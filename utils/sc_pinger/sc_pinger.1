@@ -1,0 +1,130 @@
+.\"
+.\" sc_ally.1
+.\"
+.\" Author: Matthew Luckie <mjl@luckie.org.nz>
+.\"
+.\" Copyright (c) 2020 University of Waikato
+.\"                    All rights reserved
+.\"
+.\" $Id: sc_pinger.1,v 1.1 2020/06/23 23:58:20 mjl Exp $
+.\"
+.Dd Jun 24, 2020
+.Dt SC_PINGER 1
+.Os
+.Sh NAME
+.Nm sc_pinger
+.Nd scamper driver to run ping with different probe methods on a list of addresses.
+.Sh SYNOPSIS
+.Nm
+.Bk -words
+.Op Fl ?D
+.Op Fl a Ar infile
+.Op Fl o Ar outfile
+.Op Fl p Ar port
+.Op Fl U Ar unix-socket
+.Op Fl c Ar probe-count
+.Op Fl m Ar method
+.Op Fl t Ar logfile
+.Ek
+.\""""""""""""
+.Sh DESCRIPTION
+The
+.Nm
+utility provides the ability to connect to a running
+.Xr scamper 1
+instance and run ping on a set of IPv4 and IPv6 addresses.
+For each address in the file,
+.Nm
+will try ICMP, UDP, and TCP-ack probe methods to solicit responses from the
+address.
+.Nm
+will not try all methods if one method obtains responses.
+The output of
+.Nm
+is written to a
+.Xr warts 5
+file, which can then be processed to extract details of responses.
+The options are as follows:
+.Bl -tag -width Ds
+.It Fl ?
+prints a list of command line options and a synopsis of each.
+.It Fl D
+causes
+.Nm
+to detach and become a daemon.
+.It Fl a Ar infile
+specifies the name of the input file which consists of a sequence of
+IPv4 and IPv6 addresses, one per line.
+.It Fl o Ar outfile
+specifies the name of the output file to be written.
+The output file will use the
+.Xr warts 5
+format.
+.It Fl p Ar port
+specifies the port on the local host where
+.Xr scamper 1
+is accepting control socket connections.
+.It Fl U Ar unix-socket
+specifies the name of a unix domain socket where
+.Xr scamper 1
+is accepting control socket connections.
+.It Fl c Ar probe-count
+specifies the number of probes to send for each method.
+.Nm
+accepts two formats: a single integer that specifies the number of
+probes (and responses) desired; or, two integers, separated by /,
+that specify the number of responses desired and maximum number of
+probes to send.
+By default,
+.Nm
+seeks three responses from up to five probes.
+.It Fl m Ar method
+specifies a single probe method to try.
+The available probe methods are the same as scamper's ping implementation,
+listed in
+.Xr scamper 1
+manual page.
+By default,
+.Nm
+uses ICMP-echo, UDP-dport, and TCP-ack-sport to destination port 80.
+.It Fl t Ar logfile
+specifies the name of a file to log output from
+.Nm
+generated at run time.
+.El
+.\""""""""""""
+.Sh EXAMPLES
+Given a set of IPv4 and IPv6 address sets in a file named infile.txt:
+.Pp
+.in +.3i
+.nf
+192.0.2.1
+192.0.32.10
+192.0.31.60
+2001:db8::1
+.fi
+.in -.3i
+.Pp
+and a
+.Xr scamper 1
+daemon listening on port 31337, then these addresses can be probed
+using
+.Pp
+.Dl sc_pinger -a infile.txt -o outfile.warts -p 31337
+.Pp
+To send 4 probes, and stop after receiving two responses:
+.Pp
+.Dl sc_pinger -a infile.txt -o outfile.warts -p 31337 -c 2/4
+.Pp
+To use ICMP-echo and TCP-syn probes to destination port 443
+.Pp
+.Dl sc_pinger -a infile.txt -o outfile.warts -p 31337 -m icmp-echo -m 'tcp-syn -d 443'
+.\""""""""""""
+.Sh SEE ALSO
+.Xr scamper 1 ,
+.Xr sc_wartsdump 1 ,
+.Xr sc_warts2json 1 ,
+.Xr sc_warts2text 1
+.Sh AUTHORS
+.Nm
+was written by Matthew Luckie <mjl@luckie.org.nz>.
