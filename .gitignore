@@ -1,0 +1,103 @@
+# http://www.gnu.org/software/automake
+
+Makefile.in
+/ar-lib
+/mdate-sh
+/py-compile
+/test-driver
+/ylwrap
+
+# http://www.gnu.org/software/autoconf
+
+autom4te.cache
+/autoscan.log
+/autoscan-*.log
+/aclocal.m4
+/compile
+/config.guess
+/config.h.in
+/config.log
+/config.status
+/config.sub
+/configure
+/configure.scan
+/depcomp
+/install-sh
+/missing
+/stamp-h1
+.deps/
+.libs/
+.dirstamp
+
+# https://www.gnu.org/software/libtool/
+
+/ltmain.sh
+
+# http://www.gnu.org/software/texinfo
+
+/texinfo.tex
+
+# http://www.gnu.org/software/m4/
+
+m4/libtool.m4
+m4/ltoptions.m4
+m4/ltsugar.m4
+m4/ltversion.m4
+m4/lt~obsolete.m4
+
+# Generated Makefile 
+# (meta build system like autotools, 
+# can automatically generate from config.status script
+# (which is called by configure script))
+Makefile
+config.h
+INSTALL
+libtool
+
+# temp files
+*~
+*.#*
+.DS_Store
+
+# Compiled Object files
+*.slo
+*.lo
+*.o
+
+# Compiled Dynamic libraries
+*.so
+
+# Compiled Static libraries
+*.lai
+*.la
+*.a
+
+# Compiled binaries
+scamper/scamper
+utils/sc_ally/sc_ally
+utils/sc_analysis_dump/sc_analysis_dump
+utils/sc_attach/sc_attach
+utils/sc_bdrmap/sc_bdrmap
+utils/sc_erosprober/sc_erosprober
+utils/sc_filterpolicy/sc_filterpolicy
+utils/sc_ipiddump/sc_ipiddump
+utils/sc_pinger/sc_pinger
+utils/sc_prefixscan/sc_prefixscan
+utils/sc_radargun/sc_radargun
+utils/sc_remoted/sc_remoted
+utils/sc_speedtrap/sc_speedtrap
+utils/sc_tbitblind/sc_tbitblind
+utils/sc_tbitpmtud/sc_tbitpmtud
+utils/sc_tracediff/sc_tracediff
+utils/sc_ttlexp/sc_ttlexp
+utils/sc_warts2csv/sc_warts2csv
+utils/sc_warts2json/sc_warts2json
+utils/sc_warts2pcap/sc_warts2pcap
+utils/sc_warts2text/sc_warts2text
+utils/sc_wartscat/sc_wartscat
+utils/sc_wartsdump/sc_wartsdump
+utils/sc_wartsfilter/sc_wartsfilter
+utils/sc_wartsfix/sc_wartsfix
+
+# Upstream files that we don't want
+.cvsignore
