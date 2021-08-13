@@ -4,7 +4,7 @@ AC_INIT([scamper], [20210324], [mjl@luckie.org.nz])
 
 AC_CONFIG_MACRO_DIR([m4])
 AC_CONFIG_SRCDIR([scamper/scamper.c])
-AM_INIT_AUTOMAKE
+AM_INIT_AUTOMAKE([foreign])
 AC_CONFIG_HEADER([config.h])
 
 AC_PROG_LIBTOOL
