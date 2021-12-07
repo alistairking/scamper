@@ -33,7 +33,7 @@
 
 const char *scamper_do_tbit_usage(void);
 
-void *scamper_do_tbit_alloc(char *str);
+void *scamper_do_tbit_alloc(char *str, uint32_t *id);
 
 void scamper_do_tbit_free(void *data);
 

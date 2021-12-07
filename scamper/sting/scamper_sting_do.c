@@ -928,7 +928,7 @@ static int sting_arg_param_validate(int optid, char *param, long long *out)
  * assemble a sting.  return the sting structure so that it is all ready to
  * go.
  */
-void *scamper_do_sting_alloc(char *str)
+void *scamper_do_sting_alloc(char *str, uint32_t *id)
 {
   uint16_t sport    = scamper_sport_default();
   uint16_t dport    = 80;
@@ -1026,7 +1026,7 @@ void *scamper_do_sting_alloc(char *str)
   sting->synretx  = synretx;
   sting->dataretx = dataretx;
   sting->seqskip  = seqskip;
-  sting->userid   = userid;
+  sting->userid   = *id = userid;
 
   /* take a copy of the data to be used in the measurement */
   if(scamper_sting_data(sting, (const uint8_t *)defaultrequest,

@@ -26,7 +26,7 @@
 
 typedef struct scamper_host_do scamper_host_do_t;
 
-void *scamper_do_host_alloc(char *str);
+void *scamper_do_host_alloc(char *str, uint32_t *id);
 
 scamper_task_t *scamper_do_host_alloctask(void *data,
 					  scamper_list_t *list,

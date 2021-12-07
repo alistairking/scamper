@@ -25,7 +25,7 @@
 
 typedef struct scamper_neighbourdisc_do scamper_neighbourdisc_do_t;
 
-void *scamper_do_neighbourdisc_alloc(char *str);
+void *scamper_do_neighbourdisc_alloc(char *str, uint32_t *id);
 
 scamper_task_t *scamper_do_neighbourdisc_alloctask(void *data,
 						   scamper_list_t *list,

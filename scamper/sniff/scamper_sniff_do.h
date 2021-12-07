@@ -26,7 +26,7 @@
 
 const char *scamper_do_sniff_usage(void);
 
-void *scamper_do_sniff_alloc(char *str);
+void *scamper_do_sniff_alloc(char *str, uint32_t *id);
 
 void scamper_do_sniff_free(void *data);
 

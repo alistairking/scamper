@@ -1500,7 +1500,7 @@ static int ping_tsopt(scamper_ping_t *ping, uint32_t *flags, char *tsopt)
  * a ping.  return the ping structure so that it is all ready to go.
  *
  */
-void *scamper_do_ping_alloc(char *str)
+void *scamper_do_ping_alloc(char *str, uint32_t *id)
 {
   uint16_t  probe_count   = SCAMPER_DO_PING_PROBECOUNT_DEF;
   uint8_t   probe_wait    = SCAMPER_DO_PING_PROBEWAIT_DEF;
@@ -1878,7 +1878,7 @@ void *scamper_do_ping_alloc(char *str)
   ping->probe_icmpsum = probe_icmpsum;
   ping->reply_count   = reply_count;
   ping->reply_pmtu    = reply_pmtu;
-  ping->userid        = userid;
+  ping->userid        = *id = userid;
   ping->flags         = flags;
 
   if(SCAMPER_PING_METHOD_IS_TCP(ping))
