@@ -618,7 +618,7 @@ scamper_task_t *scamper_do_neighbourdisc_alloctask(void *data,
   return NULL;
 }
 
-void *scamper_do_neighbourdisc_alloc(char *str)
+void *scamper_do_neighbourdisc_alloc(char *str, uint32_t *id)
 {
   scamper_neighbourdisc_t *nd = NULL;
   scamper_option_out_t *opts_out = NULL, *opt;

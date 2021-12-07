@@ -4492,7 +4492,7 @@ static int trace_arg_param_validate(int optid, char *param, long long *out)
  * assemble a trace.  return the trace structure so that it is all ready to
  * go.
  */
-void *scamper_do_trace_alloc(char *str)
+void *scamper_do_trace_alloc(char *str, uint32_t *id)
 {
   /* default values of various trace parameters */
   uint8_t  type        = SCAMPER_TRACE_TYPE_UDP_PARIS;
@@ -4720,7 +4720,7 @@ void *scamper_do_trace_alloc(char *str)
   trace->confidence  = confidence;
   trace->wait_probe  = wait_probe;
   trace->offset      = offset;
-  trace->userid      = userid;
+  trace->userid      = *id = userid;
 
   /* to start with, we are this far into the path */
   trace->hop_count = firsthop - 1;

@@ -2297,7 +2297,7 @@ static int client_attached_cb(client_t *client, uint8_t *buf, size_t len)
 {
   char *str;
   long long ll;
-  uint32_t id;
+  uint32_t id, userid;
 
   assert(client->source != NULL);
 
@@ -2323,10 +2323,10 @@ static int client_attached_cb(client_t *client, uint8_t *buf, size_t len)
     }
 
   /* try the command to see if it is valid and acceptable */
-  if(scamper_source_command2(client->source, (char *)buf, &id) != 0)
+  if(scamper_source_command2(client->source, (char *)buf, &id, &userid) != 0)
     return client_send(client, "ERR command not accepted");
 
-  return client_send(client, "OK id-%d", id);
+  return client_send(client, "OK id-%d userid-%d", id, userid);
 }
 
 static int client_interactive_cb(client_t *client, uint8_t *buf, size_t len)

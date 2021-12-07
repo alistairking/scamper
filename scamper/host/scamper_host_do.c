@@ -946,7 +946,7 @@ scamper_task_t *scamper_do_host_alloctask(void *data, scamper_list_t *list,
   return NULL;
 }
 
-void *scamper_do_host_alloc(char *str)
+void *scamper_do_host_alloc(char *str, uint32_t *id)
 {
   scamper_host_t *host = NULL;
   scamper_option_out_t *opts_out = NULL, *opt;
@@ -1040,7 +1040,7 @@ void *scamper_do_host_alloc(char *str)
      (host->qname = strdup(name)) == NULL)
     goto err;
 
-  host->userid  = userid;
+  host->userid  = *id = userid;
   host->flags  |= flags;
   host->wait    = wait;
   host->retries = retries;

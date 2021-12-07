@@ -4480,7 +4480,7 @@ static int tracelb_arg_param_validate(int optid, char *param, long long *out)
  * assemble a trace.  return the trace structure so that it is all ready to
  * go.
  */
-void *scamper_do_tracelb_alloc(char *str)
+void *scamper_do_tracelb_alloc(char *str, uint32_t *id)
 {
   scamper_option_out_t *opts_out = NULL, *opt;
   scamper_tracelb_t *trace = NULL;
@@ -4623,7 +4623,7 @@ void *scamper_do_tracelb_alloc(char *str)
   trace->type         = type;
   trace->probec_max   = probec_max;
   trace->gaplimit     = gaplimit;
-  trace->userid       = userid;
+  trace->userid       = *id = userid;
   trace->flags        = flags;
 
   switch(trace->dst->type)

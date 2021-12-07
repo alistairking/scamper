@@ -28,7 +28,7 @@
 #ifndef __SCAMPER_DO_TRACELB_H
 #define __SCAMPER_DO_TRACELB_H
 
-void *scamper_do_tracelb_alloc(char *str);
+void *scamper_do_tracelb_alloc(char *str, uint32_t *id);
 
 scamper_task_t *scamper_do_tracelb_alloctask(void *data,
 					     scamper_list_t *list,
