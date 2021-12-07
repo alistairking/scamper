@@ -1,13 +1,13 @@
 /*
  * scamper_trace.c
  *
- * $Id: scamper_trace.c,v 1.97 2020/03/17 07:32:16 mjl Exp $
+ * $Id: scamper_trace.c,v 1.99 2021/10/23 04:46:52 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2003-2011 The University of Waikato
  * Copyright (C) 2008      Alistair King
  * Copyright (C) 2012-2015 The Regents of the University of California
- * Copyright (C) 2019      Matthew Luckie
+ * Copyright (C) 2019-2021 Matthew Luckie
  *
  * Authors: Matthew Luckie
  *          Doubletree implementation by Alistair King
@@ -214,6 +214,8 @@ void scamper_trace_hop_free(scamper_trace_hop_t *hop)
   if(hop == NULL)
     return;
 
+  if(hop->hop_name != NULL)
+    free(hop->hop_name);
   scamper_icmpext_free(hop->hop_icmpext);
   scamper_addr_free(hop->hop_addr);
   free(hop);
@@ -269,7 +271,7 @@ const char *scamper_trace_type_tostr(const scamper_trace_t *t, char *b, size_t l
     "udp-paris",
     "tcp-ack",
   };
-  if(t->type > sizeof(m) / sizeof(char *) || m[t->type] == NULL)
+  if(t->type >= sizeof(m) / sizeof(char *) || m[t->type] == NULL)
     {
       snprintf(b, l, "%d", t->type);
       return b;
@@ -291,7 +293,7 @@ const char *scamper_trace_stop_tostr(const scamper_trace_t *t, char *b, size_t l
     "GSS",
     "HALTED",
   };
-  if(t->stop_reason > sizeof(r) / sizeof(char *) || r[t->stop_reason] == NULL)
+  if(t->stop_reason >= sizeof(r) / sizeof(char *) || r[t->stop_reason] == NULL)
     {
       snprintf(b, l, "%d", t->stop_reason);
       return b;

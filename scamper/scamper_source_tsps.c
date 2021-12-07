@@ -1,7 +1,7 @@
 /*
  * scamper_source_tsps.c
  *
- * $Id: scamper_source_tsps.c,v 1.12 2020/03/17 07:32:16 mjl Exp $
+ * $Id: scamper_source_tsps.c,v 1.13 2021/08/22 08:11:53 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -91,7 +91,7 @@ static int ssf_open(const char *filename)
   int fd = -1;
 
   /* get a file descriptor to the file */
-  if(strcmp(filename, "-") != 0)
+  if(string_isdash(filename) == 0)
     {
 #if defined(WITHOUT_PRIVSEP)
       fd = open(filename, O_RDONLY);

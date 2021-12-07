@@ -1,10 +1,10 @@
 /*
  * scamper_host_warts.c
  *
- * Copyright (C) 2019-2020 Matthew Luckie
+ * Copyright (C) 2019-2021 Matthew Luckie
  * Author: Matthew Luckie
  *
- * $Id: scamper_host_warts.c,v 1.5 2020/06/18 20:01:20 mjl Exp $
+ * $Id: scamper_host_warts.c,v 1.7 2021/08/24 09:03:07 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -190,6 +190,12 @@ typedef struct warts_host_rr
   } data_un;
 } warts_host_rr_t;
 
+typedef struct warts_host_rr_read
+{
+  int       type;
+  void     *data;
+} warts_host_rr_read_t;
+
 static void warts_host_query_params(const scamper_host_query_t *query,
 				    warts_host_query_t *state)
 {
@@ -306,9 +312,11 @@ static int warts_host_rr_mx_read(void **data, const uint8_t *buf,
   const int handler_cnt = sizeof(handlers)/sizeof(warts_param_reader_t);
   if(warts_params_read(buf, off, len, handlers, handler_cnt) != 0)
     goto err;
+  if(exchange == NULL)
+    goto err;
   if((mx = scamper_host_rr_mx_alloc(preference, exchange)) == NULL)
     goto err;
-  if(exchange != NULL) free(exchange);
+  free(exchange);
   *data = mx;
   return 0;
 
@@ -392,24 +400,26 @@ static int warts_host_rr_soa_read(void **data,
     {&minimum, (wpr_t)extract_uint32, NULL},
   };
   const int handler_cnt = sizeof(handlers)/sizeof(warts_param_reader_t);
+  int rc = -1;
+
   if(warts_params_read(buf, off, len, handlers, handler_cnt) != 0)
-    goto err;
+    goto done;
+  if(mname == NULL || rname == NULL)
+    goto done;
   if((soa = scamper_host_rr_soa_alloc(mname, rname)) == NULL)
-    goto err;
+    goto done;
   soa->serial = serial;
   soa->refresh = refresh;
   soa->retry = retry;
   soa->expire = expire;
   soa->minimum = minimum;
   *data = soa;
-  if(mname != NULL) free(mname);
-  if(rname != NULL) free(rname);
-  return 0;
+  rc = 0;
 
- err:
+ done:
   if(mname != NULL) free(mname);
   if(rname != NULL) free(rname);
-  return -1;
+  return rc;
 }
 
 static void warts_host_rr_soa_write(scamper_host_rr_soa_t *soa,
@@ -432,34 +442,37 @@ static void warts_host_rr_soa_write(scamper_host_rr_soa_t *soa,
 }
 
 static int extract_rrdata(const uint8_t *buf, uint32_t *off, uint32_t len,
-			  void **data, warts_addrtable_t *table)
+			  warts_host_rr_read_t *rrdata,
+			  warts_addrtable_t *table)
 {
   uint16_t type;
 
   if(extract_uint16(buf, off, len, &type, NULL) != 0)
     return -1;
 
+  rrdata->type = type;
   if(type == SCAMPER_HOST_RR_DATA_TYPE_ADDR)
     {
-      if(extract_addr(buf, off, len, (scamper_addr_t **)data, table) != 0)
+      if(extract_addr(buf, off, len,
+		      (scamper_addr_t **)&rrdata->data, table) != 0)
 	return -1;
       return 0;
     }
   else if(type == SCAMPER_HOST_RR_DATA_TYPE_STR)
     {
-      if(extract_string(buf, off, len, (char **)data, NULL) != 0)
+      if(extract_string(buf, off, len, (char **)&rrdata->data, NULL) != 0)
 	return -1;
       return 0;
     }
   else if(type == SCAMPER_HOST_RR_DATA_TYPE_SOA)
     {
-      if(warts_host_rr_soa_read(data, buf, off, len) != 0)
+      if(warts_host_rr_soa_read(&rrdata->data, buf, off, len) != 0)
 	return -1;
       return 0;
     }
   else if(type == SCAMPER_HOST_RR_DATA_TYPE_MX)
     {
-      if(warts_host_rr_mx_read(data, buf, off, len) != 0)
+      if(warts_host_rr_mx_read(&rrdata->data, buf, off, len) != 0)
 	return -1;
       return 0;
     }
@@ -498,14 +511,14 @@ static int warts_host_rr_data_len(const scamper_host_rr_t *rr,
   int len = 2;
   int x;
 
-  x = scamper_host_rr_data_type(rr);
+  x = scamper_host_rr_data_type(rr->class, rr->type);
   assert(x == SCAMPER_HOST_RR_DATA_TYPE_ADDR ||
 	 x == SCAMPER_HOST_RR_DATA_TYPE_STR ||
 	 x == SCAMPER_HOST_RR_DATA_TYPE_SOA ||
 	 x == SCAMPER_HOST_RR_DATA_TYPE_MX);
 
   state->data_type = (uint16_t)x;
-  state->rr = (scamper_host_rr_t*)rr;
+  state->rr = (scamper_host_rr_t *)rr;
   if(state->data_type == SCAMPER_HOST_RR_DATA_TYPE_ADDR)
     {
       len += warts_addr_size(table, rr->un.addr);
@@ -578,26 +591,45 @@ static int warts_host_rr_read(scamper_host_rr_t **rr, int i,
   uint16_t class, type;
   uint32_t ttl;
   char *name = NULL;
-  void *data = NULL;
+  warts_host_rr_read_t rrdata;
   warts_param_reader_t handlers[] = {
     {&class, (wpr_t)extract_uint16, NULL},
     {&type,  (wpr_t)extract_uint16, NULL},
     {&name,  (wpr_t)extract_string, NULL},
     {&ttl,   (wpr_t)extract_uint32, NULL},
-    {&data,  (wpr_t)extract_rrdata, table},
+    {&rrdata,(wpr_t)extract_rrdata, table},
   };
   const int handler_cnt = sizeof(handlers)/sizeof(warts_param_reader_t);
-  if(warts_params_read(buf, off, len, handlers, handler_cnt) != 0)
-    goto err;
-  if((rr[i] = scamper_host_rr_alloc(name, class, type, ttl)) == NULL)
-    goto err;
-  rr[i]->un.v = data;
-  if(name != NULL) free(name);
-  return 0;
+  int rc = -1;
 
- err:
+  rrdata.type = -1; rrdata.data = NULL;
+  if(warts_params_read(buf, off, len, handlers, handler_cnt) != 0)
+    goto done;
+
+  /* sanity check the stored RR */
+  if(name == NULL || rrdata.data == NULL || rrdata.type == -1 ||
+     rrdata.type != scamper_host_rr_data_type(class, type))
+    goto done;
+
+  if((rr[i] = scamper_host_rr_alloc(name, class, type, ttl)) == NULL)
+    goto done;
+  rr[i]->un.v = rrdata.data; rrdata.data = NULL;
+  rc = 0;
+
+ done:
   if(name != NULL) free(name);
-  return -1;
+  if(rrdata.data != NULL)
+    {
+      if(rrdata.type == SCAMPER_HOST_RR_DATA_TYPE_ADDR)
+	scamper_addr_free(rrdata.data);
+      else if(rrdata.type == SCAMPER_HOST_RR_DATA_TYPE_STR)
+	free(rrdata.data);
+      else if(rrdata.type == SCAMPER_HOST_RR_DATA_TYPE_SOA)
+	scamper_host_rr_soa_free(rrdata.data);
+      else if(rrdata.type == SCAMPER_HOST_RR_DATA_TYPE_MX)
+	scamper_host_rr_mx_free(rrdata.data);
+    }
+  return rc;
 }
 
 static void warts_host_rr_write(scamper_host_rr_t *rr, uint8_t *buf,
@@ -699,8 +731,11 @@ static int warts_host_params_read(scamper_host_t *host,
     {&host->qcount,       (wpr_t)extract_byte,    NULL},
   };
   const int handler_cnt = sizeof(handlers) / sizeof(warts_param_reader_t);
+  int rc;
 
-  if(warts_params_read(buf, off, len, handlers, handler_cnt) != 0)
+  if((rc = warts_params_read(buf, off, len, handlers, handler_cnt)) != 0)
+    return rc;
+  if(host->dst == NULL)
     return -1;
 
   return 0;

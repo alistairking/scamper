@@ -1,7 +1,7 @@
 /*
  * sc_speedtrap
  *
- * $Id: sc_speedtrap.c,v 1.62 2020/11/30 22:17:02 mjl Exp $
+ * $Id: sc_speedtrap.c,v 1.63 2021/08/22 08:11:53 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -445,7 +445,7 @@ static int check_options(int argc, char *argv[])
 
       if(opt_log != NULL)
 	{
-	  if(strcasecmp(opt_log, "-") == 0)
+	  if(string_isdash(opt_log) != 0)
 	    {
 	      logfile = stdout;
 	    }
@@ -2728,7 +2728,7 @@ static int speedtrap_read(void)
     {
       filename = dump_files[i]; dump_stop = 0;
 
-      if(strcmp(filename, "-") == 0)
+      if(string_isdash(filename) != 0)
 	{
 	  if(stdin_used == 1)
 	    {

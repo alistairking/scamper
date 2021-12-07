@@ -1,7 +1,7 @@
 /*
  * scamper_file.c
  *
- * $Id: scamper_file.c,v 1.75 2020/03/17 07:32:16 mjl Exp $
+ * $Id: scamper_file.c,v 1.76 2021/08/22 08:11:53 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -781,14 +781,10 @@ scamper_file_t *scamper_file_open(char *filename, char mode, char *type)
 
   if(mode == 'r')
     {
-      if(strcmp(filename, "-") == 0)
-	{
-	  fd = STDIN_FILENO;
-	}
+      if(string_isdash(filename) != 0)
+	fd = STDIN_FILENO;
       else
-	{
-	  flags = O_RDONLY;
-	}
+	flags = O_RDONLY;
     }
   else if(mode == 'w' || mode == 'a')
     {
@@ -798,7 +794,7 @@ scamper_file_t *scamper_file_open(char *filename, char mode, char *type)
 	  return NULL;
 	}
 
-      if(strcmp(filename, "-") == 0)
+      if(string_isdash(filename) != 0)
 	{
 	  fd = STDIN_FILENO;
 	}

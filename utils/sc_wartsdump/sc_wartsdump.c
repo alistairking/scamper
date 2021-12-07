@@ -1,7 +1,7 @@
 /*
  * sc_wartsdump
  *
- * $Id: sc_wartsdump.c,v 1.228 2020/06/12 23:29:25 mjl Exp $
+ * $Id: sc_wartsdump.c,v 1.233 2021/10/23 04:46:52 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -9,7 +9,7 @@
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2012-2015 The Regents of the University of California
- * Copyright (C) 2019-2020 Matthew Luckie
+ * Copyright (C) 2019-2021 Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -153,9 +153,12 @@ static void dump_trace_hop(const scamper_trace_t *trace,
   int i;
   char *comma = "";
 
-  printf("hop %2d  %s\n",
+  printf("hop %2d  %s",
 	 hop->hop_probe_ttl,
 	 scamper_addr_tostr(hop->hop_addr, addr, sizeof(addr)));
+  if(hop->hop_name != NULL)
+    printf(" name %s", hop->hop_name);
+  printf("\n");
 
   printf(" attempt: %d", hop->hop_probe_id);
   if(hop->hop_tx.tv_sec != 0)
@@ -336,7 +339,8 @@ static void dump_trace(scamper_trace_t *trace)
 
   printf(" attempts: %d, hoplimit: %d, loops: %d, probec: %d\n",
 	 trace->attempts, trace->hoplimit, trace->loops, trace->probec);
-  printf(" gaplimit: %d, gapaction: ", trace->gaplimit);
+  printf(" squeries: %d, gaplimit: %d, gapaction: ",
+	 trace->squeries, trace->gaplimit);
   if(trace->gapaction == SCAMPER_TRACE_GAPACTION_STOP)
     printf("stop");
   else if(trace->gapaction == SCAMPER_TRACE_GAPACTION_LASTDITCH)
@@ -372,6 +376,8 @@ static void dump_trace(scamper_trace_t *trace)
 	printf(" const-payload");
       if(trace->flags & SCAMPER_TRACE_FLAG_RXERR)
 	printf(" rxerr");
+      if(trace->flags & SCAMPER_TRACE_FLAG_PTR)
+	printf(" ptr");
       printf(" )");
     }
   printf("\n");
@@ -486,24 +492,28 @@ static void dump_tracelb_reply(scamper_tracelb_probe_t *probe,
   uint16_t m;
 
   timeval_diff_tv(&rtt, &probe->tx, &reply->reply_rx);
-  scamper_addr_tostr(reply->reply_from, from, sizeof(from));
+
+  if(reply->reply_from != NULL)
+    scamper_addr_tostr(reply->reply_from, from, sizeof(from));
+  else
+    snprintf(from, sizeof(from), "<null>");
 
   printf("   reply from: %s, rtt: %d.%06d, ttl: %d",
 	 from, (int)rtt.tv_sec, (int)rtt.tv_usec, reply->reply_ttl);
 
-  if(reply->reply_from->type == SCAMPER_ADDR_TYPE_IPV4)
+  if(reply->reply_from != NULL && SCAMPER_ADDR_TYPE_IS_IPV4(reply->reply_from))
     printf(", ipid: 0x%04x", reply->reply_ipid);
-  printf("\n     ");
+  printf("\n");
 
   if(reply->reply_flags & SCAMPER_TRACELB_REPLY_FLAG_TCP)
     {
-      printf("tcp flags 0x%02x", reply->reply_tcp_flags);
+      printf("     tcp flags 0x%02x", reply->reply_tcp_flags);
       dump_tcp_flags(reply->reply_tcp_flags);
       printf("\n");
     }
   else
     {
-      printf("icmp: %d/%d, q-tos: 0x%02x",
+      printf("     icmp: %d/%d, q-tos: 0x%02x",
 	     reply->reply_icmp_type, reply->reply_icmp_code,
 	     reply->reply_icmp_q_tos);
       if(SCAMPER_TRACELB_REPLY_IS_ICMP_UNREACH(reply) ||
@@ -1182,7 +1192,7 @@ static void dump_neighbourdisc(scamper_neighbourdisc_t *nd)
   scamper_neighbourdisc_reply_t *reply;
   struct timeval rtt;
   uint16_t i, j;
-  char a[64], b[64];
+  char buf[128];
 
   printf("neighbourdisc\n");
   dump_list_summary(nd->list);
@@ -1201,7 +1211,7 @@ static void dump_neighbourdisc(scamper_neighbourdisc_t *nd)
       printf(", attempts: %d, wait: %ds, replyc: %d, iface: %s\n",
 	     nd->attempts, nd->wait, nd->replyc, nd->ifname);
       printf(" our-mac: %s\n",
-	     scamper_addr_tostr(nd->src_mac, a, sizeof(a)));
+	     scamper_addr_tostr(nd->src_mac, buf, sizeof(buf)));
       printf(" flags: 0x%02x", nd->flags);
       if(nd->flags != 0)
 	{
@@ -1213,11 +1223,13 @@ static void dump_neighbourdisc(scamper_neighbourdisc_t *nd)
 	  printf(" )");
 	}
       printf("\n");
-      printf(" query:  who-has %s tell %s\n",
-	     scamper_addr_tostr(nd->dst_ip,  a, sizeof(a)),
-	     scamper_addr_tostr(nd->src_ip,  b, sizeof(b)));
-      printf(" result: %s is-at %s\n", a,
-	     scamper_addr_tostr(nd->dst_mac, b, sizeof(b)));
+      printf(" query:  who-has %s",
+	     scamper_addr_tostr(nd->dst_ip, buf, sizeof(buf)));
+      if(nd->src_ip != NULL)
+	printf(" tell %s", scamper_addr_tostr(nd->src_ip, buf, sizeof(buf)));
+      if(nd->dst_mac != NULL)
+	printf(" result: %s is-at %s\n", buf,
+	       scamper_addr_tostr(nd->dst_mac, buf, sizeof(buf)));
     }
 
   for(i=0; i<nd->probec; i++)
@@ -1232,7 +1244,7 @@ static void dump_neighbourdisc(scamper_neighbourdisc_t *nd)
 	  timeval_diff_tv(&rtt, &probe->tx, &reply->rx);
 	  printf("  reply: %d, rtt: %d.%06d, mac: %s\n",
 		 i, (int)rtt.tv_sec, (int)rtt.tv_usec,
-		 scamper_addr_tostr(reply->mac, a, sizeof(a)));
+		 scamper_addr_tostr(reply->mac, buf, sizeof(buf)));
 	}
     }
 
@@ -1443,11 +1455,16 @@ static void dump_tbit(scamper_tbit_t *tbit)
 		case IPPROTO_HOPOPTS:
 		case IPPROTO_DSTOPTS:
 		case IPPROTO_ROUTING:
+		  if(pkt->data[iphlen+1] == 0 ||
+		     255 - iphlen <= (pkt->data[iphlen+1] * 8) + 8)
+		    break;
 		  proto = pkt->data[iphlen+0];
 		  iphlen += (pkt->data[iphlen+1] * 8) + 8;
 		  continue;
 
 		case IPPROTO_FRAGMENT:
+		  if(255 - iphlen <= 8)
+		    break;
 		  if(pkt->data[iphlen+3] & 0x1)
 		    mf = 1;
 		  off = (bytes_ntohs(pkt->data+iphlen+2) & 0xfff8);
@@ -1677,11 +1694,16 @@ static void dump_sting(scamper_sting_t *sting)
 		case IPPROTO_HOPOPTS:
 		case IPPROTO_DSTOPTS:
 		case IPPROTO_ROUTING:
+		  if(pkt->data[iphlen+1] == 0 ||
+		     255 - iphlen <= (pkt->data[iphlen+1] * 8) + 8)
+		    break;
 		  proto = pkt->data[iphlen+0];
 		  iphlen += (pkt->data[iphlen+1] * 8) + 8;
 		  continue;
 
 		case IPPROTO_FRAGMENT:
+		  if(255 - iphlen <= 8)
+		    break;
 		  proto = pkt->data[iphlen+0];
 		  iphlen += 8;
 		  continue;
@@ -1869,7 +1891,7 @@ static void dump_host_rr(scamper_host_rr_t *rr, const char *section)
     default: printf("%d", rr->type); break;
     }
 
-  switch(scamper_host_rr_data_type(rr))
+  switch(scamper_host_rr_data_type(rr->class, rr->type))
     {
     case SCAMPER_HOST_RR_DATA_TYPE_ADDR:
       printf(" %s", scamper_addr_tostr(rr->un.addr, buf, sizeof(buf)));
@@ -1895,7 +1917,9 @@ static void dump_host(scamper_host_t *host)
   char buf[256];
   uint32_t i, j;
 
-  printf("host from %s", scamper_addr_tostr(host->src, buf, sizeof(buf)));
+  printf("host");
+  if(host->src != NULL)
+    printf(" from %s", scamper_addr_tostr(host->src, buf, sizeof(buf)));
   printf(" to %s\n", scamper_addr_tostr(host->dst, buf, sizeof(buf)));
   dump_list_summary(host->list);
   dump_cycle_summary(host->cycle);
@@ -1923,7 +1947,13 @@ static void dump_host(scamper_host_t *host)
     }
   printf("\n");
 
-  printf(" qname: %s, qclass: %d, qtype: ", host->qname, host->qclass);
+  printf(" qname: %s, qclass: ", host->qname);
+  if(host->qclass == SCAMPER_HOST_CLASS_IN)
+    printf("IN");
+  else
+    printf("%d", host->qclass);
+
+  printf(", qtype: ");
   switch(host->qtype)
     {
     case SCAMPER_HOST_TYPE_A: printf("A"); break;

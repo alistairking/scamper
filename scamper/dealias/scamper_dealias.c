@@ -1,10 +1,11 @@
 /*
  * scamper_dealias.c
  *
- * $Id: scamper_dealias.c,v 1.52 2020/03/17 07:32:16 mjl Exp $
+ * $Id: scamper_dealias.c,v 1.53 2021/08/28 21:36:31 mjl Exp $
  *
  * Copyright (C) 2008-2010 The University of Waikato
  * Copyright (C) 2012-2013 The Regents of the University of California
+ * Copyright (C) 2021      Matthew Luckie
  * Author: Matthew Luckie
  *
  * This code implements alias resolution techniques published by others
@@ -242,7 +243,7 @@ const char *scamper_dealias_probedef_method_tostr(const scamper_dealias_probedef
     "udp-dport",
     "tcp-syn-sport",
   };
-  if(d->method > sizeof(m) / sizeof(char *) || m[d->method] == NULL)
+  if(d->method >= sizeof(m) / sizeof(char *) || m[d->method] == NULL)
     {
       snprintf(b, l, "%d", d->method);
       return b;
@@ -1013,7 +1014,7 @@ const char *scamper_dealias_method_tostr(const scamper_dealias_t *d, char *b, si
     "prefixscan",
     "bump",
   };
-  if(d->method > sizeof(m) / sizeof(char *) || m[d->method] == NULL)
+  if(d->method >= sizeof(m) / sizeof(char *) || m[d->method] == NULL)
     {
       snprintf(b, l, "%d", d->method);
       return b;
@@ -1023,14 +1024,14 @@ const char *scamper_dealias_method_tostr(const scamper_dealias_t *d, char *b, si
 
 const char *scamper_dealias_result_tostr(const scamper_dealias_t *d, char *b, size_t l)
 {
-  static char *t[] = {
+  static const char *t[] = {
     "none",
     "aliases",
     "not-aliases",
     "halted",
     "ipid-echo",
   };
-  if(d->result > sizeof(t) / sizeof(char *) || t[d->result] == NULL)
+  if(d->result >= sizeof(t) / sizeof(char *) || t[d->result] == NULL)
     {
       snprintf(b, l, "%d", d->result);
       return b;

@@ -4,10 +4,10 @@
  * Copyright (C) 2009-2010 Ben Stasiewicz
  * Copyright (C) 2010-2011 The University of Waikato
  * Copyright (C) 2012-2015 The Regents of the University of California
- * Copyright (C) 2016-2020 Matthew Luckie
+ * Copyright (C) 2016-2021 Matthew Luckie
  * Authors: Matthew Luckie, Ben Stasiewicz
  *
- * $Id: scamper_tbit_warts.c,v 1.30 2020/06/09 06:18:41 mjl Exp $
+ * $Id: scamper_tbit_warts.c,v 1.33 2021/08/28 20:31:23 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -705,7 +705,7 @@ static scamper_tbit_pkt_t *warts_tbit_pkt_read(warts_state_t *state,
   scamper_tbit_pkt_t *pkt = NULL;
   uint8_t dir, *data = NULL;
   struct timeval tv;
-  uint16_t plen;
+  uint16_t plen = 0;
   warts_param_reader_t handlers[] = {
     {&dir,  (wpr_t)extract_byte,         NULL},
     {&tv,   (wpr_t)extract_timeval,      NULL},
@@ -715,6 +715,7 @@ static scamper_tbit_pkt_t *warts_tbit_pkt_read(warts_state_t *state,
   const int handler_cnt = sizeof(handlers)/sizeof(warts_param_reader_t);
 
   if(warts_params_read(buf, off, len, handlers, handler_cnt) != 0 ||
+     data == NULL || plen == 0 ||
      (pkt = scamper_tbit_pkt_alloc(dir, data, plen, &tv)) == NULL)
     goto err;
 
@@ -1017,6 +1018,9 @@ int scamper_file_warts_tbit_read(scamper_file_t *sf, const warts_hdr_t *hdr,
       if(extract_uint32(buf, &off, hdr->len, &junk32, NULL) != 0)
 	goto err;
 
+      if(hdr->len - off < junk32)
+	goto err;
+
       i = off;
       if(junk16 == WARTS_TBIT_STRUCT_TYPE)
 	{
@@ -1059,6 +1063,7 @@ int scamper_file_warts_tbit_read(scamper_file_t *sf, const warts_hdr_t *hdr,
 		goto err;
 	    }
 	}
+      else goto err;
 
       off += junk32;
     }

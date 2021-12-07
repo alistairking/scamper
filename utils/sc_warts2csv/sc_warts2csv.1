@@ -6,7 +6,7 @@
 .\" Copyright (c) 2018 Matthew Luckie
 .\"                    All rights reserved
 .\"
-.\" $Id: sc_warts2csv.1,v 1.1 2018/03/08 08:16:05 mjl Exp $
+.\" $Id: sc_warts2csv.1,v 1.2 2021/04/22 20:06:39 mjl Exp $
 .\"
 .Dd March 8, 2018
 .Dt SC_WARTS2CSV 1
@@ -23,6 +23,9 @@ The
 utility provides a CSV dump of traceroute records in
 .Xr warts 5
 files.
+.Nm
+does not support warts records other than traceroute;
+for non-traceroute records it simply produces no output.
 .Pp
 .Sh EXAMPLES
 Given two

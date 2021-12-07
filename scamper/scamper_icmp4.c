@@ -1,12 +1,12 @@
 /*
  * scamper_icmp4.c
  *
- * $Id: scamper_icmp4.c,v 1.122 2020/06/12 23:31:51 mjl Exp $
+ * $Id: scamper_icmp4.c,v 1.123 2021/04/14 07:00:49 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2013-2014 The Regents of the University of California
- * Copyright (C) 2020      Matthew Luckie
+ * Copyright (C) 2020-2021 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -547,14 +547,18 @@ static void icmp4_recv_ip(int fd, scamper_icmp_resp_t *ir, const uint8_t *buf,
 	  cmsg = (struct cmsghdr *)CMSG_NXTHDR(msg, cmsg);
 	}
     }
-#elif defined(SIOCGSTAMP)
-  if(ioctl(fd, SIOCGSTAMP, &ir->ir_rx) != -1)
-    {
-      ir->ir_flags |= SCAMPER_ICMP_RESP_FLAG_KERNRX;
-    }
-#else
-  gettimeofday_wrap(&ir->ir_rx);
 #endif
+
+#if defined(SIOCGSTAMP)
+  if((ir->ir_flags & SCAMPER_ICMP_RESP_FLAG_KERNRX) == 0)
+    {
+      if(ioctl(fd, SIOCGSTAMP, &ir->ir_rx) != -1)
+	ir->ir_flags |= SCAMPER_ICMP_RESP_FLAG_KERNRX;
+    }
+#endif
+
+  if((ir->ir_flags & SCAMPER_ICMP_RESP_FLAG_KERNRX) == 0)
+    gettimeofday_wrap(&ir->ir_rx);
 
   /* the response came from ... */
   memcpy(&ir->ir_ip_src.v4, &ip->ip_src, sizeof(struct in_addr));

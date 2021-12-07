@@ -1,7 +1,7 @@
 /*
  * sc_bdrmap: driver to map first hop border routers of networks
  *
- * $Id: sc_bdrmap.c,v 1.31 2020/06/09 20:13:10 mjl Exp $
+ * $Id: sc_bdrmap.c,v 1.32 2021/08/22 08:11:53 mjl Exp $
  *
  *         Matthew Luckie
  *         mjl@caida.org / mjl@wand.net.nz
@@ -8325,7 +8325,7 @@ static int bdrmap_dump(void)
   for(i=0; i<opt_argc; i++)
     {
       filename = opt_args[i];
-      if(strcmp(filename, "-") == 0)
+      if(string_isdash(filename) != 0)
 	{
 	  if(stdin_used == 1)
 	    {

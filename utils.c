@@ -1,7 +1,7 @@
 /*
  * utils.c
  *
- * $Id: utils.c,v 1.198 2021/03/23 07:28:45 mjl Exp $
+ * $Id: utils.c,v 1.199 2021/08/22 08:11:53 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -1439,6 +1439,15 @@ int string_addrport(const char *in, char **first, int *port)
   if(dup != NULL) free(dup);
   return -1;
 }
+
+#ifndef NDEBUG
+int string_isdash(const char *str)
+{
+  if(str[0] == '-' && str[1] == '\0')
+    return 1;
+  return 0;
+}
+#endif
 
 void mem_concat(void *dst,const void *src,size_t len,size_t *off,size_t size)
 {

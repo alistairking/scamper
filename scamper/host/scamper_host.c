@@ -1,9 +1,9 @@
 /*
  * scamper_host
  *
- * $Id: scamper_host.c,v 1.5 2020/03/17 07:32:16 mjl Exp $
+ * $Id: scamper_host.c,v 1.6 2021/08/23 08:31:27 mjl Exp $
  *
- * Copyright (C) 2018 Matthew Luckie
+ * Copyright (C) 2018-2021 Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -93,11 +93,11 @@ scamper_host_rr_mx_t *scamper_host_rr_mx_alloc(uint16_t pref, const char *exch)
   return mx;
 }
 
-int scamper_host_rr_data_type(const scamper_host_rr_t *rr)
+int scamper_host_rr_data_type(uint16_t class, uint16_t type)
 {
-  if(rr->class == SCAMPER_HOST_CLASS_IN)
+  if(class == SCAMPER_HOST_CLASS_IN)
     {
-      switch(rr->type)
+      switch(type)
 	{
 	case SCAMPER_HOST_TYPE_NS:
 	case SCAMPER_HOST_TYPE_CNAME:
@@ -127,7 +127,7 @@ void scamper_host_rr_free(scamper_host_rr_t *rr)
   if(rr->name != NULL)
     free(rr->name);
 
-  switch(scamper_host_rr_data_type(rr))
+  switch(scamper_host_rr_data_type(rr->class, rr->type))
     {
     case SCAMPER_HOST_RR_DATA_TYPE_ADDR:
       if(rr->un.addr != NULL) scamper_addr_free(rr->un.addr);

@@ -6,7 +6,7 @@
 .\" Copyright (c) 2019-2020 Matthew Luckie
 .\"               All rights reserved
 .\"
-.\" $Id: sc_hoiho.1,v 1.3 2020/09/21 15:59:47 mjl Exp $
+.\" $Id: sc_hoiho.1,v 1.8 2021/09/20 22:36:35 mjl Exp $
 .\"
 .Dd September 21, 2020
 .Dt SC_HOIHO 1
@@ -20,8 +20,13 @@
 .Op Fl 6
 .Op Fl d Ar dump
 .Op Fl D Ar domain
+.Op Fl f Ar rtt-fudge
+.Op Fl g Ar dictionary
+.Op Fl l Ar light-speed
 .Op Fl O Ar option
 .Op Fl r Ar regex
+.Op Fl R Ar rtt-file
+.Op Fl s Ar stopid
 .Op Fl S Ar siblings
 .Op Fl t Ar threadc
 public-suffix-list.dat routers.txt
@@ -47,6 +52,10 @@ Extract Router Names from Hostnames" published in the ACM Internet
 Measurement Conference (IMC) 2019.
 The technique that learns to extract ASNs is described in the paper
 "Learning to Extract and Use ASNs in Hostnames" published in IMC 2020.
+The technique that learns to extract geolocation hints is described
+in the paper "Learning to Extract Geographic Hints from Internet Router
+Hostnames" published in the ACM Conference on emerging Networking
+EXperiments and Technologies (CoNEXT) 2021.
 The supported options to
 .Nm
 are as follows:
@@ -68,6 +77,18 @@ specifies the domain suffix that
 should operate on.  If no suffix is specified, then
 .Nm
 operates on all suffixes.
+.It Fl f Ar rtt-fudge
+specifies a fudge value, in milliseconds, to add to measured RTTs
+before evaluating if the RTT between two lat/longs is feasible.
+By default, this is 1ms.
+.It Fl g Ar dictionary
+specifies a filename containing a geolocation dictionary.
+The format of this file is specified below.
+.It Fl l Ar light-speed
+specifies the distance covered in metres per millisecond, and is used
+to evaluate if the RTT between two lat/longs is feasible.
+By default, this is 204.190477 metres per millisecond, the speed of
+light in fiber optic cable.
 .It Fl O Ar option
 allows the behavior of
 .Nm
@@ -85,8 +106,23 @@ information is only printed when a
 is using a single thread.
 .It
 .Sy json:
-Output inferences using json format.  This option is only applicable on
-dump ID 2.
+Output inferences using json format.  This option is applicable on
+dump IDs 2 and 3.
+.It
+.Sy learnasn:
+infer regexes to extract AS numbers from hostnames.
+.It
+.Sy learnalias:
+infer regexes to extract router names from hostnames.
+.It
+.Sy learngeo:
+infer regexes to extract geolocation hints from hostnames.
+.It
+.Sy loadonly:
+load the training data into memory and then exit.
+.It
+.Sy noclli:
+do not emit geolocation information for CLLI code prefixes.
 .It
 .Sy noed1:
 Do not infer true positives between extracted and inferred ASNs where the
@@ -145,8 +181,12 @@ do not, or do, execute the phase that merges regular expressions that
 differ by a single simple string.  This phase is described in section
 3.3 of the IMC 2020 paper.
 .It
+.Sy norefine-dict, refine-dict:
+do not, or do, execute the phase that refines the geolocation dictionary.
+This phase is described in section 5.4 of the CoNEXT 2021 paper.
+.It
 .Sy nothin:
-do not, or do, remove any redundant regexes at the end of each phase, as
+do not remove any redundant regexes at the end of each phase, as
 described in section 4.5 of the IMC 2019 paper.
 .It
 .Sy nothin-matchc, thin-matchc:
@@ -171,22 +211,32 @@ only show hostnames where
 made a classification using a regex.
 .It
 .Sy show-good:
-only show regexes
+show regexes that
 .Nm
-would classify as good.
+classifies as good.
 .It
-.Sy learnasn:
-infer regexes to extract AS numbers from hostnames.
+.Sy show-promising:
+show regexes that
+.Nm
+classifies as promising.
 .It
-.Sy learnalias:
-infer regexes to extract router names from hostnames.
+.Sy show-poor:
+show regexes that
+.Nm
+classifies as poor.
 .It
-.Sy loadonly:
-load the training data into memory and then exit.
+.Sy split-locode:
+identify LOCODEs that appear to be split into lengths of 2
+(country-code) and 3 (location code) in hostnames.
 .El
 .It Fl r Ar regex
 specifies the name of a file containing a working set of regexes, or a
 naming convention, to apply.
+.It Fl R Ar rtt-file
+specifies the name of a file containing round trip time (RTT) measurements
+from systems with known locations towards routers.
+.It Fl s Ar stop-id
+specifies the stage number to halt processing.
 .It Fl S Ar siblings
 specifies the name of a file containing sibling ASes.
 Each line in the file contains a list of sibling ASes that belong to the
@@ -204,6 +254,7 @@ https://publicsuffix.org/list/ website:
 .Pp
 .in +.3i
 .nf
+# node2id: 1
 # node2as: 64496
 192.0.2.1    esr1-ge-5-0-0.jfk2.example.net
 .br
@@ -211,38 +262,47 @@ https://publicsuffix.org/list/ website:
 .br
 192.0.31.60
 .Pp
+# node2id: 2
 # node2as: 64496
-192.0.2.2    esr2-xe-4-0-0.pax.example.net
+192.0.2.2    esr2-xe-4-0-0.lax.example.net
 .br
-192.0.2.5    esr2-xe-4-0-1.pax.example.net
+192.0.2.5    esr2-xe-4-0-1.lax.example.net
 .br
 192.0.31.8
 .Pp
+# node2id: 3
 # node2as: 64496
-192.0.2.6    das1-v3005.nj2.example.net
+192.0.2.6    das1-v3005.akl.example.net
 .br
-192.0.2.9    das1-v3006.nj2.example.net
+192.0.2.9    das1-v3006.akl.example.net
 .br
 192.0.2.44   44.2.0.192.example.net
 .Pp
+# node2id: 4
 # node2as: 64496
-192.0.2.13   esr1-xe-4-0-0.pax.example.net
+192.0.2.13   esr1-xe-4-0-0.lax.example.net
 .Pp
+# node2id: 5
 # node2as: 64496
-192.0.2.17   esr1-xe-4-0-1.pax.example.net
+192.0.2.17   esr1-xe-4-0-1.lax.example.net
 .Pp
+# node2id: 6
 # node2as: 64496
-192.0.2.21   esr1-xe-4-0-1.pax.example.net
+192.0.2.21   esr1-xe-4-0-1.lax.example.net
 .Pp
+# node2id: 7
 # node2as: 64500
 192.0.2.25   as64500.cust.example.net
 .Pp
+# node2id: 8
 # node2as: 64501
 192.0.2.29   as64501.cust.example.net
 .Pp
+# node2id: 9
 # node2as: 64502
 192.0.2.33   as64502.cust.example.net
 .Pp
+# node2id: 10
 # node2as: 64503
 192.0.2.37   as64503.cust.example.net
 .fi
@@ -275,21 +335,25 @@ public_suffix_list.dat routers.txt
 To see the working set of regular expressions that extract router names
 built after embedding literals in captures for example.net, use:
 .Pp
-sc_hoiho -O learnalias -d working-set -D example.net -O norefine -O refine-tp
+sc_hoiho -O learnalias -d working-set -D example.net -s 2
 public_suffix_list.dat routers.txt
 .Pp
 To see how a manually-derived regular expression clusters hostnames
 according to the extracted router name, use:
 .Pp
-sc_hoiho -D example.net
+sc_hoiho -O learnalias -d routers -D example.net
 -r "^([a-z]+\\d+)-.+\\.([a-z\\d]+)\\.example\\.net$"
 .br
--d routers -O learnalias -O norefine
 public_suffix_list.dat routers.txt
 .Pp
 To infer regular expressions that extract ASNs from hostnames, use:
 .Pp
 sc_hoiho -O learnasn -d best-regex public_suffix_list.dat routers.txt
+.Pp
+To infer regular expressions that extract geohints from hostnames, and formatting the
+output as JSON, use:
+.Pp
+sc_hoiho -O learngeo -d best-regex -O json -R rtts.txt -g geohints.txt public_suffix_list.dat routers.txt
 .Pp
 .\""""""""""""
 .Sh HINTS
@@ -300,13 +364,13 @@ One option to breaking up the runtime (but not reducing it) is to
 capture the output from one phase, and then use that as input to the
 next phase.  For example, to run the first three phases:
 .Pp
-sc_hoiho -O learnalias -d working-set -O norefine public_suffix_list.dat routers.txt
+sc_hoiho -O learnalias -d working-set -s 1 public_suffix_list.dat routers.txt
 >phase-1.re
-.Pp
-sc_hoiho -O learnalias -d working-set -O norefine -O refine-tp -r phase-1.re
+.br
+sc_hoiho -O learnalias -d working-set -s 2 -r phase-1.re
 public_suffix_list.dat routers.txt >phase-2.re
-.Pp
-sc_hoiho -O learnalias -d working-set -O norefine -O refine-fne -r phase-2.re
+.br
+sc_hoiho -O learnalias -d working-set -s 3 -r phase-2.re
 public_suffix_list.dat routers.txt >phase-3.re
 .Pp
 .\""""""""""""
@@ -342,10 +406,91 @@ defines the ASNs operated by two organizations: one organization
 with ASes 64504, 64505, and 64506, and the other organization
 with ASes 64507 and 64508.
 .Pp
+When learning geohint regexes,
+.Nm
+requires parameters that specify a geohint dictionary, and RTT
+measurements.
+For the geohint dictionary, the format of the file is as follows:
+.Pp
+.in +.3i
+.nf
+iata code lat lng cc-st "city"
+.br
+icao code lat lng cc-st "city"
+.br
+clli code lat lng cc-st "city"
+.br
+place "city" cc-st lat lng population
+.br
+locode code lat lng cc-st "city"
+.br
+facility "city" cc-st lat lng "street" "name"
+.br
+country iso3166-2 iso3166-3 "name"
+.br
+state cc-st "name"
+.fi
+.in -.3i
+.Pp
+For example:
+.Pp
+.in +.3i
+.nf
+iata IAD 38.9445 -77.455803 US-VA "Washington, DC"
+.br
+icao KIAD 38.9445 -77.455803 US-VA "Washington, DC"
+.br
+clli washdc 38.89511 -77.03637 US-DC "Washington, D.C."
+.br
+place "Washington" US-DC 38.89511 -77.03637 601723
+.br
+locode USIAD 38.94877 -77.4491 US-VA "Dulles Int Apt/Washington"
+.br
+facility "Washington" US-DC 38.902918 -77.029149 "1275 K Street, NW" "CoreSite - Washington,DC (DC1)"
+.br
+country us usa "United States"
+.br
+state US-DC "Washington, D.C."
+.fi
+.in -.3i
+.Pp
+For the RTT measurements, the format of each line of the file is as
+follows:
+.Pp
+.in +.3i
+.nf
+nodeid iata ms
+.fi
+.in -.3i
+.Pp
+For example:
+.Pp
+.in +.3i
+.nf
+N1 jfk 1
+.br
+N1 iad 10
+.br
+N1 yhu 20
+.br
+N2 sjc 10
+.br
+N2 san 12
+.br
+N2 tij 16
+.br
+N3 akl 2
+.br
+N3 wlg 11
+.br
+N3 syd 25
+.fi
+.in -.3i
 .Sh SEE ALSO
 .Xr pcre 3 ,
 .Xr pcre2 3 ,
 .Xr sc_ally 1 ,
+.Xr sc_pinger 1 ,
 .Xr sc_radargun 1 ,
 .Xr sc_speedtrap 1 ,
 .Rs
@@ -353,7 +498,7 @@ with ASes 64507 and 64508.
 .%A "B. Huffaker"
 .%A "k claffy"
 .%T "Learning to Extract Router Names from Hostnames"
-.%O "Proc. ACM Internet Measurement Conference 2019"
+.%O "Proc. ACM Internet Measurement Conference (IMC) 2019"
 .Re
 .Rs
 .%A "M. Luckie"
@@ -362,7 +507,17 @@ with ASes 64507 and 64508.
 .%A "B. Huffaker"
 .%A "k claffy"
 .%T "Learning to Extract and Use ASNs in Hostnames"
-.%O "Proc. ACM Internet Measurement Conference 2020"
+.%O "Proc. ACM Internet Measurement Conference (IMC) 2020"
+.Re
+.Rs
+.%A "M. Luckie"
+.%A "B. Huffaker"
+.%A "A. Marder"
+.%A "Z. Bischof"
+.%A "M. Fletcher"
+.%A "k claffy"
+.%T "Learning to Extract Geographic Information from Internet Router Hostnames"
+.%O "Proc. ACM Conference on emerging Networking EXperiments and Technologies (CoNEXT) 2021"
 .Re
 .Rs
 .%A "Mozilla Foundation"
@@ -424,4 +579,4 @@ with ASes 64507 and 64508.
 .Nm
 was written by Matthew Luckie.
 Marianne Fletcher added support for inferring regexes that extract
-ASNs from hostnames.
+ASNs and geohints from hostnames.

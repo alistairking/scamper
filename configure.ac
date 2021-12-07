@@ -1,13 +1,14 @@
 # Process this file with autoconf to produce a configure script.
 
-AC_INIT([scamper], [20210324], [mjl@luckie.org.nz])
+AC_INIT([scamper],[20211026],[mjl@luckie.org.nz])
 
-AC_CONFIG_MACRO_DIR([m4])
 AC_CONFIG_SRCDIR([scamper/scamper.c])
+AC_CONFIG_HEADERS([config.h])
+AC_CONFIG_MACRO_DIR([m4])
+AC_CANONICAL_TARGET
 AM_INIT_AUTOMAKE
-AC_CONFIG_HEADER([config.h])
 
-AC_PROG_LIBTOOL
+LT_INIT
 AC_PROG_CC
 AC_PROG_GCC_TRADITIONAL
 AC_PROG_INSTALL
@@ -32,23 +33,19 @@ fi
 
 # privsep parameters
 AC_ARG_WITH([privsep_user],
-  [AC_HELP_STRING([--with-privsep-user=USER],
-    [sets user name for privsep process])],
+  [AS_HELP_STRING([--with-privsep-user=USER],[sets user name for privsep process])],
   [privsep_user=$withval],
   [privsep_user=nobody])
 AC_ARG_WITH([privsep_dir],
-  [AC_HELP_STRING([--with-privsep-dir=DIR],
-    [sets chroot directory for privsep process])],
+  [AS_HELP_STRING([--with-privsep-dir=DIR],[sets chroot directory for privsep process])],
   [privsep_dir=$withval],
   [privsep_dir=/var/empty])
 AC_ARG_WITH([privsep_dir_owner],
-  [AC_HELP_STRING([--with-privsep-dir-owner=USER],
-    [sets chroot directory owner])],
+  [AS_HELP_STRING([--with-privsep-dir-owner=USER],[sets chroot directory owner])],
   [privsep_dir_owner=$withval],
   [privsep_dir_owner=root])
 AC_ARG_WITH([privsep_dir_group],
-  [AC_HELP_STRING([--with-privsep-dir-group=GROUP],
-    [sets chroot directory group id])],
+  [AS_HELP_STRING([--with-privsep-dir-group=GROUP],[sets chroot directory group id])],
   [privsep_dir_group=$withval],
   [privsep_dir_group=wheel])
 AC_SUBST(privsep_user)
@@ -145,9 +142,7 @@ AC_CHECK_LIB([iphlpapi], [GetIpNetTable])
 AC_CHECK_LIB([ws2_32], [WSAStartup])
 
 # Checks for header files.
-AC_HEADER_STDC
 AC_HEADER_SYS_WAIT
-AC_HEADER_TIME
 AC_CHECK_HEADERS(arpa/inet.h)
 AC_CHECK_HEADERS(fcntl.h)
 AC_CHECK_HEADERS(limits.h)
