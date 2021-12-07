@@ -6,11 +6,11 @@
  * Copyright (C) 2011-2013 Internap Network Services Corporation
  * Copyright (C) 2013-2014 The Regents of the University of California
  * Copyright (C) 2015      The University of Waikato
- * Copyright (C) 2016-2020 Matthew Luckie
+ * Copyright (C) 2016-2021 Matthew Luckie
  *
  * Authors: Brian Hammond, Matthew Luckie
  *
- * $Id: scamper_trace_json.c,v 1.21 2020/06/12 23:29:25 mjl Exp $
+ * $Id: scamper_trace_json.c,v 1.22 2021/10/23 04:46:52 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -51,6 +51,9 @@ static char *hop_tostr(const scamper_trace_t *trace, scamper_trace_hop_t *hop)
 
   string_concat(buf, sizeof(buf), &off,	"{\"addr\":\"%s\"",
 		scamper_addr_tostr(hop->hop_addr, tmp, sizeof(tmp)));
+  if(hop->hop_name != NULL)
+    string_concat(buf, sizeof(buf), &off, ", \"name\":\"%s\"",
+		  json_esc(hop->hop_name, tmp, sizeof(tmp)));
   string_concat(buf, sizeof(buf), &off,
 		", \"probe_ttl\":%u, \"probe_id\":%u, \"probe_size\":%u",
 		hop->hop_probe_ttl, hop->hop_probe_id, hop->hop_probe_size);

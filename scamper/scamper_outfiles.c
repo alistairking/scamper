@@ -1,7 +1,7 @@
 /*
  * scamper_outfiles: hold a collection of output targets together
  *
- * $Id: scamper_outfiles.c,v 1.49 2020/03/17 07:32:16 mjl Exp $
+ * $Id: scamper_outfiles.c,v 1.50 2021/08/22 08:11:53 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -276,7 +276,7 @@ static int outfile_opendef(char *filename, char *type)
   flags |= O_BINARY;
 #endif
 
-  if(strcmp(filename, "-") == 0)
+  if(string_isdash(filename) != 0)
     {
       fd = STDOUT_FILENO;
     }

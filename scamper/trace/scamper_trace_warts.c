@@ -5,10 +5,10 @@
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2014      The Regents of the University of California
  * Copyright (C) 2015      The University of Waikato
- * Copyright (C) 2015-2020 Matthew Luckie
+ * Copyright (C) 2015-2021 Matthew Luckie
  * Author: Matthew Luckie
  *
- * $Id: scamper_trace_warts.c,v 1.27 2020/06/12 22:35:03 mjl Exp $
+ * $Id: scamper_trace_warts.c,v 1.29 2021/10/23 04:46:52 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -63,7 +63,7 @@
 #define WARTS_TRACE_START          5   /* start timestamp */
 #define WARTS_TRACE_STOP_R         6   /* stop reason */
 #define WARTS_TRACE_STOP_D         7   /* stop data */
-#define WARTS_TRACE_FLAGS          8   /* flags */
+#define WARTS_TRACE_FLAGS8         8   /* 8 bits of flags */
 #define WARTS_TRACE_ATTEMPTS       9   /* attempts */
 #define WARTS_TRACE_HOPLIMIT       10  /* hoplimit */
 #define WARTS_TRACE_TYPE           11  /* type */
@@ -86,6 +86,8 @@
 #define WARTS_TRACE_USERID         28  /* user id */
 #define WARTS_TRACE_OFFSET         29  /* IP offset to use in fragments */
 #define WARTS_TRACE_ADDR_RTR       30  /* destination address key */
+#define WARTS_TRACE_SQUERIES       31  /* squeries */
+#define WARTS_TRACE_FLAGS          32  /* 32 bits of flags */
 
 static const warts_var_t trace_vars[] =
 {
@@ -96,7 +98,7 @@ static const warts_var_t trace_vars[] =
   {WARTS_TRACE_START,        8, -1},
   {WARTS_TRACE_STOP_R,       1, -1},
   {WARTS_TRACE_STOP_D,       1, -1},
-  {WARTS_TRACE_FLAGS,        1, -1},
+  {WARTS_TRACE_FLAGS8,       1, -1},
   {WARTS_TRACE_ATTEMPTS,     1, -1},
   {WARTS_TRACE_HOPLIMIT,     1, -1},
   {WARTS_TRACE_TYPE,         1, -1},
@@ -119,6 +121,8 @@ static const warts_var_t trace_vars[] =
   {WARTS_TRACE_USERID,       4, -1},
   {WARTS_TRACE_OFFSET,       2, -1},
   {WARTS_TRACE_ADDR_RTR,    -1, -1},
+  {WARTS_TRACE_SQUERIES,     1, -1},
+  {WARTS_TRACE_FLAGS,        4, -1},
 };
 #define trace_vars_mfb WARTS_VAR_MFB(trace_vars)
 
@@ -195,6 +199,8 @@ static const warts_var_t trace_dtree_vars[] =
 #define WARTS_TRACE_HOP_ICMPEXT      17      /* RFC 4884 icmp extension data */
 #define WARTS_TRACE_HOP_ADDR         18      /* address */
 #define WARTS_TRACE_HOP_TX           19      /* transmit time */
+#define WARTS_TRACE_HOP_NAME         20      /* name for IP address */
+
 static const warts_var_t hop_vars[] =
 {
   {WARTS_TRACE_HOP_ADDR_GID,     4, -1},
@@ -216,6 +222,7 @@ static const warts_var_t hop_vars[] =
   {WARTS_TRACE_HOP_ICMPEXT,     -1, -1},
   {WARTS_TRACE_HOP_ADDR,        -1, -1},
   {WARTS_TRACE_HOP_TX,           8, -1},
+  {WARTS_TRACE_HOP_NAME,        -1, -1},
 };
 #define hop_vars_mfb WARTS_VAR_MFB(hop_vars)
 
@@ -274,7 +281,10 @@ static void warts_trace_params(const scamper_trace_t *trace,
 	 var->id == WARTS_TRACE_ADDR_DST_GID ||
 	 (var->id == WARTS_TRACE_USERID && trace->userid == 0) ||
 	 (var->id == WARTS_TRACE_OFFSET && trace->offset == 0) ||
-	 (var->id == WARTS_TRACE_ADDR_RTR && trace->rtr == NULL))
+	 (var->id == WARTS_TRACE_FLAGS8 && (trace->flags & 0xFF) == 0) ||
+	 (var->id == WARTS_TRACE_FLAGS && (trace->flags & ~0xFF) == 0) ||
+	 (var->id == WARTS_TRACE_ADDR_RTR && trace->rtr == NULL) ||
+	 (var->id == WARTS_TRACE_SQUERIES && trace->squeries < 2))
 	{
 	  continue;
 	}
@@ -309,6 +319,7 @@ static int warts_trace_params_read(scamper_trace_t *trace,warts_state_t *state,
 				   warts_addrtable_t *table,
 				   uint8_t *buf, uint32_t *off, uint32_t len)
 {
+  uint8_t flags8 = 0;
   warts_param_reader_t handlers[] = {
     {&trace->list,        (wpr_t)extract_list,     state},
     {&trace->cycle,       (wpr_t)extract_cycle,    state},
@@ -317,7 +328,7 @@ static int warts_trace_params_read(scamper_trace_t *trace,warts_state_t *state,
     {&trace->start,       (wpr_t)extract_timeval,  NULL},
     {&trace->stop_reason, (wpr_t)extract_byte,     NULL},
     {&trace->stop_data,   (wpr_t)extract_byte,     NULL},
-    {&trace->flags,       (wpr_t)extract_byte,     NULL},
+    {&flags8,             (wpr_t)extract_byte,     NULL},
     {&trace->attempts,    (wpr_t)extract_byte,     NULL},
     {&trace->hoplimit,    (wpr_t)extract_byte,     NULL},
     {&trace->type,        (wpr_t)extract_byte,     NULL},
@@ -340,8 +351,11 @@ static int warts_trace_params_read(scamper_trace_t *trace,warts_state_t *state,
     {&trace->userid,      (wpr_t)extract_uint32,   NULL},
     {&trace->offset,      (wpr_t)extract_uint16,   NULL},
     {&trace->rtr,         (wpr_t)extract_addr_static, NULL},
+    {&trace->squeries,    (wpr_t)extract_byte,     NULL},
+    {&trace->flags,       (wpr_t)extract_uint32,   NULL},
   };
   const int handler_cnt = sizeof(handlers)/sizeof(warts_param_reader_t);
+  uint32_t o = *off;
   int rc;
 
   if((rc = warts_params_read(buf, off, len, handlers, handler_cnt)) != 0)
@@ -350,6 +364,12 @@ static int warts_trace_params_read(scamper_trace_t *trace,warts_state_t *state,
     return -1;
   if(trace->firsthop == 0)
     trace->firsthop = 1;
+  if(trace->squeries < 2)
+    trace->squeries = 1;
+
+  if(flag_isset(&buf[o], WARTS_TRACE_FLAGS) == 0 &&
+     flag_isset(&buf[o], WARTS_TRACE_FLAGS8) != 0)
+    trace->flags = flags8;
 
   return 0;
 }
@@ -364,6 +384,7 @@ static int warts_trace_params_write(const scamper_trace_t *trace,
 				    const uint16_t params_len)
 {
   uint32_t list_id, cycle_id;
+  uint8_t flags8 = trace->flags & 0xFF;
   warts_param_writer_t handlers[] = {
     {&list_id,            (wpw_t)insert_uint32,  NULL},
     {&cycle_id,           (wpw_t)insert_uint32,  NULL},
@@ -372,7 +393,7 @@ static int warts_trace_params_write(const scamper_trace_t *trace,
     {&trace->start,       (wpw_t)insert_timeval, NULL},
     {&trace->stop_reason, (wpw_t)insert_byte,    NULL},
     {&trace->stop_data,   (wpw_t)insert_byte,    NULL},
-    {&trace->flags,       (wpw_t)insert_byte,    NULL},
+    {&flags8,             (wpw_t)insert_byte,    NULL},
     {&trace->attempts,    (wpw_t)insert_byte,    NULL},
     {&trace->hoplimit,    (wpw_t)insert_byte,    NULL},
     {&trace->type,        (wpw_t)insert_byte,    NULL},
@@ -395,6 +416,8 @@ static int warts_trace_params_write(const scamper_trace_t *trace,
     {&trace->userid,      (wpw_t)insert_uint32,  NULL},
     {&trace->offset,      (wpw_t)insert_uint16,  NULL},
     {trace->rtr,          (wpw_t)insert_addr_static, NULL},
+    {&trace->squeries,    (wpw_t)insert_byte,    NULL},
+    {&trace->flags,       (wpw_t)insert_uint32,  NULL},
   };
   const int handler_cnt = sizeof(handlers)/sizeof(warts_param_writer_t);
 
@@ -543,6 +566,11 @@ static void warts_trace_hop_params(const scamper_trace_t *trace,
 	  if(hop->hop_tx.tv_sec == 0)
 	    continue;
 	}
+      else if(var->id == WARTS_TRACE_HOP_NAME)
+	{
+	  if(hop->hop_name == NULL)
+	    continue;
+	}
 
       flag_set(flags, var->id, &max_id);
 
@@ -555,6 +583,10 @@ static void warts_trace_hop_params(const scamper_trace_t *trace,
 	  *params_len += 2;
 	  for(ie = hop->hop_icmpext; ie != NULL; ie = ie->ie_next)
 	    *params_len += (2 + 1 + 1 + ie->ie_dl);
+	}
+      else if(var->id == WARTS_TRACE_HOP_NAME)
+	{
+	  *params_len += warts_str_size(hop->hop_name);
 	}
       else
 	{
@@ -611,6 +643,7 @@ static int warts_trace_hop_read(scamper_trace_hop_t *hop, warts_state_t *state,
     {hop,                  (wpr_t)warts_trace_hop_read_icmpext,  NULL},
     {&hop->hop_addr,       (wpr_t)extract_addr,                  table},
     {&hop->hop_tx,         (wpr_t)extract_timeval,               NULL},
+    {&hop->hop_name,       (wpr_t)extract_string,                NULL},
   };
   const int handler_cnt = sizeof(handlers)/sizeof(warts_param_reader_t);
   uint32_t o = *off;
@@ -660,6 +693,7 @@ static void warts_trace_hop_write(const warts_trace_hop_t *state,
     {hop,                  (wpw_t)warts_trace_hop_write_icmpext,  NULL},
     {hop->hop_addr,        (wpw_t)insert_addr,                    table},
     {&hop->hop_tx,         (wpw_t)insert_timeval,                 NULL},
+    {hop->hop_name,        (wpw_t)insert_string,                  NULL},
   };
   const int handler_cnt = sizeof(handlers)/sizeof(warts_param_writer_t);
   warts_params_write(buf, off, len, state->flags, state->flags_len,

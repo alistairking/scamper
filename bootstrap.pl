@@ -1,6 +1,6 @@
 #!/usr/bin/env perl
 #
-# $Id: bootstrap.pl,v 1.19 2020/03/28 20:23:01 mjl Exp $
+# $Id: bootstrap.pl,v 1.21 2021/07/07 04:38:08 mjl Exp $
 #
 # script to ship scamper with generated configure script ready to build.
 
@@ -24,7 +24,7 @@ $ax{"ax_check_openssl.m4"} =
 $ax{"ax_gcc_builtin.m4"} =
     "7e18d94162058a321464fe0f8f565b9a009ef6bd4d584ec6e8591b20b902c78b";
 $ax{"ax_pthread.m4"} =
-    "07683234bc076455749e88c83ffb9f186afd7246565340cb601060dd59f90766";
+    "4fa6c352f1fb33147947ead61f9b12537f3d146ce068c003552d3b9582a7a406";
 
 sub which($)
 {

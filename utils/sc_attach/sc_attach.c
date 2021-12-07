@@ -205,7 +205,7 @@ static int check_options(int argc, char *argv[])
 	  break;
 
 	case 'i':
-	  if(strcasecmp(optarg, "-") == 0)
+	  if(string_isdash(optarg) != 0)
 	    stdin_fd = STDIN_FILENO;
 	  else if((options & OPT_INFILE) == 0)
 	    infile_name = optarg;
@@ -216,7 +216,7 @@ static int check_options(int argc, char *argv[])
 
 	case 'o':
 	  options |= OPT_OUTFILE;
-	  if(strcasecmp(optarg, "-") == 0)
+	  if(string_isdash(optarg) != 0)
 	    options |= OPT_STDOUT;
 	  else if(outfile_name == NULL)
 	    outfile_name = optarg;
@@ -254,7 +254,7 @@ static int check_options(int argc, char *argv[])
 	  break;
 
 	case 'v':
-	  printf("$Id: sc_attach.c,v 1.27 2020/03/17 07:32:16 mjl Exp $\n");
+	  printf("$Id: sc_attach.c,v 1.28 2021/08/22 08:11:53 mjl Exp $\n");
 	  return -1;
 
 	case '?':

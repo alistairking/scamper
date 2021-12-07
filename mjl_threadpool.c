@@ -1,7 +1,7 @@
 /*
  * Thread Pool routines
  *
- * Copyright (C) 2018 Matthew Luckie. All rights reserved.
+ * Copyright (C) 2018,2021 Matthew Luckie. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -24,15 +24,16 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  *
- * $Id: mjl_threadpool.c,v 1.1 2019/09/16 04:09:14 mjl Exp $
+ * $Id: mjl_threadpool.c,v 1.2 2021/09/14 05:46:42 mjl Exp $
  *
  */
 
-#ifdef HAVE_CONFIG_H
+#if defined(HAVE_CONFIG_H)
 #include "config.h"
 #endif
 
 #include <stdlib.h>
+#include <string.h>
 
 #ifdef HAVE_PTHREAD
 #include <pthread.h>
@@ -53,6 +54,7 @@ struct threadpool_task
   threadpool_func_t  func;
   void              *ptr;
   threadpool_task_t *next;
+  int                onion;
 };
 #endif
 
@@ -97,11 +99,21 @@ static void *threadpool_run(void *ptr)
       if(tp->head == NULL)
 	tp->tail = NULL;
 
-      /* release the lock to let another thread get some work */
-      pthread_mutex_unlock(&tp->mutex);
+      if(task->onion == 0)
+	{
+	  /* release the lock to let another thread get some work */
+	  pthread_mutex_unlock(&tp->mutex);
+	  /* do the work */
+	  task->func(task->ptr);
+	}
+      else
+	{
+	  /* expand the onion */
+	  task->func(task->ptr);
+	  /* release the lock to let another thread get some work */
+	  pthread_mutex_unlock(&tp->mutex);
+	}
 
-      /* do the work */
-      task->func(task->ptr);
       free(task);
     }
 
@@ -139,10 +151,10 @@ static void threadpool_free(threadpool_t *tp)
 #ifdef HAVE_PTHREAD
 #ifndef DMALLOC
 static threadpool_task_t *threadpool_task_alloc(threadpool_func_t func,
-						void *ptr)
+						void *ptr, int onion)
 #else
 static threadpool_task_t *threadpool_task_alloc_dm(threadpool_func_t func,
-						   void *ptr,
+						   void *ptr, int onion,
 						   const char *file,
 						   const int line)
 #endif
@@ -161,15 +173,18 @@ static threadpool_task_t *threadpool_task_alloc_dm(threadpool_func_t func,
     return NULL;
   task->func = func;
   task->ptr = ptr;
+  task->onion = onion;
   return task;
 }
 #endif
 
 #ifndef DMALLOC
-int threadpool_tail_push(threadpool_t *tp, threadpool_func_t func, void *ptr)
+static int threadpool_task_add(threadpool_t *tp, threadpool_func_t func,
+			       void *ptr, int onion, int head, int lock)
 #else
-int threadpool_tail_push_dm(threadpool_t *tp, threadpool_func_t func,
-			    void *ptr, const char *file, const int line)
+static int threadpool_task_add_dm(threadpool_t *tp, threadpool_func_t func,
+				  void *ptr, int onion, int head, int lock,
+				  const char *file, const int line)
 #endif
 {
 #ifdef HAVE_PTHREAD
@@ -184,34 +199,45 @@ int threadpool_tail_push_dm(threadpool_t *tp, threadpool_func_t func,
     }
 
 #ifndef DMALLOC
-  task = threadpool_task_alloc(func, ptr);
+  task = threadpool_task_alloc(func, ptr, onion);
 #else
-  task = threadpool_task_alloc_dm(func, ptr, file, line);
+  task = threadpool_task_alloc_dm(func, ptr, onion, file, line);
 #endif
 
   if(task == NULL)
     return -1;
 
-  /* take the lock and append the task to the list */
-  if(pthread_mutex_lock(&tp->mutex) != 0)
+  /* take the lock and put the task to the list */
+  if(lock != 0 && pthread_mutex_lock(&tp->mutex) != 0)
     {
       free(task);
       return -1;
     }
-  if(tp->tail != NULL)
-    tp->tail->next = task;
+
+  if(head == 0)
+    {
+      if(tp->tail != NULL)
+	tp->tail->next = task;
+      else
+	tp->tail = tp->head = task;
+      task->next = NULL;
+      tp->tail = task;
+    }
   else
-    tp->tail = tp->head = task;
-  task->next = NULL;
-  tp->tail = task;
-  task = NULL;
+    {
+      task->next = tp->head;
+      if(tp->head != NULL)
+	tp->head = task;
+      else
+	tp->head = tp->tail = task;
+    }
 
   /* signal to the thread pool that there's a task waiting */
   if(pthread_cond_signal(&tp->cond) != 0)
     return -1;
 
   /* release the mutex to allow a thread to take it up */
-  if(pthread_mutex_unlock(&tp->mutex) != 0)
+  if(lock != 0 && pthread_mutex_unlock(&tp->mutex) != 0)
     return -1;
 #else
   func(ptr);
@@ -219,6 +245,45 @@ int threadpool_tail_push_dm(threadpool_t *tp, threadpool_func_t func,
 
   return 0;
 }
+
+#ifndef DMALLOC
+int threadpool_tail_push(threadpool_t *tp, threadpool_func_t func, void *ptr)
+{
+  /* onion, head, lock */
+  return threadpool_task_add(tp, func, ptr, 0, 0, 1);
+}
+int threadpool_tail_push_onion(threadpool_t *tp, threadpool_func_t func,
+			       void *ptr)
+{
+  /* onion, head, lock */
+  return threadpool_task_add(tp, func, ptr, 1, 0, 1);
+}
+int threadpool_head_push_nolock(threadpool_t *tp, threadpool_func_t func,
+				void *ptr)
+{
+  /* onion, head, lock */
+  return threadpool_task_add(tp, func, ptr, 0, 1, 0);
+}
+#else
+int threadpool_tail_push_dm(threadpool_t *tp, threadpool_func_t func, void *ptr,
+			    const char *file, const int line)
+{
+  /* onion, head, lock */
+  return threadpool_task_add_dm(tp, func, ptr, 0, 0, 1, file, line);
+}
+int threadpool_tail_push_onion_dm(threadpool_t *tp, threadpool_func_t func,
+				  void *ptr, const char *file, const int line)
+{
+  /* onion, head, lock */
+  return threadpool_task_add_dm(tp, func, ptr, 1, 0, 1, file, line);
+}
+int threadpool_head_push_nolock_dm(threadpool_t *tp, threadpool_func_t func,
+				   void *ptr, const char *file, const int line)
+{
+  /* onion, head, lock */
+  return threadpool_task_add_dm(tp, func, ptr, 0, 1, 0, file, line);
+}
+#endif
 
 /*
  * threadpool_join:
@@ -287,16 +352,9 @@ threadpool_t *threadpool_alloc_dm(int threadc,const char *file,const int line)
 #endif
   if(tp == NULL)
     goto err;
-
-  tp->threadc = 0;
+  memset(tp, 0, len);
 
 #ifdef HAVE_PTHREAD
-  tp->threads = NULL;
-  tp->head = NULL;
-  tp->tail = NULL;
-  tp->flags = 0;
-  tp->stop = 0;
-
   if(pthread_mutex_init(&tp->mutex, NULL) != 0)
     goto err;
   tp->flags |= TP_FLAG_MUTEX;

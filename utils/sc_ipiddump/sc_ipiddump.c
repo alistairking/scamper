@@ -1,7 +1,7 @@
 /*
  * sc_ipiddump
  *
- * $Id: sc_ipiddump.c,v 1.15 2020/06/09 08:29:29 mjl Exp $
+ * $Id: sc_ipiddump.c,v 1.16 2021/08/22 08:11:53 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -483,7 +483,7 @@ int main(int argc, char *argv[])
 
   for(i=0; i<filelist_len; i++)
     {
-      if(strcmp(filelist[i], "-") == 0)
+      if(string_isdash(filelist[i]) != 0)
 	{
 	  if(stdin_used == 1)
 	    {

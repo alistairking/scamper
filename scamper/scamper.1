@@ -6,10 +6,10 @@
 .\"
 .\" Copyright (c) 2007-2011 University of Waikato
 .\" Copyright (c) 2012-2015 The Regents of the University of California
-.\" Copyright (c) 2015-2020 Matthew Luckie
+.\" Copyright (c) 2015-2021 Matthew Luckie
 .\"                         All rights reserved
 .\"
-.\" $Id: scamper.1,v 1.85 2020/04/27 07:32:21 mjl Exp $
+.\" $Id: scamper.1,v 1.95 2021/10/23 04:49:21 mjl Exp $
 .\"
 .\"  nroff -man scamper.1
 .\"  groff -man -Tascii scamper.1 | man2html -title scamper.1
@@ -56,7 +56,7 @@ and neighbour discovery.
 has five modes of operation.
 First,
 .Nm
-can be supplied a list of addresses on the command line with the
+can be supplied a list of one or more addresses on the command line with the
 .Fl i
 option.
 .Nm
@@ -64,13 +64,14 @@ will then execute a command with each of the supplied addresses, in parallel,
 and output the results as each task completes.
 Second,
 .Nm
-can be supplied a list of addresses in a listfile, one address per line,
-using the
+can be supplied a list of one or more addresses in a listfile, one
+address per line, using the
 .Fl f
 option.
 Third,
 .Nm
-can be supplied a list of complete commands on the command line with the
+can be supplied a list of one or more complete commands on the command
+line with the
 .Fl I
 option.
 Fourth,
@@ -85,6 +86,10 @@ Finally,
 can be instructed to connect to a remote host and port specified with the
 .Fl R
 option, where it will be supplied with commands dynamically.
+.Pp
+For most modules,
+.Nm
+must be run as root.
 .Pp
 The options are as follows:
 .Bl -tag -width Ds
@@ -108,27 +113,43 @@ specifies the command for
 to use by default. The current choices for this option are:
 .Bl -dash -offset 2n -compact -width 1n
 .It
-.Sy dealias
+.Sy dealias:
+use Ally, Mercator, or Radargun-style probing to infer which IP addresses
+belong to the same system.
 .It
-.Sy host
+.Sy host:
+issue simple DNS queries to a domain name server.
 .It
-.Sy neighbourdisc
+.Sy neighbourdisc:
+issue an IPv4 ARP or IPv6 Neighbour discovery query to determine the
+layer-2 address of an IP address on the same network.
 .It
-.Sy ping
+.Sy ping:
+conduct simple delay measurements with various probe types.
 .It
-.Sy trace
+.Sy trace:
+conduct classic and Paris-style traceroute probing, which infers a
+single path towards a destination.
 .It
-.Sy tracelb
+.Sy tracelb:
+use the multipath discovery algorithm (MDA) to infer the presence
+of load-balanced paths towards a destination.
 .It
-.Sy sniff
+.Sy sniff:
+capture a subset of packets arriving at the host using a subset of
+tcpdump-style filter expressions.
 .It
-.Sy sting
+.Sy sting:
+use the sting method to infer one-way packet loss with a TCP receiver.
 .It
-.Sy tbit
+.Sy tbit:
+use techniques from the TCP behavior inference tool (TBIT) to infer
+properties of a TCP receiver.
 .El
 .Nm
 uses trace by default.
-The available commands and their options are documented below.
+The options for each of these commands are documented in their own
+sections of this manual page.
 .It Fl p Ar pps
 specifies the target packets-per-second rate for
 .Nm
@@ -187,6 +208,7 @@ If scamper is built with privilege separation, the ID of the unprivileged
 process is written.
 .It Fl O Ar options
 allows scamper's behaviour to be further tailored.
+The options are case insensitive.
 The current choices for this option are:
 .Bl -dash -offset 2n -compact -width 1n
 .It
@@ -212,7 +234,7 @@ planetlab's safe raw sockets.
 tell scamper to use IPPROTO_RAW socket to send IPv4 TCP probes, rather than
 a datalink socket.
 .It
-.Sy icmp-rxerr:
+.Sy ICMP-rxerr:
 tell scamper to use IP_RECVERR or IPV6_RECVERR to receive ICMP
 responses, rather than raw sockets.  This is useful on Linux systems
 that have these sockets, and scamper does not have the permissions to
@@ -271,8 +293,8 @@ option.
 do not use TLS anywhere in scamper, including tbit.
 .El
 .It Fl i Ar IP 1..N
-specifies the addresses to probe, on the command line, using the command
-specified with the
+specifies a list of one or more addresses to probe, on the command
+line, using the command specified with the
 .Fl c
 option.
 .It Fl f Ar listfile
@@ -280,9 +302,9 @@ specifies the input file to read for target addresses, one per line, and
 uses the command specified with the
 .Fl c
 option on each.
-.It Fl I Ar cmds.
-specifies complete commands, including target addresses, for scamper to
-execute.
+.It Fl I Ar cmds
+specifies a list of one or more complete commands, including target
+addresses, for scamper to execute.
 .It Fl P Ar [ip:]port
 specifies that
 .Nm
@@ -302,7 +324,8 @@ domain.
 .El
 .\""""""""""""
 .Sh TRACE OPTIONS
-The trace command is used for conducting traceroute.
+The trace command is used for conducting classic and Paris-style
+traceroute probing, which infers a single path towards a destination.
 The following variations of the
 .Xr traceroute 8
 options are available:
@@ -317,6 +340,7 @@ trace
 .Op Fl G Ar gapaction
 .Op Fl l Ar loops
 .Op Fl m Ar maxttl
+.Op Fl N Ar squeries
 .Op Fl o Ar offset
 .Op Fl O Ar option
 .Op Fl p Ar payload
@@ -339,7 +363,7 @@ specifies that a hop should be probed to a specified confidence level
 for that hop.
 .It Fl d Ar dport
 specifies the base destination port value to use for UDP-based and TCP-based
-traceroute methods.  For ICMP-paris, this option sets the ICMP checksum
+traceroute methods.  For ICMP-Paris, this option sets the ICMP checksum
 value.
 .It Fl f Ar firsthop
 specifies the TTL or HLIM value to begin probing with.  By default,
@@ -353,6 +377,9 @@ not recommended.
 specifies what should happen if the gaplimit condition is met.  A value of
 1 (default) means halt probing, while a value of 2 means send last-ditch
 probes.
+.It Fl l Ar loops
+specifies the maximum number of loops permitted until probing stops.  By
+default, a value of one is used.  A value of zero disables loop checking.
 .It Fl m Ar maxttl
 specifies the maximum TTL or HLIM value that will be probed.  By default,
 there is no restriction, apart from the 255 hops that the Internet protocols
@@ -364,9 +391,13 @@ when the initial traceroute completes.
 will not conduct PMTUD unless it is probing a responsive destination, as
 otherwise there is no way to distinguish all packets being lost from just
 big packets (larger than MTU) being lost.
-.It Fl l Ar loops
-specifies the maximum number of loops permitted until probing stops.  By
-default, a value of one is used.  A value of zero disables loop checking.
+.It Fl N Ar squeries
+specifies the number of consecutive hops that may have an outstanding
+probe.
+By default, only one hop may have an outstanding probe.
+Increasing the number of outstanding probes will allow traceroutes to
+complete faster, at the expense of sending unnecessary probes.
+The number of outstanding probes must be less than the gaplimit.
 .It Fl o Ar offset
 specifies the fragmentation offset to use in probes.  By default, no
 offset is used.
@@ -375,13 +406,16 @@ specifies optional arguments to use.
 The current choices for this option are:
 .Bl -dash -offset 2n -compact -width 1n
 .It
-.Sy dl
+.Sy dl:
 specifies that the datalink socket should be used to timestamp packets,
 and to receive certain packets.
 .It
-.Sy dtree-noback
+.Sy dtree-noback:
 specifies that the traceroute should not do backwards probing when using
 doubletree.
+.It
+.Sy ptr:
+lookup hostnames for intermediate traceroute hops.
 .El
 .It Fl p Ar payload
 specifies the payload of the probe to use as a base.
@@ -391,8 +425,9 @@ modified to accomplish ICMP-Paris and UDP-Paris traceroute.
 .It Fl P Ar method
 specifies the traceroute method to use.
 .Nm
-currently supports five different probe methods: UDP, ICMP, UDP-paris,
-ICMP-paris, TCP, and TCP-ACK.  By default, UDP-paris is used.
+currently supports five different probe methods: UDP, ICMP, UDP-Paris,
+ICMP-Paris, TCP, and TCP-ACK.  Note: scamper uses UDP-Paris by default,
+and these options are case insensitive.
 .It Fl q Ar attempts
 specifies the maximum number of attempts to obtain a response per hop.  By
 default, a value of two is used.
@@ -432,7 +467,8 @@ halt probing backwards; used with the double-tree algorithm.
 .El
 .\""""""""""""
 .Sh PING OPTIONS
-The ping command is used for conducting ping.
+The ping command is used for conducting simple delay measurements with
+various probe types.
 The following variations of the
 .Xr ping 8
 options are available:
@@ -440,10 +476,10 @@ options are available:
 ping
 .Bk -words
 .Op Fl R
-.Op Fl A Ar tcp-ack
+.Op Fl A Ar TCP-ack
 .Op Fl B Ar payload
 .Op Fl c Ar probecount
-.Op Fl C Ar icmp-sum
+.Op Fl C Ar ICMP-sum
 .Op Fl d Ar dport
 .Op Fl F Ar sport
 .Op Fl i Ar wait
@@ -462,7 +498,7 @@ ping
 .Op Fl z Ar tos
 .Ek
 .Bl -tag -width Ds
-.It Fl A Ar tcp-ack
+.It Fl A Ar TCP-ack
 specifies the number to use in the acknowledgement field of the TCP header,
 or the sequence number field of the TCP header when sending reset probes.
 .It Fl B Ar payload
@@ -470,7 +506,7 @@ specifies, in a hexadecimal string, the payload to include in each probe.
 .It Fl c Ar probecount
 specifies the number of probes to send before exiting.  By default, a value
 of 4 is used.
-.It Fl C Ar icmp-sum
+.It Fl C Ar ICMP-sum
 specifies the ICMP checksum to use when sending a probe.
 The payload of each probe will be manipulated so that the checksum is valid.
 .It Fl d Ar dport
@@ -495,21 +531,21 @@ default, all probes are sent.
 The current choices for this option are:
 .Bl -dash -offset 2n -compact -width 1n
 .It
-.Sy dl
+.Sy dl:
 specifies that the ping should use datalink sockets, rather than raw sockets.
 .It
-.Sy nosrc
+.Sy nosrc:
 specifies that the real address of the host should not be embedded in
 the payload of the packet when the spoof option is used.
 .It
-.Sy spoof
+.Sy spoof:
 specifies that the source address is to be spoofed according to the address
 specified with the
 .Fl S
 option.  The address scamper would otherwise use as the source address is
 embedded in the payload of the probe unless the nosrc option is used.
 .It
-.Sy tbt
+.Sy tbt:
 specifies that the goal of the ping is to obtain fragmented responses, so that
 the
 .Fl c
@@ -523,8 +559,9 @@ specified.  By default, each probe's bytes are zeroed.
 .It Fl P Ar method
 specifies the type of ping packets to send.
 By default, ICMP echo requests are sent.
-Choices are: icmp-echo, icmp-time, tcp-syn, tcp-ack, tcp-ack-sport,
-tcp-synack, tcp-rst, udp, and udp-dport.
+Choices are: ICMP-echo, ICMP-time, TCP-syn, TCP-ack, TCP-ack-sport,
+TCP-synack, TCP-rst, UDP, and UDP-dport, and these options are case
+insensitive.
 .It Fl r Ar rtraddr
 specifies the IP address of the router to use.
 .It Fl R
@@ -604,7 +641,8 @@ specifies a fudge factor for alias matching. Defaults to 200. Only valid for
 ally and bump.
 .It Fl m Ar method
 specifies which method to use for alias resolution.
-Valid options are: ally, bump, mercator, prefixscan, and radargun.
+Valid options are: ally, bump, mercator, prefixscan, and radargun, and
+these options are case insensitive.
 .It Fl o Ar replyc
 specifies how many replies to wait for. Only valid for prefixscan.
 .It Fl O Ar option
@@ -612,15 +650,15 @@ allows alias resolution behaviour to be further tailored.
 The current choices for this option are:
 .Bl -dash -offset 2n -compact -width 1n
 .It
-.Sy inseq
+.Sy inseq:
 where IP-ID values are required to be strictly in sequence (with no tolerance
 for packet reordering)
 .It
-.Sy shuffle
+.Sy shuffle:
 randomise the order of probes sent each round; only valid for radargun
 probing.
 .It
-.Sy nobs
+.Sy nobs:
 do not allow for byte swapped IP-ID values in responses.
 Valid for ally and prefixscan.
 .El
@@ -642,8 +680,8 @@ specifies the destination IP address of the probe.
 specifies the pseudo MTU to use when soliciting fragmented responses.
 .It Fl P Ar method
 specifies which method to use for the probe.
-Valid options are: udp, udp-dport, tcp-ack, tcp-ack-sport, tcp-syn-sport,
-and icmp-echo.
+Valid options are: UDP, UDP-dport, TCP-ack, TCP-ack-sport, TCP-syn-sport,
+and ICMP-echo, and these options are case insensitive.
 .It Fl s Ar size
 specifies the size of the probes to send.
 .It Fl t Ar ttl
@@ -881,7 +919,8 @@ specifies the window scale option to use when establishing the TCP connection.
 .\""""""""""""
 .Sh TRACELB OPTIONS
 The tracelb command is used to infer all per-flow load-balanced paths
-between a source and destination.
+between a source and destination using the multipath discovery algorithm
+(MDA).
 The following options are available for the
 .Nm
 tracelb command:
@@ -931,9 +970,10 @@ do Domain Name System pointer (PTR) record lookups for IP addresses.
 .El
 .It Fl P Ar method
 specifies which method we should use to do the probing.
-Valid options are: "udp-dport", "icmp-echo", "udp-sport", "tcp-sport", and
-"tcp-ack-sport".
-Defaults to "udp-dport".
+Valid options are: UDP-dport, ICMP-echo, UDP-sport, TCP-sport, and
+TCP-ack-sport.
+Note: scamper uses UDP-dport by default, and these options are case
+insensitive.
 .It Fl q Ar attempts
 specifies how many probes we should send in an attempt to receive a reply.
 Defaults to 2.
@@ -1094,12 +1134,28 @@ The following control socket commands are available.
 .Bl -tag -width "   "
 .It Ic exit
 The exit command closes the current control socket connection.
-.It Ic attach
+.It Ic attach Ar argument ...
 The attach command changes how
 .Nm
 accepts and replies to commands, returning results straight over the control socket. See
 .Sy ATTACH
-section below for details on which commands are accepted.
+section below for details on which commands
+.Nm
+accepts.
+.Bl -tag -width "   "
+.It Ic format Ar string
+The data format requested.  The two options are warts, and json.
+The warts binary data is uuencoded.
+The json is plain json text.
+By default,
+.Nm
+uses warts.
+.It Ic priority Ar uint32_t
+The mixing priority of this source, relative to other scamper sources.
+By default,
+.Nm
+uses a priority of '1' -- all sources are mixed equally.
+.El
 .It Ic get Ar argument
 The get command returns the current setting for the supplied argument.
 Valid argument values are: holdtime, monitorname, nameserver, pid, pps,
@@ -1322,6 +1378,14 @@ all probes, writing to a specified warts file:
 .Pp
 .in +.5i
 scamper -O warts -o file.warts -I "trace -P icmp-paris -q 3 -Q 192.0.2.1"
+.in -.5i
+.Pp
+To conduct a traceroute and a ping to two different addresses using
+the default traceroute and ping parameters, writing to a specified
+warts file:
+.Pp
+.in +.5i
+scamper -O warts -o file.warts -I "trace 192.0.2.1" "ping 192.0.2.2"
 .in -.5i
 .Pp
 To ping a series of addresses defined in

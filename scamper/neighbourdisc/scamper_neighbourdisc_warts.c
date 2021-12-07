@@ -1,9 +1,9 @@
 /*
  * scamper_neighbourdisc_warts.h
  *
- * $Id: scamper_neighbourdisc_warts.c,v 1.9 2020/06/09 06:18:41 mjl Exp $
+ * $Id: scamper_neighbourdisc_warts.c,v 1.10 2021/08/24 09:03:07 mjl Exp $
  *
- * Copyright (C) 2009-2020 Matthew Luckie
+ * Copyright (C) 2009-2021 Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -169,7 +169,11 @@ static int warts_neighbourdisc_reply_read(scamper_neighbourdisc_reply_t *reply,
     {&reply->mac, (wpr_t)extract_addr,    table},
   };
   const int handler_cnt = sizeof(handlers)/sizeof(warts_param_reader_t);
-  return warts_params_read(buf, off, len, handlers, handler_cnt);
+  if(warts_params_read(buf, off, len, handlers, handler_cnt) != 0)
+    return -1;
+  if(reply->mac == NULL)
+    return -1;
+  return 0;
 }
 
 static int warts_neighbourdisc_probe_state(const scamper_file_t *sf,
@@ -404,7 +408,7 @@ static int warts_neighbourdisc_params_read(scamper_neighbourdisc_t *nd,
   if((rc = warts_params_read(buf, off, len, handlers, handler_cnt)) != 0)
     return rc;
 
-  if(nd->src_mac == NULL)
+  if(nd->src_mac == NULL || nd->dst_ip == NULL)
     return -1;
 
   return 0;

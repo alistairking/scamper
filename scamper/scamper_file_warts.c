@@ -3,12 +3,12 @@
  *
  * the warts file format
  *
- * $Id: scamper_file_warts.c,v 1.257 2020/06/12 22:35:03 mjl Exp $
+ * $Id: scamper_file_warts.c,v 1.259 2021/08/24 09:03:07 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2012-2015 The Regents of the University of California
- * Copyright (C) 2015-2020 Matthew Luckie
+ * Copyright (C) 2015-2021 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -733,11 +733,15 @@ int warts_params_read(const uint8_t *buf, uint32_t *off, uint32_t len,
 			     warts_param_reader_t *handlers, int handler_cnt)
 {
   warts_param_reader_t *handler;
-  const uint8_t *flags = &buf[*off];
+  const uint8_t *flags;
   uint16_t flags_len, params_len;
   uint32_t final_off;
   uint16_t i, j;
   int      id;
+
+  if(*off >= len)
+    goto err;
+  flags = &buf[*off];
 
   /* if there are no flags set at all, then there's nothing left to do */
   if(flags[0] == 0)
@@ -1090,7 +1094,8 @@ int warts_addr_read(scamper_file_t *sf, const warts_hdr_t *hdr,
   size_t          size;
 
   /* the data has to be at least 3 bytes long to be valid */
-  assert(hdr->len > 2);
+  if(hdr->len > 2)
+    goto err;
 
   if((state->addr_count % WARTS_ADDR_TABLEGROW) == 0)
     {

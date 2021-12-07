@@ -19,7 +19,7 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
- * $Id: sc_tbitpmtud.c,v 1.22 2020/06/09 20:09:55 mjl Exp $
+ * $Id: sc_tbitpmtud.c,v 1.23 2021/08/22 08:11:53 mjl Exp $
  */
 
 #ifdef HAVE_CONFIG_H
@@ -1863,7 +1863,7 @@ static int pmtud_dump(void)
   for(i=0; i<opt_argc; i++)
     {
       filename = opt_args[i];
-      if(strcmp(filename, "-") == 0)
+      if(string_isdash(filename) != 0)
 	{
 	  if(stdin_used == 1)
 	    {

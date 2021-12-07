@@ -6,7 +6,7 @@
 .\" Copyright (c) 2019 Matthew Luckie
 .\"                    All rights reserved
 .\"
-.\" $Id: sc_erosprober.1,v 1.2 2019/09/08 00:34:01 mjl Exp $
+.\" $Id: sc_erosprober.1,v 1.2.12.1 2021/10/25 21:16:21 mjl Exp $
 .\"
 .Dd September 8, 2019
 .Dt SC_EROSPROBER 1
@@ -25,7 +25,8 @@
 .Op Fl O Ar option
 .Op Fl p Ar port
 .Op Fl R Ar rotation
-.Op Fl U Ar unix
+.Op Fl U Ar unix-scamper
+.Op Fl x Ar unix-control
 .Ek
 .\""""""""""""
 .Sh DESCRIPTION
@@ -87,10 +88,20 @@ is accepting control socket connections.
 .It Fl R Ar rotation
 specifies the rotation interval, in seconds, between rotating output
 files.
-.It Fl U Ar unix
+.It Fl U Ar unix-scamper
 specifies the name of a unix domain socket where
 .Xr scamper 1
 is accepting control socket connections.
+This socket is used by
+.Nm
+to send probing commands to
+.Xr scamper 1
+.It Fl x Ar unix-control
+specifies the name of a unix domain socket where
+.Nm
+is accepting control socket connections.
+This socket can be used by a local process to adjust the probing list
+at run time.
 .El
 .\""""""""""""
 .Sh EXAMPLES
@@ -98,18 +109,28 @@ Given a set of IPv4 and IPv6 addresses contained in a file named
 addrs and a scamper process listening at sock
 configured to probe at 100 packets per second started as follows:
 .Pp
-.Dl scamper -U sock -p 100
+.Dl scamper -U scamper-sock -p 100
 .Pp
 the following command will ping the addresses every two minutes using
 one packet, and create an output file every thirty seconds prefixed
 with foo:
 .Pp
-.Dl sc_erosprober -U sock -a addrs -o foo -I 120 -R 30 -c 'ping -c 1'
+.Dl sc_erosprober -U scamper-sock -a addrs -o foo -I 120 -R 30 -c 'ping -c 1'
 .Pp
 The following command will traceroute towards the addresses every 15
-minutes, creating an output file every minute:
+minutes, creating an output file every minute, with an
+.Nm
+control socket:
 .Pp
-.Dl sc_erosprober -U sock -a addrs -o foo -I 900 -R 60 -c 'trace'
+.Dl sc_erosprober -U scamper-sock -x erosprober-sock -a addrs -o foo -I 900 -R 60 -c 'trace'
+.Pp
+To add an address to the probeset at runtime, using netcat, use:
+.Dl nc -U erosprober-sock
+.Dl +192.0.2.1
+.Pp
+To remove an address from the probeset at runtime, using netcat, use:
+.Dl nc -U erosprober-sock
+.Dl -192.0.31.60
 .Pp
 .\""""""""""""
 .Sh SEE ALSO

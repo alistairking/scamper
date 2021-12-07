@@ -1,7 +1,7 @@
 /*
  * internal.h
  *
- * $Id: internal.h,v 1.49 2020/08/01 21:10:08 mjl Exp $
+ * $Id: internal.h,v 1.51 2021/07/07 04:37:50 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -148,7 +148,7 @@ typedef unsigned short sa_family_t;
 #include <grp.h>
 #endif
 
-#ifdef HAVE_SYS_SYSCTL_H
+#if defined(HAVE_SYS_SYSCTL_H) && !defined(__linux__)
 #include <sys/sysctl.h>
 #endif
 

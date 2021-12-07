@@ -1,7 +1,7 @@
 /*
  * Thread Pool routines
  *
- * Copyright (C) 2018 Matthew Luckie. All rights reserved.
+ * Copyright (C) 2018,2021 Matthew Luckie. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -24,7 +24,7 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  *
- * $Id: mjl_threadpool.h,v 1.1 2019/09/16 04:09:14 mjl Exp $
+ * $Id: mjl_threadpool.h,v 1.2 2021/09/14 05:46:42 mjl Exp $
  *
  */
 
@@ -36,17 +36,31 @@ typedef void (*threadpool_func_t)(void *);
 
 #ifndef DMALLOC
 threadpool_t *threadpool_alloc(int threadc);
-int threadpool_tail_push(threadpool_t *tp, threadpool_func_t func,void *param);
+int threadpool_tail_push(threadpool_t *tp, threadpool_func_t func,
+			 void *param);
+int threadpool_tail_push_onion(threadpool_t *tp, threadpool_func_t func,
+			       void *param);
+int threadpool_head_push_nolock(threadpool_t *tp, threadpool_func_t func,
+				void *param);
 #else
 threadpool_t *threadpool_alloc_dm(int threadc,
 				  const char *file, const int line);
 int threadpool_tail_push_dm(threadpool_t *tp, threadpool_func_t func,
-			    void *param,  const char *file, const int line);
-
-#define threadpool_alloc(threadc) \
+			    void *param, const char *file, const int line);
+int threadpool_tail_push_onion_dm(threadpool_t *tp, threadpool_func_t func,
+				  void *param,
+				  const char *file, const int line);
+int threadpool_head_push_nolock_dm(threadpool_t *tp, threadpool_func_t func,
+				   void *param,
+				   const char *file, const int line);
+#define threadpool_alloc(threadc)					\
   threadpool_alloc_dm((threadc),  __FILE__, __LINE__)
-#define threadpool_tail_push(tp, func, param) \
+#define threadpool_tail_push(tp, func, param)				\
   threadpool_tail_push_dm((tp), (func), (param), __FILE__, __LINE__)
+#define threadpool_tail_push_onion(tp, func, param)			\
+  threadpool_tail_push_onion_dm((tp), (func), (param), __FILE__, __LINE__)
+#define threadpool_head_push_nolock(tp, func, param)			\
+  threadpool_head_push_nolock_dm((tp), (func), (param), __FILE__, __LINE__)
 #endif
 
 int threadpool_join(threadpool_t *tp);

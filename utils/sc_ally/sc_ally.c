@@ -2,7 +2,7 @@
  * sc_ally : scamper driver to collect data on candidate aliases using the
  *           Ally method.
  *
- * $Id: sc_ally.c,v 1.42 2020/03/17 07:32:16 mjl Exp $
+ * $Id: sc_ally.c,v 1.43 2021/08/22 08:11:53 mjl Exp $
  *
  * Copyright (C) 2009-2011 The University of Waikato
  * Copyright (C) 2013-2015 The Regents of the University of California
@@ -2135,7 +2135,7 @@ static int ally_read(void)
     {
       filename = dump_files[i];
 
-      if(strcmp(filename, "-") == 0)
+      if(string_isdash(filename) != 0)
 	{
 	  if(stdin_used == 1)
 	    {

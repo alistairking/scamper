@@ -1670,7 +1670,7 @@ static int fp_read(void)
   void *data;
   int code;
 
-  if(strcmp(datafile, "-") == 0)
+  if(string_isdash(datafile) != 0)
     in = scamper_file_openfd(STDIN_FILENO, "-", 'r', "warts");
   else
     in = scamper_file_open(datafile, 'r', NULL);

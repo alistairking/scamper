@@ -4,7 +4,7 @@
  *
  * Authors       : Matthew Luckie
  *
- * Copyright (C) 2018-2019 Matthew Luckie
+ * Copyright (C) 2018-2021 Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -57,6 +57,7 @@ static int                    data_left     = 0;
 static int                    more          = 0;
 static int                    interval      = 0;
 static int                    rotation      = 0;
+static int                    probing       = 0;
 static int                    shuffle       = 1;
 static int                    nooutfile     = 0;
 static char                  *command       = NULL;
@@ -64,17 +65,35 @@ static heap_t                *waiting       = NULL;
 static patricia_t            *probing4      = NULL;
 static patricia_t            *probing6      = NULL;
 static int                    ep_stop       = 0;
+static char                  *ctrlsock_name = NULL;
+static int                    ctrlsock_fd   = -1;
+static dlist_t               *ctrlsock_fds  = NULL;
+
 static struct timeval         now;
 
 typedef struct sc_ep
 {
-  struct timeval  tv;    /* timeval */
-  scamper_addr_t *addr;  /* address to probe */
-  uint8_t         type;  /* probe or rotate */
+  struct timeval   tv;      /* timeval */
+  scamper_addr_t  *addr;    /* address to probe */
+  heap_node_t     *hn;      /* heap node */
+  uint8_t          type;    /* probe or rotate */
+  uint8_t          flags;   /* probing, remove, trie */
 } sc_ep_t;
+
+typedef struct sc_ctrlsock
+{
+  int                 fd;
+  scamper_writebuf_t *wb;
+  scamper_linepoll_t *lp;
+  dlist_node_t       *dn;
+} sc_ctrlsock_t;
 
 #define EP_TYPE_PROBE  0
 #define EP_TYPE_ROTATE 1
+
+#define EP_FLAG_PROBING 0x1
+#define EP_FLAG_REMOVE  0x2
+#define EP_FLAG_TRIE    0x4
 
 #define OPT_ADDRFILE 0x0001
 #define OPT_OUTFILE  0x0002
@@ -86,6 +105,7 @@ typedef struct sc_ep
 #define OPT_COMMAND  0x0080
 #define OPT_OPTION   0x0100
 #define OPT_HELP     0x0200
+#define OPT_CONTROL  0x0400
 #define OPT_ALL      0xffff
 
 static void usage(uint32_t opt_mask)
@@ -93,7 +113,7 @@ static void usage(uint32_t opt_mask)
   fprintf(stderr,
   "usage: sc_erosprober [-?] [-a addrfile] [-c cmd] [-o outfile] [-p port]\n"
   "                     [-U unix] [-I interval] [-O option] [-R rotation]\n"
-  "                     [-l logfile]\n"
+  "                     [-l logfile] [-x control]\n"
   "\n");
 
   if(opt_mask == 0)
@@ -127,13 +147,15 @@ static void usage(uint32_t opt_mask)
     fprintf(stderr, "   -R rotation interval, in seconds\n");
   if(opt_mask & OPT_UNIX)
     fprintf(stderr, "   -U unix domain to find scamper on\n");
+  if(opt_mask & OPT_CONTROL)
+    fprintf(stderr, "   -x unix domain for controlling sc_erosprober\n");
 
   return;
 }
 
 static int check_options(int argc, char *argv[])
 {
-  char *opts = "?a:c:I:l:o:p:R:U:";
+  char *opts = "?a:c:I:l:o:p:R:U:x:";
   char *opt_port = NULL, *opt_log = NULL;
   char *opt_interval = NULL, *opt_rotation = NULL;
   long lo;
@@ -189,6 +211,11 @@ static int check_options(int argc, char *argv[])
 	case 'U':
 	  options |= OPT_UNIX;
 	  unix_name = optarg;
+	  break;
+
+	case 'x':
+	  options |= OPT_CONTROL;
+	  ctrlsock_name = optarg;
 	  break;
 
 	case '?':
@@ -255,7 +282,7 @@ static int check_options(int argc, char *argv[])
 
   if(opt_log != NULL)
     {
-      if(strcmp(opt_log, "-") == 0)
+      if(string_isdash(opt_log) != 0)
 	logfile = stdout;
       else if((logfile = fopen(opt_log, "w")) == NULL)
 	{
@@ -288,13 +315,6 @@ static void logprint(char *format, ...)
   return;
 }
 
-static void sc_ep_free(sc_ep_t *ep)
-{
-  if(ep->addr != NULL) scamper_addr_free(ep->addr);
-  free(ep);
-  return;
-}
-
 static int sc_ep_tv_cmp(const sc_ep_t *a, const sc_ep_t *b)
 {
   return timeval_cmp(&b->tv, &a->tv);
@@ -315,6 +335,40 @@ static int sc_ep_addr_bit(const sc_ep_t *ep, int bit)
   return scamper_addr_bit(ep->addr, bit);
 }
 
+static void sc_ep_heap_onremove(sc_ep_t *ep)
+{
+  ep->hn = NULL;
+  return;
+}
+
+static void ep_del_tree(sc_ep_t *ep)
+{
+  if(ep->hn != NULL) heap_delete(waiting, ep->hn);
+  if(ep->addr != NULL) scamper_addr_free(ep->addr);
+  free(ep);
+  return;
+}
+
+static void ep_del(sc_ep_t *ep)
+{
+  if((ep->flags & EP_FLAG_TRIE) != 0)
+    {
+      if(SCAMPER_ADDR_TYPE_IS_IPV4(ep->addr))
+	patricia_remove_item(probing4, ep);
+      else if(SCAMPER_ADDR_TYPE_IS_IPV6(ep->addr))
+	patricia_remove_item(probing6, ep);
+    }
+  if(ep->hn != NULL) heap_delete(waiting, ep->hn);
+  if(ep->addr != NULL) scamper_addr_free(ep->addr);
+  free(ep);
+  return;
+}
+
+/*
+ * ep_tree_to_heap
+ *
+ * an address has just finished being probed.  put it back in the heap.
+ */
 static int ep_tree_to_heap(scamper_addr_t *addr)
 {
   patricia_t *pt;
@@ -330,11 +384,62 @@ static int ep_tree_to_heap(scamper_addr_t *addr)
   fm.addr = addr;
   if((ep = patricia_find(pt, &fm)) == NULL)
     return -1;
-  patricia_remove_item(pt, ep);
-  if(heap_insert(waiting, ep) == NULL)
-    return -1;
+
+  if(ep->flags & EP_FLAG_REMOVE)
+    {
+      ep_del(ep);
+    }
+  else
+    {
+      ep->flags &= (~EP_FLAG_PROBING);
+      if((ep->hn = heap_insert(waiting, ep)) == NULL)
+	return -1;
+    }
 
   return 0;
+}
+
+static int ep_add(scamper_addr_t *addr, const struct timeval *tv)
+{
+  sc_ep_t *ep = NULL;
+  patricia_t *pt;
+  char buf[128];
+
+  if(SCAMPER_ADDR_TYPE_IS_IPV4(addr))
+    pt = probing4;
+  else if(SCAMPER_ADDR_TYPE_IS_IPV6(addr))
+    pt = probing6;
+  else
+    return -1;
+
+  if((ep = malloc_zero(sizeof(sc_ep_t))) == NULL)
+    {
+      fprintf(stderr, "%s: could not alloc ep\n", __func__);
+      goto done;
+    }
+  ep->type = EP_TYPE_PROBE;
+  ep->addr = scamper_addr_use(addr);
+
+  if(patricia_insert(pt, ep) == NULL)
+    {
+      fprintf(stderr, "%s: could not insert %s\n", __func__,
+	      scamper_addr_tostr(addr, buf, sizeof(buf)));
+      goto done;
+    }
+  ep->flags = EP_FLAG_TRIE;
+
+  timeval_cpy(&ep->tv, tv);
+  if((ep->hn = heap_insert(waiting, ep)) == NULL)
+    {
+      fprintf(stderr, "%s: could not add ep to heap\n", __func__);
+      goto done;
+    }
+
+  return 0;
+
+ done:
+  if(ep != NULL) ep_del(ep);
+  return -1;
 }
 
 static int addrfile_line(char *line, void *param)
@@ -401,29 +506,18 @@ static int do_addrfile(void)
 
   while((sa = slist_head_pop(list)) != NULL)
     {
-      if((ep = malloc(sizeof(sc_ep_t))) == NULL)
-	{
-	  fprintf(stderr, "%s: could not alloc ep\n", __func__);
-	  goto done;
-	}
-      ep->type = EP_TYPE_PROBE;
-      ep->addr = sa; sa = NULL;
       timeval_add_tv(&next, &gap);
-      timeval_cpy(&ep->tv, &next);
-      if(heap_insert(waiting, ep) == NULL)
-	{
-	  fprintf(stderr, "%s: could not add ep to heap\n", __func__);
-	  goto done;
-	}
-
+      if(ep_add(sa, &next) != 0)
+	goto done;
+      scamper_addr_free(sa); sa = NULL;
       ep = NULL;
     }
 
   rc = 0;
 
  done:
-  if(ep != NULL) sc_ep_free(ep);
   if(list != NULL) slist_free_cb(list, (slist_free_t)scamper_addr_free);
+  if(sa != NULL) scamper_addr_free(sa);
   return rc;
 }
 
@@ -449,7 +543,7 @@ static int do_outfile(void)
       return -1;
     }
 
-  if((ep = malloc(sizeof(sc_ep_t))) == NULL)
+  if((ep = malloc_zero(sizeof(sc_ep_t))) == NULL)
     {
       fprintf(stderr, "%s: could not alloc ep\n", __func__);
       return -1;
@@ -529,10 +623,183 @@ static int do_scamperconnect(void)
   return 0;
 }
 
+static int do_ctrlsock_readline(void *param, uint8_t *buf, size_t len)
+{
+  scamper_addr_t *sa = NULL;
+  char op, *line = (char *)buf;
+  patricia_t *pt = NULL;
+  sc_ep_t fm, *ep = NULL;
+  int rc = 0;
+
+  op = line[0];
+  if(op == '+' || op == '-')
+    {
+      line++;
+      while(isspace(*line) != 0 && *line != '\0')
+	line++;
+      if(*line == '\0')
+	return 0;
+
+      if((sa = scamper_addr_resolve(AF_UNSPEC, line)) == NULL)
+	return 0;
+      if(SCAMPER_ADDR_TYPE_IS_IPV4(sa))
+	pt = probing4;
+      else if(SCAMPER_ADDR_TYPE_IS_IPV6(sa))
+	pt = probing6;
+      else
+	{
+	  scamper_addr_free(sa);
+	  return 0;
+	}
+
+      fm.addr = sa;
+      ep = patricia_find(pt, &fm);
+    }
+  else
+    {
+      return 0;
+    }
+
+  if(op == '+')
+    {
+      if(ep == NULL)
+	rc = ep_add(sa, &now);
+    }
+  else if(op == '-')
+    {
+      if(ep != NULL)
+	{
+	  if((ep->flags & EP_FLAG_PROBING) == 0)
+	    ep_del(ep);
+	  else
+	    ep->flags |= EP_FLAG_REMOVE;
+	}
+    }
+
+  if(sa != NULL) scamper_addr_free(sa);
+  return rc;
+}
+
+static void do_ctrlsock_free(sc_ctrlsock_t *cs)
+{
+  if(cs->wb != NULL) scamper_writebuf_free(cs->wb);
+  if(cs->lp != NULL) scamper_linepoll_free(cs->lp, 0);
+  if(cs->dn != NULL) dlist_node_pop(ctrlsock_fds, cs->dn);
+  free(cs);
+  return;
+}
+
+static int do_ctrlsock_read(sc_ctrlsock_t *cs)
+{
+  ssize_t rc;
+  uint8_t buf[512];
+
+  if((rc = read(cs->fd, buf, sizeof(buf))) > 0)
+    {
+      gettimeofday_wrap(&now);
+      scamper_linepoll_handle(cs->lp, buf, rc);
+      return 0;
+    }
+  else if(rc == 0)
+    {
+      close(cs->fd); cs->fd = -1;
+      return 0;
+    }
+  else if(errno == EINTR || errno == EAGAIN)
+    {
+      return 0;
+    }
+
+  fprintf(stderr, "%s: could not read: %s\n", __func__, strerror(errno));
+  return -1;
+}
+
+static int do_ctrlsock_accept(void)
+{
+  struct sockaddr_storage ss;
+  sc_ctrlsock_t *cs = NULL;
+  socklen_t socklen;
+  int fd = -1;
+
+  socklen = sizeof(ss);
+  if((fd = accept(ctrlsock_fd, (struct sockaddr *)&ss, &socklen)) == -1)
+    {
+      fprintf(stderr, "%s: could not accept: %s\n", __func__, strerror(errno));
+      goto err;
+    }
+
+  if(fcntl_set(fd, O_NONBLOCK) == -1)
+    {
+      fprintf(stderr, "%s: could not set nonblock on scamper_fd: %s\n",
+	      __func__, strerror(errno));
+      goto err;
+    }
+
+  if((cs = malloc_zero(sizeof(sc_ctrlsock_t))) == NULL ||
+     (cs->wb = scamper_writebuf_alloc()) == NULL ||
+     (cs->lp = scamper_linepoll_alloc(do_ctrlsock_readline, cs)) == NULL ||
+     (cs->dn = dlist_tail_push(ctrlsock_fds, cs)) == NULL)
+    goto err;
+  cs->fd = fd;
+  return 0;
+
+ err:
+  return -1;
+}
+
+static int do_ctrlsock(void)
+{
+  struct sockaddr_un sn;
+
+  if(ctrlsock_name == NULL)
+    return 0;
+
+  if((ctrlsock_fds = dlist_alloc()) == NULL)
+    {
+      fprintf(stderr, "%s: could not alloc ctrlsock_fds: %s\n",
+	      __func__, strerror(errno));
+      return -1;
+    }
+
+  if(sockaddr_compose_un((struct sockaddr *)&sn, ctrlsock_name) != 0)
+    {
+      fprintf(stderr, "%s: could not compose socket: %s\n",
+	      __func__, strerror(errno));
+      return -1;
+    }
+
+  if((ctrlsock_fd = socket(AF_UNIX, SOCK_STREAM, 0)) == -1)
+    {
+      fprintf(stderr, "%s: could not create socket: %s\n",
+	      __func__, strerror(errno));
+      return -1;
+    }
+
+  if(bind(ctrlsock_fd, (struct sockaddr *)&sn, sizeof(sn)) != 0)
+    {
+      fprintf(stderr, "%s: could not bind: %s\n", __func__, strerror(errno));
+      return -1;
+    }
+
+  if(listen(ctrlsock_fd, -1) != 0)
+    {
+      fprintf(stderr, "%s: could not listen: %s\n", __func__, strerror(errno));
+      return -1;
+    }
+
+  if(fcntl_set(ctrlsock_fd, O_NONBLOCK) == -1)
+    {
+      fprintf(stderr, "%s: could not set nonblock on ctrlsock_fd: %s\n",
+	      __func__, strerror(errno));
+      return -1;
+    }
+
+  return 0;
+}
+
 static int do_method(void)
 {
   char cmd[256], buf[128];
-  patricia_t *pt;
   sc_ep_t *ep;
   int bc;
 
@@ -547,7 +814,7 @@ static int do_method(void)
   if(ep->type == EP_TYPE_ROTATE)
     {
       ep = heap_remove(waiting);
-      sc_ep_free(ep);
+      free(ep);
       if(do_outfile() != 0)
 	return -1;
       ep = heap_head_item(waiting);
@@ -559,13 +826,6 @@ static int do_method(void)
   if(ep->type != EP_TYPE_PROBE || more < 1)
     return 0;
   ep = heap_remove(waiting);
-
-  if(SCAMPER_ADDR_TYPE_IS_IPV4(ep->addr))
-    pt = probing4;
-  else if(SCAMPER_ADDR_TYPE_IS_IPV6(ep->addr))
-    pt = probing6;
-  else
-    return -1;
 
   scamper_addr_tostr(ep->addr, buf, sizeof(buf));
   if((bc = snprintf(cmd, sizeof(cmd), "%s %s\n", command, buf)) < 0 ||
@@ -583,18 +843,12 @@ static int do_method(void)
       return -1;
     }
 
+  ep->flags |= EP_FLAG_PROBING;
   timeval_add_s(&ep->tv, &now, interval);
-  if(patricia_insert(pt, ep) == NULL)
-    {
-      fprintf(stderr, "%s: could not insert %s\n", __func__, buf);
-      return -1;
-    }
-
+  probing++;
   more--;
 
-  logprint("p %d w %d: %s",
-	   patricia_count(probing4) + patricia_count(probing6),
-	   heap_count(waiting), cmd);
+  logprint("p %d w %d: %s", probing, heap_count(waiting), cmd);
   return 0;
 }
 
@@ -707,6 +961,8 @@ static int do_decoderead(void)
       return 0;
     }
 
+  probing--;
+
   if(type == SCAMPER_FILE_OBJ_PING)
     {
       ping = data;
@@ -734,22 +990,25 @@ static int do_decoderead(void)
 
 static void cleanup(void)
 {
-  if(waiting != NULL)
-    {
-      heap_free(waiting, (heap_free_t)sc_ep_free);
-      waiting = NULL;
-    }
+  sc_ctrlsock_t *cs;
 
   if(probing4 != NULL)
     {
-      patricia_free_cb(probing4, (patricia_free_t)sc_ep_free);
+      patricia_free_cb(probing4, (patricia_free_t)ep_del_tree);
       probing4 = NULL;
     }
 
   if(probing6 != NULL)
     {
-      patricia_free_cb(probing6, (patricia_free_t)sc_ep_free);
+      patricia_free_cb(probing6, (patricia_free_t)ep_del_tree);
       probing6 = NULL;
+    }
+
+  if(waiting != NULL)
+    {
+      /* free any rotate markers */
+      heap_free(waiting, free);
+      waiting = NULL;
     }
 
   if(decode_in != NULL)
@@ -782,6 +1041,25 @@ static void cleanup(void)
       decode_wb = NULL;
     }
 
+  if(ctrlsock_fd != -1)
+    {
+      close(ctrlsock_fd); ctrlsock_fd = -1;
+      unlink(ctrlsock_name);
+    }
+
+  if(ctrlsock_fds != NULL)
+    {
+      while((cs = dlist_head_pop(ctrlsock_fds)) != NULL)
+	{
+	  if(cs->fd != -1) close(cs->fd);
+	  if(cs->wb != NULL) scamper_writebuf_free(cs->wb);
+	  if(cs->lp != NULL) scamper_linepoll_free(cs->lp, 0);
+	  free(cs);
+	}
+      dlist_free(ctrlsock_fds);
+      ctrlsock_fds = NULL;
+    }
+
   if(logfile != NULL)
     {
       fclose(logfile);
@@ -808,6 +1086,8 @@ int main(int argc, char *argv[])
   uint16_t types[] = {SCAMPER_FILE_OBJ_PING, SCAMPER_FILE_OBJ_TRACE};
   struct timeval tv, *tv_ptr;
   fd_set rfds, wfds, *wfdsp;
+  sc_ctrlsock_t *cs;
+  dlist_node_t *dn;
   sc_ep_t *ep;
   int pair[2];
   int nfds;
@@ -823,8 +1103,11 @@ int main(int argc, char *argv[])
 
   random_seed();
 
-  if((waiting = heap_alloc((heap_cmp_t)sc_ep_tv_cmp)) == NULL ||
-     (probing4 = patricia_alloc((patricia_bit_t)sc_ep_addr_bit,
+  if((waiting = heap_alloc((heap_cmp_t)sc_ep_tv_cmp)) == NULL)
+    return -1;
+  heap_onremove(waiting, (heap_onremove_t)sc_ep_heap_onremove);
+
+  if((probing4 = patricia_alloc((patricia_bit_t)sc_ep_addr_bit,
 				(patricia_cmp_t)sc_ep_addr_cmp,
 				(patricia_fbd_t)sc_ep_addr_fbd)) == NULL ||
      (probing6 = patricia_alloc((patricia_bit_t)sc_ep_addr_bit,
@@ -835,7 +1118,7 @@ int main(int argc, char *argv[])
      (decode_wb = scamper_writebuf_alloc()) == NULL ||
      do_addrfile() != 0 ||
      (nooutfile == 0 && do_outfile() != 0) ||
-     do_scamperconnect() != 0 ||
+     do_scamperconnect() != 0 || do_ctrlsock() != 0 ||
      (decode_filter = scamper_file_filter_alloc(types, 1)) == NULL ||
      socketpair(AF_UNIX, SOCK_STREAM, 0, pair) != 0 ||
      (decode_in = scamper_file_openfd(pair[0], NULL, 'r', "warts")) == NULL ||
@@ -876,6 +1159,24 @@ int main(int argc, char *argv[])
 	  FD_SET(decode_out_fd, &wfds);
 	  wfdsp = &wfds;
 	  if(nfds < decode_out_fd) nfds = decode_out_fd;
+	}
+
+      if(ctrlsock_fd >= 0)
+	{
+	  FD_SET(ctrlsock_fd, &rfds);
+	  if(nfds <= ctrlsock_fd) nfds = ctrlsock_fd;
+	  for(dn=dlist_head_node(ctrlsock_fds); dn != NULL;
+	      dn=dlist_node_next(dn))
+	    {
+	      cs = dlist_node_item(dn);
+	      FD_SET(cs->fd, &rfds);
+	      if(scamper_writebuf_len(cs->wb) > 0)
+		{
+		  FD_SET(cs->fd, &wfds);
+		  wfdsp = &wfds;
+		}
+	      if(nfds < cs->fd) nfds = cs->fd;
+	    }
 	}
 
       tv_ptr = NULL;
@@ -935,6 +1236,32 @@ int main(int argc, char *argv[])
 	    {
 	      close(decode_out_fd);
 	      decode_out_fd = -1;
+	    }
+	}
+
+      if(ctrlsock_fd >= 0)
+	{
+	  if(FD_ISSET(ctrlsock_fd, &rfds) && do_ctrlsock_accept() != 0)
+	    return -1;
+	  dn=dlist_head_node(ctrlsock_fds);
+	  while(dn != NULL)
+	    {
+	      cs = dlist_node_item(dn);
+	      dn = dlist_node_next(dn);
+	      if(FD_ISSET(cs->fd, &rfds) && do_ctrlsock_read(cs) != 0)
+		return -1;
+	      if(cs->fd == -1)
+		{
+		  do_ctrlsock_free(cs);
+		  continue;
+		}
+	      if(wfdsp != NULL && FD_ISSET(cs->fd, wfdsp) &&
+		 scamper_writebuf_write(cs->fd, cs->wb) != 0)
+		{
+		  fprintf(stderr, "could not write to cs->fd: %s\n",
+			  strerror(errno));
+		  return -1;
+		}
 	    }
 	}
     }

@@ -2,10 +2,10 @@
  * scamper_tracelb_warts.c
  *
  * Copyright (C) 2008-2011 The University of Waikato
- * Copyright (C) 2016-2020 Matthew Luckie
+ * Copyright (C) 2016-2021 Matthew Luckie
  * Author: Matthew Luckie
  *
- * $Id: scamper_tracelb_warts.c,v 1.13 2020/06/12 22:35:03 mjl Exp $
+ * $Id: scamper_tracelb_warts.c,v 1.14 2021/08/23 08:31:27 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -602,7 +602,13 @@ static int warts_tracelb_reply_read(scamper_tracelb_reply_t *reply,
     {&reply->reply_from,       (wpr_t)extract_addr,                   table},
   };
   const int handler_cnt = sizeof(handlers)/sizeof(warts_param_reader_t);
-  return warts_params_read(buf, off, len, handlers, handler_cnt);
+  int rc;
+
+  if((rc = warts_params_read(buf, off, len, handlers, handler_cnt)) != 0)
+    return rc;
+  if(reply->reply_from == NULL)
+    return -1;
+  return 0;
 }
 
 static void warts_tracelb_reply_write(const scamper_tracelb_reply_t *reply,
@@ -984,9 +990,12 @@ static int warts_tracelb_link_read(scamper_tracelb_t *trace,
   link->from = trace->nodes[from];
 
   if(flag_isset(&buf[o], WARTS_TRACELB_LINK_TO) != 0)
-    link->to = trace->nodes[to];
-  else
-    link->to = NULL;
+    {
+      if(to >= trace->nodec)
+	return -1;
+      link->to = trace->nodes[to];
+    }
+  else link->to = NULL;
 
   if(link->hopc > 0)
     {

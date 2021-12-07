@@ -1,7 +1,7 @@
 /*
  * sc_warts2pcap
  *
- * $Id: sc_warts2pcap.c,v 1.5 2020/06/10 08:03:37 mjl Exp $
+ * $Id: sc_warts2pcap.c,v 1.6 2021/08/22 08:11:53 mjl Exp $
  *
  * Copyright (C) 2010 Stephen Eichler
  * Copyright (C) 2011 University of Waikato
@@ -320,7 +320,7 @@ int main(int argc, char *argv[])
     }
 
   /* open the output file */
-  if(strcasecmp(outfile_name, "-") != 0)
+  if(string_isdash(outfile_name) == 0)
     {
       if((outfile_fd = fopen(outfile_name, "w")) == NULL)
 	{

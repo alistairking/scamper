@@ -2,7 +2,7 @@
  * sc_prefixscan : scamper driver to collect evidence of pt2pt links
  *                 using the prefixscan method
  *
- * $Id: sc_prefixscan.c,v 1.9 2020/03/17 07:32:17 mjl Exp $
+ * $Id: sc_prefixscan.c,v 1.10 2021/08/22 08:11:53 mjl Exp $
  *
  * Copyright (C) 2011, 2016 The University of Waikato
  * Copyright (C) 2019       Matthew Luckie
@@ -1456,7 +1456,7 @@ static int pf_read(void)
   uint16_t type;
   void *data;
 
-  if(strcmp(datafile, "-") == 0)
+  if(string_isdash(datafile) != 0)
     in = scamper_file_openfd(STDIN_FILENO, "-", 'r', "warts");
   else
     in = scamper_file_open(datafile, 'r', NULL);

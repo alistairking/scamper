@@ -4,10 +4,10 @@
  * Copyright (C) 2008-2011 The University of Waikato
  * Copyright (C) 2012      Matthew Luckie
  * Copyright (C) 2012-2014 The Regents of the University of California
- * Copyright (C) 2015-2020 Matthew Luckie
+ * Copyright (C) 2015-2021 Matthew Luckie
  * Author: Matthew Luckie
  *
- * $Id: scamper_dealias_warts.c,v 1.18 2020/06/09 06:18:41 mjl Exp $
+ * $Id: scamper_dealias_warts.c,v 1.19 2021/08/24 09:03:07 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -1377,10 +1377,11 @@ static int warts_dealias_reply_read(scamper_dealias_reply_t *reply,
   };
   const int handler_cnt = sizeof(handlers)/sizeof(warts_param_reader_t);
   uint32_t o = *off;
-  int i;
 
-  if((i = warts_params_read(buf, off, len, handlers, handler_cnt)) != 0)
-    return i;
+  if(warts_params_read(buf, off, len, handlers, handler_cnt) != 0)
+    return -1;
+  if(reply->src == NULL)
+    return -1;
 
   if(flag_isset(&buf[o], WARTS_DEALIAS_REPLY_PROTO) == 0)
     {
@@ -1390,7 +1391,7 @@ static int warts_dealias_reply_read(scamper_dealias_reply_t *reply,
 	reply->proto = IPPROTO_ICMPV6;
     }
 
-  return i;
+  return 0;
 }
 
 static int warts_dealias_reply_write(const scamper_dealias_reply_t *r,

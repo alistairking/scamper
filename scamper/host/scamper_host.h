@@ -1,9 +1,9 @@
 /*
  * scamper_host
  *
- * $Id: scamper_host.h,v 1.6 2019/07/28 09:24:53 mjl Exp $
+ * $Id: scamper_host.h,v 1.7 2021/08/23 08:31:27 mjl Exp $
  *
- * Copyright (C) 2018-2019 Matthew Luckie
+ * Copyright (C) 2018-2021 Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -118,13 +118,15 @@ typedef struct scamper_host
 } scamper_host_t;
 
 scamper_host_rr_mx_t *scamper_host_rr_mx_alloc(uint16_t, const char *);
+void scamper_host_rr_mx_free(scamper_host_rr_mx_t *);
 scamper_host_rr_soa_t *scamper_host_rr_soa_alloc(const char *, const char *);
+void scamper_host_rr_soa_free(scamper_host_rr_soa_t *);
 
 scamper_host_rr_t *scamper_host_rr_alloc(const char *,
 					 uint16_t, uint16_t, uint32_t);
 void scamper_host_rr_free(scamper_host_rr_t *);
 
-int scamper_host_rr_data_type(const scamper_host_rr_t *rr);
+int scamper_host_rr_data_type(uint16_t class, uint16_t type);
 
 int scamper_host_queries_alloc(scamper_host_t *host, int n);
 scamper_host_query_t *scamper_host_query_alloc(void);

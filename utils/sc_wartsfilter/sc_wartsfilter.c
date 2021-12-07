@@ -1,7 +1,7 @@
 /*
  * sc_wartsfilter
  *
- * $Id: sc_wartsfilter.c,v 1.5 2020/03/17 07:32:17 mjl Exp $
+ * $Id: sc_wartsfilter.c,v 1.6 2021/08/22 08:11:53 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -306,7 +306,7 @@ static int check_options(int argc, char *argv[])
     }
 
   /* determine where to write the filtered records */
-  if(opt_outfile == NULL || strcmp(opt_outfile, "-") == 0)
+  if(opt_outfile == NULL || string_isdash(opt_outfile) != 0)
     {
       /* writing to stdout; don't dump a binary structure to a tty. */
       if(isatty(STDOUT_FILENO) != 0)

@@ -1,7 +1,7 @@
 /*
  * utils.h
  *
- * $Id: utils.h,v 1.122 2021/03/23 07:28:45 mjl Exp $
+ * $Id: utils.h,v 1.123 2021/08/22 08:11:53 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -150,6 +150,12 @@ char *string_firstof_char(char *str, const char delim);
 char *string_concat(char *str, size_t len, size_t *off, const char *fs, ...);
 const char *string_findlc(const char *str, const char *find);
 int   string_addrport(const char *in, char **addr, int *port);
+
+#ifndef NDEBUG
+int   string_isdash(const char *str);
+#else
+#define string_isdash(str)((str)[0] == '-' && (str)[1] == '\0') 
+#endif
 
 /* escape a string for json output */
 char *json_esc(const char *in, char *out, size_t len);
