@@ -31,3 +31,12 @@ autoreconf -vfi
 make
 make install
 ```
+
+There is also an [Earthly](https://earthly.dev/get-earthly) [Earthfile](Earthfile) to
+simplify builds. This is used by the GitHub actions to build binaries, but can
+also be used locally:
+```
+earthly +build   # build linux-amd64 binary
+earthly +docs    # generate pdf docs
+earhtly +docker  # build docker image
+```

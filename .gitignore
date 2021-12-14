@@ -98,6 +98,9 @@ utils/sc_wartscat/sc_wartscat
 utils/sc_wartsdump/sc_wartsdump
 utils/sc_wartsfilter/sc_wartsfilter
 utils/sc_wartsfix/sc_wartsfix
+/build/
+/docs/
+/pkg/
 
 # Upstream files that we don't want
 .cvsignore

@@ -1,0 +1,9 @@
+meta:
+  description: Scamper active measurement tool. (https://www.caida.org/catalog/software/scamper)
+  vendor: Matthew Luckie
+  maintainer: Alistair King (github.com/alistairking/scamper)
+files:
+  "/usr/bin/scamper":
+    file: scamper
+    mode: "0755"
+
