@@ -6,7 +6,7 @@
 .\" Copyright (c) 2019-2020 Matthew Luckie
 .\"               All rights reserved
 .\"
-.\" $Id: sc_hoiho.1,v 1.8 2021/09/20 22:36:35 mjl Exp $
+.\" $Id: sc_hoiho.1,v 1.9 2021/12/12 00:05:06 mjl Exp $
 .\"
 .Dd September 21, 2020
 .Dt SC_HOIHO 1
@@ -35,13 +35,16 @@ public-suffix-list.dat routers.txt
 .Sh DESCRIPTION
 The
 .Nm
-utility automatically learns regular expressions that extract router
-names or autonomous system numbers (ASNs) from hostnames.
+utility automatically learns regular expressions that extract
+router names, geolocation hints, autonomous system numbers (ASNs),
+and autonomous system names (AS names) from hostnames.
 A regular expression that extracts a router name from a router
 hostname can be used to infer which interfaces belong to the same
 router (are aliases).
-A regular expression that extracts an ASN from a router hostname can
-be used to infer which AS operates the router.
+A regular expression that extracts an ASN or AS name from a router
+hostname can be used to infer which AS operates the router.
+A regular expression that extracts geolocation hints from a router
+hostname can be used to infer the approximate location of the router.
 .Pp
 To learn these regular expressions,
 .Nm
@@ -56,6 +59,10 @@ The technique that learns to extract geolocation hints is described
 in the paper "Learning to Extract Geographic Hints from Internet Router
 Hostnames" published in the ACM Conference on emerging Networking
 EXperiments and Technologies (CoNEXT) 2021.
+The technique that learns to extract AS names is described in the paper
+"Learning Regexes to Extract Network Names from Hostnames" published
+in the Asian Internet Engineering Conference (AINTEC) 2021.
+.Pp
 The supported options to
 .Nm
 are as follows:
@@ -82,7 +89,7 @@ specifies a fudge value, in milliseconds, to add to measured RTTs
 before evaluating if the RTT between two lat/longs is feasible.
 By default, this is 1ms.
 .It Fl g Ar dictionary
-specifies a filename containing a geolocation dictionary.
+specifies a filename containing a geolocation or AS name dictionary.
 The format of this file is specified below.
 .It Fl l Ar light-speed
 specifies the distance covered in metres per millisecond, and is used
@@ -109,11 +116,14 @@ is using a single thread.
 Output inferences using json format.  This option is applicable on
 dump IDs 2 and 3.
 .It
+.Sy learnalias:
+infer regexes to extract router names from hostnames.
+.It
 .Sy learnasn:
 infer regexes to extract AS numbers from hostnames.
 .It
-.Sy learnalias:
-infer regexes to extract router names from hostnames.
+.Sy learnasnames:
+infer regexes to extract AS names from hostnames.
 .It
 .Sy learngeo:
 infer regexes to extract geolocation hints from hostnames.
@@ -486,6 +496,25 @@ N3 wlg 11
 N3 syd 25
 .fi
 .in -.3i
+.Pp
+When learning AS name regexes,
+.Nm
+can optionally be provided an AS name dictionary.  If an AS name
+dictionary is not provided, then
+.Nm
+will learn an AS name dictionary automatically.
+For an AS name dictionary that maps 64504 to foo, 64505 to bar, and
+64506 to baz, the format of the file is as follows:
+.Pp
+.in +.3i
+.nf
+64504 foo
+.br
+64505 bar
+.br
+64506 baz
+.fi
+.in -.3i
 .Sh SEE ALSO
 .Xr pcre 3 ,
 .Xr pcre2 3 ,
@@ -518,6 +547,14 @@ N3 syd 25
 .%A "k claffy"
 .%T "Learning to Extract Geographic Information from Internet Router Hostnames"
 .%O "Proc. ACM Conference on emerging Networking EXperiments and Technologies (CoNEXT) 2021"
+.Re
+.Rs
+.%A "M. Luckie"
+.%A "A. Marder"
+.%A "B. Huffaker"
+.%A "k claffy"
+.%T "Learning Regexes to Extract Network Names from Hostnames"
+.%O "Proc. Asian Internet Engineering Conference (AINTEC) 2021"
 .Re
 .Rs
 .%A "Mozilla Foundation"

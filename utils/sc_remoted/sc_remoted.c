@@ -1,7 +1,7 @@
 /*
  * sc_remoted
  *
- * $Id: sc_remoted.c,v 1.89 2020/08/18 11:00:10 mjl Exp $
+ * $Id: sc_remoted.c,v 1.90 2021/11/05 05:39:44 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -1783,10 +1783,10 @@ static void sc_master_inet_read_do(sc_master_t *ms)
 		  remote_debug(__func__, "ssl_want_read failed");
 		  goto err;
 		}
-	      return;
 	    }
 	}
-      else
+
+      if(ms->inet_mode == SSL_MODE_ESTABLISHED)
 	{
 	  while((rc = SSL_read(ms->inet_ssl, buf, sizeof(buf))) > 0)
 	    {
