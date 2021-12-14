@@ -1,7 +1,7 @@
 /*
  * sc_hoiho: Holistic Orthography of Internet Hostname Observations
  *
- * $Id: sc_hoiho.c,v 1.11 2021/09/17 03:59:31 mjl Exp $
+ * $Id: sc_hoiho.c,v 1.12 2021/12/12 00:05:06 mjl Exp $
  *
  *         Matthew Luckie
  *         mjl@luckie.org.nz
@@ -285,6 +285,8 @@ typedef struct sc_iface
   int16_t         ip_e;    /* possible end of IP address */
   int16_t         as_s;    /* possible start of ASN */
   int16_t         as_e;    /* possible end of ASN */
+  int16_t        *asnames; /* possible locations of AS names */
+  uint8_t         asnamec; /* number of possible name tags */
   sc_geotag_t    *geos;    /* possible locations of geo tags */
   uint8_t         geoc;    /* number of possible geo tags */
   uint8_t         flags;   /* flags for the interface */
@@ -360,6 +362,13 @@ typedef struct sc_as2org
   uint32_t        asn;     /* ASN */
   uint32_t        org;     /* org id */
 } sc_as2org_t;
+
+typedef struct sc_as2tag
+{
+  uint32_t        asn;     /* ASN */
+  char           *tag;     /* tag */
+  splaytree_t    *sxes;    /* suffixes with the ASN/tag mapping */
+} sc_as2tag_t;
 
 /*
  * sc_rttload_t:
@@ -630,6 +639,7 @@ typedef struct sc_dump
 #define RE_CLASS_SINGLE    3
 
 #define STOP_ASN_MAX       4
+#define STOP_ASNAMES_MAX   6
 #define STOP_ALIAS_MAX     8
 #define STOP_GEO_MAX       5
 #define STOP_IP_MAX        1
@@ -675,6 +685,8 @@ static const char      *rtt_file     = NULL;
 static uint8_t          rtt_fudge    = FUDGE_DEF;
 static uint8_t          rtt_close    = CLOSE_DEF;
 static double           light_speed  = LIGHT_SPEED_DEF;
+static sc_as2tag_t    **tag2ass      = NULL;
+static int              tag2asc      = 0;
 static slist_t         *dicts        = NULL;
 static sc_geohint_t   **geohints     = NULL;
 static int              geohintc     = 0;
@@ -701,6 +713,7 @@ static int              do_jit       = 1;
 static int              do_json      = 0;
 static int              do_learnalias = 0;
 static int              do_learnasn  = 0;
+static int              do_learnasnames = 0;
 static int              do_learngeo  = 0;
 static int              do_loadonly  = 0;
 static int              do_ed1       = 1;
@@ -774,7 +787,7 @@ static void usage(uint32_t opts)
 	    FUDGE_DEF, FUDGE_MAX);
 
   if(opts & OPT_DICT)
-    fprintf(stderr, "       -g: a dictionary file with geo\n");
+    fprintf(stderr, "       -g: a dictionary file with geo / asnames\n");
 
   if(opts & OPT_LIGHTSPEED)
     fprintf(stderr, "       -l: metres covered in one second, max %u\n",
@@ -789,6 +802,7 @@ static void usage(uint32_t opts)
 	      "           json: output inferences in json format\n"
 	      "           learnalias: learn when hostnames embed router names\n"
 	      "           learnasn: learn when hostnames embed ASN\n"
+	      "           learnasnames: learn when hostnames embed AS names\n"
 	      "           learngeo: learn when hostnames embed geo codes\n"
 	      "           loadonly: stop after loading data\n"
 	      "           noclli: do not load CLLI codes from dictionary\n"
@@ -890,6 +904,8 @@ static int check_options(int argc, char *argv[])
 	    do_learnalias = 1;
 	  else if(strcasecmp(optarg, "learnasn") == 0)
 	    do_learnasn = 1;
+	  else if(strcasecmp(optarg, "learnasnames") == 0)
+	    do_learnasnames = 1;
 	  else if(strcasecmp(optarg, "learngeo") == 0)
 	    do_learngeo = 1;
 	  else if(strcasecmp(optarg, "loadonly") == 0)
@@ -1100,13 +1116,15 @@ static int check_options(int argc, char *argv[])
       threadc = lo;
     }
 
-  if(do_learnalias == 0 && do_learnasn == 0 && do_learngeo == 0)
+  if(do_learnalias == 0 && do_learnasn == 0 && do_learnasnames == 0 &&
+     do_learngeo == 0)
     do_learnalias = 1;
 
   if(opt_stopid != NULL)
     {
       if(string_tolong(opt_stopid, &lo) != 0 || lo < 0 ||
 	 (do_learnasn != 0 && lo > STOP_ASN_MAX) ||
+	 (do_learnasnames != 0 && lo > STOP_ASNAMES_MAX) ||
 	 (do_learnalias != 0 && lo > STOP_ALIAS_MAX) ||
 	 (do_learngeo != 0 && lo > STOP_GEO_MAX))
 	{
@@ -1118,6 +1136,7 @@ static int check_options(int argc, char *argv[])
   else
     {
       if(do_learnasn != 0) stop_id = STOP_ASN_MAX;
+      else if(do_learnasnames != 0) stop_id = STOP_ASNAMES_MAX;
       else if(do_learnalias != 0) stop_id = STOP_ALIAS_MAX;
       else if(do_learngeo != 0) stop_id = STOP_GEO_MAX;
     }
@@ -1568,6 +1587,110 @@ static sc_as2org_t *sc_as2org_find(uint32_t asn)
     return NULL;
   fm.asn = asn;
   return array_find((void **)siblings,siblingc,&fm,(array_cmp_t)sc_as2org_cmp);
+}
+
+static int sc_as2org_siblings(uint32_t a, uint32_t b)
+{
+  sc_as2org_t *ao, *bo;
+  if(a == b)
+    return 1;
+  if((ao = sc_as2org_find(a)) == NULL || (bo = sc_as2org_find(b)) == NULL ||
+     ao->org != bo->org)
+    return 0;
+  return 1;
+}
+
+static int sc_as2tag_cmp(sc_as2tag_t *a, sc_as2tag_t *b)
+{
+  int i;
+  if((i = strcmp(a->tag, b->tag)) != 0)
+    return i;
+  if(a->asn < b->asn) return -1;
+  if(a->asn > b->asn) return  1;
+  return 0;
+}
+
+static int sc_as2tag_tag_cmp(sc_as2tag_t *a, sc_as2tag_t *b)
+{
+  return strcmp(a->tag, b->tag);
+}
+
+static int sc_as2tag_sxes_cmp(sc_as2tag_t *a, sc_as2tag_t *b)
+{
+  int ac, bc;
+  ac = splaytree_count(a->sxes);
+  bc = splaytree_count(b->sxes);
+  if(ac > bc) return -1;
+  if(ac < bc) return  1;
+  return 0;
+}
+
+static int sc_as2tag_tagrank_cmp(sc_as2tag_t *a, sc_as2tag_t *b)
+{
+  int i, j;
+  if((i = strcmp(a->tag, b->tag)) != 0)
+    return i;
+  i = splaytree_count(a->sxes);
+  j = splaytree_count(b->sxes);
+  if(i > j) return -1;
+  if(i < j) return  1;
+  if(a->asn < b->asn) return -1;
+  if(a->asn > b->asn) return  1;
+  return 0;
+}
+
+static void sc_as2tag_free(sc_as2tag_t *a2t)
+{
+  if(a2t->tag != NULL) free(a2t->tag);
+  if(a2t->sxes != NULL) splaytree_free(a2t->sxes, NULL);
+  free(a2t);
+  return;
+}
+
+static sc_as2tag_t *sc_as2tag_find(char *tag)
+{
+  sc_as2tag_t fm; fm.tag = tag;
+  return array_find((void **)tag2ass, tag2asc, &fm,
+		    (array_cmp_t)sc_as2tag_tag_cmp);
+}
+
+#ifndef DMALLOC
+static sc_as2tag_t *sc_as2tag_get(splaytree_t *tree, uint32_t asn, char *tag)
+#else
+#define sc_as2tag_get(tree,asn,tag) sc_as2tag_get_dm((tree),(asn),(tag), \
+						     __FILE__, __LINE__)
+static sc_as2tag_t *sc_as2tag_get_dm(splaytree_t *tree, uint32_t asn, char *tag,
+				     const char *file, const int line)
+#endif
+{
+  sc_as2tag_t *a2t, fm;
+
+  fm.asn = asn;
+  fm.tag = tag;
+  if((a2t = splaytree_find(tree, &fm)) != NULL)
+    return a2t;
+
+#ifndef DMALLOC
+  a2t = malloc(sizeof(sc_as2tag_t));
+#else
+  a2t = dmalloc_malloc(file,line,sizeof(sc_as2tag_t),DMALLOC_FUNC_MALLOC,0,0);
+#endif
+  if(a2t == NULL)
+    goto err;
+  a2t->asn = asn;
+  a2t->tag = NULL;
+  a2t->sxes = NULL;
+
+  if((a2t->tag = strdup(tag)) == NULL ||
+     (a2t->sxes = splaytree_alloc((splaytree_cmp_t)strcmp)) == NULL ||
+     splaytree_insert(tree, a2t) == NULL)
+    goto err;
+
+  return a2t;
+
+ err:
+  if(a2t != NULL) sc_as2tag_free(a2t);
+  return NULL;
 }
 
 static int char_within(const char *name, int l, int r, char c)
@@ -4632,6 +4755,49 @@ static sc_css_t *sc_css_alloc_lcs(const slist_t *X, const char *S)
   return NULL;
 }
 
+static sc_css_t *sc_css_alloc_tags(const char *str)
+{
+  sc_css_t *css = NULL;
+  int x = 0, i = 0;
+
+  if((css = sc_css_alloc(strlen(str) + 1)) == NULL)
+    return NULL;
+
+  /* skip over any training non-alnum characters */
+  while(isalnum(str[i]) == 0 && str[i] != '\0')
+   i++;
+  if(str[i] == '\0')
+    return css;
+
+  while(str[i] != '\0')
+    {
+      if(isalnum(str[i]) != 0)
+	{
+	  css->css[css->len++] = str[i++];
+	  x++;
+	  continue;
+	}
+      css->css[css->len++] = '\0';
+      css->cssc++;
+      x = 0;
+
+      while(str[i] != '\0')
+	{
+	  if(isalnum(str[i]) != 0)
+	    break;
+	  i++;
+	}
+    }
+
+  if(x > 0)
+    {
+      css->css[css->len++] = '\0';
+      css->cssc++;
+    }
+
+  return css;
+}
+
 static sc_css_t *sc_css_dup(const sc_css_t *css)
 {
   sc_css_t *x;
@@ -6436,7 +6602,8 @@ static int sc_regex_findnew(const sc_regex_t *cur, const sc_regex_t *can)
  */
 static uint32_t sc_regex_score_fp(const sc_regex_t *re)
 {
-  assert(do_learnalias != 0 || do_learnasn != 0 || do_learngeo != 0);
+  assert(do_learnalias != 0 || do_learnasn != 0 || do_learnasnames != 0 ||
+	 do_learngeo != 0);
   return re->fp_c + re->ip_c;
 }
 
@@ -6449,8 +6616,11 @@ static uint32_t sc_regex_score_fp(const sc_regex_t *re)
  */
 static uint32_t sc_regex_score_f(const sc_regex_t *re)
 {
-  assert(do_learnalias != 0 || do_learnasn != 0 || do_learngeo != 0);
-  if(do_learngeo != 0)
+  assert(do_learnalias != 0 || do_learnasn != 0 || do_learnasnames != 0 ||
+	 do_learngeo != 0);
+  if(do_learnasnames != 0)
+    return re->fp_c + re->ip_c;
+  else if(do_learngeo != 0)
     return re->fp_c + re->fnu_c + re->unk_c + re->ip_c;
   return re->fp_c + re->fnu_c + re->ip_c;
 }
@@ -6563,7 +6733,7 @@ static char *sc_regex_score_tostr(const sc_regex_t *re, char *buf, size_t len)
   string_concat(buf, len, &off, "ppv %.3f,", ((float)tp) / (tp+fp));
   if(do_learnalias != 0)
     string_concat(buf, len, &off, " rt %u", re->rt_c);
-  else if(do_learnasn != 0)
+  else if(do_learnasn != 0 || do_learnasnames != 0)
     string_concat(buf, len, &off, " asn %u", re->rt_c);
   else if(do_learngeo != 0)
     string_concat(buf, len, &off, " geo %u", re->rt_c);
@@ -6608,7 +6778,7 @@ static char *sc_regex_score_tojson(const sc_regex_t *re, char *buf, size_t len)
 
   if(do_learnalias != 0)
     string_concat(buf, len, &off, "\"rt\":%u, ", re->rt_c);
-  else if(do_learnasn != 0)
+  else if(do_learnasn != 0 || do_learnasnames != 0)
     string_concat(buf, len, &off, "\"asn\": %u, ", re->rt_c);
   else if(do_learngeo != 0)
     string_concat(buf, len, &off, "\"geo\": %u, ", re->rt_c);
@@ -6620,7 +6790,7 @@ static char *sc_regex_score_tojson(const sc_regex_t *re, char *buf, size_t len)
     string_concat(buf, len, &off, ", \"fne\":%d, \"sp\":%d, \"sn\":%d",
 		  re->fne_c, re->sp_c, re->sn_c);
 
-  if(do_learngeo != 0)
+  if(do_learngeo != 0 || do_learnasnames != 0)
     string_concat(buf, len, &off, ", \"unk\":%d", re->unk_c);
 
   string_concat(buf, len, &off, ", \"tpr\":\"%.1f\", \"atp\":%d",
@@ -6811,6 +6981,13 @@ static int sc_regex_score_rank_asn_cmp(const sc_regex_t *a, const sc_regex_t *b)
   if(a->fp_c < b->fp_c) return -1;
   if(a->fp_c > b->fp_c) return  1;
   return sc_regex_score_tie_cmp(a, b);
+}
+
+static int sc_regex_score_rank_asnames_cmp(const sc_regex_t *a, const sc_regex_t *b)
+{
+  if(a->rt_c > b->rt_c) return -1;
+  if(a->rt_c < b->rt_c) return  1;
+  return sc_regex_score_rank_asn_cmp(a, b);
 }
 
 /*
@@ -7341,6 +7518,8 @@ static void sc_iface_free(sc_iface_t *iface)
     scamper_addr_free(iface->addr);
   if(iface->name != NULL)
     free(iface->name);
+  if(iface->asnames != NULL)
+    free(iface->asnames);
   if(iface->geos != NULL)
     {
       for(i=0; i<iface->geoc; i++)
@@ -8288,6 +8467,123 @@ static void sc_iface_asn_find_thread(sc_ifacedom_t *ifd)
     }
 
   free(dup);
+  return;
+}
+
+static int sc_iface_asname_find_check(slist_t *list, const sc_iface_t *iface,
+				      char *str, int i, int j)
+{
+  sc_as2tag_t *a2t;
+  int *pair = NULL;
+  int rc = -1;
+  char in;
+
+  in = str[j];
+  str[j] = '\0';
+
+  if((a2t = sc_as2tag_find(str+i)) == NULL ||
+     sc_as2org_siblings(a2t->asn, iface->rtr->asn) == 0)
+    {
+      rc = 0;
+      goto done;
+    }
+
+  if(do_debug != 0 && threadc <= 1)
+    printf("found %s in %s %u bytes %d %d\n",
+	   a2t->tag, iface->name, a2t->asn, i, j-1);
+
+  if((pair = malloc(sizeof(int) * 2)) == NULL ||
+     slist_tail_push(list, pair) == NULL)
+    goto done;
+
+  pair[0] = i;
+  pair[1] = j-1;
+  pair = NULL;
+  rc = 1;
+
+ done:
+  str[j] = in;
+  if(pair != NULL) free(pair);
+  return rc;
+}
+
+static void sc_iface_asname_find_thread(sc_ifacedom_t *ifd)
+{
+  sc_iface_t *iface = ifd->iface;
+  slist_t *list = NULL;
+  char *str = NULL;
+  int i = 0, j = 0, k, x, stop = 0, *pair = NULL;
+
+  if(iface->asnames != NULL)
+    {
+      free(iface->asnames);
+      iface->asnames = NULL;
+    }
+  iface->asnamec = 0;
+
+  if((list = slist_alloc()) == NULL || (str = strdup(ifd->label)) == NULL)
+    goto done;
+
+  /* skip over any non-alnum characters */
+  while(isalnum(str[i]) == 0 && str[i] != '\0')
+   i++;
+  if(str[i] == '\0')
+    goto done;
+
+  j = i;
+  for(;;)
+    {
+      while(isalnum(str[j]) != 0)
+	j++;
+      if(str[j] == '\0')
+	stop = 1;
+
+      /* see if we can find this exact tag */
+      if((x = sc_iface_asname_find_check(list, iface, str, i, j)) < 0)
+	goto done;
+
+      /*
+       * if we can't find this exact tag, and the string ends with digits,
+       * try without the digits.
+       */
+      if(x == 0 && isdigit(str[j-1]) != 0)
+	{
+	  k = j;
+	  while(k > i && isdigit(str[k-1]))
+	    k--;
+	  if((x = sc_iface_asname_find_check(list, iface, str, i, k)) < 0)
+	    goto done;
+	}
+
+      if(stop != 0)
+	break;
+      j++;
+      while(str[j] != '\0')
+	{
+	  if(isalnum(str[j]) != 0)
+	    break;
+	  j++;
+	}
+      if(str[j] == 0)
+	break;
+      i = j;
+    }
+
+  if((iface->asnamec = slist_count(list)) == 0 ||
+     (iface->asnames = malloc(iface->asnamec * sizeof(int16_t) * 2)) == NULL)
+    goto done;
+  i = 0;
+  while((pair = slist_head_pop(list)) != NULL)
+    {
+      iface->asnames[i++] = pair[0];
+      iface->asnames[i++] = pair[1];
+      free(pair); pair = NULL;
+    }
+
+ done:
+  if(list != NULL) slist_free_cb(list, (slist_free_t)free);
+  if(str != NULL) free(str);
+  if(pair != NULL) free(pair);
   return;
 }
 
@@ -10574,6 +10870,135 @@ static int sc_regex_asn_eval(sc_regex_t *re, slist_t *out)
   return sc_regex_eval_cb(re, out, sc_regex_asn_ifi_score);
 }
 
+static int sc_regex_asnames_ifi_score(sc_regex_t *re, slist_t *ifi_list)
+{
+  sc_reasn_t *ts = NULL;
+  slist_t *list = NULL;
+  sc_ifaceinf_t *ifi;
+  sc_rework_t *rew = NULL;
+  sc_as2tag_t *a2t;
+  slist_node_t *sn;
+  sc_iface_t *iface;
+  sc_uint32c_t *c;
+  size_t len;
+  int i, ppv, rc = -1;
+
+  sc_regex_score_reset(re);
+
+  /* figure out how many bits might be needed for the true positives mask */
+  len = sizeof(uint32_t) * re->dom->tpmlen;
+  if((re->tp_mask == NULL && (re->tp_mask = malloc_zero(len)) == NULL) ||
+     (ts = sc_reasn_alloc(re->regexc)) == NULL ||
+     (rew = sc_rework_alloc(re)) == NULL)
+    goto done;
+
+  for(sn=slist_head_node(ifi_list); sn != NULL; sn=slist_node_next(sn))
+    {
+      ifi = slist_node_item(sn);
+      iface = ifi->ifd->iface;
+
+      if(ifi->regex != -1)
+	re->regexes[ifi->regex]->matchc++;
+
+      if(ifi->css != NULL)
+	{
+	  if(sc_rework_match(rew, iface, NULL) < 0)
+	    goto done;
+	  if(sc_iface_ip_matched(iface, rew) != 0)
+	    {
+	      ifi->class = 'x';
+	      ifi->ipm = 1;
+	      re->ip_c++;
+	      continue;
+	    }
+
+	  if((a2t = sc_as2tag_find(ifi->css->css)) == NULL)
+	    {
+	      if(iface->asnamec > 0)
+		{
+		  ifi->class = '~';
+		  re->fnu_c++;
+		}
+	      else
+		{
+		  ifi->class = '?';
+		  re->unk_c++;
+		}
+	      continue;
+	    }
+	  if(sc_as2org_siblings(a2t->asn, iface->rtr->asn) != 0)
+	    {
+	      if(sc_reasn_tp(ts, re, ifi, a2t->asn) != 0)
+		goto done;
+	      if(a2t->asn == iface->rtr->asn)
+		ifi->class = '+';
+	      else
+		ifi->class = '=';
+	    }
+	  else
+	    {
+	      ifi->class = '!';
+	      re->fp_c++;
+	    }
+	  re->matchc++;
+	}
+      else
+	{
+	  if(iface->asnamec > 0)
+	    {
+	      ifi->class = '~';
+	      re->fnu_c++;
+	    }
+	  else
+	    {
+	      ifi->class = ' ';
+	    }
+	}
+    }
+
+  if(re->regexc > 1)
+    {
+      for(i=0; i<re->regexc; i++)
+	re->regexes[i]->rt_c = tree_mincount(ts->infs[i], ts->exts[i]);
+    }
+  else
+    {
+      re->regexes[0]->rt_c = tree_mincount(ts->inf, ts->ext);
+    }
+  re->rt_c = tree_mincount(ts->inf, ts->ext);
+
+  if((list = slist_alloc()) == NULL)
+    goto done;
+  splaytree_inorder(ts->inf, tree_to_slist, list);
+  slist_qsort(list, (slist_cmp_t)sc_uint32c_c_cmp);
+  if(re->tp_c != 0)
+    ppv = re->tp_c * 100 / (re->tp_c + sc_regex_score_fp(re));
+  else
+    ppv = 0;
+  if(((c = slist_head_item(list)) != NULL && re->tp_c > 3 && ppv < 80 &&
+      re->rt_c < 5 && c->c * 100 / re->tp_c > 50) || re->rt_c == 1)
+    re->class = RE_CLASS_SINGLE;
+  else if(re->rt_c >= 3 && ppv >= 80)
+    re->class = RE_CLASS_GOOD;
+  else if(re->rt_c >= 2 && ppv >= 50)
+    re->class = RE_CLASS_PROM;
+  else
+    re->class = RE_CLASS_POOR;
+
+  rc = 0;
+
+ done:
+  if(list != NULL) slist_free(list);
+  if(rew != NULL) sc_rework_free(rew);
+  if(ts != NULL) sc_reasn_free(ts, re->regexc);
+  return rc;
+}
+
+static int sc_regex_asnames_eval(sc_regex_t *re, slist_t *out)
+{
+  return sc_regex_eval_cb(re, out, sc_regex_asnames_ifi_score);
+}
+
 static int sc_regex_geo_ifi_score_do(sc_regex_t *re, slist_t *ifi_list)
 {
   splaytree_t *geo_tree = NULL, **geo_trees = NULL;
@@ -10977,6 +11402,8 @@ static int sc_regex_eval(sc_regex_t *re, slist_t *out)
     return sc_regex_alias_eval(re, out);
   else if(do_learnasn != 0)
     return sc_regex_asn_eval(re, out);
+  else if(do_learnasnames != 0)
+    return sc_regex_asnames_eval(re, out);
   else if(do_learngeo != 0)
     return sc_regex_geo_eval(re, out);
   return -1;
@@ -11040,11 +11467,16 @@ static int sc_regex_permute(sc_regex_t *work, slist_t *work_ifi,
 	  slist_empty(ifi);
 	  slist_empty_cb(ri_list, (slist_free_t)sc_routerinf_free);
 	}
-      else if(do_learnasn != 0 || do_learngeo != 0)
+      else if(do_learnasn != 0 || do_learnasnames != 0 || do_learngeo != 0)
 	{
 	  if(do_learnasn != 0)
 	    {
 	      if(sc_regex_asn_ifi_score(re, ifi) != 0)
+		goto done;
+	    }
+	  else if(do_learnasnames != 0)
+	    {
+	      if(sc_regex_asnames_ifi_score(re, ifi) != 0)
 		goto done;
 	    }
 	  else if(do_learngeo != 0)
@@ -11289,6 +11721,8 @@ static sc_regex_t *sc_domain_bestre_asn(sc_domain_t *dom)
 
   if(do_learnasn != 0)
     slist_qsort(dom->regexes, (slist_cmp_t)sc_regex_score_rank_asn_cmp);
+  else if(do_learnasnames != 0)
+    slist_qsort(dom->regexes, (slist_cmp_t)sc_regex_score_rank_asnames_cmp);
   else
     return NULL;
 
@@ -11495,7 +11929,7 @@ static sc_regex_t *sc_domain_bestre(sc_domain_t *dom)
     return NULL;
   if(do_learnalias != 0)
     return sc_domain_bestre_alias(dom);
-  else if(do_learnasn != 0)
+  else if(do_learnasn != 0 || do_learnasnames != 0)
     return sc_domain_bestre_asn(dom);
   else if(do_learngeo != 0)
     return sc_domain_bestre_geo(dom);
@@ -12941,7 +13375,7 @@ static int sc_router_istraining(sc_router_t *rtr)
       if(rtr->ifacec > 1)
 	return 1;
     }
-  else if(do_learnasn != 0)
+  else if(do_learnasn != 0 || do_learnasnames != 0)
     {
       if(rtr->asn != 0)
 	return 1;
@@ -12999,7 +13433,8 @@ static int sc_router_finish(sc_routerload_t *rl)
       iface = slist_node_item(sn);
       /* skip over domains that we're not interested in */
       if((suffix = sc_suffix_find(iface->name)) == NULL ||
-	 (domain_eval != NULL && strcmp(domain_eval, suffix) != 0))
+	 (do_learnasnames == 0 && domain_eval != NULL &&
+	  strcmp(domain_eval, suffix) != 0))
 	continue;
       namec++;
     }
@@ -13040,7 +13475,8 @@ static int sc_router_finish(sc_routerload_t *rl)
 	continue;
 
       /* skip over domains that we're not interested in */
-      if(domain_eval != NULL && strcmp(domain_eval, suffix) != 0)
+      if(do_learnasnames == 0 && domain_eval != NULL &&
+	 strcmp(domain_eval, suffix) != 0)
 	continue;
 
       /* we only want to add the router once per domain */
@@ -13305,6 +13741,7 @@ static void dump_2_regex_iface(const sc_regex_t *re, sc_iface_t *iface,
 {
   char buf[256], *ptr;
   sc_geohint_t *vp;
+  sc_as2tag_t *a2t;
   double distance;
   int x;
 
@@ -13327,6 +13764,14 @@ static void dump_2_regex_iface(const sc_regex_t *re, sc_iface_t *iface,
   else if(class == '~' && do_learnasn != 0 && iface->as_s != -1)
     {
       printf(", \"span\":[%d, %d]", iface->as_s, iface->as_e+1);
+    }
+  else if(class == '~' && do_learnasnames != 0 && iface->asnamec > 0)
+    {
+      printf(", \"span\":[%d, %d]", iface->asnames[0], iface->asnames[1]+1);
+      x = iface->asnames[1] - iface->asnames[0] + 1; assert(x < sizeof(buf));
+      memcpy(buf, iface->name+iface->asnames[0], x); buf[x] = '\0';
+      if((a2t = sc_as2tag_find(buf)) != NULL)
+	printf(", \"name2asn\":%u", a2t->asn);
     }
   else if(class == '~' && do_learngeo != 0 && iface->geoc > 0)
     {
@@ -13371,6 +13816,9 @@ static void dump_2_regex_iface(const sc_regex_t *re, sc_iface_t *iface,
 	    ptr++;
 	}
       printf("]");
+
+      if(do_learnasnames != 0 && (a2t = sc_as2tag_find(css->css)) != NULL)
+	printf(", \"name2asn\":%u", a2t->asn);
     }
 
   printf("}");
@@ -14177,7 +14625,7 @@ static int dump_2(void)
 	  if(dump_2_regex_alias(dom, re) != 0)
 	    return -1;
 	}
-      else if(do_learnasn != 0)
+      else if(do_learnasn != 0 || do_learnasnames != 0)
 	{
 	  if(dump_2_regex_router(dom, re, NULL, dump_2_regex_router_asn) != 0)
 	    return -1;
@@ -14270,6 +14718,13 @@ static int dump_3_text(void)
   sc_regex_t *re;
   char buf[512];
   int k;
+
+  if(do_learnasnames != 0)
+    {
+      for(k=0; k<tag2asc; k++)
+	printf("%u %s\n", tag2ass[k]->asn, tag2ass[k]->tag);
+      printf("###\n");
+    }
 
   for(sn=slist_head_node(domain_list); sn != NULL; sn=slist_node_next(sn))
     {
@@ -14367,6 +14822,55 @@ static int dump_4_regex_asn(sc_domain_t *dom, sc_regex_t *re)
 		}
 	    }
 	}
+    }
+
+  rc = 0;
+
+ done:
+  if(ifi_list != NULL) slist_free_cb(ifi_list, (slist_free_t)sc_ifaceinf_free);
+  if(rew != NULL) sc_rework_free(rew);
+  if(css != NULL) sc_css_free(css);
+  return rc;
+}
+
+static int dump_4_regex_asnames(sc_domain_t *dom, sc_regex_t *re)
+{
+  slist_t *ifi_list = NULL;
+  sc_rework_t *rew = NULL;
+  sc_css_t *css = NULL;
+  sc_ifaceinf_t *ifi;
+  sc_iface_t *iface;
+  slist_node_t *sn;
+  sc_as2tag_t *a2t;
+  int i, rc = -1;
+  char buf[2048], tmp[128];
+
+  if((ifi_list = slist_alloc()) == NULL ||
+     sc_regex_asnames_eval(re, ifi_list) != 0)
+    goto done;
+
+  printf("%s:", dom->domain);
+  for(i=0; i<re->regexc; i++)
+    printf(" %s", re->regexes[i]->str);
+  printf(" %s", sc_regex_score_tostr(re, buf, sizeof(buf)));
+  printf("\n");
+
+  slist_qsort(ifi_list, (slist_cmp_t)sc_ifaceinf_class_cmp);
+  for(sn=slist_head_node(ifi_list); sn != NULL; sn=slist_node_next(sn))
+    {
+      ifi = slist_node_item(sn);
+      if(ifi->class == ' ' && do_showclass != 0)
+	continue;
+      iface = ifi->ifd->iface;
+      scamper_addr_tostr(iface->addr, buf, sizeof(buf));
+      tmp[0] = '\0';
+      if(ifi->css != NULL && (a2t = sc_as2tag_find(ifi->css->css)) != NULL)
+	snprintf(tmp,sizeof(tmp),"%u", a2t->asn);
+      else if(ifi->class == '~')
+	snprintf(tmp,sizeof(tmp),"%d:%d", iface->asnames[0],iface->asnames[1]);
+      printf("%16s %c %6d %12s %6s [%d] %s\n", buf, ifi->class,
+	     iface->rtr->asn, ifi->css != NULL ? ifi->css->css : "",
+	     tmp, ifi->regex+1, iface->name);
     }
 
   rc = 0;
@@ -14571,6 +15075,11 @@ static int dump_4(void)
 	  if(dump_4_regex_asn(dom, re) != 0)
 	    return -1;
 	}
+      else if(do_learnasnames != 0)
+	{
+	  if(dump_4_regex_asnames(dom, re) != 0)
+	    return -1;
+	}
       else if(do_learngeo != 0)
 	{
 	  if(dump_4_regex_geo(dom, re) != 0)
@@ -14702,7 +15211,8 @@ static int thin_regexes_domain_matchc(slist_t *regexes)
   sc_regex_t *re;
   int rc = -1;
 
-  assert(do_learnalias != 0 || do_learnasn != 0 || do_learngeo != 0);
+  assert(do_learnalias != 0 || do_learnasn != 0 || do_learnasnames != 0 ||
+	 do_learngeo != 0);
 
   if((keep = slist_alloc()) == NULL || (del = slist_alloc()) == NULL)
     goto done;
@@ -14712,7 +15222,7 @@ static int thin_regexes_domain_matchc(slist_t *regexes)
       re = slist_node_item(sn);
       if(do_learnalias != 0 && re->matchc >= 3 && re->rt_c > 0)
 	list = keep;
-      else if(do_learnasn != 0 && re->rt_c > 0)
+      else if((do_learnasn != 0 || do_learnasnames != 0) && re->rt_c > 0)
 	list = keep;
       else if(do_learngeo != 0 && re->matchc >= 3 && re->rt_c > 1)
 	list = keep;
@@ -16093,7 +16603,7 @@ static int sc_regex_refine_class_do(sc_regex_t *re, slist_t *ifd_list,
        */
       if(slist_count(list) == 1 &&
 	 ((do_learnalias != 0 && re->rt_c >= 2) ||
-	  do_learnasn != 0 || do_learngeo != 0))
+	  do_learnasn != 0 || do_learnasnames != 0 || do_learngeo != 0))
 	{
 	  ptr = slist_head_pop(list);
 	  if(string_isdigit(ptr) != 0)
@@ -16394,10 +16904,11 @@ static int sc_regex_refine_class(sc_regex_t *re)
 	}
       slist_free_cb(ri_list, (slist_free_t)sc_routerinf_free); ri_list = NULL;
     }
-  else if(do_learnasn != 0 || do_learngeo != 0)
+  else if(do_learnasn != 0 || do_learnasnames != 0 || do_learngeo != 0)
     {
       if((ifi_list = slist_alloc()) == NULL ||
 	 ((do_learnasn != 0 && sc_regex_asn_eval(re, ifi_list) != 0) ||
+	  (do_learnasnames != 0 && sc_regex_asnames_eval(re, ifi_list) != 0) ||
 	  (do_learngeo != 0 && sc_regex_geo_eval(re, ifi_list) != 0)))
 	goto done;
       for(sn=slist_head_node(ifi_list); sn != NULL; sn=slist_node_next(sn))
@@ -16946,10 +17457,11 @@ static int sc_regex_refine_ip(sc_regex_t *re)
 	      goto done;
 	}
     }
-  else if(do_learnasn != 0 || do_learngeo != 0)
+  else if(do_learnasn != 0 || do_learnasnames != 0 || do_learngeo != 0)
     {
       if((ifi_list = slist_alloc()) == NULL ||
 	 ((do_learnasn != 0 && sc_regex_asn_eval(re, ifi_list) != 0) ||
+	  (do_learnasnames != 0 && sc_regex_asnames_eval(re, ifi_list) != 0) ||
 	  (do_learngeo != 0 && sc_regex_geo_eval(re, ifi_list) != 0)))
 	goto done;
       for(sn=slist_head_node(ifi_list); sn != NULL; sn=slist_node_next(sn))
@@ -17051,7 +17563,7 @@ static int sc_regex_refine_ip(sc_regex_t *re)
 	    }
 	  slist_empty_cb(ri_list, (slist_free_t)sc_routerinf_free);
 	}
-      else if(do_learnasn != 0 || do_learngeo != 0)
+      else if(do_learnasn != 0 || do_learnasnames != 0 || do_learngeo != 0)
 	{
 	  for(dn=dlist_head_node(re_list); dn != NULL; dn=dlist_node_next(dn))
 	    {
@@ -17101,6 +17613,8 @@ static int sc_regex_refine_ip(sc_regex_t *re)
 	      sc_regex_alias_eval(re_new, ri_list) != 0) ||
 	     (do_learnasn != 0 &&
 	      sc_regex_asn_eval(re_new, ifi_list) != 0) ||
+	     (do_learnasnames != 0 &&
+	      sc_regex_asnames_eval(re_new, ifi_list) !=0 ) ||
 	     (do_learngeo != 0 &&
 	      sc_regex_geo_eval(re_new, ifi_list) != 0))
 	    goto done;
@@ -17571,7 +18085,8 @@ static int sc_regex_sets_isbetter(sc_regex_t *cur, sc_regex_t *can)
   uint32_t tp_max = 0;
   int i;
 
-  assert(do_learnalias != 0 || do_learnasn != 0 || do_learngeo != 0);
+  assert(do_learnalias != 0 || do_learnasn != 0 || do_learnasnames != 0 ||
+	 do_learngeo != 0);
 
   /* if we don't gain any true positives, then no better */
   if(can->tp_c <= cur->tp_c)
@@ -17619,7 +18134,7 @@ static int sc_regex_sets_isbetter(sc_regex_t *cur, sc_regex_t *can)
       if(sc_regex_del_ppv_ok(cur, can) == 0)
 	return 0;
     }
-  else if(do_learnasn != 0)
+  else if(do_learnasn != 0 || do_learnasnames != 0)
     {
       /*
        * if any component regex is unable to find two unique ASNs,
@@ -18266,6 +18781,56 @@ static int generate_regexes_domain_asn(sc_domain_t *dom)
   return -1;
 }
 
+static int generate_regexes_domain_asnames(sc_domain_t *dom)
+{
+  static const uint16_t mask = RB_BASE | RB_SEG_DIGIT_SPEC | RB_FIRST_PUNC_END;
+  splaytree_t *tree = NULL;
+  sc_routerdom_t *rd = NULL;
+  sc_ifacedom_t *ifd;
+  slist_node_t *sn;
+  int i, j, *bits = NULL, bitc, ctype = BIT_TYPE_CAPTURE;
+  int16_t c[2];
+
+  if((tree = splaytree_alloc((splaytree_cmp_t)sc_regex_str_cmp)) == NULL)
+    goto err;
+
+  for(sn=slist_head_node(dom->routers); sn != NULL; sn=slist_node_next(sn))
+    {
+      rd = slist_node_item(sn);
+      for(i=0; i<rd->ifacec; i++)
+	{
+	  ifd = rd->ifaces[i];
+	  for(j=0; j<ifd->iface->asnamec; j+=2)
+	    {
+	      c[0] = ifd->iface->asnames[j];
+	      c[1] = ifd->iface->asnames[j+1];
+	      if(pt_to_bits_ctype(ifd, &ctype, c, 2, &bits, &bitc) == 0)
+		{
+		  if(sc_regex_build(tree,ifd->label,dom,mask,bits,bitc) != 0)
+		    goto err;
+		}
+	      if(bits != NULL)
+		{
+		  free(bits);
+		  bits = NULL;
+		}
+	    }
+	}
+    }
+
+  /*
+   * take the regex strings out of the tree and put them in a list
+   * ready to be evaluated
+   */
+  splaytree_inorder(tree, tree_to_slist, dom->regexes);
+  splaytree_free(tree, NULL); tree = NULL;
+  return 0;
+
+ err:
+  if(tree != NULL) splaytree_free(tree, NULL);
+  return -1;
+}
+
 static int generate_regexes_domain_geo(sc_domain_t *dom)
 {
   static const uint16_t mask =
@@ -18338,6 +18903,8 @@ static void generate_regexes_thread(sc_domain_t *dom)
     generate_regexes_domain_alias(dom);
   else if(do_learnasn != 0)
     generate_regexes_domain_asn(dom);
+  else if(do_learnasnames != 0)
+    generate_regexes_domain_asnames(dom);
   else if(do_learngeo != 0)
     generate_regexes_domain_geo(dom);
   return;
@@ -18954,6 +19521,7 @@ static int refine_regexes_sets_domain_init(dlist_t *out, sc_domain_t *dom)
       if(head != re && re->tp_c <= head->tp_c &&
 	 ((do_learnalias != 0 && re->fp_c >= head->fp_c) ||
 	  (do_learnasn != 0 && re->fp_c > head->fp_c) ||
+	  (do_learnasnames != 0 && re->fp_c > head->fp_c) ||
 	  (do_learngeo != 0 && re->fp_c > head->fp_c)))
 	continue;
       for(s2=slist_head_node(domfn->work); s2 != NULL; s2=slist_node_next(s2))
@@ -18962,6 +19530,7 @@ static int refine_regexes_sets_domain_init(dlist_t *out, sc_domain_t *dom)
 	  if(re->tp_c <= work->re->tp_c &&
 	     ((do_learnalias != 0 && re->fp_c >= work->re->fp_c) ||
 	      (do_learnasn != 0 && re->fp_c > work->re->fp_c) ||
+	      (do_learnasnames != 0 && re->fp_c > work->re->fp_c) ||
 	      (do_learngeo != 0 && re->fp_c > work->re->fp_c)))
 	    break;
 	}
@@ -19307,6 +19876,371 @@ static int refine_regexes_tp(void)
   return 0;
 }
 
+/*
+ * refine_dict_asnames_name_dig
+ *
+ * do not keep names in the form of foo\d+ if foo is in the dict
+ */
+static int refine_dict_asnames_name_dig(slist_t *thin, const sc_as2tag_t *a2t)
+{
+  const char *S, *T;
+  size_t S_len, T_len;
+  sc_as2tag_t *a2tb;
+  slist_node_t *sn;
+
+  T = a2t->tag; T_len = strlen(T);
+  for(sn=slist_head_node(thin); sn != NULL; sn=slist_node_next(sn))
+    {
+      a2tb = slist_node_item(sn);
+      if(a2t->asn != a2tb->asn)
+	continue;
+      S = a2tb->tag; S_len = strlen(S);
+      if((S_len < T_len &&
+	  strncmp(S, T, S_len) == 0 && string_isdigit(T + S_len) != 0) ||
+	 (S_len > T_len &&
+	  strncmp(S, T, T_len) == 0 && string_isdigit(S + T_len) != 0))
+	return 1;
+    }
+
+  return 0;
+}
+
+static int refine_dict_asnames_unk_want(slist_t *thin,
+					const sc_as2tag_t *a2t,
+					const sc_as2tag_t *a2tb)
+{
+  static const char *digit2string[] = {
+    "zero", "one", "two", "three", "four", "five",
+    "six", "seven", "eight", "nine", "ten"};
+  static size_t digit2stringl[] = {4, 3, 3, 5, 4, 4, 3, 5, 5, 4, 3};
+  const char *S, *T;
+  size_t S_len, T_len, S_i, T_i;
+  slist_node_t *sn;
+  sc_as2tag_t *a2tn;
+  int digit;
+
+  /* if the name is in as\d+ form, we do not want it */
+  if(strncmp(a2t->tag, "as", 2) == 0 && string_isdigit(a2t->tag+2) != 0)
+    return 0;
+
+  /* do not want foo\d+ if foo is in the dict */
+  if(refine_dict_asnames_name_dig(thin, a2t) != 0)
+    return 0;
+
+  /*
+   * if there are no other apparent AS assignments for that name, and
+   * at least two suffixes agree on the name, add the name/asn to the
+   * dictionary
+   */
+  if((a2tb == NULL || strcmp(a2t->tag, a2tb->tag) != 0) &&
+     splaytree_count(a2t->sxes) >= 2)
+    return 1;
+
+  /*
+   * there are other possible mappings, but the evidence points to
+   * one particular mapping.
+   */
+  if(a2tb != NULL && strcmp(a2t->tag, a2tb->tag) == 0 &&
+     splaytree_count(a2t->sxes) >= 3 &&
+     splaytree_count(a2tb->sxes) <= 1)
+    return 1;
+
+  T = a2t->tag; T_len = strlen(T);
+
+  /*
+   * look for cases where the alternate name expands a digit -- e.g.
+   * 1and1 -> oneandone, m247 -> m24seven, level3 -> levelthree.
+   */
+  for(sn=slist_head_node(thin); sn != NULL; sn=slist_node_next(sn))
+    {
+      a2tn = slist_node_item(sn);
+      if(sc_as2org_siblings(a2tn->asn, a2t->asn) == 0)
+	continue;
+      S = a2tn->tag; S_len = strlen(S);
+      S_i = T_i = 0;
+      while(S_i < S_len && T_i < T_len)
+	{
+	  if(S[S_i] == T[T_i])
+	    {
+	      S_i++;
+	      T_i++;
+	    }
+	  else if(isdigit(S[S_i]) != 0)
+	    {
+	      digit = S[S_i] - '0';
+	      if(strncmp(T+T_i,digit2string[digit],digit2stringl[digit]) != 0)
+		break;
+	      S_i++;
+	      T_i += digit2stringl[digit];
+	    }
+	  else break;
+	}
+
+      if(S_i == S_len && T_i == T_len)
+	return 1;
+    }
+
+  /*
+   * figure out if two extracted names for the same ASN are similar.
+   * the candidate under consideration must be longer than the name
+   * stored in the list to count.
+   */
+  if(T_len >= 2)
+    {
+      for(sn=slist_head_node(thin); sn != NULL; sn=slist_node_next(sn))
+	{
+	  a2tn = slist_node_item(sn);
+	  if(sc_as2org_siblings(a2tn->asn, a2t->asn) == 0)
+	    continue;
+	  S = a2tn->tag; S_len = strlen(S);
+	  if(S_len < 2)
+	    continue;
+
+	  if(S_len < T_len && strncmp(S, T, S_len) == 0 &&
+	     string_isalpha(T+S_len) != 0)
+	    return 1;
+
+#if 0
+	  /* shorter names caused false inferences */
+	  if(S_len > T_len && strncmp(S, T, T_len) == 0 &&
+	     string_isalpha(S+T_len) != 0)
+	    return 1;
+#endif
+	}
+    }
+
+  return 0;
+}
+
+static int refine_dict_asnames_thin(slist_t *list, slist_t *unk_list)
+{
+  slist_t *thin = NULL;
+  sc_as2tag_t *a2t, *a2tb;
+  slist_node_t *sn;
+  int want, rc = -1;
+
+  if((thin = slist_alloc()) == NULL)
+    goto done;
+
+  slist_qsort(list, (slist_cmp_t)sc_as2tag_sxes_cmp);
+  while((a2t = slist_head_pop(list)) != NULL)
+    {
+      /*
+       * there needs to be at least three suffixes with TPs before we
+       * keep it
+       */
+      if(splaytree_count(a2t->sxes) < 3)
+	{
+	  sc_as2tag_free(a2t);
+	  continue;
+	}
+
+      /* do not keep names in the form of foo\d+ if foo is in the dict */
+      if(refine_dict_asnames_name_dig(thin, a2t) == 0)
+	{
+	  if(slist_tail_push(thin, a2t) == NULL)
+	    {
+	      sc_as2tag_free(a2t);
+	      goto done;
+	    }
+	}
+      else
+	{
+	  sc_as2tag_free(a2t);
+	}
+    }
+
+  /*
+   * go through the unknown set and see if we can match them up with
+   * an existing entry
+   */
+  slist_qsort(unk_list, (slist_cmp_t)sc_as2tag_tagrank_cmp);
+  for(;;)
+    {
+      if((a2t = slist_head_pop(unk_list)) == NULL)
+	break;
+
+      /*
+       * determine if there are possible other AS/org assignments for
+       * this apparent AS name
+       */
+      a2tb = NULL;
+      for(sn=slist_head_node(unk_list); sn != NULL; sn=slist_node_next(sn))
+	{
+	  a2tb = slist_node_item(sn);
+	  if(strcmp(a2t->tag, a2tb->tag) != 0 ||
+	     sc_as2org_siblings(a2t->asn, a2tb->asn) == 0)
+	    break;
+	}
+
+      want = refine_dict_asnames_unk_want(thin, a2t, a2tb);
+
+      /* free the other tags with the same name, if any */
+      while((a2tb = slist_head_item(unk_list)) != NULL)
+	{
+	  if(strcmp(a2t->tag, a2tb->tag) != 0)
+	    break;
+	  slist_head_pop(unk_list);
+	  sc_as2tag_free(a2tb);
+	}
+
+      if(want != 0)
+	{
+	  /* add the mapping to the dictionary */
+	  if(slist_tail_push(thin, a2t) == NULL)
+	    {
+	      sc_as2tag_free(a2t);
+	      goto done;
+	    }
+	}
+      else
+	{
+	  /* free because we do not want the tag */
+	  sc_as2tag_free(a2t);
+	}
+    }
+
+  slist_concat(list, thin);
+  slist_qsort(list, (slist_cmp_t)sc_as2tag_cmp);
+
+  rc = 0;
+
+ done:
+  slist_free_cb(thin, (slist_free_t)sc_as2tag_free);
+  return rc;
+}
+
+static int refine_dict_asnames(void)
+{
+  slist_t *ifi_list = NULL, *list = NULL, *thin = NULL, *unk_list = NULL;
+  splaytree_t *tree = NULL, *unk_tree = NULL;
+  slist_node_t *sn, *s2;
+  sc_routerdom_t *rd;
+  sc_ifaceinf_t *ifi;
+  sc_ifacedom_t *ifd;
+  sc_domain_t *dom;
+  sc_as2tag_t *a2t;
+  sc_regex_t *re;
+  int i, rc = -1;
+
+  if((refine_mask & REFINE_DICT) == 0 || domain_eval != NULL)
+    return 0;
+
+  if((ifi_list = slist_alloc()) == NULL ||
+     (tree = splaytree_alloc((splaytree_cmp_t)sc_as2tag_cmp)) == NULL ||
+     (unk_tree = splaytree_alloc((splaytree_cmp_t)sc_as2tag_cmp)) == NULL)
+    goto done;
+
+  for(sn=slist_head_node(domain_list); sn != NULL; sn=slist_node_next(sn))
+    {
+      dom = slist_node_item(sn);
+      if((re = sc_domain_bestre(dom)) == NULL || re->rt_c < 3)
+	continue;
+      if(sc_regex_asnames_eval(re, ifi_list) != 0)
+	goto done;
+      for(s2=slist_head_node(ifi_list); s2 != NULL; s2=slist_node_next(s2))
+	{
+	  ifi = slist_node_item(s2);
+	  if(ifi->class == '+' || ifi->class == '=')
+	    {
+	      a2t = sc_as2tag_find(ifi->css->css);
+	      if((a2t = sc_as2tag_get(tree, a2t->asn, ifi->css->css)) == NULL ||
+		 (splaytree_find(a2t->sxes, dom->domain) == NULL &&
+		  splaytree_insert(a2t->sxes, dom->domain) == NULL))
+		goto done;
+	    }
+	  else if(ifi->class == '?')
+	    {
+	      if((a2t = sc_as2tag_get(unk_tree, ifi->ifd->iface->rtr->asn,
+				      ifi->css->css)) == NULL ||
+		 (splaytree_find(a2t->sxes, dom->domain) == NULL &&
+		  splaytree_insert(a2t->sxes, dom->domain) == NULL))
+		goto done;
+	    }
+	}
+      slist_empty_cb(ifi_list, (slist_free_t)sc_ifaceinf_free);
+    }
+
+  /* thin out the dictionary */
+  if((list = slist_alloc()) == NULL || (unk_list = slist_alloc()) == NULL)
+    goto done;
+  splaytree_inorder(tree, tree_to_slist, list);
+  splaytree_free(tree, NULL); tree = NULL;
+  splaytree_inorder(unk_tree, tree_to_slist, unk_list);
+  splaytree_free(unk_tree, NULL); unk_tree = NULL;
+  if(refine_dict_asnames_thin(list, unk_list) != 0)
+    goto done;
+
+  /* clean out the old asnames dictionary */
+  if(tag2ass != NULL)
+    {
+      for(i=0; i<tag2asc; i++)
+	if(tag2ass[i] != NULL)
+	  sc_as2tag_free(tag2ass[i]);
+      free(tag2ass); tag2ass = NULL;
+    }
+
+  /* install the new asnames dictionary */
+  if((tag2asc = slist_count(list)) == 0)
+    {
+      rc = 0;
+      goto done;
+    }
+  if((tag2ass = malloc_zero(sizeof(sc_as2tag_t *) * tag2asc)) == NULL)
+    goto done;
+  i = 0;
+  while((a2t = slist_head_pop(list)) != NULL)
+    tag2ass[i++] = a2t;
+  slist_free(list); list = NULL;
+
+  /* infer which hostnames could embed an AS name */
+  tp = threadpool_alloc(threadc);
+  for(sn=slist_head_node(domain_list); sn != NULL; sn=slist_node_next(sn))
+    {
+      dom = slist_node_item(sn);
+      for(s2=slist_head_node(dom->routers); s2 != NULL; s2=slist_node_next(s2))
+	{
+	  rd = slist_node_item(s2);
+	  for(i=0; i<rd->ifacec; i++)
+	    {
+	      ifd = rd->ifaces[i];
+	      threadpool_tail_push(tp,
+				   (threadpool_func_t)sc_iface_asname_find_thread,
+				   ifd);
+	    }
+	}
+    }
+  threadpool_join(tp); tp = NULL;
+
+  fprintf(stderr, "refining dictionary: %d entries\n", tag2asc);
+
+  for(sn=slist_head_node(domain_list); sn != NULL; sn=slist_node_next(sn))
+    {
+      dom = slist_node_item(sn);
+      if(dom->regexes != NULL)
+	slist_empty_cb(dom->regexes, (slist_free_t)sc_regex_free);
+    }
+
+  if(generate_regexes() != 0)
+    goto done;
+  if(eval_regexes() != 0)
+    goto done;
+  if(refine_regexes_merge() != 0)
+    goto done;
+
+  rc = 0;
+
+ done:
+  if(ifi_list != NULL) slist_free_cb(ifi_list, (slist_free_t)sc_ifaceinf_free);
+  if(tree != NULL) splaytree_free(tree, (splaytree_free_t)sc_as2tag_free);
+  if(list != NULL) slist_free_cb(list, (slist_free_t)sc_as2tag_free);
+  if(unk_tree != NULL)
+    splaytree_free(unk_tree, (splaytree_free_t)sc_as2tag_free);
+  if(unk_list != NULL) slist_free_cb(unk_list, (slist_free_t)sc_as2tag_free);
+  if(thin != NULL) slist_free_cb(thin, (slist_free_t)sc_as2tag_free);
+  return rc;
+}
+
 static void refine_dict_geo_thread(sc_regex_t *re)
 {
   slist_t *ifi_list = NULL, *rd_list = NULL, *geoeval_list = NULL;
@@ -19644,6 +20578,181 @@ static void load_routers_asn(void)
   return;
 }
 
+static int load_routers_asnames_dict(void)
+{
+  splaytree_t *tree = NULL;
+  slist_t *list = NULL, *thin = NULL;
+  slist_node_t *sn, *s2;
+  sc_routerdom_t *rd;
+  sc_domain_t *dom;
+  sc_css_t *css = NULL;
+  sc_as2tag_t *a2t, *a2t_head;
+  char *ptr;
+  int i, j, rc = -1;
+
+  /* go through all routers, extracting tags per router */
+  if((tree = splaytree_alloc((splaytree_cmp_t)sc_as2tag_cmp)) == NULL)
+    goto done;
+  for(sn=slist_head_node(domain_list); sn != NULL; sn=slist_node_next(sn))
+    {
+      dom = slist_node_item(sn);
+      for(s2=slist_head_node(dom->routers); s2 != NULL; s2=slist_node_next(s2))
+	{
+	  rd = slist_node_item(s2);
+	  for(i=0; i<rd->ifacec; i++)
+	    {
+	      if((css = sc_css_alloc_tags(rd->ifaces[i]->label)) == NULL)
+		goto done;
+	      if(css->cssc == 0)
+		{
+		  sc_css_free(css);
+		  css = NULL;
+		  continue;
+		}
+
+	      ptr = css->css;
+	      for(j=0; j<css->cssc; j++)
+		{
+		  if(string_isdigit(ptr) != 0 ||
+		     (strncmp(ptr,"as",2) == 0 && string_isdigit(ptr+2) != 0))
+		    goto next;
+
+		  /* associate the tag/asn with the suffix */
+		  if((a2t = sc_as2tag_get(tree, rd->rtr->asn, ptr)) == NULL ||
+		     (splaytree_find(a2t->sxes, dom->domain) == NULL &&
+		      splaytree_insert(a2t->sxes, dom->domain) == NULL))
+		    goto done;
+
+		next:
+		  /* skip to the next tag */
+		  while(*ptr != '\0')
+		    ptr++;
+		  ptr++;
+		}
+
+	      sc_css_free(css); css = NULL;
+	    }
+	}
+    }
+
+  /* thin out any ASN tags that are in less than 3 suffixes */
+  if((list = slist_alloc()) == NULL || (thin = slist_alloc()) == NULL)
+    goto done;
+  splaytree_inorder(tree, tree_to_slist, list);
+  splaytree_free(tree, NULL); tree = NULL;
+  while((a2t = slist_head_pop(list)) != NULL)
+    {
+      if(splaytree_count(a2t->sxes) < 3)
+	{
+	  sc_as2tag_free(a2t);
+	  continue;
+	}
+      if(slist_tail_push(thin, a2t) == NULL)
+	{
+	  sc_as2tag_free(a2t);
+	  goto done;
+	}
+    }
+  slist_concat(list, thin);
+
+  /*
+   * remove any ASN tags where there are conflicting ASes who might
+   * have that tag
+   */
+  slist_qsort(list, (slist_cmp_t)sc_as2tag_tagrank_cmp);
+  for(;;)
+    {
+      if((a2t_head = slist_head_pop(list)) == NULL)
+	break;
+      a2t = NULL;
+      for(sn=slist_head_node(list); sn != NULL; sn=slist_node_next(sn))
+	{
+	  a2t = slist_node_item(sn);
+	  if(strcmp(a2t_head->tag, a2t->tag) != 0 ||
+	     sc_as2org_siblings(a2t_head->asn, a2t->asn) == 0)
+	    break;
+	}
+      j = 0;
+      if(a2t == NULL || strcmp(a2t_head->tag, a2t->tag) != 0 ||
+	 splaytree_count(a2t_head->sxes) >= splaytree_count(a2t->sxes) * 2)
+	{
+	  if(slist_tail_push(thin, a2t_head) == NULL)
+	    {
+	      sc_as2tag_free(a2t_head);
+	      goto done;
+	    }
+	}
+      else j = 1;
+      while((a2t = slist_head_item(list)) != NULL)
+	{
+	  if(strcmp(a2t_head->tag, a2t->tag) != 0)
+	    break;
+	  slist_head_pop(list);
+	  sc_as2tag_free(a2t);
+	}
+      if(j != 0) sc_as2tag_free(a2t_head);
+    }
+  slist_concat(list, thin);
+
+  if((tag2asc = slist_count(list)) == 0)
+    {
+      rc = 0;
+      goto done;
+    }
+  if((tag2ass = malloc_zero(sizeof(sc_as2tag_t *) * tag2asc)) == NULL)
+    goto done;
+
+  i = 0;
+  for(sn=slist_head_node(list); sn != NULL; sn=slist_node_next(sn))
+    {
+      a2t = slist_node_item(sn);
+      tag2ass[i++] = a2t;
+      if(do_debug != 0 && threadc <= 1)
+	printf("%s %u %d\n", a2t->tag, a2t->asn, splaytree_count(a2t->sxes));
+    }
+  slist_free(list); list = NULL;
+
+  fprintf(stderr, "inferred %d entries in asnames dictionary\n", tag2asc);
+  rc = 0;
+
+ done:
+  if(css != NULL) sc_css_free(css);
+  if(tree != NULL) splaytree_free(tree, (splaytree_free_t)sc_as2tag_free);
+  if(list != NULL) slist_free_cb(list, (slist_free_t)sc_as2tag_free);
+  if(thin != NULL) slist_free_cb(thin, (slist_free_t)sc_as2tag_free);
+  return rc;
+}
+
+static int load_routers_asnames(void)
+{
+  slist_node_t *sn, *s2;
+  sc_routerdom_t *rd;
+  sc_domain_t *dom;
+  int i;
+
+  /* infer the initial dictionary if one is not provided */
+  if(dicts == NULL && load_routers_asnames_dict() != 0)
+    return -1;
+
+  /* infer which hostnames could embed an AS name */
+  tp = threadpool_alloc(threadc);
+  for(sn=slist_head_node(domain_list); sn != NULL; sn=slist_node_next(sn))
+    {
+      dom = slist_node_item(sn);
+      for(s2=slist_head_node(dom->routers); s2 != NULL; s2=slist_node_next(s2))
+	{
+	  rd = slist_node_item(s2);
+	  for(i=0; i<rd->ifacec; i++)
+	    threadpool_tail_push(tp,
+				 (threadpool_func_t)sc_iface_asname_find_thread,
+				 rd->ifaces[i]);
+	}
+    }
+  threadpool_join(tp); tp = NULL;
+
+  return 0;
+}
+
 static void load_routers_geo(void)
 {
   sc_routerdom_t *rd;
@@ -19771,6 +20880,18 @@ static int load_routers_2(void)
     load_routers_alias();
   else if(do_learnasn != 0)
     load_routers_asn();
+  else if(do_learnasnames != 0)
+    {
+      if(load_routers_asnames() != 0)
+	goto done;
+      if(domain_eval != 0)
+	{
+	  slist_empty(domain_list);
+	  if((dom = sc_domain_find(domain_eval)) == NULL ||
+	     slist_tail_push(domain_list, dom) == NULL)
+	    goto done;
+	}
+    }
   else if(do_learngeo != 0)
     load_routers_geo();
 
@@ -20619,6 +21740,122 @@ static int load_dict_geohints(void)
   return rc;
 }
 
+/*
+ * asnames_file_line:
+ *
+ */
+static int asnames_file_line(char *line, void *param)
+{
+  splaytree_t *tree = param;
+  char *name = NULL, *asn = NULL, *ptr;
+  sc_as2tag_t fm;
+  long long ll;
+
+  if(*line == '#')
+    return 0;
+
+  asn = line;
+  ptr = line;
+  while(isdigit(*ptr) != 0)
+    ptr++;
+  if(*ptr == '\0')
+    {
+      fprintf(stderr, "%s: unexpected null: %s\n", __func__, line);
+      return -1;
+    }
+
+  *ptr = '\0';
+  ptr++;
+  if(isspace(*ptr) != 0)
+    {
+      while(*ptr != '\0' && isspace(*ptr) == 0)
+	ptr++;
+      if(*ptr == '\0')
+	{
+	  fprintf(stderr, "%s: unexpected null\n", __func__);
+	  return -1;
+	}
+    }
+  name = ptr;
+
+  if(string_isdigit(asn) == 0 || string_tollong(asn, &ll) != 0 ||
+     ll < 0 || ll > 4294967295)
+    {
+      fprintf(stderr, "%s: invalid asn %s\n", __func__, asn);
+      return -1;
+    }
+
+  fm.tag = name;
+  if(splaytree_find(tree, &fm) != NULL)
+    {
+      fprintf(stderr, "%s: %s already exists\n", __func__, name);
+      return -1;
+    }
+
+  if(sc_as2tag_get(tree, ll, name) == NULL)
+    {
+      fprintf(stderr, "%s: could not add %s\n", __func__, name);
+      return -1;
+    }
+
+  return 0;
+}
+
+/*
+ * load_dict_asnames:
+ *
+ * load asnames into an slist and then compress into an array.
+ */
+static int load_dict_asnames(void)
+{
+  splaytree_t *tree = NULL;
+  slist_t *list = NULL;
+  sc_as2tag_t *a2t;
+  int x, rc = -1;
+  char *file;
+
+  if(dicts == NULL)
+    return 0;
+
+  if((tree = splaytree_alloc((splaytree_cmp_t)sc_as2tag_tag_cmp)) == NULL ||
+     (list = slist_alloc()) == NULL)
+    goto done;
+
+  while((file = slist_head_pop(dicts)) != NULL)
+    {
+      if(file_lines(file, asnames_file_line, tree))
+	{
+	  fprintf(stderr, "failed to read %s\n", file);
+	  goto done;
+	}
+    }
+  splaytree_inorder(tree, tree_to_slist, list);
+  splaytree_free(tree, NULL); tree = NULL;
+  if((tag2asc = slist_count(list)) == 0)
+    {
+      rc = 0;
+      goto done;
+    }
+
+  if((tag2ass = malloc_zero(sizeof(sc_as2tag_t *) * tag2asc)) == NULL)
+    {
+      fprintf(stderr, "%s: could not alloc %d entries\n", __func__, tag2asc);
+      goto done;
+    }
+
+  x = 0;
+  while((a2t = slist_head_pop(list)) != NULL)
+    tag2ass[x++] = a2t;
+
+  fprintf(stderr, "loaded %d asnames\n", x);
+  rc = 0;
+
+ done:
+  if(tree != NULL) splaytree_free(tree, (splaytree_free_t)sc_as2tag_free);
+  if(list != NULL) slist_free_cb(list, (slist_free_t)sc_as2tag_free);
+  return rc;
+}
+
 static int load_dict(void)
 {
   if(dicts == NULL)
@@ -20627,6 +21864,11 @@ static int load_dict(void)
   if(do_learngeo != 0)
     {
       if(load_dict_geohints() != 0)
+	return -1;
+    }
+  else if(do_learnasnames != 0)
+    {
+      if(load_dict_asnames() != 0)
 	return -1;
     }
   else
@@ -20897,6 +22139,14 @@ static void cleanup(void)
       free(siblings); siblings = NULL;
     }
 
+  if(tag2ass != NULL)
+    {
+      for(i=0; i<tag2asc; i++)
+	if(tag2ass[i] != NULL)
+	  sc_as2tag_free(tag2ass[i]);
+      free(tag2ass); tag2ass = NULL;
+    }
+
   if(geohints != NULL)
     {
       for(i=0; i<geohintc; i++)
@@ -21033,6 +22283,18 @@ int main(int argc, char *argv[])
 	  else if(j == 2) { if(refine_regexes_class() != 0) return -1; }
 	  else if(j == 3) { if(refine_regexes_merge() != 0) return -1; }
 	  else if(j == 4) { if(refine_regexes_sets() != 0) return -1; }
+	}
+    }
+  else if(do_learnasnames != 0)
+    {
+      for(j=1; j<=stop_id; j++)
+	{
+	  if(j == 1)      { if(refine_regexes_merge() != 0) return -1; }
+	  else if(j == 2) { if(refine_dict_asnames() != 0) return -1; }
+	  else if(j == 3) { if(refine_regexes_class() != 0) return -1; }
+	  else if(j == 4) { if(refine_regexes_merge() != 0) return -1; }
+	  else if(j == 5) { if(refine_regexes_sets() != 0) return -1; }
+	  else if(j == 6) { if(refine_regexes_ip() != 0) return -1; }
 	}
     }
   else if(do_learngeo != 0)

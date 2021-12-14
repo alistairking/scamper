@@ -1,7 +1,7 @@
 /*
  * scamper_do_host
  *
- * $Id: scamper_host_do.c,v 1.42 2020/08/01 20:58:51 mjl Exp $
+ * $Id: scamper_host_do.c,v 1.43 2021/10/28 17:49:40 mjl Exp $
  *
  * Copyright (C) 2018-2020 Matthew Luckie
  *
@@ -1419,7 +1419,7 @@ static void do_host_free(scamper_task_t *task)
 static int etc_resolv_line(char *line, void *param)
 {
   scamper_addr_t *sa;
-  int x = 0;
+  int x = 0, y;
 
   if(line[0] == '\0' || line[0] == '#')
     return 0;
@@ -1431,6 +1431,14 @@ static int etc_resolv_line(char *line, void *param)
     x++;
   if(x == 10 || line[x] == '\0')
     return 0;
+
+  /* null terminate at spaces / comments */
+  y = x;
+  while(isspace(line[y]) == 0 && line[y] != '\0' && line[y] != '#' &&
+	line[y] != ';')
+    y++;
+  line[y] = '\0';
+
   if(strcasecmp(line+x, "fe80::1") == 0)
     return 0;
 

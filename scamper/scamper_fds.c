@@ -1,7 +1,7 @@
 /*
  * scamper_fds: manage events and file descriptors
  *
- * $Id: scamper_fds.c,v 1.99 2020/04/27 07:32:21 mjl Exp $
+ * $Id: scamper_fds.c,v 1.100 2021/11/05 05:40:39 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -198,7 +198,7 @@ static char *fd_addr_tostr(char *buf, size_t len, int af, void *addr)
 static char *fd_tostr(scamper_fd_t *fdn)
 {
   static char buf[144];
-  char addr[128];
+  char addr[130];
 
   switch(fdn->type)
     {

@@ -1,7 +1,7 @@
 /*
  * utils.c
  *
- * $Id: utils.c,v 1.199 2021/08/22 08:11:53 mjl Exp $
+ * $Id: utils.c,v 1.200 2021/11/05 05:49:26 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -1695,7 +1695,7 @@ int stat_mtime(const char *filename, time_t *mtime)
   return 0;
 }
 
-#if defined(HAVE_SYSCTL)
+#if defined(HAVE_SYSCTL) && !defined(__linux__)
 int sysctl_wrap(int *mib, u_int len, void **buf, size_t *size)
 {
   if(sysctl(mib, len, NULL, size, NULL, 0) != 0)

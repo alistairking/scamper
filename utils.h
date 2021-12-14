@@ -1,7 +1,7 @@
 /*
  * utils.h
  *
- * $Id: utils.h,v 1.123 2021/08/22 08:11:53 mjl Exp $
+ * $Id: utils.h,v 1.124 2021/11/05 05:49:26 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -188,7 +188,7 @@ int mkdir_wrap(const char *path);
  * Functions for dealing with sysctls
  */
 
-#if !defined(__sun__) && !defined (_WIN32)
+#if defined(HAVE_SYSCTL) && !defined(__linux__)
 int sysctl_wrap(int *mib, u_int len, void **buf, size_t *size);
 #endif
 
