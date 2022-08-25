@@ -1,11 +1,11 @@
 /*
  * scamper_udp6.c
  *
- * $Id: scamper_udp6.c,v 1.62 2020/06/12 23:57:02 mjl Exp $
+ * $Id: scamper_udp6.c,v 1.62.10.2 2022/08/10 23:06:32 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2010 The University of Waikato
- * Copyright (C) 2020      Matthew Luckie
+ * Copyright (C) 2020-2022 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify

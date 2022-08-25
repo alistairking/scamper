@@ -1,13 +1,13 @@
 /*
  * scamper_probe.c
  *
- * $Id: scamper_probe.c,v 1.78 2020/04/02 08:46:25 mjl Exp $
+ * $Id: scamper_probe.c,v 1.78.10.1 2022/06/12 06:04:54 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2012      Matthew Luckie
  * Copyright (C) 2013      The Regents of the University of California
- * Copyright (C) 2020      Matthew Luckie
+ * Copyright (C) 2020-2022 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -207,8 +207,10 @@ static void probe_print(scamper_probe_t *probe)
 		  snprintf(icmp, sizeof(icmp), ", sum %04x",
 			   ntohs(probe->pr_icmp_sum));
 		}
-	      scamper_debug("tx", "icmp %s echo, ttl %d%s, seq %d, len %d",
-			    addr, probe->pr_ip_ttl, icmp, probe->pr_icmp_seq,
+	      scamper_debug("tx",
+			    "icmp %s echo, ttl %d%s, id %d seq %d, len %d",
+			    addr, probe->pr_ip_ttl, icmp,
+			    probe->pr_icmp_id, probe->pr_icmp_seq,
 			    iphl + 8 + probe->pr_len);
 	    }
 	  else if(probe->pr_icmp_type == ICMP_UNREACH)
@@ -222,9 +224,9 @@ static void probe_print(scamper_probe_t *probe)
 	    }
 	  else if(probe->pr_icmp_type == ICMP_TSTAMP)
 	    {
-	      scamper_debug("tx", "icmp %s ts, ttl %d, seq %d, len %d",
-			    addr, probe->pr_ip_ttl, probe->pr_icmp_seq,
-			    iphl + 20);
+	      scamper_debug("tx", "icmp %s ts, ttl %d, id %d seq %d, len %d",
+			    addr, probe->pr_ip_ttl, probe->pr_icmp_id,
+			    probe->pr_icmp_seq, iphl + 20);
 	    }
 	  else
 	    {
@@ -273,8 +275,10 @@ static void probe_print(scamper_probe_t *probe)
 		  snprintf(icmp, sizeof(icmp), ", sum %04x",
 			   ntohs(probe->pr_icmp_sum));
 		}
-	      scamper_debug("tx", "icmp %s echo, ttl %d%s, seq %d, len %d",
-			    addr, probe->pr_ip_ttl, icmp, probe->pr_icmp_seq,
+	      scamper_debug("tx",
+			    "icmp %s echo, ttl %d%s, id %d seq %d, len %d",
+			    addr, probe->pr_ip_ttl, icmp,
+			    probe->pr_icmp_id, probe->pr_icmp_seq,
 			    iphl + 8 + probe->pr_len);
 	    }
 	  else if(probe->pr_icmp_type == ICMP6_PACKET_TOO_BIG)

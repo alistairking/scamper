@@ -1,11 +1,11 @@
 /*
  * scamper_debug.h
  *
- * $Id: scamper_debug.h,v 1.20 2020/04/08 07:55:51 mjl Exp $
+ * $Id: scamper_debug.h,v 1.20.10.1 2022/02/09 07:18:23 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2009 The University of Waikato
- * Copyright (C) 2015-2020 Matthew Luckie
+ * Copyright (C) 2015-2022 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -29,6 +29,10 @@
 void printerror(const char *func, const char *format, ...);
 void printerror_gai(const char *func, int ecode, const char *format, ...);
 void printerror_msg(const char *func, const char *format, ...);
+
+#ifdef HAVE_OPENSSL
+void printerror_ssl(const char *func, const char *format, ...);
+#endif
 
 #ifdef NDEBUG
 #define scamper_assert(expr, task) ((void)0)

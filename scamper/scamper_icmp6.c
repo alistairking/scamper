@@ -1,10 +1,11 @@
 /*
  * scamper_icmp6.c
  *
- * $Id: scamper_icmp6.c,v 1.100 2020/03/17 07:32:16 mjl Exp $
+ * $Id: scamper_icmp6.c,v 1.100.10.2 2022/08/10 22:39:48 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
+ * Copyright (C) 2022      Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify

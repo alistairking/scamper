@@ -7,7 +7,7 @@
 .\" Copyright (c) 2011 University of Waikato
 .\"                    All rights reserved
 .\"
-.\" $Id: sc_warts2pcap.1,v 1.5 2015/09/20 02:54:59 mjl Exp $
+.\" $Id: sc_warts2pcap.1,v 1.5.28.1 2022/08/10 22:35:54 mjl Exp $
 .\"
 .\"  nroff -man sc_warts2pcap.1
 .\"  groff -man -Tascii sc_warts2pcap.1 | man2html -title sc_warts2pcap.1
@@ -35,7 +35,7 @@ The options are as follows:
 .It Fl o Ar outfile
 specifies the name of the output file.  If no output file is specified,
 it will be written to the standard output, provided that it is not a tty.
-.It Fl o Ar sort
+.It Fl s Ar sort
 specifies how the pcap records (packets) are sorted before being written
 out.  By default, no sorting is applied; the packets are grouped as they
 are in the warts file.  If packet sorting is specified, the packets are

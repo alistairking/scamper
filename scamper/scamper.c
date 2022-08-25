@@ -1,7 +1,7 @@
 /*
  * scamper
  *
- * $Id: scamper.c,v 1.280 2020/04/30 06:22:05 mjl Exp $
+ * $Id: scamper.c,v 1.280.10.2 2022/06/12 05:37:33 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -10,7 +10,7 @@
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2012      Matthew Luckie
  * Copyright (C) 2014      The Regents of the University of California
- * Copyright (C) 2014-2020 Matthew Luckie
+ * Copyright (C) 2014-2022 Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -175,9 +175,12 @@ static int    exit_when_done = 1;
 /* central cache of addresses that scamper is dealing with */
 scamper_addrcache_t *addrcache = NULL;
 
-/* central TLS context with CA certificates loaded */
+/* central TLS context with CA certificates loaded for remote control */
 #ifdef HAVE_OPENSSL
-SSL_CTX *tls_ctx = NULL;
+SSL_CTX *remote_tls_ctx = NULL;
+static char *remote_cafile = NULL;
+static char *remote_client_privfile = NULL;
+static char *remote_client_certfile = NULL;
 #endif
 
 /* Source port to use in our probes */
@@ -297,8 +300,13 @@ static void usage(uint32_t opt_mask)
 #if defined(IP_RECVERR) || defined(IPV6_RECVERR)
       usage_line("icmp-rxerr: use recverr cmsg to receive ICMP responses");
 #endif
+#ifdef HAVE_OPENSSL
       usage_line("notls: do not use TLS anywhere in scamper");
       usage_line("notls-remote: do not use TLS on remote control sockets");
+      usage_line("cafile=file: use the CA certs in file for remote auth");
+      usage_line("client-certfile=file: use cert in file for remote auth");
+      usage_line("client-privfile=file: use privkey in file for remote auth");
+#endif
 #ifndef _WIN32
       usage_line("select: use select(2) rather than poll(2)");
 #endif
@@ -636,6 +644,14 @@ static int check_options(int argc, char *argv[])
 	  else if(strcasecmp(optarg, "debugfileappend") == 0)
 	    flags |= FLAG_DEBUGFILEAPPEND;
 #endif
+#ifdef HAVE_OPENSSL
+	  else if(strncasecmp(optarg, "cafile=", 7) == 0)
+	    remote_cafile = optarg+7;
+	  else if(strncasecmp(optarg, "client-privfile=", 16) == 0)
+	    remote_client_privfile = optarg+16;
+	  else if(strncasecmp(optarg, "client-certfile=", 16) == 0)
+	    remote_client_certfile = optarg+16;
+#endif
 	  else
 	    {
 	      usage(OPT_OPTION);
@@ -874,6 +890,29 @@ static int check_options(int argc, char *argv[])
 	  return -1;
 	}
     }
+
+#ifdef HAVE_OPENSSL
+  if(options & OPT_CTRL_REMOTE)
+    {
+      /* need both client private key and certificate if either is specified */
+      if((remote_client_privfile != NULL && remote_client_certfile == NULL) ||
+	 (remote_client_privfile == NULL && remote_client_certfile != NULL))
+	{
+	  usage(OPT_CTRL_REMOTE);
+	  return -1;
+	}
+    }
+  else
+    {
+      /* TLS things are only valid with remote controller */
+      if(remote_cafile != NULL || remote_client_privfile != NULL ||
+	 remote_client_certfile != NULL)
+	{
+	  usage(OPT_CTRL_REMOTE);
+	  return -1;
+	}
+    }
+#endif
 
   return 0;
 }
@@ -1254,19 +1293,50 @@ static int scamper(int argc, char *argv[])
   if((flags & FLAG_NOTLS) == 0)
     {
       SSL_library_init();
-      if((tls_ctx = SSL_CTX_new(SSLv23_client_method())) == NULL)
+      if((remote_tls_ctx = SSL_CTX_new(SSLv23_client_method())) == NULL)
 	{
 	  printerror_msg(__func__, "could not create ssl_ctx");
 	  return -1;
 	}
-      SSL_CTX_set_options(tls_ctx,
+      SSL_CTX_set_options(remote_tls_ctx,
 			  SSL_OP_NO_SSLv2 | SSL_OP_NO_SSLv3 | SSL_OP_NO_TLSv1);
-      SSL_CTX_set_verify(tls_ctx, SSL_VERIFY_PEER, NULL);
+      SSL_CTX_set_verify(remote_tls_ctx, SSL_VERIFY_PEER, NULL);
 
-      /* load the default set of certs into the SSL context */
-      if(SSL_CTX_set_default_verify_paths(tls_ctx) != 1)
+      if(remote_cafile == NULL)
 	{
-	  printerror_msg(__func__, "could not load default CA certs");
+	  /* load the default set of certs into the SSL context */
+	  if(SSL_CTX_set_default_verify_paths(remote_tls_ctx) != 1)
+	    {
+	      printerror_ssl(__func__, "could not load default CA certs");
+	      return -1;
+	    }
+	}
+      else
+	{
+	  if(SSL_CTX_load_verify_locations(remote_tls_ctx,
+					   remote_cafile, NULL) != 1)
+	    {
+	      printerror_ssl(__func__, "could not load certs from %s",
+			     remote_cafile);
+	      return -1;
+	    }
+	}
+
+      /* load the client key materials */
+      if(remote_client_certfile != NULL &&
+	 SSL_CTX_use_certificate_chain_file(remote_tls_ctx,
+					    remote_client_certfile) != 1)
+	{
+	  printerror_ssl(__func__, "could load client cert from %s",
+			 remote_client_certfile);
+	  return -1;
+	}
+      if(remote_client_privfile != NULL &&
+	 SSL_CTX_use_PrivateKey_file(remote_tls_ctx, remote_client_privfile,
+				     SSL_FILETYPE_PEM) != 1)
+	{
+	  printerror_ssl(__func__, "could not load client privkey from %s",
+			 remote_client_privfile);
 	  return -1;
 	}
     }
@@ -1679,10 +1749,10 @@ static void cleanup(void)
     }
 
 #ifdef HAVE_OPENSSL
-  if(tls_ctx != NULL)
+  if(remote_tls_ctx != NULL)
     {
-      SSL_CTX_free(tls_ctx);
-      tls_ctx = NULL;
+      SSL_CTX_free(remote_tls_ctx);
+      remote_tls_ctx = NULL;
     }
 #endif
 

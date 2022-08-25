@@ -9,7 +9,7 @@
  * Copyright (c) 2019-2020 Matthew Luckie
  * Authors: Brian Hammond, Matthew Luckie
  *
- * $Id: scamper_ping_json.c,v 1.21 2020/07/15 06:53:12 mjl Exp $
+ * $Id: scamper_ping_json.c,v 1.21.10.1 2022/06/12 05:24:32 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -88,6 +88,9 @@ static char *ping_header(const scamper_ping_t *ping)
 		  ", \"wait_us\":%u", ping->probe_wait_us);
   string_concat(buf, sizeof(buf), &off,
 		", \"timeout\":%u", ping->probe_timeout);
+  if(ping->probe_timeout_us != 0)
+    string_concat(buf, sizeof(buf), &off,
+		  ", \"timeout_us\":%u", ping->probe_timeout_us);
 
   if(SCAMPER_PING_METHOD_IS_UDP(ping) || SCAMPER_PING_METHOD_IS_TCP(ping))
     string_concat(buf, sizeof(buf), &off, ", \"sport\":%u, \"dport\":%u",

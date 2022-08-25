@@ -484,7 +484,6 @@ static int do_addrfile(void)
   scamper_addr_t *sa = NULL;
   struct timeval next, gap;
   slist_t *list = NULL;
-  sc_ep_t *ep = NULL;
   uint64_t gap64;
   int rc = -1;
 
@@ -510,7 +509,6 @@ static int do_addrfile(void)
       if(ep_add(sa, &next) != 0)
 	goto done;
       scamper_addr_free(sa); sa = NULL;
-      ep = NULL;
     }
 
   rc = 0;

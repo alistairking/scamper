@@ -1,12 +1,12 @@
 /*
  * sc_remoted
  *
- * $Id: sc_remoted.c,v 1.90 2021/11/05 05:39:44 mjl Exp $
+ * $Id: sc_remoted.c,v 1.90.2.2 2022/06/13 20:02:28 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
  *
- * Copyright (C) 2014-2020 Matthew Luckie
+ * Copyright (C) 2014-2022 Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -309,12 +309,14 @@ typedef struct sc_message
 #define OPT_TLSPRIV 0x0100
 #define OPT_ZOMBIE  0x0200
 #define OPT_PIDFILE 0x0400
+#define OPT_TLSCA   0x0800
 #define OPT_ALL     0xffff
 
-#define FLAG_DEBUG      0x0001
-#define FLAG_SELECT     0x0002
-#define FLAG_ALLOW_G    0x0004
-#define FLAG_ALLOW_O    0x0008
+#define FLAG_DEBUG      0x0001 /* verbose debugging */
+#define FLAG_SELECT     0x0002 /* use select instead of kqueue/epoll */
+#define FLAG_ALLOW_G    0x0004 /* allow group members to connect */
+#define FLAG_ALLOW_O    0x0008 /* allow everyone to connect */
+#define FLAG_SKIP_VERIF 0x0010 /* skip TLS name verification */
 
 #define CHANNEL_FLAG_EOF_TX 0x01
 #define CHANNEL_FLAG_EOF_RX 0x02
@@ -358,6 +360,7 @@ static int          kqfd           = -1;
 static SSL_CTX     *tls_ctx = NULL;
 static char        *tls_certfile   = NULL;
 static char        *tls_privfile   = NULL;
+static char        *tls_cafile     = NULL;
 #define SSL_MODE_ACCEPT      0x00
 #define SSL_MODE_ESTABLISHED 0x01
 #endif
@@ -402,7 +405,7 @@ static void usage(uint32_t opt_mask)
   fprintf(stderr,
 	  "usage: sc_remoted [-?46D] [-O option] -P [ip:]port -U unix\n"
 #ifdef HAVE_OPENSSL
-	  "                  [-c certfile] [-p privfile]\n"
+	  "                  [-c certfile] [-p privfile] [-C CAfile]\n"
 #endif
 	  "                  [-e pidfile] [-Z zombie-time]\n"
 	  );
@@ -432,6 +435,7 @@ static void usage(uint32_t opt_mask)
       fprintf(stderr, "        allowother: allow other access to sockets\n");
       fprintf(stderr, "        debug: print debugging messages\n");
       fprintf(stderr, "        select: use select\n");
+      fprintf(stderr, "        skipnameverification: skip TLS name verif\n");
     }
 
   if(opt_mask & OPT_PORT)
@@ -445,6 +449,8 @@ static void usage(uint32_t opt_mask)
     fprintf(stderr, "     -c server certificate in PEM format\n");
   if(opt_mask & OPT_TLSPRIV)
     fprintf(stderr, "     -p private key in PEM format\n");
+  if(opt_mask & OPT_TLSCA)
+    fprintf(stderr, "     -C require client authentication using this CA\n");
 #endif
 
   if(opt_mask & OPT_ZOMBIE)
@@ -456,7 +462,7 @@ static void usage(uint32_t opt_mask)
 static int check_options(int argc, char *argv[])
 {
   struct sockaddr_storage sas;
-  char *opts = "?46DO:c:e:p:P:U:Z:", *opt_addrport = NULL, *opt_zombie = NULL;
+  char *opts = "?46DO:c:C:e:p:P:U:Z:", *opt_addrport = NULL, *opt_zombie = NULL;
   char *opt_pidfile = NULL;
   long lo;
   int ch;
@@ -491,6 +497,8 @@ static int check_options(int argc, char *argv[])
 	    flags |= FLAG_ALLOW_O;
 	  else if(strcasecmp(optarg, "debug") == 0)
 	    flags |= FLAG_DEBUG;
+	  else if(strcasecmp(optarg, "skipnameverification") == 0)
+	    flags |= FLAG_SKIP_VERIF;
 	  else
 	    {
 	      usage(OPT_ALL);
@@ -511,6 +519,11 @@ static int check_options(int argc, char *argv[])
 	case 'p':
 	  tls_privfile = optarg;
 	  options |= OPT_TLSPRIV;
+	  break;
+
+	case 'C':
+	  tls_cafile = optarg;
+	  options |= OPT_TLSCA;
 	  break;
 #endif
 
@@ -536,10 +549,25 @@ static int check_options(int argc, char *argv[])
     }
 
 #ifdef HAVE_OPENSSL
+  /*
+   * the user must specify both a cert and private key if they specify
+   * either
+   */
   if((options & (OPT_TLSCERT|OPT_TLSPRIV)) != 0 &&
      (options & (OPT_TLSCERT|OPT_TLSPRIV)) != (OPT_TLSCERT|OPT_TLSPRIV))
     {
       usage(OPT_TLSCERT|OPT_TLSPRIV);
+      return -1;
+    }
+  /*
+   * if the user requires client cert verification, they must also
+   * present server certificates as part of the authentication
+   * process.
+   */
+  if((options & OPT_TLSCA) != 0 &&
+     (options & (OPT_TLSCERT|OPT_TLSPRIV)) != (OPT_TLSCERT|OPT_TLSPRIV))
+    {
+      usage(OPT_TLSCERT|OPT_TLSPRIV|OPT_TLSCA);
       return -1;
     }
 #endif
@@ -1051,6 +1079,97 @@ static void sc_master_inet_free(sc_master_t *ms)
   return;
 }
 
+#ifdef HAVE_OPENSSL
+static int sc_master_is_valid_client_cert_0(sc_master_t *ms)
+{
+  X509 *cert;
+
+  /* if we aren't verifying client certificates, then move on... */
+  if(tls_cafile == NULL)
+    return 1;
+
+  if(SSL_get_verify_result(ms->inet_ssl) != X509_V_OK)
+    {
+      remote_debug(__func__, "invalid certificate");
+      return 0;
+    }
+
+  if((cert = SSL_get_peer_certificate(ms->inet_ssl)) == NULL)
+    {
+      remote_debug(__func__, "no peer certificate");
+      return 0;
+    }
+
+  X509_free(cert);
+  return 1;
+}
+
+static int sc_master_is_valid_client_cert_1(sc_master_t *ms)
+{
+  X509 *cert;
+  X509_NAME *name;
+  STACK_OF(GENERAL_NAME) *names = NULL;
+  const GENERAL_NAME *gname;
+  const char *dname;
+  char buf[256];
+  int rc = 0;
+  int i, count;
+
+  /* do not do name verification */
+  if(tls_cafile == NULL || (flags & FLAG_SKIP_VERIF) != 0)
+    return 1;
+
+  /* if no monitorname, then cannot do name verification */
+  if(ms->monitorname == NULL)
+    {
+      remote_debug(__func__, "no monitor name supplied");
+      return 0;
+    }
+
+  cert = SSL_get_peer_certificate(ms->inet_ssl);
+  assert(cert != NULL);
+
+  if((names = X509_get_ext_d2i(cert,NID_subject_alt_name,NULL,NULL)) != NULL)
+    {
+      count = sk_GENERAL_NAME_num(names);
+      for(i=0; i<count; i++)
+	{
+	  gname = sk_GENERAL_NAME_value(names, i);
+	  if(gname->type != GEN_DNS)
+	    continue;
+#ifdef HAVE_ASN1_STRING_GET0_DATA
+	  dname = (const char *)ASN1_STRING_get0_data(gname->d.dNSName);
+#else
+	  dname = (const char *)ASN1_STRING_data(gname->d.dNSName);
+#endif
+	  if(ASN1_STRING_length(gname->d.dNSName) != (int)strlen(dname))
+	    continue;
+	  if(strcasecmp(dname, ms->monitorname) == 0)
+	    {
+	      rc = 1;
+	      goto done;
+	    }
+	}
+    }
+
+  if((name = X509_get_subject_name(cert)) != NULL &&
+     X509_NAME_get_text_by_NID(name, NID_commonName, buf, sizeof(buf)) > 0)
+    {
+      buf[sizeof(buf)-1] = 0;
+      if(strcasecmp(buf, ms->monitorname) == 0)
+	rc = 1;
+    }
+
+ done:
+  if(rc == 0)
+    remote_debug(__func__, "monitor name %s does not match certificate",
+		 ms->monitorname != NULL ? ms->monitorname : "<null>");
+  if(names != NULL) sk_GENERAL_NAME_pop_free(names, GENERAL_NAME_free);
+  if(cert != NULL) X509_free(cert);
+  return rc;
+}
+#endif
+
 /*
  * sc_master_unix_create
  *
@@ -1307,6 +1426,12 @@ static int sc_master_control_master(sc_master_t *ms, uint8_t *buf, size_t len)
       off += monitorname_len;
       assert(off <= len);
     }
+
+#ifdef HAVE_OPENSSL
+  /* verify the monitorname if we are verifying TLS client certificates */
+  if(sc_master_is_valid_client_cert_1(ms) == 0)
+    goto err;
+#endif
 
   /* copy the magic value out.  check that the magic value is unique */
   if((ms->magic = memdup(magic, magic_len)) == NULL)
@@ -1783,11 +1908,14 @@ static void sc_master_inet_read_do(sc_master_t *ms)
 		  remote_debug(__func__, "ssl_want_read failed");
 		  goto err;
 		}
+	      if(sc_master_is_valid_client_cert_0(ms) == 0)
+		goto err;
 	    }
 	}
 
-      if(ms->inet_mode == SSL_MODE_ESTABLISHED)
+      if(ms->inet_mode != SSL_MODE_ACCEPT)
 	{
+	  assert(ms->inet_mode == SSL_MODE_ESTABLISHED);
 	  while((rc = SSL_read(ms->inet_ssl, buf, sizeof(buf))) > 0)
 	    {
 	      sc_master_inet_read_cb(ms, buf, (size_t)rc);
@@ -2345,8 +2473,12 @@ static void cleanup(void)
 #ifdef HAVE_OPENSSL
 static int remoted_tlsctx(void)
 {
+  STACK_OF(X509_NAME) *cert_names;
+
   if((tls_ctx = SSL_CTX_new(SSLv23_method())) == NULL)
     return -1;
+
+  /* load the server key materials */
   if(SSL_CTX_use_certificate_chain_file(tls_ctx,tls_certfile)!=1)
     {
       remote_debug(__func__, "could not SSL_CTX_use_certificate_file");
@@ -2359,7 +2491,29 @@ static int remoted_tlsctx(void)
       ERR_print_errors_fp(stderr);
       return -1;
     }
-  SSL_CTX_set_verify(tls_ctx, SSL_VERIFY_NONE, NULL);
+
+  if(tls_cafile != NULL)
+    {
+      /* load the materials to verify client certificates */
+      if(SSL_CTX_load_verify_locations(tls_ctx, tls_cafile, NULL) != 1)
+	{
+	  remote_debug(__func__, "could not SSL_CTX_load_verify_locations");
+	  ERR_print_errors_fp(stderr);
+	  return -1;
+	}
+      if((cert_names = SSL_load_client_CA_file(tls_cafile)) == NULL)
+	{
+	  remote_debug(__func__, "could not SSL_load_client_CA_file");
+	  ERR_print_errors_fp(stderr);
+	  return -1;
+	}
+      SSL_CTX_set_client_CA_list(tls_ctx, cert_names);
+      SSL_CTX_set_verify(tls_ctx, SSL_VERIFY_PEER, NULL);
+    }
+  else
+    {
+      SSL_CTX_set_verify(tls_ctx, SSL_VERIFY_NONE, NULL);
+    }
   SSL_CTX_set_options(tls_ctx,
 		      SSL_OP_NO_SSLv2 | SSL_OP_NO_SSLv3 |
 		      SSL_OP_NO_TLSv1 | SSL_OP_NO_TLSv1_1);

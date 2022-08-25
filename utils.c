@@ -1,7 +1,7 @@
 /*
  * utils.c
  *
- * $Id: utils.c,v 1.200 2021/11/05 05:49:26 mjl Exp $
+ * $Id: utils.c,v 1.200.2.1 2022/02/09 07:23:22 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -2334,7 +2334,7 @@ int file_lines(const char *filename, int (*func)(char *, void *), void *param)
 
 char *offt_tostr(char *buf, size_t len, off_t off, int lz, char c)
 {
-  char sp[8];
+  char sp[16];
 
   assert(lz >= 0);
 
