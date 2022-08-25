@@ -1,12 +1,12 @@
 /*
  * scamper_ping.h
  *
- * $Id: scamper_ping.h,v 1.52 2020/04/02 08:46:51 mjl Exp $
+ * $Id: scamper_ping.h,v 1.52.10.1 2022/06/12 05:20:50 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2012-2015 The Regents of the University of California
- * Copyright (C) 2020      Matthew Luckie
+ * Copyright (C) 2020-2022 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -256,22 +256,23 @@ typedef struct scamper_ping
   uint16_t               probe_datalen;
 
   /* ping options */
-  uint16_t               probe_count;   /* -c */
-  uint16_t               probe_size;    /* -s */
-  uint8_t                probe_method;  /* -P */
-  uint8_t                probe_ttl;     /* -m */
-  uint8_t                probe_tos;     /* -z */
-  uint8_t                probe_timeout; /* -W */
-  uint8_t                probe_wait;    /* -i */
-  uint32_t               probe_wait_us; /* -i */
-  uint16_t               probe_sport;   /* -F */
-  uint16_t               probe_dport;   /* -d */
-  uint16_t               probe_icmpsum; /* -C */
-  uint32_t               probe_tcpseq;  /* -A with tcp-syn and tcp-rst */
-  uint32_t               probe_tcpack;  /* -A with other tcp probe methods */
-  uint16_t               reply_count;   /* -o */
-  uint16_t               reply_pmtu;    /* -M */
-  scamper_ping_v4ts_t   *probe_tsps;    /* -T */
+  uint16_t               probe_count;      /* -c */
+  uint16_t               probe_size;       /* -s */
+  uint8_t                probe_method;     /* -P */
+  uint8_t                probe_ttl;        /* -m */
+  uint8_t                probe_tos;        /* -z */
+  uint8_t                probe_timeout;    /* -W */
+  uint32_t               probe_timeout_us; /* -W */
+  uint8_t                probe_wait;       /* -i */
+  uint32_t               probe_wait_us;    /* -i */
+  uint16_t               probe_sport;      /* -F */
+  uint16_t               probe_dport;      /* -d */
+  uint16_t               probe_icmpsum;    /* -C */
+  uint32_t               probe_tcpseq;     /* -A w/ tcp-syn and tcp-rst */
+  uint32_t               probe_tcpack;     /* -A w/ other tcp probe methods */
+  uint16_t               reply_count;      /* -o */
+  uint16_t               reply_pmtu;       /* -M */
+  scamper_ping_v4ts_t   *probe_tsps;       /* -T */
   uint32_t               flags;
 
   /* actual data collected with the ping */

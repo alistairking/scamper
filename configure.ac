@@ -1,6 +1,6 @@
 # Process this file with autoconf to produce a configure script.
 
-AC_INIT([scamper],[20211212],[mjl@luckie.org.nz])
+AC_INIT([scamper],[20211212b],[mjl@luckie.org.nz])
 
 AC_CONFIG_SRCDIR([scamper/scamper.c])
 AC_CONFIG_HEADERS([config.h])

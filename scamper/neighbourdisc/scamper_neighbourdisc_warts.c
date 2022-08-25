@@ -1,7 +1,7 @@
 /*
  * scamper_neighbourdisc_warts.h
  *
- * $Id: scamper_neighbourdisc_warts.c,v 1.10 2021/08/24 09:03:07 mjl Exp $
+ * $Id: scamper_neighbourdisc_warts.c,v 1.10.4.1 2022/07/22 07:18:49 mjl Exp $
  *
  * Copyright (C) 2009-2021 Matthew Luckie
  *
@@ -77,7 +77,7 @@ static const warts_var_t neighbourdisc_vars[] =
 static const warts_var_t neighbourdisc_probe_vars[] =
 {
   {WARTS_NEIGHBOURDISC_PROBE_TX,  8, -1},
-  {WARTS_NEIGHBOURDISC_PROBE_RXC, 4, -1},
+  {WARTS_NEIGHBOURDISC_PROBE_RXC, 2, -1},
 };
 #define neighbourdisc_probe_vars_mfb WARTS_VAR_MFB(neighbourdisc_probe_vars)
 
@@ -105,7 +105,6 @@ typedef struct warts_neighbourdisc_probe
   uint16_t                     params_len;
   warts_neighbourdisc_reply_t *rxs;
 } warts_neighbourdisc_probe_t;
-
 
 static int warts_neighbourdisc_reply_state(scamper_neighbourdisc_reply_t *reply,
 					   warts_neighbourdisc_reply_t *state,

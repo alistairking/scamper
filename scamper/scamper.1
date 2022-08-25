@@ -6,15 +6,15 @@
 .\"
 .\" Copyright (c) 2007-2011 University of Waikato
 .\" Copyright (c) 2012-2015 The Regents of the University of California
-.\" Copyright (c) 2015-2021 Matthew Luckie
+.\" Copyright (c) 2015-2022 Matthew Luckie
 .\"                         All rights reserved
 .\"
-.\" $Id: scamper.1,v 1.95 2021/10/23 04:49:21 mjl Exp $
+.\" $Id: scamper.1,v 1.95.4.3 2022/06/12 07:01:56 mjl Exp $
 .\"
 .\"  nroff -man scamper.1
 .\"  groff -man -Tascii scamper.1 | man2html -title scamper.1
 .\"
-.Dd April 27, 2020
+.Dd February 9, 2022
 .Dt SCAMPER 1
 .Os
 .\""""""""""""
@@ -291,6 +291,18 @@ option.
 .It
 .Sy notls:
 do not use TLS anywhere in scamper, including tbit.
+.It
+.Sy cafile=file:
+load the CA certificates in the specified file into scamper, instead of
+the default certificates.
+.It
+.Sy client-certfile=file:
+load the certificate in the specified file into scamper and present it
+to the remote controller for client authentication.
+.It
+.Sy client-privfile=file:
+load the private key in the specified file into scamper and use it
+for client authentication with the remote controller.
 .El
 .It Fl i Ar IP 1..N
 specifies a list of one or more addresses to probe, on the command
@@ -515,6 +527,10 @@ ICMP sequence number to use in ICMP probes.
 .It Fl F Ar sport
 specifies the source port to use in each TCP/UDP probe, and the ICMP ID to
 use in ICMP probes.
+By default,
+.Nm
+uses a value it derives from the process ID, but can be told to generate
+a random value between 32768 and 65535 by specifying zero.
 .It Fl i Ar wait
 specifies the length of time to wait, in seconds, between probes.  By default,
 a value of 1 is used.
@@ -1426,6 +1442,15 @@ probe.
 .Pp
 .in +.5i
 scamper -I "tracelb -P udp-sport -c 99 192.0.2.6"
+.in -.5i
+.Pp
+The following command connects to the remote controller running
+.Xr sc_remoted 1
+at foo.example.com:31337, loading the CA certificates specified in the
+file.
+.Pp
+.in +.5i
+scamper -R foo.example.com:31337 -O cafile=/etc/ssl/certs/ca-certificates.crt
 .in -.5i
 .Sh SEE ALSO
 .Xr ping 8 ,

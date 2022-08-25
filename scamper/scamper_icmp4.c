@@ -1,12 +1,12 @@
 /*
  * scamper_icmp4.c
  *
- * $Id: scamper_icmp4.c,v 1.123 2021/04/14 07:00:49 mjl Exp $
+ * $Id: scamper_icmp4.c,v 1.123.4.2 2022/08/10 22:39:48 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2013-2014 The Regents of the University of California
- * Copyright (C) 2020-2021 Matthew Luckie
+ * Copyright (C) 2020-2022 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
