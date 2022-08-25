@@ -7,7 +7,7 @@
  * Copyright (C) 2016-2020 Matthew Luckie
  * Author: Matthew Luckie
  *
- * $Id: scamper_ping_warts.c,v 1.22 2020/06/12 22:35:03 mjl Exp $
+ * $Id: scamper_ping_warts.c,v 1.22.10.1 2022/06/12 05:25:45 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -75,6 +75,7 @@
 #define WARTS_PING_FLAGS          30
 #define WARTS_PING_PROBE_TCPSEQ   31
 #define WARTS_PING_ADDR_RTR       32
+#define WARTS_PING_PROBE_TIMEOUT_US 33
 
 static const warts_var_t ping_vars[] =
 {
@@ -110,6 +111,7 @@ static const warts_var_t ping_vars[] =
   {WARTS_PING_FLAGS,          4, -1},
   {WARTS_PING_PROBE_TCPSEQ,   4, -1},
   {WARTS_PING_ADDR_RTR,      -1, -1},
+  {WARTS_PING_PROBE_TIMEOUT_US, 4, -1},
 };
 #define ping_vars_mfb WARTS_VAR_MFB(ping_vars)
 
@@ -534,6 +536,7 @@ static void warts_ping_params(const scamper_ping_t *ping,
 	 (var->id == WARTS_PING_REPLY_PMTU    && ping->reply_pmtu == 0) ||
 	 (var->id == WARTS_PING_PROBE_TIMEOUT && ping->probe_timeout == ping->probe_wait) ||
 	 (var->id == WARTS_PING_PROBE_WAIT_US && ping->probe_wait_us == 0) ||
+	 (var->id == WARTS_PING_PROBE_TIMEOUT_US && ping->probe_timeout_us == 0) ||
 	 (var->id == WARTS_PING_PROBE_TCPACK  && ping->probe_tcpack == 0) ||
 	 (var->id == WARTS_PING_PROBE_TCPSEQ  && ping->probe_tcpseq == 0))
 	{
@@ -674,6 +677,7 @@ static int warts_ping_params_read(scamper_ping_t *ping, warts_state_t *state,
     {&ping->flags,         (wpr_t)extract_uint32,          NULL},
     {&ping->probe_tcpseq,  (wpr_t)extract_uint32,          NULL},
     {&ping->rtr,           (wpr_t)extract_addr_static,     NULL},
+    {&ping->probe_timeout_us, (wpr_t)extract_uint32,       NULL},
   };
   const int handler_cnt = sizeof(handlers)/sizeof(warts_param_reader_t);
   uint32_t o = *off;
@@ -736,6 +740,7 @@ static int warts_ping_params_write(const scamper_ping_t *ping,
     {&ping->flags,         (wpw_t)insert_uint32,          NULL},
     {&ping->probe_tcpseq,  (wpw_t)insert_uint32,          NULL},
     {ping->rtr,            (wpw_t)insert_addr_static,     NULL},
+    {&ping->probe_timeout_us, (wpw_t)insert_uint32,       NULL},
   };
 
   const int handler_cnt = sizeof(handlers)/sizeof(warts_param_writer_t);

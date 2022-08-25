@@ -1,7 +1,7 @@
 /*
  * sc_wartsdump
  *
- * $Id: sc_wartsdump.c,v 1.233 2021/10/23 04:46:52 mjl Exp $
+ * $Id: sc_wartsdump.c,v 1.233.4.3 2022/06/14 07:16:34 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -9,7 +9,7 @@
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2012-2015 The Regents of the University of California
- * Copyright (C) 2019-2021 Matthew Luckie
+ * Copyright (C) 2019-2022 Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -665,9 +665,13 @@ static void dump_tracelb(scamper_tracelb_t *trace)
 	  else
 	    snprintf(src, sizeof(src), "*");
 	  if(link->to != NULL)
-	    scamper_addr_tostr(link->to->addr, dst, sizeof(dst));
-	  else
-	    snprintf(dst, sizeof(dst), "*");
+	    {
+	      if(link->to->addr != NULL)
+		scamper_addr_tostr(link->to->addr, dst, sizeof(dst));
+	      else
+		snprintf(dst, sizeof(dst), "<null>");
+	    }
+	  else snprintf(dst, sizeof(dst), "*");
 	  printf(" link %s -> %s hopc %d\n", src, dst, link->hopc);
 
 	  for(k=0; k<link->hopc; k++)
@@ -833,8 +837,15 @@ static void dump_ping(scamper_ping_t *ping)
 	u32 /= 10;
       printf(".%u", u32);
     }
-  printf(", timeout: %u, ttl: %u", ping->probe_timeout, ping->probe_ttl);
-  printf("\n");
+  printf(", timeout: %u", ping->probe_timeout);
+  if(ping->probe_timeout_us > 0)
+    {
+      u32 = ping->probe_timeout_us;
+      while((u32 % 10) == 0)
+	u32 /= 10;
+      printf(".%u", u32);
+    }
+  printf(", ttl: %u\n", ping->probe_ttl);
 
   if(ping->flags != 0)
     {
@@ -857,6 +868,7 @@ static void dump_ping(scamper_ping_t *ping)
     {
     case SCAMPER_PING_METHOD_ICMP_ECHO:
     case SCAMPER_PING_METHOD_ICMP_TIME:
+      printf(", icmp-id: %d", ping->probe_sport);
       if((ping->flags & SCAMPER_PING_FLAG_ICMPSUM) != 0)
 	printf(", icmp-csum: %04x", ping->probe_icmpsum);
       break;

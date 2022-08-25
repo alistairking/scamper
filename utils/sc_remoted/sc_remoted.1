@@ -6,7 +6,7 @@
 .\" Copyright (c) 2014-2020 Matthew Luckie
 .\"               All rights reserved
 .\"
-.\" $Id: sc_remoted.1,v 1.14 2020/03/28 02:31:27 mjl Exp $
+.\" $Id: sc_remoted.1,v 1.14.10.1 2022/06/12 05:37:34 mjl Exp $
 .\"
 .Dd March 28, 2020
 .Dt SC_REMOTED 1
@@ -21,6 +21,7 @@
 .Op Fl O Ar options
 .Op Fl P Ar [ip:]port
 .Op Fl U Ar directory
+.Op Fl C Ar tls-ca
 .Op Fl c Ar tls-certificate
 .Op Fl p Ar tls-privatekey
 .Op Fl e Ar pidfile
@@ -76,6 +77,11 @@ with all sockets, rather than
 .Xr epoll 2
 or
 .Xr kqueue 2
+.It
+.Sy skipnameverification:
+do not verify the monitor name, if presented, against the name in the
+certificate that the client presents if doing client TLS
+authentication.
 .El
 .It Fl P Ar [ip:]port
 specifies the IP address and port on the local host where
@@ -87,6 +93,11 @@ will listen on all available IP addresses for incoming connections.
 .It Fl U Ar directory
 specifies the directory on the local host where unix domain sockets
 corresponding to remote hosts should be placed.
+.It Fl C Ar tls-ca
+specifies the certificate authority certificate file in PEM format
+for
+.Nm
+to use to verify client certificates.
 .It Fl c Ar tls-certificate
 specifies the server certificate file in PEM format to advertise to
 remote

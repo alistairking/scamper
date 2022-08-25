@@ -1,7 +1,7 @@
 /*
  * scamper_icmp_resp.c
  *
- * $Id: scamper_icmp_resp.c,v 1.34 2020/03/17 07:32:16 mjl Exp $
+ * $Id: scamper_icmp_resp.c,v 1.34.10.2 2022/08/10 22:39:48 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato

@@ -5,7 +5,7 @@
  * Copyright (C) 2016-2021 Matthew Luckie
  * Author: Matthew Luckie
  *
- * $Id: scamper_tracelb_warts.c,v 1.14 2021/08/23 08:31:27 mjl Exp $
+ * $Id: scamper_tracelb_warts.c,v 1.14.4.1 2022/06/14 07:16:34 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -311,7 +311,7 @@ static int warts_tracelb_params_read(scamper_tracelb_t *trace,
 
   if((rc = warts_params_read(buf, off, len, handlers, handler_cnt)) != 0)
     return rc;
-  if(trace->src == NULL || trace->dst == NULL)
+  if(trace->dst == NULL)
     return -1;
   return 0;
 }
@@ -441,12 +441,8 @@ static int warts_tracelb_node_read(scamper_tracelb_node_t *node,
     {&node->name,  (wpr_t)extract_string,    NULL},
   };
   const int handler_cnt = sizeof(handlers)/sizeof(warts_param_reader_t);
-
   if(warts_params_read(buf, off, len, handlers, handler_cnt) != 0)
     return -1;
-  if(node->addr == NULL)
-    return -1;
-
   return 0;
 }
 
