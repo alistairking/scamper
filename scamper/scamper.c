@@ -891,6 +891,7 @@ static int check_options(int argc, char *argv[])
 	}
     }
 
+#ifdef HAVE_OPENSSL
   if(options & OPT_CTRL_REMOTE)
     {
       /* need both client private key and certificate if either is specified */
@@ -911,6 +912,7 @@ static int check_options(int argc, char *argv[])
 	  return -1;
 	}
     }
+#endif
 
   return 0;
 }

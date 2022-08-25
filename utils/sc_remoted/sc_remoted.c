@@ -1427,9 +1427,11 @@ static int sc_master_control_master(sc_master_t *ms, uint8_t *buf, size_t len)
       assert(off <= len);
     }
 
+#ifdef HAVE_OPENSSL
   /* verify the monitorname if we are verifying TLS client certificates */
   if(sc_master_is_valid_client_cert_1(ms) == 0)
     goto err;
+#endif
 
   /* copy the magic value out.  check that the magic value is unique */
   if((ms->magic = memdup(magic, magic_len)) == NULL)
