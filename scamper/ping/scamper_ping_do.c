@@ -395,7 +395,8 @@ static void do_ping_handle_dl(scamper_task_t *task, scamper_dl_rec_t *dl)
 	  else
 	    seq = state->seq - 1;
 	}
-      else if(ping->probe_method == SCAMPER_PING_METHOD_TCP_ACK_SPORT)
+      else if(ping->probe_method == SCAMPER_PING_METHOD_TCP_ACK_SPORT ||
+              ping->probe_method == SCAMPER_PING_METHOD_TCP_SYN_SPORT)
 	{
 	  seq = dl->dl_tcp_dport;
 	  if(dl->dl_tcp_dport < ping->probe_sport)
@@ -1118,6 +1119,11 @@ static void do_ping_probe(scamper_task_t *task)
 	    {
 	      probe.pr_tcp_flags = TH_SYN;
 	    }
+          else if(ping->probe_method == SCAMPER_PING_METHOD_TCP_SYN_SPORT)
+	    {
+	      probe.pr_tcp_flags = TH_SYN;
+              probe.pr_tcp_sport += state->seq;
+	    }
 	  else if(ping->probe_method == SCAMPER_PING_METHOD_TCP_SYNACK)
 	    {
 	      probe.pr_tcp_flags = TH_SYN | TH_ACK;
@@ -1310,6 +1316,8 @@ static int ping_arg_param_validate(int optid, char *param, long long *out)
 	tmp = SCAMPER_PING_METHOD_ICMP_TIME;
       else if(strcasecmp(param, "tcp-syn") == 0)
 	tmp = SCAMPER_PING_METHOD_TCP_SYN;
+      else if(strcasecmp(param, "tcp-syn-sport") == 0)
+	tmp = SCAMPER_PING_METHOD_TCP_SYN_SPORT;
       else if(strcasecmp(param, "tcp-synack") == 0)
 	tmp = SCAMPER_PING_METHOD_TCP_SYNACK;
       else if(strcasecmp(param, "tcp-rst") == 0)
@@ -1903,6 +1911,7 @@ void *scamper_do_ping_alloc(char *str, uint32_t *id)
 	goto err;
 
       if(ping->probe_method == SCAMPER_PING_METHOD_TCP_SYN ||
+         ping->probe_method == SCAMPER_PING_METHOD_TCP_SYN_SPORT ||
 	 ping->probe_method == SCAMPER_PING_METHOD_TCP_RST)
 	{
 	  ping->probe_tcpseq = probe_tcpack;

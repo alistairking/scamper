@@ -77,6 +77,7 @@
  ((ping)->probe_method == SCAMPER_PING_METHOD_TCP_ACK ||      \
   (ping)->probe_method == SCAMPER_PING_METHOD_TCP_ACK_SPORT || \
   (ping)->probe_method == SCAMPER_PING_METHOD_TCP_SYN || \
+  (ping)->probe_method == SCAMPER_PING_METHOD_TCP_SYN_SPORT || \
   (ping)->probe_method == SCAMPER_PING_METHOD_TCP_SYNACK || \
   (ping)->probe_method == SCAMPER_PING_METHOD_TCP_RST))
 
@@ -118,6 +119,7 @@
 #define SCAMPER_PING_METHOD_TCP_SYN       0x06
 #define SCAMPER_PING_METHOD_TCP_SYNACK    0x07
 #define SCAMPER_PING_METHOD_TCP_RST       0x08
+#define SCAMPER_PING_METHOD_TCP_SYN_SPORT 0x09
 
 #define SCAMPER_PING_FLAG_V4RR            0x01 /* -R: IPv4 record route */
 #define SCAMPER_PING_FLAG_SPOOF           0x02 /* -O spoof: spoof src */

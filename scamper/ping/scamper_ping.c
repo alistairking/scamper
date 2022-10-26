@@ -45,6 +45,7 @@ char *scamper_ping_method2str(const scamper_ping_t *ping, char *buf, size_t len)
     "udp-dport",
     "icmp-time",
     "tcp-syn",
+    "tcp-syn-sport",
     "tcp-synack",
     "tcp-rst",
   };
