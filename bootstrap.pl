@@ -1,6 +1,6 @@
 #!/usr/bin/env perl
 #
-# $Id: bootstrap.pl,v 1.21 2021/07/07 04:38:08 mjl Exp $
+# $Id: bootstrap.pl,v 1.22 2022/12/09 09:37:42 mjl Exp $
 #
 # script to ship scamper with generated configure script ready to build.
 
@@ -23,6 +23,8 @@ $ax{"ax_check_openssl.m4"} =
     "b00c3b76d7d5ea81f77d75c0f0284b0a960480c1eed1b8a7edc63ba988ba988b";
 $ax{"ax_gcc_builtin.m4"} =
     "7e18d94162058a321464fe0f8f565b9a009ef6bd4d584ec6e8591b20b902c78b";
+$ax{"ax_gcc_func_attribute.m4"} =
+    "53f89342aa3f01310b204dac1db33e4c73410814bdeccb1876f0102a024d4b44";
 $ax{"ax_pthread.m4"} =
     "4fa6c352f1fb33147947ead61f9b12537f3d146ce068c003552d3b9582a7a406";
 
@@ -130,7 +132,9 @@ foreach my $ax (sort keys %ax)
     }
     if(!defined($sum) || $sum ne $ax{$ax})
     {
-	print STDERR "$ax has unexpected sha256 sum\n";
+	print STDERR "$ax has unexpected sha256 sum";
+	print STDERR " $sum" if(defined($sum));
+	print STDERR "\n";
 	exit -1;
     }
     else

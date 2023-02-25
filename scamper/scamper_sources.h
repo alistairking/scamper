@@ -1,10 +1,11 @@
 /*
  * scamper_source
  *
- * $Id: scamper_sources.h,v 1.14 2011/10/26 00:51:13 mjl Exp $
+ * $Id: scamper_sources.h,v 1.15 2022/02/13 08:48:15 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
+ * Copyright (C) 2022      Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -114,6 +115,7 @@ int scamper_source_halttask(scamper_source_t *source, uint32_t id);
 /* function for advising source that an active task has completed */
 void scamper_sourcetask_free(scamper_sourcetask_t *st);
 scamper_source_t *scamper_sourcetask_getsource(scamper_sourcetask_t *st);
+uint32_t scamper_sourcetask_getid(scamper_sourcetask_t *st);
 
 /* functions for managing a collection of sources */
 int scamper_sources_add(scamper_source_t *source);

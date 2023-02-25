@@ -5,11 +5,11 @@
  * Copyright (C) 2010-2011 The University of Waikato
  * Copyright (C) 2012      Matthew Luckie
  * Copyright (C) 2012,2015 The Regents of the University of California
- * Copyright (C) 2021      Matthew Luckie
+ * Copyright (C) 2021-2023 Matthew Luckie
  *
  * Authors: Ben Stasiewicz, Matthew Luckie
  *
- * $Id: scamper_tbit.c,v 1.51 2021/08/29 08:55:39 mjl Exp $
+ * $Id: scamper_tbit.c,v 1.54 2023/01/03 06:56:17 mjl Exp $
  *
  * This file implements algorithms described in the tbit-1.0 source code,
  * as well as the papers:
@@ -54,7 +54,7 @@ struct scamper_tbit_tcpq
 {
   uint32_t   seq;
   tqe_t    **tqes;
-  int        tqec;
+  size_t     tqec;
 };
 
 int scamper_tbit_data_seqoff(uint32_t rcv_nxt, uint32_t seq)
@@ -192,7 +192,7 @@ uint32_t scamper_tbit_tcpq_tail(const scamper_tbit_tcpq_t *tcpq)
 {
   uint32_t range = 0, edge, u32;
   scamper_tbit_tcpqe_t *qe;
-  int i;
+  size_t i;
 
   for(i=0; i<tcpq->tqec; i++)
     {
@@ -220,7 +220,7 @@ scamper_tbit_tcpq_t *scamper_tbit_tcpq_alloc(uint32_t isn)
 void scamper_tbit_tcpq_flush(scamper_tbit_tcpq_t *q, void (*ff)(void *))
 {
   tqe_t *tqe;
-  int i;
+  size_t i;
 
   if(q->tqes == NULL)
     return;
@@ -265,7 +265,8 @@ scamper_tbit_tcpqe_t *scamper_tbit_tcpq_pop(scamper_tbit_tcpq_t *q)
   scamper_tbit_tcpqe_t *qe;
   uint16_t len;
   tqe_t *tqe;
-  int i, off;
+  size_t i;
+  int off;
 
   if(q->tqec == 0)
     return NULL;
@@ -321,7 +322,8 @@ int scamper_tbit_tcpq_sack(scamper_tbit_tcpq_t *q, uint32_t *sack, int count)
 {
   uint32_t left, right;
   scamper_tbit_tcpqe_t *qe;
-  int i, off, c = 0;
+  int off, c = 0;
+  size_t i;
 
   assert(q->tqec >= 0);
   if(q->tqec == 0)
@@ -472,24 +474,25 @@ int scamper_tbit_pkt_tcpack(const scamper_tbit_pkt_t *pkt, uint32_t *ack)
 int scamper_tbit_icw_size(const scamper_tbit_t *tbit, uint32_t *icw_out)
 {
   const scamper_tbit_icw_t *icw = tbit->data;
-  const scamper_tbit_pkt_t *pkt;
+  const scamper_tbit_pkt_t *pkt = NULL;
   scamper_tbit_tcpq_t *q = NULL;
   uint32_t i, u32, seq, start_seq;
   uint16_t iplen, datalen;
   uint8_t proto, iphlen, tcphlen, flags, start_seq_c = 0;
   int rc = -1;
 
-  if(tbit->result != SCAMPER_TBIT_RESULT_ICW_SUCCESS ||
-     tbit->pktc < 1)
+  if(tbit->result != SCAMPER_TBIT_RESULT_ICW_SUCCESS)
     goto done;
 
   for(i=1; i<tbit->pktc; i++)
     {
-      pkt = tbit->pkts[i];
-      if(pkt->dir == SCAMPER_TBIT_PKT_DIR_RX)
-	break;
+      if(tbit->pkts[i]->dir == SCAMPER_TBIT_PKT_DIR_RX)
+	{
+	  pkt = tbit->pkts[i];
+	  break;
+	}
     }
-  if(i == tbit->pktc ||
+  if(pkt == NULL ||
      scamper_tbit_pkt_iph(pkt, &proto, &iphlen, &iplen) != 0 ||
      proto != IPPROTO_TCP ||
      (pkt->data[iphlen+13] & (TH_SYN|TH_ACK)) != (TH_SYN|TH_ACK))
@@ -555,13 +558,16 @@ int scamper_tbit_stats(const scamper_tbit_t *tbit, scamper_tbit_stats_t *stats)
 
   /* to begin with, look for a SYN/ACK */
   syn = tbit->pkts[0];
+  pkt = NULL;
   for(i=1; i<tbit->pktc; i++)
     {
-      pkt = tbit->pkts[i];
-      if(pkt->dir == SCAMPER_TBIT_PKT_DIR_RX)
-	break;
+      if(tbit->pkts[i]->dir == SCAMPER_TBIT_PKT_DIR_RX)
+	{
+	  pkt = tbit->pkts[i];
+	  break;
+	}
     }
-  if(i == tbit->pktc)
+  if(pkt == NULL)
     return 0;
 
   if(scamper_tbit_pkt_iph(pkt, &proto, &iphlen, &iplen) != 0)

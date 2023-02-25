@@ -1,14 +1,14 @@
 /*
  * scamper_trace.h
  *
- * $Id: scamper_trace.h,v 1.142 2021/10/23 04:46:52 mjl Exp $
+ * $Id: scamper_trace.h,v 1.143 2022/12/08 06:26:57 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2008      Alistair King
  * Copyright (C) 2015      The Regents of the University of California
  * Copyright (C) 2015      The University of Waikato
- * Copyright (C) 2019-2021 Matthew Luckie
+ * Copyright (C) 2019-2022 Matthew Luckie
  * Authors: Matthew Luckie
  *          Doubletree implementation by Alistair King
  *
@@ -144,6 +144,9 @@ struct scamper_addr;
 
 #define SCAMPER_TRACE_TYPE_IS_UDP_PARIS(trace) (		\
  (trace)->type == SCAMPER_TRACE_TYPE_UDP_PARIS)
+
+#define SCAMPER_TRACE_TYPE_IS_ICMP_ECHO_PARIS(trace) (		\
+ (trace)->type == SCAMPER_TRACE_TYPE_ICMP_ECHO_PARIS)
 
 /*
  * macros for dealing with scamper trace flags.

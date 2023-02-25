@@ -1,13 +1,13 @@
 /*
  * scamper_trace.c
  *
- * $Id: scamper_trace.c,v 1.99 2021/10/23 04:46:52 mjl Exp $
+ * $Id: scamper_trace.c,v 1.102 2023/01/01 08:24:19 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2003-2011 The University of Waikato
  * Copyright (C) 2008      Alistair King
  * Copyright (C) 2012-2015 The Regents of the University of California
- * Copyright (C) 2019-2021 Matthew Luckie
+ * Copyright (C) 2019-2023 Matthew Luckie
  *
  * Authors: Matthew Luckie
  *          Doubletree implementation by Alistair King
@@ -181,13 +181,17 @@ scamper_addr_t *scamper_trace_dtree_gss_find(const scamper_trace_t *trace,
 {
   if(trace->dtree == NULL)
     return NULL;
-  return array_find((void **)trace->dtree->gss, trace->dtree->gssc,
+  assert(trace->dtree->gssc >= 0);
+  return array_find((void **)trace->dtree->gss, (size_t)trace->dtree->gssc,
                     iface, (array_cmp_t)scamper_addr_cmp);
 }
 
 void scamper_trace_dtree_gss_sort(const scamper_trace_t *trace)
 {
-  array_qsort((void **)trace->dtree->gss, trace->dtree->gssc,
+  if(trace->dtree == NULL)
+    return;
+  assert(trace->dtree->gssc >= 0);
+  array_qsort((void **)trace->dtree->gss, (size_t)trace->dtree->gssc,
 	      (array_cmp_t)scamper_addr_cmp);
   return;
 }

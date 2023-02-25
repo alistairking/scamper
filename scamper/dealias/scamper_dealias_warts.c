@@ -4,10 +4,10 @@
  * Copyright (C) 2008-2011 The University of Waikato
  * Copyright (C) 2012      Matthew Luckie
  * Copyright (C) 2012-2014 The Regents of the University of California
- * Copyright (C) 2015-2021 Matthew Luckie
+ * Copyright (C) 2015-2022 Matthew Luckie
  * Author: Matthew Luckie
  *
- * $Id: scamper_dealias_warts.c,v 1.19 2021/08/24 09:03:07 mjl Exp $
+ * $Id: scamper_dealias_warts.c,v 1.20 2022/02/13 08:48:15 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -1670,7 +1670,7 @@ static void warts_dealias_probes_free(warts_dealias_probe_t *probes,
 }
 
 int scamper_file_warts_dealias_write(const scamper_file_t *sf,
-				     const scamper_dealias_t *dealias)
+				     const scamper_dealias_t *dealias, void *p)
 {
   static int (*const state[])(const scamper_file_t *, const void *,
 			      warts_dealias_data_t *, warts_addrtable_t *,
@@ -1770,7 +1770,7 @@ int scamper_file_warts_dealias_write(const scamper_file_t *sf,
 
   assert(off == len);
 
-  if(warts_write(sf, buf, len) == -1)
+  if(warts_write(sf, buf, len, p) == -1)
     {
       goto err;
     }

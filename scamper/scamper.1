@@ -6,15 +6,15 @@
 .\"
 .\" Copyright (c) 2007-2011 University of Waikato
 .\" Copyright (c) 2012-2015 The Regents of the University of California
-.\" Copyright (c) 2015-2022 Matthew Luckie
+.\" Copyright (c) 2015-2023 Matthew Luckie
 .\"                         All rights reserved
 .\"
-.\" $Id: scamper.1,v 1.95.4.3 2022/06/12 07:01:56 mjl Exp $
+.\" $Id: scamper.1,v 1.102.2.2 2023/02/24 00:16:39 mjl Exp $
 .\"
 .\"  nroff -man scamper.1
 .\"  groff -man -Tascii scamper.1 | man2html -title scamper.1
 .\"
-.Dd February 9, 2022
+.Dd February 24, 2023
 .Dt SCAMPER 1
 .Os
 .\""""""""""""
@@ -216,14 +216,21 @@ The current choices for this option are:
 output results in plain text.  Suitable for interactive use.
 .It
 .Sy warts:
-output results in warts format.  Suitable for archiving measurement
+output results in
+.Xr warts 5
+format.  Suitable for archiving measurement
 results and for use by researchers as it records details that cannot be
 easily represented with the text option.
 .It
 .Sy json:
-output results in json format.  Suitable for processing measurement
+output results in JSON format.  Suitable for processing measurement
 results with a scripting language.  A better approach is to output
-results in warts format, and to use
+results in
+.Xr warts 5
+format, and to use
+.Xr sc_warts2json 1
+to convert warts to JSON.
+The JSON format is documented in
 .Xr sc_warts2json 1 .
 .It
 .Sy planetlab:
@@ -511,8 +518,9 @@ ping
 .Ek
 .Bl -tag -width Ds
 .It Fl A Ar TCP-ack
-specifies the number to use in the acknowledgement field of the TCP header,
-or the sequence number field of the TCP header when sending reset probes.
+specifies the number to use in the acknowledgement field of the TCP
+header, or the sequence number field of the TCP header when sending
+TCP-syn, TCP-syn-sport, and TCP-rst probes.
 .It Fl B Ar payload
 specifies, in a hexadecimal string, the payload to include in each probe.
 .It Fl c Ar probecount
@@ -575,9 +583,9 @@ specified.  By default, each probe's bytes are zeroed.
 .It Fl P Ar method
 specifies the type of ping packets to send.
 By default, ICMP echo requests are sent.
-Choices are: ICMP-echo, ICMP-time, TCP-syn, TCP-syn-sport, TCP-ack,
-TCP-ack-sport, TCP-synack, TCP-rst, UDP, and UDP-dport, and these options are
-case insensitive.
+Choices are: ICMP-echo, ICMP-time, TCP-syn, TCP-ack, TCP-ack-sport,
+TCP-synack, TCP-rst, TCP-syn-sport, UDP, and UDP-dport,
+and these options are case insensitive.
 .It Fl r Ar rtraddr
 specifies the IP address of the router to use.
 .It Fl R
@@ -1363,12 +1371,17 @@ instruction.
 .It Ic MORE
 A line with just the 4 characters "MORE" indicates that scamper has the
 capacity to accept more probing commands to run in parallel.
-.It Ic DATA Ar length
-A line starting with the 4 characters "DATA" follow by a space then a base-10
-number indicates the start of result.
+.It Ic DATA Ar length Ar id-num
+A line starting with the 4 characters "DATA" indicates the start of result.
 .Ar length
-specifies the number of characters of the data, including newlines. The data
-is in binary warts format and uuencoded before transmission.
+specifies the number of characters of the data, including newlines.
+The data is in binary warts format and uuencoded before transmission, unless
+the user specified the json format in the attach command.
+.Ar id-num
+is the id number associated with the command returned in the OK statement
+when a command was accepted by
+.Nm
+versions after 20230224.
 .El
 .Pp
 To exit attached mode the client must send a single line containing "done".
@@ -1471,6 +1484,7 @@ scamper -R foo.example.com:31337 -O cafile=/etc/ssl/certs/ca-certificates.crt
 .Xr sc_warts2json 1 ,
 .Xr sc_warts2pcap 1 ,
 .Xr sc_warts2text 1 ,
+.Xr warts 5 ,
 .Rs
 .%A "S. Savage"
 .%T "Sting: a TCP-based Network Measurement Tool"

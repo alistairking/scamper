@@ -3,8 +3,9 @@
  *
  * Copyright (C) 2009-2010 Ben Stasiewicz
  * Copyright (C) 2010 University of Waikato
+ * Copyright (C) 2022 Matthew Luckie
  *
- * $Id: scamper_tbit_text.h,v 1.1 2010/10/05 02:45:44 mjl Exp $
+ * $Id: scamper_tbit_text.h,v 1.2 2022/02/13 08:48:15 mjl Exp $
  *
  * This file implements algorithms described in the tbit-1.0 source code,
  * as well as the papers:
@@ -33,6 +34,6 @@
 #define __SCAMPER_FILE_TEXT_TBIT_H
 
 int scamper_file_text_tbit_write(const scamper_file_t *sf,
-				 const scamper_tbit_t *tbit);
+				 const scamper_tbit_t *tbit, void *p);
 
 #endif

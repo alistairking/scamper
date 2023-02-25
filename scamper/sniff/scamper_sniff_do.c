@@ -1,9 +1,10 @@
 /*
  * scamper_sniff_do.c
  *
- * $Id: scamper_sniff_do.c,v 1.17 2020/06/09 20:07:53 mjl Exp $
+ * $Id: scamper_sniff_do.c,v 1.18 2022/02/13 08:48:15 mjl Exp $
  *
  * Copyright (C) 2011 The University of Waikato
+ * Copyright (C) 2022 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -241,7 +242,7 @@ static void do_sniff_probe(scamper_task_t *task)
 
 static void do_sniff_write(scamper_file_t *sf, scamper_task_t *task)
 {
-  scamper_file_write_sniff(sf, sniff_getdata(task));
+  scamper_file_write_sniff(sf, sniff_getdata(task), task);
   return;
 }
 

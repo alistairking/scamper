@@ -3,9 +3,10 @@
  *
  * This is a utility program to concatenate warts data files together.
  *
- * $Id: sc_wartscat.c,v 1.23 2020/03/17 07:32:17 mjl Exp $
+ * $Id: sc_wartscat.c,v 1.24 2022/02/13 08:48:16 mjl Exp $
  *
  * Copyright (C) 2007-2011 The University of Waikato
+ * Copyright (C) 2022 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -203,25 +204,25 @@ static int write_obj(uint16_t type, void *data)
   switch(type)
     {
     case SCAMPER_FILE_OBJ_TRACELB:
-      if(scamper_file_write_tracelb(outfile, data) != 0)
+      if(scamper_file_write_tracelb(outfile, data, NULL) != 0)
 	return -1;
       scamper_tracelb_free(data);
       break;
 
     case SCAMPER_FILE_OBJ_TRACE:
-      if(scamper_file_write_trace(outfile, data) != 0)
+      if(scamper_file_write_trace(outfile, data, NULL) != 0)
 	return -1;
       scamper_trace_free(data);
       break;
 
     case SCAMPER_FILE_OBJ_PING:
-      if(scamper_file_write_ping(outfile, data) != 0)
+      if(scamper_file_write_ping(outfile, data, NULL) != 0)
 	return -1;
       scamper_ping_free(data);
       break;
 
     case SCAMPER_FILE_OBJ_DEALIAS:
-      if(scamper_file_write_dealias(outfile, data) != 0)
+      if(scamper_file_write_dealias(outfile, data, NULL) != 0)
 	return -1;
       scamper_dealias_free(data);
       break;

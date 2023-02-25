@@ -4,7 +4,8 @@
  *
  * Author       : Matthew Luckie.
  *
- * Copyright (C) 2010, 2018 The University of Waikato
+ * Copyright (C) 2010,2018 The University of Waikato
+ * Copyright (C) 2022-2023 Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,7 +20,7 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
- * $Id: sc_tbitpmtud.c,v 1.23 2021/08/22 08:11:53 mjl Exp $
+ * $Id: sc_tbitpmtud.c,v 1.26 2023/01/02 22:09:01 mjl Exp $
  */
 
 #ifdef HAVE_CONFIG_H
@@ -427,6 +428,10 @@ static int tree_to_slist(void *ptr, void *entry)
     return 0;
   return -1;
 }
+
+#ifdef HAVE_FUNC_ATTRIBUTE_FORMAT
+static void print(char *format, ...) __attribute__((format(printf, 1, 2)));
+#endif
 
 static void print(char *format, ...)
 {
@@ -923,8 +928,8 @@ static int do_scamperread(void)
 	  /* new piece of data */
 	  else if(linelen > 5 && strncasecmp(head, "DATA ", 5) == 0)
 	    {
-	      l = strtol(head+5, &ptr, 10);
-	      if(*ptr != '\n' || l < 1)
+	      if((l = strtol(head+5, &ptr, 10)) < 1 ||
+		 (*ptr != '\n' && *ptr != ' '))
 		{
 		  head[linelen] = '\0';
 		  fprintf(stderr, "could not parse %s\n", head);
@@ -1138,7 +1143,7 @@ static int do_decoderead(void)
     {
       ping = (scamper_ping_t *)data;
       findme.addr = ping->dst;
-      if(scamper_file_write_ping(outfile, ping) != 0)
+      if(scamper_file_write_ping(outfile, ping, NULL) != 0)
 	return -1;
       outfile_obj++;
     }
@@ -1146,7 +1151,7 @@ static int do_decoderead(void)
     {
       tbit = (scamper_tbit_t *)data;
       findme.addr = tbit->dst;
-      if(scamper_file_write_tbit(outfile, tbit) != 0)
+      if(scamper_file_write_tbit(outfile, tbit, NULL) != 0)
 	return -1;
       outfile_obj++;
     }

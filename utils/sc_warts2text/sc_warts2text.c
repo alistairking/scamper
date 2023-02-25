@@ -1,13 +1,14 @@
 /*
  * warts2traceroute
  *
- * $Id: sc_warts2text.c,v 1.27 2020/03/17 07:32:17 mjl Exp $
+ * $Id: sc_warts2text.c,v 1.28 2023/01/03 02:14:50 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
+ * Copyright (C) 2023      Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -45,7 +46,7 @@ static splaytree_t *tree = NULL;
 static char       **files = NULL;
 static int          filec = 0;
 
-typedef int  (*wf_t)(scamper_file_t *, void *);
+typedef int  (*wf_t)(scamper_file_t *, const void *, void *);
 typedef void (*ff_t)(void *);
 typedef scamper_addr_t *(*df_t)(void *);
 
@@ -321,7 +322,7 @@ int main(int argc, char *argv[])
 	      printf("%s\n", descr);
 	    }
 
-	  funcs[type].write(out, data);
+	  funcs[type].write(out, data, NULL);
 	  funcs[type].datafree(data);
 	}
 

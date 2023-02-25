@@ -1,6 +1,6 @@
 #!/usr/bin/env perl
 #
-# $Id: build-man-pdfs.pl,v 1.20 2020/06/23 23:58:20 mjl Exp $
+# $Id: build-man-pdfs.pl,v 1.21 2023/01/02 22:46:28 mjl Exp $
 
 use strict;
 use warnings;
@@ -13,6 +13,9 @@ sub cmd($)
 }
 
 my @mans = ("scamper/scamper.1",
+	    "scamper/libscamperfile.3",
+	    "scamper/warts.5",
+	    "lib/libscamperctrl/libscamperctrl.3",
 	    "utils/sc_ally/sc_ally.1",
 	    "utils/sc_analysis_dump/sc_analysis_dump.1",
 	    "utils/sc_attach/sc_attach.1",
@@ -39,17 +42,27 @@ my @mans = ("scamper/scamper.1",
 	    "utils/sc_wartsdump/sc_wartsdump.1",
 	    "utils/sc_wartsfilter/sc_wartsfilter.1",
 	    "utils/sc_wartsfix/sc_wartsfix.1",
-	    "scamper/libscamperfile.3",
-	    "scamper/warts.5",
     );
 
 cmd("mkdir -p man");
+
 foreach my $man (@mans)
 {
     if($man =~ /^.+\/(.+)$/)
     {
 	my $name = $1;
-	cmd("groff -T ps -man $man | ps2pdf - >man/$name.pdf");
-	cmd("touch -r $man man/$name.pdf");
+
+	my @manstat = stat("$man");
+	if(scalar(@manstat) == 0)
+	{
+	    print STDERR "could not stat $man\n";
+	    exit -1;
+	}
+	my @pdfstat = stat("man/$name.pdf");
+	if(scalar(@pdfstat) == 0 || $manstat[9] > $pdfstat[9])
+	{
+	    cmd("groff -T ps -man $man | ps2pdf - >man/$name.pdf");
+	    cmd("touch -r $man man/$name.pdf");
+	}
     }
 }

@@ -1,7 +1,7 @@
 /*
  * sc_bdrmap: driver to map first hop border routers of networks
  *
- * $Id: sc_bdrmap.c,v 1.32 2021/08/22 08:11:53 mjl Exp $
+ * $Id: sc_bdrmap.c,v 1.37 2023/01/02 22:09:01 mjl Exp $
  *
  *         Matthew Luckie
  *         mjl@caida.org / mjl@wand.net.nz
@@ -10,7 +10,7 @@
  * Copyright (C) 2015-2016 The University of Waikato
  * Copyright (C) 2017      The Regents of the University of California
  * Copyright (C) 2018-2020 The University of Waikato
- * Copyright (C) 2020      Matthew Luckie
+ * Copyright (C) 2020-2023 Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -1124,6 +1124,7 @@ static int check_options(int argc, char *argv[])
 
   if(options & OPT_DUMP)
     {
+      assert(opt_dumpid != NULL);
       if(string_isnumber(opt_dumpid) != 0)
 	{
 	  if(string_tolong(opt_dumpid, &lo) != 0 || lo < 1 || lo >= dump_funcc)
@@ -1254,6 +1255,10 @@ static int tree_to_slist(void *ptr, void *entry)
   return -1;
 }
 
+#ifdef HAVE_FUNC_ATTRIBUTE_FORMAT
+static void logerr(char *format, ...) __attribute__((format(printf, 1, 2)));
+#endif
+
 static void logerr(char *format, ...)
 {
   va_list ap;
@@ -1277,6 +1282,10 @@ static void logerr(char *format, ...)
 
   return;
 }
+
+#ifdef HAVE_FUNC_ATTRIBUTE_FORMAT
+static void logprint(char *format, ...) __attribute__((format(printf, 1, 2)));
+#endif
 
 static void logprint(char *format, ...)
 {
@@ -4192,7 +4201,7 @@ static int do_method_allyconf(sc_test_t *test, char *cmd, size_t len)
       if((aseq = sc_ping_find(act->ally->a)) == NULL ||
 	 (bseq = sc_ping_find(act->ally->b)) == NULL)
 	{
-	  logerr("%s: could not find ipidseq\n");
+	  logerr("%s: could not find ipidseq\n", __func__);
 	  return -1;
 	}
       a = aseq->indir.dst;
@@ -5073,7 +5082,7 @@ static int do_scamperread(void)
 	{
 	  if((readbuf = memdup(buf, rc)) == NULL)
 	    {
-	      logerr("%s: could not memdup %d bytes", __func__, rc);
+	      logerr("%s: could not memdup %d bytes", __func__, (int)rc);
 	      return -1;
 	    }
 	  readbuf_len = rc;
@@ -5088,7 +5097,8 @@ static int do_scamperread(void)
 	    }
 	  else
 	    {
-	      logerr("%s: could not realloc %d bytes",__func__,readbuf_len+rc);
+	      logerr("%s: could not realloc %d bytes", __func__,
+		     (int)(readbuf_len + rc));
 	      return -1;
 	    }
 	}
@@ -5154,8 +5164,8 @@ static int do_scamperread(void)
 	  /* new piece of data */
 	  else if(linelen > 5 && strncasecmp(head, "DATA ", 5) == 0)
 	    {
-	      l = strtol(head+5, &ptr, 10);
-	      if(*ptr != '\n' || l < 1)
+	      if((l = strtol(head+5, &ptr, 10)) < 1 ||
+		 (*ptr != '\n' && *ptr != ' '))
 		{
 		  head[linelen] = '\0';
 		  logerr("could not parse %s\n", head);
@@ -6192,7 +6202,7 @@ static int bdrmap_data(void)
 	   * wants one, then wait for an appropriate length of time.
 	   */
 	  wait = heap_head_item(waiting);
-	  if(more > 0 && tv_ptr == NULL && wait != NULL)
+	  if(more > 0 && wait != NULL)
 	    {
 	      tv_ptr = &tv;
 	      if(timeval_cmp(&wait->tv, &now) > 0)
@@ -6334,7 +6344,6 @@ static int process_1_dealias(scamper_dealias_t *dealias)
   scamper_dealias_probe_t *probe;
   scamper_dealias_reply_t *reply;
   scamper_addr_t *a, *b;
-  sc_link_t *link;
   sc_ally_t *ar;
   uint32_t i;
   int ok, rc = -1;
@@ -6344,7 +6353,7 @@ static int process_1_dealias(scamper_dealias_t *dealias)
       pfs = dealias->data;
       if(pfs->ab != NULL && scamper_addr_prefixhosts(pfs->b, pfs->ab) >= 30)
 	{
-	  if((link = sc_link_get(pfs->a, pfs->b)) == NULL)
+	  if(sc_link_get(pfs->a, pfs->b) == NULL)
 	    goto done;
 	  if((pfs->flags & SCAMPER_DEALIAS_PREFIXSCAN_FLAG_CSA) != 0)
 	    {
@@ -7501,7 +7510,7 @@ static int owner_1(sc_router_t *y, uint32_t *owner_as, uint8_t *owner_reason,
 	      a2r = slist_node_item(sn);
 	      if(a2r->ttlexp == 0)
 		continue;
-	      if((ixppfxc = sc_ixpc_find(ixp_set, a2r->addr)) != NULL)
+	      if(sc_ixpc_find(ixp_set, a2r->addr) != NULL)
 		break;
 	    }
 	  if(sn != NULL)

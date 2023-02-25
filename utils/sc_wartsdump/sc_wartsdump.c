@@ -1,7 +1,7 @@
 /*
  * sc_wartsdump
  *
- * $Id: sc_wartsdump.c,v 1.233.4.3 2022/06/14 07:16:34 mjl Exp $
+ * $Id: sc_wartsdump.c,v 1.237 2022/10/29 07:38:59 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -882,6 +882,7 @@ static void dump_ping(scamper_ping_t *ping)
       break;
 
     case SCAMPER_PING_METHOD_TCP_ACK_SPORT:
+    case SCAMPER_PING_METHOD_TCP_SYN_SPORT:
       printf(", base-sport: %d, dport: %d",
 	     ping->probe_sport, ping->probe_dport);
       break;

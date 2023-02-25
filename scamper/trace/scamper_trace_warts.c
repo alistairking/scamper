@@ -5,10 +5,10 @@
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2014      The Regents of the University of California
  * Copyright (C) 2015      The University of Waikato
- * Copyright (C) 2015-2021 Matthew Luckie
+ * Copyright (C) 2015-2022 Matthew Luckie
  * Author: Matthew Luckie
  *
- * $Id: scamper_trace_warts.c,v 1.29 2021/10/23 04:46:52 mjl Exp $
+ * $Id: scamper_trace_warts.c,v 1.30 2022/02/13 08:48:16 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -1358,7 +1358,7 @@ int scamper_file_warts_trace_read(scamper_file_t *sf, const warts_hdr_t *hdr,
 }
 
 int scamper_file_warts_trace_write(const scamper_file_t *sf,
-				   const scamper_trace_t *trace)
+				   const scamper_trace_t *trace, void *p)
 {
   scamper_trace_hop_t *hop;
   uint8_t             *buf = NULL;
@@ -1536,7 +1536,7 @@ int scamper_file_warts_trace_write(const scamper_file_t *sf,
 
   assert(off == len);
 
-  if(warts_write(sf, buf, len) == -1)
+  if(warts_write(sf, buf, len, p) == -1)
     {
       goto err;
     }

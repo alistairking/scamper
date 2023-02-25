@@ -1,9 +1,10 @@
 /*
  * scamper_dealias_json.h
  *
- * $Id: scamper_dealias_json.h,v 1.1 2013/08/02 18:33:23 mjl Exp $
+ * $Id: scamper_dealias_json.h,v 1.2 2022/02/13 08:48:15 mjl Exp $
  *
  * Copyright (c) 2013 The Regents of the University of California
+ * Copyright (c) 2022 Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -24,6 +25,7 @@
 #define __SCAMPER_DEALIAS_JSON_H
 
 int scamper_file_json_dealias_write(const scamper_file_t *sf,
-				    const struct scamper_dealias *dealias);
+				    const struct scamper_dealias *dealias,
+				    void *p);
 
 #endif

@@ -1,9 +1,10 @@
 /*
  * scamper_ping_json.h
  *
- * $Id: scamper_ping_json.h,v 1.2 2013/07/18 21:17:09 mjl Exp $
+ * $Id: scamper_ping_json.h,v 1.3 2022/02/13 08:48:15 mjl Exp $
  *
  * Copyright (c) 2011-2013 Internap Network Services Corporation
+ * Copyright (C) 2022      Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -24,6 +25,6 @@
 #define __SCAMPER_PING_JSON_H
 
 int scamper_file_json_ping_write(const scamper_file_t *sf,
-				 const scamper_ping_t *ping);
+				 const scamper_ping_t *ping, void *p);
 
 #endif /* __SCAMPER_PING_JSON_H */

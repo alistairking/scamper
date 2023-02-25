@@ -1,12 +1,12 @@
 /*
  * scamper_privsep.c: code that does root-required tasks
  *
- * $Id: scamper_privsep.c,v 1.93 2020/04/30 07:17:14 mjl Exp $
+ * $Id: scamper_privsep.c,v 1.95 2022/12/09 09:37:42 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2013-2014 The Regents of the University of California
- * Copyright (C) 2016-2020 Matthew Luckie
+ * Copyright (C) 2016-2022 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -101,7 +101,7 @@ static int privsep_open_icmp(uint16_t plen, const uint8_t *param)
 
   if(plen != sizeof(type))
     {
-      scamper_debug(__func__, "plen %d != %d", plen, sizeof(type));
+      scamper_debug(__func__, "plen %u != %d", plen, (int)sizeof(type));
       return -1;
     }
 
@@ -127,7 +127,7 @@ static int privsep_open_rtsock(uint16_t plen, const uint8_t *param)
 {
   if(plen != 0)
     {
-      scamper_debug(__func__, "plen %d != 0", plen, 0);
+      scamper_debug(__func__, "plen %u != 0", plen);
       errno = EINVAL;
       return -1;
     }
@@ -148,7 +148,7 @@ static int privsep_open_datalink(uint16_t plen, const uint8_t *param)
   /* the payload should have an integer field - no more, no less. */
   if(plen != sizeof(ifindex))
     {
-      scamper_debug(__func__, "plen %d != %d", plen, sizeof(ifindex));
+      scamper_debug(__func__, "plen %u != %d", plen, (int)sizeof(ifindex));
       errno = EINVAL;
       return -1;
     }
@@ -169,7 +169,7 @@ static int privsep_open_sock(uint16_t plen, const uint8_t *param)
 
   if(plen != size)
     {
-      scamper_debug(__func__, "plen %d != %d", plen, size);
+      scamper_debug(__func__, "plen %u != %d", plen, (int)size);
       errno = EINVAL;
       goto err;
     }
@@ -242,7 +242,7 @@ static int privsep_open_rawudp(uint16_t plen, const uint8_t *param)
 
   if(plen != 4)
     {
-      scamper_debug(__func__, "plen %d != 4", plen);
+      scamper_debug(__func__, "plen %u != 4", plen);
       errno = EINVAL;
       return -1;
     }
@@ -255,7 +255,7 @@ static int privsep_open_rawip(uint16_t plen, const uint8_t *param)
 {
   if(plen != 0)
     {
-      scamper_debug(__func__, "plen %d != 4", plen);
+      scamper_debug(__func__, "plen %u != 4", plen);
       errno = EINVAL;
       return -1;
     }
@@ -267,7 +267,7 @@ static int privsep_ipfw_init(uint16_t plen, const uint8_t *param)
 #ifdef HAVE_IPFW
   if(plen != 0)
     {
-      scamper_debug(__func__, "plen %d != 0", plen);
+      scamper_debug(__func__, "plen %u != 0", plen);
       errno = EINVAL;
       return -1;
     }
@@ -284,7 +284,7 @@ static int privsep_ipfw_cleanup(uint16_t plen, const uint8_t *param)
 #ifdef HAVE_IPFW
   if(plen != 0)
     {
-      scamper_debug(__func__, "plen %d != 0", plen);
+      scamper_debug(__func__, "plen %u != 0", plen);
       errno = EINVAL;
       return -1;
     }
@@ -309,7 +309,7 @@ static int privsep_ipfw_add(uint16_t plen, const uint8_t *param)
 
   if(plen < 1 + sizeof(int))
     {
-      scamper_debug(__func__, "plen %d < %d", plen, 1 + sizeof(int));
+      scamper_debug(__func__, "plen %u < %d", plen, (int)(1 + sizeof(int)));
       goto inval;
     }
 
@@ -395,7 +395,7 @@ static int privsep_ipfw_del(uint16_t plen, const uint8_t *param)
 
   if(plen != sizeof(int) * 2)
     {
-      scamper_debug(__func__, "plen %d != %d", plen, sizeof(int) * 2);
+      scamper_debug(__func__, "plen %u != %d", plen, (int)(sizeof(int) * 2));
       goto inval;
     }
 
@@ -422,7 +422,7 @@ static int privsep_pf_init(uint16_t plen, const uint8_t *param)
   const char *name = (const char *)param;
   if(plen == 0)
     {
-      scamper_debug(__func__, "plen == 0", plen);
+      scamper_debug(__func__, "plen == 0");
       errno = EINVAL;
       return -1;
     }
@@ -451,7 +451,7 @@ static int privsep_pf_cleanup(uint16_t plen, const uint8_t *param)
 #ifdef HAVE_PF
   if(plen != 0)
     {
-      scamper_debug(__func__, "plen %d != 0", plen);
+      scamper_debug(__func__, "plen %u != 0", plen);
       errno = EINVAL;
       return -1;
     }
@@ -475,7 +475,7 @@ static int privsep_pf_add(uint16_t plen, const uint8_t *param)
 
   if(plen < sizeof(int))
     {
-      scamper_debug(__func__, "plen %d < %d", plen, sizeof(int));
+      scamper_debug(__func__, "plen %u < %d", plen, (int)sizeof(int));
       goto inval;
     }
 
@@ -530,7 +530,7 @@ static int privsep_pf_del(uint16_t plen, const uint8_t *param)
   int n;
   if(plen != sizeof(int))
     {
-      scamper_debug(__func__, "plen %d != %d", plen, sizeof(int));
+      scamper_debug(__func__, "plen %u != %d", plen, (int)sizeof(int));
       errno = EINVAL;
       return -1;
     }
@@ -711,7 +711,7 @@ static int privsep_send_rc(int rc, int error, uint8_t msg_type)
 /*
  * privsep_send_fd
  *
- * send the fd created using the priviledged code.  if the fd was not
+ * send the fd created using the privileged code.  if the fd was not
  * successfully created, we send the errno back in the payload of the
  * message.
  */
@@ -804,7 +804,7 @@ static int privsep_recv_fd(void)
 /*
  * privsep_do
  *
- * this is the only piece of code with root priviledges.  we use it to
+ * this is the only piece of code with root privileges.  we use it to
  * create raw sockets, routing/netlink sockets, BPF/PF_PACKET sockets, and
  * ordinary files that scamper itself cannot do by itself.
  */
@@ -844,7 +844,7 @@ static int privsep_do(void)
   root_pid = getpid();
 
   /*
-   * the priviledged process does not need the lame file descriptor for
+   * the privileged process does not need the lame file descriptor for
    * anything, so get rid of it
    */
   close(lame_fd);
@@ -947,7 +947,7 @@ static int privsep_lame_send(const uint16_t type, const uint16_t len,
  * privsep_getfd
  *
  * send a request to the piece of code running as root to do open a file
- * descriptor that requires priviledge to do.  return the file descriptor.
+ * descriptor that requires privilege to do.  return the file descriptor.
  */
 static int privsep_getfd(uint16_t type, uint16_t len, const uint8_t *param)
 {
@@ -1192,8 +1192,8 @@ int scamper_privsep_pf_del(int n)
 /*
  * scamper_privsep
  *
- * start a child process that has the root priviledges that scamper starts
- * with.  then, revoke scamper's priviledges to the minimum scamper can
+ * start a child process that has the root privileges that scamper starts
+ * with.  then, revoke scamper's privileges to the minimum scamper can
  * obtain
  */
 int scamper_privsep_init()
@@ -1261,7 +1261,7 @@ int scamper_privsep_init()
 
   /*
    * open up the unix domain sockets that will allow the prober to talk
-   * with the priviledged process
+   * with the privileged process
    */
   if(socketpair(AF_UNIX, SOCK_STREAM, 0, sockets) == -1)
     {
@@ -1297,7 +1297,7 @@ int scamper_privsep_init()
   root_pid = pid;
 
   /*
-   * we don't need our copy of the file descriptor passed to the priviledged
+   * we don't need our copy of the file descriptor passed to the privileged
    * process any longer
    */
   close(root_fd);
@@ -1321,7 +1321,7 @@ int scamper_privsep_init()
 #endif
 
   /*
-   * call localtime now, as then the unpriviledged process will have the
+   * call localtime now, as then the unprivileged process will have the
    * local time zone information cached in the process, so localtime will
    * actually mean something
    */
@@ -1330,7 +1330,7 @@ int scamper_privsep_init()
   localtime(&t);
 
   /*
-   * call getaddrinfo now, as then the unpriviledged process will load
+   * call getaddrinfo now, as then the unprivileged process will load
    * whatever files it needs to to help resolve IP addresses; the need for
    * this was first noticed in SunOS
    */
@@ -1341,7 +1341,7 @@ int scamper_privsep_init()
   getaddrinfo("localhost", NULL, &hints, &res0);
   freeaddrinfo(res0);
 
-  /* change the root directory of the unpriviledged directory */
+  /* change the root directory of the unprivileged directory */
   if(chroot(PRIVSEP_DIR) == -1)
     {
       printerror(__func__, "could not chroot to " PRIVSEP_DIR);

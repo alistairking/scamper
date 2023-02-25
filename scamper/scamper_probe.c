@@ -1,7 +1,7 @@
 /*
  * scamper_probe.c
  *
- * $Id: scamper_probe.c,v 1.78.10.1 2022/06/12 06:04:54 mjl Exp $
+ * $Id: scamper_probe.c,v 1.80 2022/12/09 09:37:42 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -177,7 +177,7 @@ static void probe_print(scamper_probe_t *probe)
 	{
 	  scamper_debug("tx", "frag %s %04x:%d ttl %d, len %d",
 			addr, probe->pr_ip_id, probe->pr_ip_off << 3,
-			probe->pr_ip_ttl, iphl + probe->pr_len);
+			probe->pr_ip_ttl, (int)(iphl + probe->pr_len));
 	  return;
 	}
 
@@ -186,7 +186,7 @@ static void probe_print(scamper_probe_t *probe)
 	case IPPROTO_UDP:
 	  scamper_debug("tx", "udp %s, ttl %d, %d:%d, len %d",
 			addr, probe->pr_ip_ttl, probe->pr_udp_sport,
-			probe->pr_udp_dport, iphl + 8 + probe->pr_len);
+			probe->pr_udp_dport, (int)(iphl + 8 + probe->pr_len));
 	  break;
 
 	case IPPROTO_TCP:
@@ -196,7 +196,7 @@ static void probe_print(scamper_probe_t *probe)
 			probe->pr_tcp_sport, probe->pr_tcp_dport,
 			tcp_flags(tcp, sizeof(tcp), probe),
 			probe->pr_ip_id, tcp_pos(pos, sizeof(pos), probe),
-			iphl + scamper_tcp4_hlen(probe) + probe->pr_len);
+			(int)(iphl + scamper_tcp4_hlen(probe) + probe->pr_len));
 	  break;
 
 	case IPPROTO_ICMP:
@@ -211,7 +211,7 @@ static void probe_print(scamper_probe_t *probe)
 			    "icmp %s echo, ttl %d%s, id %d seq %d, len %d",
 			    addr, probe->pr_ip_ttl, icmp,
 			    probe->pr_icmp_id, probe->pr_icmp_seq,
-			    iphl + 8 + probe->pr_len);
+			    (int)(iphl + 8 + probe->pr_len));
 	    }
 	  else if(probe->pr_icmp_type == ICMP_UNREACH)
 	    {
@@ -220,19 +220,19 @@ static void probe_print(scamper_probe_t *probe)
 	      else
 		snprintf(icmp,sizeof(icmp),"unreach %d", probe->pr_icmp_code);
 	      scamper_debug("tx", "icmp %s %s, len %d",
-			    addr, icmp, iphl + 8 + probe->pr_len);
+			    addr, icmp, (int)(iphl + 8 + probe->pr_len));
 	    }
 	  else if(probe->pr_icmp_type == ICMP_TSTAMP)
 	    {
 	      scamper_debug("tx", "icmp %s ts, ttl %d, id %d seq %d, len %d",
 			    addr, probe->pr_ip_ttl, probe->pr_icmp_id,
-			    probe->pr_icmp_seq, iphl + 20);
+			    probe->pr_icmp_seq, (int)(iphl + 20));
 	    }
 	  else
 	    {
 	      scamper_debug("tx", "icmp %s type %d, code %d, len %d",
 			    addr, probe->pr_icmp_type, probe->pr_icmp_code,
-			    iphl + 8 + probe->pr_len);
+			    (int)(iphl + 8 + probe->pr_len));
 	    }
 	  break;
 	}
@@ -246,7 +246,7 @@ static void probe_print(scamper_probe_t *probe)
 	{
 	  scamper_debug("tx", "frag %s off %04x, ttl %d, len %d",
 			addr, probe->pr_ip_off, probe->pr_ip_ttl,
-			iphl + probe->pr_len);
+			(int)(iphl + probe->pr_len));
 	  return;
 	}
 
@@ -255,7 +255,7 @@ static void probe_print(scamper_probe_t *probe)
 	case IPPROTO_UDP:
 	  scamper_debug("tx", "udp %s, ttl %d, %d:%d, len %d",
 			addr, probe->pr_ip_ttl, probe->pr_udp_sport,
-			probe->pr_udp_dport, iphl + 8 + probe->pr_len);
+			probe->pr_udp_dport, (int)(iphl + 8 + probe->pr_len));
 	  break;
 
 	case IPPROTO_TCP:
@@ -264,7 +264,7 @@ static void probe_print(scamper_probe_t *probe)
 			probe->pr_tcp_sport, probe->pr_tcp_dport,
 			tcp_flags(tcp, sizeof(tcp), probe),
 			tcp_pos(pos, sizeof(pos), probe),
-			iphl + scamper_tcp6_hlen(probe) + probe->pr_len);
+			(int)(iphl + scamper_tcp6_hlen(probe) + probe->pr_len));
 	  break;
 
 	case IPPROTO_ICMPV6:
@@ -279,23 +279,25 @@ static void probe_print(scamper_probe_t *probe)
 			    "icmp %s echo, ttl %d%s, id %d seq %d, len %d",
 			    addr, probe->pr_ip_ttl, icmp,
 			    probe->pr_icmp_id, probe->pr_icmp_seq,
-			    iphl + 8 + probe->pr_len);
+			    (int)(iphl + 8 + probe->pr_len));
 	    }
 	  else if(probe->pr_icmp_type == ICMP6_PACKET_TOO_BIG)
 	    {
 	      scamper_debug("tx", "icmp %s ptb %d, len %d", addr,
-			    probe->pr_icmp_mtu, iphl + 8 + probe->pr_len);
+			    probe->pr_icmp_mtu,
+			    (int)(iphl + 8 + probe->pr_len));
 	    }
 	  else if(probe->pr_icmp_type == ICMP6_DST_UNREACH)
 	    {
 	      scamper_debug("tx", "icmp %s unreach %d, len %d", addr,
-			    probe->pr_icmp_code, iphl + 8 + probe->pr_len);
+			    probe->pr_icmp_code,
+			    (int)(iphl + 8 + probe->pr_len));
 	    }
 	  else
 	    {
 	      scamper_debug("tx", "icmp %s type %d, code %d, len %d",
 			    addr, probe->pr_icmp_type, probe->pr_icmp_code,
-			    iphl + 8 + probe->pr_len);
+			    (int)(iphl + 8 + probe->pr_len));
 	    }
 	  break;
 	}

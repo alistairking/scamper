@@ -1,10 +1,11 @@
 /*
  * scamper_do_sting.c
  *
- * $Id: scamper_sting_do.c,v 1.49.10.2 2022/08/10 22:39:49 mjl Exp $
+ * $Id: scamper_sting_do.c,v 1.51 2022/06/12 01:39:59 mjl Exp $
  *
  * Copyright (C) 2008-2011 The University of Waikato
  * Copyright (C) 2012      The Regents of the University of California
+ * Copyright (C) 2022      Matthew Luckie
  * Author: Matthew Luckie
  *
  * This file implements algorithms described in the sting-0.7 source code,
@@ -569,7 +570,7 @@ static void sting_handle_rt(scamper_route_t *rt)
 
 static void do_sting_write(scamper_file_t *sf, scamper_task_t *task)
 {
-  scamper_file_write_sting(sf, sting_getdata(task));
+  scamper_file_write_sting(sf, sting_getdata(task), task);
   return;
 }
 
@@ -1083,6 +1084,7 @@ scamper_task_t *scamper_do_sting_alloctask(void *data,
   if(sting->src == NULL && (sting->src = scamper_getsrc(sting->dst,0)) == NULL)
     goto err;
   sig->sig_tx_ip_src = scamper_addr_use(sting->src);
+  SCAMPER_TASK_SIG_TCP(sig, sting->sport, sting->dport);
   if(scamper_task_sig_add(task, sig) != 0)
     goto err;
   sig = NULL;

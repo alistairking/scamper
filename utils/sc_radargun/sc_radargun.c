@@ -1,11 +1,11 @@
 /*
  * sc_radargun : scamper driver to do radargun-style probing.
  *
- * $Id: sc_radargun.c,v 1.12 2020/06/09 08:25:23 mjl Exp $
+ * $Id: sc_radargun.c,v 1.15 2023/01/02 22:09:01 mjl Exp $
  *
- * Copyright (C) 2014 The Regents of the University of California
- * Copyright (C) 2016 The University of Waikato
- * Copyright (C) 2020 Matthew Luckie
+ * Copyright (C) 2014      The Regents of the University of California
+ * Copyright (C) 2016      The University of Waikato
+ * Copyright (C) 2020-2023 Matthew Luckie
  * Author: Matthew Luckie
  *
  * Radargun technique authored by:
@@ -509,6 +509,10 @@ static int tree_to_slist(void *ptr, void *entry)
   return -1;
 }
 
+#ifdef HAVE_FUNC_ATTRIBUTE_FORMAT
+static void print(char *format, ...) __attribute__((format(printf, 1, 2)));
+#endif
+
 static void print(char *format, ...)
 {
   va_list ap;
@@ -536,6 +540,10 @@ static void print(char *format, ...)
 
   return;
 }
+
+#ifdef HAVE_FUNC_ATTRIBUTE_FORMAT
+static void status(char *format, ...) __attribute__((format(printf, 1, 2)));
+#endif
 
 static void status(char *format, ...)
 {
@@ -913,7 +921,7 @@ static int do_method_radargun(sc_test_t *test, char **cmd_out, size_t *len_out)
 
   if((flags & FLAG_NOBUDGET) == 0 && (1000 / pps) > rg_waitprobe)
     {
-      print("%s: unable to use available probing budget: %d > %d, %d\n",
+      print("%s: unable to use available probing budget: %d > %d\n",
 	    __func__, 1000/pps, rg_waitprobe);
       sc_radargun_free(rg);
       return 0;
@@ -921,7 +929,7 @@ static int do_method_radargun(sc_test_t *test, char **cmd_out, size_t *len_out)
 
   if((defs = malloc_zero(sizeof(char *) * incrc)) == NULL)
     {
-      print("%s: could not malloc %d defs\n", __func__, incrc);
+      print("%s: could not malloc %d defs\n", __func__, (int)incrc);
       goto err;
     }
 
@@ -961,7 +969,7 @@ static int do_method_radargun(sc_test_t *test, char **cmd_out, size_t *len_out)
 		    scamper_addr_tostr(addr, buf, sizeof(buf)));
       if((defs[i] = strdup(tmp)) == NULL)
 	{
-	  print("%s: could not dup str %s\n", __func__);
+	  print("%s: could not dup str\n", __func__);
 	  goto err;
 	}
       len += off; i++;
@@ -970,7 +978,7 @@ static int do_method_radargun(sc_test_t *test, char **cmd_out, size_t *len_out)
   len += 2; /* \n\0 */
   if((cmd = malloc(len)) == NULL)
     {
-      print("%s: could not malloc cmd string of %d bytes\n", __func__, len);
+      print("%s: could not malloc cmd string of %d bytes\n",__func__,(int)len);
       goto err;
     }
   off = 0;
@@ -1352,8 +1360,8 @@ static int do_scamperread(void)
 	  /* new piece of data */
 	  else if(linelen > 5 && strncasecmp(head, "DATA ", 5) == 0)
 	    {
-	      l = strtol(head+5, &ptr, 10);
-	      if(*ptr != '\n' || l < 1)
+	      if((l = strtol(head+5, &ptr, 10)) < 1 ||
+		 (*ptr != '\n' && *ptr != ' '))
 		{
 		  head[linelen] = '\0';
 		  fprintf(stderr, "could not parse %s\n", head);
@@ -2113,7 +2121,7 @@ static int do_probing(void)
 	   * wants one, then wait for an appropriate length of time.
 	   */
 	  wait = heap_head_item(waiting);
-	  if(more > 0 && tv_ptr == NULL && wait != NULL)
+	  if(more > 0 && wait != NULL)
 	    {
 	      tv_ptr = &tv;
 	      if(timeval_cmp(&wait->tv, &now) > 0)

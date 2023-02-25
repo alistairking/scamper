@@ -6,6 +6,9 @@
  * Copyright (C) 2015 The Regents of the University of California
  * Copyright (C) 2017 Matthew Luckie
  * Copyright (C) 2018-2019 The University of Waikato
+ * Copyright (C) 2023 Matthew Luckie
+ *
+ * $Id: sc_uptime.c,v 1.79 2023/01/03 02:19:11 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -80,7 +83,7 @@ static int                    more          = 0;
 static int                    probing       = 0;
 static int                    interval      = 0;
 static int                    expire        = 0;
-static int                    fudge         = 65535;
+static uint32_t               fudge         = 65535;
 static int                    init_data     = 0;
 static int                    init_state    = 0;
 static int                    safe_db       = 0;
@@ -354,7 +357,7 @@ static int check_options(int argc, char *argv[])
     OPT_REBOOTS |
     OPT_OUTFILE |
     OPT_DONOTPROBE;
-  if(options == 0 || countbits32(options & u32) != 1)
+  if(countbits32(options & u32) != 1)
     {
       usage(0);
       return -1;
@@ -691,8 +694,8 @@ static int next_random(int *next, int next_min, int next_max)
  */
 static int do_meta_setlong(char *type, long lo)
 {
-  const static char *up_sql = "update metadata set value=? where type=?";
-  const static char *in_sql = "insert into metadata(type,value) values(?,?)";
+  static const char *up_sql = "update metadata set value=? where type=?";
+  static const char *in_sql = "insert into metadata(type,value) values(?,?)";
   sqlite3_stmt *stmt = NULL;
   char buf[256];
   int rc = -1, x;
@@ -767,7 +770,7 @@ static int do_meta_setlong(char *type, long lo)
  */
 static int do_meta_getlong(char *type, long *lo)
 {
-  const static char *sql = "select value from metadata where type=?";
+  static const char *sql = "select value from metadata where type=?";
   const unsigned char *value;
   sqlite3_stmt *stmt = NULL;
   int rc = -1;
@@ -1016,7 +1019,7 @@ static int do_decoderead(void)
 
 static int do_scamperread_line(void *param, uint8_t *buf, size_t linelen)
 {
-  char *head = (char *)buf;
+  char *head = (char *)buf, *ptr;
   uint8_t uu[64];
   size_t uus;
   long lo;
@@ -1056,7 +1059,8 @@ static int do_scamperread_line(void *param, uint8_t *buf, size_t linelen)
   /* new piece of data */
   if(linelen > 5 && strncasecmp(head, "DATA ", 5) == 0)
     {
-      if(string_isnumber(head+5) == 0 || string_tolong(head+5, &lo) != 0)
+      if((lo = strtol(head+5, &ptr, 10)) < 1 ||
+	 (*ptr != '\0' && *ptr != ' '))
 	{
 	  fprintf(stderr, "%s: could not parse %s\n", __func__, head);
 	  return -1;
@@ -1353,7 +1357,7 @@ static int do_sqlite_init_data(void)
     "create index data_dsts_addr on data_dsts(addr)",
   };
   char *errmsg;
-  int i;
+  size_t i;
 
   for(i=0; i<sizeof(create_sql) / sizeof(char *); i++)
     {

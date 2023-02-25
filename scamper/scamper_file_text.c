@@ -5,7 +5,7 @@
  * Copyright (C) 2006-2010 The University of Waikato
  * Author: Matthew Luckie
  *
- * $Id: scamper_file_text.c,v 1.88 2020/03/17 07:32:16 mjl Exp $
+ * $Id: scamper_file_text.c,v 1.89 2022/07/02 21:21:56 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -33,31 +33,3 @@
 #include "scamper_file_text.h"
 #include "utils.h"
 
-int scamper_file_text_is(const scamper_file_t *sf)
-{
-  char buf[10];
-  int fd;
-
-  fd = scamper_file_getfd(sf);
-
-  if(lseek(fd, 0, SEEK_SET) == -1)
-    {
-      return 0;
-    }
-
-  if(read_wrap(fd, buf, NULL, sizeof(buf)) != 0)
-    {
-      return 0;
-    }
-
-  if(strncmp(buf, "traceroute", 10) == 0)
-    {
-      if(lseek(fd, 0, SEEK_SET) == -1)
-	{
-	  return 0;
-	}
-      return 1;
-    }
-
-  return 0;
-}

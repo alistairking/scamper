@@ -1,10 +1,11 @@
 /*
  * scamper_udp4.c
  *
- * $Id: scamper_udp4.c,v 1.75 2020/03/17 07:32:16 mjl Exp $
+ * $Id: scamper_udp4.c,v 1.76 2022/12/09 09:37:42 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2010 The University of Waikato
+ * Copyright (C) 2022      Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -181,7 +182,7 @@ int scamper_udp4_probe(scamper_probe_t *probe)
       probe->pr_errno = errno;
       printerror(__func__, "could not send to %s (%d ttl, %d dport, %d len)",
 		 scamper_addr_tostr(probe->pr_ip_dst, addr, sizeof(addr)),
-		 probe->pr_ip_ttl, probe->pr_udp_dport, len);
+		 probe->pr_ip_ttl, probe->pr_udp_dport, (int)len);
       return -1;
     }
   else if((size_t)i != len)

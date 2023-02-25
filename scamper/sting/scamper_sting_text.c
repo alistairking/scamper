@@ -2,9 +2,10 @@
  * scamper_sting_text.c
  *
  * Copyright (C) 2008-2010 The University of Waikato
+ * Copyright (C) 2022      Matthew Luckie
  * Author: Matthew Luckie
  *
- * $Id: scamper_sting_text.c,v 1.3 2020/03/17 07:32:16 mjl Exp $
+ * $Id: scamper_sting_text.c,v 1.4 2022/02/13 08:48:15 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -34,7 +35,7 @@
 #include "utils.h"
 
 int scamper_file_text_sting_write(const scamper_file_t *sf,
-				  const scamper_sting_t *sting)
+				  const scamper_sting_t *sting, void *p)
 {
   int      fd = scamper_file_getfd(sf);
   char     buf[192], src[64], dst[64];

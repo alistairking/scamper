@@ -1,12 +1,12 @@
 /*
  * scamper_control.c
  *
- * $Id: scamper_control.c,v 1.233.10.3 2022/07/23 00:50:24 mjl Exp $
+ * $Id: scamper_control.c,v 1.242 2023/01/24 20:41:15 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2012-2014 The Regents of the University of California
- * Copyright (C) 2014-2022 Matthew Luckie
+ * Copyright (C) 2014-2023 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -63,8 +63,10 @@
  */
 typedef struct client_obj
 {
-  void   *data;
-  size_t  len;
+  void     *data;
+  size_t    len;
+  uint32_t  id;
+  uint8_t   flags;
 } client_obj_t;
 
 /*
@@ -93,7 +95,7 @@ typedef struct client_message
 } client_message_t;
 
 /*
- * remote_t: struct to define a remote control instance.
+ * control_remote_t: struct to define a remote control instance.
  *
  * server_name: name/ip address of the remote control server
  * server_port: port to connect to on the remote control server
@@ -107,21 +109,18 @@ typedef struct client_message
  * num:         last ID assigned by this instance to identify callbacks
  * snd_nxt:     the next sequence number to use
  * rcv_nxt:     the next sequence number expected from the controller
- * messages:
+ * messages:    list of client_message_t structures
  * list:        list of client_t instances
- * tx_ka:
- * rx_abort:
- * sq:
- * resume:
- * mode:
- * node:
- *
-  int                 ssl_mode;
-  SSL                *ssl;
-  BIO                *ssl_rbio;
-  BIO                *ssl_wbio;
-
- *
+ * tx_ka:       when we sent the last keepalive to the remote instance
+ * rx_abort:    when to give up on the remote instance if unresponsive
+ * sq:          scamper_queue_t to manage events related to above timestamps
+ * resume:      1 if we should resume using magic, 0 if we should restart
+ * mode:        REMOTE_MODE_CONNECT or REMOTE_MODE_GO
+ * node:        dlist_node_t for this control_remote_t in remote_list
+ * ssl_mode:    SSL_MODE_HANDSHAKE or SSL_MODE_ESTABLISHED
+ * ssl:         OpenSSL structure
+ * ssl_rbio:    read BIO that OpenSSL structure will read from (we write)
+ * ssl_wbio:    write BIO that OpenSSL structure will write to (we read)
  *
  */
 typedef struct control_remote
@@ -237,6 +236,8 @@ typedef struct client
 
 #define CLIENT_FORMAT_WARTS     0
 #define CLIENT_FORMAT_JSON      1
+
+#define CLIENT_OBJ_FLAG_ID      0x01
 
 #define REMOTE_MODE_CONNECT     0
 #define REMOTE_MODE_GO          1
@@ -535,6 +536,11 @@ static void client_free(client_t *client)
   return;
 }
 
+#ifdef HAVE_FUNC_ATTRIBUTE_FORMAT
+static int client_send(client_t *client, char *fs, ...)
+  __attribute__((format(printf, 2, 3)));
+#endif
+
 static int client_send(client_t *client, char *fs, ...)
 {
   char msg[512], *str = NULL;
@@ -661,12 +667,12 @@ static int set_long(client_t *client, char *buf, char *name,
 
   if(setfunc(l) == -1)
     {
-      client_send(client, "ERR %s: %d out of range (%d, %d)", name,l,min,max);
-      scamper_debug(__func__, "%s: %d out of range (%d, %d)", name,l,min,max);
+      client_send(client, "ERR %s: %ld out of range (%d, %d)", name,l,min,max);
+      scamper_debug(__func__, "%s: %ld out of range (%d, %d)", name,l,min,max);
       return -1;
     }
 
-  client_send(client, "OK %s %d", name, l);
+  client_send(client, "OK %s %ld", name, l);
   return 0;
 }
 
@@ -756,11 +762,14 @@ static char *source_tostr(char *str, const size_t len,
  *
  * take a data object and put it on the list of data objects to send.
  */
-static int client_data_send(void *param, const void *vdata, size_t len)
+static int client_data_send(void *wf_param, const void *vdata, size_t len,
+			    void *p)
 {
-  client_t *client = param;
+  client_t *client = wf_param;
   client_obj_t *obj = NULL;
   const uint8_t *data = vdata;
+  scamper_task_t *task = p;
+  scamper_sourcetask_t *st;
   scamper_fd_t *fdn;
 
   assert(len >= 8);
@@ -806,6 +815,13 @@ static int client_data_send(void *param, const void *vdata, size_t len)
       goto err;
     }
   obj->len = len;
+
+  if(task != NULL)
+    {
+      st = scamper_task_getsourcetask(task);
+      obj->id = scamper_sourcetask_getid(st);
+      obj->flags |= CLIENT_OBJ_FLAG_ID;
+    }
 
   if(slist_tail_push(client->sof_objs, obj) == NULL)
     {
@@ -1412,13 +1428,13 @@ static int command_outfile_swap(client_t *client, char *buf)
 
   if((a = scamper_outfiles_get(files[0])) == NULL)
     {
-      client_send(client, "ERR unknown outfile '%s'", a);
+      client_send(client, "ERR unknown outfile '%s'", files[0]);
       return -1;
     }
 
   if((b = scamper_outfiles_get(files[1])) == NULL)
     {
-      client_send(client, "ERR unknown outfile '%s'", b);
+      client_send(client, "ERR unknown outfile '%s'", files[1]);
       return -1;
     }
 
@@ -2261,7 +2277,7 @@ static int client_isdone(client_t *client)
   if(client->type == CLIENT_TYPE_SOCKET &&
      (len = scamper_writebuf_len(client->un.sock.wb)) != 0)
     {
-      scamper_debug(__func__, "client writebuf len %d", len);
+      scamper_debug(__func__, "client writebuf len %d", (int)len);
       return 0;
     }
 
@@ -2318,8 +2334,8 @@ static int client_attached_cb(client_t *client, uint8_t *buf, size_t len)
 	return client_send(client, "ERR halt number invalid");
       id = (uint32_t)ll;
       if(scamper_source_halttask(client->source, id) != 0)
-	return client_send(client, "ERR no task id-%d", id);
-      return client_send(client, "OK halted %ld", id);
+	return client_send(client, "ERR no task id-%u", id);
+      return client_send(client, "OK halted %u", id);
     }
 
   /* try the command to see if it is valid and acceptable */
@@ -2474,8 +2490,8 @@ static int client_write_do(client_t *client,
   client_txt_t *t = NULL;
   client_obj_t *o = NULL;
   uint8_t data[8192];
-  char str[64];
-  size_t len;
+  char str[128];
+  size_t x, len;
   int rc;
 
   if(client->sof_off == 0)
@@ -2493,11 +2509,17 @@ static int client_write_do(client_t *client,
 	 (o = slist_head_pop(client->sof_objs)) != NULL)
 	{
 	  client->sof_obj = o;
+
 	  if(client->sof_format == CLIENT_FORMAT_WARTS)
-	    len = snprintf(str, sizeof(str), "DATA %d\n",
-			   (int)uuencode_len(o->len, NULL, NULL));
+	    x = uuencode_len(o->len, NULL, NULL);
 	  else
-	    len = snprintf(str, sizeof(str), "DATA %d\n", (int)o->len);
+	    x = o->len;
+
+	  if(o->flags & CLIENT_OBJ_FLAG_ID)
+	    len = snprintf(str, sizeof(str), "DATA %d id-%u\n", (int)x, o->id);
+	  else
+	    len = snprintf(str, sizeof(str), "DATA %d\n", (int)x);
+	  
 	  if(sendfunc(client, str, len) < 0)
 	    {
 	      printerror(__func__, "could not send DATA header");
@@ -2534,7 +2556,7 @@ static int client_write_do(client_t *client,
 
       if(sendfunc(client, data, len) != 0)
 	{
-	  printerror(__func__, "could not send %d bytes", len);
+	  printerror(__func__, "could not send %d bytes", (int)len);
 	  return -1;
 	}
     }
@@ -2809,7 +2831,7 @@ static int remote_sock_ssl_init(control_remote_t *rm)
   ERR_clear_error();
   rc = SSL_do_handshake(rm->ssl);
   assert(rc <= 0);
-  if((rc = SSL_get_error(rm->ssl, rc)) == SSL_ERROR_WANT_READ &&
+  if(SSL_get_error(rm->ssl, rc) == SSL_ERROR_WANT_READ &&
      remote_sock_ssl_want_read(rm) < 0)
     return -1;
 
@@ -2837,7 +2859,7 @@ static int remote_sock_is_valid_cert(control_remote_t *rm)
   const char *dname;
   char buf[256];
   int rc = 0;
-  int i, count;
+  int i, count, x;
 
   if(SSL_get_verify_result(rm->ssl) != X509_V_OK)
     {
@@ -2857,14 +2879,16 @@ static int remote_sock_is_valid_cert(control_remote_t *rm)
       for(i=0; i<count; i++)
 	{
 	  gname = sk_GENERAL_NAME_value(names, i);
-	  if(gname->type != GEN_DNS)
+	  if(gname == NULL || gname->type != GEN_DNS ||
+	     gname->d.dNSName == NULL ||
+	     (x = ASN1_STRING_length(gname->d.dNSName)) < 1)
 	    continue;
 #ifdef HAVE_ASN1_STRING_GET0_DATA
 	  dname = (const char *)ASN1_STRING_get0_data(gname->d.dNSName);
 #else
 	  dname = (const char *)ASN1_STRING_data(gname->d.dNSName);
 #endif
-	  if(ASN1_STRING_length(gname->d.dNSName) != (int)strlen(dname))
+	  if(dname == NULL || (size_t)x != strlen(dname))
 	    continue;
 	  if(strcasecmp(dname, rm->server_name) == 0)
 	    {
@@ -2937,7 +2961,7 @@ static int remote_sock_send(control_remote_t *rm, void *ptr, size_t len,
 
   if(len == 0 || len > 65535)
     {
-      scamper_debug(__func__, "invalid length %d", len);
+      scamper_debug(__func__, "invalid length %d", (int)len);
       goto err;
     }
 
@@ -3096,7 +3120,7 @@ static int remote_read_control_master_id(control_remote_t *rm,
 
   if(len < 1)
     {
-      printerror_msg(__func__, "len %d", len);
+      printerror_msg(__func__, "len %d", (int)len);
       return -1;
     }
 
@@ -3110,7 +3134,7 @@ static int remote_read_control_master_id(control_remote_t *rm,
   /* ensure the message could contain the specified number of bytes */
   if(len < id_len)
     {
-      printerror_msg(__func__, "len %d < id_len %d", len, id_len);
+      printerror_msg(__func__, "len %d < id_len %u", (int)len, id_len);
       return -1;
     }
 
@@ -3151,7 +3175,7 @@ static int remote_read_control_channel_new(control_remote_t *rm,
 
   if(len != 4)
     {
-      printerror_msg(__func__, "length %d != 4", len);
+      printerror_msg(__func__, "length %d != 4", (int)len);
       return -1;
     }
   channel = bytes_ntohl(buf);
@@ -3241,7 +3265,7 @@ static int remote_read_control_keepalive(control_remote_t *rm,
 {
   if(len != 0)
     {
-      printerror_msg(__func__, "len %d != 0", len);
+      printerror_msg(__func__, "len %d != 0", (int)len);
       return -1;
     }
   return 0;
@@ -3713,7 +3737,6 @@ static void remote_write(const int fd, void *param)
   dlist_node_t *dn;
   client_t *client;
   uint8_t buf[1+4];
-  int rc = 0;
 
   /*
    * if there is nothing buffered in the writebuf, then put some more
@@ -3755,7 +3778,7 @@ static void remote_write(const int fd, void *param)
 	      continue;
 	    }
 
-	  if((rc = client_write_do(client, client_channel_send)) != 0)
+	  if(client_write_do(client, client_channel_send) != 0)
 	    goto err;
 	}
 
@@ -3894,7 +3917,7 @@ static int remote_connect(control_remote_t *rm)
   struct addrinfo hints, *res, *res0 = NULL;
   struct timeval tv;
   char port[8];
-  int rc, fd = -1;
+  int fd = -1;
 
   snprintf(port, sizeof(port), "%d", rm->server_port);
   memset(&hints, 0, sizeof(hints));
@@ -3907,7 +3930,7 @@ static int remote_connect(control_remote_t *rm)
    * if we cannot convert the server name to an IP address, then assume
    * it is a hostname and invoke the name resolution code
    */
-  if((rc = getaddrinfo(rm->server_name, port, &hints, &res0)) != 0)
+  if(getaddrinfo(rm->server_name, port, &hints, &res0) != 0)
     {
       if(scamper_do_host_do_a(rm->server_name, rm,
 			      (scamper_host_do_a_cb_t)remote_host_cb) == NULL)

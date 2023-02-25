@@ -1,13 +1,13 @@
 /*
  * scamper_source
  *
- * $Id: scamper_sources.c,v 1.59 2020/03/17 07:32:16 mjl Exp $
+ * $Id: scamper_sources.c,v 1.60 2022/02/13 08:48:15 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2012      Matthew Luckie
  * Copyright (C) 2012      The Regents of the University of California
- * Copyright (C) 2018      Matthew Luckie
+ * Copyright (C) 2018-2022 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -1509,6 +1509,11 @@ int scamper_source_cycle(scamper_source_t *source)
 scamper_source_t *scamper_sourcetask_getsource(scamper_sourcetask_t *st)
 {
   return st->source;
+}
+
+uint32_t scamper_sourcetask_getid(scamper_sourcetask_t *st)
+{
+  return st->id;
 }
 
 /*

@@ -29,7 +29,7 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  *
- * $Id: mjl_splaytree.h,v 1.16 2018/05/12 21:49:04 mjl Exp $
+ * $Id: mjl_splaytree.h,v 1.17 2022/12/18 03:46:38 mjl Exp $
  *
  */
 
@@ -95,11 +95,11 @@ void *splaytree_gethead(splaytree_t *tree);
 void *splaytree_pophead(splaytree_t *tree);
 
 /* calculate the longest search path of the subtree passed in */
-int splaytree_depth(splaytree_t *tree);
+int splaytree_depth(const splaytree_t *tree);
 
 void splaytree_display(splaytree_t *tree, splaytree_display_t disp);
 
-int splaytree_count(splaytree_t *tree);
+int splaytree_count(const splaytree_t *tree);
 
 void splaytree_inorder(splaytree_t *tree, splaytree_inorder_t func, void *in);
 

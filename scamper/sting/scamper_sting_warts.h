@@ -1,9 +1,10 @@
 /*
  * scamper_sting_warts.h
  *
- * $Id: scamper_sting_warts.h,v 1.1 2010/10/18 07:02:57 mjl Exp $
+ * $Id: scamper_sting_warts.h,v 1.2 2022/02/13 08:48:15 mjl Exp $
  *
  * Copyright (C) 2010 University of Waikato
+ * Copyright (C) 2022 Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -24,7 +25,7 @@
 #define __SCAMPER_STING_WARTS_H
 
 int scamper_file_warts_sting_write(const scamper_file_t *sf,
-				   const scamper_sting_t *sting);
+				   const scamper_sting_t *sting, void *p);
 
 int scamper_file_warts_sting_read(scamper_file_t *sf, const warts_hdr_t *hdr,
 				  scamper_sting_t **sting_out);

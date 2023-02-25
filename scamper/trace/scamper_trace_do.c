@@ -1,14 +1,14 @@
 /*
  * scamper_do_trace.c
  *
- * $Id: scamper_trace_do.c,v 1.328.4.2 2022/08/10 22:39:49 mjl Exp $
+ * $Id: scamper_trace_do.c,v 1.334 2023/01/01 08:24:19 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2008      Alistair King
  * Copyright (C) 2012-2015 The Regents of the University of California
  * Copyright (C) 2015      The University of Waikato
- * Copyright (C) 2019-2021 Matthew Luckie
+ * Copyright (C) 2019-2023 Matthew Luckie
  *
  * Authors: Matthew Luckie
  *          Doubletree implementation by Alistair King
@@ -272,7 +272,7 @@ typedef struct trace_state
   uint8_t              confidence;    /* index into k[] */
   uint8_t              n;             /* index into k[] */
   scamper_addr_t     **interfaces;    /* ifaces found so far at this ttl */
-  uint16_t             interfacec;    /* count of interfaces */
+  size_t               interfacec;    /* count of interfaces */
 
   trace_pmtud_state_t *pmtud;         /* pmtud state */
 
@@ -285,7 +285,7 @@ typedef struct trace_state
    * the first time it is seen.
    */
   scamper_addr_t     **lss;
-  int                  lssc;
+  size_t               lssc;
   trace_lss_t         *lsst;
 } trace_state_t;
 
@@ -1693,8 +1693,6 @@ static void trace_stop_reason(scamper_trace_t *trace, scamper_trace_hop_t *hop,
 			      trace_state_t *state,
 			      uint8_t *stop_reason, uint8_t *stop_data)
 {
-  int rc;
-
   /*
    * the message received is an ICMP port unreachable -- something that
    * the destination should have sent.  make sure the port unreachable
@@ -1740,7 +1738,7 @@ static void trace_stop_reason(scamper_trace_t *trace, scamper_trace_hop_t *hop,
       *stop_reason = SCAMPER_TRACE_STOP_ICMP;
       *stop_data   = hop->hop_icmp_type;
     }
-  else if(trace->loops != 0 && (rc = trace_isloop(trace, hop, state)) != 0)
+  else if(trace->loops != 0 && trace_isloop(trace, hop, state) != 0)
     {
       /* check for a loop condition */
       *stop_reason = SCAMPER_TRACE_STOP_LOOP;
@@ -2507,8 +2505,6 @@ static void do_trace_handle_icmp(scamper_task_t *task, scamper_icmp_resp_t *ir)
       return;
     }
 
-  scamper_icmp_resp_print(ir);
-
   /*
    * if the trace is in a mode that does not handle ICMP responses, then
    * stop now
@@ -3187,9 +3183,9 @@ static void dlin_trace(scamper_trace_t *trace,
       if(probe->attempt > hop->hop_probe_id) break;
 
       scamper_debug(__func__,
-		    "hop %d.%06d dl_rec %d.%06d diff %d",
-		    hop->hop_rtt.tv_sec, hop->hop_rtt.tv_usec,
-		    tv.tv_sec, tv.tv_usec,
+		    "hop %ld.%06d dl_rec %ld.%06d diff %d",
+		    (long)hop->hop_rtt.tv_sec, (int)hop->hop_rtt.tv_usec,
+		    (long)tv.tv_sec, (int)tv.tv_usec,
 		    timeval_diff_us(&hop->hop_rtt, &tv));
 
       hop->hop_flags &= ~(SCAMPER_TRACE_HOP_FLAG_TS_SOCK_RX);
@@ -3548,9 +3544,9 @@ static void do_trace_handle_dl(scamper_task_t *task, scamper_dl_rec_t *dl)
     }
   else
     {
-      scamper_debug(__func__, "probe %d.%06d dl %d.%06d diff %d",
-		    probe->tx_tv.tv_sec, probe->tx_tv.tv_usec,
-		    dl->dl_tv.tv_sec, dl->dl_tv.tv_usec,
+      scamper_debug(__func__, "probe %ld.%06d dl %ld.%06d diff %d",
+		    (long)probe->tx_tv.tv_sec, (int)probe->tx_tv.tv_usec,
+		    (long)dl->dl_tv.tv_sec, (int)dl->dl_tv.tv_usec,
 		    timeval_diff_us(&probe->tx_tv, &dl->dl_tv));
 
       /* if at least one hop record is present then adjust */
@@ -3702,7 +3698,7 @@ static void trace_handle_rt(scamper_route_t *rt)
 
 static void do_trace_write(scamper_file_t *sf, scamper_task_t *task)
 {
-  scamper_file_write_trace(sf, trace_getdata(task));
+  scamper_file_write_trace(sf, trace_getdata(task), task);
   return;
 }
 
@@ -4877,6 +4873,32 @@ scamper_task_t *scamper_do_trace_alloctask(void *data,
   if(trace->src == NULL && (trace->src = scamper_getsrc(trace->dst,0)) == NULL)
     goto err;
   sig->sig_tx_ip_src = scamper_addr_use(trace->src);
+
+  switch(trace->type)
+    {
+    case SCAMPER_TRACE_TYPE_ICMP_ECHO:
+    case SCAMPER_TRACE_TYPE_ICMP_ECHO_PARIS:
+      SCAMPER_TASK_SIG_ICMP_ECHO(sig, trace->sport);
+      break;
+
+    case SCAMPER_TRACE_TYPE_UDP:
+      SCAMPER_TASK_SIG_UDP_DPORT(sig, trace->sport, 0, 65535);
+      break;
+
+    case SCAMPER_TRACE_TYPE_UDP_PARIS:
+      SCAMPER_TASK_SIG_UDP(sig, trace->sport, trace->dport);
+      break;
+
+    case SCAMPER_TRACE_TYPE_TCP:
+    case SCAMPER_TRACE_TYPE_TCP_ACK:
+      SCAMPER_TASK_SIG_TCP(sig, trace->sport, trace->dport);
+      break;
+
+    default:
+      scamper_debug(__func__, "unhandled type %d", trace->type);
+      goto err;
+    }
+
   if(scamper_task_sig_add(task, sig) != 0)
     goto err;
   sig = NULL;

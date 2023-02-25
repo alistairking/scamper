@@ -1,7 +1,7 @@
 /*
  * scamper_debug.c
  *
- * $Id: scamper_debug.c,v 1.39.8.2 2022/06/13 20:20:28 mjl Exp $
+ * $Id: scamper_debug.c,v 1.41 2022/06/13 20:19:00 mjl Exp $
  *
  * routines to reduce the impact of debugging cruft in scamper's code.
  *

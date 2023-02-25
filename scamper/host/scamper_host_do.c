@@ -1,9 +1,9 @@
 /*
  * scamper_do_host
  *
- * $Id: scamper_host_do.c,v 1.43 2021/10/28 17:49:40 mjl Exp $
+ * $Id: scamper_host_do.c,v 1.47 2022/12/09 09:37:42 mjl Exp $
  *
- * Copyright (C) 2018-2020 Matthew Luckie
+ * Copyright (C) 2018-2022 Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -106,6 +106,73 @@ const char *scamper_do_host_usage(void)
 {
   return
     "host [-r] [-R number] [-s server] [-t type] [-U userid] [-W wait] name\n";
+}
+
+static int etc_resolv_line(char *line, void *param)
+{
+  scamper_addr_t *sa;
+  int x = 0, y;
+
+  /* no need to proceed further if we already have a nameserver */
+  if(default_ns != NULL)
+    return 0;
+
+  if(line[0] == '\0' || line[0] == '#')
+    return 0;
+
+  x = 10;
+  if(strncasecmp(line, "nameserver", x) != 0)
+    return 0;
+  while(isspace(line[x]) != 0)
+    x++;
+  if(x == 10 || line[x] == '\0')
+    return 0;
+
+  /* null terminate at spaces / comments */
+  y = x;
+  while(isspace(line[y]) == 0 && line[y] != '\0' && line[y] != '#' &&
+	line[y] != ';')
+    y++;
+  line[y] = '\0';
+
+  if(strcasecmp(line+x, "fe80::1") == 0)
+    return 0;
+
+  if((sa = scamper_addr_resolve(AF_UNSPEC, line+x)) == NULL)
+    {
+      scamper_debug(__func__, "could not resolve %s", line+x);
+      return 0;
+    }
+  default_ns = sa;
+
+  return 0;
+}
+
+static void etc_resolv(void)
+{
+  int fd, flags = O_RDONLY;
+
+#if defined(WITHOUT_PRIVSEP)
+  fd = open("/etc/resolv.conf", flags);
+#else
+  fd = scamper_privsep_open_file("/etc/resolv.conf", flags, 0);
+#endif
+
+  /* non-fatal error, but we won't be able to do hostname lookups */
+  if(fd == -1)
+    {
+      scamper_debug(__func__, "could not open /etc/resolv.conf");
+      return;
+    }
+
+  fd_lines(fd, etc_resolv_line, NULL);
+  close(fd);
+
+  /* non-fatal error, but we won't be able to do hostname lookups */
+  if(default_ns == NULL)
+    scamper_debug(__func__, "no nameserver in /etc/resolv.conf");
+
+  return;
 }
 
 static int host_fd_close(void *param)
@@ -386,7 +453,7 @@ static int extract_name(char *name, size_t namelen,
 	  u16 = bytes_ntohs(pktbuf+off) & 0x3fff;
 	  if(u16 >= off)
 	    {
-	      scamper_debug(__func__, "ptr %u >= %u\n", u16, off);
+	      scamper_debug(__func__, "ptr %u >= %d\n", u16, (int)off);
 	      return -1;
 	    }
 	  off = u16;
@@ -682,7 +749,6 @@ static void do_host_probe(scamper_task_t *task)
   struct sockaddr *sa;
   struct timeval tv;
   uint16_t id;
-  ssize_t ss;
   size_t off;
   int fd;
 
@@ -834,7 +900,7 @@ static void do_host_probe(scamper_task_t *task)
   gettimeofday_wrap(&q->tx);
   q->id = id;
 
-  if((ss = sendto(fd, pktbuf, off, 0, sa, sockaddr_len(sa))) == -1)
+  if(sendto(fd, pktbuf, off, 0, sa, sockaddr_len(sa)) == -1)
     {
       printerror(__func__, "could not send query");
       goto err;
@@ -1050,7 +1116,11 @@ void *scamper_do_host_alloc(char *str, uint32_t *id)
   if(server == NULL)
     {
       if(default_ns == NULL)
-	goto err;
+	{
+	  etc_resolv();
+	  if(default_ns == NULL)
+	    goto err;
+	}
       host->dst = scamper_addr_use(default_ns);
     }
   else
@@ -1128,6 +1198,16 @@ static scamper_host_do_t *scamper_do_host_do_host(const char *qname,
   scamper_host_do_t *hostdo = NULL;
   scamper_host_t *host = NULL;
   scamper_task_t *task = NULL;
+
+  if(default_ns == NULL)
+    {
+      etc_resolv();
+      if(default_ns == NULL)
+	{
+	  scamper_debug(__func__, "no nameserver available");
+	  goto err;
+	}
+    }
 
   if((host = scamper_host_alloc()) == NULL ||
      (host->qname = strdup(qname)) == NULL)
@@ -1305,7 +1385,7 @@ void scamper_do_host_cleanup()
 
 static void do_host_write(scamper_file_t *sf, scamper_task_t *task)
 {
-  scamper_file_write_host(sf, host_getdata(task));
+  scamper_file_write_host(sf, host_getdata(task), task);
   return;
 }
 
@@ -1416,78 +1496,6 @@ static void do_host_free(scamper_task_t *task)
   return;
 }
 
-static int etc_resolv_line(char *line, void *param)
-{
-  scamper_addr_t *sa;
-  int x = 0, y;
-
-  if(line[0] == '\0' || line[0] == '#')
-    return 0;
-
-  x = 10;
-  if(strncasecmp(line, "nameserver", x) != 0)
-    return 0;
-  while(isspace(line[x]) != 0)
-    x++;
-  if(x == 10 || line[x] == '\0')
-    return 0;
-
-  /* null terminate at spaces / comments */
-  y = x;
-  while(isspace(line[y]) == 0 && line[y] != '\0' && line[y] != '#' &&
-	line[y] != ';')
-    y++;
-  line[y] = '\0';
-
-  if(strcasecmp(line+x, "fe80::1") == 0)
-    return 0;
-
-  if((sa = scamper_addr_resolve(AF_UNSPEC, line+x)) == NULL)
-    {
-      printerror(__func__, "could not resolve %s", line+x);
-      return -1;
-    }
-  if(default_ns == NULL)
-    default_ns = sa;
-  else
-    scamper_addr_free(sa);
-
-  return 0;
-}
-
-static int etc_resolv(void)
-{
-  int fd, flags = O_RDONLY;
-
-#if defined(WITHOUT_PRIVSEP)
-  fd = open("/etc/resolv.conf", flags);
-#else
-  fd = scamper_privsep_open_file("/etc/resolv.conf", flags, 0);
-#endif
-
-  /* non-fatal error, but we won't be able to do hostname lookups */
-  if(fd == -1)
-    {
-      scamper_debug(__func__, "could not open /etc/resolv.conf");
-      return 0;
-    }
-
-  if(fd_lines(fd, etc_resolv_line, NULL) != 0)
-    goto err;
-  close(fd); fd = -1;
-  if(default_ns == NULL)
-    {
-      printerror_msg(__func__, "no nameserver in /etc/resolv.conf");
-      goto err;
-    }
-
-  return 0;
-
- err:
-  if(fd != -1) close(fd);
-  return -1;
-}
-
 /*
  * scamper_do_host_setns
  *
@@ -1529,8 +1537,10 @@ int scamper_do_host_init()
       if(scamper_do_host_setns(nsip) != 0)
 	return -1;
     }
-  else if(etc_resolv() != 0)
-    return -1;
+  else
+    {
+      etc_resolv();
+    }
 
   if((queries = splaytree_alloc((splaytree_cmp_t)host_id_cmp)) == NULL)
     return -1;

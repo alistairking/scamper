@@ -3,7 +3,7 @@
  *
  * Copyright (C) 2014 The Regents of the University of California
  *
- * $Id: sc_warts2csv.c,v 1.4 2020/03/17 07:32:17 mjl Exp $
+ * $Id: sc_warts2csv.c,v 1.5 2022/12/15 07:17:59 mjl Exp $
  *
  * Authors: Vaibhav Bajpai, Matthew Luckie
  *
@@ -66,8 +66,8 @@ static void csv_trace(scamper_trace_t *trace)
 	  printf("scamper.%s;%u;%d;%s;%s;%s;%s;%u;%s;%s\n", PACKAGE_VERSION,
 		 trace->userid, (int)trace->start.tv_sec, src, dst, tptr,
 		 sptr, hop->hop_probe_ttl,
-		 scamper_addr_tostr(hop->hop_addr,addr,sizeof(addr)),
-		 timeval_tostr_us(&hop->hop_rtt, rtt, sizeof(addr)));
+		 scamper_addr_tostr(hop->hop_addr, addr, sizeof(addr)),
+		 timeval_tostr_us(&hop->hop_rtt, rtt, sizeof(rtt)));
 	}
     }
 

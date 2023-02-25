@@ -1,7 +1,7 @@
 /*
  * scamper_do_tbit.c
  *
- * $Id: scamper_tbit_do.c,v 1.185.10.2 2022/08/10 22:39:49 mjl Exp $
+ * $Id: scamper_tbit_do.c,v 1.190 2023/01/01 08:24:19 mjl Exp $
  *
  * Copyright (C) 2009-2010 Ben Stasiewicz
  * Copyright (C) 2009-2010 Stephen Eichler
@@ -9,6 +9,7 @@
  * Copyright (C) 2012      Matthew Luckie
  * Copyright (C) 2012-2015 The Regents of the University of California
  * Copyright (C) 2017      University of Waikato
+ * Copyright (C) 2022-2023 Matthew Luckie
  *
  * Authors: Matthew Luckie, Ben Stasiewicz, Stephen Eichler, Tiange Wu,
  *          Robert Beverly
@@ -110,7 +111,7 @@ typedef struct tbit_frags
   struct timeval   tv;
   uint32_t         id;
   tbit_frag_t    **frags;
-  int              fragc;
+  size_t           fragc;
   uint8_t          gotlast;
 } tbit_frags_t;
 
@@ -162,7 +163,7 @@ typedef struct tbit_state
   uint32_t                    rcv_nxt;
 
   tbit_frags_t              **frags;
-  int                         fragc;
+  size_t                      fragc;
 
   uint32_t                    ts_recent;
   uint32_t                    ts_lastack;
@@ -673,7 +674,7 @@ static void tbit_handleerror(scamper_task_t *task, int error)
 
 static void tbit_frags_free(tbit_frags_t *frags)
 {
-  int i;
+  size_t i;
 
   if(frags == NULL)
     return;
@@ -715,9 +716,9 @@ static int tbit_reassemble(scamper_task_t *task, scamper_dl_rec_t **out,
   tbit_frags_t fmfs, *frags;
   tbit_frag_t fmf, *frag, *next;
   uint8_t *data = NULL;
-  size_t off;
+  size_t off, pos, i;
   uint16_t mtu;
-  int i, rc, pos, ipv4 = 0, ipv6 = 0;
+  int rc, ipv4 = 0, ipv6 = 0;
 
   /* empty fragment? */
   if(dl->dl_ip_datalen == 0 || dl->dl_ip_proto != IPPROTO_TCP)
@@ -760,9 +761,9 @@ static int tbit_reassemble(scamper_task_t *task, scamper_dl_rec_t **out,
     fmfs.id = dl->dl_ip_id;
   else
     fmfs.id = dl->dl_ip6_id;
-  pos = array_findpos((void **)state->frags, state->fragc, &fmfs,
-		      (array_cmp_t)tbit_frags_cmp);
-  if(pos >= 0)
+  rc = array_findpos((void **)state->frags, state->fragc, &fmfs,
+		     (array_cmp_t)tbit_frags_cmp, &pos);
+  if(rc == 0)
     {
       frags = state->frags[pos];
     }
@@ -774,16 +775,16 @@ static int tbit_reassemble(scamper_task_t *task, scamper_dl_rec_t **out,
 	  goto err;
 	}
       frags->id = fmfs.id;
-      rc=array_insert((void ***)&state->frags, &state->fragc, frags,
-		      (array_cmp_t)tbit_frags_cmp);
+      rc = array_insert((void ***)&state->frags, &state->fragc, frags,
+			(array_cmp_t)tbit_frags_cmp);
       if(rc != 0)
 	{
 	  printerror(__func__, "could not insert frags");
 	  goto err;
 	}
-      pos = array_findpos((void **)state->frags, state->fragc, frags,
-			  (array_cmp_t)tbit_frags_cmp);
-      assert(pos != -1);
+      rc = array_findpos((void **)state->frags, state->fragc, frags,
+			 (array_cmp_t)tbit_frags_cmp, &pos);
+      assert(rc == 0);
     }
 
   /* add the fragment to the collection */
@@ -823,6 +824,7 @@ static int tbit_reassemble(scamper_task_t *task, scamper_dl_rec_t **out,
       return 0;
     }
 
+  /* frags->fragc cannot be zero (wrap) because frag->frac was checked above */
   for(i=0; i<frags->fragc-1; i++)
     {
       frag = frags->frags[i];
@@ -1169,7 +1171,7 @@ static int tbit_app_http_rx(scamper_task_t *task, uint8_t *data, uint16_t dlen)
       if(state->ssl_mode == TBIT_STATE_SSL_MODE_HANDSHAKE)
 	{
 	  if(SSL_is_init_finished(state->ssl) != 0 ||
-	     (rc = SSL_do_handshake(state->ssl)) > 0)
+	     SSL_do_handshake(state->ssl) > 0)
 	    {
 	      state->ssl_mode = TBIT_STATE_SSL_MODE_ESTABLISHED;
 	      state->flags |= TBIT_STATE_FLAG_NOMOREDATA;
@@ -1179,7 +1181,7 @@ static int tbit_app_http_rx(scamper_task_t *task, uint8_t *data, uint16_t dlen)
 	}
       else if(state->ssl_mode == TBIT_STATE_SSL_MODE_ESTABLISHED)
 	{
-	  while((rc = SSL_read(state->ssl, buf, sizeof(buf))) > 0);
+	  while(SSL_read(state->ssl, buf, sizeof(buf)) > 0);
 	  return tbit_ssl_wbio_write(state);
 	}
     }
@@ -2363,7 +2365,7 @@ static int dl_data_blindfin(scamper_task_t *task, scamper_dl_rec_t *dl)
 	  if(tbit_app_rx(task, dl->dl_tcp_data, dl->dl_tcp_datalen) < 0)
 	    goto err;
 	  state->rcv_nxt += dl->dl_tcp_datalen;
-	  if((tp = tp_tcp(state)) == NULL)
+	  if(tp_tcp(state) == NULL)
 	    goto err;
 	}
 
@@ -3439,7 +3441,7 @@ static void tbit_handle_rt(scamper_route_t *rt)
 
 static void do_tbit_write(scamper_file_t *sf, scamper_task_t *task)
 {
-  scamper_file_write_tbit(sf, tbit_getdata(task));
+  scamper_file_write_tbit(sf, tbit_getdata(task), task);
   return;
 }
 
@@ -3447,7 +3449,7 @@ static void tbit_state_free(scamper_task_t *task)
 {
   scamper_tbit_t *tbit = tbit_getdata(task);
   tbit_state_t *state = tbit_getstate(task);
-  int i;
+  size_t i;
 
   if(state == NULL)
     return;
@@ -4491,6 +4493,7 @@ scamper_task_t *scamper_do_tbit_alloctask(void *data, scamper_list_t *list,
   if(tbit->src == NULL && (tbit->src = scamper_getsrc(tbit->dst,0)) == NULL)
     goto err;
   sig->sig_tx_ip_src = scamper_addr_use(tbit->src);
+  SCAMPER_TASK_SIG_TCP(sig, tbit->sport, tbit->dport);
   if(scamper_task_sig_add(task, sig) != 0)
     goto err;
   sig = NULL;

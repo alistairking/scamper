@@ -1,12 +1,13 @@
 /*
  * scamper_file_arts.h
  *
- * $Id: scamper_file_arts.h,v 1.8 2011/09/16 03:15:44 mjl Exp $
+ * $Id: scamper_file_arts.h,v 1.10 2022/07/02 21:21:56 mjl Exp $
  *
  * code to read the legacy arts data file format into scamper_trace structures.
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2008 The University of Waikato
+ * Copyright (C) 2022      Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -27,10 +28,9 @@
 #ifndef _SCAMPER_FILE_ARTS_H
 #define _SCAMPER_FILE_ARTS_H
 
-int scamper_file_arts_read(scamper_file_t *sf, scamper_file_filter_t *filter,
+int scamper_file_arts_read(scamper_file_t *sf,
+			   const scamper_file_filter_t *filter,
 			   uint16_t *type, void **data);
-
-int scamper_file_arts_is(const scamper_file_t *file);
 
 int scamper_file_arts_init_read(scamper_file_t *file);
 

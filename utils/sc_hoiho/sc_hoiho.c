@@ -1,7 +1,7 @@
 /*
  * sc_hoiho: Holistic Orthography of Internet Hostname Observations
  *
- * $Id: sc_hoiho.c,v 1.12 2021/12/12 00:05:06 mjl Exp $
+ * $Id: sc_hoiho.c,v 1.19 2023/01/03 02:43:13 mjl Exp $
  *
  *         Matthew Luckie
  *         mjl@luckie.org.nz
@@ -9,6 +9,7 @@
  *         Marianne Fletcher added code to infer ASN and geo regexes.
  *
  * Copyright (C) 2017-2021 The University of Waikato
+ * Copyright (C) 2022-2023 Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -37,17 +38,11 @@
 #include <pcre.h>
 #endif
 
-#ifdef DMALLOC
-#include <dmalloc.h>
-#endif
-
-#include <assert.h>
-
-#include "scamper/scamper_addr.h"
-
 #ifdef HAVE_PTHREAD
 #include <pthread.h>
 #endif
+
+#include "scamper/scamper_addr.h"
 
 #include "mjl_threadpool.h"
 #include "mjl_splaytree.h"
@@ -83,7 +78,7 @@ typedef struct sc_domain
   uint32_t        rtmlen;  /* how wide a mask for router tags should be */
 
   sc_geohint_t  **geohints; /* domain-specific geohints */
-  int             geohintc; /* how many domain-specific geohints */
+  size_t          geohintc; /* how many domain-specific geohints */
 
 #ifdef HAVE_PTHREAD
   pthread_mutex_t mutex;   /* lock the domain */
@@ -114,7 +109,7 @@ struct sc_regex
   sc_domain_t    *dom;     /* the domain this regex is for */
 
   sc_geohint_t  **geohints; /* learned geohints */
-  int             geohintc; /* how many learned geohints */
+  size_t          geohintc; /* how many learned geohints */
 
   /* these parameters are set during evaluation */
   uint32_t        matchc;  /* number of matches */
@@ -182,7 +177,7 @@ typedef struct sc_country
   char            iso3[4];
   char           *name;
   sc_geohint_t  **hints;
-  int             hintc;
+  size_t          hintc;
 } sc_country_t;
 
 /*
@@ -197,19 +192,18 @@ struct sc_state
   sc_state_t     *head;    /* head when multiple states have the same code */
   sc_state_t     *next;    /* next state with the same code */
   sc_geohint_t  **hints;   /* places with this st/cc combination */
-  int             hintc;   /* number of entries in hints array */
+  size_t          hintc;   /* number of entries in hints array */
 };
 
 /*
  * sc_rtt_t:
  *
- * An RTT sample for a given location. The location is an index into the
- * geocode array.
+ * An RTT sample from a given location.
  */
 typedef struct sc_rtt
 {
-  uint32_t        loc;
-  uint16_t        rtt;
+  uint32_t        loc; /* index into a geohints array */
+  uint16_t        rtt; /* rtt, in milliseconds */
 } sc_rtt_t;
 
 typedef struct sc_geotagn
@@ -223,7 +217,7 @@ typedef struct sc_geotag
 {
   sc_geohint_t   *hint;
   sc_geotagn_t   *tags;
-  int             tagc;
+  size_t          tagc;
 } sc_geotag_t;
 
 /*
@@ -281,10 +275,10 @@ typedef struct sc_iface
   size_t          len;     /* length of hostname */
   scamper_addr_t *addr;    /* corresponding IP address */
   sc_router_t    *rtr;     /* backpointer to router */
-  int16_t         ip_s;    /* possible start of IP address */
-  int16_t         ip_e;    /* possible end of IP address */
-  int16_t         as_s;    /* possible start of ASN */
-  int16_t         as_e;    /* possible end of ASN */
+  uint16_t        ip_s;    /* possible start of IP address */
+  uint16_t        ip_e;    /* possible end of IP address */
+  uint16_t        as_s;    /* possible start of ASN */
+  uint16_t        as_e;    /* possible end of ASN */
   int16_t        *asnames; /* possible locations of AS names */
   uint8_t         asnamec; /* number of possible name tags */
   sc_geotag_t    *geos;    /* possible locations of geo tags */
@@ -295,11 +289,11 @@ typedef struct sc_iface
 struct sc_router
 {
   sc_iface_t    **ifaces;  /* interfaces inferred to be part of the router */
-  int             ifacec;  /* number of interfaces involved */
+  size_t          ifacec;  /* number of interfaces involved */
   uint32_t        id;      /* node id */
   uint32_t        asn;     /* inferred owner */
   sc_rtt_t       *rtts;    /* RTT samples */
-  int             rttc;    /* count of RTT samples */
+  size_t          rttc;    /* count of RTT samples */
   uint8_t         flags;   /* flags */
 };
 
@@ -343,7 +337,7 @@ typedef struct sc_ifaceinf
   sc_css_t       *css;     /* inferred name/ASN */
   sc_routerinf_t *ri;      /* pointer to inferred router */
   sc_geohint_t   *geohint; /* pointer to associated geohint */
-  int             rtrc;    /* how many interfaces from training routers */
+  size_t          rtrc;    /* how many interfaces from training routers */
   int             regex;   /* regex id */
   char            class;   /* classification */
   uint8_t         ipm;     /* do we believe extraction contains IP literal */
@@ -352,8 +346,8 @@ typedef struct sc_ifaceinf
 struct sc_routerinf
 {
   sc_ifaceinf_t **ifaces;  /* interfaces inferred to belong to the router */
-  int             ifacec;  /* number of inferred interfaces */
-  int             maxrtrc; /* max number of interfaces from a training rtr */
+  size_t          ifacec;  /* number of inferred interfaces */
+  size_t          maxrtrc; /* max number of interfaces from a training rtr */
   int             ip;      /* name includes IP string */
 };
 
@@ -378,14 +372,14 @@ typedef struct sc_as2tag
 typedef struct sc_rttload
 {
   sc_router_t   **routers;
-  int             routerc;
+  size_t          routerc;
   sc_router_t    *rtr;
   uint32_t        id;
   sc_rtt_t       *rtts;
-  int             rttc;
-  int             rttm;
+  size_t          rttc;
+  size_t          rttm;
   char          **unknown;
-  int             unknownc;
+  size_t          unknownc;
 } sc_rttload_t;
 
 /*
@@ -448,13 +442,13 @@ typedef struct sc_ifdptr
 typedef struct sc_ptrc
 {
   void           *ptr;
-  int             c;
+  size_t          c;
 } sc_ptrc_t;
 
 typedef struct sc_uint32c
 {
   uint32_t        num;
-  int             c;
+  size_t          c;
 } sc_uint32c_t;
 
 typedef struct sc_strlist
@@ -485,9 +479,9 @@ typedef struct sc_charposl
 
 typedef struct sc_rework
 {
-  int                c;          /* number of regexes in the set */
-  int                k;          /* which regex matched */
-  int                m;          /* number of elements in ovector */
+  size_t             c;          /* number of regexes in the set */
+  size_t             k;          /* which regex matched */
+  size_t             m;          /* number of elements in ovector */
 #ifdef HAVE_PCRE2
   pcre2_code       **pcre;
   pcre2_match_data  *match_data;
@@ -506,7 +500,7 @@ typedef struct sc_suffix
   char              *label;
   int                end;
   struct sc_suffix **suffixes;
-  int                suffixc;
+  size_t             suffixc;
 } sc_suffix_t;
 
 /*
@@ -524,7 +518,7 @@ typedef struct sc_rebuild
   char   buf[2048]; /* regex built so far */
   size_t off;       /* length of regex built so far */
   int    score;     /* specificity score so far */
-  int    f;         /* which of the builder functions should run next */
+  size_t f;         /* which of the builder functions should run next */
   int    x;         /* where in the bits array we are up to */
   int    o;         /* where in the hostname string we are up to */
   int    any;       /* have we used .+ in this regex yet? */
@@ -624,11 +618,13 @@ typedef struct sc_dump
 
 #define CLOSE_DEF 2
 
-#define LIGHT_SPEED_DEF      204.190477 /* metres per millisecond */
+#define LIGHT_SPEED_DEF      204.190477 /* kilometres per millisecond */
 #define LIGHT_SPEED_MAX      299792458  /* metres per second */
 
-#define SC_IFACE_FLAG_AS_ED1 0x01
-#define SC_IFACE_FLAG_IP_HEX 0x02
+#define SC_IFACE_FLAG_AS     0x01
+#define SC_IFACE_FLAG_AS_ED1 0x02
+#define SC_IFACE_FLAG_IP     0x04
+#define SC_IFACE_FLAG_IP_HEX 0x08
 
 #define SC_ROUTER_FLAG_ID  0x01
 #define SC_ROUTER_FLAG_ASN 0x02
@@ -679,27 +675,27 @@ static char            *domain_eval  = NULL;
 static const char      *regex_eval   = NULL;
 static char            *sibling_file = NULL;
 static sc_as2org_t    **siblings     = NULL;
-static int              siblingc     = 0;
+static size_t           siblingc     = 0;
 static uint32_t         sibling_id   = 1;
 static const char      *rtt_file     = NULL;
 static uint8_t          rtt_fudge    = FUDGE_DEF;
 static uint8_t          rtt_close    = CLOSE_DEF;
 static double           light_speed  = LIGHT_SPEED_DEF;
 static sc_as2tag_t    **tag2ass      = NULL;
-static int              tag2asc      = 0;
+static size_t           tag2asc      = 0;
 static slist_t         *dicts        = NULL;
 static sc_geohint_t   **geohints     = NULL;
-static int              geohintc     = 0;
+static size_t           geohintc     = 0;
 static sc_geohint_t   **geohint_facs = NULL;
-static int              geohint_facc = 0;
+static size_t           geohint_facc = 0;
 static sc_geohint_t   **geohint_pls[26];
-static int              geohint_plc[26];
+static size_t           geohint_plc[26];
 static sc_country_t   **geohint_cous = NULL; /* countries, sorted by cc */
-static int              geohint_couc = 0;
+static size_t           geohint_couc = 0;
 static sc_state_t     **geohint_stas = NULL; /* states, sorted by st/cc */
-static int              geohint_stac = 0;
+static size_t           geohint_stac = 0;
 static sc_clligp_t    **clligps      = NULL;
-static int              clligpc      = 0;
+static size_t           clligpc      = 0;
 static uint16_t         refine_mask  = 0;
 static int              thin_same    = 1;
 static int              thin_matchc  = 1;
@@ -1773,11 +1769,13 @@ static char *re_escape_str(char *buf, size_t len, char *in)
   return buf;
 }
 
-static int hex_toascii(char *buf, size_t len, const char *str)
+static void hex_toascii(char *buf, size_t len, const char *str)
 {
   size_t off = 0;
   size_t x = 0;
   int c;
+
+  assert(len > 0);
 
   while(str[x] != '\0')
     {
@@ -1793,23 +1791,32 @@ static int hex_toascii(char *buf, size_t len, const char *str)
 	    c += (str[x+3] - 'a' + 10);
 	  if(isprint(c) && c != ' ')
 	    {
+	      if(off >= len)
+		goto empty;
 	      buf[off++] = c;
 	      x += 4;
 	    }
-	  else
-	    {
-	      buf[0] = '\0';
-	      return 0;
-	    }
+	  else goto empty;
 	}
-      else buf[off++] = str[x++];
+      else
+	{
+	  if(off >= len)
+	    goto empty;
+	  buf[off++] = str[x++];
+	}
     }
 
+  if(off >= len)
+    goto empty;
   buf[off] = '\0';
-  return 0;
+  return;
+
+ empty:
+  buf[0] = '\0';
+  return;
 }
 
-static int overlap(int a, int b, int x, int y)
+static int overlap(size_t a, size_t b, size_t x, size_t y)
 {
   if((a <= x && y <= b) || (a >= x && y >= b) ||
      (a < x && b >= x) || (x < a && y >= a))
@@ -1870,9 +1877,10 @@ static int pt_to_bits_trip(slist_t *list, int m, int x, int y)
   return -1;
 }
 
-static int pt_xor(size_t len, int *m, int mc, int **outn, int *outc)
+static int pt_xor(size_t len, size_t *m, size_t mc, int **outn, int *outc)
 {
-  int i, x = 0, *n = NULL, nc = 0;
+  int x = 0, *n = NULL, nc = 0;
+  size_t i;
 
   if(m[0] > 0) nc += 2;
   if(m[mc-1] + 1 < len) nc += 2;
@@ -1916,11 +1924,11 @@ static int pt_xor(size_t len, int *m, int mc, int **outn, int *outc)
   return 0;
 }
 
-static void pt_s_flatten(slist_t *list, int *out, int *outc)
+static void pt_s_flatten(slist_t *list, size_t *out, size_t *outc)
 {
   sc_lcs_pt_t *pt;
   slist_node_t *sn;
-  int i = 0;
+  size_t i = 0;
 
   for(sn=slist_head_node(list); sn != NULL; sn=slist_node_next(sn))
     {
@@ -1933,11 +1941,11 @@ static void pt_s_flatten(slist_t *list, int *out, int *outc)
   return;
 }
 
-static void pt_t_flatten(slist_t *list, int *out, int *outc)
+static void pt_t_flatten(slist_t *list, size_t *out, size_t *outc)
 {
   sc_lcs_pt_t *pt;
   slist_node_t *sn;
-  int i = 0;
+  size_t i = 0;
 
   for(sn=slist_head_node(list); sn != NULL; sn=slist_node_next(sn))
     {
@@ -1978,15 +1986,17 @@ static int pt_list_to_bits(slist_t *trip_list, int **out, int *bitc)
  *
  * plan out the matches and literals given the input constraints.
  */
-static int pt_to_bits_ip(const sc_ifacedom_t *ifd, int *l, int lc,
+static int pt_to_bits_ip(const sc_ifacedom_t *ifd, size_t *l, size_t lc,
 			 int **bits, int *bitc)
 {
   slist_t *list = NULL;
-  int i, j, k, x;
-  int ip_s = ifd->iface->ip_s;
-  int ip_e = ifd->iface->ip_e;
+  size_t i, j, k, x; int z;
+  uint16_t ip_s = ifd->iface->ip_s;
+  uint16_t ip_e = ifd->iface->ip_e;
   int rc = -1;
   int type;
+
+  assert((ifd->iface->flags & SC_IFACE_FLAG_IP) != 0);
 
   if((list = slist_alloc()) == NULL)
     goto done;
@@ -2067,11 +2077,11 @@ static int pt_to_bits_ip(const sc_ifacedom_t *ifd, int *l, int lc,
 	{
 	  printf(" |");
 	  for(i=0; i<lc; i++)
-	    printf(" %d", l[i]);
+	    printf(" %d", (int)l[i]);
 	}
       printf(" |");
-      for(i=0; i < *bitc; i++)
-	printf(" %d", (*bits)[i]);
+      for(z=0; z < *bitc; z++)
+	printf(" %d", (*bits)[z]);
       printf("\n");
     }
 
@@ -2082,9 +2092,9 @@ static int pt_to_bits_ip(const sc_ifacedom_t *ifd, int *l, int lc,
   return rc;
 }
 
-static void pt_merge(int *LA, int *L, int Lc, int *LX, int LXc)
+static void pt_merge(size_t *LA, size_t *L, size_t Lc, size_t *LX, size_t LXc)
 {
-  int a = 0, l = 0, x = 0;
+  size_t a = 0, l = 0, x = 0;
 
   while(l < Lc || x < LXc)
     {
@@ -2120,9 +2130,9 @@ static void pt_merge(int *LA, int *L, int Lc, int *LX, int LXc)
   return;
 }
 
-static int pt_overlap(const int *X, int Xc, const int *L, int Lc)
+static int pt_overlap(const size_t *X, size_t Xc, const size_t *L, size_t Lc)
 {
-  int x, l;
+  size_t x, l;
 
   assert(Xc % 2 == 0);
   assert(Lc % 2 == 0);
@@ -2286,15 +2296,15 @@ static int pt_to_bits_ctype(const sc_ifacedom_t *ifd, int *ctypes,
  *       mode 5: capture, digit.
  *
  */
-static int pt_to_bits(const char *str, size_t len, int *c, int cc,
-		      int *l, int lc, int *d, int dc, int **bits, int *bitc)
+static int pt_to_bits(const char *str, size_t len, size_t *c, size_t cc,
+		      size_t *l, size_t lc, size_t *d, size_t dc, int **bits, int *bitc)
 {
   static const uint8_t cap = 0x4;
   static const uint8_t dig = 0x2;
   static const uint8_t lit = 0x1;
   slist_t *list = NULL;
   uint8_t *plan = NULL;
-  int i, j, k, m, rc = -1;
+  size_t i, j, k, m; int rc = -1;
 
   if((plan = malloc_zero(sizeof(uint8_t) * len)) == NULL ||
      (list = slist_alloc()) == NULL)
@@ -2378,23 +2388,26 @@ static int pt_to_bits(const char *str, size_t len, int *c, int cc,
  * adjust the capture so it doesn't.
  */
 static int pt_to_bits_noip(const sc_ifacedom_t *ifd,
-			   int *c, int cc, int **out, int *bitc)
+			   size_t *c, size_t cc, int **out, int *bitc)
 {
-  int ip_s = ifd->iface->ip_s;
-  int ip_e = ifd->iface->ip_e;
-  int *d = NULL;
-  int dc = 0;
-  int i, x;
+  uint16_t ip_s = ifd->iface->ip_s;
+  uint16_t ip_e = ifd->iface->ip_e;
+  size_t *d = NULL;
+  size_t dc = 0;
+  size_t i, x;
 
   /*
    * we might need more space in the output incase the ip_s and ip_e
    * fall within a capture portion
    */
-  if((d = malloc(sizeof(int) * (cc + 2))) == NULL)
+  if((d = malloc(sizeof(size_t) * (cc + 2))) == NULL)
     return -1;
 
   for(i=0; i<cc; i+=2)
     {
+      assert(c[i] >= 0);
+      assert(c[i+1] >= c[i]);
+
       /*
        * if the capture portion is entirely contained within the
        * apparent IP address literal, then skip it
@@ -2491,10 +2504,10 @@ static sc_clligp_t *sc_clligp_find(const char *gp)
   return array_find((void **)clligps,clligpc,&fm,(array_cmp_t)sc_clligp_cmp);
 }
 
-static int sc_geomap_code(sc_geomap_t *map, sc_ptrc_t *x, int xc)
+static int sc_geomap_code(sc_geomap_t *map, sc_ptrc_t *x, size_t xc)
 {
   char *cptr;
-  int i, j;
+  size_t i, j;
 
   if(xc == 2)
     {
@@ -2588,7 +2601,7 @@ static void sc_geotag_free(sc_geotag_t *tag)
 
 static int sc_geotag_place_cmp(const sc_geotag_t *a, const sc_geotag_t *b)
 {
-  int i, a_st = 0, b_st = 0, a_cc = 0, b_cc = 0;
+  size_t i, a_st = 0, b_st = 0, a_cc = 0, b_cc = 0;
 
   for(i=0; i<a->tagc; i++)
     {
@@ -2668,19 +2681,19 @@ static int sc_state_sort_cmp(const sc_state_t *a, const sc_state_t *b)
   return strcmp(a->cc, b->cc);
 }
 
-static int sc_state_sort_findpos(const char *st, const char *cc)
+static int sc_state_sort_findpos(const char *st, const char *cc, size_t *pos)
 {
   sc_state_t fm;
   memcpy(fm.st, st, sizeof(fm.st));
   memcpy(fm.cc, cc, sizeof(fm.cc));
   return array_findpos((void **)geohint_stas, geohint_stac, &fm,
-		       (array_cmp_t)sc_state_sort_cmp);
+		       (array_cmp_t)sc_state_sort_cmp, pos);
 }
 
 static void sc_state_sort(void)
 {
   sc_state_t *hint, *prev, *head;
-  int i;
+  size_t i;
 
   array_qsort((void **)geohint_stas, geohint_stac,
 	      (array_cmp_t)sc_state_sort_cmp);
@@ -2743,12 +2756,12 @@ static void sc_country_free(sc_country_t *country)
   return;
 }
 
-static int sc_country_findpos(const char *cc)
+static int sc_country_findpos(const char *cc, size_t *pos)
 {
   sc_country_t fm;
   memcpy(fm.cc, cc, sizeof(fm.cc));
   return array_findpos((void **)geohint_cous, geohint_couc, &fm,
-		       (array_cmp_t)sc_country_cmp2);
+		       (array_cmp_t)sc_country_cmp2, pos);
 }
 
 static sc_country_t *sc_country_find3(const char *iso3)
@@ -3038,7 +3051,8 @@ static int sc_geohint_checkrtt(const sc_geohint_t *hint, const sc_router_t *rtr)
   sc_rtt_t *sample;
   double distance;
   uint16_t rtt;
-  int i, ok = 0;
+  int ok = 0;
+  size_t i;
 
   for(i=0; i<rtr->rttc; i++)
     {
@@ -3102,10 +3116,10 @@ static int sc_geohint_checkmap(const sc_geohint_t *hint, const sc_geomap_t *map)
   return 0;
 }
 
-static void sc_geohint_sort(sc_geohint_t **geohints, int geohintc)
+static void sc_geohint_sort(sc_geohint_t **geohints, size_t geohintc)
 {
   sc_geohint_t *hint, *prev, *head;
-  int i;
+  size_t i;
 
   array_qsort((void **)geohints, geohintc, (array_cmp_t)sc_geohint_rank_cmp);
   prev = NULL; head = geohints[0];
@@ -3126,7 +3140,8 @@ static void sc_geohint_sort(sc_geohint_t **geohints, int geohintc)
 }
 
 static sc_geohint_t *sc_geohint_findx(sc_geohint_t **in_geohints,
-				      int in_geohintc, const sc_geomap_t *map)
+				      size_t in_geohintc,
+				      const sc_geomap_t *map)
 {
   sc_geohint_t fm, *hint = NULL;
   fm.code = (char *)map->code;
@@ -3310,7 +3325,7 @@ static int sc_geohint_fudge_state(const sc_georef_t *gr,const sc_regex_t *re,
   uint32_t tp_c; uint16_t tp_rtt;
   sc_geohint_t *hint, *gh;
   sc_geoeval_t *ge;
-  int i;
+  size_t i;
 
   if(state->hintc < 1)
     return 0;
@@ -3350,7 +3365,7 @@ static int sc_geohint_fudge_country(const sc_georef_t *gr,const sc_regex_t *re,
   uint32_t tp_c; uint16_t tp_rtt;
   sc_geohint_t *hint, *gh;
   sc_geoeval_t *ge;
-  int i;
+  size_t i;
 
   if(country->hintc < 1)
     return 0;
@@ -3425,7 +3440,8 @@ static int sc_geohint_fudge_iata(const sc_georef_t *gr, const sc_regex_t *re,
   sc_geohint_t *hint;
   sc_country_t *country;
   sc_state_t *state;
-  int i, x;
+  size_t i;
+  int x;
 
   /* is the code a possible iso 3166 3-letter country code? */
   if(map->st[0] == '\0' &&
@@ -3525,7 +3541,8 @@ static int sc_geohint_fudge_locode(const sc_georef_t *gr, const sc_regex_t *re,
 				   splaytree_t *gh_tree, slist_t *geoeval_list)
 {
   sc_geohint_t *hint;
-  int i, x;
+  size_t i;
+  int x;
 
   x = gr->map.code[2] - 'a'; assert(x >= 0 && x < 26);
   for(i=0; i<geohint_plc[x]; i++)
@@ -3598,7 +3615,8 @@ static int sc_geohint_fudge_clli(const sc_georef_t *gr, const sc_regex_t *re,
 				 splaytree_t *gh_tree, slist_t *geoeval_list)
 {
   sc_geohint_t *hint;
-  int i, x;
+  size_t i;
+  int x;
 
   x = gr->map.code[0] - 'a'; assert(x >= 0 && x < 26);
   for(i=0; i<geohint_plc[x]; i++)
@@ -3832,7 +3850,8 @@ static int sc_geohint_fudge_place(const sc_georef_t *gr,
   const sc_geomap_t *map = &gr->map;
   sc_country_t *country;
   sc_geohint_t *hint;
-  int i, x;
+  size_t i;
+  int x;
 
   /* check if the place name is actually a country */
   if(geohint_couc > 0 && map->st[0] == '\0' && map->codelen >= 5)
@@ -3886,7 +3905,7 @@ static int sc_geohint_fudge_facility(const sc_georef_t *gr,
   const sc_geomap_t *map = &gr->map;
   uint32_t tp_c; uint16_t tp_rtt;
   sc_geohint_t *hint;
-  int i;
+  size_t i;
 
   /* only guess facilities where we have a state mapping */
   if(map->codelen < 5 || (map->cc[0] == '\0' && map->st[0] == '\0'))
@@ -4193,8 +4212,10 @@ static slist_t *lcs_asn(sc_ifacedom_t *S, sc_ifacedom_t *T)
   slist_t *L = NULL;
   int s_start, s_end, t_start, t_end;
 
-  assert(S->iface->as_s >= 0); assert(S->iface->as_e >= 0);
-  assert(T->iface->as_s >= 0); assert(T->iface->as_e >= 0);
+  assert((S->iface->flags & SC_IFACE_FLAG_AS) != 0);
+  assert((T->iface->flags & SC_IFACE_FLAG_AS) != 0);
+  assert(S->iface->as_s <= S->iface->as_e);
+  assert(T->iface->as_s <= T->iface->as_e);
 
   if((L = slist_alloc()) == NULL)
     goto err;
@@ -4544,7 +4565,6 @@ static int sc_css_morespecific_ex(const sc_css_t *base, const sc_css_t *eval,
 				  sc_css_t **out)
 {
   const char *base_p = base->css, *eval_p = eval->css;
-  char *tmp_p;
   int base_i = 0, eval_i = 0;
   sc_css_t *tmp = NULL;
   size_t len;
@@ -4558,7 +4578,6 @@ static int sc_css_morespecific_ex(const sc_css_t *base, const sc_css_t *eval,
   /* alloc a css structure to contain the more specific part */
   if((tmp = sc_css_alloc(eval->len + 1)) == NULL)
     return -1;
-  tmp_p = tmp->css;
 
   while(eval_i < eval->cssc)
     {
@@ -4578,7 +4597,6 @@ static int sc_css_morespecific_ex(const sc_css_t *base, const sc_css_t *eval,
 	  memcpy(tmp->css, eval_p, len);
 	  tmp->cssc++;
 	  tmp->len += len;
-	  tmp_p += len;
 	}
 
       eval_i++;
@@ -4602,7 +4620,8 @@ static int sc_css_morespecific_ex(const sc_css_t *base, const sc_css_t *eval,
 static int sc_css_morespecific_ov(sc_rework_t *rew, sc_css_t *ex,
 				  const sc_iface_t *iface, int *cap)
 {
-  int i, m, start, len;
+  int i, m, start;
+  size_t len;
 
   *cap = 0;
 
@@ -4703,7 +4722,7 @@ static sc_css_t *sc_css_alloc_pt(const char *str, int *m, int mc)
   return css;
 }
 
-static sc_css_t *sc_css_alloc_xor(const char *str, size_t len, int *m, int mc)
+static sc_css_t *sc_css_alloc_xor(const char *str, size_t len, size_t *m, size_t mc)
 {
   sc_css_t *css = NULL;
   int *n = NULL, nc;
@@ -4861,7 +4880,7 @@ static sc_css_t *sc_css_get_str(splaytree_t *tree, const char *str)
  *
  * is all of the common substring in the input string?
  */
-static int sc_css_match(const sc_css_t *css, const char *S, int *out, int alnum)
+static int sc_css_match(const sc_css_t *css,const char *S,size_t *out,int alnum)
 {
   int i, c, x, y;
 
@@ -4908,13 +4927,13 @@ static int sc_css_match(const sc_css_t *css, const char *S, int *out, int alnum)
 static sc_css_t *sc_css_matchxor(const sc_css_t *css, const sc_ifacedom_t *ifd)
 {
   sc_css_t *out = NULL;
-  int Xc, *X_array = NULL;
-  int l, r;
+  size_t l, r, *X_array = NULL;
+  int Xc;
   int rc = -1;
 
   Xc = css->cssc * 2;
   if((out = sc_css_alloc(ifd->len + 1)) == NULL ||
-     (X_array = malloc_zero(Xc * sizeof(int))) == NULL ||
+     (X_array = malloc_zero(Xc * sizeof(size_t))) == NULL ||
      sc_css_match(css, ifd->label, X_array, 1) != 1)
     goto done;
 
@@ -4950,14 +4969,14 @@ static sc_css_t *sc_css_matchxor(const sc_css_t *css, const sc_ifacedom_t *ifd)
 static int sc_css_geomap(const sc_css_t *css, const uint8_t *geotypes,
 			 sc_geomap_t *map)
 {
-  size_t off, len;
+  size_t off, len, xi;
   sc_ptrc_t x[2];
   char *ptr = css->css;
   char *out;
-  int xi, i;
+  int i;
 
   map->code[0] = map->st[0] = map->cc[0] = '\0';
-  map->type = 0;
+  map->type = 0; map->codelen = 0;
   memset(x, 0, sizeof(x));
   xi = 0;
 
@@ -5550,8 +5569,8 @@ static int sc_regex_capget(const char *in, int capitem, char *out, size_t len)
   return -1;
 }
 
-static int sc_regex_pt_decons2(slist_t *list, int *c, int cc, int co,
-			       int *o, int oo, int use)
+static int sc_regex_pt_decons2(slist_t *list, size_t *c, size_t cc, size_t co,
+			       size_t *o, size_t oo, int use)
 {
   sc_ptrc_t *ptrc = NULL;
 
@@ -5568,7 +5587,7 @@ static int sc_regex_pt_decons2(slist_t *list, int *c, int cc, int co,
       if(oo == 0)
 	return 0;
       if((ptrc = malloc_zero(sizeof(sc_ptrc_t))) == NULL ||
-	 (ptrc->ptr = memdup(o, sizeof(int) * oo)) == NULL ||
+	 (ptrc->ptr = memdup(o, sizeof(size_t) * oo)) == NULL ||
 	 slist_tail_push(list, ptrc) == NULL)
 	goto err;
       ptrc->c = oo;
@@ -5588,15 +5607,15 @@ static int sc_regex_pt_decons2(slist_t *list, int *c, int cc, int co,
   return -1;
 }
 
-static int sc_regex_pt_decons(slist_t *list, int *c, int cc)
+static int sc_regex_pt_decons(slist_t *list, size_t *c, size_t cc)
 {
-  int *dup = NULL;
+  size_t *dup = NULL;
   int rc = -1;
 
   if(cc < 4)
     return 0;
 
-  if((dup = memdup(c, sizeof(int) * cc)) == NULL ||
+  if((dup = memdup(c, sizeof(size_t) * cc)) == NULL ||
      sc_regex_pt_decons2(list, c, cc, 0, dup, 0, 0) != 0 ||
      sc_regex_pt_decons2(list, c, cc, 0, dup, 0, 1) != 0)
     goto done;
@@ -5936,7 +5955,7 @@ static int capcount(const char *str)
   return rc;
 }
 
-static int sc_rework_matchk(sc_rework_t *rew, int k, const char *str)
+static int sc_rework_matchk(sc_rework_t *rew, size_t k, const char *str)
 {
   int rc;
 
@@ -5963,7 +5982,7 @@ static int sc_rework_matchk(sc_rework_t *rew, int k, const char *str)
     }
 #endif
 
-  rew->m = rc;
+  rew->m = (size_t)rc;
   rew->k = k;
 
   return 1;
@@ -5980,8 +5999,8 @@ static int sc_rework_matchk(sc_rework_t *rew, int k, const char *str)
 static int sc_rework_match(sc_rework_t *rew, sc_iface_t *iface, sc_css_t **out)
 {
   sc_css_t *css = NULL;
-  size_t off;
-  int i, l, k, rc;
+  size_t off, k;
+  int i, l, rc;
 
   if(out != NULL)
     *out = NULL;
@@ -6013,7 +6032,7 @@ static int sc_rework_match(sc_rework_t *rew, sc_iface_t *iface, sc_css_t **out)
   if(k == rew->c)
     return 0;
 
-  rew->m = rc;
+  rew->m = (size_t)rc;
   rew->k = k;
 
 #ifdef HAVE_PCRE2
@@ -6059,7 +6078,7 @@ static int sc_rework_match(sc_rework_t *rew, sc_iface_t *iface, sc_css_t **out)
 
 static void sc_rework_free(sc_rework_t *rew)
 {
-  int i;
+  size_t i;
 
   if(rew->pcre != NULL)
     {
@@ -6183,7 +6202,7 @@ static sc_rework_t *sc_rework_alloc(sc_regex_t *re)
 
 static void sc_suffix_free(sc_suffix_t *suffix)
 {
-  int i;
+  size_t i;
   if(suffix->label != NULL)
     free(suffix->label);
   if(suffix->suffixes != NULL)
@@ -6353,7 +6372,8 @@ static int sc_iface_geomap(const sc_iface_t *iface, sc_geomap_t *map)
 {
   sc_ptrc_t x[2];
   sc_geotagn_t *gt;
-  int xi = 0, i, s;
+  size_t xi = 0, i;
+  int s;
 
   for(i=0; i<iface->geos[0].tagc; i++)
     {
@@ -7050,6 +7070,7 @@ static int sc_regex_css_work_score_cmp(const sc_regex_css_t *a,
 
 static void sc_regex_free(sc_regex_t *re)
 {
+  size_t s;
   int i;
   if(re->regexes != NULL)
     {
@@ -7060,9 +7081,9 @@ static void sc_regex_free(sc_regex_t *re)
     }
   if(re->geohints != NULL)
     {
-      for(i=0; i<re->geohintc; i++)
-	if(re->geohints[i] != NULL)
-	  sc_geohint_free(re->geohints[i]);
+      for(s=0; s<re->geohintc; s++)
+	if(re->geohints[s] != NULL)
+	  sc_geohint_free(re->geohints[s]);
       free(re->geohints);
     }
   if(re->tp_mask != NULL) free(re->tp_mask);
@@ -7177,7 +7198,7 @@ static sc_regex_t *sc_regex_alloc_css(const sc_css_t *in)
   slist_t *list = NULL;
   int i = 0;
   char buf[256], *dup = NULL;
-  size_t off, len = 0;
+  size_t off;
 
   if((list = slist_alloc()) == NULL)
     goto err;
@@ -7261,7 +7282,6 @@ static sc_regex_t *sc_regex_alloc_css(const sc_css_t *in)
 	goto err;
       dup = NULL;
 
-      len += off;
       ptr++;
       i++;
     }
@@ -7673,10 +7693,6 @@ static sc_iface_t *sc_iface_alloc(char *ip, char *name)
     }
 
   iface->len = strlen(name);
-  iface->ip_s = -1;
-  iface->ip_e = -1;
-  iface->as_s = -1;
-  iface->as_e = -1;
   return iface;
  err:
   if(iface != NULL) sc_iface_free(iface);
@@ -7695,7 +7711,7 @@ static int sc_iface_ip_find_4(sc_iface_t *iface, const char *suffix)
   char *ep;
   char buf[128];
 
-  while(bo < sizeof(sb) / sizeof(long))
+  while((size_t)bo < sizeof(sb) / sizeof(long))
     {
       while(isdigit(*ptr) == 0 && ptr != suffix)
 	ptr++;
@@ -7755,6 +7771,7 @@ static int sc_iface_ip_find_4(sc_iface_t *iface, const char *suffix)
 
 	  if(c == l)
 	    {
+	      iface->flags |= SC_IFACE_FLAG_IP;
 	      iface->ip_s = ip_s;
 	      iface->ip_e = ip_e;
 	      if(do_debug != 0 && threadc <= 1)
@@ -8331,7 +8348,7 @@ static int sc_iface_ip_find_hex(sc_iface_t *iface, const char *suffix)
 
   iface->ip_s = best.left;
   iface->ip_e = best.right;
-  iface->flags |= SC_IFACE_FLAG_IP_HEX;
+  iface->flags |= (SC_IFACE_FLAG_IP|SC_IFACE_FLAG_IP_HEX);
   if(do_debug != 0 && threadc <= 1)
     {
       printf("found %s in %s bytes %d - %d\n",
@@ -8354,7 +8371,7 @@ static void sc_iface_ip_find_thread(sc_iface_t *iface)
   if(SCAMPER_ADDR_TYPE_IS_IPV4(iface->addr))
     {
       sc_iface_ip_find_4(iface, suffix);
-      if(iface->ip_s == -1)
+      if((iface->flags & SC_IFACE_FLAG_IP) == 0)
 	sc_iface_ip_find_hex(iface, suffix);
     }
   else if(SCAMPER_ADDR_TYPE_IS_IPV6(iface->addr))
@@ -8372,9 +8389,9 @@ static void sc_iface_ip_find_thread(sc_iface_t *iface)
  */
 static int sc_iface_ip_matched(sc_iface_t *iface, sc_rework_t *rew)
 {
-  int i;
+  size_t i;
 
-  if(iface->ip_s == -1)
+  if((iface->flags & SC_IFACE_FLAG_IP) == 0)
     return 0;
 
 #if 0
@@ -8425,7 +8442,8 @@ static void sc_iface_asn_find_thread(sc_ifacedom_t *ifd)
       else
 	dup[i] = '\0';
 
-      if(iface->ip_s == -1 || overlap(iface->ip_s,iface->ip_e,start,i-1) == 0)
+      if((iface->flags & SC_IFACE_FLAG_IP) == 0 ||
+	 overlap(iface->ip_s, iface->ip_e, start, i-1) == 0)
 	{
 	  /*
 	   * if the edit distance between the ASN extracted from
@@ -8456,6 +8474,7 @@ static void sc_iface_asn_find_thread(sc_ifacedom_t *ifd)
     {
       iface->as_s = as_s;
       iface->as_e = as_e;
+      iface->flags |= SC_IFACE_FLAG_AS;
       if(as_dist > 0)
 	iface->flags |= SC_IFACE_FLAG_AS_ED1;
       if(do_debug != 0 && threadc <= 1)
@@ -8599,13 +8618,14 @@ static void sc_router_rtt_sort(const sc_router_t *rtr)
  * Get the index of the first vantage point in the sample list that is out
  * of range of the geohint
  */
-static int sc_router_ooridx(const sc_router_t *rtr, sc_geohint_t *hint)
+static int sc_router_ooridx(const sc_router_t *rtr, sc_geohint_t *hint,
+			    size_t *idx)
 {
   sc_geohint_t *vp;
   sc_rtt_t *sample;
   double distance;
   uint16_t rtt;
-  int i;
+  size_t i;
 
   if(rtr->rttc == 0)
     return -1;
@@ -8619,7 +8639,10 @@ static int sc_router_ooridx(const sc_router_t *rtr, sc_geohint_t *hint)
       distance = sc_geohint_dist(hint, vp);
       rtt = dist2rtt(distance);
       if(rtt > sample->rtt && rtt - sample->rtt > rtt_fudge)
-	return i;
+	{
+	  *idx = i;
+	  return 0;
+	}
     }
 
   return -1;
@@ -8654,8 +8677,8 @@ static void sc_iface_geo_find_print(const sc_ifacedom_t *ifd, const char *code,
 				    const sc_geotag_t *tag)
 {
   char buf[256], tmp[256];
-  int i, st[2], cc[2];
-  size_t off = 0;
+  int st[2], cc[2];
+  size_t i, off = 0;
 
   st[0] = st[1] = cc[0] = cc[1] = -1;
   for(i=0; i<tag->tagc; i++)
@@ -8710,16 +8733,22 @@ static void sc_iface_geo_find_print(const sc_ifacedom_t *ifd, const char *code,
 static sc_geotag_t *sc_iface_geo_alloctag(const slist_t *ptrc_list,
 					  const sc_ifacedom_t *ifd,
 					  const sc_geohint_t *hint,
-					  const int *code, int codec, int *ip)
+					  const size_t *code, size_t codec)
 {
   sc_geotag_t *tag = NULL;
   slist_node_t *sn;
   sc_ptrc_t *ptrc;
-  int i, tagc = codec;
-  int cc[2], st[2], x[2];
+  size_t i, tagc = codec, x[2], ip[2];
+  int cc[2], st[2];
 
   /* figure out if the hostname contains st/cc */
   cc[0] = -1; cc[1] = -1; st[0] = -1; st[1] = -1;
+
+  if((ifd->iface->flags & SC_IFACE_FLAG_IP_HEX) != 0)
+    {
+      ip[0] = ifd->iface->ip_s;
+      ip[1] = ifd->iface->ip_e;
+    }
 
   for(sn=slist_head_node(ptrc_list); sn != NULL; sn=slist_node_next(sn))
     {
@@ -8732,7 +8761,8 @@ static sc_geotag_t *sc_iface_geo_alloctag(const slist_t *ptrc_list,
       x[0] = (char *)ptrc->ptr - ifd->label;
       x[1] = x[0] + ptrc->c - 1;
       if(pt_overlap(code, codec * 2, x, 2) != 0 ||
-	 (ip[0] != -1 && pt_overlap(ip, 2, x, 2) != 0))
+	 ((ifd->iface->flags & SC_IFACE_FLAG_IP_HEX) != 0 &&
+	  pt_overlap(ip, 2, x, 2) != 0))
 	continue;
 
       /* if the hostname portion matches the hint's country code */
@@ -8801,9 +8831,8 @@ static int sc_iface_geo_find_fac(slist_t *list, const sc_ifacedom_t *ifd,
   sc_geohint_t *hint, *fac = NULL, *newhint = NULL;
   long in_no, hint_no;
   char buf[256], *ptr, *street;
-  int code[2], ip[2];
-  int i, rc = -1, locked = 0;
-  size_t offs[256];
+  int rc = -1, locked = 0;
+  size_t offs[256], ip[2], code[2], i;
 
   code[0] = start; code[1] = end;
 
@@ -8820,14 +8849,13 @@ static int sc_iface_geo_find_fac(slist_t *list, const sc_ifacedom_t *ifd,
   if(strlen(street) < 3)
     return 0;
 
-  if(iface->ip_s != -1 && (iface->flags & SC_IFACE_FLAG_IP_HEX) != 0)
+  if((iface->flags & SC_IFACE_FLAG_IP_HEX) != 0)
     {
       ip[0] = iface->ip_s;
       ip[1] = iface->ip_e;
       if(pt_overlap(code, 2, ip, 2) != 0)
 	return 0;
     }
-  else ip[0] = ip[1] = -1;
 
   for(i=0; i<geohint_facc; i++)
     {
@@ -8894,8 +8922,7 @@ static int sc_iface_geo_find_fac(slist_t *list, const sc_ifacedom_t *ifd,
   sc_domain_unlock(ifd->dom); locked = 0;
 
   /* add a tag to the interface */
-  code[0] = start; code[1] = end;
-  if((tag = sc_iface_geo_alloctag(ptrc_list, ifd, hint, code, 1, ip)) == NULL)
+  if((tag = sc_iface_geo_alloctag(ptrc_list, ifd, hint, code, 1)) == NULL)
     goto done;
   if(slist_tail_push(list, tag) == NULL)
     goto done;
@@ -8912,23 +8939,22 @@ static int sc_iface_geo_find_fac(slist_t *list, const sc_ifacedom_t *ifd,
 }
 
 static int sc_iface_geo_find_check(slist_t *list, const sc_ifacedom_t *ifd,
-				   char *str, int *code, int codec,
+				   char *str, size_t *code, size_t codec,
 				   uint8_t type, slist_t *ptrc_list)
 {
   sc_iface_t *iface = ifd->iface;
   sc_geohint_t *hint, fm;
   sc_geotag_t *tag = NULL, *place = NULL;
-  int ip[2];
+  size_t ip[2];
   int rc = -1;
 
-  if(iface->ip_s != -1 && (iface->flags & SC_IFACE_FLAG_IP_HEX) != 0)
+  if((iface->flags & SC_IFACE_FLAG_IP_HEX) != 0)
     {
       ip[0] = iface->ip_s;
       ip[1] = iface->ip_e;
       if(pt_overlap(code, codec * 2, ip, 2) != 0)
 	return 0;
     }
-  else ip[0] = ip[1] = -1;
 
   /* check the global geohint array */
   fm.code = str;
@@ -8944,7 +8970,7 @@ static int sc_iface_geo_find_check(slist_t *list, const sc_ifacedom_t *ifd,
 	 sc_geohint_checkrtt(hint, iface->rtr) == 0)
 	continue;
 
-      if((tag=sc_iface_geo_alloctag(ptrc_list,ifd,hint,code,codec,ip)) == NULL)
+      if((tag=sc_iface_geo_alloctag(ptrc_list, ifd, hint, code, codec)) == NULL)
 	goto done;
 
       if(hint->type != GEOHINT_TYPE_PLACE)
@@ -9001,7 +9027,8 @@ static void sc_iface_geo_find_thread(sc_ifacedom_t *ifd)
   slist_node_t *sn, *s2;
   sc_ptrc_t *ptrc = NULL, *a, *b, *x, *y;
   sc_geotag_t *tag = NULL;
-  int gc[4], i = 0, j = 0, stop = 0, start;
+  size_t i = 0, j = 0, start, gc[4];
+  int stop = 0;
   uint8_t geotype;
   char buf[32];
 
@@ -9022,6 +9049,7 @@ static void sc_iface_geo_find_thread(sc_ifacedom_t *ifd)
       if(ifd->label[j] == '\0')
 	stop = 1;
 
+      assert(j >= i);
       if((ptrc = malloc(sizeof(sc_ptrc_t))) == NULL)
 	goto done;
       ptrc->ptr = ifd->label+i;
@@ -9147,6 +9175,7 @@ static void sc_iface_geo_find_thread(sc_ifacedom_t *ifd)
 	j++;
 
       assert(j <= ifd->len);
+      assert(j >= i);
       if(j-i >= sizeof(buf))
 	goto next;
 
@@ -9269,7 +9298,7 @@ static int sc_ifdptr_tree_ri(splaytree_t *ifp_tree, const slist_t *ri_list)
   slist_node_t *sn;
   sc_routerinf_t *ri;
   sc_ifdptr_t *ifp;
-  int i;
+  size_t i;
 
   for(sn=slist_head_node(ri_list); sn != NULL; sn=slist_node_next(sn))
     {
@@ -9521,13 +9550,17 @@ static void sc_routercsss_free(sc_routercss_t **rcsss, int rcssc)
 static sc_routercss_t **sc_routercss_alias_alloc(slist_t *rs, sc_rework_t *rew)
 {
   sc_routercss_t **rnames = NULL, *rn;
-  int rnamec = slist_count(rs);
   sc_routerdom_t *rd;
   slist_node_t *sn;
+  size_t rnamec;
   int i;
 
+  if((i = slist_count(rs)) <= 0)
+    return NULL;
+  rnamec = (size_t)i;
+
   if((rnames = malloc_zero(sizeof(sc_routercss_t *) * rnamec)) == NULL)
-    goto err;
+    return NULL;
   i = 0;
   for(sn=slist_head_node(rs); sn != NULL; sn = slist_node_next(sn))
     {
@@ -9549,12 +9582,12 @@ static int sc_ifacedom_css(const sc_ifacedom_t *ifd, sc_css_t **out, int trim)
   sc_css_t *css = NULL;
   size_t len = strlen(ifd->label);
   size_t off = 0;
-  int ip_s, ip_e;
+  size_t ip_s, ip_e;
 
   *out = NULL;
 
   /* if there is no IP address portion within, then copy whole string in */
-  if(ifd->iface->ip_s == -1)
+  if((ifd->iface->flags & SC_IFACE_FLAG_IP) == 0)
     {
       if((css = sc_css_alloc(len+1)) == NULL)
 	goto err;
@@ -9572,6 +9605,8 @@ static int sc_ifacedom_css(const sc_ifacedom_t *ifd, sc_css_t **out, int trim)
    * allocate a common substring structure to store the entire label
    * without the IP address portion
    */
+  assert(ifd->iface->ip_s >= 0);
+  assert(ifd->iface->ip_e >= ifd->iface->ip_s);
   ip_s = ifd->iface->ip_s;
   ip_e = ifd->iface->ip_e;
   if(trim != 0)
@@ -9675,7 +9710,7 @@ static int sc_routerinf_maxrtrc_cmp(const sc_routerinf_t *a,
 
 static void sc_routerinf_free(sc_routerinf_t *ri)
 {
-  int i;
+  size_t i;
   if(ri->ifaces != NULL)
     {
       for(i=0; i<ri->ifacec; i++)
@@ -9697,7 +9732,7 @@ static void sc_routerinf_free(sc_routerinf_t *ri)
  */
 static int sc_routerinf_finish(sc_routerinf_t *ri)
 {
-  int x, i, c, ip, no_ip;
+  size_t i, x, c, ip, no_ip;
   sc_routerdom_t *rd;
 
   /*
@@ -9713,12 +9748,14 @@ static int sc_routerinf_finish(sc_routerinf_t *ri)
     {
       if(ri->ifaces[i]->ifd->rd != rd)
 	{
+	  assert(i >= x);
 	  c = i - x;
 	  while(x != i)
 	    ri->ifaces[x++]->rtrc = c;
 	  x = i; rd = ri->ifaces[x]->ifd->rd;
 	}
     }
+  assert(ri->ifacec >= x);
   c = ri->ifacec - x;
   while(x != ri->ifacec)
     ri->ifaces[x++]->rtrc = c;
@@ -9820,7 +9857,8 @@ static int sc_regex_alias_ri_build(slist_t *ifi_list_in, slist_t *ri_list_out)
   sc_routerinf_t *ri = NULL;
   slist_t *ifi_list = NULL, *ri_list = NULL;
   slist_node_t *sn;
-  int i, rc = -1;
+  int rc = -1;
+  size_t i;
 
   if((ifi_list = slist_dup(ifi_list_in, NULL, NULL)) == NULL)
     goto done;
@@ -10118,12 +10156,12 @@ static void sc_regex_eval_tp_mask(sc_regex_t *re, sc_ifacedom_t *ifd)
 static int sc_regex_alias_ri_score(sc_regex_t *re, slist_t *ri_list)
 {
   slist_node_t *sn;
-  int ppv, tp, i, x, rc = -1, *remap = NULL;
+  int ppv, tp, i, rc = -1, *remap = NULL;
   sc_routerdom_t *rd;
   sc_routerinf_t *ri = NULL;
   sc_ifaceinf_t **ifimap = NULL;
   uint32_t *rdmap = NULL;
-  size_t len;
+  size_t len, s, x;
 
   if((remap = malloc(sizeof(int) * re->regexc)) == NULL ||
      (rdmap = malloc_zero(sizeof(uint32_t) * re->dom->rtmlen)) == NULL ||
@@ -10139,18 +10177,18 @@ static int sc_regex_alias_ri_score(sc_regex_t *re, slist_t *ri_list)
     {
       ri = slist_node_item(sn);
 
-      for(i=0; i<ri->ifacec; i++)
+      for(s=0; s<ri->ifacec; s++)
 	{
 	  /* record how many times each regex was used */
-	  if(ri->ifaces[i]->regex >= 0)
+	  if(ri->ifaces[s]->regex >= 0)
 	    {
-	      assert(ri->ifaces[i]->regex < re->regexc);
+	      assert(ri->ifaces[s]->regex < re->regexc);
 	      re->matchc++;
-	      re->regexes[ri->ifaces[i]->regex]->matchc++;
+	      re->regexes[ri->ifaces[s]->regex]->matchc++;
 	    }
 
 	  /* tag each sc_ifacedom_t with an sc_ifaceinf_t */
-	  ifimap[ri->ifaces[i]->ifd->id-1] = ri->ifaces[i];
+	  ifimap[ri->ifaces[s]->ifd->id-1] = ri->ifaces[s];
 	}
     }
 
@@ -10190,11 +10228,11 @@ static int sc_regex_alias_ri_score(sc_regex_t *re, slist_t *ri_list)
 
       /* count how many training routers are in this inferred router */
       x = 1; rd=ri->ifaces[0]->ifd->rd;
-      for(i=1; i<ri->ifacec; i++)
+      for(s=1; s<ri->ifacec; s++)
 	{
-	  if(ri->ifaces[i]->ifd->rd != rd)
+	  if(ri->ifaces[s]->ifd->rd != rd)
 	    {
-	      rd = ri->ifaces[i]->ifd->rd;
+	      rd = ri->ifaces[s]->ifd->rd;
 	      x++;
 	    }
 	}
@@ -10208,22 +10246,22 @@ static int sc_regex_alias_ri_score(sc_regex_t *re, slist_t *ri_list)
       rd = ri->ifaces[0]->ifd->rd;
       if(mask_isset(rdmap, re->dom->rtmlen, rd->id) != 0)
 	{
-	  for(i=0; i<ri->ifacec; i++)
+	  for(s=0; s<ri->ifacec; s++)
 	    {
-	      if(ri->ifaces[i]->ipm != 0)
+	      if(ri->ifaces[s]->ipm != 0)
 		{
 		  re->ip_c++;
-		  ri->ifaces[i]->class = 'x';
+		  ri->ifaces[s]->class = 'x';
 		}
 	      else if(x == 1)
 		{
 		  re->fne_c++;
-		  ri->ifaces[i]->class = '-';
+		  ri->ifaces[s]->class = '-';
 		}
 	      else
 		{
 		  re->fp_c++;
-		  ri->ifaces[i]->class = '!';
+		  ri->ifaces[s]->class = '!';
 		}
 	    }
 	  continue;
@@ -10263,21 +10301,21 @@ static int sc_regex_alias_ri_score(sc_regex_t *re, slist_t *ri_list)
 	  tp = 0;
 	  for(i=0; i<re->regexc; i++)
 	    remap[i] = 0;
-	  for(i=0; i<ri->ifacec; i++)
+	  for(s=0; s<ri->ifacec; s++)
 	    {
-	      if(ri->ifaces[i]->ipm != 0 && ri->ip != 0)
+	      if(ri->ifaces[s]->ipm != 0 && ri->ip != 0)
 		{
 		  re->ip_c++;
-		  ri->ifaces[i]->class = 'x';
+		  ri->ifaces[s]->class = 'x';
 		}
 	      else
 		{
 		  tp++;
 		  re->tp_c++;
-		  ri->ifaces[i]->class = '+';
-		  assert(ri->ifaces[i]->regex < re->regexc);
-		  remap[ri->ifaces[i]->regex]++;
-		  sc_regex_eval_tp_mask(re, ri->ifaces[i]->ifd);
+		  ri->ifaces[s]->class = '+';
+		  assert(ri->ifaces[s]->regex < re->regexc);
+		  remap[ri->ifaces[s]->regex]++;
+		  sc_regex_eval_tp_mask(re, ri->ifaces[s]->ifd);
 		}
 	    }
 	  if(tp >= 2)
@@ -10298,9 +10336,9 @@ static int sc_regex_alias_ri_score(sc_regex_t *re, slist_t *ri_list)
        */
       x = 1;
       rd = ri->ifaces[ri->maxrtrc]->ifd->rd;
-      for(i=ri->maxrtrc+1; i<ri->ifacec; i++)
+      for(s=ri->maxrtrc+1; s<ri->ifacec; s++)
 	{
-	  if(ri->ifaces[i]->ifd->rd != rd)
+	  if(ri->ifaces[s]->ifd->rd != rd)
 	    break;
 	  x++;
 	}
@@ -10313,21 +10351,21 @@ static int sc_regex_alias_ri_score(sc_regex_t *re, slist_t *ri_list)
 	  tp = 0;
 	  for(i=0; i<re->regexc; i++)
 	    remap[i] = 0;
-	  for(i=0; i<ri->maxrtrc; i++)
+	  for(s=0; s<ri->maxrtrc; s++)
 	    {
-	      if(ri->ifaces[i]->ipm != 0 && ri->ip != 0)
+	      if(ri->ifaces[s]->ipm != 0 && ri->ip != 0)
 		{
-		  ri->ifaces[i]->class = 'x';
+		  ri->ifaces[s]->class = 'x';
 		  re->ip_c++;
 		}
 	      else
 		{
 		  tp++;
 		  re->tp_c++;
-		  ri->ifaces[i]->class = '+';
-		  assert(ri->ifaces[i]->regex < re->regexc);
-		  remap[ri->ifaces[i]->regex]++;
-		  sc_regex_eval_tp_mask(re, ri->ifaces[i]->ifd);
+		  ri->ifaces[s]->class = '+';
+		  assert(ri->ifaces[s]->regex < re->regexc);
+		  remap[ri->ifaces[s]->regex]++;
+		  sc_regex_eval_tp_mask(re, ri->ifaces[s]->ifd);
 		}
 	    }
 	  if(tp >= 2)
@@ -10339,32 +10377,32 @@ static int sc_regex_alias_ri_score(sc_regex_t *re, slist_t *ri_list)
 		  re->regexes[i]->rt_c++;
 	    }
 
-	  for(i=ri->maxrtrc; i<ri->ifacec; i++)
+	  for(s=ri->maxrtrc; s<ri->ifacec; s++)
 	    {
-	      if(ri->ifaces[i]->ipm != 0)
+	      if(ri->ifaces[s]->ipm != 0)
 		{
-		  ri->ifaces[i]->class = 'x';
+		  ri->ifaces[s]->class = 'x';
 		  re->ip_c++;
 		}
 	      else
 		{
-		  ri->ifaces[i]->class = '!';
+		  ri->ifaces[s]->class = '!';
 		  re->fp_c++;
 		}
 	    }
 	}
       else
 	{
-	  for(i=0; i<ri->ifacec; i++)
+	  for(s=0; s<ri->ifacec; s++)
 	    {
-	      if(ri->ifaces[i]->ipm != 0)
+	      if(ri->ifaces[s]->ipm != 0)
 		{
-		  ri->ifaces[i]->class = 'x';
+		  ri->ifaces[s]->class = 'x';
 		  re->ip_c++;
 		}
 	      else
 		{
-		  ri->ifaces[i]->class = '!';
+		  ri->ifaces[s]->class = '!';
 		  re->fp_c++;
 		}
 	    }
@@ -10430,7 +10468,8 @@ static int sc_regex_issame(sc_regex_t *re1,slist_t *ifi1_list, sc_regex_t *re2)
   slist_t *ifi2_list = NULL;
   sc_ifaceinf_t *ifi1, *ifi2;
   slist_node_t *sn1, *sn2;
-  int i, rc = -1;
+  size_t i;
+  int rc = -1;
 
   /* the regexes must apply to the same domain */
   assert(re1->dom == re2->dom);
@@ -10710,10 +10749,10 @@ static int sc_regex_asn_ifi_score(sc_regex_t *re, slist_t *ifi_list)
   slist_node_t *sn;
   sc_iface_t *iface;
   long long ll;
-  size_t len, css_len;
+  size_t len, css_len, ed1 = 0;
   char asstr[16];
   int rc = -1;
-  int i, x, ppv, ed1 = 0;
+  int i, x, ppv;
 
   sc_regex_score_reset(re);
 
@@ -10766,7 +10805,7 @@ static int sc_regex_asn_ifi_score(sc_regex_t *re, slist_t *ifi_list)
 	      if(do_ed1 != 0 && x == 1 && len >= 3 && css_len >= 3 &&
 		 ifi->css->css[0] == asstr[0] &&
 		 ifi->css->css[css_len-1] == asstr[len-1] &&
-		 css_len == iface->as_e - iface->as_s + 1)
+		 css_len == (size_t)(iface->as_e - iface->as_s + 1))
 		{
 		  if(sc_reasn_tp(ts, re, ifi, ll) != 0)
 		    goto done;
@@ -10790,7 +10829,8 @@ static int sc_regex_asn_ifi_score(sc_regex_t *re, slist_t *ifi_list)
 	}
       else
 	{
-	  if(iface->as_s != -1 && (iface->flags & SC_IFACE_FLAG_AS_ED1) == 0)
+	  if((iface->flags & SC_IFACE_FLAG_AS) != 0 &&
+	     (iface->flags & SC_IFACE_FLAG_AS_ED1) == 0)
 	    {
 	      ifi->class = '~';
 	      re->fnu_c++;
@@ -11013,9 +11053,9 @@ static int sc_regex_geo_ifi_score_do(sc_regex_t *re, slist_t *ifi_list)
   int i, ppv, rc = -1, tp;
   char *ptr, *dup = NULL;
   char *code, three[3];
-  size_t len;
+  size_t len, s;
   uint8_t u8;
-  int min_code_len = -1, max_code_len = -1;
+  size_t min_code_len = 0, max_code_len = 0;
 
   sc_regex_score_reset(re);
 
@@ -11091,9 +11131,9 @@ static int sc_regex_geo_ifi_score_do(sc_regex_t *re, slist_t *ifi_list)
 	      if(iface->geos[u8].hint->type != hint->type ||
 		 strcmp(iface->geos[u8].hint->code, hint->code) != 0)
 		continue;
-	      for(i=0; i<iface->geos[u8].tagc; i++)
+	      for(s=0; s<iface->geos[u8].tagc; s++)
 		{
-		  tag = &iface->geos[u8].tags[i];
+		  tag = &iface->geos[u8].tags[s];
 		  if((tag->type == GEOHINT_TYPE_CC &&
 		      strcasecmp(map.cc, hint->cc) != 0) ||
 		     (tag->type == GEOHINT_TYPE_ST &&
@@ -11128,9 +11168,10 @@ static int sc_regex_geo_ifi_score_do(sc_regex_t *re, slist_t *ifi_list)
 	      ifi->class = '+';
 	      ifi->geohint = hint;
 
-	      if(min_code_len == -1 || min_code_len > map.codelen)
+	      assert(map.codelen > 0);
+	      if(min_code_len == 0 || min_code_len > map.codelen)
 		min_code_len = map.codelen;
-	      if(max_code_len == -1 || max_code_len < map.codelen)
+	      if(max_code_len == 0 || max_code_len < map.codelen)
 		max_code_len = map.codelen;
 
 	      re->tp_c++;
@@ -11630,7 +11671,8 @@ static int sc_routerdom_lcs(sc_routerdom_t *rd)
       ifd = rd->ifaces[i];
 
       /* if the entire hostname is an IP address, skip over */
-      if(ifd->iface->ip_s == 0 && ifd->label[ifd->iface->ip_e+1] == '\0')
+      if((ifd->iface->flags & SC_IFACE_FLAG_IP) != 0 &&
+	 ifd->iface->ip_s == 0 && ifd->label[ifd->iface->ip_e+1] == '\0')
 	continue;
 
       if(sc_ifacedom_css(ifd, &css, 1) != 0)
@@ -11943,7 +11985,7 @@ static int sc_domain_cmp(const sc_domain_t *a, const sc_domain_t *b)
 
 static void sc_domain_free(sc_domain_t *dom)
 {
-  int i;
+  size_t i;
   if(dom->geohints != NULL)
     {
       for(i=0; i<dom->geohintc; i++)
@@ -12126,7 +12168,7 @@ static int process_suffix(slist_t *list)
 
 	  suffix_root->suffixes[x++] = se;
 	}
-      suffix_root->suffixc = x;
+      suffix_root->suffixc = (size_t)x;
     }
   slist_free(tmp);
 
@@ -12177,7 +12219,7 @@ static int sc_regex_build_skip(const char *name, int j, char *buf, size_t len,
 			       size_t *to)
 {
   char tmp[8];
-  int r;
+  size_t r;
 
   while(isalnum(name[j]) == 0 && name[j] != '\0')
     {
@@ -12211,10 +12253,10 @@ static size_t sc_regex_build_0(const char *name, const sc_rebuild_p_t *p,
   const int *bits = p->bits;
   char *buf = p->buf;
   size_t len = p->len;
-  size_t to = 0;
+  size_t to = 0, r;
   char tmp[8];
   char sep;
-  int j, r, x = rb->x;
+  int j, x = rb->x;
 
   /* does not apply to literal, IP address, geo, or digit portions */
   assert(bits[x] >= BIT_TYPE_MIN); assert(bits[x] <= BIT_TYPE_MAX);
@@ -12268,10 +12310,10 @@ static size_t sc_regex_build_1(const char *name, const sc_rebuild_p_t *p,
   const int *bits = p->bits;
   char *buf = p->buf;
   size_t len = p->len;
-  size_t to = 0;
+  size_t to = 0, r;
   char tmp[8];
   char sep;
-  int x = rb->x, j, r, last_sep = -1;
+  int x = rb->x, j, last_sep = -1;
 
   /* does not apply to literal, IP address, geo, or digit portions */
   assert(bits[x] >= BIT_TYPE_MIN); assert(bits[x] <= BIT_TYPE_MAX);
@@ -12396,10 +12438,10 @@ static size_t sc_regex_build_3(const char *name, const sc_rebuild_p_t *p,
   const int *bits = p->bits;
   char *buf = p->buf;
   size_t len = p->len;
-  size_t to = 0;
+  size_t to = 0, r;
   char tmp[8];
   char sep;
-  int x = rb->x, j, r, last_sep = -1;
+  int x = rb->x, j, last_sep = -1;
 
   /*
    * RB_FIRST_PUNC_END will build what this routine would have, so no
@@ -12478,9 +12520,9 @@ static size_t sc_regex_build_4(const char *name, const sc_rebuild_p_t *p,
   const int *bits = p->bits;
   char *buf = p->buf;
   size_t len = p->len;
-  size_t to = 0;
+  size_t to = 0, r;
   char tmp[8];
-  int x = rb->x, j, r;
+  int x = rb->x, j;
 
   /* do not allow partial starts for now */
   if(rb->o != bits[x+1])
@@ -12523,8 +12565,8 @@ static size_t sc_regex_build_5_dec(const char *name, const sc_rebuild_p_t *p,
   size_t len = p->len;
   const char *ptr;
   char tmp[8];
-  size_t to = 0;
-  int x = rb->x, r;
+  size_t to = 0, r;
+  int x = rb->x;
 
   ptr = name + bits[x+1];
   while(ptr < name + bits[x+2] + 1)
@@ -12571,8 +12613,8 @@ static size_t sc_regex_build_5_hex(const char *name, const sc_rebuild_p_t *p,
   size_t len = p->len;
   const char *ptr;
   char tmp[8];
-  size_t to = 0;
-  int x = rb->x, r;
+  size_t to = 0, r;
+  int x = rb->x;
 
   ptr = name + bits[x+1];
   while(ptr < name + bits[x+2] + 1)
@@ -12644,8 +12686,8 @@ static size_t sc_regex_build_6(const char *name, const sc_rebuild_p_t *p,
   const int *bits = p->bits;
   char *buf = p->buf;
   size_t len = p->len;
-  size_t to = 0;
-  int digit = 0, j, r, x = rb->x;
+  size_t to = 0, r;
+  int digit = 0, j, x = rb->x;
   char tmp[8];
 
   /* do not allow partial starts for now */
@@ -12716,9 +12758,9 @@ static size_t sc_regex_build_7(const char *name, const sc_rebuild_p_t *p,
   const int *bits = p->bits;
   char *buf = p->buf;
   size_t len = p->len;
-  size_t to = 0;
+  size_t to = 0, r;
   char tmp[8];
-  int j, r, x = rb->x;
+  int j, x = rb->x;
 
   /* does not apply to literal, IP address, geo, or digit portions */
   assert(bits[x] >= BIT_TYPE_MIN); assert(bits[x] <= BIT_TYPE_MAX);
@@ -12901,7 +12943,7 @@ static size_t sc_regex_build_9(const char *name, const sc_rebuild_p_t *p,
 }
 
 static sc_rebuild_t *sc_rebuild_push(slist_t *list, char *buf, size_t off,
-				     int score, int f, int x, int o,
+				     int score, size_t f, int x, int o,
 				     int any, int capc)
 {
   sc_rebuild_t *rb;
@@ -12965,11 +13007,11 @@ static int sc_regex_build(splaytree_t *tree, const char *name, sc_domain_t *dom,
   sc_rebuild_p_t p;
   sc_rebuild_t *rb = NULL;
   slist_t *stack = NULL;
-  int k, r, x, o, any, rc = -1;
+  int k, x, o, any, rc = -1;
   sc_regex_t *re;
   char buf[2048], tmp[2048];
   int score, capc;
-  size_t off, to;
+  size_t off, to, r;
   uint8_t *geotypes = NULL;
 
   if((stack = slist_alloc()) == NULL)
@@ -13162,7 +13204,7 @@ static int sc_regex_asn_lcs(splaytree_t *tree, sc_domain_t *dom,
 {
   static const uint16_t mask =
     RB_BASE | RB_FIRST_PUNC_END | RB_SEG_LITERAL | RB_SEG_DIGIT_SPEC;
-  int *L_array = NULL, cc[2];
+  size_t cc[2], *L_array = NULL;
   slist_t *L = NULL;
   int i, j, Lc, rc = -1;
   const sc_ifacedom_t *R;
@@ -13178,7 +13220,7 @@ static int sc_regex_asn_lcs(splaytree_t *tree, sc_domain_t *dom,
     goto done;
 
   Lc = slist_count(L) * 2;
-  if(Lc > 0 && (L_array = malloc(sizeof(int) * Lc)) == NULL)
+  if(Lc > 0 && (L_array = malloc(sizeof(size_t) * Lc)) == NULL)
     goto done;
 
   for(i=0; i<2; i++)
@@ -13229,10 +13271,10 @@ static int sc_regex_asn_lcs(splaytree_t *tree, sc_domain_t *dom,
 }
 
 static int sc_regex_lcs2(splaytree_t *tree, sc_domain_t *dom,
-			 const sc_ifacedom_t *R, int *X_array, int Xc)
+			 const sc_ifacedom_t *R, size_t *X_array, int Xc)
 {
   static const uint16_t mask = RB_BASE | RB_FIRST_PUNC_END;
-  int *bits = NULL, bitc, ip[2], rc = -1;
+  int *bits = NULL, bitc, rc = -1; size_t ip[2];
 
   if(pt_to_bits(R->label,R->len, X_array,Xc, NULL,0, NULL,0, &bits,&bitc) == 0)
     {
@@ -13246,7 +13288,7 @@ static int sc_regex_lcs2(splaytree_t *tree, sc_domain_t *dom,
     }
 
   /* if there is no IP literal, or the literal was not captured */
-  if(R->iface->ip_s == -1)
+  if((R->iface->flags & SC_IFACE_FLAG_IP) == 0)
     return 0;
   ip[0] = R->iface->ip_s; ip[1] = R->iface->ip_e;
   if(pt_overlap(X_array, Xc, ip, 2) == 0)
@@ -13282,7 +13324,7 @@ static int sc_regex_lcs2(splaytree_t *tree, sc_domain_t *dom,
 static int sc_regex_lcs(splaytree_t *tree, sc_domain_t *dom,
 			const sc_ifacedom_t *S, const sc_ifacedom_t *T)
 {
-  int *X_array = NULL;
+  size_t *X_array = NULL;
   slist_t *X = NULL;
   int i, Xc, rc = -1;
   const sc_ifacedom_t *R;
@@ -13307,7 +13349,7 @@ static int sc_regex_lcs(splaytree_t *tree, sc_domain_t *dom,
   if((X_css = sc_css_alloc_lcs(X, S->label)) == NULL)
     goto done;
   Xc = X_css->cssc * 2;
-  if((X_array = malloc(sizeof(int) * Xc)) == NULL)
+  if((X_array = malloc(sizeof(size_t) * Xc)) == NULL)
     goto done;
   if((X_list = slist_alloc()) == NULL)
     goto done;
@@ -13335,7 +13377,7 @@ static int sc_regex_lcs(splaytree_t *tree, sc_domain_t *dom,
 	    goto done;
 	  while((ptrc = slist_head_pop(X_list)) != NULL)
 	    {
-	      if(sc_regex_lcs2(tree, dom, R, ptrc->ptr, ptrc->c) != 0)
+	      if(sc_regex_lcs2(tree, dom, R, (size_t *)ptrc->ptr, ptrc->c) != 0)
 		goto done;
 	      sc_ptrc_free2(ptrc); ptrc = NULL;
 	    }
@@ -13390,7 +13432,7 @@ static int sc_router_istraining(sc_router_t *rtr)
 
 static void sc_router_free(sc_router_t *rtr)
 {
-  int i;
+  size_t i;
 
   if(rtr->ifaces != NULL)
     {
@@ -13422,8 +13464,8 @@ static int sc_router_finish(sc_routerload_t *rl)
   sc_css_t *dc;
   sc_domain_t *dom;
   slist_node_t *sn; /* of sc_iface_t */
-  int i, c, free_rtr = 1;
-  int namec = 0;
+  size_t i, c;
+  int free_rtr = 1, namec = 0;
   slist_t *tmp = NULL;
   const char *suffix;
 
@@ -13743,7 +13785,7 @@ static void dump_2_regex_iface(const sc_regex_t *re, sc_iface_t *iface,
   sc_geohint_t *vp;
   sc_as2tag_t *a2t;
   double distance;
-  int x;
+  int x; size_t s;
 
   printf("{\"addr\":\"%s\"", scamper_addr_tostr(iface->addr,buf,sizeof(buf)));
   if(class != '\0')
@@ -13754,33 +13796,34 @@ static void dump_2_regex_iface(const sc_regex_t *re, sc_iface_t *iface,
   if(rew != NULL)
     {
       printf(", \"span\":[");
-      for(x=1; x<rew->m; x++)
+      for(s=1; s<rew->m; s++)
 	{
-	  if(x > 1) printf(", ");
-	  printf("%d, %d", (int)rew->ovector[2*x], (int)rew->ovector[(2*x)+1]);
+	  if(s > 1) printf(", ");
+	  printf("%d, %d", (int)rew->ovector[2*s], (int)rew->ovector[(2*s)+1]);
 	}
       printf("]");
     }
-  else if(class == '~' && do_learnasn != 0 && iface->as_s != -1)
+  else if(class == '~' && do_learnasn != 0 &&
+	  (iface->flags & SC_IFACE_FLAG_AS) != 0)
     {
       printf(", \"span\":[%d, %d]", iface->as_s, iface->as_e+1);
     }
   else if(class == '~' && do_learnasnames != 0 && iface->asnamec > 0)
     {
       printf(", \"span\":[%d, %d]", iface->asnames[0], iface->asnames[1]+1);
-      x = iface->asnames[1] - iface->asnames[0] + 1; assert(x < sizeof(buf));
-      memcpy(buf, iface->name+iface->asnames[0], x); buf[x] = '\0';
+      s = iface->asnames[1] - iface->asnames[0] + 1; assert(s < sizeof(buf));
+      memcpy(buf, iface->name+iface->asnames[0], s); buf[s] = '\0';
       if((a2t = sc_as2tag_find(buf)) != NULL)
 	printf(", \"name2asn\":%u", a2t->asn);
     }
   else if(class == '~' && do_learngeo != 0 && iface->geoc > 0)
     {
       printf(", \"span\":[");
-      for(x=0; x<iface->geos[0].tagc; x++)
+      for(s=0; s<iface->geos[0].tagc; s++)
 	{
-	  if(x > 0) printf(", ");
-	  printf("%d, %d", (int)iface->geos[0].tags[x].start,
-		 iface->geos[0].tags[x].end + 1);
+	  if(s > 0) printf(", ");
+	  printf("%d, %d", (int)iface->geos[0].tags[s].start,
+		 iface->geos[0].tags[s].end + 1);
 	}
       printf("]");
     }
@@ -13791,8 +13834,8 @@ static void dump_2_regex_iface(const sc_regex_t *re, sc_iface_t *iface,
   if(class == '!' && do_learngeo != 0)
     {
       assert(ifi != NULL && re != NULL && ifi->geohint != NULL);
-      x = sc_router_ooridx(iface->rtr, ifi->geohint); assert(x >= 0);
-      vp = geohints[iface->rtr->rtts[x].loc];
+      x = sc_router_ooridx(iface->rtr, ifi->geohint, &s); assert(x == 0);
+      vp = geohints[iface->rtr->rtts[s].loc];
       distance = sc_geohint_dist(vp, ifi->geohint);
       printf(", \"fp\":[{\"loc\":\"%s\", \"rtt\":%u}]", vp->code,
 	     dist2rtt(distance));
@@ -13850,6 +13893,7 @@ static int dump_2_regex_alias(sc_domain_t *dom, sc_regex_t *re)
   char buf[2048];
   int rc = -1;
   double randi;
+  size_t s;
 
   if((rew = sc_rework_alloc(re)) == NULL)
     goto done;
@@ -13981,9 +14025,9 @@ static int dump_2_regex_alias(sc_domain_t *dom, sc_regex_t *re)
 	    }
 	}
 
-      for(i=0; i<rd->rtr->ifacec; i++)
+      for(s=0; s<rd->rtr->ifacec; s++)
 	{
-	  iface = rd->rtr->ifaces[i];
+	  iface = rd->rtr->ifaces[s];
 	  if((suffix = sc_suffix_find(iface->name)) == NULL ||
 	     strcmp(suffix, dom->domain) != 0)
 	    {
@@ -14253,6 +14297,7 @@ static int dump_2_regex_router(sc_domain_t *dom, sc_regex_t *re,
   int matched, x, z, i, j, r, rc = -1;
   char buf[2048];
   void *ptr;
+  size_t s;
 
   if((rd_tree = splaytree_alloc((splaytree_cmp_t)ptrcmp)) == NULL ||
      (rd_list = slist_alloc()) == NULL ||
@@ -14378,9 +14423,9 @@ static int dump_2_regex_router(sc_domain_t *dom, sc_regex_t *re,
 		}
 	    }
 
-	  for(i=0; i<rd->rtr->ifacec; i++)
+	  for(s=0; s<rd->rtr->ifacec; s++)
 	    {
-	      iface = rd->rtr->ifaces[i];
+	      iface = rd->rtr->ifaces[s];
 	      if((suffix = sc_suffix_find(iface->name)) == NULL ||
 		 strcmp(suffix, dom->domain) != 0)
 		{
@@ -14486,9 +14531,9 @@ static int dump_2_regex_router(sc_domain_t *dom, sc_regex_t *re,
 		    }
 		}
 
-	      for(i=0; i<rd->rtr->ifacec; i++)
+	      for(s=0; s<rd->rtr->ifacec; s++)
 		{
-		  iface = rd->rtr->ifaces[i];
+		  iface = rd->rtr->ifaces[s];
 		  if((suffix = sc_suffix_find(iface->name)) == NULL ||
 		     strcmp(suffix, dom->domain) != 0)
 		    {
@@ -14556,9 +14601,9 @@ static int dump_2_regex_router(sc_domain_t *dom, sc_regex_t *re,
 		}
 
 	      /* print other interfaces on the router */
-	      for(i=0; i<rd->rtr->ifacec; i++)
+	      for(s=0; s<rd->rtr->ifacec; s++)
 		{
-		  iface = rd->rtr->ifaces[i];
+		  iface = rd->rtr->ifaces[s];
 		  if((suffix = sc_suffix_find(iface->name)) == NULL ||
 		     strcmp(suffix, dom->domain) != 0)
 		    {
@@ -14717,12 +14762,13 @@ static int dump_3_text(void)
   sc_domain_t *dom;
   sc_regex_t *re;
   char buf[512];
+  size_t s;
   int k;
 
   if(do_learnasnames != 0)
     {
-      for(k=0; k<tag2asc; k++)
-	printf("%u %s\n", tag2ass[k]->asn, tag2ass[k]->tag);
+      for(s=0; s<tag2asc; s++)
+	printf("%u %s\n", tag2ass[s]->asn, tag2ass[s]->tag);
       printf("###\n");
     }
 
@@ -14810,7 +14856,7 @@ static int dump_4_regex_asn(sc_domain_t *dom, sc_regex_t *re)
 		  if(css != NULL)
 		    {
 		      sc_css_tostr(css, '|', tmp, sizeof(tmp));
-		      snprintf(restr, sizeof(restr), "[%d]", rew->k+1);
+		      snprintf(restr, sizeof(restr), "[%d]", (int)rew->k+1);
 		    }
 		  printf("%16s a %6s %6s %3s %s\n",
 			 buf, "", tmp, restr, iface->name);
@@ -14895,10 +14941,10 @@ static int dump_4_regex_geo(sc_domain_t *dom, sc_regex_t *re)
   sc_css_t *css = NULL;
   slist_node_t *sn;
   sc_dump4_t *d4 = NULL;
-  int i, s, z, rc = -1;
+  int i, z, rc = -1;
   double distance;
   char buf[2048], rtt[16], render[136], fstr[64], restr[16];
-  size_t addr_len = 0, render_len = 0, rtt_len = 0, len;
+  size_t addr_len = 0, render_len = 0, rtt_len = 0, len, idx;
 
   if((ifi_list = slist_alloc()) == NULL ||
      (out_list = slist_alloc()) == NULL ||
@@ -14945,11 +14991,11 @@ static int dump_4_regex_geo(sc_domain_t *dom, sc_regex_t *re)
       else if(ifi->class == '!')
 	{
 	  assert(ifi->geohint != NULL);
-	  s = sc_router_ooridx(rtr, ifi->geohint); assert(s >= 0);
-	  vp = geohints[rtr->rtts[s].loc];
+	  i = sc_router_ooridx(rtr, ifi->geohint, &idx); assert(i == 0);
+	  vp = geohints[rtr->rtts[idx].loc];
 	  distance = sc_geohint_dist(vp, ifi->geohint);
 	  snprintf(rtt, sizeof(rtt), "%u>%u", dist2rtt(distance),
-		   rtr->rtts[s].rtt + rtt_fudge);
+		   rtr->rtts[idx].rtt + rtt_fudge);
 	}
       else if(ifi->class == '~')
 	{
@@ -15443,7 +15489,7 @@ static int sc_regex_refine_tp(sc_regex_t *re)
   slist_t *ri_list = NULL, *css_list = NULL, *re_list = NULL, *re2_list = NULL;
   splaytree_t *re_tree = NULL, **css_trees = NULL;
   sc_regex_t *re_eval = NULL, *re_new = NULL;
-  int Lc, bitc, *La = NULL, *bits = NULL;
+  int Lc, bitc, *bits = NULL; size_t *La = NULL;
   sc_rework_t *rew = NULL;
   char *str = NULL, *ptr;
   slist_node_t *sn, *s2;
@@ -15530,7 +15576,7 @@ static int sc_regex_refine_tp(sc_regex_t *re)
 	{
 	  css = slist_node_item(sn);
 	  Lc = css->cssc * 2;
-	  La = malloc(sizeof(int) * Lc);
+	  La = malloc(sizeof(size_t) * Lc);
 	  for(s2=slist_head_node(ri_list); s2 != NULL; s2=slist_node_next(s2))
 	    {
 	      ri = slist_node_item(s2);
@@ -15643,11 +15689,12 @@ static int sc_regex_ip_ri_eval(sc_regex_t *re, slist_t *ri_list)
 {
   splaytree_t *tree = NULL;
   sc_rework_t *rew = NULL;
-  int rc = -1, i, x;
+  int rc = -1, x;
   slist_node_t *sn;
   sc_routerinf_t *ri;
   sc_routerdom_t *rd;
   sc_iface_t *iface;
+  size_t i;
 
   if((rew = sc_rework_alloc(re)) == NULL)
     goto done;
@@ -15967,6 +16014,7 @@ static int sc_regex_refine_fne(sc_regex_t *re)
   int *caps = NULL;
   char *str = NULL;
   char buf[128];
+  size_t s;
 
   if((rew = sc_rework_alloc(re)) == NULL ||
      (ri_list = slist_alloc()) == NULL ||
@@ -15999,14 +16047,14 @@ static int sc_regex_refine_fne(sc_regex_t *re)
       if(ri->ifacec == 1 && ri_css == NULL)
 	continue;
 
-      for(i=0; i<ri->ifacec; i++)
+      for(s=0; s<ri->ifacec; s++)
 	{
 	  /*
 	   * skip over interfaces which did not have a more specific
 	   * name
 	   */
-	  if(ri->ifaces[i]->class != '-' ||
-	     (rd_css = ri->ifaces[i]->ifd->rd->css) == NULL ||
+	  if(ri->ifaces[s]->class != '-' ||
+	     (rd_css = ri->ifaces[s]->ifd->rd->css) == NULL ||
 	     sc_css_morespecific(rd_css, ri_css) == 0)
 	    continue;
 
@@ -16020,7 +16068,7 @@ static int sc_regex_refine_fne(sc_regex_t *re)
 	    continue;
 
 	  /* count this router as maybe not matching */
-	  if((ptrc = sc_ptrc_get(rd_ri_tree, ri->ifaces[i]->ifd->rd)) == NULL)
+	  if((ptrc = sc_ptrc_get(rd_ri_tree, ri->ifaces[s]->ifd->rd)) == NULL)
 	    goto done;
 	  ptrc->c++;
 
@@ -16034,7 +16082,7 @@ static int sc_regex_refine_fne(sc_regex_t *re)
 		}
 	      continue;
 	    }
-	  sc_css_morespecific_ov(rew, css, ri->ifaces[i]->ifd->iface, &cap);
+	  sc_css_morespecific_ov(rew, css, ri->ifaces[s]->ifd->iface, &cap);
 	  sc_css_free(css); css = NULL;
 	  caps[cap]++;
 	}
@@ -16317,7 +16365,7 @@ static int sc_regex_refine_fne(sc_regex_t *re)
 }
 
 static int sc_regex_refine_init(const sc_regex_t *re, const sc_rework_t *rew,
-				int *Xc, int **Xa, int *LXc, int **LXa,
+				int *Xc, size_t **Xa, int *LXc, size_t **LXa,
 				sc_css_t **capcss, sc_regex_t **capre,
 				sc_rework_t **caprew)
 {
@@ -16327,7 +16375,7 @@ static int sc_regex_refine_init(const sc_regex_t *re, const sc_rework_t *rew,
   *capcss = NULL; *capre = NULL; *caprew = NULL;
 
   *Xc = sc_rework_capcount(rew, 0);
-  if((*Xa = malloc(sizeof(int) * *Xc * 2)) == NULL)
+  if((*Xa = malloc(sizeof(size_t) * *Xc * 2)) == NULL)
     goto done;
 
   /* extract the capture portion of the regex */
@@ -16353,7 +16401,7 @@ static int sc_regex_refine_init(const sc_regex_t *re, const sc_rework_t *rew,
     }
   else
     {
-      if((*LXa = malloc(sizeof(int) * *LXc * 2)) == NULL ||
+      if((*LXa = malloc(sizeof(size_t) * *LXc * 2)) == NULL ||
 	 (*caprew = sc_rework_alloc(*capre)) == NULL)
 	goto done;
 #if 0
@@ -16526,7 +16574,7 @@ static int sc_regex_refine_class_do(sc_regex_t *re, slist_t *ifd_list,
   sc_segscore_t *ss;
   slist_node_t *sn;
   sc_css_t *css = NULL;
-  char *str = NULL, *ptr, buf[256], tmp[8], *alpha_ptr, *digit_ptr;
+  char *str = NULL, *ptr, buf[256], tmp[16], *alpha_ptr, *digit_ptr;
   int switchc, alpha, digit, score;
   int i, j, x, cc = 0, rc = -1;
   size_t off, len, seglen;
@@ -16868,7 +16916,7 @@ static int sc_regex_refine_class_tree(splaytree_t *re_tree, slist_t *ifd_list)
  */
 static int sc_regex_refine_class(sc_regex_t *re)
 {
-  splaytree_t **trees = NULL, *seg_tree = NULL;
+  splaytree_t *seg_tree = NULL;
   slist_t *ifd_list = NULL, *re_list = NULL;
   slist_t *ri_list = NULL, *ifi_list = NULL;
   sc_regex_t *capre = NULL, *re_eval;
@@ -16877,7 +16925,8 @@ static int sc_regex_refine_class(sc_regex_t *re)
   sc_ifaceinf_t *ifi;
   slist_node_t *sn;
   char *str = NULL, buf[256];
-  int i, cc = 0, rc = -1;
+  int rc = -1;
+  size_t i;
 
   if((ifd_list = slist_alloc()) == NULL || (re_list = slist_alloc()) == NULL)
     goto done;
@@ -16956,12 +17005,6 @@ static int sc_regex_refine_class(sc_regex_t *re)
   rc = 0;
 
  done:
-  if(trees != NULL)
-    {
-      for(i=0; i<cc; i++)
-	splaytree_free(trees[i], free);
-      free(trees);
-    }
   if(seg_tree != NULL)
     splaytree_free(seg_tree, (splaytree_free_t)sc_segscore_free);
   if(re_list != NULL) slist_free_cb(re_list, (slist_free_t)sc_regex_free);
@@ -17037,8 +17080,8 @@ static int sc_regex_refine_fnu(sc_regex_t *re)
   dlist_t *re_list = NULL; slist_t *re2_list = NULL;
   slist_t *ifi_list = NULL, *ifi2_list = NULL, *ifi3_list = NULL;
   slist_t *fnu_list = NULL, *re_set = NULL;
-  int *Xa = NULL, Xc, *La = NULL, Lc, *bits = NULL, bitc;
-  int r, i, c, d, rc = -1, rnamec = 0;
+  int Xc, Lc, *bits = NULL, bitc; size_t *Xa = NULL, *La = NULL;
+  int r, i, c, x, rc = -1, rnamec = 0; size_t d;
   sc_rework_t *rew = NULL;
   sc_routerdom_t *rd;
   sc_ifacedom_t *ifd;
@@ -17050,7 +17093,7 @@ static int sc_regex_refine_fnu(sc_regex_t *re)
   sc_css_t *capcss = NULL;
   sc_regex_t *capre = NULL;
   sc_rework_t *caprew = NULL;
-  int *LXa = NULL, LXc, LXi, *LAa = NULL, LAc;
+  int LXc, LXi, LAc; size_t *LAa = NULL, *LXa = NULL;
   uint32_t tp, fp;
   char buf[256], rebuf[256], *ptr = NULL;
 
@@ -17111,8 +17154,9 @@ static int sc_regex_refine_fnu(sc_regex_t *re)
 		   */
 		  if(sc_regex_capget(re->regexes[0]->str,1,buf,sizeof(buf))!=0)
 		    continue;
-		  if(snprintf(rebuf, sizeof(rebuf), "^(%s)\\.%s$",
-			      buf, re->dom->escape) >= sizeof(rebuf))
+		  x = snprintf(rebuf, sizeof(rebuf), "^(%s)\\.%s$",
+			       buf, re->dom->escape);
+		  if(x < 0 || (size_t)x >= sizeof(rebuf))
 		    goto done;
 		  if((re_new = sc_regex_get(re_tree, rebuf, 0, NULL)) == NULL)
 		    goto done;
@@ -17145,9 +17189,9 @@ static int sc_regex_refine_fnu(sc_regex_t *re)
        * be found
        */
       Lc = css->cssc;
-      if((La = malloc(sizeof(int) * Lc * 2)) == NULL)
+      if((La = malloc(sizeof(size_t) * Lc * 2)) == NULL)
 	goto done;
-      if((LAa = malloc(sizeof(int) * (Lc+LXc) * 2)) == NULL)
+      if((LAa = malloc(sizeof(size_t) * (Lc+LXc) * 2)) == NULL)
 	goto done;
       LAc = Lc + LXc;
 
@@ -17218,7 +17262,7 @@ static int sc_regex_refine_fnu(sc_regex_t *re)
 		}
 	      else
 		{
-		  memcpy(LAa, La, Lc * 2 * sizeof(int));
+		  memcpy(LAa, La, Lc * 2 * sizeof(size_t));
 		}
 
 	      if(pt_to_bits(ifd->label, ifd->len, Xa, Xc*2, LAa, LAc*2,
@@ -17431,8 +17475,8 @@ static int sc_regex_refine_ip(sc_regex_t *re)
   dlist_node_t *dn, *dn_this;
   sc_css_t *css;
   sc_regex_t *re_ip = NULL, *re_new = NULL;
-  int i, rc = -1, *I_array = NULL;
-  int *bits = NULL, bitc;
+  int *bits = NULL, bitc, rc = -1;
+  size_t *I_array = NULL, i;
   char buf[256];
 
   if((re_tree = splaytree_alloc((splaytree_cmp_t)sc_regex_str_cmp)) == NULL)
@@ -17490,7 +17534,8 @@ static int sc_regex_refine_ip(sc_regex_t *re)
 	}
 
       /* if the entire hostname is an IP address, skip over */
-      if(ifd->iface->ip_s == 0 && ifd->label[ifd->iface->ip_e+1] == '\0')
+      if((ifd->iface->flags & SC_IFACE_FLAG_IP) != 0 &&
+	 ifd->iface->ip_s == 0 && ifd->label[ifd->iface->ip_e+1] == '\0')
 	continue;
 
       if(sc_ifacedom_css(ifd, &css, 0) != 0)
@@ -17516,7 +17561,7 @@ static int sc_regex_refine_ip(sc_regex_t *re)
   for(sn=slist_head_node(css_list); sn != NULL; sn=slist_node_next(sn))
     {
       css = slist_node_item(sn);
-      I_array = malloc(sizeof(int) * 2 * css->cssc);
+      I_array = malloc(sizeof(size_t) * 2 * css->cssc);
       for(sn2=slist_head_node(ifd_list); sn2 != NULL; sn2=slist_node_next(sn2))
 	{
 	  ifd = slist_node_item(sn2);
@@ -17665,11 +17710,12 @@ static int sc_regex_alias_fp_eval(slist_t *ri_list, sc_regex_t *re)
 {
   splaytree_t *tree = NULL;
   sc_rework_t *rew = NULL;
-  int rc = -1, i, x;
+  int rc = -1, x;
   slist_node_t *sn;
   sc_routerinf_t *ri;
   sc_routerdom_t *rd;
   sc_iface_t *iface;
+  size_t i;
 
   if((rew = sc_rework_alloc(re)) == NULL)
     goto done;
@@ -17870,10 +17916,9 @@ static int sc_regex_refine_fp(sc_regex_t *re)
   dlist_node_t *dn, *dn_this;
   sc_css_t *css = NULL;
   sc_regex_t *re_fp = NULL, *re_tmp = NULL;
-  int i, x, rc = -1;
-  int *bits = NULL, *La = NULL, bitc;
+  int *bits = NULL, bitc, x, rc = -1;
+  size_t *La = NULL, i, len;
   char buf[256], *str;
-  size_t len;
 
   if((re_tree = splaytree_alloc((splaytree_cmp_t)sc_regex_str_cmp)) == NULL)
     goto done;
@@ -17939,7 +17984,7 @@ static int sc_regex_refine_fp(sc_regex_t *re)
       css = slist_node_item(sn);
       if(do_debug != 0 && threadc <= 1)
 	printf("%s\n", sc_css_tostr(css, '|', buf, sizeof(buf)));
-      La = malloc(sizeof(int) * 2 * css->cssc);
+      La = malloc(sizeof(size_t) * 2 * css->cssc);
       for(sn2=slist_head_node(ifd_list); sn2 != NULL; sn2=slist_node_next(sn2))
 	{
 	  ifd = slist_node_item(sn2);
@@ -18473,7 +18518,7 @@ static int sc_regex_refine_merge_setup(char *S, char *T, sc_css_t **css_o,
   sc_lcs_pt_t *pt1, *pt2;
   slist_t *X = NULL;
   size_t S_len, T_len;
-  int flat[4], flat_len;
+  size_t flat[4], flat_len;
   int rc = -1;
 
   *css_o = NULL; *S_css_o = NULL; *T_css_o = NULL;
@@ -18734,28 +18779,25 @@ static int generate_regexes_domain_asn(sc_domain_t *dom)
     goto err;
 
   /*
-   * get the hostnames with an apparent hostname embedded and put them
+   * get the hostnames with an apparent ASN embedded and put them
    * in their own list for easier processing
    */
   for(sn1=slist_head_node(dom->routers); sn1 != NULL; sn1=slist_node_next(sn1))
     {
       rd = slist_node_item(sn1);
       for(i=0; i<rd->ifacec; i++)
-	if(rd->ifaces[i]->iface->as_s != -1 &&
+	if((rd->ifaces[i]->iface->flags & SC_IFACE_FLAG_AS) != 0 &&
 	   slist_tail_push(ifaces, rd->ifaces[i]) == NULL)
 	  goto err;
     }
 
+  /* all ifaces in the list have an apparent ASN embedded */
   for(sn1=slist_head_node(ifaces); sn1 != NULL; sn1=slist_node_next(sn1))
     {
       ifd1 = slist_node_item(sn1);
-      if(ifd1->iface->as_s == -1)
-	continue;
       for(sn2=slist_node_next(sn1); sn2 != NULL; sn2=slist_node_next(sn2))
 	{
 	  ifd2 = slist_node_item(sn2);
-	  if(ifd2->iface->as_s == -1)
-	    continue;
 
 	  /*
 	   * Does the particular label containing the ASN have more structure?
@@ -18839,9 +18881,10 @@ static int generate_regexes_domain_geo(sc_domain_t *dom)
   sc_routerdom_t *rd = NULL;
   sc_ifacedom_t *ifd;
   slist_node_t *sn;
-  int *ctypes = NULL, cc, i, j, k, *bits = NULL, bitc;
+  int *ctypes = NULL, cc, i, j, *bits = NULL, bitc;
   int16_t *c = NULL;
   sc_geotag_t *tag;
+  size_t k;
 
   if((tree = splaytree_alloc((splaytree_cmp_t)sc_regex_str_cmp)) == NULL)
     goto err;
@@ -20122,6 +20165,7 @@ static int refine_dict_asnames(void)
   sc_as2tag_t *a2t;
   sc_regex_t *re;
   int i, rc = -1;
+  size_t s;
 
   if((refine_mask & REFINE_DICT) == 0 || domain_eval != NULL)
     return 0;
@@ -20174,18 +20218,19 @@ static int refine_dict_asnames(void)
   /* clean out the old asnames dictionary */
   if(tag2ass != NULL)
     {
-      for(i=0; i<tag2asc; i++)
-	if(tag2ass[i] != NULL)
-	  sc_as2tag_free(tag2ass[i]);
+      for(s=0; s<tag2asc; s++)
+	if(tag2ass[s] != NULL)
+	  sc_as2tag_free(tag2ass[s]);
       free(tag2ass); tag2ass = NULL;
     }
 
   /* install the new asnames dictionary */
-  if((tag2asc = slist_count(list)) == 0)
+  if((i = slist_count(list)) <= 0)
     {
       rc = 0;
       goto done;
     }
+  tag2asc = (size_t)i;
   if((tag2ass = malloc_zero(sizeof(sc_as2tag_t *) * tag2asc)) == NULL)
     goto done;
   i = 0;
@@ -20212,7 +20257,7 @@ static int refine_dict_asnames(void)
     }
   threadpool_join(tp); tp = NULL;
 
-  fprintf(stderr, "refining dictionary: %d entries\n", tag2asc);
+  fprintf(stderr, "refining dictionary: %d entries\n", (int)tag2asc);
 
   for(sn=slist_head_node(domain_list); sn != NULL; sn=slist_node_next(sn))
     {
@@ -20694,11 +20739,12 @@ static int load_routers_asnames_dict(void)
     }
   slist_concat(list, thin);
 
-  if((tag2asc = slist_count(list)) == 0)
+  if((i = slist_count(list)) <= 0)
     {
       rc = 0;
       goto done;
     }
+  tag2asc = (size_t)i;
   if((tag2ass = malloc_zero(sizeof(sc_as2tag_t *) * tag2asc)) == NULL)
     goto done;
 
@@ -20712,7 +20758,7 @@ static int load_routers_asnames_dict(void)
     }
   slist_free(list); list = NULL;
 
-  fprintf(stderr, "inferred %d entries in asnames dictionary\n", tag2asc);
+  fprintf(stderr, "inferred %d entries in asnames dictionary\n", (int)tag2asc);
   rc = 0;
 
  done:
@@ -20978,24 +21024,26 @@ static int load_siblings(void)
       fprintf(stderr,"%s: could not read %s\n", __func__, sibling_file);
       goto done;
     }
-  if((siblingc = slist_count(list)) == 0)
+  if((x = slist_count(list)) <= 0)
     {
       rc = 0;
       goto done;
     }
+  siblingc = (size_t)x;
 
   x = 0;
   if((siblings = malloc_zero(sizeof(sc_as2org_t *) * siblingc)) == NULL)
     {
-      fprintf(stderr,"%s: could not malloc %d siblings\n", __func__, siblingc);
+      fprintf(stderr, "%s: could not malloc %d siblings\n", __func__,
+	      (int)siblingc);
       goto done;
     }
   while((a2o = slist_head_pop(list)) != NULL)
     siblings[x++] = a2o;
-  assert(x == siblingc);
+  assert((size_t)x == siblingc);
   array_qsort((void **)siblings, siblingc, (array_cmp_t)sc_as2org_cmp);
   fprintf(stderr, "loaded %d sibling ases in %d orgs\n",
-	  siblingc, sibling_id-1);
+	  (int)siblingc, sibling_id-1);
   rc = 0;
 
  done:
@@ -21043,7 +21091,7 @@ static int geohints_file_line_iso3166(const char *line, char **ptr_in,
 {
   char *ptr = *ptr_in;
   char iso3166[8];
-  int i = 0;
+  size_t i = 0;
 
   while((isalnum(*ptr) || *ptr == '-') && i < sizeof(iso3166))
     {
@@ -21142,7 +21190,7 @@ static int geohints_file_line(char *line, void *param)
   char *ptr, *end;
   size_t expected_len = 0;
   uint8_t type = 0;
-  int i, j;
+  size_t i, j;
 
   if ('#' == *line) return 0;
 
@@ -21453,17 +21501,18 @@ static int load_dict_geohints(void)
   slist_t *geo_list = NULL, *clligp_list = NULL, *fac_list = NULL;
   slist_t *place_list = NULL, *other_list = NULL, *country_list = NULL;
   slist_t *state_list = NULL, *list;
-  int first[26], *cou_hintc = NULL, *sta_hintc = NULL;
+  size_t *cou_hintc = NULL, *sta_hintc = NULL;
+  size_t first[26];
   slist_node_t *sn;
   sc_strlist_t *sl;
   sc_geohint_t *hint, *fac;
-  sc_geomap_t map;
   struct timeval start, finish;
   sc_clligp_t *clligp;
   char *geohint_file;
   int i, rc = -1;
   char buf[64];
   uint32_t x;
+  size_t s;
 
   if(dicts == NULL)
     return 0;
@@ -21516,12 +21565,15 @@ static int load_dict_geohints(void)
   /* map the geopolitical portion of the clli code to ISO3166 cc/st */
   splaytree_inorder(clligp_tree, tree_to_slist, clligp_list);
   splaytree_free(clligp_tree, NULL); clligp_tree = NULL;
-  clligpc = slist_count(clligp_list);
-  if((clligps = malloc_zero(sizeof(sc_clligp_t *) * clligpc)) == NULL)
-    goto done;
-  i = 0;
-  while((clligp = slist_head_pop(clligp_list)) != NULL)
-    clligps[i++] = clligp;
+  if((i = slist_count(clligp_list)) > 0)
+    {
+      clligpc = (size_t)i;
+      if((clligps = malloc_zero(sizeof(sc_clligp_t *) * clligpc)) == NULL)
+	goto done;
+      i = 0;
+      while((clligp = slist_head_pop(clligp_list)) != NULL)
+	clligps[i++] = clligp;
+    }
 
   /* put the facilities in their own global array separate from other hints */
   geohint_facc = slist_count(fac_list);
@@ -21532,94 +21584,102 @@ static int load_dict_geohints(void)
     geohint_facs[i++] = hint;
 
   /* put the states in their own array */
-  geohint_stac = slist_count(state_list);
-  if((geohint_stas = malloc_zero(sizeof(sc_state_t *) * geohint_stac)) == NULL)
-    goto done;
-  i = 0;
-  while((hint = slist_head_pop(state_list)) != NULL)
+  if((i = slist_count(state_list)) > 0)
     {
-      if((geohint_stas[i] = malloc_zero(sizeof(sc_state_t))) == NULL)
+      geohint_stac = (size_t)i;
+      if((geohint_stas=malloc_zero(sizeof(sc_state_t *)*geohint_stac)) == NULL)
 	goto done;
-      memcpy(geohint_stas[i]->cc, hint->cc, sizeof(geohint_stas[i]->cc));
-      memcpy(geohint_stas[i]->st, hint->st, sizeof(geohint_stas[i]->st));
-      geohint_stas[i]->name = hint->place; hint->place = NULL;
-      sc_geohint_free(hint);
-      i++;
+      i = 0;
+      while((hint = slist_head_pop(state_list)) != NULL)
+	{
+	  if((geohint_stas[i] = malloc_zero(sizeof(sc_state_t))) == NULL)
+	    goto done;
+	  memcpy(geohint_stas[i]->cc, hint->cc, sizeof(geohint_stas[i]->cc));
+	  memcpy(geohint_stas[i]->st, hint->st, sizeof(geohint_stas[i]->st));
+	  geohint_stas[i]->name = hint->place; hint->place = NULL;
+	  sc_geohint_free(hint);
+	  i++;
+	}
+      sc_state_sort();
     }
-  sc_state_sort();
 
   /* put the countries in their own array */
-  geohint_couc = slist_count(country_list);
-  if((geohint_cous = malloc_zero(sizeof(sc_country_t *)*geohint_couc)) == NULL)
-    goto done;
-  i = 0;
-  while((hint = slist_head_pop(country_list)) != NULL)
+  if((i = slist_count(country_list)) > 0)
     {
-      if((geohint_cous[i] = malloc_zero(sizeof(sc_country_t))) == NULL)
+      geohint_couc = (size_t)i;
+      if((geohint_cous=malloc_zero(sizeof(sc_country_t *)*geohint_couc))==NULL)
 	goto done;
-      memcpy(geohint_cous[i]->cc, hint->cc, sizeof(geohint_cous[i]->cc));
-      memcpy(geohint_cous[i]->iso3, hint->st, sizeof(geohint_cous[i]->iso3));
-      geohint_cous[i]->name = hint->place; hint->place = NULL;
-      sc_geohint_free(hint);
-      i++;
+      i = 0;
+      while((hint = slist_head_pop(country_list)) != NULL)
+	{
+	  if((geohint_cous[i] = malloc_zero(sizeof(sc_country_t))) == NULL)
+	    goto done;
+	  memcpy(geohint_cous[i]->cc, hint->cc, sizeof(geohint_cous[i]->cc));
+	  memcpy(geohint_cous[i]->iso3,hint->st,sizeof(geohint_cous[i]->iso3));
+	  geohint_cous[i]->name = hint->place; hint->place = NULL;
+	  sc_geohint_free(hint);
+	  i++;
+	}
+      array_qsort((void **)geohint_cous, geohint_couc,
+		  (array_cmp_t)sc_country_cmp2);
     }
-  array_qsort((void **)geohint_cous,geohint_couc,(array_cmp_t)sc_country_cmp2);
 
   /* count how many location hints we have per country and state */
-  if((cou_hintc = malloc_zero(sizeof(int) * geohint_couc)) == NULL ||
-     (sta_hintc = malloc_zero(sizeof(int) * geohint_stac)) == NULL)
+  if((cou_hintc = malloc_zero(sizeof(size_t) * geohint_couc)) == NULL ||
+     (sta_hintc = malloc_zero(sizeof(size_t) * geohint_stac)) == NULL)
     goto done;
   for(sn=slist_head_node(place_list); sn != NULL; sn=slist_node_next(sn))
     {
       hint = slist_node_item(sn);
-      if((i = sc_country_findpos(hint->cc)) >= 0)
-	cou_hintc[i]++;
-      if((i = sc_state_sort_findpos(hint->st, hint->cc)) >= 0)
-	sta_hintc[i]++;
+      if(sc_country_findpos(hint->cc, &s) == 0)
+	cou_hintc[s]++;
+      if(sc_state_sort_findpos(hint->st, hint->cc, &s) == 0)
+	sta_hintc[s]++;
     }
 
   /* put some landmarks in for each country and state */
-  for(i=0; i<geohint_couc; i++)
+  for(s=0; s<geohint_couc; s++)
     {
-      if(cou_hintc[i] > 0 &&
-	 (geohint_cous[i]->hints = malloc_zero(sizeof(sc_geohint_t *) *
-					       cou_hintc[i])) == NULL)
+      if(cou_hintc[s] > 0 &&
+	 (geohint_cous[s]->hints = malloc_zero(sizeof(sc_geohint_t *) *
+					       cou_hintc[s])) == NULL)
 	goto done;
     }
-  for(i=0; i<geohint_stac; i++)
+  for(s=0; s<geohint_stac; s++)
     {
-      if(sta_hintc[i] > 0 &&
-	 (geohint_stas[i]->hints = malloc_zero(sizeof(sc_geohint_t *) *
-					       sta_hintc[i])) == NULL)
+      if(sta_hintc[s] > 0 &&
+	 (geohint_stas[s]->hints = malloc_zero(sizeof(sc_geohint_t *) *
+					       sta_hintc[s])) == NULL)
 	goto done;
     }
   for(sn=slist_head_node(place_list); sn != NULL; sn=slist_node_next(sn))
     {
       hint = slist_node_item(sn);
-      if((i = sc_country_findpos(hint->cc)) >= 0)
+      if(sc_country_findpos(hint->cc, &s) == 0)
 	{
-	  assert(geohint_cous[i]->hintc < cou_hintc[i]);
-	  geohint_cous[i]->hints[geohint_cous[i]->hintc++] = hint;
+	  assert(geohint_cous[s]->hintc < cou_hintc[s]);
+	  geohint_cous[s]->hints[geohint_cous[s]->hintc++] = hint;
 	}
-      if((i = sc_state_sort_findpos(hint->st, hint->cc)) >= 0)
+      if(sc_state_sort_findpos(hint->st, hint->cc, &s) == 0)
 	{
-	  assert(geohint_stas[i]->hintc < sta_hintc[i]);
-	  geohint_stas[i]->hints[geohint_stas[i]->hintc++] = hint;
+	  assert(geohint_stas[s]->hintc < sta_hintc[s]);
+	  geohint_stas[s]->hints[geohint_stas[s]->hintc++] = hint;
 	}
     }
-  for(i=0; i<geohint_couc; i++)
+  for(s=0; s<geohint_couc; s++)
     {
-      array_qsort((void **)geohint_cous[i]->hints, geohint_cous[i]->hintc,
+      array_qsort((void **)geohint_cous[s]->hints, geohint_cous[s]->hintc,
 		  (array_cmp_t)sc_geohint_popn_cmp);
     }
-  for(i=0; i<geohint_stac; i++)
+  for(s=0; s<geohint_stac; s++)
     {
-      array_qsort((void **)geohint_stas[i]->hints, geohint_stas[i]->hintc,
+      array_qsort((void **)geohint_stas[s]->hints, geohint_stas[s]->hintc,
 		  (array_cmp_t)sc_geohint_popn_cmp);
     }
 
   /* sort countries by iso3166 3-letter code */
-  array_qsort((void **)geohint_cous,geohint_couc,(array_cmp_t)sc_country_cmp3);
+  array_qsort((void **)geohint_cous, geohint_couc,
+	      (array_cmp_t)sc_country_cmp3);
 
   /*
    * go through the places, tagging those that have a known facility.
@@ -21641,10 +21701,9 @@ static int load_dict_geohints(void)
       geohint_plc[i]++;
 
     }
-  for(i=0; i<geohint_facc; i++)
+  for(s=0; s<geohint_facc; s++)
     {
-      fac = geohint_facs[i];
-      assert(sizeof(map.code) > fac->codelen);
+      fac = geohint_facs[s];
 
       sl = sc_strlist_get(strlist_tree, fac->code); x = 0;
       for(sn=slist_head_node(sl->list); sn != NULL; sn=slist_node_next(sn))
@@ -21698,25 +21757,27 @@ static int load_dict_geohints(void)
 
   slist_concat(geo_list, other_list);
   slist_concat(geo_list, place_list);
-  if((geohintc = slist_count(geo_list)) == 0)
+  if((i = slist_count(geo_list)) <= 0)
     {
       rc = 0;
       goto done;
     }
+  geohintc = (size_t)i;
   if((geohints = malloc_zero(sizeof(sc_geohint_t *) * geohintc)) == NULL)
     {
-      fprintf(stderr,"%s: could not malloc %d geohints\n", __func__, geohintc);
+      fprintf(stderr,"%s: could not malloc %d geohints\n", __func__,
+	      (int)geohintc);
       goto done;
     }
-  i = 0;
+  s = 0;
   while((hint = slist_head_pop(geo_list)) != NULL)
-    geohints[i++] = hint;
+    geohints[s++] = hint;
   sc_geohint_sort(geohints, geohintc);
-  for(i=0; i<geohintc; i++)
-    geohints[i]->index = i;
+  for(s=0; s<geohintc; s++)
+    geohints[s]->index = s;
 
   gettimeofday_wrap(&finish);
-  fprintf(stderr, "loaded %d geohints in %s\n", geohintc,
+  fprintf(stderr, "loaded %d geohints in %s\n", (int)geohintc,
 	  duration_tostr(buf, sizeof(buf), &start, &finish));
   rc = 0;
 
@@ -21831,15 +21892,16 @@ static int load_dict_asnames(void)
     }
   splaytree_inorder(tree, tree_to_slist, list);
   splaytree_free(tree, NULL); tree = NULL;
-  if((tag2asc = slist_count(list)) == 0)
+  if((x = slist_count(list)) <= 0)
     {
       rc = 0;
       goto done;
     }
+  tag2asc = (size_t)x;
 
   if((tag2ass = malloc_zero(sizeof(sc_as2tag_t *) * tag2asc)) == NULL)
     {
-      fprintf(stderr, "%s: could not alloc %d entries\n", __func__, tag2asc);
+      fprintf(stderr,"%s: could not alloc %d entries\n",__func__,(int)tag2asc);
       goto done;
     }
 
@@ -21893,8 +21955,8 @@ static int rttload_router_finish(sc_rttload_t *rtl)
     return 0;
   if((rtl->rtr->rtts = memdup(rtl->rtts, sizeof(sc_rtt_t) * rtl->rttc)) == NULL)
     {
-      fprintf(stderr, "%s: could not memdup %d entries\n",__func__,
-	      rtl->rttc);
+      fprintf(stderr, "%s: could not memdup %d entries\n", __func__,
+	      (int)rtl->rttc);
       return -1;
     }
   rtl->rtr->rttc = rtl->rttc;
@@ -21971,7 +22033,7 @@ static int rtt_file_line(char *line, void *param)
 
   memset(&map, 0, sizeof(map));
   snprintf(map.code, sizeof(map.code), "%s", vp_ptr);
-  if((vp = sc_geohint_find(NULL, &map)) < 0)
+  if((vp = sc_geohint_find(NULL, &map)) == NULL)
     {
       if(array_find((void **)rtl->unknown, rtl->unknownc, vp_ptr,
 		    (array_cmp_t)strcasecmp) == NULL)
@@ -22026,8 +22088,9 @@ static int load_rtt(void)
   sc_router_t *rtr;
   sc_rttload_t rtl;
   slist_node_t *sn;
-  int i, rc = -1, rttc = 0, rtc = 0;
+  int rc = -1, rttc = 0, rtc = 0;
   char buf[32];
+  size_t i;
 
   if(rtt_file == NULL)
     return 0;
@@ -22049,7 +22112,8 @@ static int load_rtt(void)
 
   if((rtl.routers = malloc_zero(sizeof(sc_router_t *) * rtl.routerc)) == NULL)
     {
-      fprintf(stderr, "%s: could not alloc %d routers\n",__func__,rtl.routerc);
+      fprintf(stderr, "%s: could not alloc %d routers\n", __func__,
+	      (int)rtl.routerc);
       goto done;
     }
 
@@ -22111,7 +22175,7 @@ static int load_rtt(void)
 
 static void cleanup(void)
 {
-  int i;
+  size_t i;
 
   if(suffix_root != NULL)
     {

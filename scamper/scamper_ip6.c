@@ -1,7 +1,7 @@
 /*
  * scamper_ip6.c
  *
- * $Id: scamper_ip6.c,v 1.20 2020/03/17 07:32:16 mjl Exp $
+ * $Id: scamper_ip6.c,v 1.21 2023/01/03 02:33:57 mjl Exp $
  *
  * Copyright (C) 2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -47,14 +47,16 @@ static int ip6_ext_route0(struct ip6_hdr *ip6,
 			  const scamper_probe_ipopt_t *opt,
 			  uint8_t *buf, size_t *len)
 {
-  int i;
+  uint8_t i;
   ssize_t off;
+  size_t x;
 
   assert(opt->opt_v6rh0_ipc > 0);
+  x = ((size_t)opt->opt_v6rh0_ipc * 16) + 8;
 
-  if(*len < (opt->opt_v6rh0_ipc * 16) + 8)
+  if(*len < x)
     {
-      *len = (opt->opt_v6rh0_ipc * 16) + 8;
+      *len = x;
       return -1;
     }
 

@@ -4,9 +4,10 @@
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2012-2014 The Regents of the University of California
+ * Copyright (C) 2022-2023 Matthew Luckie
  * Author: Matthew Luckie
  *
- * $Id: scamper_ping_text.c,v 1.17 2020/03/17 07:32:16 mjl Exp $
+ * $Id: scamper_ping_text.c,v 1.19 2023/02/23 18:58:23 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -162,6 +163,8 @@ static char *ping_stats(const scamper_ping_t *ping)
 		ping->ping_sent, stats.nreplies);
   if(stats.ndups > 0)
     string_concat(buf, sizeof(buf), &off, "+%d duplicates, ", stats.ndups);
+  if(stats.nerrs > 0)
+    string_concat(buf, sizeof(buf), &off, "+%d errors, ", stats.nerrs);
   string_concat(buf, sizeof(buf), &off, "%d%% packet loss\n", rp);
   if(stats.nreplies > 0)
     {
@@ -180,7 +183,7 @@ static char *ping_stats(const scamper_ping_t *ping)
 }
 
 int scamper_file_text_ping_write(const scamper_file_t *sf,
-				 const scamper_ping_t *ping)
+				 const scamper_ping_t *ping, void *p)
 {
   scamper_ping_reply_t *reply;
   int       fd          = scamper_file_getfd(sf);

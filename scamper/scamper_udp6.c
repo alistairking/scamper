@@ -1,7 +1,7 @@
 /*
  * scamper_udp6.c
  *
- * $Id: scamper_udp6.c,v 1.62.10.2 2022/08/10 23:06:32 mjl Exp $
+ * $Id: scamper_udp6.c,v 1.65 2022/12/22 03:12:57 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2010 The University of Waikato
@@ -29,6 +29,7 @@
 #include "internal.h"
 
 #include "scamper_addr.h"
+#include "scamper_task.h"
 #include "scamper_dl.h"
 #include "scamper_probe.h"
 #include "scamper_ip6.h"
@@ -38,6 +39,10 @@
 
 #include "scamper_debug.h"
 #include "utils.h"
+
+#if defined(IPV6_RECVERR)
+static uint8_t rxbuf[65536];
+#endif
 
 uint16_t scamper_udp6_cksum(scamper_probe_t *probe)
 {
@@ -213,7 +218,6 @@ static int scamper_udp6_read_err(int fd, scamper_icmp_resp_t *resp)
   struct iovec iov;
   ssize_t pbuflen;
   uint8_t ctrlbuf[2048];
-  uint8_t rxbuf[65536];
 
   memset(&iov, 0, sizeof(iov));
   iov.iov_base = (caddr_t)rxbuf;
@@ -299,7 +303,7 @@ void scamper_udp6_read_err_cb(int fd, void *param)
   memset(&ir, 0, sizeof(ir));
   if(scamper_udp6_read_err(fd, &ir) == 0 &&
      scamper_fd_sport((const scamper_fd_t *)param,&ir.ir_inner_udp_sport) == 0)
-    scamper_icmp_resp_handle(&ir);
+    scamper_task_handleicmp(&ir);
   scamper_icmp_resp_clean(&ir);
 #endif
   return;

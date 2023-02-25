@@ -1,7 +1,7 @@
 /*
  * scamper_rtsock: code to deal with a route socket or equivalent
  *
- * $Id: scamper_rtsock.c,v 1.87 2020/06/10 09:09:27 mjl Exp $
+ * $Id: scamper_rtsock.c,v 1.91 2023/01/03 02:58:33 mjl Exp $
  *
  *          Matthew Luckie
  *
@@ -24,6 +24,7 @@
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2010 The University of Waikato
  * Copyright (C) 2014      The Regents of the University of California
+ * Copyright (C) 2016-2022 Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -124,7 +125,7 @@ typedef struct rtsock_pair
   dlist_node_t    *node;  /* pointer to node in pair dlist */
 } rtsock_pair_t;
 
-static pid_t    pid;          /* [unpriviledged] process id */
+static pid_t    pid;          /* [unprivileged] process id */
 static uint16_t seq   = 0;    /* next sequence number to use */
 static dlist_t *pairs = NULL; /* list of addresses queried with their seq */
 
@@ -309,7 +310,6 @@ static int scamper_rtsock_getifindex(int fd, scamper_addr_t *dst)
   struct nlmsghdr *nlmsg;
   struct rtmsg    *rtmsg;
   struct rtattr   *rta;
-  int              error;
   int              dst_len;
   uint8_t          buf[1024];
   int              af;
@@ -357,7 +357,7 @@ static int scamper_rtsock_getifindex(int fd, scamper_addr_t *dst)
   memcpy(RTA_DATA(rta), dst->addr, dst_len);
 
   /* send the request */
-  if((error = send(fd, buf, nlmsg->nlmsg_len, 0)) != nlmsg->nlmsg_len)
+  if(send(fd, buf, nlmsg->nlmsg_len, 0) != nlmsg->nlmsg_len)
     {
       printerror(__func__, "could not send");
       return -1;
@@ -446,14 +446,15 @@ static void rtsock_parsemsg(uint8_t *buf, size_t len)
 
   if(len < sizeof(struct nlmsghdr))
     {
-      scamper_debug(__func__, "len %d != %d", len, sizeof(struct nlmsghdr));
+      scamper_debug(__func__, "len %d != %d",
+		    (int)len, (int)sizeof(struct nlmsghdr));
       return;
     }
 
   nlmsg = (struct nlmsghdr *)buf;
 
   /* if the message isn't addressed to this pid, drop it */
-  if(nlmsg->nlmsg_pid != pid)
+  if(nlmsg->nlmsg_pid != (uint32_t)pid)
     return;
 
   if((pair = rtsock_pair_get(nlmsg->nlmsg_seq)) == NULL)
@@ -534,7 +535,8 @@ static void rtsock_parsemsg(uint8_t *buf, size_t len)
     {
       if(len - x < sizeof(struct rt_msghdr))
 	{
-	  scamper_debug(__func__,"len %d != %d",len,sizeof(struct rt_msghdr));
+	  scamper_debug(__func__, "len %d != %d",
+			(int)len, (int)sizeof(struct rt_msghdr));
 	  return;
 	}
 

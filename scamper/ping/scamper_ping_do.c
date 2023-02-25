@@ -1,12 +1,12 @@
 /*
  * scamper_do_ping.c
  *
- * $Id: scamper_ping_do.c,v 1.156.10.6 2022/08/10 22:39:49 mjl Exp $
+ * $Id: scamper_ping_do.c,v 1.165 2022/11/21 05:05:30 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2012-2015 The Regents of the University of California
- * Copyright (C) 2016-2020 Matthew Luckie
+ * Copyright (C) 2016-2022 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -396,7 +396,7 @@ static void do_ping_handle_dl(scamper_task_t *task, scamper_dl_rec_t *dl)
 	    seq = state->seq - 1;
 	}
       else if(ping->probe_method == SCAMPER_PING_METHOD_TCP_ACK_SPORT ||
-              ping->probe_method == SCAMPER_PING_METHOD_TCP_SYN_SPORT)
+	      ping->probe_method == SCAMPER_PING_METHOD_TCP_SYN_SPORT)
 	{
 	  seq = dl->dl_tcp_dport;
 	  if(dl->dl_tcp_dport < ping->probe_sport)
@@ -536,8 +536,6 @@ static void do_ping_handle_icmp(scamper_task_t *task, scamper_icmp_resp_t *ir)
 
   if((ping->flags & SCAMPER_PING_FLAG_DL) != 0)
     return;
-
-  scamper_icmp_resp_print(ir);
 
   /* if this is an echo reply packet, then check the id and sequence */
   if(SCAMPER_ICMP_RESP_IS_ECHO_REPLY(ir) || SCAMPER_ICMP_RESP_IS_TIME_REPLY(ir))
@@ -1132,6 +1130,11 @@ static void do_ping_probe(scamper_task_t *task)
 	    {
 	      probe.pr_tcp_flags = TH_RST;
 	    }
+	  else if(ping->probe_method == SCAMPER_PING_METHOD_TCP_SYN_SPORT)
+	    {
+	      probe.pr_tcp_flags = TH_SYN;
+	      probe.pr_tcp_sport += state->seq;
+	    }
 	}
       else if(SCAMPER_PING_METHOD_IS_UDP(ping))
 	{
@@ -1216,7 +1219,7 @@ static void do_ping_probe(scamper_task_t *task)
 
 static void do_ping_write(scamper_file_t *sf, scamper_task_t *task)
 {
-  scamper_file_write_ping(sf, ping_getdata(task));
+  scamper_file_write_ping(sf, ping_getdata(task), task);
   return;
 }
 
@@ -1322,6 +1325,8 @@ static int ping_arg_param_validate(int optid, char *param, long long *out)
 	tmp = SCAMPER_PING_METHOD_TCP_SYNACK;
       else if(strcasecmp(param, "tcp-rst") == 0)
 	tmp = SCAMPER_PING_METHOD_TCP_RST;
+      else if(strcasecmp(param, "tcp-syn-sport") == 0)
+	tmp = SCAMPER_PING_METHOD_TCP_SYN_SPORT;
       else
 	goto err;
       break;
@@ -1911,7 +1916,11 @@ void *scamper_do_ping_alloc(char *str, uint32_t *id)
 	goto err;
 
       if(ping->probe_method == SCAMPER_PING_METHOD_TCP_SYN ||
+<<<<<<< HEAD
          ping->probe_method == SCAMPER_PING_METHOD_TCP_SYN_SPORT ||
+=======
+	 ping->probe_method == SCAMPER_PING_METHOD_TCP_SYN_SPORT ||
+>>>>>>> master
 	 ping->probe_method == SCAMPER_PING_METHOD_TCP_RST)
 	{
 	  ping->probe_tcpseq = probe_tcpack;
@@ -1973,6 +1982,42 @@ scamper_task_t *scamper_do_ping_alloctask(void *data, scamper_list_t *list,
     goto err;
   if((ping->flags & SCAMPER_PING_FLAG_SPOOF) == 0)
     sig->sig_tx_ip_src = scamper_addr_use(ping->src);
+
+  switch(ping->probe_method)
+    {
+    case SCAMPER_PING_METHOD_ICMP_ECHO:
+      SCAMPER_TASK_SIG_ICMP_ECHO(sig, ping->probe_sport);
+      break;
+
+    case SCAMPER_PING_METHOD_ICMP_TIME:
+      SCAMPER_TASK_SIG_ICMP_TIME(sig, ping->probe_sport);
+      break;
+
+    case SCAMPER_PING_METHOD_TCP_ACK:
+    case SCAMPER_PING_METHOD_TCP_SYN:
+    case SCAMPER_PING_METHOD_TCP_SYNACK:
+    case SCAMPER_PING_METHOD_TCP_RST:
+      SCAMPER_TASK_SIG_TCP(sig, ping->probe_sport, ping->probe_dport);
+      break;
+
+    case SCAMPER_PING_METHOD_UDP:
+      SCAMPER_TASK_SIG_UDP(sig, ping->probe_sport, ping->probe_dport);
+      break;
+
+    case SCAMPER_PING_METHOD_UDP_DPORT:
+      SCAMPER_TASK_SIG_UDP_DPORT(sig, ping->probe_sport, 0, 65535);
+      break;
+
+    case SCAMPER_PING_METHOD_TCP_ACK_SPORT:
+    case SCAMPER_PING_METHOD_TCP_SYN_SPORT:
+      SCAMPER_TASK_SIG_TCP_SPORT(sig, 0, 65535, ping->probe_dport);
+      break;
+
+    default:
+      scamper_debug(__func__, "unhandled probe method %d", ping->probe_method);
+      goto err;
+    }
+
   if(scamper_task_sig_add(task, sig) != 0)
     goto err;
   sig = NULL;

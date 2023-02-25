@@ -1,11 +1,12 @@
 /*
  * scamper_file.c
  *
- * $Id: scamper_file.c,v 1.76 2021/08/22 08:11:53 mjl Exp $
+ * $Id: scamper_file.c,v 1.88 2023/01/03 02:09:35 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2012      The Regents of the University of California
+ * Copyright (C) 2022      Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -74,7 +75,18 @@
 #define SCAMPER_FILE_WARTS       2
 #define SCAMPER_FILE_JSON        3
 
-typedef int (*write_obj_func_t)(scamper_file_t *sf, const void *);
+typedef int (*write_obj_func_t)(scamper_file_t *sf, const void *, void *);
+
+#ifdef HAVE_ZLIB
+typedef struct scamper_file_zstrm
+{
+  z_stream                  zs;
+  uint8_t                   in[64 * 1024];
+  uint8_t                   out[64 * 1024];
+  uint8_t                   eof; /* read returned zero */
+  uint8_t                   end; /* inflate returned Z_STREAM_END */
+} scamper_file_zstrm_t;
+#endif
 
 struct scamper_file
 {
@@ -82,13 +94,15 @@ struct scamper_file
   int                       fd;
   void                     *state;
   int                       type;
-  char                      error_str[256];
-  uint32_t                  capability;
   int                       eof;
   scamper_file_writefunc_t  writefunc;
   void                     *writeparam;
   scamper_file_readfunc_t   readfunc;
   void                     *readparam;
+
+#ifdef HAVE_ZLIB
+  scamper_file_zstrm_t     *zstrm;
+#endif
 };
 
 struct scamper_file_filter
@@ -97,20 +111,30 @@ struct scamper_file_filter
   uint16_t  max;
 };
 
+typedef struct scamper_file_readbuf_n
+{
+  uint8_t                       *data;
+  size_t                         len;
+  struct scamper_file_readbuf_n *next;
+} scamper_file_readbuf_n_t;
+
+struct scamper_file_readbuf
+{
+  scamper_file_readbuf_n_t *head;
+  scamper_file_readbuf_n_t *tail;
+  size_t                    len;
+};
+
 struct handler
 {
   char *type;
-  int (*detect)(const scamper_file_t *sf);
 
   int (*init_read)(scamper_file_t *sf);
   int (*init_write)(scamper_file_t *sf);
   int (*init_append)(scamper_file_t *sf);
 
-  int (*read)(scamper_file_t *sf, scamper_file_filter_t *filter,
+  int (*read)(scamper_file_t *sf, const scamper_file_filter_t *filter,
 	      uint16_t *type, void **data);
-
-  int (*write_trace)(const scamper_file_t *sf,
-		     const struct scamper_trace *trace);
 
   int (*write_cycle_start)(const scamper_file_t *sf,
 			   scamper_cycle_t *cycle);
@@ -118,43 +142,45 @@ struct handler
   int (*write_cycle_stop)(const scamper_file_t *sf,
 			  scamper_cycle_t *cycle);
 
+  int (*write_trace)(const scamper_file_t *sf,
+		     const struct scamper_trace *trace, void *p);
+
   int (*write_ping)(const scamper_file_t *sf,
-		    const struct scamper_ping *ping);
+		    const struct scamper_ping *ping, void *p);
 
   int (*write_tracelb)(const scamper_file_t *sf,
-		       const struct scamper_tracelb *trace);
+		       const struct scamper_tracelb *trace, void *p);
 
   int (*write_sting)(const scamper_file_t *sf,
-		     const struct scamper_sting *sting);
+		     const struct scamper_sting *sting, void *p);
 
   int (*write_dealias)(const scamper_file_t *sf,
-		       const struct scamper_dealias *dealias);
+		       const struct scamper_dealias *dealias, void *p);
 
   int (*write_neighbourdisc)(const scamper_file_t *sf,
-			     const struct scamper_neighbourdisc *nd);
+			     const struct scamper_neighbourdisc *nd, void *p);
 
   int (*write_tbit)(const scamper_file_t *sf,
-		    const struct scamper_tbit *tbit);
+		    const struct scamper_tbit *tbit, void *p);
 
   int (*write_sniff)(const scamper_file_t *sf,
-		     const struct scamper_sniff *sniff);
+		     const struct scamper_sniff *sniff, void *p);
 
   int (*write_host)(const scamper_file_t *sf,
-		    const struct scamper_host *host);
+		    const struct scamper_host *host, void *p);
 
   void (*free_state)(scamper_file_t *sf);
 };
 
 static struct handler handlers[] = {
   {"text",                                 /* type */
-   NULL,                                   /* detect */
    NULL,                                   /* init_read */
    NULL,                                   /* init_write */
    NULL,                                   /* init_append */
    NULL,                                   /* read */
-   scamper_file_text_trace_write,          /* write_trace */
    NULL,                                   /* write_cycle_start */
    NULL,                                   /* write_cycle_stop */
+   scamper_file_text_trace_write,          /* write_trace */
    scamper_file_text_ping_write,           /* write_ping */
    scamper_file_text_tracelb_write,        /* write_tracelb */
    scamper_file_text_sting_write,          /* write_sting */
@@ -166,14 +192,13 @@ static struct handler handlers[] = {
    NULL,                                   /* free_state */
   },
   {"arts",                                 /* type */
-   scamper_file_arts_is,                   /* detect */
    scamper_file_arts_init_read,            /* init_read */
    NULL,                                   /* init_write */
    NULL,                                   /* init_append */
    scamper_file_arts_read,                 /* read */
-   NULL,                                   /* write_trace */
    NULL,                                   /* write_cycle_start */
    NULL,                                   /* write_cycle_stop */
+   NULL,                                   /* write_trace */
    NULL,                                   /* write_ping */
    NULL,                                   /* write_tracelb */
    NULL,                                   /* write_sting */
@@ -185,14 +210,13 @@ static struct handler handlers[] = {
    scamper_file_arts_free_state,           /* free_state */
   },
   {"warts",                                /* type */
-   scamper_file_warts_is,                  /* detect */
    scamper_file_warts_init_read,           /* init_read */
    scamper_file_warts_init_write,          /* init_write */
    scamper_file_warts_init_append,         /* init_append */
    scamper_file_warts_read,                /* read */
-   scamper_file_warts_trace_write,         /* write_trace */
    scamper_file_warts_cyclestart_write,    /* write_cycle_start */
    scamper_file_warts_cyclestop_write,     /* write_cycle_stop */
+   scamper_file_warts_trace_write,         /* write_trace */
    scamper_file_warts_ping_write,          /* write_ping */
    scamper_file_warts_tracelb_write,       /* write_tracelb */
    scamper_file_warts_sting_write,         /* write_sting */
@@ -204,14 +228,13 @@ static struct handler handlers[] = {
    scamper_file_warts_free_state,          /* free_state */
   },
   {"json",                                 /* type */
-   NULL,                                   /* detect */
    NULL,                                   /* init_read */
    scamper_file_json_init_write,           /* init_write */
    NULL,                                   /* init_append */
    NULL,                                   /* read */
-   scamper_file_json_trace_write,          /* write_trace */
    scamper_file_json_cyclestart_write,     /* write_cycle_start */
    scamper_file_json_cyclestop_write,      /* write_cycle_stop */
+   scamper_file_json_trace_write,          /* write_trace */
    scamper_file_json_ping_write,           /* write_ping */
    scamper_file_json_tracelb_write,        /* write_tracelb */
    NULL,                                   /* write_sting */
@@ -284,108 +307,96 @@ void *scamper_file_getwriteparam(const scamper_file_t *sf)
 }
 
 int scamper_file_write_trace(scamper_file_t *sf,
-			     const struct scamper_trace *trace)
+			     const struct scamper_trace *trace, void *p)
 {
-  int rc = -1;
-
+  assert(sf->type >= -1); assert(sf->type <= handler_cnt);
   if(sf->type != SCAMPER_FILE_NONE && handlers[sf->type].write_trace != NULL)
-    {
-      rc = handlers[sf->type].write_trace(sf, trace);
-    }
-
-  return rc;
+    return handlers[sf->type].write_trace(sf, trace, p);
+  return -1;
 }
 
 int scamper_file_write_ping(scamper_file_t *sf,
-			    const struct scamper_ping *ping)
+			    const struct scamper_ping *ping, void *p)
 {
+  assert(sf->type >= -1); assert(sf->type <= handler_cnt);
   if(sf->type != SCAMPER_FILE_NONE && handlers[sf->type].write_ping != NULL)
-    {
-      return handlers[sf->type].write_ping(sf, ping);
-    }
+    return handlers[sf->type].write_ping(sf, ping, p);
   return -1;
 }
 
 int scamper_file_write_tracelb(scamper_file_t *sf,
-			       const struct scamper_tracelb *trace)
+			       const struct scamper_tracelb *trace, void *p)
 {
+  assert(sf->type >= -1); assert(sf->type <= handler_cnt);
   if(sf->type != SCAMPER_FILE_NONE && handlers[sf->type].write_tracelb != NULL)
-    {
-      return handlers[sf->type].write_tracelb(sf, trace);
-    }
+    return handlers[sf->type].write_tracelb(sf, trace, p);
   return -1;
 }
 
 int scamper_file_write_sting(scamper_file_t *sf,
-			     const struct scamper_sting *sting)
+			     const struct scamper_sting *sting, void *p)
 {
+  assert(sf->type >= -1); assert(sf->type <= handler_cnt);
   if(sf->type != SCAMPER_FILE_NONE && handlers[sf->type].write_sting != NULL)
-    {
-      return handlers[sf->type].write_sting(sf, sting);
-    }
+    return handlers[sf->type].write_sting(sf, sting,  p);
   return -1;
 }
 
 int scamper_file_write_dealias(scamper_file_t *sf,
-			       const struct scamper_dealias *dealias)
+			       const struct scamper_dealias *dealias, void *p)
 {
+  assert(sf->type >= -1); assert(sf->type <= handler_cnt);
   if(sf->type != SCAMPER_FILE_NONE && handlers[sf->type].write_dealias != NULL)
-    {
-      return handlers[sf->type].write_dealias(sf, dealias);
-    }
+    return handlers[sf->type].write_dealias(sf, dealias, p);
   return -1;
 }
 
 int scamper_file_write_neighbourdisc(scamper_file_t *sf,
-				     const struct scamper_neighbourdisc *nd)
+				     const struct scamper_neighbourdisc *nd,
+				     void *p)
 {
+  assert(sf->type >= -1); assert(sf->type <= handler_cnt);
   if(sf->type != SCAMPER_FILE_NONE &&
      handlers[sf->type].write_neighbourdisc != NULL)
-    {
-      return handlers[sf->type].write_neighbourdisc(sf, nd);
-    }
+    return handlers[sf->type].write_neighbourdisc(sf, nd, p);
   return -1;
 }
 
 int scamper_file_write_tbit(scamper_file_t *sf,
-			    const struct scamper_tbit *tbit)
+			    const struct scamper_tbit *tbit, void *p)
 {
+  assert(sf->type >= -1); assert(sf->type <= handler_cnt);
   if(sf->type != SCAMPER_FILE_NONE && handlers[sf->type].write_tbit != NULL)
-    {
-      return handlers[sf->type].write_tbit(sf, tbit);
-    }
+    return handlers[sf->type].write_tbit(sf, tbit, p);
   return -1;
 }
 
 int scamper_file_write_sniff(scamper_file_t *sf,
-			     const struct scamper_sniff *sniff)
+			     const struct scamper_sniff *sniff, void *p)
 {
+  assert(sf->type >= -1); assert(sf->type <= handler_cnt);
   if(sf->type != SCAMPER_FILE_NONE && handlers[sf->type].write_sniff != NULL)
-    {
-      return handlers[sf->type].write_sniff(sf, sniff);
-    }
+    return handlers[sf->type].write_sniff(sf, sniff, p);
   return -1;
-
 }
 
 int scamper_file_write_host(scamper_file_t *sf,
-			    const struct scamper_host *host)
+			    const struct scamper_host *host, void *p)
 {
+  assert(sf->type >= -1); assert(sf->type <= handler_cnt);
   if(sf->type != SCAMPER_FILE_NONE && handlers[sf->type].write_host != NULL)
-    {
-      return handlers[sf->type].write_host(sf, host);
-    }
+    return handlers[sf->type].write_host(sf, host, p);
   return -1;
 }
 
 int scamper_file_write_obj(scamper_file_t *sf, uint16_t type, const void *data)
 {
-  static int (*const func[])(scamper_file_t *sf, const void *) = {
+  static int (*const func[])(scamper_file_t *sf, const void *, void *) = {
     NULL,
     NULL, /* SCAMPER_FILE_OBJ_LIST */
-    (write_obj_func_t)scamper_file_write_cycle_start,
+    NULL, /* SCAMPER_FILE_OBJ_CYCLE_START */
     NULL, /* SCAMPER_FILE_OBJ_CYCLE_DEF */
-    (write_obj_func_t)scamper_file_write_cycle_stop,
+    NULL, /* SCAMPER_FILE_OBJ_CYCLE_STOP */
     NULL, /* SCAMPER_FILE_OBJ_ADDR */
     (write_obj_func_t)scamper_file_write_trace,
     (write_obj_func_t)scamper_file_write_ping,
@@ -397,9 +408,15 @@ int scamper_file_write_obj(scamper_file_t *sf, uint16_t type, const void *data)
     (write_obj_func_t)scamper_file_write_sniff,
     (write_obj_func_t)scamper_file_write_host,
   };
-  if(type > 13 || func[type] == NULL)
+  if(type > 13)
     return -1;
-  return func[type](sf, data);
+  if(func[type] != NULL)
+    return func[type](sf, data, NULL);
+  if(type == SCAMPER_FILE_OBJ_CYCLE_START)
+    return scamper_file_write_cycle_start(sf, (scamper_cycle_t *)data);
+  if(type == SCAMPER_FILE_OBJ_CYCLE_STOP)
+    return scamper_file_write_cycle_stop(sf, (scamper_cycle_t *)data);
+  return -1;
 }
 
 /*
@@ -407,7 +424,8 @@ int scamper_file_write_obj(scamper_file_t *sf, uint16_t type, const void *data)
  *
  *
  */
-int scamper_file_read(scamper_file_t *sf, scamper_file_filter_t *filter,
+int scamper_file_read(scamper_file_t *sf,
+		      const scamper_file_filter_t *filter,
 		      uint16_t *type, void **object)
 {
   if(sf->type != SCAMPER_FILE_NONE && handlers[sf->type].read != NULL)
@@ -423,18 +441,13 @@ int scamper_file_read(scamper_file_t *sf, scamper_file_filter_t *filter,
  *
  * check to see if the particular type is set in the filter or not
  */
-int scamper_file_filter_isset(scamper_file_filter_t *filter, uint16_t type)
+int scamper_file_filter_isset(const scamper_file_filter_t *filter,
+			      uint16_t type)
 {
   if(filter == NULL || type > filter->max)
-    {
-      return 0;
-    }
-
+    return 0;
   if((filter->flags[type/32] & (0x1 << ((type%32)-1))) == 0)
-    {
-      return 0;
-    }
-
+    return 0;
   return 1;
 }
 
@@ -444,7 +457,8 @@ int scamper_file_filter_isset(scamper_file_filter_t *filter, uint16_t type)
  * allocate a filter for reading data objects from scamper files based on an
  * array of types the caller is interested in.
  */
-scamper_file_filter_t *scamper_file_filter_alloc(uint16_t *types, uint16_t num)
+scamper_file_filter_t *scamper_file_filter_alloc(const uint16_t *types,
+						 uint16_t num)
 {
   scamper_file_filter_t *filter = NULL;
   size_t size;
@@ -553,7 +567,7 @@ int scamper_file_write_cycle_stop(scamper_file_t *sf, scamper_cycle_t *cycle)
  * scamper_file_geteof
  *
  */
-int scamper_file_geteof(scamper_file_t *sf)
+int scamper_file_geteof(const scamper_file_t *sf)
 {
   if(sf == NULL || sf->fd == -1) return -1;
   return sf->eof;
@@ -578,7 +592,17 @@ void scamper_file_free(scamper_file_t *sf)
 {
   if(sf != NULL)
     {
-      if(sf->filename) free(sf->filename);
+      if(sf->filename != NULL)
+	free(sf->filename);
+
+#ifdef HAVE_ZLIB
+      if(sf->zstrm != NULL)
+	{
+	  inflateEnd(&sf->zstrm->zs);
+	  free(sf->zstrm);
+	}
+#endif
+
       free(sf);
     }
   return;
@@ -619,7 +643,85 @@ char *scamper_file_type_tostr(scamper_file_t *sf, char *buf, size_t len)
   return NULL;
 }
 
-static int file_type_get(char *type)
+/*
+ * zlib_read
+ *
+ * next_in:   where deflated bytes need to be written
+ * avail_in:  how many defated bytes are in the in buffer
+ * next_out:  where inflated bytes can be obtained
+ * avail_out: 
+ */
+#ifdef HAVE_ZLIB
+static int zlib_read(scamper_file_t *sf, uint8_t **data, size_t len)
+{
+  uint8_t *tmp = NULL;
+  ssize_t readc;
+  size_t off = 0;
+  size_t b, have;
+  int rc;
+
+  *data = NULL;
+
+  if((tmp = malloc(len)) == NULL)
+    goto err;
+
+  have = sizeof(sf->zstrm->out) - sf->zstrm->zs.avail_out;
+  while(sf->zstrm->end == 0 || have > 0)
+    {
+      if(have > 0)
+	{
+	  if(have >= len - off)
+	    b = len - off;
+	  else
+	    b = have;
+
+	  memcpy(tmp+off, sf->zstrm->out, b);
+	  memmove(sf->zstrm->out, sf->zstrm->out+b, sizeof(sf->zstrm->out)-b);
+	  sf->zstrm->zs.avail_out += b;
+	  sf->zstrm->zs.next_out -= b;
+	  off += b;
+	  have -= b;
+
+	  if(off == len)
+	    {
+	      *data = tmp;
+	      return 0;
+	    }
+	}
+
+      if(sf->zstrm->zs.avail_in < sizeof(sf->zstrm->in))
+	{
+	  b = sizeof(sf->zstrm->in) - sf->zstrm->zs.avail_in;
+	  memmove(sf->zstrm->in,sf->zstrm->zs.next_in,sf->zstrm->zs.avail_in);
+	  readc = read(sf->fd, sf->zstrm->in + sf->zstrm->zs.avail_in, b);
+	  if(readc < 0)
+	    goto err;
+	  else if(readc == 0)
+	    sf->zstrm->eof = 1;
+	  else
+	    sf->zstrm->zs.avail_in += readc;
+
+	  sf->zstrm->zs.next_in = sf->zstrm->in;
+	  rc = inflate(&sf->zstrm->zs, Z_NO_FLUSH);
+	  if(rc == Z_STREAM_END)
+	    sf->zstrm->end = 1;
+	  else if(rc != Z_OK)
+	    goto err;
+
+	  have = sizeof(sf->zstrm->out) - sf->zstrm->zs.avail_out;
+	}
+    }
+
+  free(tmp);
+  return -2;
+
+ err:
+  if(tmp != NULL) free(tmp);
+  return -1;
+}
+#endif
+
+static int file_type_get(const char *type)
 {
   int i;
   if(type == NULL)
@@ -632,10 +734,50 @@ static int file_type_get(char *type)
 
 static int file_type_detect(scamper_file_t *sf)
 {
-  int i;
-  for(i=0; i<handler_cnt; i++)
-    if(handlers[i].detect != NULL && handlers[i].detect(sf) == 1)
-      return i;
+  uint8_t buf[2], *ptr = buf;
+
+#ifdef HAVE_ZLIB
+  ssize_t readc;
+  int rc;
+#endif
+
+  if(lseek(sf->fd, 0, SEEK_SET) == -1 ||
+     read_wrap(sf->fd, buf, NULL, sizeof(buf)) != 0 ||
+     lseek(sf->fd, 0, SEEK_SET) == -1)
+    return SCAMPER_FILE_NONE;
+
+#ifdef HAVE_ZLIB
+  if(buf[0] == 0x1F && buf[1] == 0x8B)
+    {
+      if((sf->zstrm = malloc_zero(sizeof(scamper_file_zstrm_t))) == NULL)
+	return SCAMPER_FILE_NONE;
+      if(inflateInit2(&sf->zstrm->zs, MAX_WBITS + 32) != Z_OK)
+	return SCAMPER_FILE_NONE;
+      sf->readfunc = (scamper_file_readfunc_t)zlib_read;
+      sf->readparam = sf;
+      sf->zstrm->zs.next_out = sf->zstrm->out;
+      sf->zstrm->zs.avail_out = sizeof(sf->zstrm->out);
+
+      readc = read(sf->fd, sf->zstrm->in, sizeof(sf->zstrm->in));
+      if(readc <= 0)
+	return SCAMPER_FILE_NONE;
+      sf->zstrm->zs.next_in = sf->zstrm->in;
+      sf->zstrm->zs.avail_in = readc;
+
+      rc = inflate(&sf->zstrm->zs, Z_NO_FLUSH);
+      if(rc == Z_STREAM_END)
+	sf->zstrm->end = 1;
+      else if(rc != Z_OK)
+	return SCAMPER_FILE_NONE;
+      ptr = sf->zstrm->out;
+    }
+#endif
+
+  if(ptr[0] == 0x12 && ptr[1] == 0x05)
+    return SCAMPER_FILE_WARTS;
+  if(ptr[0] == 0xDF && ptr[1] == 0xB0)
+    return SCAMPER_FILE_ARTS;
+
   return SCAMPER_FILE_NONE;
 }
 
@@ -697,7 +839,7 @@ static int file_open_append(scamper_file_t *sf)
   return 0;
 }
 
-static scamper_file_t *file_open(int fd, char *fn, char mode, int type)
+static scamper_file_t *file_open(int fd, const char *fn, char mode, int type)
 {
   scamper_file_t *sf;
   int (*open_func)(scamper_file_t *);
@@ -729,7 +871,7 @@ static scamper_file_t *file_open(int fd, char *fn, char mode, int type)
   return sf;
 }
 
-scamper_file_t *scamper_file_opennull(char mode, char *format)
+scamper_file_t *scamper_file_opennull(char mode, const char *format)
 {
   uint8_t file_type;
 
@@ -743,7 +885,8 @@ scamper_file_t *scamper_file_opennull(char mode, char *format)
   return file_open(-1, NULL, mode, file_type);
 }
 
-scamper_file_t *scamper_file_openfd(int fd, char *fn, char mode, char *type)
+scamper_file_t *scamper_file_openfd(int fd, const char *fn, char mode,
+				    const char *type)
 {
   return file_open(fd, fn, mode, file_type_get(type));
 }
@@ -755,17 +898,13 @@ scamper_file_t *scamper_file_openfd(int fd, char *fn, char mode, char *type)
  * the modes that we know about are 'r' read-only, 'w' write-only on a
  * brand new file, and 'a' for appending.
  *
- * in 'w' mode [and conditionally for 'a'] an optional parameter may be
- * supplied that says what type of file should be written.
- *  'w' for warts
- *  't' for text
- *  'a' for arts [not implemented]
+ * in 'w' and 'a' mode, the caller must also specify the type of file
+ * to write or append to; the three valid classes are "warts", "text",
+ * and "json".
  *
- * when a file is opened for appending, this second parameter is only
- * used when the file is empty so that writes will be written in the
- * format expected.
  */
-scamper_file_t *scamper_file_open(char *filename, char mode, char *type)
+scamper_file_t *scamper_file_open(const char *filename, char mode,
+				  const char *type)
 {
   scamper_file_t *sf;
   mode_t mo;
@@ -827,4 +966,105 @@ scamper_file_t *scamper_file_open(char *filename, char mode, char *type)
   sf = file_open(fd, filename, mode, ft);
 
   return sf;
+}
+
+void scamper_file_readbuf_n_free(scamper_file_readbuf_n_t *node)
+{
+  if(node->data != NULL) free(node->data);
+  free(node);
+  return;
+}
+
+scamper_file_readbuf_t *scamper_file_readbuf_alloc(void)
+{
+  return malloc_zero(sizeof(scamper_file_readbuf_t));
+}
+
+void scamper_file_readbuf_free(scamper_file_readbuf_t *rb)
+{
+  scamper_file_readbuf_n_t *node;
+  while(rb->head != NULL)
+    {
+      node = rb->head;
+      rb->head = rb->head->next;
+      scamper_file_readbuf_n_free(node);
+    }
+  free(rb);
+  return;
+}
+
+int scamper_file_readbuf_add(scamper_file_readbuf_t *rb,
+			     const void *data, size_t len)
+{
+  scamper_file_readbuf_n_t *node = NULL;
+
+  if((node = malloc_zero(sizeof(scamper_file_readbuf_n_t))) == NULL ||
+     (node->data = memdup(data, len)) == NULL)
+    goto err;
+  node->len = len;
+
+  if(rb->head == NULL)
+    {
+      rb->head = rb->tail = node;
+    }
+  else
+    {
+      rb->tail->next = node;
+      rb->tail = node;
+    }
+
+  rb->len += len;
+
+  return 0;
+
+ err:
+  if(node != NULL) scamper_file_readbuf_n_free(node);
+  return -1;
+}
+
+int scamper_file_readbuf_read(void *param, uint8_t **out, size_t len)
+{
+  scamper_file_readbuf_t *rb = param;
+  scamper_file_readbuf_n_t *node;
+  uint8_t *buf = NULL;
+  size_t off = 0, x;
+
+  *out = NULL;
+
+  if(rb->len < len)
+    return 0;
+
+  if((buf = malloc(len)) == NULL)
+    return -1;
+
+  while(off < len)
+    {
+      assert(rb->head != NULL);
+      node = rb->head;
+
+      if(len - off >= node->len)
+	{
+	  rb->len -= node->len;
+	  memcpy(buf+off, node->data, node->len);
+	  off += node->len;
+	  rb->head = node->next;
+	  free(node->data);
+	  free(node);
+	}
+      else
+	{
+	  x = len - off;
+	  rb->len -= x;
+	  memcpy(buf+off, node->data, x);
+	  node->len -= x;
+	  off += x;
+	  memmove(node->data, node->data+x, node->len);
+	}
+    }
+
+  if(rb->head == NULL)
+    rb->tail = NULL;
+
+  *out = buf;
+  return 0;
 }

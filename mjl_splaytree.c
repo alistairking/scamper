@@ -69,11 +69,27 @@ struct splaytree
   splaytree_onremove_t  onremove;
 };
 
+#ifdef HAVE_FUNC_ATTRIBUTE_MALLOC
+static splaytree_stack_t *stack_create(void) __attribute__ ((malloc));
+#else
 static splaytree_stack_t *stack_create(void);
+#endif
+
+#ifdef HAVE_FUNC_ATTRIBUTE_NONNULL
+static splaytree_node_t *stack_pop(splaytree_stack_t *stack)
+  __attribute__ ((nonnull));
+static void  stack_destroy(splaytree_stack_t *stack)
+  __attribute__ ((nonnull));
+static int   stack_push(splaytree_stack_t *stack, splaytree_node_t *node)
+  __attribute__ ((nonnull));
+static void  stack_clean(splaytree_stack_t *stack)
+  __attribute__ ((nonnull));
+#else
 static splaytree_node_t *stack_pop(splaytree_stack_t *stack);
 static void  stack_destroy(splaytree_stack_t *stack);
 static int   stack_push(splaytree_stack_t *stack, splaytree_node_t *node);
 static void  stack_clean(splaytree_stack_t *stack);
+#endif
 
 #if !defined(NDEBUG) && defined(MJLSPLAYTREE_DEBUG)
 static void splaytree_assert2(const splaytree_t *tree,
@@ -216,6 +232,10 @@ static void splaytree_splay2(splaytree_node_t *child,
  * the stack contains, in order, the path to the child so that the nodes can
  * be splayed.
  */
+#ifdef HAVE_FUNC_ATTRIBUTE_NONNULL
+static void splaytree_splay(splaytree_t *tree) __attribute__ ((nonnull));
+#endif
+
 static void splaytree_splay(splaytree_t *tree)
 {
   splaytree_node_t *child, *parent, *grandparent, *keep;
@@ -262,9 +282,7 @@ static void splaytree_splay(splaytree_t *tree)
        * complete
        */
       if(parent == NULL)
-	{
-	  break;
-	}
+	break;
 
       assert(parent->left == keep || parent->right == keep);
 
@@ -273,21 +291,15 @@ static void splaytree_splay(splaytree_t *tree)
        * (as the grandparent in keep is now down the tree)
        */
       if(parent->left == keep)
-	{
-	  parent->left = child;
-	}
+	parent->left = child;
       else
-	{
-	  parent->right = child;
-	}
+	parent->right = child;
 
       /* splay now */
       splaytree_splay2(child, parent, grandparent);
 
       if(grandparent == NULL)
-	{
-	  break;
-	}
+	break;
 
       keep = grandparent;
     }
@@ -752,7 +764,7 @@ void *splaytree_findclosest(splaytree_t *tree, const void *item,
  *
  * recursive function to return the depth of the splay tree.
  */
-static int splaytree_depth2(splaytree_node_t *tn)
+static int splaytree_depth2(const splaytree_node_t *tn)
 {
   int left = 0;
   int right = 0;
@@ -760,13 +772,9 @@ static int splaytree_depth2(splaytree_node_t *tn)
   if(tn == NULL) return 0;
 
   if(tn->left != NULL)
-    {
-      left = splaytree_depth2(tn->left) + 1;
-    }
+    left = splaytree_depth2(tn->left) + 1;
   if(tn->right != NULL)
-    {
-      right = splaytree_depth2(tn->right) + 1;
-    }
+    right = splaytree_depth2(tn->right) + 1;
 
   return (left > right) ? left : right;
 }
@@ -776,7 +784,7 @@ static int splaytree_depth2(splaytree_node_t *tn)
  *
  * returns the longest path (the depth) of the splay tree
  */
-int splaytree_depth(splaytree_t *tree)
+int splaytree_depth(const splaytree_t *tree)
 {
   if(tree == NULL) return -1;
   if(tree->head == NULL) return 0;
@@ -1026,7 +1034,7 @@ splaytree_t *splaytree_alloc_dm(splaytree_cmp_t cmp,
  *
  * return the number of items in the splaytree.
  */
-int splaytree_count(splaytree_t *tree)
+int splaytree_count(const splaytree_t *tree)
 {
   if(tree == NULL) return -1;
   return tree->size;

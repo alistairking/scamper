@@ -1,10 +1,11 @@
 /*
  * scamper_trace_text.h
  *
- * $Id: scamper_trace_text.h,v 1.2 2011/09/16 03:15:44 mjl Exp $
+ * $Id: scamper_trace_text.h,v 1.3 2022/02/13 08:48:16 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2010 The University of Waikato
+ * Copyright (C) 2022      Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -25,6 +26,6 @@
 #define __SCAMPER_TRACE_TEXT_H
 
 int scamper_file_text_trace_write(const scamper_file_t *sf,
-				  const struct scamper_trace *trace);
+				  const struct scamper_trace *trace, void *p);
 
 #endif
