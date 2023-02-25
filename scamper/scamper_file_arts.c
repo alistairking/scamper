@@ -1,13 +1,14 @@
 /*
  * scamper_file_arts.c
  *
- * $Id: scamper_file_arts.c,v 1.64 2020/03/17 07:32:16 mjl Exp $
+ * $Id: scamper_file_arts.c,v 1.67 2022/07/02 21:21:56 mjl Exp $
  *
  * code to read the legacy arts data file format into scamper_hop structures.
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2014      The Regents of the University of California
+ * Copyright (C) 2022      Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -133,7 +134,7 @@ static int arts_read_hdr(const scamper_file_t *sf, arts_header_t *ah)
     goto err;
 
   /* read the arts attributes into a buffer */
-  if(attr_len > 0 && (ret = read_wrap(fd, tmp, &rc, attr_len)) != 0)
+  if(attr_len > 0 && read_wrap(fd, tmp, &rc, attr_len) != 0)
     {
       goto err;
     }
@@ -609,7 +610,7 @@ static scamper_trace_t *arts_read_trace(const scamper_file_t *sf,
   return NULL;
 }
 
-static int arts_skip(scamper_file_t *sf, uint32_t bytes)
+static int arts_skip(const scamper_file_t *sf, uint32_t bytes)
 {
   arts_state_t *state = scamper_file_getstate(sf);
   int fd = scamper_file_getfd(sf);
@@ -641,7 +642,8 @@ static int arts_skip(scamper_file_t *sf, uint32_t bytes)
  *
  * legacy arts only recognises IPv4 traces
  */
-int scamper_file_arts_read(scamper_file_t *sf, scamper_file_filter_t *filter,
+int scamper_file_arts_read(scamper_file_t *sf,
+			   const scamper_file_filter_t *filter,
 			   uint16_t *type, void **data)
 {
   arts_header_t ah;
@@ -676,27 +678,6 @@ int scamper_file_arts_read(scamper_file_t *sf, scamper_file_filter_t *filter,
       /* skip over */
       if(arts_skip(sf, ah.data_length) != 0)
 	return -1;
-    }
-
-  return 0;
-}
-
-int scamper_file_arts_is(const scamper_file_t *sf)
-{
-  uint16_t magic16;
-  int fd = scamper_file_getfd(sf);
-
-  if(lseek(fd, 0, SEEK_SET) == -1)
-    return 0;
-
-  if(read_wrap(fd, &magic16, NULL, sizeof(magic16)) != 0)
-    return 0;
-
-  if(ntohs(magic16) == ARTS_MAGIC)
-    {
-      if(lseek(fd, 0, SEEK_SET) == -1)
-	return 0;
-      return 1;
     }
 
   return 0;

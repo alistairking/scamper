@@ -1,7 +1,7 @@
 /*
  * scamper_outfiles: hold a collection of output targets together
  *
- * $Id: scamper_outfiles.c,v 1.50 2021/08/22 08:11:53 mjl Exp $
+ * $Id: scamper_outfiles.c,v 1.51 2022/03/20 04:43:04 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -194,14 +194,11 @@ scamper_outfile_t *scamper_outfile_open(char *name, char *file, char *mo)
 #endif
 
   if(name == NULL || file == NULL || mo == NULL)
-    {
-      return NULL;
-    }
+    return NULL;
 
-  if((sof = scamper_outfiles_get(name)) != NULL)
-    {
-      return NULL;
-    }
+  /* already an outfile with this name */
+  if(scamper_outfiles_get(name) != NULL)
+    return NULL;
 
   if(strcasecmp(mo, "append") == 0)
     {

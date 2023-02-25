@@ -2,10 +2,10 @@
  * scamper_dealias_text.c
  *
  * Copyright (C) 2008-2010 The University of Waikato
- * Copyright (C) 2013      Matthew Luckie
+ * Copyright (C) 2013-2022 Matthew Luckie
  * Author: Matthew Luckie
  *
- * $Id: scamper_dealias_text.c,v 1.4 2020/03/17 07:32:16 mjl Exp $
+ * $Id: scamper_dealias_text.c,v 1.5 2022/02/13 08:48:15 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -35,7 +35,7 @@
 #include "utils.h"
 
 int scamper_file_text_dealias_write(const scamper_file_t *sf,
-				    const scamper_dealias_t *dealias)
+				    const scamper_dealias_t *dealias, void *p)
 {
   scamper_dealias_ally_t *ally;
   char buf[256], a[64], b[64], c[32];

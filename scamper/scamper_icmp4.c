@@ -1,7 +1,7 @@
 /*
  * scamper_icmp4.c
  *
- * $Id: scamper_icmp4.c,v 1.123.4.2 2022/08/10 22:39:48 mjl Exp $
+ * $Id: scamper_icmp4.c,v 1.126 2022/12/22 03:13:37 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -31,6 +31,7 @@
 
 #include "scamper.h"
 #include "scamper_addr.h"
+#include "scamper_task.h"
 #include "scamper_dl.h"
 #include "scamper_probe.h"
 #include "scamper_icmp_resp.h"
@@ -231,7 +232,7 @@ int scamper_icmp4_probe(scamper_probe_t *probe)
       probe->pr_errno = errno;
       printerror(__func__, "could not send to %s (%d ttl, %d seq, %d len)",
 		 scamper_addr_tostr(probe->pr_ip_dst, addr, sizeof(addr)),
-		 probe->pr_ip_ttl, probe->pr_icmp_seq, len);
+		 probe->pr_ip_ttl, probe->pr_icmp_seq, (int)len);
       return -1;
     }
   else if((size_t)i != len)
@@ -626,7 +627,7 @@ static int scamper_icmp4_recv_err(int fd, scamper_icmp_resp_t *resp)
    */
   if(pbuflen < 8)
     {
-      scamper_debug(__func__, "pbuflen %d < 8", pbuflen);
+      scamper_debug(__func__, "pbuflen %d < 8", (int)pbuflen);
       return -1;
     }
 
@@ -673,7 +674,6 @@ static int scamper_icmp4_recv_err(int fd, scamper_icmp_resp_t *resp)
        * so get the outer packet's details and be done
        */
       type = icmp->icmp_type;
-      code = icmp->icmp_code;
       if(type == ICMP_ECHOREPLY || type == ICMP_TSTAMPREPLY)
 	{
 	  resp->ir_icmp_id  = ntohs(icmp->icmp_id);
@@ -785,7 +785,8 @@ int scamper_icmp4_recv(int fd, scamper_icmp_resp_t *resp)
    */
   if(pbuflen < iphl + 8)
     {
-      scamper_debug(__func__, "pbuflen [%d] < iphl [%d] + 8", pbuflen, iphl);
+      scamper_debug(__func__, "pbuflen [%d] < iphl [%d] + 8",
+		    (int)pbuflen, iphl);
       return -1;
     }
 
@@ -945,7 +946,7 @@ void scamper_icmp4_read_cb(const int fd, void *param)
   scamper_icmp_resp_t ir;
   memset(&ir, 0, sizeof(ir));
   if(scamper_icmp4_recv(fd, &ir) == 0)
-    scamper_icmp_resp_handle(&ir);
+    scamper_task_handleicmp(&ir);
   scamper_icmp_resp_clean(&ir);
   return;
 }
@@ -956,7 +957,7 @@ void scamper_icmp4_read_err_cb(const int fd, void *param)
   scamper_icmp_resp_t ir;
   memset(&ir, 0, sizeof(ir));
   if(scamper_icmp4_recv_err(fd, &ir) == 0)
-    scamper_icmp_resp_handle(&ir);
+    scamper_task_handleicmp(&ir);
   scamper_icmp_resp_clean(&ir);
 #endif
   return;

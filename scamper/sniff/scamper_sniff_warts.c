@@ -3,10 +3,10 @@
  *
  * Copyright (C) 2011      The University of Waikato
  * Copyright (C) 2014      The Regents of the University of California
- * Copyright (C) 2016-2020 Matthew Luckie
+ * Copyright (C) 2016-2022 Matthew Luckie
  * Author: Matthew Luckie
  *
- * $Id: scamper_sniff_warts.c,v 1.11 2020/06/09 06:18:41 mjl Exp $
+ * $Id: scamper_sniff_warts.c,v 1.12 2022/02/13 08:48:15 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -346,7 +346,7 @@ int scamper_file_warts_sniff_read(scamper_file_t *sf, const warts_hdr_t *hdr,
 
 /* Write data from a scamper sniff object to a warts file */
 int scamper_file_warts_sniff_write(const scamper_file_t *sf,
-				   const scamper_sniff_t *sniff)
+				   const scamper_sniff_t *sniff, void *p)
 {
   warts_addrtable_t *table = NULL;
   warts_sniff_pkt_t *pkts = NULL;
@@ -396,7 +396,7 @@ int scamper_file_warts_sniff_write(const scamper_file_t *sf,
   assert(off == len);
 
   /* Write the whole buffer to a warts file */
-  if(warts_write(sf, buf, len) == -1)
+  if(warts_write(sf, buf, len, p) == -1)
     goto err;
 
   warts_addrtable_free(table);

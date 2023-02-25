@@ -1,9 +1,9 @@
 /*
  * scamper_neighbourdisc_warts.h
  *
- * $Id: scamper_neighbourdisc_warts.c,v 1.10.4.1 2022/07/22 07:18:49 mjl Exp $
+ * $Id: scamper_neighbourdisc_warts.c,v 1.12 2022/07/22 07:15:28 mjl Exp $
  *
- * Copyright (C) 2009-2021 Matthew Luckie
+ * Copyright (C) 2009-2022 Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -431,7 +431,8 @@ static void warts_neighbourdisc_probes_free(warts_neighbourdisc_probe_t *ps,
 }
 
 int scamper_file_warts_neighbourdisc_write(const scamper_file_t *sf,
-					   const scamper_neighbourdisc_t *nd)
+					   const scamper_neighbourdisc_t *nd,
+					   void *p)
 {
   warts_addrtable_t *table = NULL;
   warts_neighbourdisc_probe_t *probes = NULL;
@@ -494,7 +495,7 @@ int scamper_file_warts_neighbourdisc_write(const scamper_file_t *sf,
 
   assert(off == len);
 
-  if(warts_write(sf, buf, len) == -1)
+  if(warts_write(sf, buf, len, p) == -1)
     {
       goto err;
     }

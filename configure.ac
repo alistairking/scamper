@@ -1,6 +1,6 @@
 # Process this file with autoconf to produce a configure script.
 
-AC_INIT([scamper],[20211212b],[mjl@luckie.org.nz])
+AC_INIT([scamper],[20230224],[mjl@luckie.org.nz])
 
 AC_CONFIG_SRCDIR([scamper/scamper.c])
 AC_CONFIG_HEADERS([config.h])
@@ -140,6 +140,13 @@ AM_CONDITIONAL([WITH_SC_UPTIME], [test x$with_sc_uptime = xyes])
 # Checks for libraries.
 AC_CHECK_LIB([iphlpapi], [GetIpNetTable])
 AC_CHECK_LIB([ws2_32], [WSAStartup])
+
+AC_CHECK_LIB([z], [inflateEnd],
+	[
+	AC_DEFINE([HAVE_ZLIB], [1], [Define to 1 if you have zlib])
+	ZLIB_LIBS="-lz"
+	])
+AC_SUBST(ZLIB_LIBS)
 
 # Checks for header files.
 AC_HEADER_SYS_WAIT
@@ -443,9 +450,17 @@ if test "x$enable_threads" != xno; then
 	[AC_DEFINE([HAVE_PTHREAD], [1], [Define to 1 if you have pthread])])
 fi
 
+AX_GCC_FUNC_ATTRIBUTE(const)
+AX_GCC_FUNC_ATTRIBUTE(format)
+AX_GCC_FUNC_ATTRIBUTE(malloc)
+AX_GCC_FUNC_ATTRIBUTE(nonnull)
+AX_GCC_FUNC_ATTRIBUTE(pure)
+
 AC_CONFIG_FILES([
 	Makefile
 	scamper/Makefile
+	lib/Makefile
+	lib/libscamperctrl/Makefile
 	utils/Makefile
 	utils/sc_ally/Makefile
 	utils/sc_analysis_dump/Makefile

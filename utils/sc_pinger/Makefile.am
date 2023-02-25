@@ -6,13 +6,13 @@ bin_PROGRAMS = sc_pinger
 
 sc_pinger_SOURCES = \
 	sc_pinger.c \
-	../../scamper/scamper_linepoll.c \
-	../../scamper/scamper_writebuf.c \
 	../../utils.c \
 	../../mjl_list.c \
 	../../mjl_splaytree.c
 
-sc_pinger_LDADD = ../../scamper/libscamperfile.la
+sc_pinger_LDADD = \
+	../../scamper/libscamperfile.la \
+	../../lib/libscamperctrl/libscamperctrl.la
 
 man_MANS = sc_pinger.1
 

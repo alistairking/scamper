@@ -1,10 +1,10 @@
 /*
  * scamper_host_warts.c
  *
- * Copyright (C) 2019-2021 Matthew Luckie
+ * Copyright (C) 2019-2022 Matthew Luckie
  * Author: Matthew Luckie
  *
- * $Id: scamper_host_warts.c,v 1.7 2021/08/24 09:03:07 mjl Exp $
+ * $Id: scamper_host_warts.c,v 1.8 2022/02/13 08:48:15 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -842,7 +842,7 @@ int scamper_file_warts_host_read(scamper_file_t *sf, const warts_hdr_t *hdr,
 }
 
 int scamper_file_warts_host_write(const scamper_file_t *sf,
-				  const scamper_host_t *host)
+				  const scamper_host_t *host, void *p)
 {
   scamper_host_query_t *query;
   warts_addrtable_t *table = NULL;
@@ -942,7 +942,7 @@ int scamper_file_warts_host_write(const scamper_file_t *sf,
   assert(off == len);
 
   /* Write the whole buffer to a warts file */
-  if(warts_write(sf, buf, len) == -1)
+  if(warts_write(sf, buf, len, p) == -1)
     goto err;
 
   warts_addrtable_free(table);

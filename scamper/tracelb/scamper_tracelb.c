@@ -1,11 +1,11 @@
 /*
  * scamper_tracelb.c
  *
- * $Id: scamper_tracelb.c,v 1.60 2020/04/02 06:45:02 mjl Exp $
+ * $Id: scamper_tracelb.c,v 1.63 2023/01/01 08:24:19 mjl Exp $
  *
  * Copyright (C) 2008-2010 The University of Waikato
  * Copyright (C) 2012      The Regents of the University of California
- * Copyright (C) 2018-2019 Matthew Luckie
+ * Copyright (C) 2018-2023 Matthew Luckie
  * Author: Matthew Luckie
  *
  * Load-balancer traceroute technique authored by
@@ -67,6 +67,7 @@ scamper_tracelb_probeset_summary_alloc(scamper_tracelb_probeset_t *set)
   scamper_tracelb_probe_t *probe;
   scamper_addr_t *addr;
   uint16_t flowid, j;
+  size_t addrc;
   int i, x;
 
   if((sum = malloc_zero(sizeof(scamper_tracelb_probeset_summary_t))) == NULL)
@@ -105,12 +106,14 @@ scamper_tracelb_probeset_summary_alloc(scamper_tracelb_probeset_t *set)
 	  for(j=0; j<probe->rxc; j++)
 	    {
 	      addr = probe->rxs[j]->reply_from;
-	      if(array_find((void **)sum->addrs, sum->addrc, addr,
+	      addrc = (size_t)sum->addrc;
+	      if(array_find((void **)sum->addrs, addrc, addr,
 			    (array_cmp_t)scamper_addr_cmp) != NULL)
 		continue;
-	      if(array_insert((void ***)&sum->addrs, &sum->addrc,
-			      addr, (array_cmp_t)scamper_addr_cmp) != 0)
+	      if(array_insert((void ***)&sum->addrs, &addrc, addr,
+			      (array_cmp_t)scamper_addr_cmp) != 0)
 		goto err;
+	      sum->addrc = (int)addrc;
 	      scamper_addr_use(addr);
 	    }
 	  x++;
@@ -213,7 +216,7 @@ static int tracelb_node_link_cmp(const scamper_tracelb_link_t *a,
 static void tracelb_nodes_extract(const scamper_tracelb_t *trace,
 				  scamper_tracelb_node_t *from,
 				  scamper_tracelb_node_t *to,
-				  scamper_tracelb_node_t **nodes, int *nodec)
+				  scamper_tracelb_node_t **nodes,size_t *nodec)
 {
   uint16_t i;
 
@@ -247,7 +250,7 @@ int scamper_tracelb_nodes_extract(const scamper_tracelb_t *trace,
 				  scamper_tracelb_node_t *to,
 				  scamper_tracelb_node_t **nodes)
 {
-  int nodec = 0;
+  size_t nodec = 0;
   tracelb_nodes_extract(trace, from, to, nodes, &nodec);
   return nodec;
 }

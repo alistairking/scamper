@@ -1,12 +1,12 @@
 /*
- * scamper_file_text_tbit.c
+ * scamper_tbit_text.c
  *
  * Copyright (C) 2009-2011 The University of Waikato
- * Copyright (C) 2021      Matthew Luckie
+ * Copyright (C) 2021-2022 Matthew Luckie
  *
  * Authors: Ben Stasiewicz, Matthew Luckie
  *
- * $Id: scamper_tbit_text.c,v 1.18 2021/08/29 08:55:39 mjl Exp $
+ * $Id: scamper_tbit_text.c,v 1.20 2022/12/09 09:37:42 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -43,7 +43,7 @@ static uint32_t tbit_isnoff(uint32_t isn, uint32_t seq)
 }
 
 int scamper_file_text_tbit_write(const scamper_file_t *sf,
-				 const scamper_tbit_t *tbit)
+				 const scamper_tbit_t *tbit, void *p)
 {
   scamper_tbit_pkt_t *pkt;
   scamper_tbit_app_http_t *http;
@@ -254,7 +254,7 @@ int scamper_file_text_tbit_write(const scamper_file_t *sf,
 	  string_concat(tmp, sizeof(tmp), &toff, " seq = %u:%u", seq, ack);
 	  if(datalen != 0)
 	    string_concat(tmp, sizeof(tmp), &toff, "(%d)", datalen);
-	  string_concat(tmp, sizeof(tmp), &toff, sack);
+	  string_concat(tmp, sizeof(tmp), &toff, "%s", sack);
 	  string_concat(buf, sizeof(buf), &soff, "%-23s%s", tmp, ipid);
 	  if(frag != 0) string_concat(buf, sizeof(buf), &soff, "%s", fstr);
 	  if(datalen > 0 && (pkt->data[0] >> 4) == 4 && pkt->data[6] & 0x40)

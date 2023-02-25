@@ -4,10 +4,10 @@
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2012-2014 The Regents of the University of California
- * Copyright (C) 2016-2020 Matthew Luckie
+ * Copyright (C) 2016-2022 Matthew Luckie
  * Author: Matthew Luckie
  *
- * $Id: scamper_ping_warts.c,v 1.22.10.1 2022/06/12 05:25:45 mjl Exp $
+ * $Id: scamper_ping_warts.c,v 1.24 2022/06/03 23:19:34 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -839,7 +839,7 @@ int scamper_file_warts_ping_read(scamper_file_t *sf, const warts_hdr_t *hdr,
 }
 
 int scamper_file_warts_ping_write(const scamper_file_t *sf,
-				  const scamper_ping_t *ping)
+				  const scamper_ping_t *ping, void *p)
 {
   warts_addrtable_t *table = NULL;
   warts_ping_reply_t *reply_state = NULL;
@@ -911,7 +911,7 @@ int scamper_file_warts_ping_write(const scamper_file_t *sf,
 
   assert(off == len);
 
-  if(warts_write(sf, buf, len) == -1)
+  if(warts_write(sf, buf, len, p) == -1)
     {
       goto err;
     }

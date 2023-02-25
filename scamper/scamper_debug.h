@@ -1,7 +1,7 @@
 /*
  * scamper_debug.h
  *
- * $Id: scamper_debug.h,v 1.20.10.1 2022/02/09 07:18:23 mjl Exp $
+ * $Id: scamper_debug.h,v 1.22 2022/12/09 09:37:42 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2009 The University of Waikato
@@ -26,12 +26,26 @@
 #ifndef __SCAMPER_DEBUG_H
 #define __SCAMPER_DEBUG_H
 
+#ifdef HAVE_FUNC_ATTRIBUTE_FORMAT
+void printerror(const char *func, const char *format, ...)
+  __attribute__((format(printf, 2, 3)));
+void printerror_gai(const char *func, int ecode, const char *format, ...)
+  __attribute__((format(printf, 3, 4)));
+void printerror_msg(const char *func, const char *format, ...)
+  __attribute__((format(printf, 2, 3)));
+#else
 void printerror(const char *func, const char *format, ...);
 void printerror_gai(const char *func, int ecode, const char *format, ...);
 void printerror_msg(const char *func, const char *format, ...);
+#endif
 
 #ifdef HAVE_OPENSSL
+#ifdef HAVE_FUNC_ATTRIBUTE_FORMAT
+void printerror_ssl(const char *func, const char *format, ...)
+  __attribute__((format(printf, 2, 3)));
+#else
 void printerror_ssl(const char *func, const char *format, ...);
+#endif
 #endif
 
 #ifdef NDEBUG
@@ -48,7 +62,12 @@ void __scamper_assert(const char *file, int line, const char *func,
 #define scamper_debug(func, format, ...) ((void)0)
 #else
 #define HAVE_SCAMPER_DEBUG
+#ifdef HAVE_FUNC_ATTRIBUTE_FORMAT
+void scamper_debug(const char *func, const char *format, ...)
+  __attribute__((format(printf, 2, 3)));
+#else
 void scamper_debug(const char *func, const char *format, ...);
+#endif
 #endif
 
 #ifndef WITHOUT_DEBUGFILE

@@ -4,7 +4,7 @@
  *
  * Authors       : Matthew Luckie
  *
- * Copyright (C) 2018-2021 Matthew Luckie
+ * Copyright (C) 2018-2023 Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -294,6 +294,10 @@ static int check_options(int argc, char *argv[])
   return 0;
 }
 
+#ifdef HAVE_FUNC_ATTRIBUTE_FORMAT
+static void logprint(char *format, ...) __attribute__((format(printf, 1, 2)));
+#endif
+
 static void logprint(char *format, ...)
 {
   va_list ap;
@@ -492,6 +496,7 @@ static int do_addrfile(void)
       fprintf(stderr, "could not alloc list");
       goto done;
     }
+  assert(addrfile_name != NULL);
   if(file_lines(addrfile_name, addrfile_line, list) != 0)
     goto done;
   if(shuffle != 0)
@@ -742,6 +747,8 @@ static int do_ctrlsock_accept(void)
   return 0;
 
  err:
+  if(fd != -1) close(fd);
+  if(cs != NULL) do_ctrlsock_free(cs);
   return -1;
 }
 
@@ -852,7 +859,7 @@ static int do_method(void)
 
 static int do_scamperread_line(void *param, uint8_t *buf, size_t linelen)
 {
-  char *head = (char *)buf;
+  char *head = (char *)buf, *eptr;
   uint8_t uu[64];
   size_t uus;
   long lo;
@@ -890,7 +897,7 @@ static int do_scamperread_line(void *param, uint8_t *buf, size_t linelen)
   /* new piece of data */
   if(linelen > 5 && strncasecmp(head, "DATA ", 5) == 0)
     {
-      if(string_isnumber(head+5) == 0 || string_tolong(head+5, &lo) != 0)
+      if((lo=strtol(head+5, &eptr, 10)) < 1 || (*eptr != '\0' && *eptr != ' '))
 	{
 	  fprintf(stderr, "%s: could not parse %s\n", __func__, head);
 	  return -1;
@@ -966,7 +973,7 @@ static int do_decoderead(void)
       ping = data;
       if(ep_tree_to_heap(ping->dst) != 0)
 	goto done;
-      if(nooutfile == 0 && scamper_file_write_ping(outfile, ping) != 0)
+      if(nooutfile == 0 && scamper_file_write_ping(outfile, ping, NULL) != 0)
 	goto done;
       rc = 0;
     }
@@ -975,7 +982,7 @@ static int do_decoderead(void)
       trace = data;
       if(ep_tree_to_heap(trace->dst) != 0)
 	goto done;
-      if(nooutfile == 0 && scamper_file_write_trace(outfile, trace) != 0)
+      if(nooutfile == 0 && scamper_file_write_trace(outfile, trace, NULL) != 0)
 	goto done;
       rc = 0;
     }

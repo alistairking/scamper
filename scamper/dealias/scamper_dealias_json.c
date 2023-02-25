@@ -3,9 +3,10 @@
  *
  * Copyright (c) 2013      Matthew Luckie
  * Copyright (c) 2013-2014 The Regents of the University of California
+ * Copyright (c) 2022      Matthew Luckie
  * Author: Matthew Luckie
  *
- * $Id: scamper_dealias_json.c,v 1.14 2020/03/17 07:32:16 mjl Exp $
+ * $Id: scamper_dealias_json.c,v 1.16 2022/12/09 09:37:42 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -79,8 +80,9 @@ static char *dealias_header_tostr(const scamper_dealias_t *dealias)
   string_concat(buf, sizeof(buf), &off, ", \"userid\":%u, \"result\":\"%s\"",
 		dealias->userid,
 		scamper_dealias_result_tostr(dealias, tmp, sizeof(tmp)));
-  string_concat(buf, sizeof(buf), &off, ", \"start\":{\"sec\":%u, \"usec\":%u}",
-		dealias->start.tv_sec, dealias->start.tv_usec);
+  string_concat(buf, sizeof(buf), &off,
+		", \"start\":{\"sec\":%ld, \"usec\":%d}",
+		(long)dealias->start.tv_sec, (int)dealias->start.tv_usec);
 
   if(SCAMPER_DEALIAS_METHOD_IS_MERCATOR(dealias))
     {
@@ -237,9 +239,10 @@ static char *dealias_reply_tostr(const scamper_dealias_reply_t *reply)
   char buf[256], tmp[64];
   size_t off = 0;
   string_concat(buf, sizeof(buf), &off,
-		"{\"src\":\"%s\", \"rx\":{\"sec\":%u, \"usec\":%u}, \"ttl\":%u",
+		"{\"src\":\"%s\",\"rx\":{\"sec\":%ld,\"usec\":%d},\"ttl\":%u",
 		scamper_addr_tostr(reply->src, tmp, sizeof(tmp)),
-		reply->rx.tv_sec, reply->rx.tv_usec, reply->ttl);
+		(long)reply->rx.tv_sec, (int)reply->rx.tv_usec,
+		reply->ttl);
   if(SCAMPER_ADDR_TYPE_IS_IPV4(reply->src))
     string_concat(buf, sizeof(buf), &off, ", \"ipid\": %u", reply->ipid);
   else if(reply->flags & SCAMPER_DEALIAS_REPLY_FLAG_IPID32)
@@ -274,8 +277,9 @@ static char *dealias_probe_tostr(const scamper_dealias_probe_t *probe)
   int i;
 
   string_concat(header, sizeof(header), &header_len,
-		"{\"probedef_id\":%u, \"seq\":%u, \"tx\":{\"sec\":%u, \"usec\":%u}",
-		probe->def->id, probe->seq, probe->tx.tv_sec, probe->tx.tv_usec);
+	"{\"probedef_id\":%u,\"seq\":%u,\"tx\":{\"sec\":%ld,\"usec\":%d}",
+	probe->def->id, probe->seq,
+	(long)probe->tx.tv_sec, (int)probe->tx.tv_usec);
   if(SCAMPER_ADDR_TYPE_IS_IPV4(probe->def->dst))
     string_concat(header, sizeof(header), &header_len,
 		  ", \"ipid\":%u", probe->ipid);
@@ -333,7 +337,7 @@ static char *dealias_probe_tostr(const scamper_dealias_probe_t *probe)
 }
 
 int scamper_file_json_dealias_write(const scamper_file_t *sf,
-				    const scamper_dealias_t *dealias)
+				    const scamper_dealias_t *dealias, void *p)
 {
   char     *str         = NULL;
   size_t    len         = 0;
@@ -421,7 +425,7 @@ int scamper_file_json_dealias_write(const scamper_file_t *sf,
 
   assert(wc == len);
 
-  rc = json_write(sf, str, len);
+  rc = json_write(sf, str, len, p);
 
  cleanup:
   if(str != NULL) free(str);

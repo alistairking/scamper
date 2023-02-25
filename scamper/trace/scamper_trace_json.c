@@ -6,11 +6,11 @@
  * Copyright (C) 2011-2013 Internap Network Services Corporation
  * Copyright (C) 2013-2014 The Regents of the University of California
  * Copyright (C) 2015      The University of Waikato
- * Copyright (C) 2016-2021 Matthew Luckie
+ * Copyright (C) 2016-2022 Matthew Luckie
  *
  * Authors: Brian Hammond, Matthew Luckie
  *
- * $Id: scamper_trace_json.c,v 1.22 2021/10/23 04:46:52 mjl Exp $
+ * $Id: scamper_trace_json.c,v 1.24 2022/12/09 09:37:42 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -59,8 +59,8 @@ static char *hop_tostr(const scamper_trace_t *trace, scamper_trace_hop_t *hop)
 		hop->hop_probe_ttl, hop->hop_probe_id, hop->hop_probe_size);
   if(hop->hop_tx.tv_sec != 0)
     string_concat(buf, sizeof(buf), &off,
-		  ", \"tx\":{\"sec\":%u, \"usec\":%u}",
-		  hop->hop_tx.tv_sec, hop->hop_tx.tv_usec);
+		  ", \"tx\":{\"sec\":%ld, \"usec\":%d}",
+		  (long)hop->hop_tx.tv_sec, (int)hop->hop_tx.tv_usec);
   string_concat(buf, sizeof(buf), &off, ", \"rtt\":%s",
 		timeval_tostr_us(&hop->hop_rtt, tmp, sizeof(tmp)));
   string_concat(buf, sizeof(buf), &off,
@@ -165,8 +165,8 @@ static char *header_tostr(const scamper_trace_t *trace)
 		trace->stop_data);
   strftime(tmp, sizeof(tmp), "%Y-%m-%d %H:%M:%S", localtime(&tt));
   string_concat(buf, sizeof(buf), &off,
-		", \"start\":{\"sec\":%u, \"usec\":%u, \"ftime\":\"%s\"}",
-		trace->start.tv_sec, trace->start.tv_usec, tmp);
+		", \"start\":{\"sec\":%ld, \"usec\":%d, \"ftime\":\"%s\"}",
+		(long)trace->start.tv_sec, (int)trace->start.tv_usec, tmp);
   string_concat(buf, sizeof(buf), &off,
 		", \"hop_count\":%u, \"attempts\":%u, \"hoplimit\":%u",
 		trace->hop_count, trace->attempts, trace->hoplimit);
@@ -181,7 +181,7 @@ static char *header_tostr(const scamper_trace_t *trace)
 }
 
 int scamper_file_json_trace_write(const scamper_file_t *sf,
-				  const scamper_trace_t *trace)
+				  const scamper_trace_t *trace, void *p)
 {
   scamper_trace_hop_t *hop;
   size_t len, off = 0;
@@ -231,7 +231,7 @@ int scamper_file_json_trace_write(const scamper_file_t *sf,
   string_concat(str, len, &off, "}\n");
   assert(off+1 == len);
 
-  rc = json_write(sf, str, off);
+  rc = json_write(sf, str, off, p);
 
  cleanup:
   if(hops != NULL)

@@ -1,12 +1,12 @@
 /*
  * scamper_task.c
  *
- * $Id: scamper_task.c,v 1.71.10.2 2022/08/10 22:39:48 mjl Exp $
+ * $Id: scamper_task.c,v 1.75 2023/01/01 08:24:19 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2012-2015 The Regents of the University of California
- * Copyright (C) 2016-2020 Matthew Luckie
+ * Copyright (C) 2016-2023 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -79,7 +79,7 @@ struct scamper_task
 
   /* file descriptors held by the task */
   scamper_fd_t            **fds;
-  int                       fdc;
+  size_t                    fdc;
 };
 
 struct scamper_task_anc
@@ -88,6 +88,13 @@ struct scamper_task_anc
   void        (*freedata)(void *);
   dlist_node_t *node;
 };
+
+typedef struct trie_s2t
+{
+  scamper_addr_t     *addr;
+  dlist_t            *list;
+  patricia_node_t    *node;
+} trie_s2t_t;
 
 typedef struct s2t
 {
@@ -109,24 +116,19 @@ static patricia_t  *tx_nd6 = NULL;
 static dlist_t     *sniff = NULL;
 static splaytree_t *host = NULL;
 
-static int tx_ip_cmp(const s2t_t *a, const s2t_t *b)
+static int tx_ip_cmp(const trie_s2t_t *a, const trie_s2t_t *b)
 {
-  assert(a->sig->sig_type == SCAMPER_TASK_SIG_TYPE_TX_IP);
-  assert(b->sig->sig_type == SCAMPER_TASK_SIG_TYPE_TX_IP);
-  return scamper_addr_cmp(a->sig->sig_tx_ip_dst, b->sig->sig_tx_ip_dst);
+  return scamper_addr_cmp(a->addr, b->addr);
 }
 
-static int tx_ip_bit(const s2t_t *s2t, int bit)
+static int tx_ip_bit(const trie_s2t_t *ts2t, int bit)
 {
-  assert(s2t->sig->sig_type == SCAMPER_TASK_SIG_TYPE_TX_IP);
-  return scamper_addr_bit(s2t->sig->sig_tx_ip_dst, bit);
+  return scamper_addr_bit(ts2t->addr, bit);
 }
 
-static int tx_ip_fbd(const s2t_t *a, const s2t_t *b)
+static int tx_ip_fbd(const trie_s2t_t *a, const trie_s2t_t *b)
 {
-  assert(a->sig->sig_type == SCAMPER_TASK_SIG_TYPE_TX_IP);
-  assert(b->sig->sig_type == SCAMPER_TASK_SIG_TYPE_TX_IP);
-  return scamper_addr_fbd(a->sig->sig_tx_ip_dst, b->sig->sig_tx_ip_dst);
+  return scamper_addr_fbd(a->addr, b->addr);
 }
 
 static int tx_nd_cmp(const s2t_t *a, const s2t_t *b)
@@ -163,22 +165,45 @@ static int host_cmp(const s2t_t *a, const s2t_t *b)
   return 0;
 }
 
+static void trie_s2t_free(trie_s2t_t *ts2t)
+{
+  if(ts2t->list != NULL) dlist_free(ts2t->list);
+  if(ts2t->addr != NULL) scamper_addr_free(ts2t->addr);
+  free(ts2t);
+  return;
+}
+
+static trie_s2t_t *trie_s2t_alloc(scamper_addr_t *addr)
+{
+  trie_s2t_t *ts2t;
+  if((ts2t = malloc_zero(sizeof(trie_s2t_t))) == NULL ||
+     (ts2t->list = dlist_alloc()) == NULL)
+    goto err;
+  ts2t->addr = scamper_addr_use(addr);
+  return ts2t;
+ err:
+  if(ts2t != NULL) trie_s2t_free(ts2t);
+  return NULL;
+}
+
 static void tx_ip_check(scamper_dl_rec_t *dl)
 {
-  scamper_task_sig_t sig;
   scamper_addr_t addr, addr2buf, *addr2 = NULL;
   patricia_t *pt;
-  s2t_t fm, *s2t;
+  trie_s2t_t fm, *ts2t;
+  dlist_node_t *dn;
+  s2t_t *s2t;
+  int i;
 
   if(SCAMPER_DL_IS_IPV4(dl))
     {
-      addr.type = SCAMPER_ADDR_TYPE_IPV4;
       pt = tx_ip4;
+      addr.type = SCAMPER_ADDR_TYPE_IPV4;
     }
   else if(SCAMPER_DL_IS_IPV6(dl))
     {
-      addr.type = SCAMPER_ADDR_TYPE_IPV6;
       pt = tx_ip6;
+      addr.type = SCAMPER_ADDR_TYPE_IPV6;
     }
   else return;
 
@@ -219,22 +244,27 @@ static void tx_ip_check(scamper_dl_rec_t *dl)
       addr.addr = dl->dl_ip_dst;
     }
 
-  fm.sig = &sig;
-  sig.sig_type = SCAMPER_TASK_SIG_TYPE_TX_IP;
-  sig.sig_tx_ip_dst = &addr;
-
-  if((s2t = patricia_find(pt, &fm)) != NULL &&
-     s2t->task->funcs->handle_dl != NULL)
+  /*
+   * make up to two checks in the trie, checking addr2 if we don't
+   * find anything with addr
+   */
+  for(i=0; i<2; i++)
     {
-      s2t->task->funcs->handle_dl(s2t->task, dl);
-    }
-  else if(addr2 != NULL)
-    {
-      sig.sig_tx_ip_dst = addr2;
-      if((s2t = patricia_find(pt, &fm)) != NULL &&
-	 s2t->task->funcs->handle_dl != NULL)
+      if(i == 0)
+        fm.addr = &addr;
+      else if(i == 1 && addr2 != NULL)
+	fm.addr = addr2;
+      else
+	break;
+      if((ts2t = patricia_find(pt, &fm)) != NULL)
 	{
-	  s2t->task->funcs->handle_dl(s2t->task, dl);
+	  for(dn=dlist_head_node(ts2t->list);dn != NULL;dn=dlist_node_next(dn))
+	    {
+	      s2t = dlist_node_item(dn);
+	      if(s2t->task->funcs->handle_dl != NULL)
+		s2t->task->funcs->handle_dl(s2t->task, dl);
+	    }
+	  break;
 	}
     }
 
@@ -326,6 +356,8 @@ static void sniff_check(scamper_dl_rec_t *dl)
 static void s2t_free(s2t_t *s2t)
 {
   scamper_task_sig_t *sig = s2t->sig;
+  trie_s2t_t fm, *ts2t;
+  patricia_t *pt;
 
   if(s2t == NULL)
     return;
@@ -334,10 +366,24 @@ static void s2t_free(s2t_t *s2t)
     {
       if(sig->sig_type == SCAMPER_TASK_SIG_TYPE_TX_IP)
 	{
-	  if(sig->sig_tx_ip_dst->type == SCAMPER_ADDR_TYPE_IPV4)
-	    patricia_remove_node(tx_ip4, s2t->node);
+	  /* get the trie_s2t node that manages this address */
+	  fm.addr = sig->sig_tx_ip_dst;
+	  if(SCAMPER_ADDR_TYPE_IS_IPV4(sig->sig_tx_ip_dst))
+	    pt = tx_ip4;
 	  else
-	    patricia_remove_node(tx_ip6, s2t->node);
+	    pt = tx_ip6;
+	  ts2t = patricia_find(pt, &fm);
+	  assert(ts2t != NULL);
+
+	  /* remove the s2t from the trie_s2t node */
+	  dlist_node_pop(ts2t->list, s2t->node);
+
+	  /* if the address no longer has any tasks, remove from trie */
+	  if(dlist_count(ts2t->list) == 0)
+	    {
+	      patricia_remove_node(pt, ts2t->node);
+	      trie_s2t_free(ts2t);
+	    }
 	}
       else if(sig->sig_type == SCAMPER_TASK_SIG_TYPE_TX_ND)
 	{
@@ -362,8 +408,50 @@ char *scamper_task_sig_tostr(scamper_task_sig_t *sig, char *buf, size_t len)
   size_t off = 0;
 
   if(sig->sig_type == SCAMPER_TASK_SIG_TYPE_TX_IP)
-    string_concat(buf, len, &off, "ip %s",
-		  scamper_addr_tostr(sig->sig_tx_ip_dst, tmp, sizeof(tmp)));
+    {
+      string_concat(buf, len, &off, "ip %s",
+		    scamper_addr_tostr(sig->sig_tx_ip_dst, tmp, sizeof(tmp)));
+      if(sig->sig_tx_ip_proto == IPPROTO_ICMP)
+	{
+	  if(sig->sig_tx_ip_icmp_type == ICMP_ECHO)
+	    string_concat(buf, len, &off, " icmp echo");
+	  else if(sig->sig_tx_ip_icmp_type == ICMP_TSTAMP)
+	    string_concat(buf, len, &off, " icmp time");
+	  else
+	    string_concat(buf, len, &off, " icmp");
+	  string_concat(buf, len, &off, " id %d", sig->sig_tx_ip_icmp_id);
+	}
+      else if(sig->sig_tx_ip_proto == IPPROTO_ICMPV6)
+	{
+	  if(sig->sig_tx_ip_icmp_type == ICMP6_ECHO_REQUEST)
+	    string_concat(buf, len, &off, " icmp echo");
+	  else
+	    string_concat(buf, len, &off, " icmp");
+	  string_concat(buf, len, &off, " id %d", sig->sig_tx_ip_icmp_id);
+	}
+      else if(sig->sig_tx_ip_proto == IPPROTO_UDP)
+	{
+	  string_concat(buf, len, &off, " udp sport %d",
+			sig->sig_tx_ip_udp_sport_x);
+	  if(sig->sig_tx_ip_udp_sport_x != sig->sig_tx_ip_udp_sport_y)
+	    string_concat(buf, len, &off, "-%d", sig->sig_tx_ip_udp_sport_y);
+	  string_concat(buf, len, &off, " dport %d",
+			sig->sig_tx_ip_udp_dport_x);
+	  if(sig->sig_tx_ip_udp_dport_x != sig->sig_tx_ip_udp_dport_y)
+	    string_concat(buf, len, &off, "-%d", sig->sig_tx_ip_udp_dport_y);
+	}
+      else if(sig->sig_tx_ip_proto == IPPROTO_TCP)
+	{
+	  string_concat(buf, len, &off, " tcp sport %d",
+			sig->sig_tx_ip_tcp_sport_x);
+	  if(sig->sig_tx_ip_tcp_sport_x != sig->sig_tx_ip_tcp_sport_y)
+	    string_concat(buf, len, &off, "-%d", sig->sig_tx_ip_tcp_sport_y);
+	  string_concat(buf, len, &off, " dport %d",
+			sig->sig_tx_ip_tcp_dport_x);
+	  if(sig->sig_tx_ip_tcp_dport_x != sig->sig_tx_ip_tcp_dport_y)
+	    string_concat(buf, len, &off, "-%d", sig->sig_tx_ip_tcp_dport_y);
+	}
+    }
   else if(sig->sig_type == SCAMPER_TASK_SIG_TYPE_TX_ND)
     string_concat(buf, len, &off, "nd %s",
 		  scamper_addr_tostr(sig->sig_tx_nd_ip, tmp, sizeof(tmp)));
@@ -459,24 +547,80 @@ int scamper_task_sig_add(scamper_task_t *task, scamper_task_sig_t *sig)
   return 0;
 }
 
+static int overlap(uint16_t a, uint16_t b, uint16_t x, uint16_t y)
+{
+  if((a <= x && y <= b) || (a >= x && y >= b) ||
+     (a < x && b >= x) || (x < a && y >= a))
+    return 1;
+  return 0;
+}
+
+static int s2t_tx_ip_overlap(scamper_task_sig_t *a, scamper_task_sig_t *b)
+{
+  if(a->sig_tx_ip_proto != b->sig_tx_ip_proto)
+    return 0;
+  if(a->sig_tx_ip_proto == IPPROTO_ICMP || a->sig_tx_ip_proto == IPPROTO_ICMPV6)
+    {
+      if(a->sig_tx_ip_icmp_type != b->sig_tx_ip_icmp_type)
+	return 0;
+      if(a->sig_tx_ip_icmp_id != b->sig_tx_ip_icmp_id)
+	return 0;
+      return 1;
+    }
+  else if(a->sig_tx_ip_proto == IPPROTO_UDP)
+    {
+      if(overlap(a->sig_tx_ip_udp_sport_x, a->sig_tx_ip_udp_sport_y,
+		 b->sig_tx_ip_udp_sport_x, b->sig_tx_ip_udp_sport_y) == 0)
+	return 0;
+      if(overlap(a->sig_tx_ip_udp_dport_x, a->sig_tx_ip_udp_dport_y,
+		 b->sig_tx_ip_udp_dport_x, b->sig_tx_ip_udp_dport_y) == 0)
+	return 0;
+    }
+  else
+    {
+      assert(a->sig_tx_ip_proto == IPPROTO_TCP);
+      if(overlap(a->sig_tx_ip_tcp_sport_x, a->sig_tx_ip_tcp_sport_y,
+		 b->sig_tx_ip_tcp_sport_x, b->sig_tx_ip_tcp_sport_y) == 0)
+	return 0;
+      if(overlap(a->sig_tx_ip_tcp_dport_x, a->sig_tx_ip_tcp_dport_y,
+		 b->sig_tx_ip_tcp_dport_x, b->sig_tx_ip_tcp_dport_y) == 0)
+	return 0;
+    }
+
+  return 1;
+}
+
 scamper_task_t *scamper_task_find(scamper_task_sig_t *sig)
 {
-  s2t_t fm, *s2t;
+  trie_s2t_t ts2t_fm, *ts2t;
+  dlist_node_t *dn;
+  s2t_t s2t_fm, *s2t;
 
-  fm.sig = sig;
   if(sig->sig_type == SCAMPER_TASK_SIG_TYPE_TX_IP)
     {
-      if(sig->sig_tx_ip_dst->type == SCAMPER_ADDR_TYPE_IPV4)
-	s2t = patricia_find(tx_ip4, &fm);
+      ts2t_fm.addr = sig->sig_tx_ip_dst;
+      if(SCAMPER_ADDR_TYPE_IS_IPV4(sig->sig_tx_ip_dst))
+	ts2t = patricia_find(tx_ip4, &ts2t_fm);
       else
-	s2t = patricia_find(tx_ip6, &fm);
+	ts2t = patricia_find(tx_ip6, &ts2t_fm);
+      if(ts2t == NULL)
+	return NULL;
+      for(dn=dlist_head_node(ts2t->list); dn != NULL; dn=dlist_node_next(dn))
+	{
+	  s2t = dlist_node_item(dn);
+	  if(s2t_tx_ip_overlap(sig, s2t->sig) != 0)
+	    break;
+	}
+      if(dn == NULL)
+	s2t = NULL;
     }
   else if(sig->sig_type == SCAMPER_TASK_SIG_TYPE_TX_ND)
     {
+      s2t_fm.sig = sig;
       if(sig->sig_tx_nd_ip->type == SCAMPER_ADDR_TYPE_IPV4)
-	s2t = patricia_find(tx_nd4, &fm);
+	s2t = patricia_find(tx_nd4, &s2t_fm);
       else
-	s2t = patricia_find(tx_nd6, &fm);
+	s2t = patricia_find(tx_nd6, &s2t_fm);
     }
   else
     return NULL;
@@ -506,6 +650,8 @@ int scamper_task_sig_install(scamper_task_t *task)
 {
   scamper_task_sig_t *sig;
   scamper_task_t *tf;
+  trie_s2t_t *ts2t, fm;
+  patricia_t *pt;
   s2t_t *s2t;
   slist_node_t *n;
 
@@ -530,9 +676,32 @@ int scamper_task_sig_install(scamper_task_t *task)
       if(sig->sig_type == SCAMPER_TASK_SIG_TYPE_TX_IP)
 	{
 	  if(sig->sig_tx_ip_dst->type == SCAMPER_ADDR_TYPE_IPV4)
-	    s2t->node = patricia_insert(tx_ip4, s2t);
+	    pt = tx_ip4;
 	  else
-	    s2t->node = patricia_insert(tx_ip6, s2t);
+	    pt = tx_ip6;
+	  fm.addr = sig->sig_tx_ip_dst;
+	  if((ts2t = patricia_find(pt, &fm)) == NULL)
+	    {
+	      if((ts2t = trie_s2t_alloc(sig->sig_tx_ip_dst)) == NULL)
+		{
+		  scamper_debug(__func__, "could not alloc ts2t");
+		  goto err;
+		}
+	      if((ts2t->node = patricia_insert(pt, ts2t)) == NULL)
+		{
+		  scamper_debug(__func__, "could not install ts2t");
+		  trie_s2t_free(ts2t);
+		  goto err;
+		}
+	    }
+	  s2t->node = dlist_head_push(ts2t->list, s2t);
+
+	  /* if we weren't able to insert the s2t, free addr */
+	  if(s2t->node == NULL && dlist_count(ts2t->list) == 0)
+	    {
+	      patricia_remove_node(pt, ts2t->node);
+	      trie_s2t_free(ts2t);
+	    }
 	}
       else if(sig->sig_type == SCAMPER_TASK_SIG_TYPE_TX_ND)
 	{
@@ -663,7 +832,7 @@ void scamper_task_free(scamper_task_t *task)
 {
   scamper_task_anc_t *anc;
   task_onhold_t *toh;
-  int i;
+  size_t i;
 
   if(task->funcs != NULL)
     task->funcs->task_free(task);
@@ -752,6 +921,11 @@ scamper_source_t *scamper_task_getsource(scamper_task_t *task)
   return scamper_sourcetask_getsource(task->sourcetask);
 }
 
+scamper_sourcetask_t *scamper_task_getsourcetask(scamper_task_t *task)
+{
+  return task->sourcetask;
+}
+
 void scamper_task_setsourcetask(scamper_task_t *task, scamper_sourcetask_t *st)
 {
   assert(task->sourcetask == NULL);
@@ -783,10 +957,59 @@ void scamper_task_halt(scamper_task_t *task)
   return;
 }
 
-void scamper_task_handleicmp(scamper_task_t *task, scamper_icmp_resp_t *resp)
+void scamper_task_handleicmp(scamper_icmp_resp_t *resp)
 {
-  if(task->funcs->handle_icmp != NULL)
-    task->funcs->handle_icmp(task, resp);
+  trie_s2t_t *ts2t, fm;
+  scamper_addr_t addr;
+  dlist_node_t *dn;
+  patricia_t *pt;
+  s2t_t *s2t;
+  int print = 0;
+
+  if(SCAMPER_ICMP_RESP_IS_TTL_EXP(resp) ||
+     SCAMPER_ICMP_RESP_IS_UNREACH(resp) ||
+     SCAMPER_ICMP_RESP_IS_PACKET_TOO_BIG(resp) ||
+     SCAMPER_ICMP_RESP_IS_PARAMPROB(resp))
+    {
+      /* the probe signature is embedded in the response */
+      if(!SCAMPER_ICMP_RESP_INNER_IS_SET(resp))
+	return;
+      if(scamper_icmp_resp_inner_dst(resp, &addr) != 0)
+	return;
+    }
+  else if(SCAMPER_ICMP_RESP_IS_ECHO_REPLY(resp) ||
+	  SCAMPER_ICMP_RESP_IS_TIME_REPLY(resp))
+    {
+      /* the probe signature is an ICMP echo/ts request */
+      if(scamper_icmp_resp_src(resp, &addr) != 0)
+	return;
+    }
+  else
+    {
+      return;
+    }
+
+  fm.addr = &addr;
+  if(SCAMPER_ADDR_TYPE_IS_IPV4(&addr))
+    pt = tx_ip4;
+  else
+    pt = tx_ip6;
+  if((ts2t = patricia_find(pt, &fm)) == NULL)
+    return;
+
+  for(dn=dlist_head_node(ts2t->list); dn != NULL; dn=dlist_node_next(dn))
+    {
+      s2t = dlist_node_item(dn);
+      if(s2t->task->funcs->handle_icmp != NULL)
+	{
+	  if(print == 0)
+	    {
+	      scamper_icmp_resp_print(resp);
+	      print = 1;
+	    }
+	  s2t->task->funcs->handle_icmp(s2t->task, resp);
+	}
+    }
   return;
 }
 

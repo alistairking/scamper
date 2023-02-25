@@ -1,7 +1,7 @@
 /*
  * sc_ipiddump
  *
- * $Id: sc_ipiddump.c,v 1.16 2021/08/22 08:11:53 mjl Exp $
+ * $Id: sc_ipiddump.c,v 1.17 2022/03/20 04:38:23 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -121,7 +121,7 @@ static int check_options(int argc, char *argv[])
 {
   scamper_addr_t *addr_a[256], *addr;
   uint32_t u32_a[256];
-  int ch; long lo;
+  int ch, rc = -1; long lo;
   char *opts = "?i:O:U:";
   char *opt_userid = NULL, *opt_ips = NULL;
   char *str, *next;
@@ -141,7 +141,7 @@ static int check_options(int argc, char *argv[])
 	  else
 	    {
 	      usage(OPT_OPTIONS);
-	      goto err;
+	      goto done;
 	    }
 	  break;
 
@@ -152,7 +152,7 @@ static int check_options(int argc, char *argv[])
 	case '?':
 	default:
 	  usage(0xffffffff);
-	  goto err;
+	  goto done;
 	}
     }
 
@@ -164,20 +164,20 @@ static int check_options(int argc, char *argv[])
 	  if(x >= sizeof(u32_a) / sizeof(uint32_t))
 	    {
 	      usage(OPT_USERID);
-	      goto err;
+	      goto done;
 	    }
 	  string_nullterm_char(str, ',', &next);
 	  if(string_tolong(str, &lo) != 0 || lo < 0 || lo > 65535)
 	    {
 	      usage(OPT_USERID);
-	      goto err;
+	      goto done;
 	    }
 	  u32_a[x++] = lo;
 	  str = next;
 	}
       while(str != NULL);
       if((userids = malloc(sizeof(uint32_t) * x)) == NULL)
-	goto err;
+	goto done;
       for(i=0; i<x; i++)
 	userids[i] = u32_a[i];
       useridc = x;
@@ -193,20 +193,20 @@ static int check_options(int argc, char *argv[])
 	  if(x >= sizeof(addr_a) / sizeof(scamper_addr_t *))
 	    {
 	      usage(OPT_IP);
-	      goto err;
+	      goto done;
 	    }
 	  string_nullterm_char(str, ',', &next);
 	  if((addr = scamper_addr_resolve(AF_UNSPEC, str)) == NULL)
 	    {
 	      usage(OPT_IP);
-	      goto err;
+	      goto done;
 	    }
 	  addr_a[x++] = addr;
 	  str = next;
 	}
       while(str != NULL);
       if((ips = malloc(sizeof(scamper_addr_t *) * x)) == NULL)
-	goto err;
+	goto done;
       for(i=0; i<x; i++)
 	ips[i] = addr_a[i];
       ipc = x;
@@ -220,15 +220,15 @@ static int check_options(int argc, char *argv[])
   if(filelist_len == 0)
     {
       usage(0xffffffff);
-      goto err;
+      goto done;
     }
 
-  return 0;
+  rc = 0;
 
- err:
+ done:
   if(opt_userid != NULL) free(opt_userid);
   if(opt_ips != NULL) free(opt_ips);
-  return -1;
+  return rc;
 }
 
 static int ipid_sample_cmp(const ipid_sample_t *a, const ipid_sample_t *b)

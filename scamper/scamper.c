@@ -1,7 +1,7 @@
 /*
  * scamper
  *
- * $Id: scamper.c,v 1.280.10.2 2022/06/12 05:37:33 mjl Exp $
+ * $Id: scamper.c,v 1.284 2022/08/25 19:32:47 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -891,6 +891,7 @@ static int check_options(int argc, char *argv[])
 	}
     }
 
+#ifdef HAVE_OPENSSL
   if(options & OPT_CTRL_REMOTE)
     {
       /* need both client private key and certificate if either is specified */
@@ -911,6 +912,7 @@ static int check_options(int argc, char *argv[])
 	  return -1;
 	}
     }
+#endif
 
   return 0;
 }
@@ -1278,7 +1280,7 @@ static int scamper(int argc, char *argv[])
     return -1;
 
   /*
-   * this has to be done before priviledge separation, as if scamper is
+   * this has to be done before privilege separation, as if scamper is
    * running on a BPF system it has to open a BPF fd to establish
    * version compatibility
    */
@@ -1341,7 +1343,7 @@ static int scamper(int argc, char *argv[])
 #endif
 
 #ifndef WITHOUT_PRIVSEP
-  /* revoke the root priviledges we started with */
+  /* revoke the root privileges we started with */
   if(scamper_privsep_init() == -1)
     {
       return -1;

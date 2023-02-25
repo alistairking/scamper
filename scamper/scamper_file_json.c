@@ -1,9 +1,9 @@
 /*
  * scamper_file_json.c
  *
- * $Id: scamper_file_json.c,v 1.3 2020/03/17 07:32:16 mjl Exp $
+ * $Id: scamper_file_json.c,v 1.5 2022/02/13 08:48:15 mjl Exp $
  *
- * Copyright (C) 2017 Matthew Luckie
+ * Copyright (C) 2017-2022 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -44,7 +44,7 @@ int scamper_file_json_cyclestart_write(const scamper_file_t *sf,
     string_concat(buf,sizeof(buf),&off, ", \"hostname\":\"%s\"", c->hostname);
   string_concat(buf,sizeof(buf),&off, ", \"start_time\":%u}\n",c->start_time);
 
-  return json_write(sf, buf, off);
+  return json_write(sf, buf, off, NULL);
 }
 
 int scamper_file_json_cyclestop_write(const scamper_file_t *sf,
@@ -60,39 +60,40 @@ int scamper_file_json_cyclestop_write(const scamper_file_t *sf,
     string_concat(buf,sizeof(buf),&off, ", \"hostname\":\"%s\"", c->hostname);
   string_concat(buf,sizeof(buf),&off, ", \"stop_time\":%u}\n", c->stop_time);
 
-  return json_write(sf, buf, off);
+  return json_write(sf, buf, off, NULL);
 }
 
-int json_write(const scamper_file_t *sf, const void *buf, size_t len)
+/*
+ * json_write
+ *
+ * this function will write a record to disk in json format.  if the
+ * write fails for whatever reason (e.g., the disk was full and only a
+ * partial record could be written), then the write will be retracted
+ * in its entirety.
+ */
+int json_write(const scamper_file_t *sf, const void *buf, size_t len, void *p)
 {
-  scamper_file_writefunc_t wf = scamper_file_getwritefunc(sf);
-  json_state_t *state = scamper_file_getstate(sf);
+  scamper_file_writefunc_t wf;
+  json_state_t *state;
   off_t off = 0;
-  void *param;
   int fd;
 
-  if(wf != NULL)
-    {
-      param = scamper_file_getwriteparam(sf);
-      return wf(param, buf, len);
-    }
+  if((wf = scamper_file_getwritefunc(sf)) != NULL)
+    return wf(scamper_file_getwriteparam(sf), buf, len, p);
 
+  state = scamper_file_getstate(sf);
   fd = scamper_file_getfd(sf);
-  if(state->isreg && (off = lseek(fd, 0, SEEK_CUR)) == (off_t)-1)
+  if(state->isreg != 0 && (off = lseek(fd, 0, SEEK_CUR)) == (off_t)-1)
     return -1;
 
   if(write_wrap(fd, buf, NULL, len) != 0)
     {
-      /*
-       * if we could not write the buf out, then truncate the file at
-       * the hdr we just wrote out above.
-       */
+      /* if we could not write the buf out, then truncate the file */
       if(state->isreg != 0)
 	{
 	  if(ftruncate(fd, off) != 0)
 	    return -1;
 	}
-
       return -1;
     }
 

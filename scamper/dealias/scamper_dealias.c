@@ -1,11 +1,11 @@
 /*
  * scamper_dealias.c
  *
- * $Id: scamper_dealias.c,v 1.53 2021/08/28 21:36:31 mjl Exp $
+ * $Id: scamper_dealias.c,v 1.55 2023/01/01 08:24:19 mjl Exp $
  *
  * Copyright (C) 2008-2010 The University of Waikato
  * Copyright (C) 2012-2013 The Regents of the University of California
- * Copyright (C) 2021      Matthew Luckie
+ * Copyright (C) 2021-2023 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This code implements alias resolution techniques published by others
@@ -494,11 +494,12 @@ static int dealias_ipid32_inseq3(uint64_t a,uint64_t b,uint64_t c,uint64_t f)
   return 1;
 }
 
-static int dealias_ipid16_bo(scamper_dealias_probe_t **probes, int probec)
+static int dealias_ipid16_bo(scamper_dealias_probe_t **probes, size_t probec)
 {
   scamper_dealias_probe_t **s = NULL;
   uint16_t a, b, c = 1, max_bs = 0, max_nobs = 0, u16;
-  int i, rc = 2;
+  size_t i;
+  int rc = 2;
 
   if((s = memdup(probes, sizeof(scamper_dealias_probe_t *) * probec)) == NULL)
     return -1;
@@ -538,10 +539,10 @@ static int dealias_ipid16_bo(scamper_dealias_probe_t **probes, int probec)
 }
 
 static int dealias_ipid16_inseq(scamper_dealias_probe_t **probes,
-				int probec, uint16_t fudge, int bs)
+				size_t probec, uint16_t fudge, int bs)
 {
   uint16_t a, b, c;
-  int i;
+  size_t i;
 
   /*
    * do a preliminary check to see if the ipids could be in sequence with
@@ -583,11 +584,12 @@ static int dealias_ipid16_inseq(scamper_dealias_probe_t **probes,
   return 1;
 }
 
-static int dealias_ipid32_bo(scamper_dealias_probe_t **probes, int probec)
+static int dealias_ipid32_bo(scamper_dealias_probe_t **probes, size_t probec)
 {
   scamper_dealias_probe_t **s = NULL;
   uint32_t a, b, c = 1, max_bs = 0, max_nobs = 0, u32;
-  int i, rc = 2;
+  size_t i;
+  int rc = 2;
 
   if((s = memdup(probes, sizeof(scamper_dealias_probe_t *) * probec)) == NULL)
     return -1;
@@ -627,10 +629,10 @@ static int dealias_ipid32_bo(scamper_dealias_probe_t **probes, int probec)
 }
 
 static int dealias_ipid32_inseq(scamper_dealias_probe_t **probes,
-				int probec, uint16_t fudge, int bs)
+				size_t probec, uint16_t fudge, int bs)
 {
   uint32_t a, b, c;
-  int i;
+  size_t i;
 
   /*
    * do a preliminary check to see if the ipids could be in sequence with
@@ -675,11 +677,12 @@ static int dealias_ipid32_inseq(scamper_dealias_probe_t **probes,
 int scamper_dealias_ipid_inseq(scamper_dealias_probe_t **probes,
 			       int probec, uint16_t fudge, int bs)
 {
-  static int (*const inseq[])(scamper_dealias_probe_t **,int,uint16_t,int) = {
+  static int (*const inseq[])(scamper_dealias_probe_t **, size_t, uint16_t,
+			      int) = {
     dealias_ipid16_inseq,
     dealias_ipid32_inseq,
   };
-  static int (*const bo[])(scamper_dealias_probe_t **, int) = {
+  static int (*const bo[])(scamper_dealias_probe_t **, size_t) = {
     dealias_ipid16_bo,
     dealias_ipid32_bo,
   };
@@ -697,19 +700,19 @@ int scamper_dealias_ipid_inseq(scamper_dealias_probe_t **probes,
 
   if(bs == 3 && fudge == 0)
     {
-      if((i = bo[x](probes, probec)) == -1)
+      if((i = bo[x](probes, (size_t)probec)) == -1)
 	return -1;
-      return inseq[x](probes, probec, fudge, i);
+      return inseq[x](probes, (size_t)probec, fudge, i);
     }
 
   if(bs == 2 || bs == 3)
     {
-      if(inseq[x](probes, probec, fudge, 0) == 1)
+      if(inseq[x](probes, (size_t)probec, fudge, 0) == 1)
 	return 1;
-      return inseq[x](probes, probec, fudge, 1);
+      return inseq[x](probes, (size_t)probec, fudge, 1);
     }
 
-  return inseq[x](probes, probec, fudge, bs);
+  return inseq[x](probes, (size_t)probec, fudge, bs);
 }
 
 int scamper_dealias_probes_alloc(scamper_dealias_t *dealias, uint32_t cnt)
@@ -770,7 +773,7 @@ int scamper_dealias_prefixscan_xs_add(scamper_dealias_t *dealias,
 				      scamper_addr_t *addr)
 {
   scamper_dealias_prefixscan_t *prefixscan = dealias->data;
-  int tmp;
+  size_t tmp;
 
   if(array_find((void **)prefixscan->xs, prefixscan->xc, addr,
 		(array_cmp_t)scamper_addr_cmp) != NULL)
@@ -850,6 +853,7 @@ int scamper_dealias_radargun_fudge(scamper_dealias_t *dealias,
   dealias_resolv_t *dr = NULL;
   dealias_resolv_t *drd;
   uint32_t pid, x;
+  size_t tmp;
   int i, j, k, bs, inseq, d = 0;
 
   if(dealias->method != SCAMPER_DEALIAS_METHOD_RADARGUN)
@@ -913,8 +917,10 @@ int scamper_dealias_radargun_fudge(scamper_dealias_t *dealias,
 	    }
 	}
 
-      if(array_insert((void ***)&dr[pid].probes,&dr[pid].probec,pr,NULL) != 0)
+      tmp = dr[pid].probec;
+      if(array_insert((void ***)&dr[pid].probes, &tmp, pr, NULL) != 0)
 	goto err;
+      dr[pid].probec = tmp;
     }
 
   /* figure out if we should byteswap the ipid sequence */

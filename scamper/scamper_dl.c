@@ -1,7 +1,7 @@
 /*
  * scamper_dl: manage BPF/PF_PACKET datalink instances for scamper
  *
- * $Id: scamper_dl.c,v 1.187 2020/03/17 07:32:16 mjl Exp $
+ * $Id: scamper_dl.c,v 1.189 2023/01/03 03:10:39 mjl Exp $
  *
  *          Matthew Luckie
  *          Ben Stasiewicz added fragmentation support.
@@ -17,6 +17,7 @@
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2012      Matthew Luckie
  * Copyright (C) 2014-2015 The Regents of the University of California
+ * Copyright (C) 2022-2023 Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -603,7 +604,7 @@ static int dlt_null_cb(scamper_dl_rec_t *dl, uint8_t *pkt, size_t len)
 static int dlt_en10mb_cb(scamper_dl_rec_t *dl, uint8_t *pkt, size_t len)
 {
   uint16_t u16;
-  size_t off;
+  size_t off, s;
 
   /* ensure the packet holds at least the length of the ethernet header */
   if(len <= 14)
@@ -629,7 +630,8 @@ static int dlt_en10mb_cb(scamper_dl_rec_t *dl, uint8_t *pkt, size_t len)
       dl->dl_arp_op  = bytes_ntohs(pkt+off); off += 2;
 
       /* make sure all the bits are found after the arp header */
-      if(14 + 8 + (dl->dl_arp_hln*2) + (dl->dl_arp_pln*2) > len)
+      s = (dl->dl_arp_hln*2) + (dl->dl_arp_pln*2) + 14 + 8;
+      if(s > len)
 	return 0;
 
       dl->dl_arp_sha = pkt+off; off += dl->dl_arp_hln;
@@ -977,9 +979,9 @@ static int dl_bpf_tx(const scamper_dl_t *node,
   if((wb = write(scamper_fd_fd_get(node->fdn), pkt, len)) < (ssize_t)len)
     {
       if(wb == -1)
-	printerror(__func__, "%d bytes failed", len);
+	printerror(__func__, "%d bytes failed", (int)len);
       else
-	scamper_debug(__func__, "%d bytes sent of %d total", wb, len);
+	scamper_debug(__func__, "%d bytes sent of %d total", (int)wb,(int)len);
       return -1;
     }
 
@@ -1114,6 +1116,7 @@ static int dl_linux_read(const int fd, scamper_dl_t *node)
   ssize_t            len;
   struct sockaddr_ll from;
   socklen_t          fromlen;
+  size_t             s;
 
   fromlen = sizeof(from);
   while((len = recvfrom(fd, readbuf, readbuf_len, MSG_TRUNC,
@@ -1128,12 +1131,17 @@ static int dl_linux_read(const int fd, scamper_dl_t *node)
 	{
 	  return 0;
 	}
-      printerror(__func__, "read %d bytes from fd %d failed", readbuf_len, fd);
+      printerror(__func__,
+		 "read %d bytes from fd %d failed", (int)readbuf_len, fd);
       return -1;
     }
 
   /* sanity check the packet length */
-  if(len > readbuf_len) len = readbuf_len;
+  assert(len >= 0);
+  if((size_t)len > readbuf_len)
+    s = readbuf_len;
+  else
+    s = (size_t)len;
 
   /* reset the datalink record */
   memset(&dl, 0, sizeof(dl));
@@ -1145,7 +1153,7 @@ static int dl_linux_read(const int fd, scamper_dl_t *node)
     }
 
   /* if the packet passes the filter, we need to get the time it was rx'd */
-  if(node->dlt_cb(&dl, readbuf, len))
+  if(node->dlt_cb(&dl, readbuf, s))
     {
       /* scamper treats the failure of this ioctl as non-fatal */
       if(ioctl(fd, SIOCGSTAMP, &dl.dl_tv) == 0)
@@ -1190,9 +1198,9 @@ static int dl_linux_tx(const scamper_dl_t *node,
   if((wb = sendto(fd, pkt, len, 0, sa, sizeof(sll))) < (ssize_t)len)
     {
       if(wb == -1)
-	printerror(__func__, "%d bytes failed", len);
+	printerror(__func__, "%d bytes failed", (int)len);
       else
-	scamper_debug(__func__, "%d bytes sent of %d total", wb, len);
+	scamper_debug(__func__, "%d bytes sent of %d total", (int)wb, (int)len);
       return -1;
     }
 

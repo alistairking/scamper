@@ -3,12 +3,12 @@
  *
  * the warts file format
  *
- * $Id: scamper_file_warts.h,v 1.26 2020/06/12 22:35:03 mjl Exp $
+ * $Id: scamper_file_warts.h,v 1.29 2022/07/02 21:21:56 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2012      The Regents of the University of California
- * Copyright (C) 2016      Matthew Luckie
+ * Copyright (C) 2016-2022 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -249,7 +249,7 @@ void warts_params_write(uint8_t *buf, uint32_t *off,
 
 
 int warts_read(scamper_file_t *sf, uint8_t **buf, size_t len);
-int warts_write(const scamper_file_t *sf, const void *buf, size_t len);
+int warts_write(const scamper_file_t *sf, const void *buf, size_t len, void *p);
 
 
 
@@ -301,7 +301,8 @@ int warts_icmpext_read(const uint8_t *buf, uint32_t *off, uint32_t len,
 void warts_icmpext_write(uint8_t *buf,uint32_t *off,const uint32_t len,
 				const scamper_icmpext_t *exts);
 
-int scamper_file_warts_read(scamper_file_t *sf, scamper_file_filter_t *filter,
+int scamper_file_warts_read(scamper_file_t *sf,
+			    const scamper_file_filter_t *filter,
 			    uint16_t *type, void **data);
 
 int scamper_file_warts_cyclestart_write(const scamper_file_t *sf,
@@ -309,7 +310,6 @@ int scamper_file_warts_cyclestart_write(const scamper_file_t *sf,
 int scamper_file_warts_cyclestop_write(const scamper_file_t *sf,
 				       scamper_cycle_t *c);
 
-int scamper_file_warts_is(const scamper_file_t *file);
 int scamper_file_warts_init_append(scamper_file_t *file);
 int scamper_file_warts_init_read(scamper_file_t *file);
 int scamper_file_warts_init_write(scamper_file_t *file);

@@ -1,9 +1,9 @@
 /*
  * scamper_neighbourdisc_warts.h
  *
- * $Id: scamper_neighbourdisc_warts.h,v 1.1 2010/10/05 02:45:44 mjl Exp $
+ * $Id: scamper_neighbourdisc_warts.h,v 1.2 2022/02/13 08:48:15 mjl Exp $
  *
- * Copyright (C) 2009-2010 Matthew Luckie
+ * Copyright (C) 2009-2022 Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -28,6 +28,7 @@ int scamper_file_warts_neighbourdisc_read(scamper_file_t *sf,
 					  scamper_neighbourdisc_t **nd_out);
 
 int scamper_file_warts_neighbourdisc_write(const scamper_file_t *sf,
-					   const scamper_neighbourdisc_t *nd);
+					   const scamper_neighbourdisc_t *nd,
+					   void *p);
 
 #endif /* __SCAMPER_NEIGHBOURDISC_WARTS_H */

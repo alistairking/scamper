@@ -4,10 +4,10 @@
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2014      The Regents of the University of California
- * Copyright (C) 2020      Matthew Luckie
+ * Copyright (C) 2020-2022 Matthew Luckie
  * Author: Matthew Luckie
  *
- * $Id: scamper_trace_text.c,v 1.27 2020/04/17 21:29:06 mjl Exp $
+ * $Id: scamper_trace_text.c,v 1.28 2022/02/13 08:48:16 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -631,7 +631,7 @@ static int pmtud_ver2(const scamper_trace_t *trace, char **mtus)
  * return 0 on successful write, -1 otherwise.
  */
 int scamper_file_text_trace_write(const scamper_file_t *sf,
-				  const scamper_trace_t *trace)
+				  const scamper_trace_t *trace, void *p)
 {
   static int (*const pmtud_tostr[])(const scamper_trace_t *, char **) = {
     NULL,

@@ -1,7 +1,7 @@
 /*
  * scamper_queue.c
  *
- * $Id: scamper_queue.c,v 1.44 2020/03/17 07:32:16 mjl Exp $
+ * $Id: scamper_queue.c,v 1.45 2022/03/20 04:43:04 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -436,12 +436,10 @@ int scamper_queue_windowcount()
  */
 void scamper_queue_empty()
 {
-  scamper_queue_t *sq;
-
-  while((sq = (scamper_queue_t *)heap_remove(wait_queue)) != NULL)
+  while(heap_remove(wait_queue) != NULL)
     count--;
 
-  while((sq = (scamper_queue_t *)dlist_head_pop(probe_queue)) != NULL)
+  while(dlist_head_pop(probe_queue) != NULL)
     count--;
 
   return;

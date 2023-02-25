@@ -1,9 +1,9 @@
 /*
  * scamper_do_neighbourdisc
  *
- * $Id: scamper_neighbourdisc_do.c,v 1.40 2020/03/17 07:32:16 mjl Exp $
+ * $Id: scamper_neighbourdisc_do.c,v 1.41 2022/02/13 08:48:15 mjl Exp $
  *
- * Copyright (C) 2009-2011 Matthew Luckie
+ * Copyright (C) 2009-2022 Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -496,7 +496,7 @@ static void do_nd_probe(scamper_task_t *task)
 
 static void do_nd_write(scamper_file_t *sf, scamper_task_t *task)
 {
-  scamper_file_write_neighbourdisc(sf, nd_getdata(task));
+  scamper_file_write_neighbourdisc(sf, nd_getdata(task), task);
   return;
 }
 

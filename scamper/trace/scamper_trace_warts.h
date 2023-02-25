@@ -1,10 +1,11 @@
 /*
  * scamper_trace_warts.h
  *
- * $Id: scamper_trace_warts.h,v 1.3 2011/09/16 03:15:44 mjl Exp $
+ * $Id: scamper_trace_warts.h,v 1.4 2022/02/13 08:48:16 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2010 The University of Waikato
+ * Copyright (C) 2022      Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -29,6 +30,6 @@ int scamper_file_warts_trace_read(scamper_file_t *sf, const warts_hdr_t *hdr,
 				  struct scamper_trace **trace_out);
 
 int scamper_file_warts_trace_write(const scamper_file_t *sf,
-				   const struct scamper_trace *trace);
+				   const struct scamper_trace *trace, void *p);
 
 #endif
