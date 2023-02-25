@@ -1,12 +1,12 @@
 /*
  * scamper_ping.h
  *
- * $Id: scamper_ping.h,v 1.52.10.1 2022/06/12 05:20:50 mjl Exp $
+ * $Id: scamper_ping.h,v 1.57 2023/02/23 18:58:23 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2012-2015 The Regents of the University of California
- * Copyright (C) 2020-2022 Matthew Luckie
+ * Copyright (C) 2020-2023 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -78,7 +78,11 @@
   (ping)->probe_method == SCAMPER_PING_METHOD_TCP_ACK_SPORT || \
   (ping)->probe_method == SCAMPER_PING_METHOD_TCP_SYN || \
   (ping)->probe_method == SCAMPER_PING_METHOD_TCP_SYNACK || \
-  (ping)->probe_method == SCAMPER_PING_METHOD_TCP_RST))
+  (ping)->probe_method == SCAMPER_PING_METHOD_TCP_RST || \
+  (ping)->probe_method == SCAMPER_PING_METHOD_TCP_SYN_SPORT))
+
+#define SCAMPER_PING_METHOD_IS_TCP_ACK_SPORT(ping) (		\
+ ((ping)->probe_method == SCAMPER_PING_METHOD_TCP_ACK_SPORT))
 
 #define SCAMPER_PING_METHOD_IS_UDP(ping) (                \
  ((ping)->probe_method == SCAMPER_PING_METHOD_UDP ||      \
@@ -89,6 +93,13 @@
 
 #define SCAMPER_PING_METHOD_IS_ICMP_ECHO(ping) (\
  ((ping)->probe_method == SCAMPER_PING_METHOD_ICMP_ECHO))
+
+#define SCAMPER_PING_METHOD_VARY_SPORT(ping) (			\
+ ((ping)->probe_method == SCAMPER_PING_METHOD_TCP_ACK_SPORT ||	\
+  (ping)->probe_method == SCAMPER_PING_METHOD_TCP_SYN_SPORT))
+
+#define SCAMPER_PING_METHOD_VARY_DPORT(ping) (			\
+ ((ping)->probe_method == SCAMPER_PING_METHOD_UDP_DPORT))
 
 #define SCAMPER_PING_REPLY_FROM_TARGET(ping, reply) ( \
  (SCAMPER_PING_METHOD_IS_ICMP_ECHO(ping) &&           \
@@ -118,6 +129,7 @@
 #define SCAMPER_PING_METHOD_TCP_SYN       0x06
 #define SCAMPER_PING_METHOD_TCP_SYNACK    0x07
 #define SCAMPER_PING_METHOD_TCP_RST       0x08
+#define SCAMPER_PING_METHOD_TCP_SYN_SPORT 0x09
 
 #define SCAMPER_PING_FLAG_V4RR            0x01 /* -R: IPv4 record route */
 #define SCAMPER_PING_FLAG_SPOOF           0x02 /* -O spoof: spoof src */
@@ -311,7 +323,8 @@ typedef struct scamper_ping_stats
 {
   uint32_t nreplies;
   uint32_t ndups;
-  uint16_t nloss;
+  uint32_t nloss;
+  uint32_t nerrs;
   struct timeval min_rtt;
   struct timeval max_rtt;
   struct timeval avg_rtt;

@@ -1,11 +1,12 @@
 /*
  * scamper_tcp4.c
  *
- * $Id: scamper_tcp4.c,v 1.59 2020/03/17 07:32:16 mjl Exp $
+ * $Id: scamper_tcp4.c,v 1.60 2022/12/09 09:37:42 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2012,2015 The Regents of the University of California
+ * Copyright (C) 2022      Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -327,7 +328,7 @@ int scamper_tcp4_probe(scamper_probe_t *pr)
       pr->pr_errno = errno;
       printerror(__func__, "could not send to %s (%d ttl, %d dport, %d len)",
 		 scamper_addr_tostr(pr->pr_ip_dst, addr, sizeof(addr)),
-		 pr->pr_ip_ttl, pr->pr_tcp_dport, len);
+		 pr->pr_ip_ttl, pr->pr_tcp_dport, (int)len);
       return -1;
     }
   else if((size_t)i != len)

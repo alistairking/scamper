@@ -3,10 +3,10 @@
  *
  * Copyright (C) 2010-2011 The University of Waikato
  * Copyright (C) 2012-2014 The Regents of the University of California
- * Copyright (C) 2016-2021 Matthew Luckie
+ * Copyright (C) 2016-2022 Matthew Luckie
  * Author: Matthew Luckie
  *
- * $Id: scamper_sting_warts.c,v 1.12 2021/08/27 10:06:55 mjl Exp $
+ * $Id: scamper_sting_warts.c,v 1.13 2022/02/13 08:48:15 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -412,7 +412,7 @@ int scamper_file_warts_sting_read(scamper_file_t *sf, const warts_hdr_t *hdr,
 
 /* Write data from a scamper sting object to a warts file */
 int scamper_file_warts_sting_write(const scamper_file_t *sf,
-				   const scamper_sting_t *sting)
+				   const scamper_sting_t *sting, void *p)
 {
   warts_addrtable_t *table = NULL;
   warts_sting_pkt_t *pkts = NULL;
@@ -462,7 +462,7 @@ int scamper_file_warts_sting_write(const scamper_file_t *sf,
   assert(off == len);
 
   /* Write the whole buffer to a warts file */
-  if(warts_write(sf, buf, len) == -1)
+  if(warts_write(sf, buf, len, p) == -1)
     goto err;
 
   warts_addrtable_free(table);

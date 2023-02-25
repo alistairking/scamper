@@ -1,0 +1,176 @@
+.\"
+.\" libscamperctrl.3
+.\"
+.\" Author: Matthew Luckie
+.\" Copyright (c) 2022-2023 Matthew Luckie
+.\"
+.\" $Id: libscamperctrl.3,v 1.5.2.1 2023/02/24 00:14:19 mjl Exp $
+.\"
+.Dd Feb 24, 2023
+.Dt LIBSCAMPERCTRL 3
+.Os
+.Sh NAME
+.Nm libscamperctrl
+.Nd scamper control library
+.Sh LIBRARY
+scamper control library (libscamperctrl -lscamperctrl)
+.Sh SYNOPSIS
+.In libscamperctrl.h
+.Sh DESCRIPTION
+The
+.Nm
+library provides an application programming interface (API) to execute
+measurements using the control mechanisms available for a set of
+external
+.Xr scamper 1
+processes.
+.Sh ROUTINES
+.Ft scamper_ctrl_t *
+.Fn scamper_ctrl_alloc "scamper_ctrl_cb_t cb"
+.br
+Allocate a control structure for managing a set of
+.Xr scamper 1
+instances.
+The caller must pass a callback function, which must be defined as follows:
+.Pp
+.Ft void
+.Fn cb "scamper_inst_t *inst" "uint8_t type" "scamper_task_t *task" "const void *data" "size_t len"
+.Pp
+.Fn scamper_ctrl_wait
+calls this function every time there is an event.
+It passes a pointer to the scamper instance that the event is in
+relation to in the first parameter.
+The second parameter identifies the type of the event, which could
+be one of the following.
+.Pp
+.Bl -dash -offset 2n -compact -width 1n
+.It
+.Sy SCAMPER_CTRL_TYPE_DATA:
+a measurement task has completed.
+The task pointer points to the task returned by
+.Fn scamper_inst_do .
+The data pointer points to the data, and the length parameter
+reports the number of bytes of data.
+The programmer does not have to call
+.Fn scamper_task_free
+unless they kept a copy of the task pointer by calling
+.Fn scamper_task_use .
+.It
+.Sy SCAMPER_CTRL_TYPE_MORE:
+the scamper instance is requesting another command to execute.
+.It
+.Sy SCAMPER_CTRL_TYPE_ERR:
+the command was not accepted.
+.It
+.Sy SCAMPER_CTRL_TYPE_EOF:
+the scamper instance disconnected.
+.It
+.Sy SCAMPER_CTRL_TYPE_FATAL:
+the library encountered a fatal error.
+.El
+.Pp
+.Ft int
+.Fn scamper_ctrl_wait "scamper_ctrl_t *ctrl" "struct timeval *to"
+.br
+Wait for events from the collection of
+.Xr scamper 1
+instances.
+If the timeout parameter is null, then the wait function will
+block indefinitely until an event occurs.
+Otherwise, this function will return after the length of time
+specified in the timeout parameter has elapsed, or after it has
+called the callback function for an event.
+.Pp
+.Ft void
+.Fn scamper_ctrl_free "scamper_ctrl_t *ctrl"
+.br
+Cleanup the resources associated with managing the set of
+.Xr scamper 1
+instances.
+.Pp
+.Ft int
+.Fn scamper_ctrl_isdone "scamper_ctrl_t *ctrl"
+.br
+Returns 0 if there is at least one active scamper instance.
+Returns non-zero if there are no active scamper instances.
+.Pp
+.Ft scamper_inst_t *
+.Fn scamper_inst_unix "scamper_ctrl_t *ctrl" "const char *path"
+.br
+Attach to a local scamper instance via the unix domain socket at the
+supplied path.
+.Pp
+.Ft scamper_inst_t *
+.Fn scamper_inst_inet "scamper_ctrl_t *ctrl" "const char *addr" "uint16_t port"
+.br
+Attach to a local scamper instance via the supplied IP address and port.
+.Pp
+.Ft scamper_inst_t *
+.Fn scamper_inst_remote "scamper_ctrl_t *ctrl" "const char *path"
+.br
+Attach to a remote scamper instance via the unix domain socket at the
+supplied path.
+The remote scamper instance is connected to the local machine using a
+.Xr sc_remoted 3
+process.
+.Pp
+.Ft void
+.Fn scamper_inst_free "scamper_inst_t *inst"
+.br
+Disconnect and then free the resources associated with the instance.
+.Pp
+.Ft scamper_task_t *
+.Fn scamper_inst_do "scamper_inst_t *inst" "const char *cmd"
+.br
+Issue a command on the supplied instance.
+The returned task pointer uniquely identifes the task.
+If a programmer wishes to keep a copy of the task pointer in the
+process, they must call
+.Fn scamper_task_use
+to keep a reference, and then call
+.Fn scamper_task_free
+once done with it.
+.Pp
+.Ft int
+.Fn scamper_inst_halt "scamper_inst_t *inst" "scamper_task_t *task"
+.br
+Issue a halt command for the task.
+If the command has not been issued to scamper yet, then no DATA object
+will be returned; otherwise, a DATA object will be returned.
+.Pp
+.Ft int
+.Fn scamper_inst_done "scamper_inst_t *inst"
+.br
+Send a done command, which will cause the
+.Xr scamper 1
+instance to disconnect when it has returned all completed
+measurements.
+.Pp
+.Ft void
+.Fn scamper_task_free "scamper_task_t *task"
+.br
+Free task resources, if the programmer previously called
+.Fn scamper_task_use
+to advice
+.Xr libscamperctrl 3
+that the programmer would also be keeping a copy of a task pointer.
+.Pp
+.Ft void
+.Fn scamper_task_use "scamper_task_t *task"
+.br
+Advise
+.Xr libscamperctrl 3
+that the programmer is keeping a copy of the task in their program.
+.Pp
+.Sh SEE ALSO
+.Xr scamper 1 ,
+.Xr sc_remoted 1 ,
+.Xr libscamperfile 3 ,
+.Rs
+.%A "M. Luckie"
+.%T "Scamper: a Scalable and Extensible Packet Prober for Active Measurement of the Internet"
+.%O "Proc. ACM/SIGCOMM Internet Measurement Conference 2010"
+.Re
+.Sh AUTHORS
+.Nm
+was written by Matthew Luckie <mjl@luckie.org.nz>.

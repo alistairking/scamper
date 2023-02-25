@@ -6,7 +6,7 @@
  *
  * Copyright (C) 2008-2011 The University of Waikato
  * Copyright (C) 2012-2015 Regents of the University of California
- * Copyright (C) 2015-2020 Matthew Luckie
+ * Copyright (C) 2015-2022 Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -20,6 +20,8 @@
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ *
+ * $Id: sc_attach.c,v 1.29 2022/06/14 07:32:40 mjl Exp $
  *
  */
 
@@ -254,7 +256,7 @@ static int check_options(int argc, char *argv[])
 	  break;
 
 	case 'v':
-	  printf("$Id: sc_attach.c,v 1.28 2021/08/22 08:11:53 mjl Exp $\n");
+	  printf("$Id: sc_attach.c,v 1.29 2022/06/14 07:32:40 mjl Exp $\n");
 	  return -1;
 
 	case '?':
@@ -433,6 +435,7 @@ static int do_scamperread_line(void *param, uint8_t *buf, size_t linelen)
   char *head = (char *)buf;
   uint8_t uu[64];
   size_t uus;
+  char *eptr;
   long l;
 
   /* skip empty lines */
@@ -478,7 +481,7 @@ static int do_scamperread_line(void *param, uint8_t *buf, size_t linelen)
   /* new piece of data */
   if(linelen > 5 && strncasecmp(head, "DATA ", 5) == 0)
     {
-      if(string_isnumber(head+5) == 0 || string_tolong(head+5, &l) != 0)
+      if((l=strtol(head+5, &eptr, 10)) < 1 || (*eptr != '\0' && *eptr != ' '))
 	{
 	  fprintf(stderr, "could not parse %s\n", head);
 	  error = 1;

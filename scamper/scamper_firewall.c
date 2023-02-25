@@ -1,10 +1,10 @@
 /*
  * scamper_firewall.c
  *
- * $Id: scamper_firewall.c,v 1.54 2020/03/17 07:32:16 mjl Exp $
+ * $Id: scamper_firewall.c,v 1.55 2022/12/09 09:37:42 mjl Exp $
  *
  * Copyright (C) 2008-2011 The University of Waikato
- * Copyright (C) 2016      Matthew Luckie
+ * Copyright (C) 2016-2022 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -174,13 +174,13 @@ static int firewall_freeslots_alloc(long start, long end)
     {
       if((entry = malloc_zero(sizeof(scamper_firewall_entry_t))) == NULL)
 	{
-	  printerror(__func__, "could not alloc entry %d", i);
+	  printerror(__func__, "could not alloc entry %ld", i);
 	  return -1;
 	}
       entry->slot = i;
       if(heap_insert(freeslots, entry) == NULL)
 	{
-	  printerror(__func__, "could not add entry %d", i);
+	  printerror(__func__, "could not add entry %ld", i);
 	  return -1;
 	}
     }

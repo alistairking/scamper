@@ -1,11 +1,11 @@
 /*
  * scamper_tracelb_json.c
  *
- * Copyright (C) 2018-2020 Matthew Luckie
+ * Copyright (C) 2018-2022 Matthew Luckie
  *
  * Authors: Matthew Luckie
  *
- * $Id: scamper_tracelb_json.c,v 1.13 2020/04/02 06:45:02 mjl Exp $
+ * $Id: scamper_tracelb_json.c,v 1.15 2022/12/09 09:37:42 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -65,8 +65,8 @@ static char *header_tostr(const scamper_tracelb_t *trace)
 		  trace->sport, trace->dport);
   strftime(tmp, sizeof(tmp), "%Y-%m-%d %H:%M:%S", localtime(&tt));
   string_concat(buf, sizeof(buf), &off,
-		", \"start\":{\"sec\":%u, \"usec\":%u, \"ftime\":\"%s\"}",
-		trace->start.tv_sec, trace->start.tv_usec, tmp);
+		", \"start\":{\"sec\":%ld, \"usec\":%d, \"ftime\":\"%s\"}",
+		(long)trace->start.tv_sec, (int)trace->start.tv_usec, tmp);
   string_concat(buf, sizeof(buf), &off,
 		", \"probe_size\":%u, \"firsthop\":%u, \"attempts\":%u",
 		trace->probe_size, trace->firsthop, trace->attempts);
@@ -95,8 +95,8 @@ static char *reply_tostr(const scamper_tracelb_probe_t *probe,
 
   timeval_diff_tv(&rtt, &probe->tx, &reply->reply_rx);
   string_concat(buf, sizeof(buf), &off,
-		"{\"rx\":{\"sec\":%u, \"usec\":%u}, \"ttl\":%u, \"rtt\":%s",
-		reply->reply_rx.tv_sec, reply->reply_rx.tv_usec,
+		"{\"rx\":{\"sec\":%ld, \"usec\":%d}, \"ttl\":%u, \"rtt\":%s",
+		(long)reply->reply_rx.tv_sec, (int)reply->reply_rx.tv_usec,
 		reply->reply_ttl, timeval_tostr_us(&rtt, tmp, sizeof(tmp)));
 
   if(SCAMPER_ADDR_TYPE_IS_IPV4(reply->reply_from))
@@ -138,9 +138,9 @@ static char *probe_tostr(const scamper_tracelb_probe_t *probe,
       rxc++;
 
   string_concat(buf, sizeof(buf), &off,
-		"{\"tx\":{\"sec\":%u, \"usec\":%u}, \"replyc\":%u,"
+		"{\"tx\":{\"sec\":%ld, \"usec\":%d}, \"replyc\":%u,"
 		" \"ttl\":%u, \"attempt\":%u, \"flowid\":%u",
-		probe->tx.tv_sec, probe->tx.tv_usec, rxc,
+		(long)probe->tx.tv_sec, (int)probe->tx.tv_usec, rxc,
 		probe->ttl, probe->attempt, probe->flowid);
 
   if(rxc > 0)
@@ -171,7 +171,7 @@ static char *probe_tostr(const scamper_tracelb_probe_t *probe,
     goto err;
   off = 0;
 
-  string_concat(dup, len, &off, buf);
+  string_concat(dup, len, &off, "%s", buf);
   if(rxc > 0)
     {
       for(i=0; i<rxc; i++)
@@ -425,7 +425,7 @@ static char *node_tostr(const scamper_tracelb_node_t *node)
   off = 0; slp = head;
   while(slp != NULL)
     {
-      string_concat(dup, len, &off, slp->str);
+      string_concat(dup, len, &off, "%s", slp->str);
       slpn = slp->next;
       free(slp->str);
       free(slp);
@@ -449,7 +449,7 @@ static char *node_tostr(const scamper_tracelb_node_t *node)
 }
 
 int scamper_file_json_tracelb_write(const scamper_file_t *sf,
-				    const scamper_tracelb_t *trace)
+				    const scamper_tracelb_t *trace, void *p)
 {
   char *str = NULL, *header = NULL, **nodes = NULL;
   size_t len, off = 0;
@@ -496,7 +496,7 @@ int scamper_file_json_tracelb_write(const scamper_file_t *sf,
   string_concat(str, len, &off, "}\n");
   assert(off+1 == len);
 
-  rc = json_write(sf, str, off);
+  rc = json_write(sf, str, off, p);
 
  cleanup:
   if(nodes != NULL)

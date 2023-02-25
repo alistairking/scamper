@@ -1,12 +1,12 @@
 /*
  * scamper_addr2mac.c: handle a cache of IP to MAC address mappings
  *
- * $Id: scamper_addr2mac.c,v 1.45 2020/04/28 22:30:07 mjl Exp $
+ * $Id: scamper_addr2mac.c,v 1.47 2023/01/03 02:59:53 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2012-2014 The Regents of the University of California
- * Copyright (C) 2020      Matthew Luckie
+ * Copyright (C) 2020-2022 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -198,10 +198,10 @@ static int addr2mac_add(const int ifindex, const int type, const void *ipraw,
       goto err;
     }
 
-  scamper_debug(__func__, "ifindex %d ip %s mac %s expire %d", ifindex,
+  scamper_debug(__func__, "ifindex %d ip %s mac %s expire %ld", ifindex,
 		scamper_addr_tostr(addr2mac->ip, ipstr, sizeof(ipstr)),
 		scamper_addr_tostr(addr2mac->mac, macstr, sizeof(macstr)),
-		expire);
+		(long)expire);
   return 0;
 
  err:
@@ -332,7 +332,7 @@ static int addr2mac_init_linux()
       nlmsg = (struct nlmsghdr *)buf;
       while(NLMSG_OK(nlmsg, len))
 	{
-	  if(nlmsg->nlmsg_pid != pid || nlmsg->nlmsg_seq != 0)
+	  if(nlmsg->nlmsg_pid != (uint32_t)pid || nlmsg->nlmsg_seq != 0)
 	    {
 	      goto skip;
 	    }

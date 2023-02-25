@@ -4,10 +4,10 @@
  * Copyright (C) 2009-2010 Ben Stasiewicz
  * Copyright (C) 2010-2011 The University of Waikato
  * Copyright (C) 2012-2015 The Regents of the University of California
- * Copyright (C) 2016-2021 Matthew Luckie
+ * Copyright (C) 2016-2022 Matthew Luckie
  * Authors: Matthew Luckie, Ben Stasiewicz
  *
- * $Id: scamper_tbit_warts.c,v 1.33 2021/08/28 20:31:23 mjl Exp $
+ * $Id: scamper_tbit_warts.c,v 1.34 2022/02/13 08:48:15 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -1082,7 +1082,7 @@ int scamper_file_warts_tbit_read(scamper_file_t *sf, const warts_hdr_t *hdr,
 
 /* Write data from a scamper tbit object to a warts file */
 int scamper_file_warts_tbit_write(const scamper_file_t *sf,
-				  const scamper_tbit_t *tbit)
+				  const scamper_tbit_t *tbit, void *p)
 {
   warts_addrtable_t *table = NULL;
   warts_tbit_pkt_t *pkts = NULL;
@@ -1245,7 +1245,7 @@ int scamper_file_warts_tbit_write(const scamper_file_t *sf,
   assert(off == len);
 
   /* Write the whole buffer to a warts file */
-  if(warts_write(sf, buf, len) == -1)
+  if(warts_write(sf, buf, len, p) == -1)
     goto err;
 
   warts_addrtable_free(table);

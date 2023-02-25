@@ -1,12 +1,12 @@
 /*
  * sc_remoted
  *
- * $Id: sc_remoted.c,v 1.90.2.2 2022/06/13 20:02:28 mjl Exp $
+ * $Id: sc_remoted.c,v 1.98 2023/02/09 22:13:28 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
  *
- * Copyright (C) 2014-2022 Matthew Luckie
+ * Copyright (C) 2014-2023 Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -610,6 +610,11 @@ static int check_options(int argc, char *argv[])
   return 0;
 }
 
+#ifdef HAVE_FUNC_ATTRIBUTE_FORMAT
+static void remote_debug(const char *func, const char *format, ...)
+  __attribute__((format(printf, 2, 3)));
+#endif
+
 static void remote_debug(const char *func, const char *format, ...)
 {
   char message[512], ts[16];
@@ -1113,7 +1118,7 @@ static int sc_master_is_valid_client_cert_1(sc_master_t *ms)
   const char *dname;
   char buf[256];
   int rc = 0;
-  int i, count;
+  int i, count, x;
 
   /* do not do name verification */
   if(tls_cafile == NULL || (flags & FLAG_SKIP_VERIF) != 0)
@@ -1126,8 +1131,12 @@ static int sc_master_is_valid_client_cert_1(sc_master_t *ms)
       return 0;
     }
 
-  cert = SSL_get_peer_certificate(ms->inet_ssl);
-  assert(cert != NULL);
+  /*
+   * cert should not be null because sc_master_is_valid_client_cert_0
+   * established that there is a cert for this connection.
+   */
+  if((cert = SSL_get_peer_certificate(ms->inet_ssl)) == NULL)
+    return 0;
 
   if((names = X509_get_ext_d2i(cert,NID_subject_alt_name,NULL,NULL)) != NULL)
     {
@@ -1135,14 +1144,16 @@ static int sc_master_is_valid_client_cert_1(sc_master_t *ms)
       for(i=0; i<count; i++)
 	{
 	  gname = sk_GENERAL_NAME_value(names, i);
-	  if(gname->type != GEN_DNS)
+	  if(gname == NULL || gname->type != GEN_DNS ||
+	     gname->d.dNSName == NULL ||
+	     (x = ASN1_STRING_length(gname->d.dNSName)) < 1)
 	    continue;
 #ifdef HAVE_ASN1_STRING_GET0_DATA
 	  dname = (const char *)ASN1_STRING_get0_data(gname->d.dNSName);
 #else
 	  dname = (const char *)ASN1_STRING_data(gname->d.dNSName);
 #endif
-	  if(ASN1_STRING_length(gname->d.dNSName) != (int)strlen(dname))
+	  if(dname == NULL || (size_t)x != strlen(dname))
 	    continue;
 	  if(strcasecmp(dname, ms->monitorname) == 0)
 	    {
@@ -1306,12 +1317,18 @@ static void sc_master_zombie(sc_master_t *ms)
   sc_master_unix_free(ms);
   sc_master_inet_free(ms);
   timeval_add_s(&ms->zombie, &now, zombie);
-  remote_debug(__func__, "%s zombie until %d", ms->name, ms->zombie.tv_sec);
+  remote_debug(__func__, "%s zombie until %ld", ms->name,
+	       (long)ms->zombie.tv_sec);
   return;
 }
 
 static void sc_master_inet_write_do(sc_master_t *ms)
 {
+  /* if we did a read which returned -1, then inet_wb will be null */
+  if(ms->inet_fd.fd == -1)
+    return;
+  assert(ms->inet_wb != NULL);
+
   if(scamper_writebuf_write(ms->inet_fd.fd, ms->inet_wb) != 0)
     goto zombie;
 
@@ -1396,8 +1413,8 @@ static int sc_master_control_master(sc_master_t *ms, uint8_t *buf, size_t len)
   /* ensure the magic length value makes sense */
   if(len - off < magic_len)
     {
-      remote_debug(__func__, "len %u - off %u < magic_len %u",
-		   len, off, magic_len);
+      remote_debug(__func__, "len %d - off %d < magic_len %u",
+		   (int)len, (int)off, magic_len);
       goto err;
     }
   off += magic_len;
@@ -1408,8 +1425,8 @@ static int sc_master_control_master(sc_master_t *ms, uint8_t *buf, size_t len)
       if(off + monitorname_len > len)
 	{
 	  remote_debug(__func__,
-		       "malformed monitorname length variable: %u + %u > %u",
-		       off, monitorname_len, len);
+		       "malformed monitorname length variable: %d + %u > %d",
+		       (int)off, monitorname_len, (int)len);
 	  goto err;
 	}
       monitorname = (char *)(buf+off);
@@ -1563,8 +1580,8 @@ static int sc_master_control_resume(sc_master_t *ms, uint8_t *buf, size_t len)
   /* ensure the magic length value makes sense */
   if(off + magic_len > len)
     {
-      remote_debug(__func__, "len %u - off %u < magic_len %u",
-		   len, off, magic_len);
+      remote_debug(__func__, "len %d - off %d < magic_len %u",
+		   (int)len, (int)off, magic_len);
       goto err;
     }
   off += magic_len;
@@ -1572,7 +1589,8 @@ static int sc_master_control_resume(sc_master_t *ms, uint8_t *buf, size_t len)
   /* ensure there is enough left for the three expected sequence numbers */
   if(len - off < 12)
     {
-      remote_debug(__func__, "len %u - off %u < 12 for sequence", len, off);
+      remote_debug(__func__, "len %d - off %d < 12 for sequence",
+		   (int)len, (int)off);
       goto err;
     }
   rcv_nxt = bytes_ntohl(buf+off); off += 4;
@@ -1913,6 +1931,11 @@ static void sc_master_inet_read_do(sc_master_t *ms)
 	    }
 	}
 
+      /*
+       * equivalent to checking if ms->inet_mode == SSL_MODE_ESTABLISHED,
+       * but silenced warning about rc possibly being used without
+       * first being initialised
+       */
       if(ms->inet_mode != SSL_MODE_ACCEPT)
 	{
 	  assert(ms->inet_mode == SSL_MODE_ESTABLISHED);
@@ -1959,9 +1982,11 @@ static void sc_master_inet_read_do(sc_master_t *ms)
     sc_master_zombie(ms);
   return;
 
+#ifdef HAVE_OPENSSL
  err:
   sc_unit_gc(ms->unit);
   return;
+#endif
 }
 
 /*
@@ -2136,8 +2161,6 @@ static sc_master_t *sc_master_alloc(int fd)
  */
 static void sc_channel_unix_write_do(sc_channel_t *cn)
 {
-  int gtzero;
-
   /* if we did a read which returned -1, then the unix_fd will be null */
   if(cn->unix_fd == NULL)
     return;
@@ -2153,7 +2176,7 @@ static void sc_channel_unix_write_do(sc_channel_t *cn)
    * if we still have data to write, then wait until we get signal to
    * write again
    */
-  if((gtzero = scamper_writebuf_gtzero(cn->unix_wb)) != 0)
+  if(scamper_writebuf_gtzero(cn->unix_wb) != 0)
     return;
 
   /* nothing more to write, so remove fd */

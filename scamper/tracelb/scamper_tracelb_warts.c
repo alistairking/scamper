@@ -2,10 +2,10 @@
  * scamper_tracelb_warts.c
  *
  * Copyright (C) 2008-2011 The University of Waikato
- * Copyright (C) 2016-2021 Matthew Luckie
+ * Copyright (C) 2016-2022 Matthew Luckie
  * Author: Matthew Luckie
  *
- * $Id: scamper_tracelb_warts.c,v 1.14.4.1 2022/06/14 07:16:34 mjl Exp $
+ * $Id: scamper_tracelb_warts.c,v 1.16 2022/06/14 05:26:16 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -1169,7 +1169,7 @@ int scamper_file_warts_tracelb_read(scamper_file_t *sf, const warts_hdr_t *hdr,
 }
 
 int scamper_file_warts_tracelb_write(const scamper_file_t *sf,
-				     const scamper_tracelb_t *trace)
+				     const scamper_tracelb_t *trace, void *p)
 {
   const scamper_tracelb_node_t *node;
   const scamper_tracelb_link_t *link;
@@ -1288,7 +1288,7 @@ int scamper_file_warts_tracelb_write(const scamper_file_t *sf,
 
   assert(off == len);
 
-  if(warts_write(sf, buf, off) == -1)
+  if(warts_write(sf, buf, off, p) == -1)
     {
       goto err;
     }

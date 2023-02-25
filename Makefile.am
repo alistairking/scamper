@@ -1,4 +1,4 @@
-SUBDIRS = scamper utils
+SUBDIRS = scamper lib utils
 
 ACLOCAL_AMFLAGS = -I m4
 

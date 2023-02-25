@@ -1,12 +1,12 @@
 /*
  * scamper_source_file.c
  *
- * $Id: scamper_source_file.c,v 1.27 2021/08/22 08:11:53 mjl Exp $
+ * $Id: scamper_source_file.c,v 1.28 2022/12/09 09:37:42 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2014      The Regents of the University of California
- * Copyright (C) 2017      Matthew Luckie
+ * Copyright (C) 2017-2022 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -195,7 +195,7 @@ static int ssf_read_line(void *param, uint8_t *buf, size_t len)
 	{
 	  if((cmd = malloc_zero(reqd_len)) == NULL)
 	    {
-	      printerror(__func__, "could not malloc %u bytes", reqd_len);
+	      printerror(__func__, "could not malloc %d bytes", (int)reqd_len);
 	      goto err;
 	    }
 	}

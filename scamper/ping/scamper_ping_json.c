@@ -6,10 +6,10 @@
  * Copyright (c) 2011-2013 Internap Network Services Corporation
  * Copyright (c) 2013      Matthew Luckie
  * Copyright (c) 2013-2015 The Regents of the University of California
- * Copyright (c) 2019-2020 Matthew Luckie
+ * Copyright (c) 2019-2023 Matthew Luckie
  * Authors: Brian Hammond, Matthew Luckie
  *
- * $Id: scamper_ping_json.c,v 1.21.10.1 2022/06/12 05:24:32 mjl Exp $
+ * $Id: scamper_ping_json.c,v 1.26 2023/02/23 18:58:23 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -76,8 +76,8 @@ static char *ping_header(const scamper_ping_t *ping)
     string_concat(buf, sizeof(buf), &off, ", \"rtr\":\"%s\"",
 		  scamper_addr_tostr(ping->rtr, tmp, sizeof(tmp)));
   string_concat(buf, sizeof(buf), &off,
-		", \"start\":{\"sec\":%u,\"usec\":%u}",
-		ping->start.tv_sec, ping->start.tv_usec);
+		", \"start\":{\"sec\":%ld,\"usec\":%d}",
+		(long)ping->start.tv_sec, (int)ping->start.tv_usec);
   string_concat(buf, sizeof(buf), &off,
 		", \"ping_sent\":%u, \"probe_size\":%u"
 		", \"userid\":%u, \"ttl\":%u, \"wait\":%u",
@@ -166,7 +166,7 @@ static char *ping_reply(const scamper_ping_t *ping,
   scamper_ping_reply_v4rr_t *v4rr;
   scamper_ping_reply_v4ts_t *v4ts;
   struct timeval tv;
-  char buf[512], tmp[64];
+  char buf[512], tmp[64], *pt = "bug";
   uint8_t i;
   size_t off = 0;
 
@@ -182,14 +182,50 @@ static char *ping_reply(const scamper_ping_t *ping,
     {
       timeval_add_tv3(&tv, &reply->tx, &reply->rtt);
       string_concat(buf, sizeof(buf), &off,
-		    ", \"tx\":{\"sec\":%u, \"usec\":%u}",
-		    reply->tx.tv_sec, reply->tx.tv_usec);
+		    ", \"tx\":{\"sec\":%ld, \"usec\":%d}",
+		    (long)reply->tx.tv_sec, (int)reply->tx.tv_usec);
       string_concat(buf, sizeof(buf), &off,
-		    ", \"rx\":{\"sec\":%u, \"usec\":%u}",
-		    tv.tv_sec, tv.tv_usec);
+		    ", \"rx\":{\"sec\":%ld, \"usec\":%d}",
+		    (long)tv.tv_sec, (int)tv.tv_usec);
     }
   string_concat(buf, sizeof(buf), &off, ", \"rtt\":%s",
 		timeval_tostr_us(&reply->rtt, tmp, sizeof(tmp)));
+
+  if(SCAMPER_PING_METHOD_VARY_SPORT(ping))
+    {
+      if(SCAMPER_PING_METHOD_IS_TCP(ping))
+	pt = "tcp";
+      string_concat(buf, sizeof(buf), &off,
+		    ", \"%s_sport\":%u, \"%s_dport\":%u",
+		    pt, ping->probe_sport + reply->probe_id,
+		    pt, ping->probe_dport);
+    }
+  else if(SCAMPER_PING_METHOD_VARY_DPORT(ping))
+    {
+      if(SCAMPER_PING_METHOD_IS_UDP(ping))
+	pt = "udp";
+      string_concat(buf, sizeof(buf), &off,
+		    ", \"%s_sport\":%u, \"%s_dport\":%u",
+		    pt, ping->probe_sport,
+		    pt, ping->probe_dport + reply->probe_id);
+    }
+  else if(SCAMPER_PING_METHOD_IS_ICMP(ping))
+    {
+      string_concat(buf, sizeof(buf), &off,
+		    ", \"icmp_id\":%u, \"icmp_seq\":%u",
+		    ping->probe_sport,
+		    ping->probe_dport + reply->probe_id);
+    }
+  else if(SCAMPER_PING_METHOD_IS_UDP(ping) || SCAMPER_PING_METHOD_IS_TCP(ping))
+    {
+      if(SCAMPER_PING_METHOD_IS_UDP(ping))
+	pt = "udp";
+      else if(SCAMPER_PING_METHOD_IS_TCP(ping))
+	pt = "tcp";
+      string_concat(buf, sizeof(buf), &off,
+		    ", \"%s_sport\":%u, \"%s_dport\":%u",
+		    pt, ping->probe_sport, pt, ping->probe_dport);
+    }
 
   if(SCAMPER_ADDR_TYPE_IS_IPV4(reply->addr))
     {
@@ -295,13 +331,18 @@ static char *ping_stats(const scamper_ping_t *ping)
       string_concat(buf, sizeof(buf), &off, ", \"stddev\":%s",
 		    timeval_tostr_us(&stats.stddev_rtt, str, sizeof(str)));
     }
+  if(stats.ndups > 0)
+    string_concat(buf, sizeof(buf), &off, ", \"ndups\":%d", stats.ndups);
+  if(stats.nerrs > 0)
+    string_concat(buf, sizeof(buf), &off, ", \"nerrs\":%d", stats.nerrs);
+
   string_concat(buf, sizeof(buf), &off, "}");
 
   return strdup(buf);
 }
 
 int scamper_file_json_ping_write(const scamper_file_t *sf,
-				 const scamper_ping_t *ping)
+				 const scamper_ping_t *ping, void *p)
 {
   scamper_ping_reply_t *reply;
   uint32_t  reply_count = scamper_ping_reply_count(ping);
@@ -375,7 +416,7 @@ int scamper_file_json_ping_write(const scamper_file_t *sf,
   memcpy(str+wc, "}\n", 2); wc += 2;
 
   assert(wc == len);
-  ret = json_write(sf, str, len);
+  ret = json_write(sf, str, len, p);
 
  cleanup:
   if(str != NULL) free(str);

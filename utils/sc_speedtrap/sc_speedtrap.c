@@ -1,13 +1,14 @@
 /*
  * sc_speedtrap
  *
- * $Id: sc_speedtrap.c,v 1.63 2021/08/22 08:11:53 mjl Exp $
+ * $Id: sc_speedtrap.c,v 1.71 2023/01/03 03:12:09 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
  *
  * Copyright (C) 2013-2015 The Regents of the University of California
  * Copyright (C) 2016,2020 The University of Waikato
+ * Copyright (C) 2022-2023 Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -37,8 +38,7 @@
 #include "scamper_list.h"
 #include "ping/scamper_ping.h"
 #include "dealias/scamper_dealias.h"
-#include "scamper_linepoll.h"
-#include "scamper_writebuf.h"
+#include "lib/libscamperctrl/libscamperctrl.h"
 #include "scamper_file.h"
 #include "mjl_list.h"
 #include "mjl_splaytree.h"
@@ -176,6 +176,8 @@ static void finish_4(void);
 
 static uint32_t               options       = 0;
 static char                  *addressfile   = NULL;
+static scamper_ctrl_t        *scamper_ctrl  = NULL;
+static scamper_inst_t        *scamper_inst  = NULL;
 static char                  *dst_addr      = NULL;
 static int                    dst_port      = 0;
 static char                  *unix_name     = NULL;
@@ -187,21 +189,17 @@ static slist_t               *probelist     = NULL;
 static heap_t                *probeheap     = NULL;
 static slist_t               *incr          = NULL; /* descend and overlap */
 static heap_t                *waiting       = NULL;
-static int                    scamper_fd    = -1;
-static scamper_linepoll_t    *scamper_lp    = NULL;
-static scamper_writebuf_t    *scamper_wb    = NULL;
 static char                  *outfile_name  = NULL;
 static scamper_file_t        *outfile       = NULL;
 static scamper_file_filter_t *ffilter       = NULL;
-static scamper_file_t        *decode_in     = NULL;
-static int                    decode_in_fd  = -1;
-static int                    decode_out_fd = -1;
-static scamper_writebuf_t    *decode_wb     = NULL;
-static int                    data_left     = 0;
+static scamper_file_t        *decode_sf     = NULL;
+static scamper_file_readbuf_t *decode_rb    = NULL;
 static int                    more          = 0;
 static int                    probing       = 0;
 static int                    blocked       = 0;
 static int                    mode          = 0;
+static int                    error         = 0;
+static int                    done          = 0;
 static long                   threadc       = -1;
 static struct timeval         now;
 static FILE                  *logfile       = NULL;
@@ -217,7 +215,7 @@ static int                    stop_stepid   = 0;
 
 static uint32_t              *pairwise_uint32 = NULL;
 static sc_targetipid_t      **pairwise_tipid  = NULL;
-static int                    pairwise_max    = 0;
+static size_t                 pairwise_max    = 0;
 
 #ifdef HAVE_PTHREAD
 static pthread_mutex_t        candidates_mutex;
@@ -506,6 +504,11 @@ static void hms(int x, int *h, int *m, int *s)
   *h = x / 60;
   return;
 }
+
+#ifdef HAVE_FUNC_ATTRIBUTE_FORMAT
+static void logprint(int st, char *format, ...)
+  __attribute__((format(printf, 2, 3)));
+#endif
 
 static void logprint(int st, char *format, ...)
 {
@@ -887,10 +890,10 @@ static sc_targetipid_t *sc_target_sample(sc_target_t *tg, sc_targetipid_t *x)
   return ti;
 }
 
-static sc_target_t *sc_target_free(sc_target_t *tg)
+static void sc_target_free(sc_target_t *tg)
 {
   if(tg == NULL)
-    return NULL;
+    return;
 
   if(tg->samples != NULL)
     slist_free_cb(tg->samples, free);
@@ -900,7 +903,7 @@ static sc_target_t *sc_target_free(sc_target_t *tg)
     scamper_addr_free(tg->addr);
 
   free(tg);
-  return NULL;
+  return;
 }
 
 static sc_target_t *sc_target_alloc(scamper_addr_t *addr)
@@ -1082,9 +1085,13 @@ static int pairwise(sc_target_t *ta, sc_target_t *tb)
 {
   slist_node_t *ss;
   size_t len;
-  int tc;
+  size_t tc;
+  int tac, tbc;
 
-  tc = slist_count(ta->samples) + slist_count(tb->samples);
+  if((tac=slist_count(ta->samples)) < 0 || (tbc=slist_count(tb->samples)) < 0)
+    return -1;
+
+  tc = (size_t)(tac + tbc);
   if(tc > pairwise_max)
     {
       len = tc * sizeof(sc_targetipid_t *);
@@ -1112,27 +1119,28 @@ static void pairwise_all_thread(void *param)
   sc_targetipid_t **pairwise_tipid = NULL;
   sc_targetset_t *ts = NULL;
   uint32_t *pairwise_uint32 = NULL;
-  int pairwise_max = 0;
+  size_t pairwise_max = 0;
   slist_node_t *sb, *ss;
   sc_target_t *ta = pw->ta, *tb;
   slist_t *list = NULL;
   size_t len;
-  int tc;
+  size_t tc;
+  int tac, tbc;
 
 #if defined(HAVE_PTHREAD)
   int candidates_mutex_held = 0;
 #endif
 
-  if((list = slist_alloc()) == NULL)
+  if((tac = slist_count(ta->samples)) <= 0 || (list = slist_alloc()) == NULL)
     goto done;
 
   for(sb=pw->sb; sb != NULL; sb=slist_node_next(sb))
     {
       tb = slist_node_item(sb);
-      if(slist_count(tb->samples) == 0)
+      if((tbc = slist_count(tb->samples)) <= 0)
 	continue;
 
-      tc = slist_count(ta->samples) + slist_count(tb->samples);
+      tc = (size_t)(tac + tbc);
       if(tc > pairwise_max)
 	{
 	  len = tc * sizeof(sc_targetipid_t *);
@@ -1247,7 +1255,7 @@ static int test_ping6(sc_target_t *target, char *cmd, size_t len)
   size_t off = 0;
   char buf[64];
   string_concat(cmd, len, &off,
-		"ping -O dl -U %d -c 6 -s 1300 -M 1280 %s\n",
+		"ping -O dl -U %d -c 6 -s 1300 -M 1280 %s",
 		mode, scamper_addr_tostr(target->addr, buf, sizeof(buf)));
   return off;
 }
@@ -1257,7 +1265,7 @@ static int test_ping1(sc_target_t *target, char *cmd, size_t len)
   size_t off = 0;
   char buf[64];
   string_concat(cmd, len, &off,
-		"ping -O dl -O tbt -U %d -c 2 -o 1 -s 1300 -M 1280 %s\n",
+		"ping -O dl -O tbt -U %d -c 2 -o 1 -s 1300 -M 1280 %s",
 		mode, scamper_addr_tostr(target->addr, buf, sizeof(buf)));
   return off;
 }
@@ -1413,7 +1421,6 @@ static int do_method_ping(void)
   sc_target_t *tg;
   sc_wait_t *w;
   char buf[128];
-  size_t off;
 
   if((w = heap_head_item(waiting)) != NULL && timeval_cmp(&now, &w->tv) >= 0)
     {
@@ -1431,17 +1438,22 @@ static int do_method_ping(void)
       return -1;
     }
 
-  if((off = test_func[mode](tg, buf, sizeof(buf))) == -1)
+  if(test_func[mode](tg, buf, sizeof(buf)) == -1)
     {
       fprintf(stderr, "something went wrong\n");
       return -1;
     }
 
-  write_wrap(scamper_fd, buf, NULL, off);
+  if(scamper_inst_do(scamper_inst, buf) == NULL)
+    {
+      fprintf(stderr, "could not send %s\n", buf);
+      return -1;
+    }
+
   probing++;
   more--;
 
-  logprint(1, "%s", buf);
+  logprint(1, "%s\n", buf);
   return 0;
 }
 
@@ -1468,14 +1480,19 @@ static int do_method_ally(void)
 		mode, fudge, "-P icmp-echo -s 1300 -M 1280",
 		scamper_addr_tostr(tg->addr, addr, sizeof(addr)));
   tg = slist_node_item(ts->next);
-  string_concat(cmd, sizeof(cmd), &off, " %s\n",
+  string_concat(cmd, sizeof(cmd), &off, " %s",
 		scamper_addr_tostr(tg->addr, addr, sizeof(addr)));
 
-  write_wrap(scamper_fd, cmd, NULL, off);
+  if(scamper_inst_do(scamper_inst, cmd) == NULL)
+    {
+      fprintf(stderr, "could not send %s\n", cmd);
+      return -1;
+    }
+
   probing++;
   more--;
 
-  logprint(1, "%s", cmd);
+  logprint(1, "%s\n", cmd);
   return 0;
 }
 
@@ -1682,7 +1699,6 @@ static int finish_overlap(void)
 static int reply_overlap(sc_target_t *target, sc_targetipid_t *ipids,
 			 uint16_t ipidc, uint16_t rxd)
 {
-  sc_targetipid_t *ti;
   sc_targetset_t *ts, *tsb;
   sc_target_t *tg;
   struct timeval tv;
@@ -1698,7 +1714,7 @@ static int reply_overlap(sc_target_t *target, sc_targetipid_t *ipids,
       return 0;
     }
 
-  if((ti = sc_target_sample(target, &ipids[0])) == NULL)
+  if(sc_target_sample(target, &ipids[0]) == NULL)
     return -1;
 
  done:
@@ -1757,7 +1773,7 @@ static int finish_descend2(void)
       for(sb=slist_head_node(ts->targets); sb != NULL; sb=slist_node_next(sb))
 	{
 	  tg = slist_node_item(sb);
-	  if((a2r = sc_addr2router_find(tg->addr)) != NULL)
+	  if(sc_addr2router_find(tg->addr) != NULL)
 	    continue;
 	  if((r = sc_router_alloc()) == NULL ||
 	     (a2r = sc_addr2router_alloc(tg->addr, r)) == NULL ||
@@ -1964,131 +1980,55 @@ static int do_decoderead_dealias(scamper_dealias_t *dealias)
   return rc;
 }
 
-static int do_decoderead(void)
+static void ctrlcb(scamper_inst_t *inst, uint8_t type, scamper_task_t *task,
+		   const void *data, size_t len)
 {
-  void     *data;
-  uint16_t  type;
+  uint16_t obj_type;
+  void *obj_data;
 
-  /* try and read from the warts decoder */
-  if(scamper_file_read(decode_in, ffilter, &type, &data) != 0)
-    {
-      fprintf(stderr, "do_decoderead: scamper_file_read errno %d\n", errno);
-      return -1;
-    }
-  if(data == NULL)
-    {
-      if(scamper_file_geteof(decode_in) != 0)
-	{
-	  scamper_file_close(decode_in);
-	  decode_in = NULL;
-	  decode_in_fd = -1;
-	}
-      return 0;
-    }
-  probing--;
+  gettimeofday_wrap(&now);
 
-  if(scamper_file_write_obj(outfile, type, data) != 0)
-    {
-      fprintf(stderr, "do_decoderead: could not write obj %d\n", type);
-      /* XXX: free data */
-      return -1;
-    }
-
-  if(type == SCAMPER_FILE_OBJ_PING)
-    return do_decoderead_ping(data);
-  else if(type == SCAMPER_FILE_OBJ_DEALIAS)
-    return do_decoderead_dealias(data);
-
-  return -1;
-}
-
-static int do_scamperread_line(void *param, uint8_t *buf, size_t linelen)
-{
-  char *head = (char *)buf;
-  uint8_t uu[64];
-  size_t uus;
-  long lo;
-
-  /* skip empty lines */
-  if(head[0] == '\0')
-    return 0;
-
-  /* if currently decoding data, then pass it to uudecode */
-  if(data_left > 0)
-    {
-      uus = sizeof(uu);
-      if(uudecode_line(head, linelen, uu, &uus) != 0)
-	{
-	  fprintf(stderr, "could not uudecode_line\n");
-	  return -1;
-	}
-      if(uus != 0)
-	scamper_writebuf_send(decode_wb, uu, uus);
-      data_left -= (linelen + 1);
-      return 0;
-    }
-
-  /* feedback letting us know that the command was accepted */
-  if(linelen >= 2 && strncasecmp(head, "OK", 2) == 0)
-    return 0;
-
-  /* if the scamper process is asking for more tasks, give it more */
-  if(linelen == 4 && strncasecmp(head, "MORE", linelen) == 0)
+  if(type == SCAMPER_CTRL_TYPE_MORE)
     {
       more++;
-      if(do_method() != 0)
-	return -1;
-      return 0;
+      do_method();
     }
-
-  /* new piece of data */
-  if(linelen > 5 && strncasecmp(head, "DATA ", 5) == 0)
+  else if(type == SCAMPER_CTRL_TYPE_DATA)
     {
-      if(string_isnumber(head+5) == 0 || string_tolong(head+5, &lo) != 0)
+      if(scamper_file_readbuf_add(decode_rb, data, len) != 0 ||
+	 scamper_file_read(decode_sf, ffilter, &obj_type, &obj_data) != 0)
 	{
-	  fprintf(stderr, "could not parse %s\n", head);
-	  return -1;
+	  fprintf(stderr, "%s: could not read\n", __func__);
+	  goto err;
 	}
-      data_left = lo;
-      return 0;
-    }
 
-  /* feedback letting us know that the command was not accepted */
-  if(linelen >= 3 && strncasecmp(head, "ERR", 3) == 0)
+      if(obj_data == NULL)
+	return;
+      probing--;
+
+      if(scamper_file_write_obj(outfile, obj_type, obj_data) != 0)
+	{
+	  fprintf(stderr, "%s: could not write obj %d\n", __func__, obj_type);
+	  goto err;
+	}
+
+      if((obj_type == SCAMPER_FILE_OBJ_PING &&
+	  do_decoderead_ping(obj_data) != 0) ||
+	 (obj_type == SCAMPER_FILE_OBJ_DEALIAS &&
+	  do_decoderead_dealias(obj_data) != 0))
+	goto err;
+
+    }
+  else if(type == SCAMPER_CTRL_TYPE_EOF)
     {
-      more++;
-      if(do_method() != 0)
-	return -1;
-      return 0;
+      scamper_inst_free(scamper_inst);
+      scamper_inst = NULL;
     }
+  return;
 
-  fprintf(stderr, "unknown response '%s'\n", head);
-  return -1;
-}
-
-static int do_scamperread(void)
-{
-  ssize_t rc;
-  uint8_t buf[512];
-
-  if((rc = read(scamper_fd, buf, sizeof(buf))) > 0)
-    {
-      scamper_linepoll_handle(scamper_lp, buf, rc);
-      return 0;
-    }
-  else if(rc == 0)
-    {
-      close(scamper_fd);
-      scamper_fd = -1;
-      return 0;
-    }
-  else if(errno == EINTR || errno == EAGAIN)
-    {
-      return 0;
-    }
-
-  fprintf(stderr, "could not read: errno %d\n", errno);
-  return -1;
+ err:
+  error = 1;
+  return;
 }
 
 static int addressfile_line(char *addr, void *param)
@@ -2171,81 +2111,77 @@ static int do_addressfile(void)
  */
 static int do_scamperconnect(void)
 {
-  struct sockaddr_un sun;
-  struct sockaddr_storage sas;
-  struct sockaddr *sa = (struct sockaddr *)&sas;
-  struct in_addr in;
+  if((scamper_ctrl = scamper_ctrl_alloc(ctrlcb)) == NULL)
+    {
+      fprintf(stderr, "could not alloc scamper_ctrl\n");
+      return -1;
+    }
 
   if(options & OPT_PORT)
     {
-      if(dst_addr != NULL)
+      if((scamper_inst = scamper_inst_inet(scamper_ctrl,
+					   dst_addr, dst_port)) == NULL)
 	{
-	  if(sockaddr_compose_str(sa, dst_addr, dst_port) != 0)
-	    {
-	      fprintf(stderr, "%s: could not compose sockaddr from %s:%d\n",
-		      __func__, dst_addr, dst_port);
-	      return -1;
-	    }
-	}
-      else
-	{
-	  in.s_addr = htonl(INADDR_LOOPBACK);
-	  sockaddr_compose(sa, AF_INET, &in, dst_port);
-	}
-
-      if((scamper_fd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) < 0)
-	{
-	  fprintf(stderr, "could not allocate new socket\n");
-	  return -1;
-	}
-      if(connect(scamper_fd, sa, sockaddr_len(sa)) != 0)
-	{
-	  fprintf(stderr, "could not connect to scamper process\n");
+	  fprintf(stderr, "could not alloc port inst\n");
 	  return -1;
 	}
       return 0;
     }
+#ifdef HAVE_SOCKADDR_UN
   else if(options & OPT_UNIX)
     {
-      if(sockaddr_compose_un((struct sockaddr *)&sun, unix_name) != 0)
+      if((scamper_inst = scamper_inst_unix(scamper_ctrl, unix_name)) == NULL)
 	{
-	  fprintf(stderr, "could not build sockaddr_un\n");
-	  return -1;
-	}
-      if((scamper_fd = socket(AF_UNIX, SOCK_STREAM, 0)) == -1)
-	{
-	  fprintf(stderr, "could not allocate unix domain socket\n");
-	  return -1;
-	}
-      if(connect(scamper_fd, (const struct sockaddr *)&sun, sizeof(sun)) != 0)
-	{
-	  fprintf(stderr, "could not connect to scamper process\n");
+	  fprintf(stderr, "could not alloc unix inst\n");
 	  return -1;
 	}
       return 0;
     }
+#endif
 
   return -1;
 }
 
-static int speedtrap_data_select(void)
+static int speedtrap_data(void)
 {
   struct timeval tv, *tv_ptr;
-  fd_set rfds, wfds, *wfdsp;
   sc_wait_t *w;
-  int nfds;
 
-  for(;;)
+  if((targets = splaytree_alloc((splaytree_cmp_t)sc_target_addr_cmp)) == NULL ||
+     (waiting = heap_alloc((heap_cmp_t)sc_wait_cmp)) == NULL ||
+     (probelist = slist_alloc()) == NULL ||
+     (incr = slist_alloc()) == NULL ||
+     (candidates = slist_alloc()) == NULL ||
+     (notaliases = splaytree_alloc((splaytree_cmp_t)sc_notaliases_cmp))==NULL||
+     (overlap_act = dlist_alloc()) == NULL ||
+     do_addressfile() != 0 || do_scamperconnect() != 0 ||
+     (outfile = scamper_file_open(outfile_name, 'w', "warts")) == NULL ||
+     (decode_sf = scamper_file_opennull('r', "warts")) == NULL ||
+     (decode_rb = scamper_file_readbuf_alloc()) == NULL)
+    return -1;
+
+  scamper_file_setreadfunc(decode_sf, decode_rb, scamper_file_readbuf_read);
+  random_seed();
+  slist_shuffle(probelist);
+
+  if(options & OPT_INCR)
+    {
+      mode = MODE_DESCEND;
+      if((descend = slist_alloc()) == NULL)
+	return -1;
+    }
+
+  while(scamper_ctrl_isdone(scamper_ctrl) == 0)
     {
       /*
        * need to set a timeout on select if scamper's processing window is
        * not full and there is a task in the waiting queue.
        */
       tv_ptr = NULL;
+      gettimeofday_wrap(&now);
+
       if(more > 0)
 	{
-	  gettimeofday_wrap(&now);
-
 	  /*
 	   * if there is something ready to probe now, then try and
 	   * do it.
@@ -2264,7 +2200,7 @@ static int speedtrap_data_select(void)
 	   * wants one, then wait for an appropriate length of time.
 	   */
 	  w = heap_head_item(waiting);
-	  if(more > 0 && tv_ptr == NULL && w != NULL)
+	  if(more > 0 && w != NULL)
 	    {
 	      tv_ptr = &tv;
 	      if(timeval_cmp(&w->tv, &now) > 0)
@@ -2274,126 +2210,22 @@ static int speedtrap_data_select(void)
 	    }
 	}
 
-      nfds = 0; FD_ZERO(&rfds); FD_ZERO(&wfds); wfdsp = NULL;
-      if(scamper_fd < 0 && decode_in_fd < 0)
-	break;
-
-      if(scamper_fd >= 0)
-	{
-	  FD_SET(scamper_fd, &rfds);
-	  if(nfds < scamper_fd) nfds = scamper_fd;
-	  if(scamper_writebuf_len(scamper_wb) > 0)
-	    {
-	      FD_SET(scamper_fd, &wfds);
-	      wfdsp = &wfds;
-	    }
-	}
-
-      if(decode_in_fd >= 0)
-	{
-	  FD_SET(decode_in_fd, &rfds);
-	  if(nfds < decode_in_fd) nfds = decode_in_fd;
-	}
-
-      if(decode_out_fd >= 0 && scamper_writebuf_len(decode_wb) > 0)
-	{
-	  FD_SET(decode_out_fd, &wfds);
-	  wfdsp = &wfds;
-	  if(nfds < decode_out_fd) nfds = decode_out_fd;
-	}
-
       if(splaytree_count(targets) == 0 && slist_count(probelist) == 0 &&
 	 (probeheap == NULL || heap_count(probeheap) == 0) &&
-	 heap_count(waiting) == 0)
+	 heap_count(waiting) == 0 && done == 0)
 	{
+	  scamper_inst_done(scamper_inst);
+	  done = 1;
 	  logprint(1, "done\n");
-	  break;
 	}
 
-      if(select(nfds+1, &rfds, wfdsp, NULL, tv_ptr) < 0)
-	{
-	  if(errno == EINTR) continue;
-	  fprintf(stderr, "select error\n");
-	  break;
-	}
+      scamper_ctrl_wait(scamper_ctrl, tv_ptr);
 
-      gettimeofday_wrap(&now);
-
-      if(more > 0)
-	{
-	  if(do_method() != 0)
-	    return -1;
-	}
-
-      if(scamper_fd >= 0)
-	{
-	  if(FD_ISSET(scamper_fd, &rfds) && do_scamperread() != 0)
-	    return -1;
-	  if(wfdsp != NULL && FD_ISSET(scamper_fd, wfdsp) &&
-	     scamper_writebuf_write(scamper_fd, scamper_wb) != 0)
-	    return -1;
-	}
-
-      if(decode_in_fd >= 0)
-	{
-	  if(FD_ISSET(decode_in_fd, &rfds) && do_decoderead() != 0)
-	    return -1;
-	}
-
-      if(decode_out_fd >= 0)
-	{
-	  if(wfdsp != NULL && FD_ISSET(decode_out_fd, wfdsp) &&
-	     scamper_writebuf_write(decode_out_fd, decode_wb) != 0)
-	    return -1;
-
-	  if(scamper_fd < 0 && scamper_writebuf_len(decode_wb) == 0)
-	    {
-	      close(decode_out_fd);
-	      decode_out_fd = -1;
-	    }
-	}
+      if(error != 0)
+	break;
     }
 
   return 0;
-}
-
-static int speedtrap_data(void)
-{
-  int pair[2];
-
-  if((targets = splaytree_alloc((splaytree_cmp_t)sc_target_addr_cmp)) == NULL ||
-     (waiting = heap_alloc((heap_cmp_t)sc_wait_cmp)) == NULL ||
-     (probelist = slist_alloc()) == NULL ||
-     (incr = slist_alloc()) == NULL ||
-     (candidates = slist_alloc()) == NULL ||
-     (notaliases = splaytree_alloc((splaytree_cmp_t)sc_notaliases_cmp))==NULL||
-     (overlap_act = dlist_alloc()) == NULL ||
-     do_addressfile() != 0 || do_scamperconnect() != 0 ||
-     (scamper_lp = scamper_linepoll_alloc(do_scamperread_line, NULL)) == NULL ||
-     (scamper_wb = scamper_writebuf_alloc()) == NULL ||
-     (decode_wb = scamper_writebuf_alloc()) == NULL ||
-     (outfile = scamper_file_open(outfile_name, 'w', "warts")) == NULL ||
-     socketpair(AF_UNIX, SOCK_STREAM, 0, pair) != 0 ||
-     (decode_in = scamper_file_openfd(pair[0], NULL, 'r', "warts")) == NULL ||
-     fcntl_set(pair[0], O_NONBLOCK) == -1 ||
-     fcntl_set(pair[1], O_NONBLOCK) == -1)
-    return -1;
-
-  decode_in_fd  = pair[0];
-  decode_out_fd = pair[1];
-  scamper_writebuf_send(scamper_wb, "attach\n", 7);
-
-  random_seed();
-  slist_shuffle(probelist);
-
-  if(options & OPT_INCR)
-    {
-      mode = MODE_DESCEND;
-      if((descend = slist_alloc()) == NULL)
-	return -1;
-    }
-
-  return speedtrap_data_select();
 }
 
 static int ping_read(const scamper_ping_t *ping, uint32_t *ipids,
@@ -2907,40 +2739,40 @@ static void cleanup(void)
       outfile = NULL;
     }
 
-  if(decode_in != NULL)
-    {
-      scamper_file_close(decode_in);
-      decode_in = NULL;
-    }
-
   if(ffilter != NULL)
     {
       scamper_file_filter_free(ffilter);
       ffilter = NULL;
     }
 
+  if(decode_rb != NULL)
+    {
+      scamper_file_readbuf_free(decode_rb);
+      decode_rb = NULL;
+    }
+
+  if(decode_sf != NULL)
+    {
+      scamper_file_close(decode_sf);
+      decode_sf = NULL;
+    }
+
+  if(scamper_inst != NULL)
+    {
+      scamper_inst_free(scamper_inst);
+      scamper_inst = NULL;
+    }
+
+  if(scamper_ctrl != NULL)
+    {
+      scamper_ctrl_free(scamper_ctrl);
+      scamper_ctrl = NULL;
+    }
+
   if(logfile != NULL)
     {
       fclose(logfile);
       logfile = NULL;
-    }
-
-  if(scamper_wb != NULL)
-    {
-      scamper_writebuf_free(scamper_wb);
-      scamper_wb = NULL;
-    }
-
-  if(scamper_lp != NULL)
-    {
-      scamper_linepoll_free(scamper_lp, 0);
-      scamper_lp = NULL;
-    }
-
-  if(decode_wb != NULL)
-    {
-      scamper_writebuf_free(decode_wb);
-      decode_wb = NULL;
     }
 
   return;

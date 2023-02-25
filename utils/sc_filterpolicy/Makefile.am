@@ -9,11 +9,11 @@ sc_filterpolicy_SOURCES = \
 	../../utils.c \
 	../../mjl_heap.c \
 	../../mjl_list.c \
-	../../mjl_splaytree.c \
-	../../scamper/scamper_linepoll.c \
-	../../scamper/scamper_writebuf.c
+	../../mjl_splaytree.c
 
-sc_filterpolicy_LDADD = ../../scamper/libscamperfile.la
+sc_filterpolicy_LDADD = \
+	../../scamper/libscamperfile.la \
+	../../lib/libscamperctrl/libscamperctrl.la
 
 man_MANS = sc_filterpolicy.1
 

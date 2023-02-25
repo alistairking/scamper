@@ -1,9 +1,9 @@
 /*
  * scamper_tracelb_json.h
  *
- * $Id: scamper_tracelb_json.h,v 1.1 2018/05/22 10:08:59 mjl Exp $
+ * $Id: scamper_tracelb_json.h,v 1.2 2022/02/13 08:48:16 mjl Exp $
  *
- * Copyright (c) 2018 Matthew Luckie
+ * Copyright (c) 2018-2022 Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -24,6 +24,7 @@
 #define __SCAMPER_TRACELB_JSON_H
 
 int scamper_file_json_tracelb_write(const scamper_file_t *sf,
-				    const struct scamper_tracelb *trace);
+				    const struct scamper_tracelb *trace,
+				    void *p);
 
 #endif

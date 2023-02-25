@@ -1,7 +1,7 @@
 /*
  * scamper_icmp_resp.c
  *
- * $Id: scamper_icmp_resp.c,v 1.34.10.2 2022/08/10 22:39:48 mjl Exp $
+ * $Id: scamper_icmp_resp.c,v 1.35 2022/06/12 01:39:59 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -357,42 +357,5 @@ void scamper_icmp_resp_clean(scamper_icmp_resp_t *ir)
   if(ir->ir_inner_ipopt_tstss != NULL)
     free(ir->ir_inner_ipopt_tstss);
 
-  return;
-}
-
-void scamper_icmp_resp_handle(scamper_icmp_resp_t *resp)
-{
-  scamper_task_sig_t sig;
-  scamper_task_t *task;
-  scamper_addr_t  addr;
-
-  if(SCAMPER_ICMP_RESP_IS_TTL_EXP(resp) ||
-     SCAMPER_ICMP_RESP_IS_UNREACH(resp) ||
-     SCAMPER_ICMP_RESP_IS_PACKET_TOO_BIG(resp) ||
-     SCAMPER_ICMP_RESP_IS_PARAMPROB(resp))
-    {
-      /* the probe signature is embedded in the response */
-      if(!SCAMPER_ICMP_RESP_INNER_IS_SET(resp))
-	return;
-      if(scamper_icmp_resp_inner_dst(resp, &addr) != 0)
-	return;
-    }
-  else if(SCAMPER_ICMP_RESP_IS_ECHO_REPLY(resp) ||
-	  SCAMPER_ICMP_RESP_IS_TIME_REPLY(resp))
-    {
-      /* the probe signature is an ICMP echo/ts request */
-      if(scamper_icmp_resp_src(resp, &addr) != 0)
-	return;
-    }
-  else
-    {
-      return;
-    }
-
-  memset(&sig, 0, sizeof(sig));
-  sig.sig_type = SCAMPER_TASK_SIG_TYPE_TX_IP;
-  sig.sig_tx_ip_dst = &addr;
-  if((task = scamper_task_find(&sig)) != NULL)
-    scamper_task_handleicmp(task, resp);
   return;
 }

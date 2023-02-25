@@ -1,12 +1,12 @@
 /*
  * scamper_do_dealias.c
  *
- * $Id: scamper_dealias_do.c,v 1.167.10.2 2022/08/10 22:39:49 mjl Exp $
+ * $Id: scamper_dealias_do.c,v 1.172 2023/01/01 08:24:19 mjl Exp $
  *
  * Copyright (C) 2008-2011 The University of Waikato
  * Copyright (C) 2012-2013 Matthew Luckie
  * Copyright (C) 2012-2014 The Regents of the University of California
- * Copyright (C) 2016-2020 Matthew Luckie
+ * Copyright (C) 2016-2023 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This code implements alias resolution techniques published by others
@@ -152,7 +152,7 @@ typedef struct dealias_prefixscan
   scamper_dealias_probedef_t  *probedefs;
   uint32_t                     probedefc;
   scamper_addr_t             **aaliases;
-  int                          aaliasc;
+  size_t                       aaliasc;
   int                          attempt;
   int                          seq;
   int                          round0;
@@ -219,7 +219,7 @@ typedef struct dealias_state
   scamper_dealias_probedef_t  *probedefs;
   uint32_t                     probedefc;
   dealias_probedef_t         **pds;
-  int                          pdc;
+  size_t                       pdc;
   uint32_t                     probe;
   uint32_t                     round;
   struct timeval               last_tx;
@@ -245,7 +245,7 @@ typedef struct dealias_state
 static void dealias_state_assert(const dealias_state_t *state)
 				 
 {
-  int i;
+  size_t i;
   for(i=0; i<state->pdc; i++)
     {
       assert(state->pds[i] != NULL);
@@ -510,7 +510,7 @@ static void dealias_prefixscan_array_free(scamper_addr_t **addrs, int addrc)
 }
 
 static int dealias_prefixscan_array_add(scamper_dealias_t *dealias,
-					scamper_addr_t ***out, int *outc,
+					scamper_addr_t ***out, size_t *outc,
 					struct in_addr *addr)
 {
   scamper_dealias_prefixscan_t *prefixscan = dealias->data;
@@ -575,7 +575,7 @@ static int dealias_prefixscan_array_add(scamper_dealias_t *dealias,
  *
  */
 static int dealias_prefixscan_array(scamper_dealias_t *dealias,
-				    scamper_addr_t ***out, int *outc)
+				    scamper_addr_t ***out, size_t *outc)
 {
   scamper_dealias_prefixscan_t *prefixscan = dealias->data;
   scamper_addr_t **array = NULL;
@@ -1191,7 +1191,7 @@ static int dealias_prefixscan_next(scamper_task_t *task)
   scamper_dealias_prefixscan_t *prefixscan = dealias->data;
   scamper_dealias_probedef_t *def = &pfstate->probedefs[state->probedefc-1];
   uint32_t *defids = NULL, p;
-  int q;
+  size_t q;
 
   /*
    * if the address we'd otherwise probe has been observed as an alias of
@@ -1860,8 +1860,6 @@ static void do_dealias_handle_icmp(scamper_task_t *task,scamper_icmp_resp_t *ir)
   if(probe == NULL)
     return;
 
-  scamper_icmp_resp_print(ir);
-
   if((reply = scamper_dealias_reply_alloc()) == NULL)
     {
       scamper_debug(__func__, "could not alloc reply");
@@ -1968,7 +1966,7 @@ static void dealias_prefixscan_free(void *data)
 {
   dealias_prefixscan_t *pfstate = data;
   uint32_t j;
-  int k;
+  size_t k;
 
   if(pfstate->probedefs != NULL)
     {
@@ -2000,7 +1998,7 @@ static int dealias_prefixscan_alloc(scamper_dealias_t *dealias,
   scamper_dealias_probedef_t pd;
   dealias_prefixscan_t *pfstate = NULL;
   scamper_addr_t      **addrs = NULL;
-  int                   i, addrc = 0;
+  size_t                i, addrc = 0;
 
   /* figure out the addresses that will be probed */
   if(dealias_prefixscan_array(dealias, &addrs, &addrc) != 0)
@@ -2099,7 +2097,7 @@ static void dealias_bump_free(void *data)
 static void dealias_state_free(scamper_dealias_t *dealias,
 			       dealias_state_t *state)
 {
-  int j;
+  size_t j;
 
   if(state == NULL)
     return;
@@ -2321,7 +2319,7 @@ static void do_dealias_probe(scamper_task_t *task)
 
 static void do_dealias_write(scamper_file_t *sf, scamper_task_t *task)
 {
-  scamper_file_write_dealias(sf, dealias_getdata(task));
+  scamper_file_write_dealias(sf, dealias_getdata(task), task);
   return;
 }
 
@@ -3335,6 +3333,8 @@ void *scamper_do_dealias_alloc(char *str)
     }
   dealias->method = method;
   dealias->userid = userid;
+
+  assert(method >= 1 && method <= 5);
   if(alloc_func[method-1](dealias, &o) != 0)
     goto err;
 
@@ -3384,8 +3384,36 @@ static int probedef2sig(scamper_task_t *task, scamper_dealias_probedef_t *def)
   /* form a signature */
   if((sig = scamper_task_sig_alloc(SCAMPER_TASK_SIG_TYPE_TX_IP)) == NULL)
     goto err;
-  sig->sig_tx_ip_dst = scamper_addr_use(def->dst);
   sig->sig_tx_ip_src = scamper_addr_use(def->src);
+  sig->sig_tx_ip_dst = scamper_addr_use(def->dst);
+
+  switch(def->method)
+    {
+    case SCAMPER_DEALIAS_PROBEDEF_METHOD_ICMP_ECHO:
+      SCAMPER_TASK_SIG_ICMP_ECHO(sig, def->un.icmp.id);
+      break;
+
+    case SCAMPER_DEALIAS_PROBEDEF_METHOD_TCP_ACK:
+      SCAMPER_TASK_SIG_TCP(sig, def->un.tcp.sport, def->un.tcp.dport);
+      break;
+
+    case SCAMPER_DEALIAS_PROBEDEF_METHOD_UDP:
+      SCAMPER_TASK_SIG_UDP(sig, def->un.udp.sport, def->un.udp.dport);
+      break;
+
+    case SCAMPER_DEALIAS_PROBEDEF_METHOD_TCP_ACK_SPORT:
+    case SCAMPER_DEALIAS_PROBEDEF_METHOD_TCP_SYN_SPORT:
+      SCAMPER_TASK_SIG_TCP_SPORT(sig, 0, 65535, def->un.udp.dport);
+      break;
+
+    case SCAMPER_DEALIAS_PROBEDEF_METHOD_UDP_DPORT:
+      SCAMPER_TASK_SIG_UDP_DPORT(sig, def->un.udp.sport, 0, 65535);
+      break;
+
+    default:
+      scamper_debug(__func__, "unhandled probe method %d", def->method);
+      goto err;
+    }
 
   /* add it to the task */
   if(scamper_task_sig_add(task, sig) != 0)

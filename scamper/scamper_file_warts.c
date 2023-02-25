@@ -3,12 +3,12 @@
  *
  * the warts file format
  *
- * $Id: scamper_file_warts.c,v 1.259 2021/08/24 09:03:07 mjl Exp $
+ * $Id: scamper_file_warts.c,v 1.268 2023/01/03 01:54:31 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2012-2015 The Regents of the University of California
- * Copyright (C) 2015-2021 Matthew Luckie
+ * Copyright (C) 2015-2023 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -95,7 +95,7 @@ struct warts_addrtable
 {
   splaytree_t   *tree;
   warts_addr_t **addrs;
-  int            addrc;
+  size_t         addrc;
 };
 
 void flag_ij(const int id, int *i, int *j)
@@ -255,7 +255,7 @@ warts_addrtable_t *warts_addrtable_alloc_byid(void)
 
 void warts_addrtable_free(warts_addrtable_t *table)
 {
-  int i;
+  size_t i;
   if(table == NULL)
     return;
   if(table->tree != NULL)
@@ -481,7 +481,7 @@ int extract_addr(const uint8_t *buf, uint32_t *off,
 
       /* load the index value out, and sanity check it */
       memcpy(&u32, &buf[*off], 4); u32 = ntohl(u32);
-      if(table->addrc < 0 || u32 >= (uint32_t)table->addrc)
+      if(u32 >= table->addrc)
 	return -1;
 
       *out = scamper_addr_use(table->addrs[u32]->addr);
@@ -1001,42 +1001,36 @@ int warts_read(scamper_file_t *sf, uint8_t **buf, size_t len)
  *
  * this function will write a record to disk, appending a warts_header
  * on the way out to the disk.  if the write fails for whatever reason
- * (as in the disk is full and only a partial recrd can be written), then
+ * (e.g., the disk was full and only a partial record could be written), then
  * the write will be retracted in its entirety.
  */
-int warts_write(const scamper_file_t *sf, const void *buf, size_t len)
+int warts_write(const scamper_file_t *sf, const void *buf, size_t len, void *p)
 {
-  scamper_file_writefunc_t wf = scamper_file_getwritefunc(sf);
-  warts_state_t *state = scamper_file_getstate(sf);
-  void *param;
+  scamper_file_writefunc_t wf;
+  warts_state_t *state;
   off_t off = 0;
   int fd;
 
-  if(wf == NULL)
+  if((wf = scamper_file_getwritefunc(sf)) != NULL)
+    return wf(scamper_file_getwriteparam(sf), buf, len, p);
+
+  state = scamper_file_getstate(sf);
+  fd = scamper_file_getfd(sf);
+  if(state->isreg != 0 && (off = lseek(fd, 0, SEEK_CUR)) == (off_t)-1)
+    return -1;
+
+  if(write_wrap(fd, buf, NULL, len) != 0)
     {
-      fd = scamper_file_getfd(sf);
-
-      if(state->isreg && (off = lseek(fd, 0, SEEK_CUR)) == (off_t)-1)
-	return -1;
-
-      if(write_wrap(fd, buf, NULL, len) != 0)
+      /*
+       * if we could not write the buf out, then truncate the warts file
+       * at the hdr we just wrote out above.
+       */
+      if(state->isreg != 0)
 	{
-	  /*
-	   * if we could not write the buf out, then truncate the warts file
-	   * at the hdr we just wrote out above.
-	   */
-	  if(state->isreg)
-	    {
-	      if(ftruncate(fd, off) != 0)
-		return -1;
-	    }
-	  return -1;
+	  if(ftruncate(fd, off) != 0)
+	    return -1;
 	}
-    }
-  else
-    {
-      param = scamper_file_getwriteparam(sf);
-      return wf(param, buf, len);
+      return -1;
     }
 
   return 0;
@@ -1051,6 +1045,8 @@ int warts_hdr_read(scamper_file_t *sf, warts_hdr_t *hdr)
   const uint32_t len = 8;
   uint8_t  *buf = NULL;
   uint32_t  off = 0;
+
+  memset(hdr, 0, sizeof(warts_hdr_t));
 
   if(warts_read(sf, &buf, len) != 0)
     {
@@ -1094,7 +1090,7 @@ int warts_addr_read(scamper_file_t *sf, const warts_hdr_t *hdr,
   size_t          size;
 
   /* the data has to be at least 3 bytes long to be valid */
-  if(hdr->len > 2)
+  if(hdr->len < 3)
     goto err;
 
   if((state->addr_count % WARTS_ADDR_TABLEGROW) == 0)
@@ -1408,7 +1404,7 @@ int warts_list_write(const scamper_file_t *sf, scamper_list_t *list,
     }
 
   /* write the list record to disk */
-  if(warts_write(sf, buf, len) == -1)
+  if(warts_write(sf, buf, len, NULL) == -1)
     {
       goto err;
     }
@@ -1724,7 +1720,7 @@ int warts_cycle_write(const scamper_file_t *sf, scamper_cycle_t *cycle,
       goto err;
     }
 
-  if(warts_write(sf, buf, len) == -1)
+  if(warts_write(sf, buf, len, NULL) == -1)
     {
       goto err;
     }
@@ -1885,7 +1881,7 @@ int warts_cycle_stop_write(const scamper_file_t *sf,
 
   assert(off == len);
 
-  if(warts_write(sf, buf, len) == -1)
+  if(warts_write(sf, buf, len, NULL) == -1)
     {
       goto err;
     }
@@ -2000,7 +1996,8 @@ void warts_icmpext_write(uint8_t *buf,uint32_t *off,const uint32_t len,
  * scamper_file_warts_read
  *
  */
-int scamper_file_warts_read(scamper_file_t *sf, scamper_file_filter_t *filter,
+int scamper_file_warts_read(scamper_file_t *sf,
+			    const scamper_file_filter_t *filter,
 			    uint16_t *type, void **data)
 {
   static const warts_obj_read_t objread[] =
@@ -2355,33 +2352,6 @@ int scamper_file_warts_init_append(scamper_file_t *sf)
 	return -1;
     }
   free(s->cycle_table); s->cycle_table = NULL;
-
-  return 0;
-}
-
-int scamper_file_warts_is(const scamper_file_t *sf)
-{
-  uint16_t magic16;
-  int fd = scamper_file_getfd(sf);
-
-  if(lseek(fd, 0, SEEK_SET) == -1)
-    {
-      return 0;
-    }
-
-  if(read_wrap(fd, &magic16, NULL, sizeof(magic16)) != 0)
-    {
-      return 0;
-    }
-
-  if(ntohs(magic16) == WARTS_MAGIC)
-    {
-      if(lseek(fd, 0, SEEK_SET) == -1)
-	{
-	  return 0;
-	}
-      return 1;
-    }
 
   return 0;
 }

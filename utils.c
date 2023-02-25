@@ -1,13 +1,13 @@
 /*
  * utils.c
  *
- * $Id: utils.c,v 1.200.2.1 2022/02/09 07:23:22 mjl Exp $
+ * $Id: utils.c,v 1.209 2023/01/03 02:17:09 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2011      Matthew Luckie
  * Copyright (C) 2012-2015 The Regents of the University of California
- * Copyright (C) 2015-2021 Matthew Luckie
+ * Copyright (C) 2015-2023 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -53,47 +53,6 @@ int sockaddr_len(const struct sockaddr *sa)
   return -1;
 }
 #endif
-
-void *addr_dup(const int af, const void *addr_in)
-{
-  void   *addr;
-  size_t  size;
-
-  if(af == AF_INET)
-    {
-      size = sizeof(struct in_addr);
-    }
-  else if(af == AF_INET6)
-    {
-      size = sizeof(struct in6_addr);
-    }
-  else return NULL;
-
-  if((addr = malloc(size)) != NULL)
-    {
-      memcpy(addr, addr_in, size);
-    }
-
-  return addr;
-}
-
-struct sockaddr *sockaddr_dup(const struct sockaddr *sa)
-{
-  struct sockaddr *addr;
-  int len;
-
-  if((len = sockaddr_len(sa)) <= 0)
-    {
-      return NULL;
-    }
-
-  if((addr = malloc((size_t)len)) != NULL)
-    {
-      memcpy(addr, sa, (size_t)len);
-    }
-
-  return addr;
-}
 
 int sockaddr_compose(struct sockaddr *sa,
 		     const int af, const void *addr, const int port)
@@ -532,14 +491,14 @@ int realloc_wrap_dm(void **ptr, size_t len, const char *file, const int line)
 }
 #endif
 
-int array_findpos(void **array, int nmemb, const void *item, array_cmp_t cmp)
+int array_findpos(void **array, size_t nmemb, const void *item,
+		  array_cmp_t cmp, size_t *pos)
 {
-  int l, r, k, i;
+  size_t l, r, k;
+  int i;
 
   if(nmemb == 0)
-    {
-      return -1;
-    }
+    return -1;
 
   l = 0;
   r = nmemb-1;
@@ -547,7 +506,10 @@ int array_findpos(void **array, int nmemb, const void *item, array_cmp_t cmp)
   if(r == 0)
     {
       if(cmp(array[0], item) == 0)
-	return 0;
+	{
+	  *pos = 0;
+	  return 0;
+	}
       return -1;
     }
 
@@ -556,20 +518,27 @@ int array_findpos(void **array, int nmemb, const void *item, array_cmp_t cmp)
       k = (l + r) / 2;
       i = cmp(array[k], item);
       if(i > 0)
-	r = k-1;
+	{
+	  if(k == 0)
+	    break;
+	  r = k-1;
+	}
       else if(i < 0)
 	l = k+1;
       else
-	return k;
+	{
+	  *pos = k;
+	  return 0;
+	}
     }
 
   return -1;
 }
 
-void *array_find(void **array, int nmemb, const void *item, array_cmp_t cmp)
+void *array_find(void **array,size_t nmemb,const void *item,array_cmp_t cmp)
 {
-  int k = array_findpos(array, nmemb, item, cmp);
-  if(k >= 0)
+  size_t k;
+  if(array_findpos(array, nmemb, item, cmp, &k) == 0)
     return array[k];
   return NULL;
 }
@@ -581,7 +550,8 @@ void *array_find(void **array, int nmemb, const void *item, array_cmp_t cmp)
  * and then sorting the array, if necessary.  using mergesort because
  * the array is likely to have pre-existing order.
  */
-static int array_insert_0(void **array,int *nmemb,void *item,array_cmp_t cmp)
+static int array_insert_0(void **array, size_t *nmemb, void *item,
+			    array_cmp_t cmp)
 {
   assert(array != NULL);
   array[*nmemb] = item;
@@ -592,7 +562,7 @@ static int array_insert_0(void **array,int *nmemb,void *item,array_cmp_t cmp)
 }
 
 #ifndef DMALLOC
-int array_insert(void ***array, int *nmemb, void *item, array_cmp_t cmp)
+int array_insert(void ***array, size_t *nmemb, void *item, array_cmp_t cmp)
 {
   size_t len;
   assert(nmemb != NULL); assert(*nmemb >= 0);
@@ -602,7 +572,7 @@ int array_insert(void ***array, int *nmemb, void *item, array_cmp_t cmp)
   return array_insert_0(*array, nmemb, item, cmp);
 }
 
-int array_insert_gb(void ***array, int *nmemb, int *mmemb, int growby,
+int array_insert_gb(void ***array, size_t *nmemb, size_t *mmemb, size_t growby,
 		    void *item, array_cmp_t cmp)
 {
   size_t len;
@@ -622,7 +592,7 @@ int array_insert_gb(void ***array, int *nmemb, int *mmemb, int growby,
 #endif
 
 #ifdef DMALLOC
-int array_insert_dm(void ***array, int *nmemb, void *item,
+int array_insert_dm(void ***array, size_t *nmemb, void *item,
 		    array_cmp_t cmp, const char *file, const int line)
 {
   size_t len;
@@ -635,8 +605,8 @@ int array_insert_dm(void ***array, int *nmemb, void *item,
   return array_insert_0(*array, nmemb, item, cmp);
 }
 
-int array_insert_gb_dm(void ***array, int *nmemb, int *mmemb, int growby,
-		       void *item, array_cmp_t cmp,
+int array_insert_gb_dm(void ***array, size_t *nmemb, size_t *mmemb,
+		       size_t growby, void *item, array_cmp_t cmp,
 		       const char *file, const int line)
 {
   size_t len;
@@ -655,15 +625,16 @@ int array_insert_gb_dm(void ***array, int *nmemb, int *mmemb, int growby,
 }
 #endif
 
-void array_remove(void **array, int *nmemb, int p)
+void array_remove(void **array, size_t *nmemb, size_t p)
 {
+  assert(*nmemb > 0);
   assert(p >= 0 && p < *nmemb);
   memmove(array+p, array+p+1, ((*nmemb)-p-1) * sizeof(void *));
   *nmemb = *nmemb - 1;
   return;
 }
 
-static void array_swap(void **a, int i, int j)
+static void array_swap(void **a, size_t i, size_t j)
 {
   void *item = a[i];
   a[i] = a[j];
@@ -671,11 +642,12 @@ static void array_swap(void **a, int i, int j)
   return;
 }
 
-static void array_qsort_3(void **a, array_cmp_t cmp, int l, int r)
+static void array_qsort_3(void **a, array_cmp_t cmp, size_t l, size_t r)
 {
-  int lt, gt, i, rc;
+  size_t lt, gt, i;
+  int rc;
   void *c;
-  
+
   if(l >= r)
     return;
 
@@ -695,14 +667,16 @@ static void array_qsort_3(void **a, array_cmp_t cmp, int l, int r)
 	i++;
     }
 
-  array_qsort_3(a, cmp, l, lt-1);
+  if(lt > 0)
+    array_qsort_3(a, cmp, l, lt-1);
   array_qsort_3(a, cmp, gt+1, r);
   return;
 }
 
-void array_qsort(void **a, int n, array_cmp_t cmp)
+void array_qsort(void **a, size_t n, array_cmp_t cmp)
 {
-  array_qsort_3(a, cmp, 0, n-1);
+  if(n > 1)
+    array_qsort_3(a, cmp, 0, n-1);
   return;
 }
 
@@ -1384,7 +1358,7 @@ char *string_concat(char *str, size_t len, size_t *off, const char *fs, ...)
   if(wc < 0)
     return NULL;
 
-  *off = *off + ((size_t)wc < left ? wc : left);
+  *off = *off + ((size_t)wc < left ? (size_t)wc : left);
   return str;
 }
 
@@ -1796,9 +1770,9 @@ int countbits32(uint32_t v)
 }
 
 /* Fisher-Yates shuffle */
-int shuffle16(uint16_t *array, int len)
+int shuffle16(uint16_t *array, size_t len)
 {
-  int x, n = len;
+  size_t x, n = len;
   uint32_t k;
   uint16_t tmp;
 
@@ -1819,9 +1793,9 @@ int shuffle16(uint16_t *array, int len)
 }
 
 /* Fisher-Yates shuffle */
-int shuffle32(uint32_t *array, int len)
+int shuffle32(uint32_t *array, size_t len)
 {
-  int n = len;
+  size_t n = len;
   uint32_t k, tmp;
 
   while(n > 1)
@@ -1839,9 +1813,10 @@ int shuffle32(uint32_t *array, int len)
   return 0;
 }
 
-int min_array(int *array, int len)
+int min_array(const int *array, size_t len)
 {
-  int x, i;
+  int x;
+  size_t i;
   x = array[0];
   for(i=1; i<len; i++)
     if(x > array[i])

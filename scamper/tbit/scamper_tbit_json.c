@@ -3,10 +3,11 @@
  *
  * Copyright (c) 2014 Matthew Luckie
  * Copyright (C) 2015 The Regents of the University of California
+ * Copyright (C) 2022 Matthew Luckie
  *
  * Author: Matthew Luckie
  *
- * $Id: scamper_tbit_json.c,v 1.26 2020/03/17 07:32:16 mjl Exp $
+ * $Id: scamper_tbit_json.c,v 1.28 2022/12/09 09:37:42 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -104,8 +105,9 @@ static char *tbit_header_tostr(const scamper_tbit_t *tbit,
 		scamper_addr_tostr(tbit->dst, tmp, sizeof(tmp)));
   string_concat(buf, sizeof(buf), &off, ", \"sport\":%u, \"dport\":%u",
 		tbit->sport, tbit->dport);
-  string_concat(buf, sizeof(buf), &off, ", \"start\":{\"sec\":%u,\"usec\":%u}",
-		tbit->start.tv_sec, tbit->start.tv_usec);
+  string_concat(buf, sizeof(buf), &off,
+		", \"start\":{\"sec\":%ld,\"usec\":%d}",
+		(long)tbit->start.tv_sec, (int)tbit->start.tv_usec);
   string_concat(buf, sizeof(buf), &off,
 		", \"client_mss\":%u, \"server_mss\":%u, \"ttl\":%u",
 		tbit->client_mss, tbit->server_mss, tbit->ttl);
@@ -228,8 +230,8 @@ static char *tbit_pkt_tostr(const scamper_tbit_t *tbit,
 
   timeval_diff_tv(&tv, &tbit->start, &pkt->tv);
   string_concat(buf, sizeof(buf), &off,
-		"{\"dir\":%s, \"tv_sec\":%u, \"tv_usec\":%u, \"len\":%u",
-		tmp, tv.tv_sec, tv.tv_usec, pkt->len);
+		"{\"dir\":%s, \"tv_sec\":%ld, \"tv_usec\":%d, \"len\":%u",
+		tmp, (long)tv.tv_sec, (int)tv.tv_usec, pkt->len);
 
   v = (pkt->data[0] >> 4);
 
@@ -442,7 +444,7 @@ static char *tbit_pkt_tostr(const scamper_tbit_t *tbit,
 }
 
 int scamper_file_json_tbit_write(const scamper_file_t *sf,
-				 const scamper_tbit_t *tbit)
+				 const scamper_tbit_t *tbit, void *p)
 {
   tbit_state_t state;
   char *str = NULL, *header = NULL, **pkts = NULL;
@@ -491,7 +493,7 @@ int scamper_file_json_tbit_write(const scamper_file_t *sf,
 
   assert(wc == len);
 
-  rc = json_write(sf, str, len);
+  rc = json_write(sf, str, len, p);
 
  cleanup:
   if(str != NULL) free(str);

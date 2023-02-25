@@ -5,7 +5,8 @@
  *
  * Authors      : Matthew Luckie, Robert Beverly.
  *
- * Copyright (C) 2015 The Regents of the University of California
+ * Copyright (C) 2015      The Regents of the University of California
+ * Copyright (C) 2022-2023 Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -290,6 +291,10 @@ static int check_options(int argc, char *argv[])
 
   return 0;
 }
+
+#ifdef HAVE_FUNC_ATTRIBUTE_FORMAT
+static void print(char *format, ...) __attribute__((format(printf, 1, 2)));
+#endif
 
 static void print(char *format, ...)
 {
@@ -658,8 +663,8 @@ static int do_scamperread(void)
 	  /* new piece of data */
 	  else if(linelen > 5 && strncasecmp(head, "DATA ", 5) == 0)
 	    {
-	      l = strtol(head+5, &ptr, 10);
-	      if(*ptr != '\n' || l < 1)
+	      if((l = strtol(head+5, &ptr, 10)) < 1 ||
+		 (*ptr != '\n' && *ptr != ' '))
 		{
 		  head[linelen] = '\0';
 		  fprintf(stderr, "could not parse %s\n", head);
@@ -843,7 +848,7 @@ static int do_decoderead(void)
     {
       tbit = (scamper_tbit_t *)data;
       findme.addr = tbit->dst;
-      if(scamper_file_write_tbit(outfile, tbit) != 0)
+      if(scamper_file_write_tbit(outfile, tbit, NULL) != 0)
 	return -1;
       outfile_obj++;
     }
@@ -938,6 +943,7 @@ int main(int argc, char *argv[])
   heap_onremove(heap, target_onremove);
   if((list = slist_alloc()) == NULL)
     return -1;
+  assert(addressfile != NULL);
   if(file_lines(addressfile, parse_list, NULL) != 0)
     return -1;
   splaytree_empty(tree, NULL);

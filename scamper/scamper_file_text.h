@@ -1,7 +1,7 @@
 /*
  * scamper_file_text.h
  *
- * $Id: scamper_file_text.h,v 1.16 2011/09/16 03:15:44 mjl Exp $
+ * $Id: scamper_file_text.h,v 1.17 2022/07/02 21:21:56 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2010 The University of Waikato
@@ -48,7 +48,5 @@ int scamper_file_text_write_dealias(const scamper_file_t *sf,
 struct scamper_tbit;
 int scamper_file_text_write_tbit(const scamper_file_t *sf,
 				 const struct scamper_tbit *tbit);
-
-int scamper_file_text_is(const scamper_file_t *sf);
 
 #endif /* _SCAMPER_FILE_TEXT_H */

@@ -1,9 +1,9 @@
 /*
  * scamper_file_warts.h
  *
- * $Id: scamper_file_json.h,v 1.1 2017/07/09 09:05:14 mjl Exp $
+ * $Id: scamper_file_json.h,v 1.2 2022/02/13 08:48:15 mjl Exp $
  *
- * Copyright (C) 2017      Matthew Luckie
+ * Copyright (C) 2017-2022 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -34,7 +34,7 @@ int scamper_file_json_cyclestart_write(const scamper_file_t *sf,
 int scamper_file_json_cyclestop_write(const scamper_file_t *sf,
 				      scamper_cycle_t *c);
 
-int json_write(const scamper_file_t *sf, const void *buf, size_t len);
+int json_write(const scamper_file_t *sf, const void *buf, size_t len, void *p);
 
 int scamper_file_json_init_write(scamper_file_t *file);
 

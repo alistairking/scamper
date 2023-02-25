@@ -1,7 +1,7 @@
 /*
  * scamper_icmp6.c
  *
- * $Id: scamper_icmp6.c,v 1.100.10.2 2022/08/10 22:39:48 mjl Exp $
+ * $Id: scamper_icmp6.c,v 1.102 2022/12/09 09:37:42 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -30,6 +30,7 @@
 
 #include "scamper.h"
 #include "scamper_addr.h"
+#include "scamper_task.h"
 #include "scamper_dl.h"
 #include "scamper_probe.h"
 #include "scamper_icmp_resp.h"
@@ -234,7 +235,7 @@ int scamper_icmp6_probe(scamper_probe_t *probe)
       probe->pr_errno = errno;
       printerror(__func__, "could not send to %s (%d ttl, %d seq, %d len)",
 		 scamper_addr_tostr(probe->pr_ip_dst, addr, sizeof(addr)),
-		 probe->pr_ip_ttl, probe->pr_icmp_seq, len);
+		 probe->pr_ip_ttl, probe->pr_icmp_seq, (int)len);
       return -1;
     }
   else if((size_t)i != len)
@@ -517,14 +518,10 @@ int scamper_icmp6_recv(int fd, scamper_icmp_resp_t *resp)
 void scamper_icmp6_read_cb(const int fd, void *param)
 {
   scamper_icmp_resp_t ir;
-
   memset(&ir, 0, sizeof(ir));
-
   if(scamper_icmp6_recv(fd, &ir) == 0)
-    scamper_icmp_resp_handle(&ir);
-
+    scamper_task_handleicmp(&ir);
   scamper_icmp_resp_clean(&ir);
-
   return;
 }
 

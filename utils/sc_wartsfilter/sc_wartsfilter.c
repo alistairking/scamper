@@ -1,12 +1,13 @@
 /*
  * sc_wartsfilter
  *
- * $Id: sc_wartsfilter.c,v 1.6 2021/08/22 08:11:53 mjl Exp $
+ * $Id: sc_wartsfilter.c,v 1.9 2023/01/03 02:56:53 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
  *
  * Copyright (C) 2019-2020 The University of Waikato
+ * Copyright (C) 2022-2023 Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -397,7 +398,7 @@ static void process_dealias(scamper_dealias_t *dealias)
 	}
       else goto done;
     }
-  scamper_file_write_dealias(outfile, dealias);
+  scamper_file_write_dealias(outfile, dealias, NULL);
 
  done:
   scamper_dealias_free(dealias);
@@ -408,7 +409,7 @@ static void process_ping(scamper_ping_t *ping)
 {
   if(addrc > 0 && addr_matched(ping->dst) == 0)
     goto done;
-  scamper_file_write_ping(outfile, ping);
+  scamper_file_write_ping(outfile, ping, NULL);
 
  done:
   scamper_ping_free(ping);
@@ -419,7 +420,7 @@ static void process_tbit(scamper_tbit_t *tbit)
 {
   if(addrc > 0 && addr_matched(tbit->dst) == 0)
     goto done;
-  scamper_file_write_tbit(outfile, tbit);
+  scamper_file_write_tbit(outfile, tbit, NULL);
 
  done:
   scamper_tbit_free(tbit);
@@ -433,12 +434,12 @@ static void process_trace(scamper_trace_t *trace)
 
   if(addrc == 0)
     {
-      scamper_file_write_trace(outfile, trace);
+      scamper_file_write_trace(outfile, trace, NULL);
       goto done;
     }
   else if(addr_matched(trace->dst) != 0)
     {
-      scamper_file_write_trace(outfile, trace);
+      scamper_file_write_trace(outfile, trace, NULL);
       goto done;
     }
   else if(check_hops != 0)
@@ -449,7 +450,7 @@ static void process_trace(scamper_trace_t *trace)
 	    {
 	      if(addr_matched(hop->hop_addr) != 0)
 		{
-		  scamper_file_write_trace(outfile, trace);
+		  scamper_file_write_trace(outfile, trace, NULL);
 		  goto done;
 		}
 	    }
@@ -468,16 +469,17 @@ static int process_tracelb(scamper_tracelb_t *tracelb)
   scamper_tracelb_probeset_t *set;
   scamper_tracelb_probe_t *probe;
   scamper_tracelb_reply_t *reply;
-  uint32_t i, j, k, l, m;
+  uint16_t i, j, l, m;
+  uint8_t k;
 
   if(addrc == 0)
     {
-      scamper_file_write_tracelb(outfile, tracelb);
+      scamper_file_write_tracelb(outfile, tracelb, NULL);
       goto done;
     }
   else if(addr_matched(tracelb->dst) != 0)
     {
-      scamper_file_write_tracelb(outfile, tracelb);
+      scamper_file_write_tracelb(outfile, tracelb, NULL);
       goto done;
     }
   else if(check_hops != 0)
@@ -487,7 +489,7 @@ static int process_tracelb(scamper_tracelb_t *tracelb)
 	  node = tracelb->nodes[i];
 	  if(node->addr != NULL && addr_matched(node->addr) != 0)
 	    {
-	      scamper_file_write_tracelb(outfile, tracelb);
+	      scamper_file_write_tracelb(outfile, tracelb, NULL);
 	      goto done;
 	    }
 	  for(j=0; j<node->linkc; j++)
@@ -495,9 +497,11 @@ static int process_tracelb(scamper_tracelb_t *tracelb)
 	      link = node->links[j];
 	      if(link->to != NULL && addr_matched(link->to->addr) != 0)
 		{
-		  scamper_file_write_tracelb(outfile, tracelb);
+		  scamper_file_write_tracelb(outfile, tracelb, NULL);
 		  goto done;
 		}
+	      if(link->hopc < 1)
+		continue;
 	      for(k=0; k<link->hopc-1; k++)
 		{
 		  set = link->sets[k];
@@ -509,7 +513,7 @@ static int process_tracelb(scamper_tracelb_t *tracelb)
 			  reply = probe->rxs[m];
 			  if(addr_matched(reply->reply_from) != 0)
 			    {
-			      scamper_file_write_tracelb(outfile, tracelb);
+			      scamper_file_write_tracelb(outfile,tracelb,NULL);
 			      goto done;
 			    }
 			}

@@ -3,9 +3,10 @@
  *
  * Copyright (C) 2008-2011 The University of Waikato
  * Copyright (C) 2012      The Regents of the University of California
+ * Copyright (C) 2022      Matthew Luckie
  * Author: Matthew Luckie
  *
- * $Id: scamper_tracelb_text.c,v 1.7 2020/03/17 07:32:16 mjl Exp $
+ * $Id: scamper_tracelb_text.c,v 1.8 2022/02/13 08:48:16 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -62,7 +63,7 @@ static void probeset_summary_tostr(scamper_tracelb_probeset_summary_t *sum,
 }
 
 int scamper_file_text_tracelb_write(const scamper_file_t *sf,
-				    const scamper_tracelb_t *trace)
+				    const scamper_tracelb_t *trace, void *p)
 {
   scamper_tracelb_probeset_summary_t *sum = NULL;
   scamper_tracelb_probeset_t *set;

@@ -1,11 +1,12 @@
 /*
  * scamper_source_cmdline.c
  *
- * $Id: scamper_source_cmdline.c,v 1.12 2020/03/17 07:32:16 mjl Exp $
+ * $Id: scamper_source_cmdline.c,v 1.14 2022/12/09 09:37:42 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2010 The University of Waikato
  * Copyright (C) 2014      The Regents of the University of California
+ * Copyright (C) 2022      Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -48,7 +49,7 @@ static int command_assemble(char **out, size_t *len,
 	{
 	  if((tmp = realloc(*out, reqlen)) == NULL)
 	    {
-	      printerror(__func__, "could not realloc %d bytes", reqlen);
+	      printerror(__func__, "could not realloc %d bytes", (int)reqlen);
 	      return -1;
 	    }
 	}
@@ -56,7 +57,7 @@ static int command_assemble(char **out, size_t *len,
 	{
 	  if((tmp = malloc_zero(reqlen)) == NULL)
 	    {
-	      printerror(__func__, "could not malloc %d bytes", reqlen);
+	      printerror(__func__, "could not malloc %d bytes", (int)reqlen);
 	      return -1;
 	    }
 
@@ -68,6 +69,7 @@ static int command_assemble(char **out, size_t *len,
       *len = reqlen;
     }
 
+  assert(*out != NULL);
   memcpy((*out)+cmdlen+1, addr, addrlen + 1);
   return 0;
 }
