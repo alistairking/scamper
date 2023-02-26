@@ -1916,11 +1916,7 @@ void *scamper_do_ping_alloc(char *str, uint32_t *id)
 	goto err;
 
       if(ping->probe_method == SCAMPER_PING_METHOD_TCP_SYN ||
-<<<<<<< HEAD
-         ping->probe_method == SCAMPER_PING_METHOD_TCP_SYN_SPORT ||
-=======
 	 ping->probe_method == SCAMPER_PING_METHOD_TCP_SYN_SPORT ||
->>>>>>> master
 	 ping->probe_method == SCAMPER_PING_METHOD_TCP_RST)
 	{
 	  ping->probe_tcpseq = probe_tcpack;
