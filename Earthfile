@@ -41,6 +41,27 @@ build-multiarch:
               --platform=linux/amd64 \
               +build
 
+deps-alpine:
+        FROM alpine:latest
+        RUN apk add --update \
+             alpine-sdk \
+             autoconf \
+             automake \
+             libtool \
+             linux-headers
+
+build-alpine:
+        FROM +deps-alpine
+        COPY --dir --keep-ts \
+             *.[ch] lib scamper utils configure.ac Makefile.am m4 \
+             ./
+        RUN autoreconf -vfi
+        RUN ./configure
+        RUN make
+        ARG TARGETPLATFORM
+        SAVE ARTIFACT scamper/scamper alpine/${TARGETPLATFORM}/scamper \
+             AS LOCAL ./build/alpine/${TARGETPLATFORM}/scamper
+
 docker:
         ARG TARGETPLATFORM
         COPY +build/${TARGETPLATFORM}/scamper /usr/local/bin/scamper
@@ -115,7 +136,7 @@ docs:
         SAVE ARTIFACT man/*.pdf AS LOCAL docs/
 
 # To support native macos (etc.) builds
-# TODO: this feels clunky and repetetive. Is there no better way?
+# TODO: this feels clunky and repetitive. Is there no better way?
 bootstrap-native:
         LOCALLY
         RUN autoreconf -vfi
