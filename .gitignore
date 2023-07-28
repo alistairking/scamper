@@ -82,6 +82,7 @@ utils/sc_erosprober/sc_erosprober
 utils/sc_filterpolicy/sc_filterpolicy
 utils/sc_ipiddump/sc_ipiddump
 utils/sc_pinger/sc_pinger
+utils/sc_prefixprober/sc_prefixprober
 utils/sc_prefixscan/sc_prefixscan
 utils/sc_radargun/sc_radargun
 utils/sc_remoted/sc_remoted

@@ -33,7 +33,7 @@ build:
         ARG base=debian
         FROM +deps-${base}
         COPY --dir --keep-ts \
-             *.[ch] lib scamper utils configure.ac Makefile.am m4 \
+             *.[ch] lib scamper tests utils configure.ac Makefile.am m4 \
              ./
         RUN autoreconf -vfi
         RUN ./configure
