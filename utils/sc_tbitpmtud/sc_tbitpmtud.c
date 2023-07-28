@@ -20,7 +20,7 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
- * $Id: sc_tbitpmtud.c,v 1.26 2023/01/02 22:09:01 mjl Exp $
+ * $Id: sc_tbitpmtud.c,v 1.27 2023/02/24 04:06:14 mjl Exp $
  */
 
 #ifdef HAVE_CONFIG_H
@@ -1600,11 +1600,11 @@ static int finish_1(void)
 {
   sc_mssresult_t **table;
   sc_mssresult_t *mr, *tmr;
-  slist_t *list = NULL;
+  slist_t *mrlist = NULL;
   int i, v, rc = -1;
   char buf[8];
 
-  if((list = slist_alloc()) == NULL)
+  if((mrlist = slist_alloc()) == NULL)
     goto done;
 
   for(v=0; v<2; v++)
@@ -1624,10 +1624,10 @@ static int finish_1(void)
 
       for(i=0; i<65536; i++)
 	{
-	  if(table[i] != NULL && slist_tail_push(list, table[i]) == NULL)
+	  if(table[i] != NULL && slist_tail_push(mrlist, table[i]) == NULL)
 	    goto done;
 	}
-      slist_qsort(list, (slist_cmp_t)sc_mssresult_cmp);
+      slist_qsort(mrlist, (slist_cmp_t)sc_mssresult_cmp);
 
       printf("    success   |     fail     |   toosmall   |    other    |    total");
       printf("\n");
@@ -1639,7 +1639,7 @@ static int finish_1(void)
 	     percentage(buf, sizeof(buf), tmr->results[3], tmr->count),
 	     tmr->count);
       printf("----------------------------------------------------------------------------\n");
-      while((mr = slist_head_pop(list)) != NULL)
+      while((mr = slist_head_pop(mrlist)) != NULL)
 	{
 	  printf("%5d |", mr->mss);
 	  for(i=0; i<3; i++)
@@ -1666,7 +1666,7 @@ static int finish_1(void)
   free(table_1_6);
   free(total_1_4);
   free(total_1_6);
-  if(list != NULL) slist_free(list);
+  if(mrlist != NULL) slist_free(mrlist);
   return rc;
 }
 
@@ -1689,18 +1689,18 @@ static int sc_asnresult_c_cmp(const sc_asnresult_t *a,const sc_asnresult_t *b)
   return sc_asmap_cmp(a->asmap, b->asmap);
 }
 
-static sc_asnresult_t *sc_asnresult_get(splaytree_t *tree, sc_asmap_t *asmap)
+static sc_asnresult_t *sc_asnresult_get(splaytree_t *artree, sc_asmap_t *asmap)
 {
   sc_asnresult_t fm, *asr;
 
   fm.asmap = asmap;
-  if((asr = splaytree_find(tree, &fm)) != NULL)
+  if((asr = splaytree_find(artree, &fm)) != NULL)
     return asr;
 
   if((asr = malloc_zero(sizeof(sc_asnresult_t))) == NULL)
     return NULL;
   asr->asmap = asmap;
-  if(splaytree_insert(tree, asr) == NULL)
+  if(splaytree_insert(artree, asr) == NULL)
     {
       free(asr);
       return NULL;
@@ -1735,7 +1735,7 @@ static int process_2_tbit(scamper_tbit_t *tbit)
 {
   scamper_tbit_pmtud_t *pmtud;
   sc_asnresult_t *tasr, *asr;
-  splaytree_t *tree;
+  splaytree_t *artree;
   sc_prefix_t *pfx;
   int x, rc = -1;
 
@@ -1754,17 +1754,17 @@ static int process_2_tbit(scamper_tbit_t *tbit)
 
   if(SCAMPER_ADDR_TYPE_IS_IPV4(tbit->dst))
     {
-      tree = tree_2_4;
+      artree = tree_2_4;
       tasr = total_2_4;
     }
   else if(SCAMPER_ADDR_TYPE_IS_IPV6(tbit->dst))
     {
-      tree = tree_2_6;
+      artree = tree_2_6;
       tasr = total_2_6;
     }
   else goto done;
 
-  if((asr = sc_asnresult_get(tree, pfx->asmap)) == NULL)
+  if((asr = sc_asnresult_get(artree, pfx->asmap)) == NULL)
     goto done;
   
   if(tbit->result == SCAMPER_TBIT_RESULT_PMTUD_SUCCESS)
@@ -1788,32 +1788,32 @@ static int process_2_tbit(scamper_tbit_t *tbit)
 
 static int finish_2(void)
 {
-  splaytree_t *tree;
+  splaytree_t *artree;
   sc_asnresult_t *tasr, *asr;
-  slist_t *list = NULL;
+  slist_t *arlist = NULL;
   int i, v, rc = -1;
   char buf[256];
 
-  if((list = slist_alloc()) == NULL)
+  if((arlist = slist_alloc()) == NULL)
     goto done;
 
   for(v=0; v<2; v++)
     {
       if(v == 0)
 	{
-	  tree = tree_2_4;
+	  artree = tree_2_4;
 	  tasr = total_2_4;
 	}
       else
 	{
-	  tree = tree_2_6;
+	  artree = tree_2_6;
 	  tasr = total_2_6;
 	}
       
-      splaytree_inorder(tree, tree_to_slist, list);
-      if(slist_count(list) == 0)
+      splaytree_inorder(artree, tree_to_slist, arlist);
+      if(slist_count(arlist) == 0)
 	continue;
-      slist_qsort(list, (slist_cmp_t)sc_asnresult_c_cmp);
+      slist_qsort(arlist, (slist_cmp_t)sc_asnresult_c_cmp);
 
       if(v == 0)
 	printf("  IPv4 |");
@@ -1830,7 +1830,7 @@ static int finish_2(void)
 	     percentage(buf, sizeof(buf), tasr->results[3], tasr->count),
 	     tasr->count);
       printf("----------------------------------------------------------------------------\n");
-      while((asr = slist_head_pop(list)) != NULL)
+      while((asr = slist_head_pop(arlist)) != NULL)
 	{
 	  printf("%6s |", sc_asmap_tostr(asr->asmap, buf, sizeof(buf)));
 	  for(i=0; i<3; i++)
@@ -1846,7 +1846,7 @@ static int finish_2(void)
   rc = 0;
 
  done:
-  if(list != NULL) slist_free(list);
+  if(arlist != NULL) slist_free(arlist);
   if(tree_2_4 != NULL) splaytree_free(tree_2_4, free);
   if(tree_2_6 != NULL) splaytree_free(tree_2_6, free);
   if(total_2_4 != NULL) free(total_2_4);

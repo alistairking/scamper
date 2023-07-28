@@ -1,7 +1,7 @@
 /*
  * scamper_do_trace.c
  *
- * $Id: scamper_trace_do.c,v 1.334 2023/01/01 08:24:19 mjl Exp $
+ * $Id: scamper_trace_do.c,v 1.335 2023/03/01 04:22:27 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -100,7 +100,7 @@
 #define SCAMPER_DO_TRACE_PPS_MAX       1000
 #define SCAMPER_DO_TRACE_PPS_DEF       20
 
-#define SCAMPER_DO_TRACE_SPORT_MIN     1
+#define SCAMPER_DO_TRACE_SPORT_MIN     0
 #define SCAMPER_DO_TRACE_SPORT_MAX     65535
 
 #define SCAMPER_DO_TRACE_SQUERIES_MIN  1
@@ -4505,7 +4505,7 @@ void *scamper_do_trace_alloc(char *str)
   uint8_t  loops       = SCAMPER_DO_TRACE_LOOPS_DEF;
   uint8_t  confidence  = 0;
   uint8_t  dtree_flags = 0;
-  uint16_t sport       = scamper_sport_default();
+  int      sport       = -1;
   uint16_t dport       = SCAMPER_DO_TRACE_DPORT_DEF;
   uint16_t offset      = SCAMPER_DO_TRACE_OFFSET_DEF;
   uint8_t *payload     = NULL;
@@ -4523,6 +4523,7 @@ void *scamper_do_trace_alloc(char *str)
   char *src = NULL, *rtr = NULL;
   int af, x;
   uint32_t optids = 0;
+  uint16_t u16;
 
   /* try and parse the string passed in */
   if(scamper_options_parse(str, opts, opts_cnt, &opts_out, &addr) != 0)
@@ -4614,7 +4615,7 @@ void *scamper_do_trace_alloc(char *str)
 	  break;
 
 	case TRACE_OPT_SPORT:
-	  sport = (uint16_t)tmp;
+	  sport = (int)tmp;
 	  break;
 
 	case TRACE_OPT_SQUERIES:
@@ -4689,6 +4690,14 @@ void *scamper_do_trace_alloc(char *str)
   if((flags & SCAMPER_TRACE_FLAG_PMTUD) != 0 &&
      type != SCAMPER_TRACE_TYPE_UDP && type != SCAMPER_TRACE_TYPE_UDP_PARIS)
     goto err;
+
+  if(sport == -1)
+    sport = scamper_sport_default();
+  else if(sport == 0)
+    {
+      random_u16(&u16);
+      sport = u16 | 0x8000;
+    }
 
   if((trace = scamper_trace_alloc()) == NULL)
     {

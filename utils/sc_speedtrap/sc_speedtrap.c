@@ -1,7 +1,7 @@
 /*
  * sc_speedtrap
  *
- * $Id: sc_speedtrap.c,v 1.71 2023/01/03 03:12:09 mjl Exp $
+ * $Id: sc_speedtrap.c,v 1.72 2023/02/24 04:20:54 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -1116,10 +1116,10 @@ static int pairwise(sc_target_t *ta, sc_target_t *tb)
 static void pairwise_all_thread(void *param)
 {
   sc_pairwise_t *pw = param;
-  sc_targetipid_t **pairwise_tipid = NULL;
+  sc_targetipid_t **pwt_tipid = NULL;
   sc_targetset_t *ts = NULL;
-  uint32_t *pairwise_uint32 = NULL;
-  size_t pairwise_max = 0;
+  uint32_t *pwt_uint32 = NULL;
+  size_t pwt_max = 0;
   slist_node_t *sb, *ss;
   sc_target_t *ta = pw->ta, *tb;
   slist_t *list = NULL;
@@ -1141,26 +1141,25 @@ static void pairwise_all_thread(void *param)
 	continue;
 
       tc = (size_t)(tac + tbc);
-      if(tc > pairwise_max)
+      if(tc > pwt_max)
 	{
 	  len = tc * sizeof(sc_targetipid_t *);
-	  if(realloc_wrap((void **)&pairwise_tipid, len) != 0)
+	  if(realloc_wrap((void **)&pwt_tipid, len) != 0)
 	    goto done;
 	  len = tc * sizeof(uint32_t);
-	  if(realloc_wrap((void **)&pairwise_uint32, len) != 0)
+	  if(realloc_wrap((void **)&pwt_uint32, len) != 0)
 	    goto done;
-	  pairwise_max = tc;
+	  pwt_max = tc;
 	}
 
       tc = 0;
       for(ss=slist_head_node(ta->samples); ss!=NULL; ss=slist_node_next(ss))
-	pairwise_tipid[tc++] = slist_node_item(ss);
+	pwt_tipid[tc++] = slist_node_item(ss);
       for(ss=slist_head_node(tb->samples); ss!=NULL; ss=slist_node_next(ss))
-	pairwise_tipid[tc++] = slist_node_item(ss);
-      array_qsort((void **)pairwise_tipid, tc,
-		  (array_cmp_t)sc_targetipid_tx_cmp);
+	pwt_tipid[tc++] = slist_node_item(ss);
+      array_qsort((void **)pwt_tipid, tc, (array_cmp_t)sc_targetipid_tx_cmp);
 
-      if(pairwise_test(pairwise_tipid, tc, pairwise_uint32) != 0 &&
+      if(pairwise_test(pwt_tipid, tc, pwt_uint32) != 0 &&
 	 slist_tail_push(list, tb) == NULL)
 	goto done;
     }
@@ -1191,10 +1190,10 @@ static void pairwise_all_thread(void *param)
   if(candidates_mutex_held != 0)
     pthread_mutex_unlock(&candidates_mutex);
 #endif
-  if(pairwise_tipid != NULL)
-    free(pairwise_tipid);
-  if(pairwise_uint32 != NULL)
-    free(pairwise_uint32);
+  if(pwt_tipid != NULL)
+    free(pwt_tipid);
+  if(pwt_uint32 != NULL)
+    free(pwt_uint32);
   if(list != NULL)
     slist_free(list);
   if(ts != NULL)
@@ -1203,7 +1202,7 @@ static void pairwise_all_thread(void *param)
   return;
 }
 
-static int pairwise_all(slist_t *targets)
+static int pairwise_all(slist_t *tgtlist)
 {
   sc_pairwise_t *pw = NULL;
   threadpool_t *tp = NULL;
@@ -1224,7 +1223,7 @@ static int pairwise_all(slist_t *targets)
   candidates_mutex_ok = 1;
 #endif
 
-  for(sa=slist_head_node(targets); sa != NULL; sa=slist_node_next(sa))
+  for(sa=slist_head_node(tgtlist); sa != NULL; sa=slist_node_next(sa))
     {
       ta = slist_node_item(sa);
       if(slist_count(ta->samples) <= 0)

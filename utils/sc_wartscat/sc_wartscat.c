@@ -1,12 +1,13 @@
 /*
- * warts-cat
+ * sc_wartscat
  *
  * This is a utility program to concatenate warts data files together.
  *
- * $Id: sc_wartscat.c,v 1.24 2022/02/13 08:48:16 mjl Exp $
+ * $Id: sc_wartscat.c,v 1.29 2023/03/01 02:30:23 mjl Exp $
  *
  * Copyright (C) 2007-2011 The University of Waikato
- * Copyright (C) 2022 Matthew Luckie
+ * Copyright (C) 2022      Matthew Luckie
+ * Copyright (C) 2023      The Regents of the University of California
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -38,6 +39,8 @@
 #include "tbit/scamper_tbit.h"
 #include "neighbourdisc/scamper_neighbourdisc.h"
 #include "sting/scamper_sting.h"
+#include "sniff/scamper_sniff.h"
+#include "host/scamper_host.h"
 #include "scamper_file.h"
 #include "mjl_heap.h"
 #include "utils.h"
@@ -125,7 +128,11 @@ static int check_options(int argc, char *argv[])
       return -1;
     }
   if((infiles = malloc_zero(sizeof(scamper_file_t *) * infile_cnt)) == NULL)
-    return -1;
+    {
+      fprintf(stderr, "%s: could not malloc %d infile array\n",
+	      __func__, infile_cnt);
+      return -1;
+    }
 
   /* open each input file */
   for(i=0; i<infile_cnt; i++)
@@ -133,7 +140,8 @@ static int check_options(int argc, char *argv[])
       if((infiles[i] = scamper_file_open(argv[optind+i], 'r', NULL)) == NULL)
 	{
 	  usage(argv[0], 0);
-	  fprintf(stderr, "could not open infile %s\n", argv[optind+i]);
+	  fprintf(stderr, "%s: could not open infile %s\n",
+		  __func__, argv[optind+i]);
 	  return -1;
 	}
     }
@@ -200,55 +208,88 @@ static void cleanup(void)
 
 static int write_obj(uint16_t type, void *data)
 {
+  int rc = 0;
+
   /* write the object out */
   switch(type)
     {
-    case SCAMPER_FILE_OBJ_TRACELB:
-      if(scamper_file_write_tracelb(outfile, data, NULL) != 0)
-	return -1;
-      scamper_tracelb_free(data);
-      break;
-
-    case SCAMPER_FILE_OBJ_TRACE:
-      if(scamper_file_write_trace(outfile, data, NULL) != 0)
-	return -1;
-      scamper_trace_free(data);
-      break;
-
-    case SCAMPER_FILE_OBJ_PING:
-      if(scamper_file_write_ping(outfile, data, NULL) != 0)
-	return -1;
-      scamper_ping_free(data);
-      break;
-
-    case SCAMPER_FILE_OBJ_DEALIAS:
-      if(scamper_file_write_dealias(outfile, data, NULL) != 0)
-	return -1;
-      scamper_dealias_free(data);
-      break;
-
     case SCAMPER_FILE_OBJ_CYCLE_START:
       if(scamper_file_write_cycle_start(outfile, data) != 0)
-	return -1;
+	rc = -1;
       scamper_cycle_free(data);
       break;
 
     case SCAMPER_FILE_OBJ_CYCLE_STOP:
       if(scamper_file_write_cycle_stop(outfile, data) != 0)
-	return -1;
+	rc = -1;
       scamper_cycle_free(data);
+      break;
+
+    case SCAMPER_FILE_OBJ_TRACE:
+      if(scamper_file_write_trace(outfile, data, NULL) != 0)
+	rc = -1;
+      scamper_trace_free(data);
+      break;
+
+    case SCAMPER_FILE_OBJ_PING:
+      if(scamper_file_write_ping(outfile, data, NULL) != 0)
+	rc = -1;
+      scamper_ping_free(data);
+      break;
+
+    case SCAMPER_FILE_OBJ_TRACELB:
+      if(scamper_file_write_tracelb(outfile, data, NULL) != 0)
+	rc = -1;
+      scamper_tracelb_free(data);
+      break;
+
+    case SCAMPER_FILE_OBJ_DEALIAS:
+      if(scamper_file_write_dealias(outfile, data, NULL) != 0)
+	rc = -1;
+      scamper_dealias_free(data);
+      break;
+
+    case SCAMPER_FILE_OBJ_NEIGHBOURDISC:
+      if(scamper_file_write_neighbourdisc(outfile, data, NULL) != 0)
+	rc = -1;
+      scamper_neighbourdisc_free(data);
+      break;
+
+    case SCAMPER_FILE_OBJ_TBIT:
+      if(scamper_file_write_tbit(outfile, data, NULL) != 0)
+	rc = -1;
+      scamper_tbit_free(data);
+      break;
+
+    case SCAMPER_FILE_OBJ_STING:
+      if(scamper_file_write_sting(outfile, data, NULL) != 0)
+	rc = -1;
+      scamper_sting_free(data);
+      break;
+
+    case SCAMPER_FILE_OBJ_SNIFF:
+      if(scamper_file_write_sniff(outfile, data, NULL) != 0)
+	rc = -1;
+      scamper_sniff_free(data);
+      break;
+
+    case SCAMPER_FILE_OBJ_HOST:
+      if(scamper_file_write_host(outfile, data, NULL) != 0)
+	rc = -1;
+      scamper_host_free(data);
       break;
 
     default:
       fprintf(stderr, "unhandled data object 0x%04x\n", type);
-      break;
+      rc = -1;
     }
 
-  return 0;
+  return rc;
 }
 
 static int simple_cat(void)
 {
+  const char *objtype;
   uint16_t type;
   void *data;
   int i, rc;
@@ -261,12 +302,22 @@ static int simple_cat(void)
 	  if(data == NULL)
 	    break;
 	  if(write_obj(type, data) != 0)
-	    return -1;
+	    {
+	      if((objtype = scamper_file_objtype_tostr(type)) == NULL)
+		objtype = "unknown-type";
+	      fprintf(stderr, "%s: could not write %s record from %s\n",
+		      __func__, objtype, scamper_file_getfilename(infiles[i]));
+	      return -1;
+	    }
 	}
 
       /* error when reading the input file */
       if(rc != 0)
-	return -1;
+	{
+	  fprintf(stderr, "%s: error reading %s\n", __func__,
+		  scamper_file_getfilename(infiles[1]));
+	  return -1;
+	}
 
       scamper_file_close(infiles[i]);
       infiles[i] = NULL;
@@ -308,6 +359,7 @@ static int sort_struct_cmp(const sort_struct_t *a, const sort_struct_t *b)
 
 static int sort_cat_fill(heap_t *heap, sort_struct_t *s)
 {
+  const char *objtype;
   int i = s->file;
 
   if(scamper_file_read(infiles[i], filter, &s->type, &s->data) == 0)
@@ -322,8 +374,14 @@ static int sort_cat_fill(heap_t *heap, sort_struct_t *s)
 
       switch(s->type)
 	{
-	case SCAMPER_FILE_OBJ_TRACELB:
-	  timeval_cpy(&s->tv, &((scamper_tracelb_t *)s->data)->start);
+	case SCAMPER_FILE_OBJ_CYCLE_START:
+	  s->tv.tv_sec = ((scamper_cycle_t *)s->data)->start_time;
+	  s->tv.tv_usec = 0;
+	  break;
+
+	case SCAMPER_FILE_OBJ_CYCLE_STOP:
+	  s->tv.tv_sec = ((scamper_cycle_t *)s->data)->stop_time;
+	  s->tv.tv_usec = 1000000;
 	  break;
 
 	case SCAMPER_FILE_OBJ_TRACE:
@@ -334,53 +392,74 @@ static int sort_cat_fill(heap_t *heap, sort_struct_t *s)
 	  timeval_cpy(&s->tv, &((scamper_ping_t *)s->data)->start);
 	  break;
 
-	case SCAMPER_FILE_OBJ_DEALIAS:
-	  timeval_cpy(&s->tv, &((scamper_dealias_t *)s->data)->start);
+	case SCAMPER_FILE_OBJ_TRACELB:
+	  timeval_cpy(&s->tv, &((scamper_tracelb_t *)s->data)->start);
 	  break;
 
-	case SCAMPER_FILE_OBJ_TBIT:
-	  timeval_cpy(&s->tv, &((scamper_tbit_t *)s->data)->start);
+	case SCAMPER_FILE_OBJ_DEALIAS:
+	  timeval_cpy(&s->tv, &((scamper_dealias_t *)s->data)->start);
 	  break;
 
 	case SCAMPER_FILE_OBJ_NEIGHBOURDISC:
 	  timeval_cpy(&s->tv, &((scamper_neighbourdisc_t *)s->data)->start);
 	  break;
 
+	case SCAMPER_FILE_OBJ_TBIT:
+	  timeval_cpy(&s->tv, &((scamper_tbit_t *)s->data)->start);
+	  break;
+
 	case SCAMPER_FILE_OBJ_STING:
 	  timeval_cpy(&s->tv, &((scamper_sting_t *)s->data)->start);
 	  break;
 
-	case SCAMPER_FILE_OBJ_CYCLE_START:
-	  s->tv.tv_sec = ((scamper_cycle_t *)s->data)->start_time;
-	  s->tv.tv_usec = 0;
+	case SCAMPER_FILE_OBJ_SNIFF:
+	  timeval_cpy(&s->tv, &((scamper_sniff_t *)s->data)->start);
 	  break;
 
-	case SCAMPER_FILE_OBJ_CYCLE_STOP:
-	  s->tv.tv_sec = ((scamper_cycle_t *)s->data)->stop_time;
-	  s->tv.tv_usec = 1000000;
+	case SCAMPER_FILE_OBJ_HOST:
+	  timeval_cpy(&s->tv, &((scamper_host_t *)s->data)->start);
 	  break;
 	}
 
       if(heap_insert(heap, s) == NULL)
-	return -1;
+	{
+	  if((objtype = scamper_file_objtype_tostr(s->type)) == NULL)
+	    objtype = "unknown-type";
+	  fprintf(stderr, "%s: could not add %s from %s to heap\n", __func__,
+		  objtype, scamper_file_getfilename(infiles[i]));
+	  return -1;
+	}
     }
-  else return -1;
+  else
+    {
+      fprintf(stderr, "%s: could not read from %s\n", __func__,
+	      scamper_file_getfilename(infiles[i]));
+      return -1;
+    }
 
   return 0;
 }
 
 static int sort_cat(void)
 {
+  const char    *objtype;
   heap_t        *heap = NULL;
   sort_struct_t *ss = NULL;
   sort_struct_t *s;
   int i;
 
   if((heap = heap_alloc((heap_cmp_t)sort_struct_cmp)) == NULL)
-    goto err;
+    {
+      fprintf(stderr, "%s: could not alloc heap\n", __func__);
+      goto err;
+    }
 
   if((ss = malloc_zero(sizeof(sort_struct_t) * infile_cnt)) == NULL)
-    goto err;
+    {
+      fprintf(stderr, "%s: could not alloc sorting %d structures\n",
+	      __func__, infile_cnt);
+      goto err;
+    }
 
   /*
    * start by filling all file slots with the first data object from
@@ -401,7 +480,13 @@ static int sort_cat(void)
   while((s = (sort_struct_t *)heap_remove(heap)) != NULL)
     {
       if(write_obj(s->type, s->data) != 0)
-	goto err;
+	{
+	  if((objtype = scamper_file_objtype_tostr(s->type)) == NULL)
+	    objtype = "unknown-type";
+	  fprintf(stderr, "%s: could not write %s record from %s\n", __func__,
+		  objtype, scamper_file_getfilename(infiles[s->file]));
+	  goto err;
+	}
       if(sort_cat_fill(heap, s) != 0)
 	goto err;
     }
@@ -420,15 +505,17 @@ static int sort_cat(void)
 int main(int argc, char *argv[])
 {
   uint16_t filter_types[] = {
-    SCAMPER_FILE_OBJ_TRACELB,
-    SCAMPER_FILE_OBJ_TRACE,
-    SCAMPER_FILE_OBJ_PING,
-    SCAMPER_FILE_OBJ_DEALIAS,
-    SCAMPER_FILE_OBJ_TBIT,
-    SCAMPER_FILE_OBJ_NEIGHBOURDISC,
-    SCAMPER_FILE_OBJ_STING,
     SCAMPER_FILE_OBJ_CYCLE_START,
     SCAMPER_FILE_OBJ_CYCLE_STOP,
+    SCAMPER_FILE_OBJ_TRACE,
+    SCAMPER_FILE_OBJ_PING,
+    SCAMPER_FILE_OBJ_TRACELB,
+    SCAMPER_FILE_OBJ_DEALIAS,
+    SCAMPER_FILE_OBJ_NEIGHBOURDISC,
+    SCAMPER_FILE_OBJ_TBIT,
+    SCAMPER_FILE_OBJ_STING,
+    SCAMPER_FILE_OBJ_SNIFF,
+    SCAMPER_FILE_OBJ_HOST,
   };
   uint16_t filter_cnt = sizeof(filter_types)/sizeof(uint16_t);
   int rc;

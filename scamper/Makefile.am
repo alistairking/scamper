@@ -1,4 +1,4 @@
-# $Id: Makefile.am,v 1.38.2.1 2023/02/23 23:51:30 mjl Exp $
+# $Id: Makefile.am,v 1.39.2.1 2023/03/02 04:07:41 mjl Exp $
 
 AUTOMAKE_OPTIONS = subdir-objects
 
@@ -8,7 +8,7 @@ bin_PROGRAMS = scamper
 
 lib_LTLIBRARIES = libscamperfile.la
 
-libscamperfile_la_LDFLAGS = -version-info 4:0:0
+libscamperfile_la_LDFLAGS = -version-info 5:0:0
 
 libscamperfile_la_LIBADD = @ZLIB_LIBS@
 

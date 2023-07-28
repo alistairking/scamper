@@ -1,12 +1,12 @@
 /*
  * scamper_file.c
  *
- * $Id: scamper_file.h,v 1.36 2022/06/28 06:29:03 mjl Exp $
+ * $Id: scamper_file.h,v 1.37 2023/03/01 01:49:16 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2012      The Regents of the University of California
- * Copyright (C) 2022      Matthew Luckie
+ * Copyright (C) 2022-2023 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -121,6 +121,7 @@ int scamper_file_write_host(scamper_file_t *sf,
 			    const struct scamper_host *host, void *p);
 
 char *scamper_file_type_tostr(scamper_file_t *sf, char *buf, size_t len);
+const char *scamper_file_objtype_tostr(uint16_t type);
 char *scamper_file_getfilename(scamper_file_t *sf);
 
 int   scamper_file_geteof(const scamper_file_t *sf);

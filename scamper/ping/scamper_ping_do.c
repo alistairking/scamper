@@ -1,12 +1,12 @@
 /*
  * scamper_do_ping.c
  *
- * $Id: scamper_ping_do.c,v 1.165 2022/11/21 05:05:30 mjl Exp $
+ * $Id: scamper_ping_do.c,v 1.166 2023/03/01 04:24:11 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2012-2015 The Regents of the University of California
- * Copyright (C) 2016-2022 Matthew Luckie
+ * Copyright (C) 2016-2023 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -1852,17 +1852,46 @@ void *scamper_do_ping_alloc(char *str)
 	goto err;
     }
 
-  if(probe_sport == -1)
+  if(SCAMPER_PING_METHOD_IS_ICMP(ping))
     {
-      if(SCAMPER_PING_METHOD_IS_ICMP(ping))
+      if(probe_sport == -1)
 	probe_sport = pid & 0xffff;
-      else
-	probe_sport = (pid & 0xffff) | 0x8000;
+      else if(probe_sport == 0)
+	{
+	  random_u16(&u16);
+	  probe_sport = u16 | 0x8000;
+	}
     }
-  else if(probe_sport == 0)
+  else if(probe_sport == -1 || probe_sport == 0)
     {
-      random_u16(&u16);
-      probe_sport = u16 | 0x8000;
+      if(probe_sport == -1)
+	probe_sport = (pid & 0xffff) | 0x8000;
+      else if(probe_sport == 0)
+	{
+	  random_u16(&u16);
+	  probe_sport = u16 | 0x8000;
+	}
+
+      /*
+       * if scamper generates the starting sport value, make sure it
+       * won't wrap to zero.
+       */
+      if(SCAMPER_PING_METHOD_VARY_SPORT(ping) &&
+	 65535 - probe_sport < probe_count-1 && probe_count < 32768)
+	{
+	  probe_sport -= probe_count;
+	  if(probe_sport < 0x8000)
+	    probe_sport = 0x8000;
+	}
+    }
+
+  /* make sure probe_sport + probe_count <= 65535 */
+  if(SCAMPER_PING_METHOD_VARY_SPORT(ping) &&
+     65535 - probe_sport < probe_count - 1)
+    {
+      scamper_debug(__func__, "invalid probe_sport %u given probe_count %u",
+		    probe_sport, probe_count);
+      goto err;
     }
 
   if(probe_dport == -1)
@@ -1871,6 +1900,15 @@ void *scamper_do_ping_alloc(char *str)
 	probe_dport = 0;
       else
 	probe_dport = 33435;
+    }
+
+  /* make sure probe_dport + probe_count <= 65535 */
+  if(SCAMPER_PING_METHOD_VARY_DPORT(ping) &&
+     65535 - probe_dport < probe_count - 1)
+    {
+      scamper_debug(__func__, "invalid probe_dport %u given probe_count %u",
+		    probe_dport, probe_count);
+      goto err;
     }
 
   if(probe_timeout == -1)
@@ -1994,12 +2032,15 @@ scamper_task_t *scamper_do_ping_alloctask(void *data, scamper_list_t *list,
       break;
 
     case SCAMPER_PING_METHOD_UDP_DPORT:
-      SCAMPER_TASK_SIG_UDP_DPORT(sig, ping->probe_sport, 0, 65535);
+      SCAMPER_TASK_SIG_UDP_DPORT(sig, ping->probe_sport, ping->probe_dport,
+				 ping->probe_dport + ping->probe_count - 1);
       break;
 
     case SCAMPER_PING_METHOD_TCP_ACK_SPORT:
     case SCAMPER_PING_METHOD_TCP_SYN_SPORT:
-      SCAMPER_TASK_SIG_TCP_SPORT(sig, 0, 65535, ping->probe_dport);
+      SCAMPER_TASK_SIG_TCP_SPORT(sig, ping->probe_sport,
+				 ping->probe_sport + ping->probe_count - 1,
+				 ping->probe_dport);
       break;
 
     default:

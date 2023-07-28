@@ -1,7 +1,7 @@
 /*
  * scamper_rtsock: code to deal with a route socket or equivalent
  *
- * $Id: scamper_rtsock.c,v 1.91 2023/01/03 02:58:33 mjl Exp $
+ * $Id: scamper_rtsock.c,v 1.92 2023/02/24 04:00:51 mjl Exp $
  *
  *          Matthew Luckie
  *
@@ -129,13 +129,13 @@ static pid_t    pid;          /* [unprivileged] process id */
 static uint16_t seq   = 0;    /* next sequence number to use */
 static dlist_t *pairs = NULL; /* list of addresses queried with their seq */
 
-static rtsock_pair_t *rtsock_pair_alloc(scamper_route_t *route, int seq)
+static rtsock_pair_t *rtsock_pair_alloc(scamper_route_t *route, int seq_in)
 {
   rtsock_pair_t *pair;
   if((pair = malloc_zero(sizeof(rtsock_pair_t))) == NULL)
     return NULL;
   pair->route = route;
-  pair->seq = seq;
+  pair->seq = seq_in;
   if((pair->node = dlist_head_push(pairs, pair)) == NULL)
     {
       free(pair);
@@ -156,7 +156,7 @@ static void rtsock_pair_free(rtsock_pair_t *pair)
   return;
 }
 
-static rtsock_pair_t *rtsock_pair_get(uint16_t seq)
+static rtsock_pair_t *rtsock_pair_get(uint16_t seq_in)
 {
   rtsock_pair_t *pair;
   dlist_node_t  *node;
@@ -164,7 +164,7 @@ static rtsock_pair_t *rtsock_pair_get(uint16_t seq)
   for(node=dlist_head_node(pairs); node != NULL; node=dlist_node_next(node))
     {
       pair = dlist_node_item(node);
-      if(pair->seq != seq)
+      if(pair->seq != seq_in)
 	continue;
       dlist_node_pop(pairs, node);
       pair->node = NULL;

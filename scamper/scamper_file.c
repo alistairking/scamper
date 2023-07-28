@@ -1,12 +1,12 @@
 /*
  * scamper_file.c
  *
- * $Id: scamper_file.c,v 1.88 2023/01/03 02:09:35 mjl Exp $
+ * $Id: scamper_file.c,v 1.89 2023/03/01 01:49:16 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2012      The Regents of the University of California
- * Copyright (C) 2022      Matthew Luckie
+ * Copyright (C) 2022-2023 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -640,6 +640,31 @@ char *scamper_file_type_tostr(scamper_file_t *sf, char *buf, size_t len)
       return buf;
     }
 
+  return NULL;
+}
+
+const char *scamper_file_objtype_tostr(uint16_t type)
+{
+  static const char *types[] = {
+    NULL,
+    "list",
+    "cycle-start",
+    "cycle-def",
+    "cycle-stop",
+    "addr",
+    "trace",
+    "ping",
+    "tracelb",
+    "dealias",
+    "neighbourdisc",
+    "tbit",
+    "sting",
+    "sniff",
+    "host",
+  };
+  uint16_t typec = sizeof(types)/sizeof(char *);
+  if(typec > type)
+    return types[type];
   return NULL;
 }
 

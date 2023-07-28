@@ -1,7 +1,7 @@
 /*
  * sc_bdrmap: driver to map first hop border routers of networks
  *
- * $Id: sc_bdrmap.c,v 1.37 2023/01/02 22:09:01 mjl Exp $
+ * $Id: sc_bdrmap.c,v 1.38 2023/02/24 04:30:23 mjl Exp $
  *
  *         Matthew Luckie
  *         mjl@caida.org / mjl@wand.net.nz
@@ -591,7 +591,6 @@ static int                    no_merge      = 1;
 static int                    fudge         = 5000;
 static int                    af            = AF_INET;
 static struct timeval         now;
-static char                   cmd[32768];
 static int                    dump_id       = 0;
 static const sc_dump_t        dump_funcs[]  = {
   {NULL, NULL,
@@ -3747,7 +3746,7 @@ static char *rtt_tostr(const struct timeval *rtt, char *str, size_t len)
   return str;
 }
 
-static void trace_dump(const scamper_trace_t *trace, sc_routerset_t *rtrset)
+static void trace_dump(const scamper_trace_t *trace, sc_routerset_t *rtrset_in)
 {
   scamper_trace_hop_t *hop;
   sc_prefix_t *pfx;
@@ -3781,8 +3780,8 @@ static void trace_dump(const scamper_trace_t *trace, sc_routerset_t *rtrset)
       else
 	printf(" null");
 
-      if(rtrset != NULL &&
-	 (rtr = sc_routerset_find(rtrset, hop->hop_addr)) != NULL)
+      if(rtrset_in != NULL &&
+	 (rtr = sc_routerset_find(rtrset_in, hop->hop_addr)) != NULL)
 	printf(" %u:%s", rtr->owner_as, owner_reasonstr[rtr->owner_reason]);
 
       printf("\n");
@@ -3791,11 +3790,11 @@ static void trace_dump(const scamper_trace_t *trace, sc_routerset_t *rtrset)
   return;
 }
 
-static void traceset_dump(const sc_traceset_t *ts, sc_routerset_t *rtrset)
+static void traceset_dump(const sc_traceset_t *ts, sc_routerset_t *rtrset_in)
 {
   slist_node_t *sn;
   for(sn=slist_head_node(ts->list); sn != NULL; sn=slist_node_next(sn))
-    trace_dump(slist_node_item(sn), rtrset);
+    trace_dump(slist_node_item(sn), rtrset_in);
   printf("\n");
   return;
 }
@@ -4285,6 +4284,7 @@ static int do_method(void)
     do_method_ally,
     do_method_allyconf,
   };
+  char cmd[32768];
   sc_waittest_t *wt;
   sc_test_t *test;
   int off;

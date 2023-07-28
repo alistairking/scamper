@@ -1,9 +1,9 @@
 /*
  * scamper_do_host
  *
- * $Id: scamper_host_do.c,v 1.47 2022/12/09 09:37:42 mjl Exp $
+ * $Id: scamper_host_do.c,v 1.48 2023/02/24 03:56:22 mjl Exp $
  *
- * Copyright (C) 2018-2022 Matthew Luckie
+ * Copyright (C) 2018-2023 Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -426,7 +426,7 @@ static host_state_t *host_state_alloc(scamper_task_t *task)
 }
 
 static int extract_name(char *name, size_t namelen,
-			uint8_t *pktbuf, size_t pktlen, size_t off)
+			const uint8_t *pbuf, size_t plen, size_t off)
 {
   int ptr_used = 0, rc = 0;
   uint16_t u16;
@@ -435,9 +435,9 @@ static int extract_name(char *name, size_t namelen,
 
   for(;;)
     {
-      if(off >= pktlen)
+      if(off >= plen)
 	return -1;
-      u8 = pktbuf[off];
+      u8 = pbuf[off];
 
       if(u8 == 0)
 	{
@@ -448,16 +448,16 @@ static int extract_name(char *name, size_t namelen,
 
       if((u8 & 0xc0) == 0xc0)
 	{
-	  if(off + 1 >= pktlen)
+	  if(off + 1 >= plen)
 	    return -1;
-	  u16 = bytes_ntohs(pktbuf+off) & 0x3fff;
+	  u16 = bytes_ntohs(pbuf+off) & 0x3fff;
 	  if(u16 >= off)
 	    {
 	      scamper_debug(__func__, "ptr %u >= %d\n", u16, (int)off);
 	      return -1;
 	    }
 	  off = u16;
-	  if(off >= pktlen)
+	  if(off >= plen)
 	    return -1;
 	  if(ptr_used == 0)
 	    {
@@ -467,11 +467,11 @@ static int extract_name(char *name, size_t namelen,
 	  continue;
 	}
 
-      if(off + 1 + u8 >= pktlen)
+      if(off + 1 + u8 >= plen)
 	return -1;
       if(i + u8 >= namelen)
 	return -1;
-      memcpy(name+i, pktbuf+off+1, u8);
+      memcpy(name+i, pbuf+off+1, u8);
       off += u8 + 1;
       i += u8;
       name[i++] = '.';
@@ -483,30 +483,30 @@ static int extract_name(char *name, size_t namelen,
   return rc;
 }
 
-static int extract_soa(scamper_host_rr_t *rr, uint8_t *pktbuf, size_t pktlen,
-		       size_t off)
+static int extract_soa(scamper_host_rr_t *rr,
+		       const uint8_t *pbuf, size_t plen, size_t off)
 {
   scamper_host_rr_soa_t *soa = NULL;
   char mname[256], rname[256];
   uint32_t serial, refresh, retry, expire, minimum;
   int i;
 
-  if((i = extract_name(mname, sizeof(mname), pktbuf, pktlen, off)) <= 0)
+  if((i = extract_name(mname, sizeof(mname), pbuf, plen, off)) <= 0)
     return -1;
   off += i;
-  if((i = extract_name(rname, sizeof(rname), pktbuf, pktlen, off)) <= 0)
+  if((i = extract_name(rname, sizeof(rname), pbuf, plen, off)) <= 0)
     return -1;
   off += i;
 
   /* need to have at least 20 bytes for the next five fields */
-  if(pktlen - off < 20)
+  if(plen - off < 20)
     return -1;
-  serial = bytes_ntohl(pktbuf+off); off += 4;
-  refresh = bytes_ntohl(pktbuf+off); off += 4;
-  retry = bytes_ntohl(pktbuf+off); off += 4;
-  expire = bytes_ntohl(pktbuf+off); off += 4;
-  minimum = bytes_ntohl(pktbuf+off); off += 4;
-  assert(off <= pktlen);
+  serial = bytes_ntohl(pbuf+off); off += 4;
+  refresh = bytes_ntohl(pbuf+off); off += 4;
+  retry = bytes_ntohl(pbuf+off); off += 4;
+  expire = bytes_ntohl(pbuf+off); off += 4;
+  minimum = bytes_ntohl(pbuf+off); off += 4;
+  assert(off <= plen);
 
   if((soa = scamper_host_rr_soa_alloc(mname, rname)) == NULL)
     return -1;
@@ -520,19 +520,19 @@ static int extract_soa(scamper_host_rr_t *rr, uint8_t *pktbuf, size_t pktlen,
   return 0;
 }
 
-static int extract_mx(scamper_host_rr_t *rr, uint8_t *pktbuf, size_t pktlen,
-		      size_t off)
+static int extract_mx(scamper_host_rr_t *rr,
+		      const uint8_t *pbuf, size_t plen, size_t off)
 {
   scamper_host_rr_mx_t *mx = NULL;
   char exchange[256];
   uint16_t preference;
 
   /* need to have at least two bytes for preference */
-  if(pktlen - off < 2)
+  if(plen - off < 2)
     return -1;
 
-  preference = bytes_ntohs(pktbuf+off); off += 2;
-  if(extract_name(exchange, sizeof(exchange), pktbuf, pktlen, off) <= 0)
+  preference = bytes_ntohs(pbuf+off); off += 2;
+  if(extract_name(exchange, sizeof(exchange), pbuf, plen, off) <= 0)
     return -1;
   if((mx = scamper_host_rr_mx_alloc(preference, exchange)) == NULL)
     return -1;

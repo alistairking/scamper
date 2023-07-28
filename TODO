@@ -1,8 +1,8 @@
-$Id: TODO,v 1.19 2020/03/01 07:42:04 mjl Exp $
+$Id: TODO,v 1.20 2023/02/24 04:36:13 mjl Exp $
 
 * compile without warnings when the following is passed in CFLAGS
   -Wall -Wno-unneeded-internal-declaration -Wno-unused-const-variable
-  -Wno-deprecated-declarations -Wshadow
+  -Wno-deprecated-declarations -Wno-unused-parameter -Wshadow -Wextra
 
 * investigate if gettimeofday has to be called so much
 

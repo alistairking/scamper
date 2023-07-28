@@ -9,12 +9,12 @@
 .\" Copyright (c) 2015-2023 Matthew Luckie
 .\"                         All rights reserved
 .\"
-.\" $Id: scamper.1,v 1.102.2.2 2023/02/24 00:16:39 mjl Exp $
+.\" $Id: scamper.1,v 1.106 2023/03/01 04:22:27 mjl Exp $
 .\"
 .\"  nroff -man scamper.1
 .\"  groff -man -Tascii scamper.1 | man2html -title scamper.1
 .\"
-.Dd February 24, 2023
+.Dd March 1, 2023
 .Dt SCAMPER 1
 .Os
 .\""""""""""""
@@ -457,7 +457,10 @@ have been received.
 specifies the IP address of the router to use.
 .It Fl s Ar sport
 specifies the source port value to use.  For ICMP-based methods, this option
-specifies the ICMP identifier to use.
+specifies the ICMP identifier to use.  By default,
+.Nm
+uses a value it derives from the process ID, but can be told to generate
+a random value between 32768 and 65535 by specifying zero.
 .It Fl S Ar srcaddr
 specifies the source address to use in probes.
 The address cannot be spoofed.
@@ -697,7 +700,9 @@ specifies the destination port of the probe.
 Defaults to 33435.
 .It Fl F Ar src-port
 specifies the source port of the probe.
-Defaults to (pid & 0x7fff) + 0x8000.
+By default,
+.Nm
+uses a value it derives from the process ID.
 .It Fl i Ar IP
 specifies the destination IP address of the probe.
 .It Fl M Ar mtu
@@ -855,9 +860,9 @@ specifies the destination port for the packets being sent.
 Defaults are application-specific.
 .It Fl s Ar sport
 specifies the source port for the packets being sent.
-Default is based of the
+By default,
 .Nm
-process id.
+uses a value it derives from the process ID.
 .It Fl a Ar acks
 specifies the sequence of packets that should be acknowledged as part of
 the ABC test.
@@ -1008,7 +1013,9 @@ Defaults to 3000.
 specifies the IP address of the router to use.
 .It Fl s Ar sport
 specifies to the source port to use when sending probes.
-Default based on process ID.
+By default,
+.Nm
+uses a value it derives from the process ID.
 .It Fl t Ar tos
 specifies the value for the IP Type-of-service field for outgoing probes.
 Defaults to 0.
@@ -1075,7 +1082,9 @@ specifies the mean rate to send packets in the data phase, in milliseconds.
 By default, sting waits 100ms between probes.
 .It Fl s Ar sport
 specifies to the source port to use when sending probes.
-Default is based on the process ID.
+By default,
+.Nm
+uses a value it derives from the process ID.
 .El
 .\""""""""""""
 .Sh SNIFF OPTIONS
