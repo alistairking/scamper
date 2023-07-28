@@ -1,12 +1,12 @@
 /*
  * scamper_tcp4.c
  *
- * $Id: scamper_tcp4.c,v 1.60 2022/12/09 09:37:42 mjl Exp $
+ * $Id: scamper_tcp4.c,v 1.61 2023/05/29 21:22:26 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2012,2015 The Regents of the University of California
- * Copyright (C) 2022      Matthew Luckie
+ * Copyright (C) 2022-2023 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -30,6 +30,7 @@
 #include "internal.h"
 
 #include "scamper_addr.h"
+#include "scamper_addr_int.h"
 #include "scamper_dl.h"
 #include "scamper_probe.h"
 #include "scamper_ip4.h"

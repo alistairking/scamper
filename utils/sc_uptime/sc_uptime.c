@@ -7,8 +7,9 @@
  * Copyright (C) 2017 Matthew Luckie
  * Copyright (C) 2018-2019 The University of Waikato
  * Copyright (C) 2023 Matthew Luckie
+ * Copyright (C) 2023 The Regents of the University of California
  *
- * $Id: sc_uptime.c,v 1.79 2023/01/03 02:19:11 mjl Exp $
+ * $Id: sc_uptime.c,v 1.87 2023/05/14 08:10:40 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -77,6 +78,7 @@ static int                    decode_out_fd = -1;
 static char                  *dbfile        = NULL;
 static char                  *srcaddr       = NULL;
 static scamper_file_t        *outfile       = NULL;
+static char                  *outfile_type  = "warts";
 static scamper_file_filter_t *ffilter       = NULL;
 static int                    data_left     = 0;
 static int                    more          = 0;
@@ -161,7 +163,7 @@ static void usage(uint32_t opt_mask)
 {
   fprintf(stderr,
     "usage: sc_uptime [-o] [-d dbfile] [-E expire] [-I interval]\n"
-    "                      [-l log] [-o outfile] [-O option] [-p port]\n"
+    "                      [-l log] [-O option] [-p port]\n"
     "                      [-S srcaddr] [-U unix] outfile.warts\n"
     "\n"
     "       sc_update [-a] [-d dbfile] [-E expire] [-O option] addrfile.txt\n"
@@ -440,6 +442,7 @@ static int check_options(int argc, char *argv[])
       return 0;
     }
 
+  /* at this stage, we know that we should be using -o */
   if((options & OPT_OUTFILE) == 0 ||
      (options & (OPT_PORT|OPT_UNIX)) == 0 ||
      (options & (OPT_PORT|OPT_UNIX)) == (OPT_PORT|OPT_UNIX) ||
@@ -447,6 +450,40 @@ static int check_options(int argc, char *argv[])
     {
       usage(OPT_OUTFILE|OPT_PORT|OPT_UNIX);
       return -1;
+    }
+
+  if(string_endswith(opt_args[0], ".gz") != 0)
+    {
+#ifdef HAVE_ZLIB
+      outfile_type = "warts.gz";
+#else
+      usage(OPT_OUTFILE);
+      fprintf(stderr, "cannot write to %s: did not link against zlib\n",
+	      opt_args[0]);
+      return -1;
+#endif
+    }
+  else if(string_endswith(opt_args[0], ".bz2") != 0)
+    {
+#ifdef HAVE_LIBBZ2
+      outfile_type = "warts.bz2";
+#else
+      usage(OPT_OUTFILE);
+      fprintf(stderr, "cannot write to %s: did not link against libbz2\n",
+	      opt_args[0]);
+      return -1;
+#endif
+    }
+  else if(string_endswith(opt_args[0], ".xz") != 0)
+    {
+#ifdef HAVE_LIBLZMA
+      outfile_type = "warts.xz";
+#else
+      usage(OPT_OUTFILE);
+      fprintf(stderr, "cannot write to %s: did not link against liblzma\n",
+	      opt_args[0]);
+      return -1;
+#endif
     }
 
   if(options & OPT_PORT)
@@ -888,16 +925,19 @@ static int db_update(sc_dst_t *dst, uint32_t last_tx)
 
 static int do_decoderead_ping(scamper_ping_t *ping)
 {
-  scamper_ping_reply_t *reply;
+  const scamper_ping_reply_t *reply;
+  const struct timeval *tv;
+  scamper_addr_t *dst_addr;
   sc_sample_t ipids[10];
   int i, rc = 0, ipidc = 0, replyc = 0, freedst = 1;
   uint32_t last_tx;
+  uint16_t ping_sent;
   sc_dst_t *dst;
   char buf[128];
 
-  scamper_addr_tostr(ping->dst, buf, sizeof(buf));
-
-  if((dst = sc_dst_find(ping->dst)) == NULL)
+  dst_addr = scamper_ping_dst_get(ping);
+  scamper_addr_tostr(dst_addr, buf, sizeof(buf));
+  if((dst = sc_dst_find(dst_addr)) == NULL)
     {
       fprintf(stderr, "%s: could not find dst %s\n", __func__, buf);
       return -1;
@@ -905,23 +945,25 @@ static int do_decoderead_ping(scamper_ping_t *ping)
   splaytree_remove_node(tree, dst->tree_node);
   dst->tree_node = NULL;
 
-  for(i=0; i<ping->ping_sent; i++)
+  ping_sent = scamper_ping_sent_get(ping);
+  for(i=0; i<ping_sent; i++)
     {
-      if((reply = ping->ping_replies[i]) == NULL)
-	continue;
-      if(SCAMPER_PING_REPLY_IS_ICMP_ECHO_REPLY(reply) == 0)
+      if((reply = scamper_ping_reply_get(ping, i)) == NULL ||
+	 scamper_ping_reply_is_icmp_echo_reply(reply) == 0)
 	continue;
       replyc++;
-      if(reply->flags & SCAMPER_PING_REPLY_FLAG_REPLY_IPID)
+      if(scamper_ping_reply_flag_is_reply_ipid(reply))
 	{
 	  if(ipidc == 10)
 	    break;
-	  ipids[ipidc].ipid   = reply->reply_ipid32;
-	  ipids[ipidc].tx_sec = reply->tx.tv_sec;
+	  tv = scamper_ping_reply_tx_get(reply);
+	  ipids[ipidc].ipid = scamper_ping_reply_ipid32_get(reply);
+	  ipids[ipidc].tx_sec = tv->tv_sec;
 	  ipidc++;
 	}
     }
-  last_tx = (uint32_t)ping->start.tv_sec;
+  tv = scamper_ping_start_get(ping);
+  last_tx = (uint32_t)tv->tv_sec;
   scamper_ping_free(ping); ping = NULL;
 
   if(dst->class != CLASS_INCR)
@@ -1167,7 +1209,7 @@ static int do_scamperconnect(void)
 
 static int donotprobe_line(char *line, void *param)
 {
-  prefixtree_t *tree = param;
+  prefixtree_t *dnp_tree = param;
   prefix6_t *pf6 = NULL;
   struct in6_addr in6;
   int netlen = 128;
@@ -1199,7 +1241,7 @@ static int donotprobe_line(char *line, void *param)
       return -1;
     }
 
-  if(prefixtree_find_exact6(tree, &in6, netlen) != NULL)
+  if(prefixtree_find_exact6(dnp_tree, &in6, netlen) != NULL)
     return 0;
 
   if((pf6 = prefix6_alloc(&in6, netlen, NULL)) == NULL)
@@ -1209,7 +1251,7 @@ static int donotprobe_line(char *line, void *param)
       return -1;
     }
 
-  if(prefixtree_insert6(tree, pf6) == NULL)
+  if(prefixtree_insert6(dnp_tree, pf6) == NULL)
     {
       fprintf(stderr, "%s: could not insert %s/%u\n", __func__,
 	      inet_ntop(AF_INET6, &in6, buf, sizeof(buf)), netlen);
@@ -1386,6 +1428,7 @@ static int do_sqlite_open(void)
    * before opening the database file, check if it exists.
    * if the file does not exist, only create the dbfile if we've been told.
    */
+  assert(dbfile != NULL);
   rc = stat(dbfile, &sb);
   if(options & OPT_CREATE)
     {
@@ -1574,7 +1617,7 @@ static int up_data(void)
   if((list = slist_alloc()) == NULL ||
      (heap_p1 = heap_alloc((heap_cmp_t)sc_dst_next_cmp)) == NULL ||
      do_sqlite_state() != 0 || do_scamperconnect() != 0 ||
-     (outfile = scamper_file_open(opt_args[0], 'w', "warts")) == NULL ||
+     (outfile = scamper_file_open(opt_args[0], 'w', outfile_type)) == NULL ||
      (scamper_wb = scamper_writebuf_alloc()) == NULL ||
      (scamper_lp = scamper_linepoll_alloc(do_scamperread_line,NULL)) == NULL ||
      (decode_wb = scamper_writebuf_alloc()) == NULL ||
@@ -1853,19 +1896,19 @@ static int up_addrfile(void)
 static int up_donotprobe(void)
 {
   sqlite3_stmt *st_s = NULL, *st_d = NULL;
-  prefixtree_t *tree = NULL;
+  prefixtree_t *dnp_tree = NULL;
   const unsigned char *addr;
   struct in6_addr in6;
   sqlite3_int64 id;
   const char *sql;
   int x, rc = 1, begun = 0;
 
-  if((tree = prefixtree_alloc6()) == NULL)
+  if((dnp_tree = prefixtree_alloc6()) == NULL)
     {
       fprintf(stderr, "%s: could not alloc tree\n", __func__);
       goto done;
     }
-  if(file_lines(opt_args[0], donotprobe_line, tree) != 0)
+  if(file_lines(opt_args[0], donotprobe_line, dnp_tree) != 0)
     goto done;
 
   sqlite3_exec(db, "begin", NULL, NULL, NULL); begun = 1;
@@ -1896,7 +1939,7 @@ static int up_donotprobe(void)
 	  goto done;
 	}
 
-      if(prefixtree_find_ip6(tree, &in6) != NULL)
+      if(prefixtree_find_ip6(dnp_tree, &in6) != NULL)
 	{
 	  sqlite3_reset(st_d);
 	  sqlite3_clear_bindings(st_d);
@@ -1918,7 +1961,8 @@ static int up_donotprobe(void)
   if(st_s != NULL) sqlite3_finalize(st_s);
   if(st_d != NULL) sqlite3_finalize(st_d);
   if(begun != 0) sqlite3_exec(db, "commit", NULL, NULL, NULL);
-  if(tree != NULL) prefixtree_free_cb(tree, (prefix_free_t)prefix6_free);
+  if(dnp_tree != NULL)
+    prefixtree_free_cb(dnp_tree, (prefix_free_t)prefix6_free);
   return rc;
 }
 
@@ -2042,16 +2086,17 @@ static int up_import(void)
   sqlite3_int64 id, samples_rowid;
   scamper_file_t *in;
   scamper_ping_t *ping;
-  scamper_ping_reply_t *r;
+  const scamper_ping_reply_t *r;
   const unsigned char *addr;
-  scamper_addr_t *sa;
+  const struct timeval *tx, *start;
+  scamper_addr_t *sa, *dst_addr;
   struct timeval tv;
   struct tm *tm;
   time_t t;
   const char *sql, *ptr;
   char buf[128];
   sc_dst_t *dst;
-  uint16_t j, type;
+  uint16_t j, type, ping_sent;
   uint32_t blob_off, blob_len;
   int blob_size;
   uint8_t u8[21];
@@ -2084,7 +2129,7 @@ static int up_import(void)
 	      __func__, sqlite3_errstr(x));
       goto done;
     }
-  while((x = sqlite3_step(stmt)) == SQLITE_ROW)
+  while(sqlite3_step(stmt) == SQLITE_ROW)
     {
       id   = sqlite3_column_int64(stmt, 0);
       addr = sqlite3_column_text(stmt, 1);
@@ -2204,14 +2249,15 @@ static int up_import(void)
 	  ping = data;
 
 	  /* get dst record from database */
-	  if((dst = sc_dst_find(ping->dst)) == NULL)
+	  dst_addr = scamper_ping_dst_get(ping);
+	  if((dst = sc_dst_find(dst_addr)) == NULL)
 	    {
-	      if((dst = sc_dst_alloc(0, ping->dst)) == NULL)
+	      if((dst = sc_dst_alloc(0, dst_addr)) == NULL)
 		{
 		  fprintf(stderr, "%s: could not malloc dst\n", __func__);
 		  goto done;
 		}
-	      scamper_addr_use(ping->dst);
+	      scamper_addr_use(dst_addr);
 	      if(sc_dst_insert(dst) != 0)
 		{
 		  fprintf(stderr, "%s: could not insert dst\n", __func__);
@@ -2219,7 +2265,7 @@ static int up_import(void)
 		}
 
 	      /* insert the address into the database */
-	      scamper_addr_tostr(ping->dst, buf, sizeof(buf));
+	      scamper_addr_tostr(dst_addr, buf, sizeof(buf));
 	      sqlite3_bind_text(st_addr_ins,1,buf,strlen(buf),SQLITE_STATIC);
 	      if((x = sqlite3_step(st_addr_ins)) != SQLITE_DONE)
 		{
@@ -2249,22 +2295,23 @@ static int up_import(void)
 	    blob_off = 4;
 
 	  rx = 0;
-	  for(j=0; j<ping->ping_sent; j++)
+	  ping_sent = scamper_ping_sent_get(ping);
+	  for(j=0; j<ping_sent; j++)
 	    {
-	      r = ping->ping_replies[j];
-	      if(r != NULL && SCAMPER_PING_REPLY_IS_ICMP_ECHO_REPLY(r))
+	      r = scamper_ping_reply_get(ping, j);
+	      if(r != NULL && scamper_ping_reply_is_icmp_echo_reply(r))
 		{
 		  rx++;
-
-		  timeval_add_tv3(&tv, &r->tx, &r->rtt);
-		  bytes_htonl(u8+1, (uint32_t)r->tx.tv_sec);
-		  bytes_htonl(u8+5, (uint32_t)r->tx.tv_usec);
+		  tx = scamper_ping_reply_tx_get(r);
+		  timeval_add_tv3(&tv, tx, scamper_ping_reply_rtt_get(r));
+		  bytes_htonl(u8+1, (uint32_t)tx->tv_sec);
+		  bytes_htonl(u8+5, (uint32_t)tx->tv_usec);
 		  bytes_htonl(u8+9, (uint32_t)tv.tv_sec);
 		  bytes_htonl(u8+13, (uint32_t)tv.tv_usec);
-		  if(r->flags & SCAMPER_PING_REPLY_FLAG_REPLY_IPID)
+		  if(scamper_ping_reply_flag_is_reply_ipid(r))
 		    {
 		      u8[0] = 1;
-		      bytes_htonl(u8+17, r->reply_ipid32);
+		      bytes_htonl(u8+17, scamper_ping_reply_ipid32_get(r));
 		      blob_len = 21;
 		    }
 		  else
@@ -2291,8 +2338,9 @@ static int up_import(void)
 	  if(rx == 0)
 	    {
 	      u8[0] = 3;
-	      bytes_htonl(u8+1, (uint32_t)ping->start.tv_sec);
-	      bytes_htonl(u8+5, (uint32_t)ping->start.tv_usec);
+	      start = scamper_ping_start_get(ping);
+	      bytes_htonl(u8+1, (uint32_t)start->tv_sec);
+	      bytes_htonl(u8+5, (uint32_t)start->tv_usec);
 	      blob_len = 9;
 
 	      if(blob_size - blob_off < blob_len)
@@ -2398,7 +2446,7 @@ static int up_reboots_arerandom(sc_sample_t **samples,int samplec, int l,int r)
  *
  *
  */
-static int up_reboots_init(slist_t *list, sc_sample_t ***out, int *outc)
+static int up_reboots_init(slist_t *sample_list, sc_sample_t ***out, int *outc)
 {
   sc_sample_t **samples = NULL, *sample;
   slist_node_t *sn, *s2;
@@ -2406,7 +2454,7 @@ static int up_reboots_init(slist_t *list, sc_sample_t ***out, int *outc)
 
   *out = NULL;
   *outc = 0;
-  for(sn=slist_head_node(list); sn != NULL; sn=slist_node_next(sn))
+  for(sn=slist_head_node(sample_list); sn != NULL; sn=slist_node_next(sn))
     {
       sample = slist_node_item(sn);
       if((s2 = slist_node_next(sn)) != NULL)
@@ -2423,7 +2471,7 @@ static int up_reboots_init(slist_t *list, sc_sample_t ***out, int *outc)
     return -1;
 
   i = 0;
-  for(sn=slist_head_node(list); sn != NULL; sn=slist_node_next(sn))
+  for(sn=slist_head_node(sample_list); sn != NULL; sn=slist_node_next(sn))
     {
       sample = slist_node_item(sn);
       if(sample->type == 1)
@@ -2780,7 +2828,7 @@ static int ptrcmp(const void *a, const void *b)
 
 static int up_reboots_doone(sc_dst_t *dst, slist_t *samplist, slist_t *reboots)
 {
-  splaytree_t *tree = NULL;
+  splaytree_t *seq_tree = NULL;
   sc_sample_t **samples = NULL;
   sc_ipidseq_t *seq, *seq_last = NULL;
   slist_node_t *sn;
@@ -2793,7 +2841,7 @@ static int up_reboots_doone(sc_dst_t *dst, slist_t *samplist, slist_t *reboots)
     goto err;
   if(samples == NULL)
     return 0;
-  if((tree = splaytree_alloc(ptrcmp)) == NULL)
+  if((seq_tree = splaytree_alloc(ptrcmp)) == NULL)
     goto err;
   if((seqs = up_reboots_seqs(samples, samplec)) == NULL)
     goto err;
@@ -2803,11 +2851,11 @@ static int up_reboots_doone(sc_dst_t *dst, slist_t *samplist, slist_t *reboots)
       seq = slist_node_item(sn);
 
       /* if this sequence ends here, remove it */
-      if(splaytree_find(tree, seq) != NULL)
-	splaytree_remove_item(tree, seq);
+      if(splaytree_find(seq_tree, seq) != NULL)
+	splaytree_remove_item(seq_tree, seq);
 
       /* if sequence is contained within a continuous sequence, no reboot */
-      if(splaytree_count(tree) != 0)
+      if(splaytree_count(seq_tree) != 0)
 	goto next;
 
       /* if a sequence ended here, then no reboot */
@@ -2842,7 +2890,7 @@ static int up_reboots_doone(sc_dst_t *dst, slist_t *samplist, slist_t *reboots)
 	}
 
     next:
-      if(seq->next != NULL && splaytree_insert(tree, seq->next) == NULL)
+      if(seq->next != NULL && splaytree_insert(seq_tree, seq->next) == NULL)
 	goto err;
       seq_last = seq;
     }
@@ -2850,6 +2898,7 @@ static int up_reboots_doone(sc_dst_t *dst, slist_t *samplist, slist_t *reboots)
 
  err:
   if(seqs != NULL) slist_free_cb(seqs, (slist_free_t)sc_ipidseq_free);
+  if(seq_tree != NULL) splaytree_free(seq_tree, NULL);
   if(samples != NULL) free(samples);
   return -1;
 }
@@ -3022,7 +3071,7 @@ static int up_reboots(void)
 	  sqlite3_reset(st);
 	  ptr = opt_args[i];
 	  sqlite3_bind_text(st, 1, ptr, strlen(ptr), SQLITE_STATIC);
-	  if((x = sqlite3_step(st)) != SQLITE_ROW)
+	  if(sqlite3_step(st) != SQLITE_ROW)
 	    {
 	      fprintf(stderr, "%s: %s not in %s\n", __func__, ptr, dbfile);
 	      goto done;
@@ -3058,7 +3107,7 @@ static int up_reboots(void)
 	  goto done;
 	}
 
-      while((x = sqlite3_step(st)) == SQLITE_ROW)
+      while(sqlite3_step(st) == SQLITE_ROW)
 	{
 	  addr = sqlite3_column_text(st, 1);
 	  if((sa = scamper_addr_resolve(AF_INET6, (const char *)addr)) == NULL)
@@ -3109,7 +3158,7 @@ static int up_reboots(void)
       sqlite3_reset(st);
       sqlite3_bind_int(st, 1, dst->id);
 
-      while((x = sqlite3_step(st)) == SQLITE_ROW)
+      while(sqlite3_step(st) == SQLITE_ROW)
 	{
 	  sample_id = sqlite3_column_int64(st, 0);
 

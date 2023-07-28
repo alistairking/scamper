@@ -1,10 +1,11 @@
 /*
  * scamper_getsrc.c
  *
- * $Id: scamper_getsrc.c,v 1.20 2020/03/17 07:32:16 mjl Exp $
+ * $Id: scamper_getsrc.c,v 1.21 2023/05/29 21:22:26 mjl Exp $
  *
  * Copyright (C) 2005 Matthew Luckie
  * Copyright (C) 2007-2010 The University of Waikato
+ * Copyright (C) 2023 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -29,6 +30,7 @@
 
 #include "scamper.h"
 #include "scamper_addr.h"
+#include "scamper_addr_int.h"
 #include "scamper_debug.h"
 #include "scamper_getsrc.h"
 #include "utils.h"

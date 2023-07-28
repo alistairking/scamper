@@ -1,7 +1,7 @@
 /*
  * utils.c
  *
- * $Id: utils.c,v 1.209 2023/01/03 02:17:09 mjl Exp $
+ * $Id: utils.c,v 1.216 2023/05/03 19:23:19 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -271,19 +271,15 @@ char *sockaddr_tostr(const struct sockaddr *sa, char *buf, const size_t len)
   return buf;
 }
 
-int addr4_cmp(const void *va, const void *vb)
+int addr4_cmp(const struct in_addr *a, const struct in_addr *b)
 {
-  const struct in_addr *a = (const struct in_addr *)va;
-  const struct in_addr *b = (const struct in_addr *)vb;
   if(a->s_addr < b->s_addr) return -1;
   if(a->s_addr > b->s_addr) return  1;
   return 0;
 }
 
-int addr4_human_cmp(const void *va, const void *vb)
+int addr4_human_cmp(const struct in_addr *a, const struct in_addr *b)
 {
-  const struct in_addr *a = (const struct in_addr *)va;
-  const struct in_addr *b = (const struct in_addr *)vb;
   uint32_t ua = ntohl(a->s_addr);
   uint32_t ub = ntohl(b->s_addr);
   if(ua < ub) return -1;
@@ -291,33 +287,13 @@ int addr4_human_cmp(const void *va, const void *vb)
   return 0;
 }
 
-int addr6_cmp(const void *va, const void *vb)
+int addr6_cmp(const struct in6_addr *a, const struct in6_addr *b)
 {
-  const struct in6_addr *a = (const struct in6_addr *)va;
-  const struct in6_addr *b = (const struct in6_addr *)vb;
-  int i;
-
-#ifndef _WIN32
-  for(i=0; i<4; i++)
-    {
-      if(a->s6_addr32[i] < b->s6_addr32[i]) return -1;
-      if(a->s6_addr32[i] > b->s6_addr32[i]) return  1;
-    }
-#else
-  for(i=0; i<8; i++)
-    {
-      if(a->u.Word[i] < b->u.Word[i]) return -1;
-      if(a->u.Word[i] > b->u.Word[i]) return  1;
-    }
-#endif
-
-  return 0;
+  return memcmp(a, b, sizeof(struct in6_addr));
 }
 
-int addr6_human_cmp(const void *va, const void *vb)
+int addr6_human_cmp(const struct in6_addr *a, const struct in6_addr *b)
 {
-  const struct in6_addr *a = (const struct in6_addr *)va;
-  const struct in6_addr *b = (const struct in6_addr *)vb;
   int i;
 
 #ifndef _WIN32
@@ -341,6 +317,82 @@ int addr6_human_cmp(const void *va, const void *vb)
 #endif
 
   return 0;
+}
+
+int addr6_add_netlen(struct in6_addr *in, int netlen)
+{
+  static const uint8_t add[] = {0x80,0x40,0x20,0x10,0x08,0x04,0x02,0x01};
+  int j = (netlen-1) / 8;
+  int k = (netlen-1) % 8;
+
+  if(((int)in->s6_addr[j]) + add[k] <= 255)
+    {
+      in->s6_addr[j] += add[k];
+      return 0;
+    }
+
+  in->s6_addr[j--] = 0;
+  while(j >= 0)
+    {
+      if(in->s6_addr[j] < 255)
+	break;
+      in->s6_addr[j--] = 0;
+    }
+
+  if(j < 0)
+    return -1;
+
+  in->s6_addr[j]++;
+  return 0;
+}
+
+void addr6_sub(struct in6_addr *out,
+	       const struct in6_addr *y, const struct in6_addr *x)
+{
+  uint16_t x16, y16, z, c = 0;
+  int i;
+
+  assert(addr6_human_cmp(x, y) <= 0);
+
+  for(i=15; i>=0; i--)
+    {
+      y16 = y->s6_addr[i];
+      x16 = x->s6_addr[i] + c;
+      if(y16 >= x16)
+	{
+	  out->s6_addr[i] = y16 - x16;
+	  c = 0;
+	}
+      else
+	{
+	  z = 256 + y16 - x16;
+	  out->s6_addr[i] = z;
+	  c = 1;
+	}
+    }
+
+  return;
+}
+
+void addr6_add(struct in6_addr *out, const struct in6_addr *x,
+	       const struct in6_addr *y)
+{
+  uint16_t z, c = 0;
+  int i;
+
+  for(i=15; i>=0; i--)
+    {
+      z = x->s6_addr[i] + y->s6_addr[i] + c;
+      if(z > 255)
+	{
+	  c = 1;
+	  z = z & 0xff;
+	}
+      else c = 0;
+      out->s6_addr[i] = z;
+    }
+
+  return;
 }
 
 /*
@@ -565,7 +617,7 @@ static int array_insert_0(void **array, size_t *nmemb, void *item,
 int array_insert(void ***array, size_t *nmemb, void *item, array_cmp_t cmp)
 {
   size_t len;
-  assert(nmemb != NULL); assert(*nmemb >= 0);
+  assert(nmemb != NULL);
   len = ((*nmemb) + 1) * sizeof(void *);
   if(realloc_wrap((void **)array, len) != 0)
     return -1;
@@ -577,7 +629,7 @@ int array_insert_gb(void ***array, size_t *nmemb, size_t *mmemb, size_t growby,
 {
   size_t len;
 
-  assert(nmemb != NULL && *nmemb >= 0);
+  assert(nmemb != NULL);
   if(*nmemb + 1 >= *mmemb)
     {
       assert(*mmemb + growby > *nmemb);
@@ -597,7 +649,7 @@ int array_insert_dm(void ***array, size_t *nmemb, void *item,
 {
   size_t len;
 
-  assert(nmemb != NULL && *nmemb >= 0);
+  assert(nmemb != NULL);
   len = ((*nmemb) + 1) * sizeof(void *);
   if(realloc_wrap_dm((void **)array, len, file, line) != 0)
     return -1;
@@ -611,7 +663,7 @@ int array_insert_gb_dm(void ***array, size_t *nmemb, size_t *mmemb,
 {
   size_t len;
 
-  assert(nmemb != NULL && *nmemb >= 0);
+  assert(nmemb != NULL);
   if(*nmemb + 1 >= *mmemb)
     {
       assert(*mmemb + growby > *nmemb);
@@ -628,7 +680,7 @@ int array_insert_gb_dm(void ***array, size_t *nmemb, size_t *mmemb,
 void array_remove(void **array, size_t *nmemb, size_t p)
 {
   assert(*nmemb > 0);
-  assert(p >= 0 && p < *nmemb);
+  assert(p < *nmemb);
   memmove(array+p, array+p+1, ((*nmemb)-p-1) * sizeof(void *));
   *nmemb = *nmemb - 1;
   return;
@@ -977,6 +1029,18 @@ char *string_toupper(char *buf, size_t len, const char *in)
   while(in[off] != '\0' && len - off > 1)
     {
       buf[off] = toupper(in[off]);
+      off++;
+    }
+  buf[off] = '\0';
+  return buf;
+}
+
+char *string_tolower(char *buf, size_t len, const char *in)
+{
+  size_t off = 0;
+  while(in[off] != '\0' && len - off > 1)
+    {
+      buf[off] = tolower(in[off]);
       off++;
     }
   buf[off] = '\0';
@@ -1422,6 +1486,16 @@ int string_isdash(const char *str)
   return 0;
 }
 #endif
+
+int string_endswith(const char *in, const char *ending)
+{
+  size_t in_len = strlen(in);
+  size_t end_len = strlen(ending);
+  if(end_len >= in_len ||
+     strcasecmp(in + in_len - end_len, ending) != 0)
+    return 0;
+  return 1;
+}
 
 void mem_concat(void *dst,const void *src,size_t len,size_t *off,size_t size)
 {

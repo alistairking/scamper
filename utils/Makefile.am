@@ -13,6 +13,7 @@ endif
 SUBDIRS+= \
 	sc_ipiddump \
 	sc_pinger \
+	sc_prefixprober \
 	sc_prefixscan \
 	sc_radargun \
 	sc_remoted \

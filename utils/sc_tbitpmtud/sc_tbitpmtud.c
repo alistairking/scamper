@@ -6,6 +6,7 @@
  *
  * Copyright (C) 2010,2018 The University of Waikato
  * Copyright (C) 2022-2023 Matthew Luckie
+ * Copyright (C) 2023      The Regents of the University of California
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -20,7 +21,7 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
- * $Id: sc_tbitpmtud.c,v 1.26 2023/01/02 22:09:01 mjl Exp $
+ * $Id: sc_tbitpmtud.c,v 1.34 2023/05/29 21:22:27 mjl Exp $
  */
 
 #ifdef HAVE_CONFIG_H
@@ -92,6 +93,7 @@ static char                  *readbuf       = NULL;
 static size_t                 readbuf_len   = 0;
 static int                    port          = 31337;
 static char                  *addressfile   = NULL;
+static char                  *outfile_type  = "warts";
 static char                  *outfile_name  = NULL;
 static scamper_file_t        *outfile       = NULL;
 static int                    outfile_obj   = 0;
@@ -170,6 +172,7 @@ typedef struct target
 #define OPT_MTU         0x0200
 #define OPT_DUMP        0x0400
 #define OPT_IP2AS       0x0800
+#define OPT_OPTIONS     0x1000
 
 static void usage(uint32_t opts)
 {
@@ -178,7 +181,7 @@ static void usage(uint32_t opts)
   fprintf(stderr,
   "usage: sc_tbitpmtud [-r] [-a addressfile] [-o outfile] [-p port]\n"
   "                    [-c completed] [-l limit] [-m mtu] [-t textfile]\n"
-  "                    [-w window]\n"
+  "                    [-O options] [-w window]\n"
   "\n"
   "       sc_tbitpmtud [-d dumpid] [-A ip2as] [-m mtu] file1 .. fileN\n");
 
@@ -212,9 +215,10 @@ static void usage(uint32_t opts)
     fprintf(stderr, "       -m: pseudo maximum transmission unit\n");
   if(opts & OPT_OUTFILE)
     fprintf(stderr, "       -o: write raw data to specified file\n");
+  if(opts & OPT_OPTIONS)
+    fprintf(stderr, "       -O: options\n");
   if(opts & OPT_PORT)
     fprintf(stderr, "       -p: find local scamper process on local port\n");
-  if(opts & OPT_LIMIT)
   if(opts & OPT_RANDOM)
     fprintf(stderr, "       -r: probe systems in random order\n");
   if(opts & OPT_TEXT)
@@ -228,7 +232,7 @@ static void usage(uint32_t opts)
 static int check_options(int argc, char *argv[])
 {
   int x = 0, ch; long lo;
-  char *opts = "?A:a:c:d:l:m:o:p:rt:w:";
+  char *opts = "?A:a:c:d:l:m:o:O:p:rt:w:";
   char *opt_port = NULL, *opt_text = NULL, *opt_limit = NULL;
   char *opt_window = NULL, *opt_comp = NULL, *opt_mtu = NULL;
   char *opt_dumpid = NULL;
@@ -274,6 +278,47 @@ static int check_options(int argc, char *argv[])
 	case 'o':
 	  options |= OPT_OUTFILE;
 	  outfile_name = optarg;
+	  break;
+
+	case 'O':
+	  if(strcasecmp(optarg, "gz") == 0 ||
+	     strcasecmp(optarg, "warts.gz") == 0)
+	    {
+#ifdef HAVE_ZLIB
+	      outfile_type = "warts.gz";
+#else
+	      fprintf(stderr, "cannot write %s: did not link against zlib\n",
+		      optarg);
+	      return -1;
+#endif
+	    }
+	  else if(strcasecmp(optarg, "bz2") == 0 ||
+		  strcasecmp(optarg, "warts.bz2") == 0)
+	    {
+#ifdef HAVE_LIBBZ2
+	      outfile_type = "warts.bz2";
+#else
+	      fprintf(stderr, "cannot write %s: did not link against libbz2\n",
+		      optarg);
+	      return -1;
+#endif
+	    }
+	  else if(strcasecmp(optarg, "xz") == 0 ||
+		  strcasecmp(optarg, "warts.xz") == 0)
+	    {
+#ifdef HAVE_LIBLZMA
+	      outfile_type = "warts.xz";
+#else
+	      fprintf(stderr, "cannot write %s: did not link against liblzma\n",
+		      optarg);
+	      return -1;
+#endif
+	    }
+	  else
+	    {
+	      usage(OPT_OPTIONS);
+	      return -1;
+	    }
 	  break;
 
 	case 'p':
@@ -752,8 +797,7 @@ static int parse_list(char *str, void *param)
     return -1;
 
   if(scamper_addr_isreserved(tf.addr) != 0 ||
-     (SCAMPER_ADDR_TYPE_IS_IPV6(tf.addr) &&
-      scamper_addr_isunicast(tf.addr) != 1))
+     (scamper_addr_isipv6(tf.addr) && scamper_addr_isunicast(tf.addr) != 1))
     {
       scamper_addr_free(tf.addr);
       return 0;
@@ -771,7 +815,7 @@ static int parse_list(char *str, void *param)
       target->addr  = scamper_addr_use(tf.addr);
       target->sport = 1024;
 
-      if(target->addr->type == SCAMPER_ADDR_TYPE_IPV4)
+      if(scamper_addr_isipv4(target->addr))
 	target->mss = 1460;
       else
 	target->mss = 1440;
@@ -1043,7 +1087,7 @@ static int process_tbit(target_t *target, scamper_tbit_t *tbit)
 
   target->sport++;
 
-  if(target->addr->type == SCAMPER_ADDR_TYPE_IPV6)
+  if(scamper_addr_isipv6(target->addr))
     ipv6 = 1;
 
   /* some conditions mean that we'll stop evaluating pmtud */
@@ -1134,15 +1178,16 @@ static int do_decoderead(void)
 	  outfile = NULL;
 	}
       outfile_obj = 0;
-      snprintf(buf, sizeof(buf), "%s_%02d.warts", outfile_name, outfile_i++);
-      if((outfile = scamper_file_open(buf, 'w', "warts")) == NULL)
+      snprintf(buf, sizeof(buf), "%s_%02d.%s", outfile_name, outfile_i++,
+	       outfile_type);
+      if((outfile = scamper_file_open(buf, 'w', outfile_type)) == NULL)
 	return -1;
     }
 
   if(type == SCAMPER_FILE_OBJ_PING)
     {
       ping = (scamper_ping_t *)data;
-      findme.addr = ping->dst;
+      findme.addr = scamper_ping_dst_get(ping);
       if(scamper_file_write_ping(outfile, ping, NULL) != 0)
 	return -1;
       outfile_obj++;
@@ -1150,7 +1195,7 @@ static int do_decoderead(void)
   else if(type == SCAMPER_FILE_OBJ_TBIT)
     {
       tbit = (scamper_tbit_t *)data;
-      findme.addr = tbit->dst;
+      findme.addr = scamper_tbit_dst_get(tbit);
       if(scamper_file_write_tbit(outfile, tbit, NULL) != 0)
 	return -1;
       outfile_obj++;
@@ -1345,13 +1390,13 @@ static sc_prefix_t *sc_prefix_alloc(int af, void *net, int len)
 
 static int ip2as_line(char *line, void *param)
 {
-  scamper_addr_t sa;
+  scamper_addr_t *sa;
   sc_prefix_t *p = NULL;
   char *n, *m, *a, *at;
   struct in_addr in;
   struct in6_addr in6;
   uint32_t u32, *ases = NULL;
-  int asc = 0, last = 0;
+  int asc = 0, last = 0, rsvd;
   long lo;
 
   if(line[0] == '\0' || line[0] == '#')
@@ -1383,9 +1428,11 @@ static int ip2as_line(char *line, void *param)
     {
       if(lo < IPV4_PREFIX_MIN || lo > IPV4_PREFIX_MAX)
 	return 0;
-      sa.type = SCAMPER_ADDR_TYPE_IPV4;
-      sa.addr = &in;
-      if(scamper_addr_isreserved(&sa))
+      if((sa = scamper_addr_alloc_ipv4(&in)) == NULL)
+	goto err;
+      rsvd = scamper_addr_isreserved(sa);
+      scamper_addr_free(sa);
+      if(rsvd != 0)
 	return 0;
       if((p = sc_prefix_alloc(AF_INET, &in, lo)) == NULL)
 	goto err;
@@ -1394,9 +1441,11 @@ static int ip2as_line(char *line, void *param)
     {
       if(lo < IPV6_PREFIX_MIN || lo > IPV6_PREFIX_MAX)
 	return 0;
-      sa.type = SCAMPER_ADDR_TYPE_IPV6;
-      sa.addr = &in6;
-      if(scamper_addr_isreserved(&sa))
+      if((sa = scamper_addr_alloc_ipv6(&in6)) == NULL)
+	goto err;
+      rsvd = scamper_addr_isreserved(sa);
+      scamper_addr_free(sa);
+      if(rsvd != 0)
 	return 0;
       if((p = sc_prefix_alloc(AF_INET6, &in6, lo)) == NULL)
 	goto err;
@@ -1445,20 +1494,21 @@ static int ip2as_line(char *line, void *param)
   return -1;
 }
 
-static sc_prefix_t *sc_prefix_find(scamper_addr_t *addr)
+static sc_prefix_t *sc_prefix_find(const scamper_addr_t *addr)
 {
+  const void *va = scamper_addr_addr_get(addr);
   prefix4_t *p4;
   prefix6_t *p6;
 
-  if(addr->type == SCAMPER_ADDR_TYPE_IPV4)
+  switch(scamper_addr_type_get(addr))
     {
-      if((p4 = prefixtree_find_ip4(ip2as_pt_4, addr->addr)) == NULL)
+    case SCAMPER_ADDR_TYPE_IPV4:
+      if((p4 = prefixtree_find_ip4(ip2as_pt_4, va)) == NULL)
         return NULL;
       return p4->ptr;
-    }
-  else if(addr->type == SCAMPER_ADDR_TYPE_IPV6)
-    {
-      if((p6 = prefixtree_find_ip6(ip2as_pt_6, addr->addr)) == NULL)
+
+    case SCAMPER_ADDR_TYPE_IPV6:
+      if((p6 = prefixtree_find_ip6(ip2as_pt_6, va)) == NULL)
         return NULL;
       return p6->ptr;
     }
@@ -1533,57 +1583,60 @@ static int init_1(void)
 
 static int process_1_tbit(scamper_tbit_t *tbit)
 {
-  scamper_tbit_pmtud_t *pmtud;
+  const scamper_tbit_pmtud_t *pmtud;
+  scamper_addr_t *dst;
   sc_mssresult_t *mr;
   sc_mssresult_t *tmr;
+  uint16_t server_mss;
   int rc = -1;
   int x;
 
-  if(tbit->server_mss == 0 || tbit->type != SCAMPER_TBIT_TYPE_PMTUD)
+  server_mss = scamper_tbit_server_mss_get(tbit);
+  if(server_mss == 0 || scamper_tbit_type_get(tbit) != SCAMPER_TBIT_TYPE_PMTUD)
     {
       rc = 0;
       goto done;
     }
 
-  pmtud = tbit->data;
-  if(pmtud->mtu != mtu)
+  pmtud = scamper_tbit_pmtud_get(tbit);
+  if(scamper_tbit_pmtud_mtu_get(pmtud) != mtu)
     {
       rc = 0;
       goto done;
     }
 
-  if(SCAMPER_ADDR_TYPE_IS_IPV4(tbit->dst))
+  dst = scamper_tbit_dst_get(tbit);
+  if(scamper_addr_isipv4(dst))
     {
-      if((mr = table_1_4[tbit->server_mss]) == NULL)
+      if((mr = table_1_4[server_mss]) == NULL)
 	{
 	  if((mr = malloc_zero(sizeof(sc_mssresult_t))) == NULL)
 	    goto done;
-	  table_1_4[tbit->server_mss] = mr;
-	  mr->mss = tbit->server_mss;
+	  table_1_4[server_mss] = mr;
+	  mr->mss = server_mss;
 	}
       tmr = total_1_4;
     }
-  else if(SCAMPER_ADDR_TYPE_IS_IPV6(tbit->dst))
+  else if(scamper_addr_isipv6(dst))
     {
-      if((mr = table_1_6[tbit->server_mss]) == NULL)
+      if((mr = table_1_6[server_mss]) == NULL)
 	{
 	  if((mr = malloc_zero(sizeof(sc_mssresult_t))) == NULL)
 	    goto done;
-	  table_1_6[tbit->server_mss] = mr;
-	  mr->mss = tbit->server_mss;
+	  table_1_6[server_mss] = mr;
+	  mr->mss = server_mss;
 	}
       tmr = total_1_6;
     }
   else goto done;
 
-  if(tbit->result == SCAMPER_TBIT_RESULT_PMTUD_SUCCESS)
-    x = 0;
-  else if(tbit->result == SCAMPER_TBIT_RESULT_PMTUD_FAIL)
-    x = 1;
-  else if(tbit->result == SCAMPER_TBIT_RESULT_PMTUD_TOOSMALL)
-    x = 2;
-  else
-    x = 3;
+  switch(scamper_tbit_result_get(tbit))
+    {
+    case SCAMPER_TBIT_RESULT_PMTUD_SUCCESS: x = 0; break;
+    case SCAMPER_TBIT_RESULT_PMTUD_FAIL: x = 1; break;
+    case SCAMPER_TBIT_RESULT_PMTUD_TOOSMALL: x = 2; break;
+    default: x = 3; break;
+    }
   mr->results[x]++;
   tmr->results[x]++;
   mr->count++;
@@ -1600,11 +1653,11 @@ static int finish_1(void)
 {
   sc_mssresult_t **table;
   sc_mssresult_t *mr, *tmr;
-  slist_t *list = NULL;
+  slist_t *mrlist = NULL;
   int i, v, rc = -1;
   char buf[8];
 
-  if((list = slist_alloc()) == NULL)
+  if((mrlist = slist_alloc()) == NULL)
     goto done;
 
   for(v=0; v<2; v++)
@@ -1624,10 +1677,10 @@ static int finish_1(void)
 
       for(i=0; i<65536; i++)
 	{
-	  if(table[i] != NULL && slist_tail_push(list, table[i]) == NULL)
+	  if(table[i] != NULL && slist_tail_push(mrlist, table[i]) == NULL)
 	    goto done;
 	}
-      slist_qsort(list, (slist_cmp_t)sc_mssresult_cmp);
+      slist_qsort(mrlist, (slist_cmp_t)sc_mssresult_cmp);
 
       printf("    success   |     fail     |   toosmall   |    other    |    total");
       printf("\n");
@@ -1639,7 +1692,7 @@ static int finish_1(void)
 	     percentage(buf, sizeof(buf), tmr->results[3], tmr->count),
 	     tmr->count);
       printf("----------------------------------------------------------------------------\n");
-      while((mr = slist_head_pop(list)) != NULL)
+      while((mr = slist_head_pop(mrlist)) != NULL)
 	{
 	  printf("%5d |", mr->mss);
 	  for(i=0; i<3; i++)
@@ -1666,7 +1719,7 @@ static int finish_1(void)
   free(table_1_6);
   free(total_1_4);
   free(total_1_6);
-  if(list != NULL) slist_free(list);
+  if(mrlist != NULL) slist_free(mrlist);
   return rc;
 }
 
@@ -1689,18 +1742,18 @@ static int sc_asnresult_c_cmp(const sc_asnresult_t *a,const sc_asnresult_t *b)
   return sc_asmap_cmp(a->asmap, b->asmap);
 }
 
-static sc_asnresult_t *sc_asnresult_get(splaytree_t *tree, sc_asmap_t *asmap)
+static sc_asnresult_t *sc_asnresult_get(splaytree_t *artree, sc_asmap_t *asmap)
 {
   sc_asnresult_t fm, *asr;
 
   fm.asmap = asmap;
-  if((asr = splaytree_find(tree, &fm)) != NULL)
+  if((asr = splaytree_find(artree, &fm)) != NULL)
     return asr;
 
   if((asr = malloc_zero(sizeof(sc_asnresult_t))) == NULL)
     return NULL;
   asr->asmap = asmap;
-  if(splaytree_insert(tree, asr) == NULL)
+  if(splaytree_insert(artree, asr) == NULL)
     {
       free(asr);
       return NULL;
@@ -1733,48 +1786,51 @@ static int init_2(void)
 
 static int process_2_tbit(scamper_tbit_t *tbit)
 {
-  scamper_tbit_pmtud_t *pmtud;
+  const scamper_tbit_pmtud_t *pmtud;
   sc_asnresult_t *tasr, *asr;
-  splaytree_t *tree;
+  scamper_addr_t *dst;
+  splaytree_t *artree;
   sc_prefix_t *pfx;
   int x, rc = -1;
 
-  if(tbit->server_mss == 0 || tbit->type != SCAMPER_TBIT_TYPE_PMTUD)
+  if(scamper_tbit_server_mss_get(tbit) == 0 ||
+     scamper_tbit_type_get(tbit) != SCAMPER_TBIT_TYPE_PMTUD)
     {
       rc = 0;
       goto done;
     }
 
-  pmtud = tbit->data;
-  if(pmtud->mtu != mtu || (pfx = sc_prefix_find(tbit->dst)) == NULL)
+  dst = scamper_tbit_dst_get(tbit);
+  pmtud = scamper_tbit_pmtud_get(tbit);
+  if(scamper_tbit_pmtud_mtu_get(pmtud) != mtu ||
+     (pfx = sc_prefix_find(dst)) == NULL)
     {
       rc = 0;
       goto done;
     }
 
-  if(SCAMPER_ADDR_TYPE_IS_IPV4(tbit->dst))
+  if(scamper_addr_isipv4(dst))
     {
-      tree = tree_2_4;
+      artree = tree_2_4;
       tasr = total_2_4;
     }
-  else if(SCAMPER_ADDR_TYPE_IS_IPV6(tbit->dst))
+  else if(scamper_addr_isipv6(dst))
     {
-      tree = tree_2_6;
+      artree = tree_2_6;
       tasr = total_2_6;
     }
   else goto done;
 
-  if((asr = sc_asnresult_get(tree, pfx->asmap)) == NULL)
+  if((asr = sc_asnresult_get(artree, pfx->asmap)) == NULL)
     goto done;
-  
-  if(tbit->result == SCAMPER_TBIT_RESULT_PMTUD_SUCCESS)
-    x = 0;
-  else if(tbit->result == SCAMPER_TBIT_RESULT_PMTUD_FAIL)
-    x = 1;
-  else if(tbit->result == SCAMPER_TBIT_RESULT_PMTUD_TOOSMALL)
-    x = 2;
-  else
-    x = 3;
+
+  switch(scamper_tbit_result_get(tbit))
+    {
+    case SCAMPER_TBIT_RESULT_PMTUD_SUCCESS: x = 0; break;
+    case SCAMPER_TBIT_RESULT_PMTUD_FAIL: x = 1; break;
+    case SCAMPER_TBIT_RESULT_PMTUD_TOOSMALL: x = 2; break;
+    default: x = 3; break;
+    }
   asr->results[x]++;
   asr->count++;
   tasr->results[x]++;
@@ -1788,32 +1844,32 @@ static int process_2_tbit(scamper_tbit_t *tbit)
 
 static int finish_2(void)
 {
-  splaytree_t *tree;
+  splaytree_t *artree;
   sc_asnresult_t *tasr, *asr;
-  slist_t *list = NULL;
+  slist_t *arlist = NULL;
   int i, v, rc = -1;
   char buf[256];
 
-  if((list = slist_alloc()) == NULL)
+  if((arlist = slist_alloc()) == NULL)
     goto done;
 
   for(v=0; v<2; v++)
     {
       if(v == 0)
 	{
-	  tree = tree_2_4;
+	  artree = tree_2_4;
 	  tasr = total_2_4;
 	}
       else
 	{
-	  tree = tree_2_6;
+	  artree = tree_2_6;
 	  tasr = total_2_6;
 	}
       
-      splaytree_inorder(tree, tree_to_slist, list);
-      if(slist_count(list) == 0)
+      splaytree_inorder(artree, tree_to_slist, arlist);
+      if(slist_count(arlist) == 0)
 	continue;
-      slist_qsort(list, (slist_cmp_t)sc_asnresult_c_cmp);
+      slist_qsort(arlist, (slist_cmp_t)sc_asnresult_c_cmp);
 
       if(v == 0)
 	printf("  IPv4 |");
@@ -1830,7 +1886,7 @@ static int finish_2(void)
 	     percentage(buf, sizeof(buf), tasr->results[3], tasr->count),
 	     tasr->count);
       printf("----------------------------------------------------------------------------\n");
-      while((asr = slist_head_pop(list)) != NULL)
+      while((asr = slist_head_pop(arlist)) != NULL)
 	{
 	  printf("%6s |", sc_asmap_tostr(asr->asmap, buf, sizeof(buf)));
 	  for(i=0; i<3; i++)
@@ -1846,7 +1902,7 @@ static int finish_2(void)
   rc = 0;
 
  done:
-  if(list != NULL) slist_free(list);
+  if(arlist != NULL) slist_free(arlist);
   if(tree_2_4 != NULL) splaytree_free(tree_2_4, free);
   if(tree_2_6 != NULL) splaytree_free(tree_2_6, free);
   if(total_2_4 != NULL) free(total_2_4);

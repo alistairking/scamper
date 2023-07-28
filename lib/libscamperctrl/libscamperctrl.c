@@ -1,7 +1,7 @@
 /*
  * libscamperctrl
  *
- * $Id: libscamperctrl.c,v 1.17 2023/01/11 07:50:42 mjl Exp $
+ * $Id: libscamperctrl.c,v 1.32 2023/04/24 08:07:44 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -36,6 +36,11 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
+#ifdef HAVE_KQUEUE
+#include <sys/event.h>
+#include <sys/time.h>
+#endif
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -62,12 +67,16 @@ struct scamper_ctrl
   scamper_ctrl_cb_t  cb;       /* callback to call */
   uint8_t            wait;     /* are we currently in scamper_ctrl_wait */
   char               err[128]; /* error string */
+#ifdef HAVE_KQUEUE
+  int                kqfd;     /* kqueue fd */
+  dlist_t           *freelist; /* items queued to be freed */
+#endif
 };
 
 struct scamper_inst
 {
   scamper_ctrl_t    *ctrl;    /* backpointer to overall control structure */
-  dlist_node_t      *dn;      /* dlist node in ctrl->insts */
+  dlist_node_t      *dn;      /* dlist node in ctrl->insts or ctrl->freelist */
   void              *param;   /* user-supplied parameter */
   uint8_t            type;    /* types: inet, unix, or remote */
   uint8_t            flags;   /* flags: done */
@@ -118,9 +127,24 @@ struct scamper_task
   uint32_t           id;       /* the task ID returned by scamper */
   uint8_t            refcnt;   /* max value is 2 */
   uint8_t            flags;    /* flags */
+  void              *param;    /* user-supplied parameter */
+};
+
+struct scamper_attp
+{
+  uint8_t            flags;     /* which fields are set */
+  uint32_t           l_id;      /* list id */
+  uint32_t           c_id;      /* cycle id */
+  uint32_t           priority;  /* mix priority */
+  char              *l_name;    /* list name */
+  char              *l_descr;   /* list description */
+  char              *l_monitor; /* list monitor */
 };
 
 #define SCAMPER_INST_FLAG_DONE   0x01
+#ifdef HAVE_KQUEUE
+#define SCAMPER_INST_FLAG_WRITE  0x02
+#endif
 
 #define SCAMPER_INST_TYPE_UNIX   1
 #define SCAMPER_INST_TYPE_INET   2
@@ -137,6 +161,10 @@ struct scamper_task
 #define SCAMPER_TASK_FLAG_DONE   0x08
 #define SCAMPER_TASK_FLAG_HALT   0x10
 #define SCAMPER_TASK_FLAG_HALTED 0x20
+
+#define SCAMPER_ATTP_FLAG_LISTID   0x01
+#define SCAMPER_ATTP_FLAG_CYCLEID  0x02
+#define SCAMPER_ATTP_FLAG_PRIORITY 0x04
 
 void scamper_task_free(scamper_task_t *task)
 {
@@ -161,11 +189,34 @@ static int scamper_task_cmp(const scamper_task_t *a, const scamper_task_t *b)
   return 0;
 }
 
+void *scamper_task_getparam(scamper_task_t *task)
+{
+  return task->param;
+}
+
+char *scamper_task_getcmd(scamper_task_t *task, char *buf, size_t len)
+{
+  size_t x;
+  if(task->cmd->len < len)
+    x = task->cmd->len - 1;
+  else
+    x = len - 1;
+  memcpy(buf, task->cmd->str, x);
+  buf[x] = '\0';
+  return buf;
+}
+
 static void scamper_cmd_free(scamper_cmd_t *cmd)
 {
   if(cmd->str != NULL)
     free(cmd->str);
   free(cmd);
+  return;
+}
+
+static void scamper_inst_onremove(scamper_inst_t *inst)
+{
+  inst->dn = NULL;
   return;
 }
 
@@ -182,6 +233,10 @@ static scamper_cmd_t *scamper_inst_cmd(scamper_inst_t *inst,
 {
   scamper_cmd_t *cmd = NULL;
   size_t i, len = strlen(str);
+
+#ifdef HAVE_KQUEUE
+  struct kevent kev;
+#endif
 
   /*
    * remove extraneous trailing \r\n characters from the end of the
@@ -236,6 +291,16 @@ static scamper_cmd_t *scamper_inst_cmd(scamper_inst_t *inst,
       goto err;
     }
 
+#ifdef HAVE_KQUEUE
+  if((inst->flags & SCAMPER_INST_FLAG_WRITE) == 0)
+    {
+      EV_SET(&kev, inst->fd, EVFILT_WRITE, EV_ADD, 0, 0, inst);
+      if(kevent(inst->ctrl->kqfd, &kev, 1, NULL, 0, NULL) != 0)
+	goto err;
+      inst->flags |= SCAMPER_INST_FLAG_WRITE;
+    }
+#endif
+
   return cmd;
 
  err:
@@ -254,7 +319,7 @@ void scamper_inst_setparam(scamper_inst_t *inst, void *param)
   return;
 }
 
-scamper_task_t *scamper_inst_do(scamper_inst_t *inst, const char *str)
+scamper_task_t *scamper_inst_do(scamper_inst_t *inst, const char *str, void *p)
 {
   scamper_task_t *task = NULL;
   scamper_cmd_t *cmd = NULL;
@@ -295,6 +360,7 @@ scamper_task_t *scamper_inst_do(scamper_inst_t *inst, const char *str)
   cmd->task = task; task->cmd = cmd;
   task->refcnt = 1;
   task->flags |= SCAMPER_TASK_FLAG_QUEUE;
+  task->param = p;
   return task;
 }
 
@@ -357,7 +423,16 @@ static void scamper_inst_freedo(scamper_inst_t *inst)
   if(inst->fd != -1)
     close(inst->fd);
   if(inst->dn != NULL)
-    dlist_node_pop(inst->ctrl->insts, inst->dn);
+    {
+#ifdef HAVE_KQUEUE
+      if(inst->gc == 0)
+	dlist_node_pop(inst->ctrl->insts, inst->dn);
+      else
+	dlist_node_pop(inst->ctrl->freelist, inst->dn);
+#else
+      dlist_node_pop(inst->ctrl->insts, inst->dn);
+#endif
+    }
   if(inst->waitok != NULL)
     slist_free_cb(inst->waitok, (slist_free_t)scamper_cmd_free);
   if(inst->queue != NULL)
@@ -380,7 +455,13 @@ void scamper_inst_free(scamper_inst_t *inst)
    */
   if(inst->ctrl->wait != 0)
     {
-      inst->gc = 1;
+      if(inst->gc == 0)
+	{
+	  inst->gc = 1;
+#ifdef HAVE_KQUEUE
+	  dlist_node_tail_push(inst->ctrl->freelist, inst->dn);
+#endif
+	}
       return;
     }
 
@@ -401,6 +482,10 @@ static scamper_inst_t *scamper_inst_alloc_dm(scamper_ctrl_t *ctrl, uint8_t t,
 {
   scamper_inst_t *inst;
   size_t len = sizeof(scamper_inst_t);
+
+#ifdef HAVE_KQUEUE
+  struct kevent kev;
+#endif
 
 #ifndef DMALLOC
   inst = (scamper_inst_t *)malloc(len);
@@ -431,6 +516,12 @@ static scamper_inst_t *scamper_inst_alloc_dm(scamper_ctrl_t *ctrl, uint8_t t,
   inst->type = t;
   inst->fd   = fd;
 
+#ifdef HAVE_KQUEUE
+  EV_SET(&kev, inst->fd, EVFILT_READ, EV_ADD, 0, 0, inst);
+  if(kevent(ctrl->kqfd, &kev, 1, NULL, 0, NULL) != 0)
+    goto err;
+#endif
+
   return inst;
 
  err:
@@ -449,11 +540,60 @@ static scamper_inst_t *scamper_inst_alloc_dm(scamper_ctrl_t *ctrl, uint8_t t,
   return NULL;
 }
 
+static int scamper_inst_attach(const scamper_attp_t *attp,char *buf,size_t len)
+{
+  char cycleid[24], descr[128], listid[24], monitor[128], name[128];
+  char priority[24];
+
+  if(attp == NULL)
+    {
+      snprintf(buf, len, "attach");
+      return 0;
+    }
+
+  if(attp->flags & SCAMPER_ATTP_FLAG_CYCLEID)
+    snprintf(cycleid, sizeof(cycleid), " cycle_id %u", attp->c_id);
+  else
+    cycleid[0] = '\0';
+
+  if(attp->l_descr != NULL)
+    snprintf(descr, sizeof(descr), " descr \"%s\"", attp->l_descr);
+  else
+    descr[0] = '\0';
+
+  if(attp->flags & SCAMPER_ATTP_FLAG_LISTID)
+    snprintf(listid, sizeof(listid), " list_id %u", attp->l_id);
+  else
+    listid[0] = '\0';
+
+  if(attp->l_monitor != NULL)
+    snprintf(monitor, sizeof(monitor), " monitor \"%s\"", attp->l_monitor);
+  else
+    monitor[0] = '\0';
+
+  if(attp->l_name != NULL)
+    snprintf(name, sizeof(name), " name \"%s\"", attp->l_name);
+  else
+    name[0] = '\0';
+
+  if(attp->flags & SCAMPER_ATTP_FLAG_PRIORITY)
+    snprintf(priority, sizeof(priority), " priority %u", attp->priority);
+  else
+    priority[0] = '\0';
+
+  snprintf(buf, len, "attach%s%s%s%s%s%s",
+	   cycleid, descr, listid, monitor, name, priority);
+
+  return 0;
+}
+
 scamper_inst_t *scamper_inst_inet(scamper_ctrl_t *ctrl,
+				  const scamper_attp_t *attp,
 				  const char *addr, uint16_t port)
 {
   struct addrinfo hints, *res, *res0;
   scamper_inst_t *inst = NULL;
+  char buf[512];
   char servname[6];
   int fd = -1;
 
@@ -487,7 +627,7 @@ scamper_inst_t *scamper_inst_inet(scamper_ctrl_t *ctrl,
   if((fd = socket(res->ai_family, SOCK_STREAM, IPPROTO_TCP)) == -1)
     {
       snprintf(ctrl->err, sizeof(ctrl->err),
-	       "could not create inet socket: %s", strerror(errno));      
+	       "could not create inet socket: %s", strerror(errno));
       goto err;
     }
   if(connect(fd, res->ai_addr, res->ai_addrlen) != 0)
@@ -506,7 +646,12 @@ scamper_inst_t *scamper_inst_inet(scamper_ctrl_t *ctrl,
   if((inst = scamper_inst_alloc(ctrl, SCAMPER_INST_TYPE_INET, fd)) == NULL)
     goto err;
   fd = -1;
-  if(scamper_inst_cmd(inst, SCAMPER_CMD_TYPE_ATTACH, "attach") == NULL)
+  if(scamper_inst_attach(attp, buf, sizeof(buf)) != 0)
+    {
+      snprintf(ctrl->err, sizeof(ctrl->err), "could not form attach");
+      goto err;
+    }
+  if(scamper_inst_cmd(inst, SCAMPER_CMD_TYPE_ATTACH, buf) == NULL)
     goto err;
 
   freeaddrinfo(res0);
@@ -571,14 +716,18 @@ static int scamper_inst_unix_fd(scamper_ctrl_t *ctrl, const char *path)
   return -1;
 }
 
-scamper_inst_t *scamper_inst_unix(scamper_ctrl_t *ctrl, const char *path)
+scamper_inst_t *scamper_inst_unix(scamper_ctrl_t *ctrl,
+				  const scamper_attp_t *attp,
+				  const char *path)
 {
   scamper_inst_t *inst = NULL;
+  char buf[512];
   int fd = -1;
 
   if((fd = scamper_inst_unix_fd(ctrl, path)) == -1 ||
      (inst = scamper_inst_alloc(ctrl, SCAMPER_INST_TYPE_UNIX, fd)) == NULL ||
-     scamper_inst_cmd(inst, SCAMPER_CMD_TYPE_ATTACH, "attach") == NULL)
+     scamper_inst_attach(attp, buf, sizeof(buf)) != 0 ||
+     scamper_inst_cmd(inst, SCAMPER_CMD_TYPE_ATTACH, buf) == NULL)
     goto err;
 
   return inst;
@@ -630,7 +779,7 @@ static int scamper_inst_read(scamper_inst_t *inst)
       ctrl->cb(inst, SCAMPER_CTRL_TYPE_EOF, NULL, NULL, 0);
       return 0;
     }
-  
+
   if(rc < 0)
     {
       /* didn't read anything but no fatal error */
@@ -640,12 +789,13 @@ static int scamper_inst_read(scamper_inst_t *inst)
       /* fatal error */
       snprintf(ctrl->err, sizeof(ctrl->err), "could not read: %s",
 	       strerror(errno));
-      goto err;
+      goto fatal;
     }
 
   /* adjust for any partial read left over from last time */
   memcpy(buf, inst->line, inst->line_off);
   len = rc + inst->line_off;
+  inst->line_off = 0;
 
   start = (char *)buf;
   x = 0;
@@ -667,7 +817,7 @@ static int scamper_inst_read(scamper_inst_t *inst)
       if(linelen == 0)
 	{
 	  snprintf(ctrl->err, sizeof(ctrl->err), "unexpected empty line");
-	  goto err;
+	  goto fatal;
 	}
 
       if(inst->data_len == 0)
@@ -682,12 +832,12 @@ static int scamper_inst_read(scamper_inst_t *inst)
 		{
 		  snprintf(ctrl->err, sizeof(ctrl->err),
 			   "invalid ID number in OK");
-		  goto err;
+		  goto fatal;
 		}
 	      if((cmd = slist_head_pop(inst->waitok)) == NULL)
 		{
 		  snprintf(ctrl->err, sizeof(ctrl->err), "no cmd to pop");
-		  goto err;
+		  goto fatal;
 		}
 	      assert(cmd->type == SCAMPER_CMD_TYPE_TASK);
 	      cmd->task->id = lo;
@@ -697,7 +847,7 @@ static int scamper_inst_read(scamper_inst_t *inst)
 	      if(splaytree_insert(inst->tree, cmd->task) == NULL)
 		{
 		  snprintf(ctrl->err, sizeof(ctrl->err), "could not add task");
-		  goto err;
+		  goto fatal;
 		}
 	      cmd->task->cmd = NULL; cmd->task = NULL;
 	      scamper_cmd_free(cmd);
@@ -733,7 +883,7 @@ static int scamper_inst_read(scamper_inst_t *inst)
 	      if((lo = strtol(start+5, &ptr, 10)) < 3)
 		{
 		  snprintf(ctrl->err, sizeof(ctrl->err), "invalid data length");
-		  goto err;
+		  goto fatal;
 		}
 	      inst->data_left = (size_t)lo;
 
@@ -743,7 +893,7 @@ static int scamper_inst_read(scamper_inst_t *inst)
 		{
 		  snprintf(ctrl->err, sizeof(ctrl->err),
 			   "could not malloc %d bytes", (int)size);
-		  goto err;
+		  goto fatal;
 		}
 	      inst->data_len = size;
 
@@ -754,14 +904,14 @@ static int scamper_inst_read(scamper_inst_t *inst)
 		    {
 		      snprintf(ctrl->err, sizeof(ctrl->err),
 			       "invalid ID in DATA");
-		      goto err;
+		      goto fatal;
 		    }
 		  fm.id = lo;
 		  if((inst->task = splaytree_find(inst->tree, &fm)) == NULL)
 		    {
 		      snprintf(ctrl->err, sizeof(ctrl->err),
 			       "could not find task with ID %ld", lo);
-		      goto err;
+		      goto fatal;
 		    }
 		  splaytree_remove_item(inst->tree, &fm);
 		}
@@ -776,7 +926,7 @@ static int scamper_inst_read(scamper_inst_t *inst)
 	  if(linelen + 1 > inst->data_left)
 	    {
 	      snprintf(ctrl->err, sizeof(ctrl->err), "unexpected long line");
-	      goto err;
+	      goto fatal;
 	    }
 
 	  /* make sure the line only contains valid uuencode characters */
@@ -786,7 +936,7 @@ static int scamper_inst_read(scamper_inst_t *inst)
 		{
 		  snprintf(ctrl->err, sizeof(ctrl->err),
 			   "line did not start with valid character");
-		  goto err;
+		  goto fatal;
 		}
 	    }
 
@@ -802,7 +952,7 @@ static int scamper_inst_read(scamper_inst_t *inst)
 	  if(enc > inst->data_len - inst->data_o)
 	    {
 	      snprintf(ctrl->err, sizeof(ctrl->err), "unexpected extra data");
-	      goto err;
+	      goto fatal;
 	    }
 
 	  i = 0;
@@ -813,7 +963,7 @@ static int scamper_inst_read(scamper_inst_t *inst)
 	      if(linelen - j < 4)
 		{
 		  snprintf(ctrl->err, sizeof(ctrl->err), "need 4 characters");
-		  goto err;
+		  goto fatal;
 		}
 	      a = (start[j+0] - 32) & 0x3f;
 	      b = (start[j+1] - 32) & 0x3f;
@@ -863,12 +1013,12 @@ static int scamper_inst_read(scamper_inst_t *inst)
       if(start > (char *)(buf+x))
 	{
 	  snprintf(ctrl->err, sizeof(ctrl->err), "start beyond line");
-	  goto err;
+	  goto fatal;
 	}
       if((size_t)((char *)(buf+x) - start) > sizeof(inst->line))
 	{
 	  snprintf(ctrl->err, sizeof(ctrl->err), "long partial line");
-	  goto err;
+	  goto fatal;
 	}
       inst->line_off = (char *)(buf+x) - start;
       memcpy(inst->line, start, inst->line_off);
@@ -876,9 +1026,9 @@ static int scamper_inst_read(scamper_inst_t *inst)
 
   return 0;
 
- err:
-  ctrl->cb(inst, SCAMPER_CTRL_TYPE_ERR, NULL, NULL, 0);
-  return 0;  
+ fatal:
+  ctrl->cb(inst, SCAMPER_CTRL_TYPE_FATAL, NULL, NULL, 0);
+  return 0;
 }
 
 static int scamper_inst_write(scamper_inst_t *inst)
@@ -886,6 +1036,10 @@ static int scamper_inst_write(scamper_inst_t *inst)
   scamper_cmd_t *cmd;
   scamper_task_t *task;
   ssize_t rc;
+
+#ifdef HAVE_KQUEUE
+  struct kevent kev;
+#endif
 
   cmd = dlist_head_item(inst->queue);
   assert(cmd != NULL);
@@ -929,9 +1083,78 @@ static int scamper_inst_write(scamper_inst_t *inst)
       cmd->off += rc;
     }
 
+#ifdef HAVE_KQUEUE
+  if(dlist_count(inst->queue) == 0)
+    {
+      EV_SET(&kev, inst->fd, EVFILT_WRITE, EV_DELETE, 0, 0, inst);
+      if(kevent(inst->ctrl->kqfd, &kev, 1, NULL, 0, NULL) != 0)
+	{
+	  snprintf(inst->ctrl->err, sizeof(inst->ctrl->err),
+		   "could not remove inst from kqueue");
+	  return -1;
+	}
+      inst->flags &= ~(SCAMPER_INST_FLAG_WRITE);
+    }
+#endif
+
   return 0;
 }
 
+#ifdef HAVE_KQUEUE
+int scamper_ctrl_wait(scamper_ctrl_t *ctrl, struct timeval *to)
+{
+  struct kevent events[128];
+  int eventc = sizeof(events) / sizeof(struct kevent);
+  struct timespec ts, *timeout;
+  scamper_inst_t *inst;
+  int i, c, rc = -1;
+
+  ctrl->wait = 1;
+
+  if(to != NULL)
+    {
+      ts.tv_sec = to->tv_sec;
+      ts.tv_nsec = to->tv_usec * 1000;
+      timeout = &ts;
+    }
+  else
+    {
+      timeout = NULL;
+    }
+
+  if((c = kevent(ctrl->kqfd, NULL, 0, events, eventc, timeout)) == -1)
+    {
+      if(errno == EINTR)
+	rc = 0;
+      else
+	snprintf(ctrl->err, sizeof(ctrl->err), "could not kevent");
+      goto done;
+    }
+
+  for(i=0; i<c; i++)
+    {
+      inst = events[i].udata;
+      if(events[i].filter == EVFILT_READ)
+	{
+	  if(scamper_inst_read(inst) != 0)
+	    goto done;
+	}
+      else if(events[i].filter == EVFILT_WRITE && inst->gc == 0)
+	{
+	  if(scamper_inst_write(inst) != 0)
+	    goto done;
+	}
+    }
+
+  rc = 0;
+
+ done:
+  ctrl->wait = 0;
+  while((inst = dlist_head_pop(ctrl->freelist)) != NULL)
+    scamper_inst_freedo(inst);
+  return rc;
+}
+#else
 int scamper_ctrl_wait(scamper_ctrl_t *ctrl, struct timeval *to)
 {
   scamper_inst_t *inst;
@@ -956,10 +1179,11 @@ int scamper_ctrl_wait(scamper_ctrl_t *ctrl, struct timeval *to)
 
   if(select(nfds+1, &rfds, wfdsp, NULL, to) < 0)
     {
-      if(errno == EINTR)
+      if(errno == EINTR || errno == EAGAIN)
 	rc = 0;
-      snprintf(ctrl->err, sizeof(ctrl->err), "could not select: %s",
-	       strerror(errno));
+      else
+	snprintf(ctrl->err, sizeof(ctrl->err), "could not select: %s",
+		 strerror(errno));
       goto done;
     }
 
@@ -985,11 +1209,12 @@ int scamper_ctrl_wait(scamper_ctrl_t *ctrl, struct timeval *to)
   ctrl->wait = 0;
   return rc;
 }
+#endif
 
 void scamper_ctrl_free(scamper_ctrl_t *ctrl)
 {
   scamper_inst_t *inst;
-  
+
   if(ctrl == NULL)
     return;
 
@@ -999,6 +1224,17 @@ void scamper_ctrl_free(scamper_ctrl_t *ctrl)
 	scamper_inst_free(inst);
       dlist_free(ctrl->insts);
     }
+
+#ifdef HAVE_KQUEUE
+  if(ctrl->freelist != NULL)
+    {
+      while((inst = dlist_head_pop(ctrl->freelist)) != NULL)
+	scamper_inst_free(inst);
+      dlist_free(ctrl->freelist);
+    }
+  if(ctrl->kqfd != -1)
+    close(ctrl->kqfd);
+#endif
 
   free(ctrl);
   return;
@@ -1025,6 +1261,19 @@ scamper_ctrl_t *scamper_ctrl_alloc_dm(scamper_ctrl_cb_t cb,
     return NULL;
   memset(ctrl, 0, sizeof(scamper_ctrl_t));
 
+#ifdef HAVE_KQUEUE
+  if((ctrl->kqfd = kqueue()) == -1)
+    goto err;
+#ifndef DMALLOC
+  ctrl->freelist = dlist_alloc();
+#else
+  ctrl->freelist = dlist_alloc_dm(file, line);
+#endif
+  if(ctrl->freelist == NULL)
+    goto err;
+  dlist_onremove(ctrl->freelist, (dlist_onremove_t)scamper_inst_onremove);
+#endif
+
 #ifndef DMALLOC
   ctrl->insts = dlist_alloc();
 #else
@@ -1032,14 +1281,16 @@ scamper_ctrl_t *scamper_ctrl_alloc_dm(scamper_ctrl_cb_t cb,
 #endif
 
   if(ctrl->insts == NULL)
-    {
-      free(ctrl);
-      return NULL;
-    }
+    goto err;
+  dlist_onremove(ctrl->insts, (dlist_onremove_t)scamper_inst_onremove);
 
   ctrl->cb = cb;
 
   return ctrl;
+
+ err:
+  if(ctrl != NULL) scamper_ctrl_free(ctrl);
+  return NULL;
 }
 
 const char *scamper_ctrl_type_tostr(uint8_t type)
@@ -1065,4 +1316,116 @@ int scamper_ctrl_isdone(scamper_ctrl_t *ctrl)
 const char *scamper_ctrl_strerror(const scamper_ctrl_t *ctrl)
 {
   return ctrl->err;
+}
+
+#ifndef DMALLOC
+scamper_attp_t *scamper_attp_alloc(void)
+#else
+scamper_attp_t *scamper_attp_alloc_dm(const char *file, const int line)
+#endif
+{
+  scamper_attp_t *attp;
+  size_t len = sizeof(scamper_attp_t);
+
+#ifndef DMALLOC
+  attp = (scamper_attp_t *)malloc(len);
+#else
+  attp = (scamper_attp_t *)dmalloc_malloc(file, line, len,
+					  DMALLOC_FUNC_MALLOC, 0, 0);
+#endif
+
+  if(attp == NULL) return NULL;
+  memset(attp, 0, len);
+  return attp;
+}  
+
+/*
+ * scamper_attp_str_isvalid:
+ *
+ * is the string passed in valid for an attach command parameter?
+ *
+ * this function needs to be kept up to date with what
+ * scamper_control.c:params_get() considers valid
+ */
+static int scamper_attp_str_isvalid(const char *str)
+{
+  int i = 0;
+
+  for(i=0; str[i] != '\0'; i++)
+    {
+      if(isprint(str[i]) == 0)
+	return 0;
+      if(str[i] == '"')
+	return 0;
+    }
+
+  return 1;
+}
+
+void scamper_attp_set_listid(scamper_attp_t *attp, uint32_t list_id)
+{
+  attp->flags |= SCAMPER_ATTP_FLAG_LISTID;
+  attp->l_id = list_id;
+  return;
+}
+
+int scamper_attp_set_listname(scamper_attp_t *attp, char *list_name)
+{
+  char *tmp;
+  if(scamper_attp_str_isvalid(list_name) == 0 ||
+     (tmp = strdup(list_name)) == NULL)
+    return -1;
+  if(attp->l_name != NULL)
+    free(attp->l_name);
+  attp->l_name = tmp;
+  return 0;
+}
+
+int scamper_attp_set_listdescr(scamper_attp_t *attp, char *list_descr)
+{
+  char *tmp;
+  if(scamper_attp_str_isvalid(list_descr) == 0 ||
+     (tmp = strdup(list_descr)) == NULL)
+    return -1;
+  if(attp->l_descr != NULL)
+    free(attp->l_descr);
+  attp->l_descr = tmp;  
+  return 0;
+}
+
+int scamper_attp_set_listmonitor(scamper_attp_t *attp, char *list_monitor)
+{
+  char *tmp;
+  if(scamper_attp_str_isvalid(list_monitor) == 0 ||
+     (tmp = strdup(list_monitor)) == NULL)
+    return -1;
+  if(attp->l_monitor != NULL)
+    free(attp->l_monitor);
+  attp->l_monitor = tmp;  
+  return 0;
+}
+
+void scamper_attp_set_cycleid(scamper_attp_t *attp, uint32_t cycle_id)
+{
+  attp->flags |= SCAMPER_ATTP_FLAG_CYCLEID;
+  attp->c_id = cycle_id;
+  return;
+}
+
+void scamper_attp_set_priority(scamper_attp_t *attp, uint32_t priority)
+{
+  attp->flags |= SCAMPER_ATTP_FLAG_PRIORITY;
+  attp->priority = priority;
+  return;
+}
+
+void scamper_attp_free(scamper_attp_t *attp)
+{
+  if(attp == NULL)
+    return;
+  if(attp->l_name != NULL) free(attp->l_name);
+  if(attp->l_descr != NULL) free(attp->l_descr);
+  if(attp->l_monitor != NULL) free(attp->l_monitor);
+  free(attp);
+  return;
 }

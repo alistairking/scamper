@@ -1,7 +1,7 @@
 /*
  * scamper_debug.c
  *
- * $Id: scamper_debug.c,v 1.41 2022/06/13 20:19:00 mjl Exp $
+ * $Id: scamper_debug.c,v 1.43 2023/03/29 06:21:54 mjl Exp $
  *
  * routines to reduce the impact of debugging cruft in scamper's code.
  *
@@ -292,11 +292,13 @@ void scamper_debug(const char *func, const char *format, ...)
   if(func != NULL) snprintf(fs, sizeof(fs), "%s: ", func);
   else             fs[0] = '\0';
 
+#ifndef NDEBUG
   if(isdaemon == 0)
     {
       fprintf(stderr, "%s %s%s\n", ts, fs, message);
       fflush(stderr);
     }
+#endif
 
 #ifndef WITHOUT_DEBUGFILE
   if(debugfile != NULL)
@@ -315,10 +317,6 @@ int scamper_debug_open(const char *file)
 {
   mode_t mode;
   int flags, fd;
-
-#ifndef _WIN32
-  uid_t uid = getuid();
-#endif
 
 #ifndef _WIN32
   mode = S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH;
@@ -342,13 +340,6 @@ int scamper_debug_open(const char *file)
       printerror(__func__, "could not fdopen debugfile %s", file);
       return -1;
     }
-
-#ifndef _WIN32
-  if(uid != geteuid() && fchown(fd, uid, -1) != 0)
-    {
-      printerror(__func__, "could not fchown");
-    }
-#endif
 
   return 0;
 }

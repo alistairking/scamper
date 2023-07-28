@@ -9,12 +9,12 @@
 .\" Copyright (c) 2015-2023 Matthew Luckie
 .\"                         All rights reserved
 .\"
-.\" $Id: scamper.1,v 1.102.2.2 2023/02/24 00:16:39 mjl Exp $
+.\" $Id: scamper.1,v 1.114 2023/05/06 23:51:01 mjl Exp $
 .\"
 .\"  nroff -man scamper.1
 .\"  groff -man -Tascii scamper.1 | man2html -title scamper.1
 .\"
-.Dd February 24, 2023
+.Dd May 6, 2023
 .Dt SCAMPER 1
 .Os
 .\""""""""""""
@@ -221,6 +221,24 @@ output results in
 format.  Suitable for archiving measurement
 results and for use by researchers as it records details that cannot be
 easily represented with the text option.
+.It
+.Sy warts.gz:
+output results in
+.Xr warts 5
+format, compressed with
+.Xr gzip 1 .
+.It
+.Sy warts.bz2:
+output results in
+.Xr warts 5
+format, compressed with
+.Xr bzip2 1 .
+.It
+.Sy warts.xz:
+output results in
+.Xr warts 5
+format, compressed with
+.Xr xz 1 .
 .It
 .Sy json:
 output results in JSON format.  Suitable for processing measurement
@@ -457,7 +475,10 @@ have been received.
 specifies the IP address of the router to use.
 .It Fl s Ar sport
 specifies the source port value to use.  For ICMP-based methods, this option
-specifies the ICMP identifier to use.
+specifies the ICMP identifier to use.  By default,
+.Nm
+uses a value it derives from the process ID, but can be told to generate
+a random value between 32768 and 65535 by specifying zero.
 .It Fl S Ar srcaddr
 specifies the source address to use in probes.
 The address cannot be spoofed.
@@ -597,7 +618,9 @@ By default, a probe size of 84 bytes is used for IPv4 pings, and 56 bytes for
 IPv6 pings.
 .It Fl S Ar srcaddr
 specifies the source address to use in probes.
-The address can be spoofed if -O spoof is included.
+The address can be spoofed if
+.Fl O Ar spoof
+is included.
 .It Fl T Ar timestamp
 specifies that an IP timestamp option be included.
 The timestamp option can either be: tsprespec where IP addresses of devices
@@ -697,7 +720,9 @@ specifies the destination port of the probe.
 Defaults to 33435.
 .It Fl F Ar src-port
 specifies the source port of the probe.
-Defaults to (pid & 0x7fff) + 0x8000.
+By default,
+.Nm
+uses a value it derives from the process ID.
 .It Fl i Ar IP
 specifies the destination IP address of the probe.
 .It Fl M Ar mtu
@@ -711,6 +736,7 @@ specifies the size of the probes to send.
 .It Fl t Ar ttl
 specifies the IP time to live of the probe.
 .El
+.Pp
 The ally method accepts up to two probe definitions; the prefixscan
 method expects one probe definition; radargun expects at least one probe
 definition; bump expects two probe definitions.
@@ -763,7 +789,7 @@ specifies the IP address of the name server to query instead of the
 default nameserver.
 .It Fl t Ar type
 specifies the DNS query type.  The type argument can be one of the
-following: A, AAAA, PTR, and MX.
+following: A, AAAA, PTR, MX, NS, SOA.
 The default is A if a name is queried, or a PTR if an IP address is queried.
 .It Fl U Ar userid
 specifies an unsigned integer to include with the data collected; the meaning
@@ -855,9 +881,9 @@ specifies the destination port for the packets being sent.
 Defaults are application-specific.
 .It Fl s Ar sport
 specifies the source port for the packets being sent.
-Default is based of the
+By default,
 .Nm
-process id.
+uses a value it derives from the process ID.
 .It Fl a Ar acks
 specifies the sequence of packets that should be acknowledged as part of
 the ABC test.
@@ -1008,7 +1034,9 @@ Defaults to 3000.
 specifies the IP address of the router to use.
 .It Fl s Ar sport
 specifies to the source port to use when sending probes.
-Default based on process ID.
+By default,
+.Nm
+uses a value it derives from the process ID.
 .It Fl t Ar tos
 specifies the value for the IP Type-of-service field for outgoing probes.
 Defaults to 0.
@@ -1075,7 +1103,9 @@ specifies the mean rate to send packets in the data phase, in milliseconds.
 By default, sting waits 100ms between probes.
 .It Fl s Ar sport
 specifies to the source port to use when sending probes.
-Default is based on the process ID.
+By default,
+.Nm
+uses a value it derives from the process ID.
 .El
 .\""""""""""""
 .Sh SNIFF OPTIONS
@@ -1115,13 +1145,30 @@ ICMP-ID to select.
 .\""""""""""""
 .Sh DATA COLLECTION FEATURES
 .Nm
-has two data output formats.
+has three data output formats.
 The first is a human-readable format suitable for one-off data collection and
 measurement.
 The second, known as
 .Ic warts ,
 is a binary format that records much more meta-data and is more precise than
 the human-readable format.
+The third format is json, which contains most of the meta-data and is almost
+as precise as the
+.Xr warts 5
+format.
+.Nm
+produces text output by default, but will produce the other formats if
+the user specifies them using
+.Fl O Ar warts
+or
+.Fl O Ar json ,
+or if the output file name's suffix is one of these strings.
+.Nm
+can also produce warts files compressed with gz, bz2, or xz at run-time, if
+.Nm
+is linked against
+.Xr zlib 3 ,
+libbz2, or liblzma.
 .Pp
 .Nm
 is designed for Internet-scale measurement, where large lists of targets
@@ -1133,25 +1180,30 @@ mix rate that specifies the priority of the list.
 can also make multiple cycles over a list of addresses.
 .Pp
 When writing output to a
-.Ic warts
+.Xr warts 5
 file,
 .Nm
 records details of the list and cycle that each measurement task belongs
 to.
 .\""""""""""""
 .Sh CONTROL SOCKET
-When started with the
+When started with a
 .Fl P
+or
+.Fl U
 option,
 .Nm
 allows inter-process communication via a TCP socket bound to the supplied
-port on the local host.
-This socket is useful for controlling the operation of a long-lived
+port on the local host, or a unix domain socket bound to the supplied location
+in the file system.
+These sockets are useful for controlling the operation of a long-lived
 .Nm
 process.
 A client may interact with scamper by using
 .Xr telnet 1
-to open a connection to the supplied port.
+to open a connection to the supplied port, or
+.Xr nc 1
+to open a unix domain socket.
 .Pp
 The following control socket commands are available.
 .Pp
@@ -1167,18 +1219,48 @@ section below for details on which commands
 .Nm
 accepts.
 .Bl -tag -width "   "
+.It Ic cycle_id Ar uint32_t
+The cycle identifer value to use in the cycle record.
+By default,
+.Nm
+uses 1.
+.It Ic descr Ar string
+The descriptive string to use in the list record.
+By default,
+.Nm
+does not include a descriptive string.
 .It Ic format Ar string
-The data format requested.  The two options are warts, and json.
+The data format requested.  The two options are warts and json.
 The warts binary data is uuencoded.
 The json is plain json text.
 By default,
 .Nm
 uses warts.
+.It Ic list_id Ar uint32_t
+The list identifer value to use in the list record.
+By default,
+.Nm
+uses 0.
+.It Ic monitor Ar string
+The monitor string to use in the list record.
+By default,
+.Nm
+uses the value passed using the
+.Fl M Ar monitorname
+parameter to
+.Nm ,
+or the hostname if the user did not supply a monitor name.
+.It Ic name Ar string
+The name string to use in the list record.
+By default,
+.Nm
+uses a string derived from the socket connected to
+.Nm .
 .It Ic priority Ar uint32_t
 The mixing priority of this source, relative to other scamper sources.
 By default,
 .Nm
-uses a priority of '1' -- all sources are mixed equally.
+uses a priority of 1 -- all sources are mixed equally.
 .El
 .It Ic get Ar argument
 The get command returns the current setting for the supplied argument.

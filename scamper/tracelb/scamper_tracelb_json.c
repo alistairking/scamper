@@ -1,11 +1,11 @@
 /*
  * scamper_tracelb_json.c
  *
- * Copyright (C) 2018-2022 Matthew Luckie
+ * Copyright (C) 2018-2023 Matthew Luckie
  *
  * Authors: Matthew Luckie
  *
- * $Id: scamper_tracelb_json.c,v 1.15 2022/12/09 09:37:42 mjl Exp $
+ * $Id: scamper_tracelb_json.c,v 1.18 2023/06/01 08:06:04 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -28,8 +28,11 @@
 #include "internal.h"
 
 #include "scamper_addr.h"
+#include "scamper_addr_int.h"
 #include "scamper_list.h"
+#include "scamper_icmpext.h"
 #include "scamper_tracelb.h"
+#include "scamper_tracelb_int.h"
 #include "scamper_file.h"
 #include "scamper_file_json.h"
 #include "scamper_tracelb_json.h"
@@ -51,7 +54,7 @@ static char *header_tostr(const scamper_tracelb_t *trace)
 		"\"type\":\"tracelb\", \"version\":\"0.1\"");
   string_concat(buf, sizeof(buf), &off, ", \"userid\":%u", trace->userid);
   string_concat(buf, sizeof(buf), &off, ", \"method\":\"%s\"",
-		scamper_tracelb_type_tostr(trace));
+		scamper_tracelb_type_tostr(trace, tmp, sizeof(tmp)));
   if(trace->src != NULL)
     string_concat(buf, sizeof(buf), &off, ", \"src\":\"%s\"",
 		  scamper_addr_tostr(trace->src, tmp, sizeof(tmp)));

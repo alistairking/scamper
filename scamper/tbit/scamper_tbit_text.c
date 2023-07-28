@@ -2,11 +2,11 @@
  * scamper_tbit_text.c
  *
  * Copyright (C) 2009-2011 The University of Waikato
- * Copyright (C) 2021-2022 Matthew Luckie
+ * Copyright (C) 2021-2023 Matthew Luckie
  *
  * Authors: Ben Stasiewicz, Matthew Luckie
  *
- * $Id: scamper_tbit_text.c,v 1.20 2022/12/09 09:37:42 mjl Exp $
+ * $Id: scamper_tbit_text.c,v 1.22 2023/06/01 07:15:35 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -32,6 +32,7 @@
 #include "scamper_list.h"
 #include "scamper_file.h"
 #include "scamper_tbit.h"
+#include "scamper_tbit_int.h"
 #include "scamper_tbit_text.h"
 #include "utils.h"
 
@@ -63,7 +64,7 @@ int scamper_file_text_tbit_write(const scamper_file_t *sf,
 		scamper_addr_tostr(tbit->src, src, sizeof(src)),
 		scamper_addr_tostr(tbit->dst, dst, sizeof(dst)),
 		tbit->server_mss,
-		scamper_tbit_res2str(tbit, tmp, sizeof(tmp)));
+		scamper_tbit_result_tostr(tbit, tmp, sizeof(tmp)));
 
   if(tbit->app_proto == SCAMPER_TBIT_APP_HTTP && tbit->app_data != NULL)
     {

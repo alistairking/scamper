@@ -1,12 +1,12 @@
 /*
  * linked list routines
  *
- * $Id: mjl_list.c,v 1.78 2020/03/17 07:32:15 mjl Exp $
+ * $Id: mjl_list.c,v 1.80 2023/06/01 04:03:31 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
  *
- * Copyright (C) 2004-2020 Matthew Luckie. All rights reserved.
+ * Copyright (C) 2004-2023 Matthew Luckie. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -30,6 +30,10 @@
  * SUCH DAMAGE.
  *
  */
+
+#ifdef _WIN32
+#define _CRT_RAND_S
+#endif
 
 #include <stdlib.h>
 #include <assert.h>
@@ -197,6 +201,17 @@ int slist_islocked(slist_t *list)
   return list->lock == 0 ? 0 : 1;
 }
 
+static void slist_init(slist_t *list)
+{
+  assert(list != NULL);
+  list->head     = NULL;
+  list->tail     = NULL;
+  list->length   = 0;
+  list->lock     = 0;
+  list->onremove = NULL;
+  return;
+}
+
 #ifndef DMALLOC
 slist_t *slist_alloc(void)
 #else
@@ -218,17 +233,6 @@ slist_t *slist_alloc_dm(const char *file, const int line)
     }
 
   return list;
-}
-
-void slist_init(slist_t *list)
-{
-  assert(list != NULL);
-  list->head     = NULL;
-  list->tail     = NULL;
-  list->length   = 0;
-  list->lock     = 0;
-  list->onremove = NULL;
-  return;
 }
 
 void slist_onremove(slist_t *list, slist_onremove_t onremove)
@@ -780,6 +784,17 @@ int dlist_islocked(dlist_t *list)
   return list->lock == 0 ? 0 : 1;
 }
 
+static void dlist_init(dlist_t *list)
+{
+  assert(list != NULL);
+  list->head     = NULL;
+  list->tail     = NULL;
+  list->length   = 0;
+  list->lock     = 0;
+  list->onremove = NULL;
+  return;
+}
+
 #ifndef DMALLOC
 dlist_t *dlist_alloc(void)
 #else
@@ -801,17 +816,6 @@ dlist_t *dlist_alloc_dm(const char *file, const int line)
     }
 
   return list;
-}
-
-void dlist_init(dlist_t *list)
-{
-  assert(list != NULL);
-  list->head     = NULL;
-  list->tail     = NULL;
-  list->length   = 0;
-  list->lock     = 0;
-  list->onremove = NULL;
-  return;
 }
 
 void dlist_onremove(dlist_t *list, dlist_onremove_t onremove)
@@ -1570,6 +1574,16 @@ static void clist_assert(const clist_t *list)
 #define clist_assert(list)((void)0)
 #endif
 
+static void clist_init(clist_t *list)
+{
+  assert(list != NULL);
+  list->head     = NULL;
+  list->length   = 0;
+  list->lock     = 0;
+  list->onremove = NULL;
+  return;
+}
+
 #ifndef DMALLOC
 clist_t *clist_alloc(void)
 #else
@@ -1591,16 +1605,6 @@ clist_t *clist_alloc_dm(const char *file, const int line)
     }
 
   return list;
-}
-
-void clist_init(clist_t *list)
-{
-  assert(list != NULL);
-  list->head     = NULL;
-  list->length   = 0;
-  list->lock     = 0;
-  list->onremove = NULL;
-  return;
 }
 
 void clist_onremove(clist_t *list, clist_onremove_t onremove)

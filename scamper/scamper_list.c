@@ -1,10 +1,11 @@
 /*
  * scamper_list.c
  *
- * $Id: scamper_list.c,v 1.23 2020/03/17 07:32:16 mjl Exp $
+ * $Id: scamper_list.c,v 1.25 2023/05/29 21:27:48 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2010 The University of Waikato
+ * Copyright (C) 2023      Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -28,7 +29,53 @@
 #include "internal.h"
 
 #include "scamper_list.h"
+#include "scamper_list_int.h"
 #include "utils.h"
+
+uint32_t scamper_list_id_get(const scamper_list_t *list)
+{
+  return list->id;
+}
+
+const char *scamper_list_name_get(const scamper_list_t *list)
+{
+  return list->name;
+}
+
+const char *scamper_list_descr_get(const scamper_list_t *list)
+{
+  return list->descr;
+}
+
+const char *scamper_list_monitor_get(const scamper_list_t *list)
+{
+  return list->monitor;
+}
+
+scamper_list_t *scamper_cycle_list_get(const scamper_cycle_t *cycle)
+{
+  return cycle->list;
+}
+
+uint32_t scamper_cycle_id_get(const scamper_cycle_t *cycle)
+{
+  return cycle->id;
+}
+
+time_t scamper_cycle_start_time_get(const scamper_cycle_t *cycle)
+{
+  return cycle->start_time;
+}
+
+time_t scamper_cycle_stop_time_get(const scamper_cycle_t *cycle)
+{
+  return cycle->stop_time;
+}
+
+const char *scamper_cycle_hostname_get(const scamper_cycle_t *cycle)
+{
+  return cycle->hostname;
+}
 
 /*
  * scamper_cycle_cmp

@@ -1,10 +1,11 @@
 /*
  * scamper_dealias.h
  *
- * $Id: scamper_dealias.h,v 1.45 2013/08/28 05:23:47 mjl Exp $
+ * $Id: scamper_dealias.h,v 1.46 2023/05/29 07:17:30 mjl Exp $
  *
  * Copyright (C) 2008-2011 The University of Waikato
  * Copyright (C) 2012-2013 The Regents of the University of California
+ * Copyright (C) 2023      Matthew Luckie
  * Author: Matthew Luckie
  *
  * This code implements alias resolution techniques published by others
@@ -28,6 +29,19 @@
 
 #ifndef __SCAMPER_DEALIAS_H
 #define __SCAMPER_DEALIAS_H
+
+typedef struct scamper_dealias scamper_dealias_t;
+typedef struct scamper_dealias_mercator scamper_dealias_mercator_t;
+typedef struct scamper_dealias_ally scamper_dealias_ally_t;
+typedef struct scamper_dealias_radargun scamper_dealias_radargun_t;
+typedef struct scamper_dealias_prefixscan scamper_dealias_prefixscan_t;
+typedef struct scamper_dealias_bump scamper_dealias_bump_t;
+typedef struct scamper_dealias_probe scamper_dealias_probe_t;
+typedef struct scamper_dealias_probedef_udp scamper_dealias_probedef_udp_t;
+typedef struct scamper_dealias_probedef_icmp scamper_dealias_probedef_icmp_t;
+typedef struct scamper_dealias_probedef_tcp scamper_dealias_probedef_tcp_t;
+typedef struct scamper_dealias_probedef scamper_dealias_probedef_t;
+typedef struct scamper_dealias_reply scamper_dealias_reply_t;
 
 #define SCAMPER_DEALIAS_METHOD_MERCATOR   1
 #define SCAMPER_DEALIAS_METHOD_ALLY       2
@@ -55,255 +69,119 @@
 
 #define SCAMPER_DEALIAS_REPLY_FLAG_IPID32 1
 
-#define SCAMPER_DEALIAS_PROBEDEF_PROTO_IS_ICMP(def) (        \
- (def)->method == SCAMPER_DEALIAS_PROBEDEF_METHOD_ICMP_ECHO)
+scamper_list_t *scamper_dealias_list_get(const scamper_dealias_t *dealias);
+scamper_cycle_t *scamper_dealias_cycle_get(const scamper_dealias_t *dealias);
+uint32_t scamper_dealias_userid_get(const scamper_dealias_t *dealias);
+const struct timeval *scamper_dealias_start_get(const scamper_dealias_t *dealias);
+uint8_t scamper_dealias_method_get(const scamper_dealias_t *dealias);
+uint8_t scamper_dealias_result_get(const scamper_dealias_t *dealias);
+const scamper_dealias_ally_t *scamper_dealias_ally_get(const scamper_dealias_t *dealias);
+const scamper_dealias_mercator_t *scamper_dealias_mercator_get(const scamper_dealias_t *dealias);
+const scamper_dealias_radargun_t *scamper_dealias_radargun_get(const scamper_dealias_t *dealias);
+const scamper_dealias_prefixscan_t *scamper_dealias_prefixscan_get(const scamper_dealias_t *dealias);
+const scamper_dealias_bump_t *scamper_dealias_bump_get(const scamper_dealias_t *dealias);
+const scamper_dealias_probe_t *scamper_dealias_probe_get(const scamper_dealias_t *dealias, uint32_t i);
+uint32_t scamper_dealias_probec_get(const scamper_dealias_t *dealias);
+int scamper_dealias_method_is_prefixscan(const scamper_dealias_t *dealias);
+int scamper_dealias_method_is_ally(const scamper_dealias_t *dealias);
 
-#define SCAMPER_DEALIAS_PROBEDEF_PROTO_IS_UDP(def) (         \
- (def)->method == SCAMPER_DEALIAS_PROBEDEF_METHOD_UDP ||     \
- (def)->method == SCAMPER_DEALIAS_PROBEDEF_METHOD_UDP_DPORT)
+const scamper_dealias_probedef_t *scamper_dealias_mercator_def_get(const scamper_dealias_mercator_t *mc);
+uint8_t scamper_dealias_mercator_attempts_get(const scamper_dealias_mercator_t *mc);
+uint8_t scamper_dealias_mercator_wait_timeout_get(const scamper_dealias_mercator_t *mc);
 
-#define SCAMPER_DEALIAS_PROBEDEF_PROTO_IS_TCP(def) (               \
- (def)->method == SCAMPER_DEALIAS_PROBEDEF_METHOD_TCP_ACK ||       \
- (def)->method == SCAMPER_DEALIAS_PROBEDEF_METHOD_TCP_ACK_SPORT || \
- (def)->method == SCAMPER_DEALIAS_PROBEDEF_METHOD_TCP_SYN_SPORT)
+const scamper_dealias_probedef_t *scamper_dealias_ally_def0_get(const scamper_dealias_ally_t *ally);
+const scamper_dealias_probedef_t *scamper_dealias_ally_def1_get(const scamper_dealias_ally_t *ally);
+uint16_t scamper_dealias_ally_wait_probe_get(const scamper_dealias_ally_t *ally);
+uint8_t scamper_dealias_ally_wait_timeout_get(const scamper_dealias_ally_t *ally);
+uint8_t scamper_dealias_ally_attempts_get(const scamper_dealias_ally_t *ally);
+uint8_t scamper_dealias_ally_flags_get(const scamper_dealias_ally_t *ally);
+uint16_t scamper_dealias_ally_fudge_get(const scamper_dealias_ally_t *ally);
+int scamper_dealias_ally_is_nobs(const scamper_dealias_ally_t *ally);
 
-#define SCAMPER_DEALIAS_PROBEDEF_VARY_TCP_SPORT(def) ( \
- (def)->method == SCAMPER_DEALIAS_PROBEDEF_METHOD_TCP_ACK_SPORT || \
- (def)->method == SCAMPER_DEALIAS_PROBEDEF_METHOD_TCP_SYN_SPORT)
+const scamper_dealias_probedef_t *scamper_dealias_radargun_def_get(const scamper_dealias_radargun_t *rg, uint32_t i);
+uint32_t scamper_dealias_radargun_defc_get(const scamper_dealias_radargun_t *rg);
+uint16_t scamper_dealias_radargun_attempts_get(const scamper_dealias_radargun_t *rg);
+uint16_t scamper_dealias_radargun_wait_probe_get(const scamper_dealias_radargun_t *rg);
+uint32_t scamper_dealias_radargun_wait_round_get(const scamper_dealias_radargun_t *rg);
+uint8_t scamper_dealias_radargun_wait_timeout_get(const scamper_dealias_radargun_t *rg);
+uint8_t scamper_dealias_radargun_flags_get(const scamper_dealias_radargun_t *rg);
 
-#define SCAMPER_DEALIAS_PROBEDEF_PROTO_IS_TCP_ACK(def) (           \
- (def)->method == SCAMPER_DEALIAS_PROBEDEF_METHOD_TCP_ACK ||       \
- (def)->method == SCAMPER_DEALIAS_PROBEDEF_METHOD_TCP_ACK_SPORT)
+scamper_addr_t *scamper_dealias_prefixscan_a_get(const scamper_dealias_prefixscan_t *pf);
+scamper_addr_t *scamper_dealias_prefixscan_b_get(const scamper_dealias_prefixscan_t *pf);
+scamper_addr_t *scamper_dealias_prefixscan_ab_get(const scamper_dealias_prefixscan_t *pf);
+scamper_addr_t *scamper_dealias_prefixscan_xs_get(const scamper_dealias_prefixscan_t *pf, uint16_t i);
+uint16_t scamper_dealias_prefixscan_xc_get(const scamper_dealias_prefixscan_t *pf);
+uint8_t scamper_dealias_prefixscan_prefix_get(const scamper_dealias_prefixscan_t *pf);
+uint8_t scamper_dealias_prefixscan_attempts_get(const scamper_dealias_prefixscan_t *pf);
+uint8_t scamper_dealias_prefixscan_replyc_get(const scamper_dealias_prefixscan_t *pf);
+uint16_t scamper_dealias_prefixscan_fudge_get(const scamper_dealias_prefixscan_t *pf);
+uint16_t scamper_dealias_prefixscan_wait_probe_get(const scamper_dealias_prefixscan_t *pf);
+uint8_t scamper_dealias_prefixscan_wait_timeout_get(const scamper_dealias_prefixscan_t *pf);
+uint8_t scamper_dealias_prefixscan_flags_get(const scamper_dealias_prefixscan_t *pf);
+const scamper_dealias_probedef_t *scamper_dealias_prefixscan_def_get(const scamper_dealias_prefixscan_t *pf, uint16_t i);
+uint16_t scamper_dealias_prefixscan_defc_get(const scamper_dealias_prefixscan_t *pf);
+int scamper_dealias_prefixscan_is_csa(const scamper_dealias_prefixscan_t *pfs);
+int scamper_dealias_prefixscan_is_nobs(const scamper_dealias_prefixscan_t *pfs);
 
-#define SCAMPER_DEALIAS_PROBEDEF_PROTO_IS_TCP_SYN(def) (           \
- (def)->method == SCAMPER_DEALIAS_PROBEDEF_METHOD_TCP_SYN_SPORT)
+const scamper_dealias_probedef_t *scamper_dealias_bump_def0_get(const scamper_dealias_bump_t *bump);
+const scamper_dealias_probedef_t *scamper_dealias_bump_def1_get(const scamper_dealias_bump_t *bump);
+uint16_t scamper_dealias_bump_wait_probe_get(const scamper_dealias_bump_t *bump);
+uint16_t scamper_dealias_bump_limit_get(const scamper_dealias_bump_t *bump);
+uint8_t scamper_dealias_bump_attempts_get(const scamper_dealias_bump_t *bump);
 
-#define SCAMPER_DEALIAS_REPLY_IS_ICMP(reply) ( \
- ((reply)->proto == 1 || (reply)->proto == 58))
+const scamper_dealias_probedef_t *scamper_dealias_probe_def_get(const scamper_dealias_probe_t *probe);
+uint32_t scamper_dealias_probe_seq_get(const scamper_dealias_probe_t *probe);
+const struct timeval *scamper_dealias_probe_tx_get(const scamper_dealias_probe_t *probe);
+const scamper_dealias_reply_t *scamper_dealias_probe_reply_get(const scamper_dealias_probe_t *probe, uint16_t i);
+uint16_t scamper_dealias_probe_replyc_get(const scamper_dealias_probe_t *probe);
+uint16_t scamper_dealias_probe_ipid_get(const scamper_dealias_probe_t *probe);
 
-#define SCAMPER_DEALIAS_REPLY_IS_TCP(reply) ( \
- ((reply)->proto == 6))
+scamper_addr_t *scamper_dealias_probedef_src_get(const scamper_dealias_probedef_t *pd);
+scamper_addr_t *scamper_dealias_probedef_dst_get(const scamper_dealias_probedef_t *pd);
+uint32_t scamper_dealias_probedef_id_get(const scamper_dealias_probedef_t *pd);
+uint8_t scamper_dealias_probedef_method_get(const scamper_dealias_probedef_t *pd);
+int scamper_dealias_probedef_proto_is_udp(const scamper_dealias_probedef_t *pd);
+uint8_t scamper_dealias_probedef_ttl_get(const scamper_dealias_probedef_t *pd);
+uint8_t scamper_dealias_probedef_tos_get(const scamper_dealias_probedef_t *pd);
+uint16_t scamper_dealias_probedef_size_get(const scamper_dealias_probedef_t *pd);
+uint16_t scamper_dealias_probedef_mtu_get(const scamper_dealias_probedef_t *pd);
+const scamper_dealias_probedef_udp_t *scamper_dealias_probedef_udp_get(const scamper_dealias_probedef_t *pd);
+const scamper_dealias_probedef_tcp_t *scamper_dealias_probedef_tcp_get(const scamper_dealias_probedef_t *pd);
+const scamper_dealias_probedef_icmp_t *scamper_dealias_probedef_icmp_get(const scamper_dealias_probedef_t *pd);
 
-#define SCAMPER_DEALIAS_REPLY_IS_ICMP_TTL_EXP(reply) ( \
- ((reply)->proto == 1  && (reply)->icmp_type == 11) || \
- ((reply)->proto == 58 && (reply)->icmp_type == 3))
+uint16_t scamper_dealias_probedef_udp_sport_get(const scamper_dealias_probedef_udp_t *udp);
+uint16_t scamper_dealias_probedef_udp_dport_get(const scamper_dealias_probedef_udp_t *udp);
 
-#define SCAMPER_DEALIAS_REPLY_IS_ICMP_UNREACH(reply) ( \
- ((reply)->proto == 1  && (reply)->icmp_type == 3) ||  \
- ((reply)->proto == 58 && (reply)->icmp_type == 1))
+uint16_t scamper_dealias_probedef_icmp_csum_get(const scamper_dealias_probedef_icmp_t *icmp);
+uint16_t scamper_dealias_probedef_icmp_id_get(const scamper_dealias_probedef_icmp_t *icmp);
 
-#define SCAMPER_DEALIAS_REPLY_IS_ICMP_UNREACH_PORT(reply) ( \
- ((reply)->proto == 1 &&                                    \
-  (reply)->icmp_type == 3 && (reply)->icmp_code == 3) ||    \
- ((reply)->proto == 58 &&                                   \
-  (reply)->icmp_type == 1 && (reply)->icmp_code == 4))
+uint16_t scamper_dealias_probedef_tcp_sport_get(const scamper_dealias_probedef_tcp_t *tcp);
+uint16_t scamper_dealias_probedef_tcp_dport_get(const scamper_dealias_probedef_tcp_t *tcp);
+uint8_t scamper_dealias_probedef_tcp_flags_get(const scamper_dealias_probedef_tcp_t *tcp);
 
-#define SCAMPER_DEALIAS_REPLY_IS_ICMP_ECHO_REPLY(reply) ( \
- ((reply)->proto == 1  && (reply)->icmp_type == 0) ||     \
- ((reply)->proto == 58 && (reply)->icmp_type == 129))
+scamper_addr_t *scamper_dealias_reply_src_get(const scamper_dealias_reply_t *reply);
+const struct timeval *scamper_dealias_reply_rx_get(const scamper_dealias_reply_t *reply);
+uint8_t scamper_dealias_reply_flags_get(const scamper_dealias_reply_t *reply);
+uint8_t scamper_dealias_reply_proto_get(const scamper_dealias_reply_t *reply);
+uint8_t scamper_dealias_reply_ttl_get(const scamper_dealias_reply_t *reply);
+uint8_t scamper_dealias_reply_icmp_type_get(const scamper_dealias_reply_t *reply);
+uint8_t scamper_dealias_reply_icmp_code_get(const scamper_dealias_reply_t *reply);
+uint8_t scamper_dealias_reply_icmp_q_ip_ttl_get(const scamper_dealias_reply_t *reply);
+uint8_t scamper_dealias_reply_tcp_flags_get(const scamper_dealias_reply_t *reply);
+uint16_t scamper_dealias_reply_ipid_get(const scamper_dealias_reply_t *reply);
+uint32_t scamper_dealias_reply_ipid32_get(const scamper_dealias_reply_t *reply);
+int scamper_dealias_reply_is_ipid32(const scamper_dealias_reply_t *reply);
+int scamper_dealias_reply_is_icmp_unreach_port(const scamper_dealias_reply_t *reply);
+int scamper_dealias_reply_is_icmp(const scamper_dealias_reply_t *reply);
+int scamper_dealias_reply_is_icmp_unreach(const scamper_dealias_reply_t *reply);
+int scamper_dealias_reply_is_icmp_ttl_exp(const scamper_dealias_reply_t *reply);
+int scamper_dealias_reply_is_tcp(const scamper_dealias_reply_t *reply);
+int scamper_dealias_reply_from_target(const scamper_dealias_probe_t *probe,
+				      const scamper_dealias_reply_t *reply);
 
-#define SCAMPER_DEALIAS_METHOD_IS_MERCATOR(d) ( \
- (d)->method == SCAMPER_DEALIAS_METHOD_MERCATOR)
-
-#define SCAMPER_DEALIAS_METHOD_IS_ALLY(d) ( \
- (d)->method == SCAMPER_DEALIAS_METHOD_ALLY)
-
-#define SCAMPER_DEALIAS_METHOD_IS_RADARGUN(d) ( \
- (d)->method == SCAMPER_DEALIAS_METHOD_RADARGUN)
-
-#define SCAMPER_DEALIAS_METHOD_IS_PREFIXSCAN(d) ( \
- (d)->method == SCAMPER_DEALIAS_METHOD_PREFIXSCAN)
-
-#define SCAMPER_DEALIAS_METHOD_IS_BUMP(d) ( \
- (d)->method == SCAMPER_DEALIAS_METHOD_BUMP)
-
-#define SCAMPER_DEALIAS_RESULT_IS_NONE(d) ( \
- (d)->result == SCAMPER_DEALIAS_RESULT_NONE)
-
-#define SCAMPER_DEALIAS_RESULT_IS_ALIASES(d) ( \
- (d)->result == SCAMPER_DEALIAS_RESULT_ALIASES)
-
-#define SCAMPER_DEALIAS_RESULT_IS_NOTALIASES(d) ( \
- (d)->result == SCAMPER_DEALIAS_RESULT_NOTALIASES)
-
-#define SCAMPER_DEALIAS_ALLY_IS_NOBS(d) ( \
- (((scamper_dealias_ally_t *)(d)->data)->flags) & \
-    SCAMPER_DEALIAS_ALLY_FLAG_NOBS)
-
-#define SCAMPER_DEALIAS_PREFIXSCAN_IS_NOBS(d) ( \
- (((scamper_dealias_prefixscan_t *)(d)->data)->flags) & \
-    SCAMPER_DEALIAS_PREFIXSCAN_FLAG_NOBS)
-
-#define SCAMPER_DEALIAS_REPLY_FROM_TARGET(p, r) (          \
- (SCAMPER_DEALIAS_PROBEDEF_PROTO_IS_UDP((p)->def) &&  \
-  SCAMPER_DEALIAS_REPLY_IS_ICMP_UNREACH_PORT((r))) ||      \
- (SCAMPER_DEALIAS_PROBEDEF_PROTO_IS_ICMP((p)->def) && \
-  SCAMPER_DEALIAS_REPLY_IS_ICMP_ECHO_REPLY((r))) ||        \
- (SCAMPER_DEALIAS_PROBEDEF_PROTO_IS_TCP((p)->def) &&  \
-  SCAMPER_DEALIAS_REPLY_IS_TCP((r))))
-
-typedef struct scamper_dealias_reply
-{
-  scamper_addr_t               *src;
-  struct timeval                rx;
-
-  uint8_t                       flags;
-  uint8_t                       proto;
-  uint8_t                       ttl;
-  uint8_t                       icmp_type;
-  uint8_t                       icmp_code;
-  uint8_t                       icmp_q_ip_ttl;
-  uint8_t                       tcp_flags;
-
-  uint16_t                      ipid;
-  uint32_t                      ipid32;
-
-  struct scamper_icmpext       *icmp_ext;
-
-} scamper_dealias_reply_t;
-
-typedef struct scamper_dealias_probedef_udp
-{
-  uint16_t sport;
-  uint16_t dport;
-} scamper_dealias_probedef_udp_t;
-
-typedef struct scamper_dealias_probedef_icmp
-{
-  uint16_t csum;
-  uint16_t id;
-} scamper_dealias_probedef_icmp_t;
-
-typedef struct scamper_dealias_probedef_tcp
-{
-  uint16_t sport;
-  uint16_t dport;
-  uint8_t  flags;
-} scamper_dealias_probedef_tcp_t;
-
-typedef struct scamper_dealias_probedef
-{
-  scamper_addr_t                   *src;
-  scamper_addr_t                   *dst;
-  uint32_t                          id;
-  uint8_t                           method;
-  uint8_t                           ttl;
-  uint8_t                           tos;
-  uint16_t                          size;
-  uint16_t                          mtu;
-  union
-  {
-    scamper_dealias_probedef_udp_t  udp;
-    scamper_dealias_probedef_tcp_t  tcp;
-    scamper_dealias_probedef_icmp_t icmp;
-  } un;
-} scamper_dealias_probedef_t;
-
-typedef struct scamper_dealias_probe
-{
-  scamper_dealias_probedef_t   *def;
-  uint32_t                      seq;
-  struct timeval                tx;
-  scamper_dealias_reply_t     **replies;
-  uint16_t                      replyc;
-  uint16_t                      ipid;
-} scamper_dealias_probe_t;
-
-typedef struct scamper_dealias_mercator
-{
-  scamper_dealias_probedef_t    probedef;
-  uint8_t                       attempts;
-  uint8_t                       wait_timeout;
-} scamper_dealias_mercator_t;
-
-typedef struct scamper_dealias_ally
-{
-  scamper_dealias_probedef_t    probedefs[2];
-  uint16_t                      wait_probe;
-  uint8_t                       wait_timeout;
-  uint8_t                       attempts;
-  uint8_t                       flags;
-  uint16_t                      fudge;
-} scamper_dealias_ally_t;
-
-/*
- * scamper_dealias_radargun
- *
- * the following variables define a radargun measurement.  radargun was
- * first defined in the following paper:
- *
- *   Fixing ally's growing pains with velocity modeling.  Adam Bender, Rob
- *   Sherwood, Neil Spring. Proc. IMC 2008, pages 337-342.
- *
- * probedefs    : structures defining the form of a probe packet
- * attempts     : number of times to send each probe packet
- * wait_probe   : minimum length of time (ms) to wait between probes in a round
- * wait_round   : minimum length of time (ms) to wait between attempts
- * wait_timeout : minimum length of time (sec) to wait for a response
- * flags        : flags to adjust the behaviour of radargun
- */
-typedef struct scamper_dealias_radargun
-{
-  scamper_dealias_probedef_t   *probedefs;
-  uint32_t                      probedefc;
-  uint16_t                      attempts;
-  uint16_t                      wait_probe;
-  uint32_t                      wait_round;
-  uint8_t                       wait_timeout;
-  uint8_t                       flags;
-} scamper_dealias_radargun_t;
-
-/*
- * scamper_dealias_prefixscan
- *
- * given an IP link defined by `a' and `b', try and find an alias for `a'
- * that would be found on the same subnet as `b'.  if such an alias is
- * found, store it in `ab'.
- */
-typedef struct scamper_dealias_prefixscan
-{
-  scamper_addr_t                     *a;            /* hop a */
-  scamper_addr_t                     *b;            /* hop b */
-  scamper_addr_t                     *ab;           /* alias found */
-  scamper_addr_t                    **xs;           /* ifaces to exclude */
-  uint16_t                            xc;           /* # ifaces to exclude */
-  uint8_t                             prefix;       /* range of IPs to scan */
-  uint8_t                             attempts;     /* how many attempts */
-  uint8_t                             replyc;       /* replies required */
-  uint16_t                            fudge;        /* ipid fudge */
-  uint16_t                            wait_probe;   /* how long b/w probes */
-  uint8_t                             wait_timeout; /* when to declare lost */
-  uint8_t                             flags;        /* flags */
-  scamper_dealias_probedef_t         *probedefs;    /* probedefs used */
-  uint16_t                            probedefc;    /* how many were used */
-} scamper_dealias_prefixscan_t;
-
-/*
- * scamper_dealias_bump
- *
- * given two IP addresses thought to be aliases, try and confirm this by
- * attempting to bump their IP-ID counters out of synchronisation.
- */
-typedef struct scamper_dealias_bump
-{
-  scamper_dealias_probedef_t    probedefs[2];
-  uint16_t                      wait_probe;
-  uint16_t                      bump_limit;
-  uint8_t                       attempts;
-} scamper_dealias_bump_t;
-
-typedef struct scamper_dealias
-{
-  scamper_list_t               *list;
-  scamper_cycle_t              *cycle;
-  uint32_t                      userid;
-  struct timeval                start;
-  uint8_t                       method;
-  uint8_t                       result;
-  void                         *data;
-  scamper_dealias_probe_t     **probes;
-  uint32_t                      probec;
-} scamper_dealias_t;
+#ifdef __SCAMPER_ICMPEXT_H
+const scamper_icmpext_t *scamper_dealias_reply_icmp_ext_get(const scamper_dealias_reply_t *reply);
+#endif
 
 scamper_dealias_t *scamper_dealias_alloc(void);
 void scamper_dealias_free(scamper_dealias_t *);
@@ -318,8 +196,8 @@ scamper_dealias_reply_t *scamper_dealias_reply_alloc(void);
 void scamper_dealias_reply_free(scamper_dealias_reply_t *);
 uint32_t scamper_dealias_reply_count(const scamper_dealias_t *);
 
-const char *scamper_dealias_method_tostr(const scamper_dealias_t *, char *, size_t);
-const char *scamper_dealias_result_tostr(const scamper_dealias_t *, char *, size_t);
+const char *scamper_dealias_method_tostr(uint8_t method, char *, size_t);
+const char *scamper_dealias_result_tostr(uint8_t result, char *, size_t);
 const char *scamper_dealias_probedef_method_tostr(const scamper_dealias_probedef_t *,
 						  char *, size_t);
 
@@ -372,21 +250,5 @@ int scamper_dealias_radargun_fudge(scamper_dealias_t *,
 
 int scamper_dealias_radargun_probedefs_alloc(scamper_dealias_radargun_t *,
 					     uint32_t);
-
-#define SCAMPER_DEALIAS_IPID_UNKNOWN   0
-#define SCAMPER_DEALIAS_IPID_ZERO      1
-#define SCAMPER_DEALIAS_IPID_CONST     2
-#define SCAMPER_DEALIAS_IPID_ECHO      3
-#define SCAMPER_DEALIAS_IPID_INCR      4
-
-typedef struct scamper_dealias_ipid
-{
-  uint8_t  type;
-  uint32_t mind;
-  uint32_t maxd;
-} scamper_dealias_ipid_t;
-
-int scamper_dealias_ipid(const scamper_dealias_probe_t **probes,
-			 uint32_t probec, scamper_dealias_ipid_t *ipid);
 
 #endif /* __SCAMPER_DEALIAS_H */

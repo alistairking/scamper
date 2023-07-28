@@ -1,11 +1,12 @@
 /*
  * scamper_source
  *
- * $Id: scamper_sources.h,v 1.15 2022/02/13 08:48:15 mjl Exp $
+ * $Id: scamper_sources.h,v 1.16 2023/04/20 01:00:01 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2022      Matthew Luckie
+ * Copyright (C) 2023      The Regents of the University of California
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -44,6 +45,7 @@ typedef struct scamper_source_params
   /*
    *  name:     the name of the list being probed.
    *  descr:    a description of the addresses that are stored in this source
+   *  monitor:  the name of the monitor.
    *  list_id:  the list id number assigned by a human.
    *  cycle_id: the initial cycle id to use.
    *  type:     type of the source (file, cmdline, control socket, ...)
@@ -52,6 +54,7 @@ typedef struct scamper_source_params
    */
   char              *name;
   char              *descr;
+  char              *monitor;
   uint32_t           list_id;
   uint32_t           cycle_id;
   int                type;

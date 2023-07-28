@@ -1,10 +1,11 @@
 /*
  * scamper_if.c
  *
- * $Id: scamper_if.c,v 1.26 2020/03/17 07:32:16 mjl Exp $
+ * $Id: scamper_if.c,v 1.27 2023/03/27 04:24:56 mjl Exp $
  *
  * Copyright (C) 2008-2011 The University of Waikato
  * Copyright (C) 2014      The Regents of the University of California
+ * Copyright (C) 2023      The Regents of the University of California
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -220,24 +221,43 @@ int scamper_if_getmac(const int ifindex, uint8_t *mac)
 
 #ifdef WITHOUT_PRIVSEP
   char ifname[5+IFNAMSIZ];
+  uid_t uid = scamper_getuid();
+  uid_t euid = scamper_geteuid();
+  int sete = 0;
+  if(uid != euid)
+    {
+      if(seteuid(euid) != 0)
+	{
+	  printerror(__func__, "could not claim euid");
+	  goto err;
+	}
+      sete = 1;
+    }
   strncpy(ifname, "/dev/", sizeof(ifname));
   if(if_indextoname(ifindex, ifname+5) == NULL)
     {
       printerror(__func__, "if_indextoname %d", ifindex);
       goto err;
     }
-  if((fd = open(ifname, O_RDWR)) == -1)
+  fd = open(ifname, O_RDWR);
+  if(uid != euid)
     {
-      printerror(__func__, "could not open %s", ifname);
-      goto err;
+      if(seteuid(uid) != 0)
+	{
+	  printerror(__func__, "could not return to uid");
+	  exit(-errno);
+	}
+      sete = 0;
     }
 #else
-  if((fd = scamper_privsep_open_datalink(ifindex)) == -1)
+  fd = scamper_privsep_open_datalink(ifindex);
+#endif
+
+  if(fd == -1)
     {
       printerror(__func__, "could not open %d", ifindex);
       goto err;
     }
-#endif
 
   memset(reqbuf, 0, sizeof(reqbuf));
   req->dl_primitive = DL_PHYS_ADDR_REQ;
@@ -273,6 +293,10 @@ int scamper_if_getmac(const int ifindex, uint8_t *mac)
 
  err:
   if(fd != -1) close(fd);
+#ifdef WITHOUT_PRIVSEP
+  if(sete != 0 && seteuid(uid) != 0)
+    exit(-errno);
+#endif
   return -1;
 }
 #else

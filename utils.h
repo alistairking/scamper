@@ -1,7 +1,7 @@
 /*
  * utils.h
  *
- * $Id: utils.h,v 1.132 2023/01/01 08:24:19 mjl Exp $
+ * $Id: utils.h,v 1.139 2023/05/03 19:23:19 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -171,10 +171,15 @@ int array_insert_gb_dm(void ***a, size_t *nmemb, size_t *mmemb, size_t growby,
 /*
  * Functions for dealing with raw IPv4/IPv6 addresses
  */
-int addr4_cmp(const void *a, const void *b);
-int addr4_human_cmp(const void *a, const void *b);
-int addr6_cmp(const void *a, const void *b);
-int addr6_human_cmp(const void *a, const void *b);
+int addr4_cmp(const struct in_addr *a, const struct in_addr *b);
+int addr4_human_cmp(const struct in_addr *a, const struct in_addr *b);
+int addr6_cmp(const struct in6_addr *a, const struct in6_addr *b);
+int addr6_human_cmp(const struct in6_addr *a, const struct in6_addr *b);
+void addr6_add(struct in6_addr *out,
+	       const struct in6_addr *x, const struct in6_addr *y);
+int addr6_add_netlen(struct in6_addr *in, int netlen);
+void addr6_sub(struct in6_addr *out,
+	       const struct in6_addr *y, const struct in6_addr *x);
 int addr_cmp(const int af, const void *a, const void *b);
 const char *addr_tostr(int af, const void *addr, char *buf, size_t len);
 
@@ -209,6 +214,7 @@ int   string_isdigit(const char *str);
 int   string_isalnum(const char *str);
 int   string_isfloat(const char *str);
 char *string_toupper(char *buf, size_t len, const char *in);
+char *string_tolower(char *buf, size_t len, const char *in);
 int   string_tolong(const char *str, long *l);
 int   string_tollong(const char *str, long long *ll);
 char *string_lastof(char *str, const char *delim);
@@ -222,6 +228,7 @@ char *string_concat(char *str, size_t len, size_t *off, const char *fs, ...);
 #endif
 const char *string_findlc(const char *str, const char *find);
 int   string_addrport(const char *in, char **addr, int *port);
+int   string_endswith(const char *in, const char *ending);
 
 #ifndef NDEBUG
 int   string_isdash(const char *str);

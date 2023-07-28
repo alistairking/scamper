@@ -1,12 +1,13 @@
 /*
  * scamper_privsep.c: code that does root-required tasks
  *
- * $Id: scamper_privsep.c,v 1.95 2022/12/09 09:37:42 mjl Exp $
+ * $Id: scamper_privsep.c,v 1.99 2023/05/29 22:30:24 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2013-2014 The Regents of the University of California
  * Copyright (C) 2016-2022 Matthew Luckie
+ * Copyright (C) 2023      The Regents of the University of California
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -31,7 +32,7 @@
 #ifndef WITHOUT_PRIVSEP
 
 #include "internal.h"
-
+#include "scamper.h"
 #include "scamper_privsep.h"
 #include "scamper_debug.h"
 
@@ -85,8 +86,9 @@ static void *cmsgbuf   = NULL; /* cmsgbuf sized for one fd */
 #define SCAMPER_PRIVSEP_PF_CLEANUP    0x0fU
 #define SCAMPER_PRIVSEP_PF_ADD        0x10U
 #define SCAMPER_PRIVSEP_PF_DEL        0x11U
+#define SCAMPER_PRIVSEP_READY         0x12U
 
-#define SCAMPER_PRIVSEP_MAXTYPE (SCAMPER_PRIVSEP_PF_DEL)
+#define SCAMPER_PRIVSEP_MAXTYPE (SCAMPER_PRIVSEP_READY)
 
 /*
  * privsep_open_rawsock
@@ -811,7 +813,7 @@ static int privsep_recv_fd(void)
 static int privsep_do(void)
 {
   static const privsep_func_t funcs[] = {
-    {NULL, NULL},
+    {NULL, NULL},                             /* EXIT */
     {privsep_open_datalink, privsep_send_fd},
     {privsep_open_file,     privsep_send_fd},
     {privsep_open_rtsock,   privsep_send_fd},
@@ -829,6 +831,7 @@ static int privsep_do(void)
     {privsep_pf_cleanup,    privsep_send_rc},
     {privsep_pf_add,        privsep_send_rc},
     {privsep_pf_del,        privsep_send_rc},
+    {NULL, NULL},                             /* READY */
   };
 
   privsep_msg_t   msg;
@@ -849,6 +852,24 @@ static int privsep_do(void)
    */
   close(lame_fd);
   lame_fd = -1;
+
+  /* write the pidfile of the privileged process */
+  if(scamper_pidfile() != 0)
+    {
+      /*
+       * if we can't write the pidfile, then we want to shutdown this process
+       * by closing the root_fd, which we do in the done block below
+       */
+      ret = (-errno);
+      goto done;
+    }
+
+  /* done the pidfile, send ready */
+  if(privsep_send_rc(0, 0, SCAMPER_PRIVSEP_READY) != 0)
+    {
+      ret = (-errno);
+      goto done;
+    }
 
   for(;;)
     {
@@ -902,10 +923,12 @@ static int privsep_do(void)
       if(funcs[msg.type].txfunc(fd, error, msg.type) != 0)
 	break;
 
+      /* close the privileged process' copy of the fd, if it has one */
       if(funcs[msg.type].txfunc == privsep_send_fd && fd != -1)
 	close(fd);
     }
 
+ done:
   close(root_fd);
   return ret;
 }
@@ -921,7 +944,7 @@ static int privsep_lame_send(const uint16_t type, const uint16_t len,
 {
   privsep_msg_t msg;
 
-  assert(type != SCAMPER_PRIVSEP_EXIT);
+  assert(type != SCAMPER_PRIVSEP_EXIT); assert(type != SCAMPER_PRIVSEP_READY);
   assert(type <= SCAMPER_PRIVSEP_MAXTYPE);
 
   /* send the header first */
@@ -967,6 +990,24 @@ static int privsep_dotask(uint16_t type, uint16_t len, const uint8_t *param)
 
   if(privsep_lame_send(type, len, param) == -1)
     return -1;
+
+  if(read_wrap(lame_fd, buf, NULL, sizeof(buf)) == -1)
+    return -1;
+
+  memcpy(&rc, buf, sizeof(rc));
+  memcpy(&error, buf+sizeof(int), sizeof(error));
+
+  if(rc != 0)
+    errno = error;
+
+  return rc;
+}
+
+static int privsep_getready(void)
+{
+  uint8_t buf[sizeof(int)*2];
+  int error;
+  int rc;
 
   if(read_wrap(lame_fd, buf, NULL, sizeof(buf)) == -1)
     return -1;
@@ -1210,6 +1251,11 @@ int scamper_privsep_init()
   int    ret;
   time_t t;
 
+  /* reclaim root privileges */
+  uid = scamper_geteuid();
+  if(seteuid(uid) != 0)
+    exit(-errno);
+
   /* check to see if the PRIVSEP_DIR exists */
   if(stat(PRIVSEP_DIR, &sb) == -1)
     {
@@ -1302,6 +1348,10 @@ int scamper_privsep_init()
    */
   close(root_fd);
   root_fd = -1;
+
+  /* make sure the privsep process signals ready */
+  if(privsep_getready() != 0)
+    return -1;
 
   /*
    * get the details for the PRIVSEP_USER login, which the rest of scamper

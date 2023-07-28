@@ -1,13 +1,13 @@
 /*
  * scamper_probe.c
  *
- * $Id: scamper_probe.c,v 1.80 2022/12/09 09:37:42 mjl Exp $
+ * $Id: scamper_probe.c,v 1.81 2023/05/29 21:22:26 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2012      Matthew Luckie
  * Copyright (C) 2013      The Regents of the University of California
- * Copyright (C) 2020-2022 Matthew Luckie
+ * Copyright (C) 2020-2023 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -32,6 +32,7 @@
 
 #include "scamper.h"
 #include "scamper_addr.h"
+#include "scamper_addr_int.h"
 #include "scamper_dl.h"
 #include "scamper_fds.h"
 #include "scamper_rtsock.h"

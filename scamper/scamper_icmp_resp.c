@@ -1,11 +1,12 @@
 /*
  * scamper_icmp_resp.c
  *
- * $Id: scamper_icmp_resp.c,v 1.35 2022/06/12 01:39:59 mjl Exp $
+ * $Id: scamper_icmp_resp.c,v 1.36 2023/05/29 21:22:26 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2012-2013 The Regents of the University of California
+ * Copyright (C) 2023      Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -30,6 +31,7 @@
 
 #include "utils.h"
 #include "scamper_addr.h"
+#include "scamper_addr_int.h"
 #include "scamper_task.h"
 #include "scamper_icmp_resp.h"
 #include "scamper_debug.h"

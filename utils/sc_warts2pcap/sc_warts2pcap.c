@@ -1,10 +1,12 @@
 /*
  * sc_warts2pcap
  *
- * $Id: sc_warts2pcap.c,v 1.6 2021/08/22 08:11:53 mjl Exp $
+ * $Id: sc_warts2pcap.c,v 1.10 2023/05/21 22:26:28 mjl Exp $
  *
  * Copyright (C) 2010 Stephen Eichler
  * Copyright (C) 2011 University of Waikato
+ * Copyright (C) 2023 Matthew Luckie
+ *
  * Authors: Stephen Eichler, Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -133,7 +135,8 @@ static int check_options(int argc, char *argv[])
   return 0;
 }
 
-static int pkt_write(uint8_t *data, uint16_t len, struct timeval *tv, void *p)
+static int pkt_write(const uint8_t *data, uint16_t len,
+		     const struct timeval *tv, void *p)
 {
   prec_t rec;
 
@@ -163,7 +166,8 @@ static int pkt_cmp(const pkt_t *a, const pkt_t *b)
   return timeval_cmp(&a->tv, &b->tv);
 }
 
-static int pkt_push(uint8_t *data, uint16_t len, struct timeval *tv, void *p)
+static int pkt_push(const uint8_t *data, uint16_t len,
+		    const struct timeval *tv, void *p)
 {
   slist_t *list = p;
   pkt_t *pkt = NULL;
@@ -186,24 +190,28 @@ static int pkt_push(uint8_t *data, uint16_t len, struct timeval *tv, void *p)
 }
 
 static int doit(uint16_t type, void *data,
-		int (*func)(uint8_t *, uint16_t, struct timeval *, void *),
+		int (*func)(const uint8_t *, uint16_t,
+			    const struct timeval *, void *),
 		void *param)
 {
   scamper_tbit_t *tbit = NULL;
-  scamper_tbit_pkt_t *tbit_pkt;
   scamper_sting_t *sting = NULL;
-  scamper_sting_pkt_t *sting_pkt;
   scamper_sniff_t *sniff = NULL;
-  scamper_sniff_pkt_t *sniff_pkt;
-  uint32_t i;
+  const scamper_tbit_pkt_t *tbit_pkt;
+  const scamper_sting_pkt_t *sting_pkt;
+  const scamper_sniff_pkt_t *sniff_pkt;
+  uint32_t i, pktc;
 
   if(type == SCAMPER_FILE_OBJ_TBIT)
     {
       tbit = data;
-      for(i=0; i<tbit->pktc; i++)
+      pktc = scamper_tbit_pktc_get(tbit);
+      for(i=0; i<pktc; i++)
 	{
-	  tbit_pkt = tbit->pkts[i];
-	  if(func(tbit_pkt->data, tbit_pkt->len, &tbit_pkt->tv, param) != 0)
+	  tbit_pkt = scamper_tbit_pkt_get(tbit, i);
+	  if(func(scamper_tbit_pkt_data_get(tbit_pkt),
+		  scamper_tbit_pkt_len_get(tbit_pkt),
+		  scamper_tbit_pkt_tv_get(tbit_pkt), param) != 0)
 	    goto err;
 	}
       scamper_tbit_free(tbit);
@@ -211,10 +219,13 @@ static int doit(uint16_t type, void *data,
   else if(type == SCAMPER_FILE_OBJ_STING)
     {
       sting = data;
-      for(i=0; i<sting->pktc; i++)
+      pktc = scamper_sting_pktc_get(sting);
+      for(i=0; i<pktc; i++)
 	{
-	  sting_pkt = sting->pkts[i];
-	  if(func(sting_pkt->data, sting_pkt->len, &sting_pkt->tv, param) != 0)
+	  sting_pkt = scamper_sting_pkt_get(sting, i);
+	  if(func(scamper_sting_pkt_data_get(sting_pkt),
+		  scamper_sting_pkt_len_get(sting_pkt),
+		  scamper_sting_pkt_tv_get(sting_pkt), param) != 0)
 	    goto err;
 	}
       scamper_sting_free(sting);
@@ -222,10 +233,13 @@ static int doit(uint16_t type, void *data,
   else if(type == SCAMPER_FILE_OBJ_SNIFF)
     {
       sniff = data;
-      for(i=0; i<sniff->pktc; i++)
+      pktc = scamper_sniff_pktc_get(sniff);
+      for(i=0; i<pktc; i++)
 	{
-	  sniff_pkt = sniff->pkts[i];
-	  if(func(sniff_pkt->data, sniff_pkt->len, &sniff_pkt->tv, param) != 0)
+	  sniff_pkt = scamper_sniff_pkt_get(sniff, i);
+	  if(func(scamper_sniff_pkt_data_get(sniff_pkt),
+		  scamper_sniff_pkt_len_get(sniff_pkt),
+		  scamper_sniff_pkt_tv_get(sniff_pkt), param) != 0)
 	    goto err;
 	}
       scamper_sniff_free(sniff);
@@ -330,12 +344,14 @@ int main(int argc, char *argv[])
     }
   else
     {
+#ifdef HAVE_ISATTY
       /* writing to stdout; don't dump a binary structure to a tty. */
       if(isatty(STDOUT_FILENO) != 0)
 	{
 	  fprintf(stderr, "not going to dump pcap to a tty, sorry\n");
 	  return -1;
 	}
+#endif
 
       if((outfile_fd = fdopen(STDOUT_FILENO, "w")) == NULL)
 	{

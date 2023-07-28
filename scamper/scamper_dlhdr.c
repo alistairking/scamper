@@ -1,11 +1,12 @@
 /*
  * scamper_dlhdr.c
  *
- * $Id: scamper_dlhdr.c,v 1.17 2020/03/17 07:32:16 mjl Exp $
+ * $Id: scamper_dlhdr.c,v 1.18 2023/05/29 21:22:26 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2010 The University of Waikato
  * Copyright (C) 2014      The Regents of the University of California
+ * Copyright (C) 2023      Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -31,6 +32,7 @@
 #include "scamper_debug.h"
 #include "scamper_fds.h"
 #include "scamper_addr.h"
+#include "scamper_addr_int.h"
 #include "scamper_addr2mac.h"
 #include "scamper_task.h"
 #include "scamper_dl.h"

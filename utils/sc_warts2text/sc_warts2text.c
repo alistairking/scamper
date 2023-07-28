@@ -1,7 +1,7 @@
 /*
  * warts2traceroute
  *
- * $Id: sc_warts2text.c,v 1.28 2023/01/03 02:14:50 mjl Exp $
+ * $Id: sc_warts2text.c,v 1.33 2023/05/29 00:02:24 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -179,27 +179,27 @@ static char *ip2descr_lookup(scamper_addr_t *addr)
 
 static scamper_addr_t *trace_dst(void *data)
 {
-  return ((scamper_trace_t *)data)->dst;
+  return scamper_trace_dst_get(data);
 }
 
 static scamper_addr_t *ping_dst(void *data)
 {
-  return ((scamper_ping_t *)data)->dst;
+  return scamper_ping_dst_get(data);
 }
 
 static scamper_addr_t *tracelb_dst(void *data)
 {
-  return ((scamper_tracelb_t *)data)->dst;
+  return scamper_tracelb_dst_get(data);
 }
 
 static scamper_addr_t *tbit_dst(void *data)
 {
-  return ((scamper_tbit_t *)data)->dst;
+  return scamper_tbit_dst_get(data);
 }
 
 static scamper_addr_t *sting_dst(void *data)
 {
-  return ((scamper_sting_t *)data)->dst;
+  return scamper_sting_dst_get(data);
 }
 
 static int check_options(int argc, char *argv[])

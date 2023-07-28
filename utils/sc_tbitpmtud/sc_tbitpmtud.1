@@ -6,9 +6,9 @@
 .\" Copyright (c) 2018 Matthew Luckie
 .\"                    All rights reserved
 .\"
-.\" $Id: sc_tbitpmtud.1,v 1.2 2018/03/08 00:31:53 mjl Exp $
+.\" $Id: sc_tbitpmtud.1,v 1.4 2023/03/22 01:38:57 mjl Exp $
 .\"
-.Dd March 1, 2018
+.Dd March 22, 2023
 .Dt SC_TBITPMTUD 1
 .Os
 .Sh NAME
@@ -24,6 +24,7 @@ packet too big messages
 .Op Fl l Ar limit-per-file
 .Op Fl m Ar maximum-transmission-unit
 .Op Fl o Ar output-file
+.Op Fl O Ar options
 .Op Fl p Ar scamper-port
 .Op Fl t Ar log-file
 .Op Fl w Ar window
@@ -80,6 +81,31 @@ The default MTU value tested is 1280.
 .It Fl o Ar output-file
 specifies the name of the file to be written.  The output file will use
 the warts format.
+.It Fl O Ar options
+allows the behavior of
+.Nm
+to be further tailored.
+The current choices for this option are:
+.Bl -dash -offset 2n -compact -width 1n
+.It
+.Sy gz:
+compress the warts output using gzip compression.
+.It
+.Sy warts.gz:
+compress the warts output using gzip compression.
+.It
+.Sy bz2:
+compress the warts output using bzip2 compression.
+.It
+.Sy warts.bz2:
+compress the warts output using bzip2 compression.
+.It
+.Sy xz:
+compress the warts output using xz compression.
+.It
+.Sy warts.xz:
+compress the warts output using xz compression.
+.El
 .It Fl p Ar scamper-port
 specifies the port on the local host where
 .Xr scamper 1

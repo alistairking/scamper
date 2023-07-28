@@ -1,7 +1,7 @@
 /*
  * scamper_do_tbit.h
  *
- * $Id: scamper_tbit_do.h,v 1.2 2010/10/24 03:28:31 mjl Exp $
+ * $Id: scamper_tbit_do.h,v 1.3 2023/06/04 06:05:34 mjl Exp $
  *
  * Copyright (C) 2009-2010 Ben Stasiewicz
  *
@@ -31,17 +31,11 @@
 #ifndef __SCAMPER_DO_TBIT_H
 #define __SCAMPER_DO_TBIT_H
 
-const char *scamper_do_tbit_usage(void);
-
-void *scamper_do_tbit_alloc(char *str);
-
 void scamper_do_tbit_free(void *data);
 
 scamper_task_t *scamper_do_tbit_alloctask(void *data,
 					  scamper_list_t *list,
 					  scamper_cycle_t *cycle);
-
-int scamper_do_tbit_arg_validate(int argc, char *argv[], int *stop);
 
 void scamper_do_tbit_cleanup(void);
 int scamper_do_tbit_init(void);

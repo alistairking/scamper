@@ -1,7 +1,7 @@
 /*
  * scamper_rtsock: code to deal with a route socket or equivalent
  *
- * $Id: scamper_rtsock.c,v 1.91 2023/01/03 02:58:33 mjl Exp $
+ * $Id: scamper_rtsock.c,v 1.94 2023/05/29 21:22:26 mjl Exp $
  *
  *          Matthew Luckie
  *
@@ -24,7 +24,8 @@
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2010 The University of Waikato
  * Copyright (C) 2014      The Regents of the University of California
- * Copyright (C) 2016-2022 Matthew Luckie
+ * Copyright (C) 2016-2023 Matthew Luckie
+ * Copyright (C) 2023      The Regents of the University of California
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -106,6 +107,7 @@ struct rtmsg
 
 #include "scamper.h"
 #include "scamper_addr.h"
+#include "scamper_addr_int.h"
 #include "scamper_list.h"
 #include "scamper_fds.h"
 #include "scamper_rtsock.h"
@@ -129,13 +131,13 @@ static pid_t    pid;          /* [unprivileged] process id */
 static uint16_t seq   = 0;    /* next sequence number to use */
 static dlist_t *pairs = NULL; /* list of addresses queried with their seq */
 
-static rtsock_pair_t *rtsock_pair_alloc(scamper_route_t *route, int seq)
+static rtsock_pair_t *rtsock_pair_alloc(scamper_route_t *route, int seq_in)
 {
   rtsock_pair_t *pair;
   if((pair = malloc_zero(sizeof(rtsock_pair_t))) == NULL)
     return NULL;
   pair->route = route;
-  pair->seq = seq;
+  pair->seq = seq_in;
   if((pair->node = dlist_head_push(pairs, pair)) == NULL)
     {
       free(pair);
@@ -156,7 +158,7 @@ static void rtsock_pair_free(rtsock_pair_t *pair)
   return;
 }
 
-static rtsock_pair_t *rtsock_pair_get(uint16_t seq)
+static rtsock_pair_t *rtsock_pair_get(uint16_t seq_in)
 {
   rtsock_pair_t *pair;
   dlist_node_t  *node;
@@ -164,7 +166,7 @@ static rtsock_pair_t *rtsock_pair_get(uint16_t seq)
   for(node=dlist_head_node(pairs); node != NULL; node=dlist_node_next(node))
     {
       pair = dlist_node_item(node);
-      if(pair->seq != seq)
+      if(pair->seq != seq_in)
 	continue;
       dlist_node_pop(pairs, node);
       pair->node = NULL;
@@ -703,10 +705,27 @@ int scamper_rtsock_open()
   int fd;
 
 #if defined(WITHOUT_PRIVSEP)
-  if((fd = scamper_rtsock_open_fd()) == -1)
-#else
-  if((fd = scamper_privsep_open_rtsock()) == -1)
+#ifndef _WIN32
+  uid_t uid = scamper_getuid();
+  uid_t euid = scamper_geteuid();
+  if(uid != euid && seteuid(euid) != 0)
+    {
+      printerror(__func__, "could not claim euid");
+      return -1;
+    }
 #endif
+  fd = scamper_rtsock_open_fd();
+#ifndef _WIN32
+  if(uid != euid && seteuid(uid) != 0)
+    {
+      printerror(__func__, "could not return to uid");
+      exit(-errno);
+    }
+#endif
+#else
+  fd = scamper_privsep_open_rtsock();
+#endif
+  if(fd == -1)
     {
       printerror(__func__, "could not open route socket");
       return -1;

@@ -1,12 +1,13 @@
 /*
  * scamper_file.c
  *
- * $Id: scamper_file.c,v 1.88 2023/01/03 02:09:35 mjl Exp $
+ * $Id: scamper_file.c,v 1.116 2023/05/03 20:48:13 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2012      The Regents of the University of California
- * Copyright (C) 2022      Matthew Luckie
+ * Copyright (C) 2022-2023 Matthew Luckie
+ * Copyright (C) 2023      The Regents of the University of California
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -66,26 +67,49 @@
 #include "sniff/scamper_sniff_warts.h"
 #include "host/scamper_host.h"
 #include "host/scamper_host_warts.h"
+#include "host/scamper_host_json.h"
 
 #include "utils.h"
 
-#define SCAMPER_FILE_NONE       (-1)
-#define SCAMPER_FILE_TEXT        0
-#define SCAMPER_FILE_ARTS        1
-#define SCAMPER_FILE_WARTS       2
-#define SCAMPER_FILE_JSON        3
+#define SCAMPER_FILE_TYPE_NONE        0
+#define SCAMPER_FILE_TYPE_TEXT        1
+#define SCAMPER_FILE_TYPE_ARTS        2
+#define SCAMPER_FILE_TYPE_WARTS       3
+#define SCAMPER_FILE_TYPE_JSON        4
+#define SCAMPER_FILE_TYPE_WARTS_GZ    5
+#define SCAMPER_FILE_TYPE_WARTS_BZ2   6
+#define SCAMPER_FILE_TYPE_WARTS_XZ    7
 
 typedef int (*write_obj_func_t)(scamper_file_t *sf, const void *, void *);
 
-#ifdef HAVE_ZLIB
-typedef struct scamper_file_zstrm
+static int init_noop(scamper_file_t *sf);
+static int init_fail(scamper_file_t *sf);
+static int init_write_warts_gz(scamper_file_t *sf);
+static int init_write_warts_bz2(scamper_file_t *sf);
+static int init_write_warts_xz(scamper_file_t *sf);
+
+#if defined(HAVE_ZLIB) || defined(HAVE_LIBBZ2) || defined(HAVE_LIBLZMA)
+#define HAVE_SCAMPER_FILE_Z
+typedef struct scamper_file_z
 {
-  z_stream                  zs;
+  union
+  {
+#ifdef HAVE_ZLIB
+    z_stream               *gzs;
+#endif
+#ifdef HAVE_LIBBZ2
+    bz_stream              *bzs;
+#endif
+#ifdef HAVE_LIBLZMA
+    lzma_stream            *xzs;
+#endif
+  } s;
   uint8_t                   in[64 * 1024];
   uint8_t                   out[64 * 1024];
   uint8_t                   eof; /* read returned zero */
-  uint8_t                   end; /* inflate returned Z_STREAM_END */
-} scamper_file_zstrm_t;
+  uint8_t                   end; /* decompression stream ended */
+  char                      type; /* g(z) / b(zip2) / x(z) */
+} scamper_file_z_t;
 #endif
 
 struct scamper_file
@@ -93,15 +117,16 @@ struct scamper_file
   char                     *filename;
   int                       fd;
   void                     *state;
-  int                       type;
+  size_t                    type;
   int                       eof;
+  char                      mode;
   scamper_file_writefunc_t  writefunc;
   void                     *writeparam;
   scamper_file_readfunc_t   readfunc;
   void                     *readparam;
 
-#ifdef HAVE_ZLIB
-  scamper_file_zstrm_t     *zstrm;
+#ifdef HAVE_SCAMPER_FILE_Z
+  scamper_file_z_t         *z;
 #endif
 };
 
@@ -125,6 +150,84 @@ struct scamper_file_readbuf
   size_t                    len;
 };
 
+typedef struct write_handlers
+{
+  int (*cycle_start)(const scamper_file_t *sf, scamper_cycle_t *cycle);
+  int (*cycle_stop)(const scamper_file_t *sf, scamper_cycle_t *cycle);
+  int (*trace)(const scamper_file_t *sf, const scamper_trace_t *trace, void *p);
+  int (*ping)(const scamper_file_t *sf, const scamper_ping_t *ping, void *p);
+  int (*tracelb)(const scamper_file_t *sf,
+		 const scamper_tracelb_t *trace, void *p);
+  int (*sting)(const scamper_file_t *sf, const scamper_sting_t *sting, void *p);
+  int (*dealias)(const scamper_file_t *sf,
+		 const scamper_dealias_t *dealias, void *p);
+  int (*neighbourdisc)(const scamper_file_t *sf,
+		       const scamper_neighbourdisc_t *nd, void *p);
+  int (*tbit)(const scamper_file_t *sf, const scamper_tbit_t *tbit, void *p);
+  int (*sniff)(const scamper_file_t *sf, const scamper_sniff_t *sniff, void *p);
+  int (*host)(const scamper_file_t *sf, const scamper_host_t *host, void *p);
+} write_handlers_t;
+
+static write_handlers_t warts_write_handlers =
+{
+  scamper_file_warts_cyclestart_write,    /* cycle_start */
+  scamper_file_warts_cyclestop_write,     /* cycle_stop */
+  scamper_file_warts_trace_write,         /* trace */
+  scamper_file_warts_ping_write,          /* ping */
+  scamper_file_warts_tracelb_write,       /* tracelb */
+  scamper_file_warts_sting_write,         /* sting */
+  scamper_file_warts_dealias_write,       /* dealias */
+  scamper_file_warts_neighbourdisc_write, /* neighbourdisc */
+  scamper_file_warts_tbit_write,          /* tbit */
+  scamper_file_warts_sniff_write,         /* sniff */
+  scamper_file_warts_host_write,          /* host */
+};
+
+static write_handlers_t json_write_handlers =
+{
+  scamper_file_json_cyclestart_write,     /* cycle_start */
+  scamper_file_json_cyclestop_write,      /* cycle_stop */
+  scamper_file_json_trace_write,          /* trace */
+  scamper_file_json_ping_write,           /* ping */
+  scamper_file_json_tracelb_write,        /* tracelb */
+  NULL,                                   /* sting */
+  scamper_file_json_dealias_write,        /* dealias */
+  NULL,                                   /* neighbourdisc */
+  scamper_file_json_tbit_write,           /* tbit */
+  NULL,                                   /* sniff */
+  scamper_file_json_host_write,           /* host */
+};
+
+static write_handlers_t text_write_handlers =
+{
+  NULL,                                   /* cycle_start */
+  NULL,                                   /* cycle_stop */
+  scamper_file_text_trace_write,          /* trace */
+  scamper_file_text_ping_write,           /* ping */
+  scamper_file_text_tracelb_write,        /* tracelb */
+  scamper_file_text_sting_write,          /* sting */
+  scamper_file_text_dealias_write,        /* dealias */
+  NULL,                                   /* neighbourdisc */
+  scamper_file_text_tbit_write,           /* tbit */
+  NULL,                                   /* sniff */
+  NULL,                                   /* host */
+};
+
+static write_handlers_t null_write_handlers =
+{
+  NULL,                                   /* cycle_start */
+  NULL,                                   /* cycle_stop */
+  NULL,                                   /* trace */
+  NULL,                                   /* ping */
+  NULL,                                   /* tracelb */
+  NULL,                                   /* sting */
+  NULL,                                   /* dealias */
+  NULL,                                   /* neighbourdisc */
+  NULL,                                   /* tbit */
+  NULL,                                   /* sniff */
+  NULL,                                   /* host */
+};
+
 struct handler
 {
   char *type;
@@ -136,77 +239,34 @@ struct handler
   int (*read)(scamper_file_t *sf, const scamper_file_filter_t *filter,
 	      uint16_t *type, void **data);
 
-  int (*write_cycle_start)(const scamper_file_t *sf,
-			   scamper_cycle_t *cycle);
-
-  int (*write_cycle_stop)(const scamper_file_t *sf,
-			  scamper_cycle_t *cycle);
-
-  int (*write_trace)(const scamper_file_t *sf,
-		     const struct scamper_trace *trace, void *p);
-
-  int (*write_ping)(const scamper_file_t *sf,
-		    const struct scamper_ping *ping, void *p);
-
-  int (*write_tracelb)(const scamper_file_t *sf,
-		       const struct scamper_tracelb *trace, void *p);
-
-  int (*write_sting)(const scamper_file_t *sf,
-		     const struct scamper_sting *sting, void *p);
-
-  int (*write_dealias)(const scamper_file_t *sf,
-		       const struct scamper_dealias *dealias, void *p);
-
-  int (*write_neighbourdisc)(const scamper_file_t *sf,
-			     const struct scamper_neighbourdisc *nd, void *p);
-
-  int (*write_tbit)(const scamper_file_t *sf,
-		    const struct scamper_tbit *tbit, void *p);
-
-  int (*write_sniff)(const scamper_file_t *sf,
-		     const struct scamper_sniff *sniff, void *p);
-
-  int (*write_host)(const scamper_file_t *sf,
-		    const struct scamper_host *host, void *p);
+  write_handlers_t *write;
 
   void (*free_state)(scamper_file_t *sf);
 };
 
 static struct handler handlers[] = {
-  {"text",                                 /* type */
-   NULL,                                   /* init_read */
-   NULL,                                   /* init_write */
-   NULL,                                   /* init_append */
+  {NULL,                                   /* type, null for type_tostr */
+   init_fail,                              /* init_read */
+   init_fail,                              /* init_write */
+   init_fail,                              /* init_append */
    NULL,                                   /* read */
-   NULL,                                   /* write_cycle_start */
-   NULL,                                   /* write_cycle_stop */
-   scamper_file_text_trace_write,          /* write_trace */
-   scamper_file_text_ping_write,           /* write_ping */
-   scamper_file_text_tracelb_write,        /* write_tracelb */
-   scamper_file_text_sting_write,          /* write_sting */
-   scamper_file_text_dealias_write,        /* write_dealias */
-   NULL,                                   /* write_neighbourdisc */
-   scamper_file_text_tbit_write,           /* write_tbit */
-   NULL,                                   /* write_sniff */
-   NULL,                                   /* write_host */
+   &null_write_handlers,                   /* write */
+   NULL,                                   /* free_state */
+  },
+  {"text",                                 /* type */
+   init_fail,                              /* init_read */
+   init_noop,                              /* init_write */
+   init_noop,                              /* init_append */
+   NULL,                                   /* read */
+   &text_write_handlers,                   /* write */
    NULL,                                   /* free_state */
   },
   {"arts",                                 /* type */
    scamper_file_arts_init_read,            /* init_read */
-   NULL,                                   /* init_write */
-   NULL,                                   /* init_append */
+   init_fail,                              /* init_write */
+   init_fail,                              /* init_append */
    scamper_file_arts_read,                 /* read */
-   NULL,                                   /* write_cycle_start */
-   NULL,                                   /* write_cycle_stop */
-   NULL,                                   /* write_trace */
-   NULL,                                   /* write_ping */
-   NULL,                                   /* write_tracelb */
-   NULL,                                   /* write_sting */
-   NULL,                                   /* write_dealias */
-   NULL,                                   /* write_neighbourdisc */
-   NULL,                                   /* write_tbit */
-   NULL,                                   /* write_sniff */
-   NULL,                                   /* write_host */
+   &null_write_handlers,                   /* write */
    scamper_file_arts_free_state,           /* free_state */
   },
   {"warts",                                /* type */
@@ -214,40 +274,44 @@ static struct handler handlers[] = {
    scamper_file_warts_init_write,          /* init_write */
    scamper_file_warts_init_append,         /* init_append */
    scamper_file_warts_read,                /* read */
-   scamper_file_warts_cyclestart_write,    /* write_cycle_start */
-   scamper_file_warts_cyclestop_write,     /* write_cycle_stop */
-   scamper_file_warts_trace_write,         /* write_trace */
-   scamper_file_warts_ping_write,          /* write_ping */
-   scamper_file_warts_tracelb_write,       /* write_tracelb */
-   scamper_file_warts_sting_write,         /* write_sting */
-   scamper_file_warts_dealias_write,       /* write_dealias */
-   scamper_file_warts_neighbourdisc_write, /* write_neighbourdisc */
-   scamper_file_warts_tbit_write,          /* write_tbit */
-   scamper_file_warts_sniff_write,         /* write_sniff */
-   scamper_file_warts_host_write,          /* write_host */
+   &warts_write_handlers,                  /* write */
    scamper_file_warts_free_state,          /* free_state */
   },
   {"json",                                 /* type */
-   NULL,                                   /* init_read */
+   init_fail,                              /* init_read */
    scamper_file_json_init_write,           /* init_write */
-   NULL,                                   /* init_append */
+   scamper_file_json_init_write,           /* init_append */
    NULL,                                   /* read */
-   scamper_file_json_cyclestart_write,     /* write_cycle_start */
-   scamper_file_json_cyclestop_write,      /* write_cycle_stop */
-   scamper_file_json_trace_write,          /* write_trace */
-   scamper_file_json_ping_write,           /* write_ping */
-   scamper_file_json_tracelb_write,        /* write_tracelb */
-   NULL,                                   /* write_sting */
-   scamper_file_json_dealias_write,        /* write_dealias */
-   NULL,                                   /* write_neighbourdisc */
-   scamper_file_json_tbit_write,           /* write_tbit */
-   NULL,                                   /* write_sniff */
-   NULL,                                   /* write_host */
+   &json_write_handlers,                   /* write */
    scamper_file_json_free_state,           /* free_state */
+  },
+  {"warts.gz",                             /* type */
+   init_fail,                              /* init_read */
+   init_write_warts_gz,                    /* init_write */
+   init_fail,                              /* init_append */
+   NULL,                                   /* read */
+   &warts_write_handlers,                  /* write */
+   scamper_file_warts_free_state,          /* free_state */
+  },
+  {"warts.bz2",                            /* type */
+   init_fail,                              /* init_read */
+   init_write_warts_bz2,                   /* init_write */
+   init_fail,                              /* init_append */
+   NULL,                                   /* read */
+   &warts_write_handlers,                  /* write */
+   scamper_file_warts_free_state,          /* free_state */
+  },
+  {"warts.xz",                             /* type */
+   init_fail,                              /* init_read */
+   init_write_warts_xz,                    /* init_write */
+   init_fail,                              /* init_append */
+   NULL,                                   /* read */
+   &warts_write_handlers,                  /* write */
+   scamper_file_warts_free_state,          /* free_state */
   },
 };
 
-static int handler_cnt = sizeof(handlers) / sizeof(struct handler);
+static size_t handler_cnt = sizeof(handlers) / sizeof(struct handler);
 
 int scamper_file_getfd(const scamper_file_t *sf)
 {
@@ -306,86 +370,101 @@ void *scamper_file_getwriteparam(const scamper_file_t *sf)
   return sf->writeparam;
 }
 
-int scamper_file_write_trace(scamper_file_t *sf,
-			     const struct scamper_trace *trace, void *p)
+int scamper_file_write_cycle_start(scamper_file_t *sf, scamper_cycle_t *cycle)
 {
-  assert(sf->type >= -1); assert(sf->type <= handler_cnt);
-  if(sf->type != SCAMPER_FILE_NONE && handlers[sf->type].write_trace != NULL)
-    return handlers[sf->type].write_trace(sf, trace, p);
+  assert(sf->type < handler_cnt);
+  if(handlers[sf->type].write->cycle_start != NULL)
+    return handlers[sf->type].write->cycle_start(sf, cycle);
+  return -1;
+}
+
+int scamper_file_write_cycle_stop(scamper_file_t *sf, scamper_cycle_t *cycle)
+{
+  assert(sf->type < handler_cnt);
+  if(handlers[sf->type].write->cycle_stop != NULL)
+    return handlers[sf->type].write->cycle_stop(sf, cycle);
+  return -1;
+}
+
+int scamper_file_write_trace(scamper_file_t *sf,
+			     const scamper_trace_t *trace, void *p)
+{
+  assert(sf->type < handler_cnt);
+  if(handlers[sf->type].write->trace != NULL)
+    return handlers[sf->type].write->trace(sf, trace, p);
   return -1;
 }
 
 int scamper_file_write_ping(scamper_file_t *sf,
-			    const struct scamper_ping *ping, void *p)
+			    const scamper_ping_t *ping, void *p)
 {
-  assert(sf->type >= -1); assert(sf->type <= handler_cnt);
-  if(sf->type != SCAMPER_FILE_NONE && handlers[sf->type].write_ping != NULL)
-    return handlers[sf->type].write_ping(sf, ping, p);
+  assert(sf->type < handler_cnt);
+  if(handlers[sf->type].write->ping != NULL)
+    return handlers[sf->type].write->ping(sf, ping, p);
   return -1;
 }
 
 int scamper_file_write_tracelb(scamper_file_t *sf,
-			       const struct scamper_tracelb *trace, void *p)
+			       const scamper_tracelb_t *trace, void *p)
 {
-  assert(sf->type >= -1); assert(sf->type <= handler_cnt);
-  if(sf->type != SCAMPER_FILE_NONE && handlers[sf->type].write_tracelb != NULL)
-    return handlers[sf->type].write_tracelb(sf, trace, p);
+  assert(sf->type < handler_cnt);
+  if(handlers[sf->type].write->tracelb != NULL)
+    return handlers[sf->type].write->tracelb(sf, trace, p);
   return -1;
 }
 
 int scamper_file_write_sting(scamper_file_t *sf,
-			     const struct scamper_sting *sting, void *p)
+			     const scamper_sting_t *sting, void *p)
 {
-  assert(sf->type >= -1); assert(sf->type <= handler_cnt);
-  if(sf->type != SCAMPER_FILE_NONE && handlers[sf->type].write_sting != NULL)
-    return handlers[sf->type].write_sting(sf, sting,  p);
+  assert(sf->type < handler_cnt);
+  if(handlers[sf->type].write->sting != NULL)
+    return handlers[sf->type].write->sting(sf, sting,  p);
   return -1;
 }
 
 int scamper_file_write_dealias(scamper_file_t *sf,
-			       const struct scamper_dealias *dealias, void *p)
+			       const scamper_dealias_t *dealias, void *p)
 {
-  assert(sf->type >= -1); assert(sf->type <= handler_cnt);
-  if(sf->type != SCAMPER_FILE_NONE && handlers[sf->type].write_dealias != NULL)
-    return handlers[sf->type].write_dealias(sf, dealias, p);
+  assert(sf->type < handler_cnt);
+  if(handlers[sf->type].write->dealias != NULL)
+    return handlers[sf->type].write->dealias(sf, dealias, p);
   return -1;
 }
 
 int scamper_file_write_neighbourdisc(scamper_file_t *sf,
-				     const struct scamper_neighbourdisc *nd,
+				     const scamper_neighbourdisc_t *nd,
 				     void *p)
 {
-  assert(sf->type >= -1); assert(sf->type <= handler_cnt);
-  if(sf->type != SCAMPER_FILE_NONE &&
-     handlers[sf->type].write_neighbourdisc != NULL)
-    return handlers[sf->type].write_neighbourdisc(sf, nd, p);
+  assert(sf->type < handler_cnt);
+  if(handlers[sf->type].write->neighbourdisc != NULL)
+    return handlers[sf->type].write->neighbourdisc(sf, nd, p);
   return -1;
 }
 
 int scamper_file_write_tbit(scamper_file_t *sf,
-			    const struct scamper_tbit *tbit, void *p)
+			    const scamper_tbit_t *tbit, void *p)
 {
-  assert(sf->type >= -1); assert(sf->type <= handler_cnt);
-  if(sf->type != SCAMPER_FILE_NONE && handlers[sf->type].write_tbit != NULL)
-    return handlers[sf->type].write_tbit(sf, tbit, p);
+  assert(sf->type < handler_cnt);
+  if(handlers[sf->type].write->tbit != NULL)
+    return handlers[sf->type].write->tbit(sf, tbit, p);
   return -1;
 }
 
 int scamper_file_write_sniff(scamper_file_t *sf,
-			     const struct scamper_sniff *sniff, void *p)
+			     const scamper_sniff_t *sniff, void *p)
 {
-  assert(sf->type >= -1); assert(sf->type <= handler_cnt);
-  if(sf->type != SCAMPER_FILE_NONE && handlers[sf->type].write_sniff != NULL)
-    return handlers[sf->type].write_sniff(sf, sniff, p);
+  assert(sf->type < handler_cnt);
+  if(handlers[sf->type].write->sniff != NULL)
+    return handlers[sf->type].write->sniff(sf, sniff, p);
   return -1;
 }
 
 int scamper_file_write_host(scamper_file_t *sf,
-			    const struct scamper_host *host, void *p)
+			    const scamper_host_t *host, void *p)
 {
-  assert(sf->type >= -1); assert(sf->type <= handler_cnt);
-  if(sf->type != SCAMPER_FILE_NONE && handlers[sf->type].write_host != NULL)
-    return handlers[sf->type].write_host(sf, host, p);
+  assert(sf->type < handler_cnt);
+  if(handlers[sf->type].write->host != NULL)
+    return handlers[sf->type].write->host(sf, host, p);
   return -1;
 }
 
@@ -408,7 +487,7 @@ int scamper_file_write_obj(scamper_file_t *sf, uint16_t type, const void *data)
     (write_obj_func_t)scamper_file_write_sniff,
     (write_obj_func_t)scamper_file_write_host,
   };
-  if(type > 13)
+  if(type > 14)
     return -1;
   if(func[type] != NULL)
     return func[type](sf, data, NULL);
@@ -428,11 +507,9 @@ int scamper_file_read(scamper_file_t *sf,
 		      const scamper_file_filter_t *filter,
 		      uint16_t *type, void **object)
 {
-  if(sf->type != SCAMPER_FILE_NONE && handlers[sf->type].read != NULL)
-    {
-      return handlers[sf->type].read(sf, filter, type, object);
-    }
-
+  assert(sf->type < handler_cnt);
+  if(handlers[sf->type].read != NULL)
+    return handlers[sf->type].read(sf, filter, type, object);
   return -1;
 }
 
@@ -543,26 +620,6 @@ void scamper_file_filter_free(scamper_file_filter_t *filter)
   return;
 }
 
-int scamper_file_write_cycle_start(scamper_file_t *sf, scamper_cycle_t *cycle)
-{
-  if(sf->type != SCAMPER_FILE_NONE &&
-     handlers[sf->type].write_cycle_start != NULL)
-    {
-      return handlers[sf->type].write_cycle_start(sf, cycle);
-    }
-  return -1;
-}
-
-int scamper_file_write_cycle_stop(scamper_file_t *sf, scamper_cycle_t *cycle)
-{
-  if(sf->type != SCAMPER_FILE_NONE &&
-     handlers[sf->type].write_cycle_stop != NULL)
-    {
-      return handlers[sf->type].write_cycle_stop(sf, cycle);
-    }
-  return -1;
-}
-
 /*
  * scamper_file_geteof
  *
@@ -584,6 +641,130 @@ void scamper_file_seteof(scamper_file_t *sf)
   return;
 }
 
+#ifdef HAVE_SCAMPER_FILE_Z
+static void z_free(scamper_file_z_t *z, char mode)
+{
+  switch(z->type)
+    {
+#ifdef HAVE_ZLIB
+    case 'g':
+      if(z->s.gzs != NULL)
+	{
+	  if(mode == 'r')
+	    inflateEnd(z->s.gzs);
+	  else if(mode == 'w')
+	    deflateEnd(z->s.gzs);
+	  free(z->s.gzs);
+	}
+      break;
+#endif
+
+#ifdef HAVE_LIBBZ2
+    case 'b':
+      if(z->s.bzs != NULL)
+	{
+	  if(mode == 'r')
+	    BZ2_bzDecompressEnd(z->s.bzs);
+	  else if(mode == 'w')
+	    BZ2_bzCompressEnd(z->s.bzs);
+	  free(z->s.bzs);
+	}
+      break;
+#endif
+
+#ifdef HAVE_LIBLZMA
+    case 'x':
+      if(z->s.xzs != NULL)
+	{
+	  lzma_end(z->s.xzs);
+	  free(z->s.xzs);
+	}
+      break;
+#endif
+    }
+
+  free(z);
+  return;
+}
+
+static scamper_file_z_t *z_alloc(char type)
+{
+  scamper_file_z_t *z;
+  assert(type == 'g' || type == 'b' || type == 'x');
+  if((z = malloc_zero(sizeof(scamper_file_z_t))) == NULL)
+    return NULL;
+  z->type = type;
+  return z;
+}
+
+static void z_flush(scamper_file_z_t *z, int fd)
+{
+  size_t have;
+
+#if defined(HAVE_LIBBZ2) || defined(HAVE_LIBLZMA)
+  int rc;
+#endif
+
+#ifdef HAVE_ZLIB
+  if(z->type == 'g')
+    {
+      z->s.gzs->next_in = NULL;
+      z->s.gzs->avail_in = 0;
+      z->s.gzs->avail_out = sizeof(z->out);
+      z->s.gzs->next_out = z->out;
+      if(deflate(z->s.gzs, Z_FINISH) != Z_STREAM_ERROR)
+	{
+	  have = sizeof(z->out) - z->s.gzs->avail_out;
+	  if(have > 0)
+	    write_wrap(fd, z->out, NULL, have);
+	}
+      return;
+    }
+#endif
+
+#ifdef HAVE_LIBBZ2
+  if(z->type == 'b')
+    {
+      z->s.bzs->next_in = NULL;
+      z->s.bzs->avail_in = 0;
+      z->s.bzs->avail_out = sizeof(z->out);
+      z->s.bzs->next_out = (char *)z->out;
+      do
+	{
+	  rc = BZ2_bzCompress(z->s.bzs, BZ_FINISH);
+	  have = sizeof(z->out) - z->s.bzs->avail_out;
+	  if(have > 0)
+	    write_wrap(fd, z->out, NULL, have);
+	}
+      while(rc != BZ_STREAM_END);
+      return;
+    }
+#endif
+
+#ifdef HAVE_LIBLZMA
+  if(z->type == 'x')
+    {
+      z->s.xzs->next_in = NULL;
+      z->s.xzs->avail_in = 0;
+      z->s.xzs->avail_out = sizeof(z->out);
+      z->s.xzs->next_out = z->out;
+      do
+	{
+	  rc = lzma_code(z->s.xzs, LZMA_FINISH);
+	  have = sizeof(z->out) - z->s.xzs->avail_out;
+	  if(have > 0)
+	    write_wrap(fd, z->out, NULL, have);
+	}
+      while(rc != LZMA_STREAM_END);
+      return;
+    }
+#endif
+
+  return;
+}
+
+#endif
+
 /*
  * scamper_file_free
  *
@@ -595,12 +776,9 @@ void scamper_file_free(scamper_file_t *sf)
       if(sf->filename != NULL)
 	free(sf->filename);
 
-#ifdef HAVE_ZLIB
-      if(sf->zstrm != NULL)
-	{
-	  inflateEnd(&sf->zstrm->zs);
-	  free(sf->zstrm);
-	}
+#ifdef HAVE_SCAMPER_FILE_Z
+      if(sf->z != NULL)
+	z_free(sf->z, sf->mode);
 #endif
 
       free(sf);
@@ -614,17 +792,20 @@ void scamper_file_free(scamper_file_t *sf)
  */
 void scamper_file_close(scamper_file_t *sf)
 {
+  assert(sf->type < handler_cnt);
+
+#ifdef HAVE_SCAMPER_FILE_Z
+  if(sf->z != NULL && sf->mode == 'w')
+    z_flush(sf->z, sf->fd);
+#endif
+
   /* free state associated with the type of scamper_file_t */
-  if(sf->type != SCAMPER_FILE_NONE && handlers[sf->type].free_state != NULL)
-    {
-      handlers[sf->type].free_state(sf);
-    }
+  if(handlers[sf->type].free_state != NULL)
+    handlers[sf->type].free_state(sf);
 
   /* close the file descriptor */
   if(sf->fd != -1)
-    {
-      close(sf->fd);
-    }
+    close(sf->fd);
 
   /* free general state associated */
   scamper_file_free(sf);
@@ -634,40 +815,199 @@ void scamper_file_close(scamper_file_t *sf)
 
 char *scamper_file_type_tostr(scamper_file_t *sf, char *buf, size_t len)
 {
-  if(sf->type != SCAMPER_FILE_NONE && handlers[sf->type].type != NULL)
-    {
-      strncpy(buf, handlers[sf->type].type, len);
-      return buf;
-    }
+  assert(sf->type < handler_cnt);
+  if(handlers[sf->type].type == NULL)
+    return NULL;
+  strncpy(buf, handlers[sf->type].type, len);
+  return buf;
+}
 
+const char *scamper_file_objtype_tostr(uint16_t type)
+{
+  static const char *types[] = {
+    NULL,
+    "list",
+    "cycle-start",
+    "cycle-def",
+    "cycle-stop",
+    "addr",
+    "trace",
+    "ping",
+    "tracelb",
+    "dealias",
+    "neighbourdisc",
+    "tbit",
+    "sting",
+    "sniff",
+    "host",
+  };
+  uint16_t typec = sizeof(types)/sizeof(char *);
+  if(typec > type)
+    return types[type];
   return NULL;
 }
 
-/*
- * zlib_read
- *
- * next_in:   where deflated bytes need to be written
- * avail_in:  how many defated bytes are in the in buffer
- * next_out:  where inflated bytes can be obtained
- * avail_out: 
- */
+#ifdef HAVE_SCAMPER_FILE_Z
+static int z_avail_out(scamper_file_z_t *z, size_t *avail_out)
+{
 #ifdef HAVE_ZLIB
-static int zlib_read(scamper_file_t *sf, uint8_t **data, size_t len)
+  if(z->type == 'g') { *avail_out = z->s.gzs->avail_out; return 0; }
+#endif
+#ifdef HAVE_LIBBZ2
+  if(z->type == 'b') { *avail_out = z->s.bzs->avail_out; return 0; }
+#endif
+#ifdef HAVE_LIBLZMA
+  if(z->type == 'x') { *avail_out = z->s.xzs->avail_out; return 0; }
+#endif
+  return -1;
+}
+
+static int z_in_pair(scamper_file_z_t *z, size_t *avail_in, uint8_t **next_in)
+{
+#ifdef HAVE_ZLIB
+  if(z->type == 'g')
+    {
+      *avail_in = z->s.gzs->avail_in;
+      *next_in = z->s.gzs->next_in;
+      return 0;
+    }
+#endif
+#ifdef HAVE_LIBBZ2
+  if(z->type == 'b')
+    {
+      *avail_in = z->s.bzs->avail_in;
+      *next_in = (uint8_t *)z->s.bzs->next_in;
+      return 0;
+    }
+#endif
+#ifdef HAVE_LIBLZMA
+  if(z->type == 'x')
+    {
+      *avail_in = z->s.xzs->avail_in;
+      *next_in = (uint8_t *)z->s.xzs->next_in;
+      return 0;
+    }
+#endif
+  return -1;
+}
+
+static int z_out_pair_add(scamper_file_z_t *z, size_t b)
+{
+#ifdef HAVE_ZLIB
+  if(z->type == 'g')
+    {
+      z->s.gzs->avail_out += b;
+      z->s.gzs->next_out -= b;
+      return 0;
+    }
+#endif
+#ifdef HAVE_LIBBZ2
+  if(z->type == 'b')
+    {
+      z->s.bzs->avail_out += b;
+      z->s.bzs->next_out -= b;
+      return 0;
+    }
+#endif
+#ifdef HAVE_LIBLZMA
+  if(z->type == 'x')
+    {
+      z->s.xzs->avail_out += b;
+      z->s.xzs->next_out -= b;
+      return 0;
+    }
+#endif
+  return -1;
+}
+
+static int z_next_in_reset(scamper_file_z_t *z)
+{
+#ifdef HAVE_ZLIB
+  if(z->type == 'g') { z->s.gzs->next_in = z->in; return 0; }
+#endif
+#ifdef HAVE_LIBBZ2
+  if(z->type == 'b') { z->s.bzs->next_in = (char *)z->in; return 0; }
+#endif
+#ifdef HAVE_LIBLZMA
+  if(z->type == 'x') { z->s.xzs->next_in = z->in; return 0; }
+#endif
+  return -1;
+}
+
+static int z_avail_in_add(scamper_file_z_t *z, ssize_t val)
+{
+#ifdef HAVE_ZLIB
+  if(z->type == 'g') { z->s.gzs->avail_in += val; return 0; }
+#endif
+#ifdef HAVE_LIBBZ2
+  if(z->type == 'b') { z->s.bzs->avail_in += val; return 0; }
+#endif
+#ifdef HAVE_LIBLZMA
+  if(z->type == 'x') { z->s.xzs->avail_in += val; return 0; }
+#endif
+  return -1;
+}
+
+static int z_decompress(scamper_file_z_t *z, size_t *have)
+{
+  int rc;
+
+#ifdef HAVE_ZLIB
+  if(z->type == 'g')
+    {
+      rc = inflate(z->s.gzs, Z_NO_FLUSH);
+      if(rc == Z_STREAM_END)
+	z->end = 1;
+      else if(rc != Z_OK)
+	return -1;
+      *have = sizeof(z->out) - z->s.gzs->avail_out;
+      return 0;
+    }
+#endif
+#ifdef HAVE_LIBBZ2
+  if(z->type == 'b')
+    {
+      rc = BZ2_bzDecompress(z->s.bzs);
+      if(rc == BZ_STREAM_END)
+	z->end = 1;
+      else if(rc != BZ_OK)
+	return -1;
+      *have = sizeof(z->out) - z->s.bzs->avail_out;
+      return 0;
+    }
+#endif
+#ifdef HAVE_LIBLZMA
+  if(z->type == 'x')
+    {
+      rc = lzma_code(z->s.xzs, z->eof == 0 ? LZMA_RUN : LZMA_FINISH);
+      if(rc == LZMA_STREAM_END)
+	z->end = 1;
+      else if(rc != LZMA_OK)
+	return -1;
+      *have = sizeof(z->out) - z->s.xzs->avail_out;
+      return 0;
+    }
+#endif
+  return -1;
+}
+
+static int z_read(scamper_file_t *sf, uint8_t **data, size_t len)
 {
   uint8_t *tmp = NULL;
   ssize_t readc;
-  size_t off = 0;
-  size_t b, have;
-  int rc;
+  size_t b, have, avail_in, avail_out, off = 0;
+  uint8_t *next_in;
 
   *data = NULL;
 
-  if((tmp = malloc(len)) == NULL)
+  if((tmp = malloc(len)) == NULL ||
+     z_avail_out(sf->z, &avail_out) != 0)
     goto err;
+  have = sizeof(sf->z->out) - avail_out;
 
-  have = sizeof(sf->zstrm->out) - sf->zstrm->zs.avail_out;
-  while(sf->zstrm->end == 0 || have > 0)
+  while(sf->z->end == 0 || have > 0)
     {
+      /* copy data out of the decompression buffer into the data buffer */
       if(have > 0)
 	{
 	  if(have >= len - off)
@@ -675,13 +1015,16 @@ static int zlib_read(scamper_file_t *sf, uint8_t **data, size_t len)
 	  else
 	    b = have;
 
-	  memcpy(tmp+off, sf->zstrm->out, b);
-	  memmove(sf->zstrm->out, sf->zstrm->out+b, sizeof(sf->zstrm->out)-b);
-	  sf->zstrm->zs.avail_out += b;
-	  sf->zstrm->zs.next_out -= b;
+	  memcpy(tmp+off, sf->z->out, b);
+	  memmove(sf->z->out, sf->z->out + b, sizeof(sf->z->out) - b);
 	  off += b;
 	  have -= b;
 
+	  /* adjust avail_out / next_out according to b */
+	  if(z_out_pair_add(sf->z, b) != 0)
+	    goto err;
+
+	  /* if we have everything we need, we can return now */
 	  if(off == len)
 	    {
 	      *data = tmp;
@@ -689,27 +1032,38 @@ static int zlib_read(scamper_file_t *sf, uint8_t **data, size_t len)
 	    }
 	}
 
-      if(sf->zstrm->zs.avail_in < sizeof(sf->zstrm->in))
+      /*
+       * read until have > 0 (there is data in the decompression
+       * output buffer) or we have got to the end of the file
+       */
+      do
 	{
-	  b = sizeof(sf->zstrm->in) - sf->zstrm->zs.avail_in;
-	  memmove(sf->zstrm->in,sf->zstrm->zs.next_in,sf->zstrm->zs.avail_in);
-	  readc = read(sf->fd, sf->zstrm->in + sf->zstrm->zs.avail_in, b);
-	  if(readc < 0)
-	    goto err;
-	  else if(readc == 0)
-	    sf->zstrm->eof = 1;
-	  else
-	    sf->zstrm->zs.avail_in += readc;
-
-	  sf->zstrm->zs.next_in = sf->zstrm->in;
-	  rc = inflate(&sf->zstrm->zs, Z_NO_FLUSH);
-	  if(rc == Z_STREAM_END)
-	    sf->zstrm->end = 1;
-	  else if(rc != Z_OK)
+	  if(z_in_pair(sf->z, &avail_in, &next_in) != 0)
 	    goto err;
 
-	  have = sizeof(sf->zstrm->out) - sf->zstrm->zs.avail_out;
+	  /* if there is space to read into the buffer, then read */
+	  b = sizeof(sf->z->in) - avail_in;
+	  if(b > 0 && sf->z->eof == 0)
+	    {
+	      /* move input buffer back to start of z->in */
+	      memmove(sf->z->in, next_in, avail_in);
+	      z_next_in_reset(sf->z);
+
+	      /* make a read, and adjust state according to return value */
+	      readc = read(sf->fd, sf->z->in + avail_in, b);
+	      if(readc < 0)
+		goto err;
+	      else if(readc == 0)
+		sf->z->eof = 1;
+	      else if(z_avail_in_add(sf->z, readc) != 0)
+		goto err;
+	    }
+
+	  /* decompress */
+	  if(z_decompress(sf->z, &have) != 0)
+	    goto err;
 	}
+      while(have == 0 && sf->z->eof == 0);      
     }
 
   free(tmp);
@@ -719,24 +1073,108 @@ static int zlib_read(scamper_file_t *sf, uint8_t **data, size_t len)
   if(tmp != NULL) free(tmp);
   return -1;
 }
+
+#ifdef HAVE_ZLIB
+static int zlib_write(scamper_file_t *sf, const void *buf, size_t len, void *p)
+{
+  size_t have;
+
+  if(sf->z == NULL || sf->z->s.gzs == NULL)
+    return -1;
+
+  sf->z->s.gzs->next_in = (void *)buf;
+  sf->z->s.gzs->avail_in = len;
+
+  do
+    {
+      sf->z->s.gzs->avail_out = sizeof(sf->z->out);
+      sf->z->s.gzs->next_out = sf->z->out;
+      if(deflate(sf->z->s.gzs, Z_NO_FLUSH) == Z_STREAM_ERROR)
+	return -1;
+
+      have = sizeof(sf->z->out) - sf->z->s.gzs->avail_out;
+      if(have > 0 && write_wrap(sf->fd, sf->z->out, NULL, have) != 0)
+	return -1;
+    }
+  while(sf->z->s.gzs->avail_out == 0);
+
+  return 0;
+}
 #endif
 
-static int file_type_get(const char *type)
+#ifdef HAVE_LIBBZ2
+static int libbz2_write(scamper_file_t *sf,const void *buf,size_t len,void *p)
 {
-  int i;
+  size_t have;
+
+  if(sf->z == NULL || sf->z->s.bzs == NULL)
+    return -1;
+
+  sf->z->s.bzs->next_in = (void *)buf;
+  sf->z->s.bzs->avail_in = len;
+
+  do
+    {
+      sf->z->s.bzs->avail_out = sizeof(sf->z->out);
+      sf->z->s.bzs->next_out = (char *)sf->z->out;
+      if(BZ2_bzCompress(sf->z->s.bzs, BZ_RUN) != BZ_RUN_OK)
+	return -1;
+
+      have = sizeof(sf->z->out) - sf->z->s.bzs->avail_out;
+      if(have > 0 && write_wrap(sf->fd, sf->z->out, NULL, have) != 0)
+	return -1;
+    }
+  while(sf->z->s.bzs->avail_out == 0);
+
+  return 0;
+}
+#endif
+
+#ifdef HAVE_LIBLZMA
+static int xz_write(scamper_file_t *sf, const void *buf, size_t len, void *p)
+{
+  size_t have;
+
+  if(sf->z == NULL || sf->z->s.xzs == NULL)
+    return -1;
+
+  sf->z->s.xzs->next_in = (void *)buf;
+  sf->z->s.xzs->avail_in = len;
+
+  do
+    {
+      sf->z->s.xzs->avail_out = sizeof(sf->z->out);
+      sf->z->s.xzs->next_out = sf->z->out;
+      if(lzma_code(sf->z->s.xzs, LZMA_RUN) != LZMA_OK)
+	return -1;
+
+      have = sizeof(sf->z->out) - sf->z->s.xzs->avail_out;
+      if(have > 0 && write_wrap(sf->fd, sf->z->out, NULL, have) != 0)
+	return -1;
+    }
+  while(sf->z->s.xzs->avail_out == 0);
+
+  return 0;
+}
+#endif
+#endif
+
+static size_t file_type_get(const char *type)
+{
+  size_t i;
   if(type == NULL)
-    return SCAMPER_FILE_NONE;
-  for(i=0; i<handler_cnt; i++)
+    return SCAMPER_FILE_TYPE_NONE;
+  for(i=1; i<handler_cnt; i++)
     if(strcasecmp(type, handlers[i].type) == 0)
       return i;
-  return SCAMPER_FILE_NONE;
+  return SCAMPER_FILE_TYPE_NONE;
 }
 
 static int file_type_detect(scamper_file_t *sf)
 {
-  uint8_t buf[2], *ptr = buf;
+  uint8_t buf[6], *ptr = buf;
 
-#ifdef HAVE_ZLIB
+#if defined(HAVE_ZLIB) || defined(HAVE_LIBBZ2) || defined(HAVE_LIBLZMA)
   ssize_t readc;
   int rc;
 #endif
@@ -744,41 +1182,107 @@ static int file_type_detect(scamper_file_t *sf)
   if(lseek(sf->fd, 0, SEEK_SET) == -1 ||
      read_wrap(sf->fd, buf, NULL, sizeof(buf)) != 0 ||
      lseek(sf->fd, 0, SEEK_SET) == -1)
-    return SCAMPER_FILE_NONE;
+    return SCAMPER_FILE_TYPE_NONE;
 
-#ifdef HAVE_ZLIB
   if(buf[0] == 0x1F && buf[1] == 0x8B)
     {
-      if((sf->zstrm = malloc_zero(sizeof(scamper_file_zstrm_t))) == NULL)
-	return SCAMPER_FILE_NONE;
-      if(inflateInit2(&sf->zstrm->zs, MAX_WBITS + 32) != Z_OK)
-	return SCAMPER_FILE_NONE;
-      sf->readfunc = (scamper_file_readfunc_t)zlib_read;
+#ifdef HAVE_ZLIB
+      if((sf->z = z_alloc('g')) == NULL ||
+	 (sf->z->s.gzs = malloc_zero(sizeof(z_stream))) == NULL ||
+	 inflateInit2(sf->z->s.gzs, MAX_WBITS + 32) != Z_OK)
+	return SCAMPER_FILE_TYPE_NONE;
+      sf->readfunc = (scamper_file_readfunc_t)z_read;
       sf->readparam = sf;
-      sf->zstrm->zs.next_out = sf->zstrm->out;
-      sf->zstrm->zs.avail_out = sizeof(sf->zstrm->out);
+      sf->z->s.gzs->next_out = sf->z->out;
+      sf->z->s.gzs->avail_out = sizeof(sf->z->out);
 
-      readc = read(sf->fd, sf->zstrm->in, sizeof(sf->zstrm->in));
-      if(readc <= 0)
-	return SCAMPER_FILE_NONE;
-      sf->zstrm->zs.next_in = sf->zstrm->in;
-      sf->zstrm->zs.avail_in = readc;
+      if((readc = read(sf->fd, sf->z->in, sizeof(sf->z->in))) <= 0)
+	return SCAMPER_FILE_TYPE_NONE;
+      sf->z->s.gzs->next_in = sf->z->in;
+      sf->z->s.gzs->avail_in = readc;
 
-      rc = inflate(&sf->zstrm->zs, Z_NO_FLUSH);
+      rc = inflate(sf->z->s.gzs, Z_NO_FLUSH);
       if(rc == Z_STREAM_END)
-	sf->zstrm->end = 1;
+	sf->z->end = 1;
       else if(rc != Z_OK)
-	return SCAMPER_FILE_NONE;
-      ptr = sf->zstrm->out;
-    }
+	return SCAMPER_FILE_TYPE_NONE;
+      ptr = sf->z->out;
+#else
+      return SCAMPER_FILE_TYPE_NONE;
 #endif
+    }
+  else if(buf[0] == 0x42 && buf[1] == 0x5A)
+    {
+#ifdef HAVE_LIBBZ2
+      if((sf->z = z_alloc('b')) == NULL ||
+	 (sf->z->s.bzs = malloc_zero(sizeof(bz_stream))) == NULL ||
+	 BZ2_bzDecompressInit(sf->z->s.bzs, 0, 0) != BZ_OK)
+	return SCAMPER_FILE_TYPE_NONE;
+      sf->readfunc = (scamper_file_readfunc_t)z_read;
+      sf->readparam = sf;
+      sf->z->s.bzs->next_out = (char *)sf->z->out;
+      sf->z->s.bzs->avail_out = sizeof(sf->z->out);
+
+      do
+	{
+	  if((readc = read(sf->fd, sf->z->in, sizeof(sf->z->in))) <= 0)
+	    return SCAMPER_FILE_TYPE_NONE;
+	  sf->z->s.bzs->next_in = (char *)sf->z->in;
+	  sf->z->s.bzs->avail_in = readc;
+
+	  rc = BZ2_bzDecompress(sf->z->s.bzs);
+	  if(rc == BZ_STREAM_END)
+	    sf->z->end = 1;
+	  else if(rc != BZ_OK)
+	    return SCAMPER_FILE_TYPE_NONE;
+	}
+      while(sf->z->s.bzs->avail_out == sizeof(sf->z->out));
+
+      ptr = sf->z->out;
+#else
+      return SCAMPER_FILE_TYPE_NONE;
+#endif
+    }
+  else if(buf[0] == 0xFD && buf[1] == 0x37 && buf[2] == 0x7A &&
+	  buf[3] == 0x58 && buf[4] == 0x5A && buf[5] == 0x00)
+    {
+#ifdef HAVE_LIBLZMA
+      if((sf->z = z_alloc('x')) == NULL ||
+	 (sf->z->s.xzs = malloc_zero(sizeof(lzma_stream))) == NULL ||
+	 lzma_stream_decoder(sf->z->s.xzs, UINT64_MAX, 0) != LZMA_OK)
+	return SCAMPER_FILE_TYPE_NONE;
+      sf->readfunc = (scamper_file_readfunc_t)z_read;
+      sf->readparam = sf;
+      sf->z->s.xzs->next_out = sf->z->out;
+      sf->z->s.xzs->avail_out = sizeof(sf->z->out);
+
+      do
+	{
+	  if((readc = read(sf->fd, sf->z->in, sizeof(sf->z->in))) <= 0)
+	    return SCAMPER_FILE_TYPE_NONE;
+	  sf->z->s.xzs->next_in = sf->z->in;
+	  sf->z->s.xzs->avail_in = readc;
+
+	  rc = lzma_code(sf->z->s.xzs, LZMA_RUN);
+	  if(rc == LZMA_STREAM_END)
+	    sf->z->end = 1;
+	  else if(rc != LZMA_OK)
+	    return SCAMPER_FILE_TYPE_NONE;
+	}
+      while(sf->z->s.xzs->avail_out == sizeof(sf->z->out));
+
+      ptr = sf->z->out;
+#else
+      return SCAMPER_FILE_TYPE_NONE;
+#endif
+    }
 
   if(ptr[0] == 0x12 && ptr[1] == 0x05)
-    return SCAMPER_FILE_WARTS;
+    return SCAMPER_FILE_TYPE_WARTS;
   if(ptr[0] == 0xDF && ptr[1] == 0xB0)
-    return SCAMPER_FILE_ARTS;
+    return SCAMPER_FILE_TYPE_ARTS;
 
-  return SCAMPER_FILE_NONE;
+  return SCAMPER_FILE_TYPE_NONE;
 }
 
 static int file_open_read(scamper_file_t *sf)
@@ -794,52 +1298,97 @@ static int file_open_read(scamper_file_t *sf)
 	sf->type = file_type_detect(sf);
     }
 
-  if(sf->type == SCAMPER_FILE_NONE)
-    return -1;
-
-  if(handlers[sf->type].init_read == NULL)
-    return -1;
-
+  assert(sf->type < handler_cnt);
   return handlers[sf->type].init_read(sf);
 }
 
 static int file_open_write(scamper_file_t *sf)
 {
-  if(sf->type != SCAMPER_FILE_NONE && handlers[sf->type].init_write != NULL)
-    return handlers[sf->type].init_write(sf);
+  assert(sf->type < handler_cnt);
+  return handlers[sf->type].init_write(sf);
+}
+
+static int init_noop(scamper_file_t *sf)
+{
   return 0;
+}
+
+static int init_fail(scamper_file_t *sf)
+{
+  return -1;
+}
+
+static int init_write_warts_gz(scamper_file_t *sf)
+{
+#ifdef HAVE_ZLIB
+  if((sf->z = z_alloc('g')) == NULL ||
+     (sf->z->s.gzs = malloc_zero(sizeof(z_stream))) == NULL ||
+     deflateInit2(sf->z->s.gzs, Z_DEFAULT_COMPRESSION, Z_DEFLATED,
+		  15 | 16, 8, Z_DEFAULT_STRATEGY) != Z_OK)
+    return -1;
+  sf->writefunc = (scamper_file_writefunc_t)zlib_write;
+  sf->writeparam = sf;
+  return handlers[SCAMPER_FILE_TYPE_WARTS].init_write(sf);
+#else
+  return -1;
+#endif
+}
+
+static int init_write_warts_bz2(scamper_file_t *sf)
+{
+#ifdef HAVE_LIBBZ2
+  if((sf->z = z_alloc('b')) == NULL ||
+     (sf->z->s.bzs = malloc_zero(sizeof(bz_stream))) == NULL ||
+     BZ2_bzCompressInit(sf->z->s.bzs, 6, 0, 0) != BZ_OK)
+    return -1;
+  sf->writefunc = (scamper_file_writefunc_t)libbz2_write;
+  sf->writeparam = sf;
+  return handlers[SCAMPER_FILE_TYPE_WARTS].init_write(sf);
+#else
+  return -1;
+#endif
+}
+
+static int init_write_warts_xz(scamper_file_t *sf)
+{
+#ifdef HAVE_LIBLZMA
+  if((sf->z = z_alloc('x')) == NULL ||
+     (sf->z->s.xzs = malloc_zero(sizeof(lzma_stream))) == NULL ||
+     lzma_easy_encoder(sf->z->s.xzs, LZMA_PRESET_DEFAULT,
+		       LZMA_CHECK_CRC64) != LZMA_OK)
+    return -1;
+  sf->writefunc = (scamper_file_writefunc_t)xz_write;
+  sf->writeparam = sf;
+  return handlers[SCAMPER_FILE_TYPE_WARTS].init_write(sf);
+#else
+  return -1;
+#endif
 }
 
 static int file_open_append(scamper_file_t *sf)
 {
   struct stat sb;
 
+  /*
+   * appending to a zero-sized file is the same as just writing to a
+   * new file
+   */
   if(fstat(sf->fd, &sb) != 0)
     return -1;
-
+  assert(sf->type < handler_cnt);
   if(sb.st_size == 0)
-    {
-      if(sf->type == SCAMPER_FILE_WARTS)
-	return handlers[sf->type].init_write(sf);
-      else if(sf->type == SCAMPER_FILE_TEXT || sf->type == SCAMPER_FILE_JSON)
-	return 0;
-      return -1;
-    }
+    return handlers[sf->type].init_write(sf);
 
   /* can't append to pipes */
   if((sb.st_mode & S_IFIFO) != 0)
     return -1;
 
   sf->type = file_type_detect(sf);
-  if(handlers[sf->type].init_append != NULL)
-    return handlers[sf->type].init_append(sf);
-  else if(sf->type != SCAMPER_FILE_TEXT && sf->type != SCAMPER_FILE_JSON)
-    return -1;
-
-  return 0;
+  assert(sf->type < handler_cnt);
+  return handlers[sf->type].init_append(sf);
 }
 
-static scamper_file_t *file_open(int fd, const char *fn, char mode, int type)
+static scamper_file_t *file_open(int fd, const char *fn, char mode, size_t type)
 {
   scamper_file_t *sf;
   int (*open_func)(scamper_file_t *);
@@ -860,6 +1409,7 @@ static scamper_file_t *file_open(int fd, const char *fn, char mode, int type)
       return NULL;
     }
 
+  sf->mode = mode;
   sf->type = type;
   sf->fd   = fd;
   if(open_func(sf) == -1)
@@ -876,9 +1426,9 @@ scamper_file_t *scamper_file_opennull(char mode, const char *format)
   uint8_t file_type;
 
   if(strcasecmp(format, "warts") == 0)
-    file_type = SCAMPER_FILE_WARTS;
+    file_type = SCAMPER_FILE_TYPE_WARTS;
   else if(strcasecmp(format, "json") == 0)
-    file_type = SCAMPER_FILE_JSON;
+    file_type = SCAMPER_FILE_TYPE_JSON;
   else
     return NULL;
 
@@ -899,8 +1449,8 @@ scamper_file_t *scamper_file_openfd(int fd, const char *fn, char mode,
  * brand new file, and 'a' for appending.
  *
  * in 'w' and 'a' mode, the caller must also specify the type of file
- * to write or append to; the three valid classes are "warts", "text",
- * and "json".
+ * to write or append to; the valid classes are "warts", "text", "json",
+ * "warts.gz"
  *
  */
 scamper_file_t *scamper_file_open(const char *filename, char mode,
@@ -908,7 +1458,7 @@ scamper_file_t *scamper_file_open(const char *filename, char mode,
 {
   scamper_file_t *sf;
   mode_t mo;
-  int ft = file_type_get(type);
+  size_t ft = file_type_get(type);
   int flags = 0;
   int fd = -1;
 
@@ -928,10 +1478,8 @@ scamper_file_t *scamper_file_open(const char *filename, char mode,
   else if(mode == 'w' || mode == 'a')
     {
       /* sanity check the type of file to be written */
-      if(ft == SCAMPER_FILE_NONE || ft == SCAMPER_FILE_ARTS)
-	{
-	  return NULL;
-	}
+      if(handlers[ft].init_write == init_fail)
+	return NULL;
 
       if(string_isdash(filename) != 0)
 	{

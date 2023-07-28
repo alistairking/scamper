@@ -1,9 +1,9 @@
 /*
  * scamper_neighbourdisc_warts.h
  *
- * $Id: scamper_neighbourdisc_warts.c,v 1.12 2022/07/22 07:15:28 mjl Exp $
+ * $Id: scamper_neighbourdisc_warts.c,v 1.13 2023/05/16 06:54:59 mjl Exp $
  *
- * Copyright (C) 2009-2022 Matthew Luckie
+ * Copyright (C) 2009-2023 Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -29,6 +29,7 @@
 #include "scamper_list.h"
 #include "scamper_icmpext.h"
 #include "scamper_neighbourdisc.h"
+#include "scamper_neighbourdisc_int.h"
 #include "scamper_file.h"
 #include "scamper_file_warts.h"
 #include "scamper_neighbourdisc_warts.h"

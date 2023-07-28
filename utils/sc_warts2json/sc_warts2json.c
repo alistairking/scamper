@@ -1,7 +1,7 @@
 /*
  * sc_warts2json
  *
- * $Id: sc_warts2json.c,v 1.9 2020/03/17 07:32:17 mjl Exp $
+ * $Id: sc_warts2json.c,v 1.11 2023/05/03 20:50:01 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -9,6 +9,7 @@
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2013      The Regents of the University of California
+ * Copyright (C) 2023      Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -38,6 +39,7 @@
 #include "tracelb/scamper_tracelb.h"
 #include "dealias/scamper_dealias.h"
 #include "tbit/scamper_tbit.h"
+#include "host/scamper_host.h"
 #include "utils.h"
 
 int main(int argc, char *argv[])
@@ -50,6 +52,7 @@ int main(int argc, char *argv[])
     SCAMPER_FILE_OBJ_TRACELB,
     SCAMPER_FILE_OBJ_DEALIAS,
     SCAMPER_FILE_OBJ_TBIT,
+    SCAMPER_FILE_OBJ_HOST,
   };
   scamper_file_t *in, *out;
   scamper_file_filter_t *filter;
@@ -115,6 +118,11 @@ int main(int argc, char *argv[])
 	    scamper_tbit_free(data);
 	  else if(type == SCAMPER_FILE_OBJ_TRACELB)
 	    scamper_tracelb_free(data);
+	  else if(type == SCAMPER_FILE_OBJ_HOST)
+	    scamper_host_free(data);
+	  else if(type == SCAMPER_FILE_OBJ_CYCLE_START ||
+		  type == SCAMPER_FILE_OBJ_CYCLE_STOP)
+	    scamper_cycle_free(data);
 	}
 
       scamper_file_close(in);

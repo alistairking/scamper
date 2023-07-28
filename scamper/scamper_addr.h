@@ -1,7 +1,7 @@
 /*
  * scamper_addr.h
  *
- * $Id: scamper_addr.h,v 1.29 2020/04/02 05:35:24 mjl Exp $
+ * $Id: scamper_addr.h,v 1.30 2023/05/29 21:22:26 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -51,27 +51,14 @@
 
 #define SCAMPER_ADDR_TYPE_MAX      SCAMPER_ADDR_TYPE_FIREWIRE
 
-#define SCAMPER_ADDR_TYPE_IS_IPV4(a) ((a)->type == SCAMPER_ADDR_TYPE_IPV4)
-#define SCAMPER_ADDR_TYPE_IS_IPV6(a) ((a)->type == SCAMPER_ADDR_TYPE_IPV6)
-
-#define SCAMPER_ADDR_TYPE_IS_IP(a) ((a)->type == SCAMPER_ADDR_TYPE_IPV4 || \
-				    (a)->type == SCAMPER_ADDR_TYPE_IPV6)
-
 /*
  * scamper_addr:
- *
  * this structure is used to store an address in scamper.
- * the contents of this will eventually be made private, so users of
- * addresses should not count on the contents of the struct remaining
- * public.
  */
-typedef struct scamper_addr
-{
-  int   type;
-  void *addr;
-  int   refcnt;
-  void *internal;
-} scamper_addr_t;
+typedef struct scamper_addr scamper_addr_t;
+
+int scamper_addr_type_get(const scamper_addr_t *addr);
+const void *scamper_addr_addr_get(const scamper_addr_t *addr);
 
 /*
  * scamper_addr_alloc:
@@ -205,6 +192,8 @@ int scamper_addr_isrfc1918(const scamper_addr_t *a);
 int scamper_addr_isunicast(const scamper_addr_t *a);
 int scamper_addr_is6to4(const scamper_addr_t *a);
 int scamper_addr_isreserved(const scamper_addr_t *a);
+int scamper_addr_isipv4(const scamper_addr_t *a);
+int scamper_addr_isipv6(const scamper_addr_t *a);
 
 /*
  * scamper_addrcache_get_[ipv4|ipv6|ethernet|firewire]

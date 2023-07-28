@@ -7,7 +7,7 @@
  * Copyright (C) 2020-2023 Matthew Luckie
  * Author: Matthew Luckie
  *
- * $Id: scamper_ping.c,v 1.40 2023/02/23 18:58:23 mjl Exp $
+ * $Id: scamper_ping.c,v 1.46 2023/06/01 07:10:45 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -31,11 +31,13 @@
 
 #include "scamper_list.h"
 #include "scamper_addr.h"
+#include "scamper_addr_int.h"
 #include "scamper_ping.h"
+#include "scamper_ping_int.h"
 
 #include "utils.h"
 
-char *scamper_ping_method2str(const scamper_ping_t *ping, char *buf, size_t len)
+char *scamper_ping_method_tostr(const scamper_ping_t *ping,char *buf,size_t len)
 {
   static char *m[] = {
     "icmp-echo",
@@ -49,14 +51,11 @@ char *scamper_ping_method2str(const scamper_ping_t *ping, char *buf, size_t len)
     "tcp-rst",
     "tcp-syn-sport",
   };
-
   if(ping->probe_method >= sizeof(m) / sizeof(char *))
-    {
-      snprintf(buf, len, "%d", ping->probe_method);
-      return buf;
-    }
-
-  return m[ping->probe_method];
+    snprintf(buf, len, "%d", ping->probe_method);
+  else
+    snprintf(buf, len, "%s", m[ping->probe_method]);
+  return buf;
 }
 
 int scamper_ping_stats(const scamper_ping_t *ping, scamper_ping_stats_t *stats)
@@ -78,7 +77,7 @@ int scamper_ping_stats(const scamper_ping_t *ping, scamper_ping_stats_t *stats)
 
       for(reply = ping->ping_replies[i]; reply != NULL; reply = reply->next)
 	{
-	  if(SCAMPER_PING_REPLY_FROM_TARGET(ping, reply))
+	  if(SCAMPER_PING_REPLY_IS_FROM_TARGET(ping, reply))
 	    {
 	      if(first == 0)
 		{
@@ -125,7 +124,7 @@ int scamper_ping_stats(const scamper_ping_t *ping, scamper_ping_stats_t *stats)
 	{
 	  for(reply=ping->ping_replies[i]; reply != NULL; reply = reply->next)
 	    {
-	      if(SCAMPER_PING_REPLY_FROM_TARGET(ping, reply) == 0)
+	      if(SCAMPER_PING_REPLY_IS_FROM_TARGET(ping, reply) == 0)
 		continue;
 	      rtt = ((reply->rtt.tv_sec * 1000000) + reply->rtt.tv_usec);
 	      diff = rtt - d;
@@ -139,42 +138,6 @@ int scamper_ping_stats(const scamper_ping_t *ping, scamper_ping_stats_t *stats)
     }
 
   return 0;
-}
-
-int scamper_ping_setdata(scamper_ping_t *ping, uint8_t *bytes, uint16_t len)
-{
-  uint8_t *dup;
-
-  /* make a duplicate of the pattern bytes before freeing the old pattern */
-  if(bytes != NULL && len > 0)
-    {
-      if((dup = memdup(bytes, len)) == NULL)
-	{
-	  return -1;
-	}
-    }
-  else
-    {
-      dup = NULL;
-      len = 0;
-    }
-
-  /* clear out anything there */
-  if(ping->probe_data != NULL)
-    {
-      free(ping->probe_data);
-    }
-
-  /* copy in the new pattern */
-  ping->probe_data    = dup;
-  ping->probe_datalen = len;
-
-  return 0;
-}
-
-scamper_addr_t *scamper_ping_addr(const void *va)
-{
-  return ((const scamper_ping_t *)va)->dst;
 }
 
 scamper_ping_reply_tsreply_t *scamper_ping_reply_tsreply_alloc(void)
@@ -269,7 +232,7 @@ void scamper_ping_free(scamper_ping_t *ping)
   return;
 }
 
-uint32_t scamper_ping_reply_count(const scamper_ping_t *ping)
+uint32_t scamper_ping_reply_total(const scamper_ping_t *ping)
 {
   scamper_ping_reply_t *reply;
   uint16_t i;
@@ -315,16 +278,11 @@ int scamper_ping_reply_append(scamper_ping_t *p, scamper_ping_reply_t *reply)
   return 0;
 }
 
-int scamper_ping_replies_alloc(scamper_ping_t *ping, int count)
+int scamper_ping_replies_alloc(scamper_ping_t *ping, uint16_t count)
 {
-  size_t size;
-
-  size = sizeof(scamper_ping_reply_t *) * count;
+  size_t size = sizeof(scamper_ping_reply_t *) * count;
   if((ping->ping_replies = (scamper_ping_reply_t **)malloc_zero(size)) != NULL)
-    {
-      return 0;
-    }
-
+    return 0;
   return -1;
 }
 
@@ -381,30 +339,30 @@ void scamper_ping_reply_v4rr_free(scamper_ping_reply_v4rr_t *rr)
   if(rr == NULL)
     return;
 
-  if(rr->rr != NULL)
+  if(rr->ip != NULL)
     {
-      for(i=0; i<rr->rrc; i++)
-	if(rr->rr[i] != NULL)
-	  scamper_addr_free(rr->rr[i]);
-      free(rr->rr);
+      for(i=0; i<rr->ipc; i++)
+	if(rr->ip[i] != NULL)
+	  scamper_addr_free(rr->ip[i]);
+      free(rr->ip);
     }
 
   free(rr);
   return;
 }
 
-scamper_ping_reply_v4rr_t *scamper_ping_reply_v4rr_alloc(uint8_t rrc)
+scamper_ping_reply_v4rr_t *scamper_ping_reply_v4rr_alloc(uint8_t ipc)
 {
   scamper_ping_reply_v4rr_t *rr = NULL;
 
-  if(rrc == 0)
+  if(ipc == 0)
     goto err;
 
   if((rr = malloc_zero(sizeof(scamper_ping_reply_v4rr_t))) == NULL)
     goto err;
-  rr->rrc = rrc;
+  rr->ipc = ipc;
 
-  if((rr->rr = malloc_zero(sizeof(scamper_addr_t *) * rrc)) == NULL)
+  if((rr->ip = malloc_zero(sizeof(scamper_addr_t *) * ipc)) == NULL)
     goto err;
 
   return rr;

@@ -7,7 +7,7 @@
  * Copyright (C) 2016-2022 Matthew Luckie
  * Authors: Matthew Luckie, Ben Stasiewicz
  *
- * $Id: scamper_tbit_warts.c,v 1.34 2022/02/13 08:48:15 mjl Exp $
+ * $Id: scamper_tbit_warts.c,v 1.36 2023/05/21 22:26:28 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -33,6 +33,7 @@
 #include "scamper_list.h"
 #include "scamper_icmpext.h"
 #include "scamper_tbit.h"
+#include "scamper_tbit_int.h"
 #include "scamper_file.h"
 #include "scamper_file_warts.h"
 #include "scamper_tbit_warts.h"
@@ -747,7 +748,7 @@ static int warts_tbit_pkt_write(const scamper_tbit_pkt_t *pkt,
 void insert_cookie(uint8_t *buf, uint32_t *off, const uint32_t len,
 		   const uint8_t *cookie, uint8_t *count)
 {
-  assert(len - *off >= ((*count) + 1));
+  assert(len - *off >= (((uint32_t)*count) + 1));
   buf[(*off)++] = *count;
   memcpy(buf + *off, cookie, *count);
   *off += *count;

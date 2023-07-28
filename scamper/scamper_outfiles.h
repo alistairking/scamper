@@ -1,7 +1,7 @@
 /*
  * scamper_outfiles: hold a collection of output targets together
  *
- * $Id: scamper_outfiles.h,v 1.19 2017/07/09 09:16:21 mjl Exp $
+ * $Id: scamper_outfiles.h,v 1.20 2023/03/22 01:03:30 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2010 The University of Waikato
@@ -33,7 +33,8 @@ struct scamper_file *scamper_outfile_getfile(scamper_outfile_t *sof);
 const char *scamper_outfile_getname(const scamper_outfile_t *sof);
 int scamper_outfile_getrefcnt(const scamper_outfile_t *sof);
 
-scamper_outfile_t *scamper_outfile_open(char *alias, char *file, char *mo);
+scamper_outfile_t *scamper_outfile_open(const char *alias, const char *file,
+					const char *mo,char *err,size_t errlen);
 int scamper_outfile_close(scamper_outfile_t *sof);
 scamper_outfile_t *scamper_outfile_use(scamper_outfile_t *sof);
 void scamper_outfile_free(scamper_outfile_t *sof);

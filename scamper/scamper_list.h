@@ -1,10 +1,11 @@
 /*
  * scamper_list.h
  *
- * $Id: scamper_list.h,v 1.7 2011/09/16 03:15:44 mjl Exp $
+ * $Id: scamper_list.h,v 1.9 2023/05/29 21:27:48 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2008 The University of Waikato
+ * Copyright (C) 2023      Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -34,16 +35,12 @@
  * name:     the name assigned to the list
  * monitor:  the (optional) canonical name of the monitor
  * descr:    optional free-form text describing the list somehow.
- * refcnt:   a count of references to an instance of this struct
  */
-typedef struct scamper_list
-{
-  uint32_t  id;
-  char     *name;
-  char     *descr;
-  char     *monitor;
-  int       refcnt;
-} scamper_list_t;
+typedef struct scamper_list scamper_list_t;
+uint32_t scamper_list_id_get(const scamper_list_t *list);
+const char *scamper_list_name_get(const scamper_list_t *list);
+const char *scamper_list_descr_get(const scamper_list_t *list);
+const char *scamper_list_monitor_get(const scamper_list_t *list);
 
 /*
  * scamper_cycle:
@@ -55,17 +52,13 @@ typedef struct scamper_list
  * start_time: time at which cycle began, seconds since the epoch
  * stop_time:  time at which cycle ended, seconds since the epoch
  * hostname:   optional record of the hostname at the beginning of the cycle.
- * refcnt:     a count of references to an instance of this struct
  */
-typedef struct scamper_cycle
-{
-  scamper_list_t *list;
-  uint32_t        id;
-  uint32_t        start_time;
-  uint32_t        stop_time;
-  char           *hostname;
-  int             refcnt;
-} scamper_cycle_t;
+typedef struct scamper_cycle scamper_cycle_t;
+scamper_list_t *scamper_cycle_list_get(const scamper_cycle_t *cycle);
+uint32_t scamper_cycle_id_get(const scamper_cycle_t *cycle);
+time_t scamper_cycle_start_time_get(const scamper_cycle_t *cycle);
+time_t scamper_cycle_stop_time_get(const scamper_cycle_t *cycle);
+const char *scamper_cycle_hostname_get(const scamper_cycle_t *cycle);
 
 /*
  * scamper_[list|cycle]_[alloc|use|free]

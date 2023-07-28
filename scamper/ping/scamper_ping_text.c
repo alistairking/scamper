@@ -7,7 +7,7 @@
  * Copyright (C) 2022-2023 Matthew Luckie
  * Author: Matthew Luckie
  *
- * $Id: scamper_ping_text.c,v 1.19 2023/02/23 18:58:23 mjl Exp $
+ * $Id: scamper_ping_text.c,v 1.21 2023/05/29 21:22:26 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -30,8 +30,10 @@
 #include "internal.h"
 
 #include "scamper_addr.h"
+#include "scamper_addr_int.h"
 #include "scamper_list.h"
 #include "scamper_ping.h"
+#include "scamper_ping_int.h"
 #include "scamper_file.h"
 #include "scamper_ping_text.h"
 
@@ -115,10 +117,10 @@ static char *ping_reply(const scamper_ping_t *ping,
   if((v4rr = reply->v4rr) != NULL)
     {
       string_concat(buf, sizeof(buf), &off, " RR: %s\n",
-		    scamper_addr_tostr(v4rr->rr[0], a, sizeof(a)));
-      for(i=1; i<v4rr->rrc; i++)
+		    scamper_addr_tostr(v4rr->ip[0], a, sizeof(a)));
+      for(i=1; i<v4rr->ipc; i++)
 	string_concat(buf, sizeof(buf), &off, "     %s\n",
-		      scamper_addr_tostr(v4rr->rr[i], a, sizeof(a)));
+		      scamper_addr_tostr(v4rr->ip[i], a, sizeof(a)));
     }
 
   if((v4ts = reply->v4ts) != NULL && v4ts->tsc > 0)
@@ -188,7 +190,7 @@ int scamper_file_text_ping_write(const scamper_file_t *sf,
   scamper_ping_reply_t *reply;
   int       fd          = scamper_file_getfd(sf);
   off_t     off         = 0;
-  uint32_t  reply_count = scamper_ping_reply_count(ping);
+  uint32_t  reply_count = scamper_ping_reply_total(ping);
   char     *header      = NULL;
   size_t    header_len  = 0;
   char    **replies     = NULL;

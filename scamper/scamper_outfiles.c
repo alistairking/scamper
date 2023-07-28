@@ -1,11 +1,12 @@
 /*
  * scamper_outfiles: hold a collection of output targets together
  *
- * $Id: scamper_outfiles.c,v 1.51 2022/03/20 04:43:04 mjl Exp $
+ * $Id: scamper_outfiles.c,v 1.53 2023/03/27 04:24:56 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2012      The Regents of the University of California
+ * Copyright (C) 2023      The Regents of the University of California
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -50,7 +51,7 @@ static int outfile_cmp(const scamper_outfile_t *a, const scamper_outfile_t *b)
   return strcasecmp(b->name, a->name);
 }
 
-static scamper_outfile_t *outfile_alloc(char *name, scamper_file_t *sf)
+static scamper_outfile_t *outfile_alloc(const char *name, scamper_file_t *sf)
 {
   scamper_outfile_t *sof = NULL;
 
@@ -180,25 +181,57 @@ void scamper_outfiles_swap(scamper_outfile_t *a, scamper_outfile_t *b)
   return;
 }
 
-scamper_outfile_t *scamper_outfile_open(char *name, char *file, char *mo)
+scamper_outfile_t *scamper_outfile_open(const char *name, const char *file,
+					const char *mo,char *err,size_t errlen)
 {
   scamper_outfile_t *sof;
   scamper_file_t *sf;
+  char *outfile_type = "warts";
   int flags;
   mode_t mode;
   char sf_mode;
   int fd;
 
-#if defined(WITHOUT_PRIVSEP) && !defined(_WIN32)
-  uid_t uid;
-#endif
-
   if(name == NULL || file == NULL || mo == NULL)
-    return NULL;
+    {
+      snprintf(err, errlen, "missing parameter");
+      return NULL;
+    }
 
   /* already an outfile with this name */
   if(scamper_outfiles_get(name) != NULL)
-    return NULL;
+    {
+      snprintf(err, errlen, "already an outfile with name");
+      return NULL;
+    }
+
+  if(string_endswith(file, ".gz") != 0)
+    {
+#ifdef HAVE_ZLIB
+      outfile_type = "warts.gz";
+#else
+      snprintf(err, errlen, "not compiled with zlib");
+      return NULL;
+#endif
+    }
+  else if(string_endswith(file, ".bz2") != 0)
+    {
+#ifdef HAVE_LIBBZ2
+      outfile_type = "warts.bz2";
+#else
+      snprintf(err, errlen, "not compiled with libbz2");
+      return NULL;
+#endif
+    }
+  else if(string_endswith(file, ".xz") != 0)
+    {
+#ifdef HAVE_LIBLZMA
+      outfile_type = "warts.xz";
+#else
+      snprintf(err, errlen, "not compiled with liblzma");
+      return NULL;
+#endif
+    }
 
   if(strcasecmp(mo, "append") == 0)
     {
@@ -212,6 +245,7 @@ scamper_outfile_t *scamper_outfile_open(char *name, char *file, char *mo)
     }
   else
     {
+      snprintf(err, errlen, "unknown mode");
       return NULL;
     }
 
@@ -231,27 +265,25 @@ scamper_outfile_t *scamper_outfile_open(char *name, char *file, char *mo)
   /* make sure the fd is valid, otherwise bail */
   if(fd == -1)
     {
-      printerror(__func__, "could not open %s", file);
+      snprintf(err, errlen, "could not open %s", file);
       return NULL;
     }
 
-#if defined(WITHOUT_PRIVSEP) && !defined(_WIN32)
-  if((uid = getuid()) != geteuid() && fchown(fd, uid, -1) != 0)
-    printerror(__func__, "could not fchown");
-#endif
-
-  if((sf = scamper_file_openfd(fd, file, sf_mode, "warts")) == NULL)
+  if((sf = scamper_file_openfd(fd, file, sf_mode, outfile_type)) == NULL)
     {
+      snprintf(err, errlen, "could not openfd for %s", file);
       close(fd);
       return NULL;
     }
 
   if((sof = outfile_alloc(name, sf)) == NULL)
     {
+      snprintf(err, errlen, "could not outfile_alloc %s", name);
       scamper_file_close(sf);
       return NULL;
     }
 
+  err[0] = '\0';
   return sof;
 }
 

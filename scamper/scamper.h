@@ -1,11 +1,12 @@
 /*
  * scamper.h
  *
- * $Id: scamper.h,v 1.66.10.1 2023/02/23 23:07:02 mjl Exp $
+ * $Id: scamper.h,v 1.70.4.1 2023/06/14 07:43:48 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
- * Copyright (C) 2015-2020 Matthew Luckie
+ * Copyright (C) 2015-2023 Matthew Luckie
+ * Copyright (C) 2023      The Regents of the University of California
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -47,12 +48,15 @@ int scamper_option_monitorname_set(const char *monitorname);
 
 const char *scamper_option_nameserver_get(void);
 
+#define SCAMPER_OPTION_POLLFUNC_POLL   0
+#define SCAMPER_OPTION_POLLFUNC_KQUEUE 1
+#define SCAMPER_OPTION_POLLFUNC_EPOLL  2
+#define SCAMPER_OPTION_POLLFUNC_SELECT 3
+int scamper_option_pollfunc_get(void);
+
 int scamper_option_planetlab(void);
 int scamper_option_noinitndc(void);
 int scamper_option_notls(void);
-int scamper_option_select(void);
-int scamper_option_kqueue(void);
-int scamper_option_epoll(void);
 int scamper_option_rawtcp(void);
 int scamper_option_icmp_rxerr(void);
 int scamper_option_debugfileappend(void);
@@ -60,8 +64,16 @@ int scamper_option_daemon(void);
 
 void scamper_exitwhendone(int on);
 
-uint16_t scamper_sport_default(void);
+#ifndef _WIN32
+uid_t scamper_getuid(void);
+uid_t scamper_geteuid(void);
+#endif
 
-#define SCAMPER_VERSION "20230224"
+int scamper_pidfile(void);
+
+uint16_t scamper_sport_default(void);
+uint16_t scamper_pid_u16(void);
+
+#define SCAMPER_VERSION "20230614"
 
 #endif /* __SCAMPER_H */

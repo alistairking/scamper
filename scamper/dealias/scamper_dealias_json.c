@@ -3,10 +3,10 @@
  *
  * Copyright (c) 2013      Matthew Luckie
  * Copyright (c) 2013-2014 The Regents of the University of California
- * Copyright (c) 2022      Matthew Luckie
+ * Copyright (c) 2022-2023 Matthew Luckie
  * Author: Matthew Luckie
  *
- * $Id: scamper_dealias_json.c,v 1.16 2022/12/09 09:37:42 mjl Exp $
+ * $Id: scamper_dealias_json.c,v 1.18 2023/05/29 21:22:26 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -29,8 +29,10 @@
 #include "internal.h"
 
 #include "scamper_addr.h"
+#include "scamper_addr_int.h"
 #include "scamper_list.h"
 #include "scamper_dealias.h"
+#include "scamper_dealias_int.h"
 #include "scamper_file.h"
 #include "scamper_file_json.h"
 #include "scamper_dealias_json.h"
@@ -76,10 +78,10 @@ static char *dealias_header_tostr(const scamper_dealias_t *dealias)
 
   string_concat(buf, sizeof(buf), &off,
 		"{\"type\":\"dealias\",\"version\":\"0.2\",\"method\":\"%s\"",
-		scamper_dealias_method_tostr(dealias, tmp, sizeof(tmp)));
+		scamper_dealias_method_tostr(dealias->method,tmp,sizeof(tmp)));
   string_concat(buf, sizeof(buf), &off, ", \"userid\":%u, \"result\":\"%s\"",
 		dealias->userid,
-		scamper_dealias_result_tostr(dealias, tmp, sizeof(tmp)));
+		scamper_dealias_result_tostr(dealias->result,tmp,sizeof(tmp)));
   string_concat(buf, sizeof(buf), &off,
 		", \"start\":{\"sec\":%ld, \"usec\":%d}",
 		(long)dealias->start.tv_sec, (int)dealias->start.tv_usec);

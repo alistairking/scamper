@@ -1,7 +1,7 @@
 /*
  * scamper_do_host.h
  *
- * $Id: scamper_host_do.h,v 1.4 2020/03/21 00:32:57 mjl Exp $
+ * $Id: scamper_host_do.h,v 1.5 2023/06/04 04:41:53 mjl Exp $
  *
  * Copyright (C) 2018-2020 Matthew Luckie
  * Author: Matthew Luckie
@@ -26,17 +26,11 @@
 
 typedef struct scamper_host_do scamper_host_do_t;
 
-void *scamper_do_host_alloc(char *str);
-
 scamper_task_t *scamper_do_host_alloctask(void *data,
 					  scamper_list_t *list,
 					  scamper_cycle_t *cycle);
 
-int scamper_do_host_arg_validate(int argc, char *argv[], int *stop);
-
 void scamper_do_host_free(void *data);
-
-const char *scamper_do_host_usage(void);
 
 /* code to use the host code to do a PTR record lookup */
 typedef void (*scamper_host_do_ptr_cb_t)(void *param, const char *name);

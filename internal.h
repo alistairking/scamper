@@ -1,7 +1,7 @@
 /*
  * internal.h
  *
- * $Id: internal.h,v 1.52 2022/07/10 05:26:17 mjl Exp $
+ * $Id: internal.h,v 1.56 2023/05/14 02:29:14 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -247,6 +247,14 @@ typedef unsigned short sa_family_t;
 
 #if defined(HAVE_ZLIB)
 #include <zlib.h>
+#endif
+
+#if defined(HAVE_LIBBZ2)
+#include <bzlib.h>
+#endif
+
+#if defined(HAVE_LIBLZMA)
+#include <lzma.h>
 #endif
 
 #if defined(DMALLOC)
@@ -741,6 +749,14 @@ struct sockaddr_nl
 
 #ifndef TCP_MAX_SEQNUM
 #define TCP_MAX_SEQNUM 4294967295U
+#endif
+
+#ifndef UINT32_MAX
+#define UINT32_MAX 4294967295U
+#endif
+
+#ifndef UINT16_MAX
+#define UINT16_MAX 65535U
 #endif
 
 #ifndef SEQ_LT

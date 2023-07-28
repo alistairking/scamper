@@ -1,10 +1,10 @@
 /*
  * scamper_host_warts.c
  *
- * Copyright (C) 2019-2022 Matthew Luckie
+ * Copyright (C) 2019-2023 Matthew Luckie
  * Author: Matthew Luckie
  *
- * $Id: scamper_host_warts.c,v 1.8 2022/02/13 08:48:15 mjl Exp $
+ * $Id: scamper_host_warts.c,v 1.11 2023/05/20 05:10:56 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -30,6 +30,7 @@
 #include "scamper_list.h"
 #include "scamper_icmpext.h"
 #include "scamper_host.h"
+#include "scamper_host_int.h"
 #include "scamper_file.h"
 #include "scamper_file_warts.h"
 #include "scamper_host_warts.h"
@@ -83,6 +84,8 @@ static const warts_var_t host_vars[] =
 #define WARTS_HOST_QUERY_ANCOUNT   4
 #define WARTS_HOST_QUERY_NSCOUNT   5
 #define WARTS_HOST_QUERY_ARCOUNT   6
+#define WARTS_HOST_QUERY_RCODE     7
+#define WARTS_HOST_QUERY_FLAGS     8
 
 static const warts_var_t host_query_vars[] =
 {
@@ -92,6 +95,8 @@ static const warts_var_t host_query_vars[] =
  {WARTS_HOST_QUERY_ANCOUNT,   2, -1},
  {WARTS_HOST_QUERY_NSCOUNT,   2, -1},
  {WARTS_HOST_QUERY_ARCOUNT,   2, -1},
+ {WARTS_HOST_QUERY_RCODE,     1, -1},
+ {WARTS_HOST_QUERY_FLAGS,     1, -1},
 };
 #define host_query_vars_mfb WARTS_VAR_MFB(host_query_vars)
 
@@ -209,10 +214,16 @@ static void warts_host_query_params(const scamper_host_query_t *query,
   for(i=0; i<sizeof(host_query_vars)/sizeof(warts_var_t); i++)
     {
       var = &host_query_vars[i];
-      if((var->id == WARTS_HOST_QUERY_ID      && query->id == 0) ||
+      if((var->id == WARTS_HOST_QUERY_TX &&
+	  query->tx.tv_sec == 0 && query->tx.tv_usec == 0) ||
+	 (var->id == WARTS_HOST_QUERY_RX &&
+	  query->rx.tv_sec == 0 && query->rx.tv_usec == 0) ||
+	 (var->id == WARTS_HOST_QUERY_ID      && query->id == 0) ||
 	 (var->id == WARTS_HOST_QUERY_ANCOUNT && query->ancount == 0) ||
 	 (var->id == WARTS_HOST_QUERY_NSCOUNT && query->nscount == 0) ||
-	 (var->id == WARTS_HOST_QUERY_ARCOUNT && query->arcount == 0))
+	 (var->id == WARTS_HOST_QUERY_ARCOUNT && query->arcount == 0) ||
+	 (var->id == WARTS_HOST_QUERY_RCODE   && query->rcode == 0) ||
+	 (var->id == WARTS_HOST_QUERY_FLAGS   && query->flags == 0))
 	continue;
       flag_set(state->flags, var->id, &max_id);
       assert(var->size >= 0);
@@ -237,6 +248,8 @@ static int warts_host_query_read(scamper_host_query_t *query,
     {&query->ancount, (wpr_t)extract_uint16,  NULL},
     {&query->nscount, (wpr_t)extract_uint16,  NULL},
     {&query->arcount, (wpr_t)extract_uint16,  NULL},
+    {&query->rcode,   (wpr_t)extract_byte,    NULL},
+    {&query->flags,   (wpr_t)extract_byte,    NULL},
   };
   const int handler_cnt = sizeof(handlers)/sizeof(warts_param_reader_t);
   if(warts_params_read(buf, off, len, handlers, handler_cnt) != 0)
@@ -258,6 +271,8 @@ static void warts_host_query_write(const scamper_host_query_t *query,
     {&query->ancount, (wpw_t)insert_uint16,  NULL},
     {&query->nscount, (wpw_t)insert_uint16,  NULL},
     {&query->arcount, (wpw_t)insert_uint16,  NULL},
+    {&query->rcode,   (wpw_t)insert_byte,    NULL},
+    {&query->flags,   (wpw_t)insert_byte,    NULL},
   };
   const int handler_cnt = sizeof(handlers)/sizeof(warts_param_writer_t);
   warts_params_write(buf, off, len, state->flags, state->flags_len,

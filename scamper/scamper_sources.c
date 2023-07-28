@@ -1,13 +1,14 @@
 /*
  * scamper_source
  *
- * $Id: scamper_sources.c,v 1.60 2022/02/13 08:48:15 mjl Exp $
+ * $Id: scamper_sources.c,v 1.71 2023/06/04 07:24:32 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2012      Matthew Luckie
  * Copyright (C) 2012      The Regents of the University of California
- * Copyright (C) 2018-2022 Matthew Luckie
+ * Copyright (C) 2018-2023 Matthew Luckie
+ * Copyright (C) 2023      The Regents of the University of California
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -33,20 +34,30 @@
 #include "scamper.h"
 #include "scamper_addr.h"
 #include "scamper_list.h"
+#include "scamper_list_int.h"
 #include "scamper_task.h"
 #include "scamper_file.h"
 #include "scamper_outfiles.h"
 #include "scamper_sources.h"
 #include "scamper_cyclemon.h"
 
+#include "trace/scamper_trace_cmd.h"
 #include "trace/scamper_trace_do.h"
+#include "ping/scamper_ping_cmd.h"
 #include "ping/scamper_ping_do.h"
+#include "tracelb/scamper_tracelb_cmd.h"
 #include "tracelb/scamper_tracelb_do.h"
+#include "dealias/scamper_dealias_cmd.h"
 #include "dealias/scamper_dealias_do.h"
+#include "sting/scamper_sting_cmd.h"
 #include "sting/scamper_sting_do.h"
+#include "neighbourdisc/scamper_neighbourdisc_cmd.h"
 #include "neighbourdisc/scamper_neighbourdisc_do.h"
+#include "tbit/scamper_tbit_cmd.h"
 #include "tbit/scamper_tbit_do.h"
+#include "sniff/scamper_sniff_cmd.h"
 #include "sniff/scamper_sniff_do.h"
+#include "host/scamper_host_cmd.h"
 #include "host/scamper_host_do.h"
 
 #include "scamper_debug.h"
@@ -1629,7 +1640,7 @@ scamper_source_t *scamper_source_alloc(const scamper_source_params_t *ssp)
   source->tostr       = ssp->tostr;
 
   source->list = scamper_list_alloc(ssp->list_id, ssp->name, ssp->descr,
-				    scamper_option_monitorname_get());
+	ssp->monitor == NULL ? scamper_option_monitorname_get() : ssp->monitor);
   if(source->list == NULL)
     {
       printerror(__func__, "could not alloc source->list");

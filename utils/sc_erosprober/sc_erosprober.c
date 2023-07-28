@@ -5,6 +5,7 @@
  * Authors       : Matthew Luckie
  *
  * Copyright (C) 2018-2023 Matthew Luckie
+ * Copyright (C) 2023      The Regents of the University of California
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -50,6 +51,7 @@ static int                    decode_in_fd  = -1;
 static int                    decode_out_fd = -1;
 static char                  *addrfile_name = NULL;
 static char                  *outfile_name  = NULL;
+static char                  *outfile_type  = "warts";
 static scamper_file_t        *outfile       = NULL;
 static scamper_file_filter_t *decode_filter = NULL;
 static FILE                  *logfile       = NULL;
@@ -138,8 +140,12 @@ static void usage(uint32_t opt_mask)
   if(opt_mask & OPT_OPTION)
     {
       fprintf(stderr, "   -O options\n");
+      fprintf(stderr, "      gz: gzip compress the warts output\n");
       fprintf(stderr, "      noshuffle: do not shuffle address file\n");
       fprintf(stderr, "      nooutfile: do not write an output file\n");
+      fprintf(stderr, "      warts.gz: gzip compress the warts output\n");
+      fprintf(stderr, "      warts.bz2: bzip2 compress the warts output\n");
+      fprintf(stderr, "      warts.xz: xz compress the warts output\n");
     }
   if(opt_mask & OPT_PORT)
     fprintf(stderr, "   -p port to find scamper on\n");
@@ -196,6 +202,39 @@ static int check_options(int argc, char *argv[])
 	    shuffle = 0;
 	  else if(strcasecmp(optarg, "nooutfile") == 0)
 	    nooutfile = 1;
+	  else if(strcasecmp(optarg, "gz") == 0 ||
+		  strcasecmp(optarg, "warts.gz") == 0)
+	    {
+#ifdef HAVE_ZLIB
+	      outfile_type = "warts.gz";
+#else
+	      fprintf(stderr, "cannot write %s: did not link against zlib\n",
+		      optarg);
+	      return -1;
+#endif
+	    }
+	  else if(strcasecmp(optarg, "bz2") == 0 ||
+		  strcasecmp(optarg, "warts.bz2") == 0)
+	    {
+#ifdef HAVE_LIBBZ2
+	      outfile_type = "warts.bz2";
+#else
+	      fprintf(stderr, "cannot write %s: did not link against libbz2\n",
+		      optarg);
+	      return -1;
+#endif
+	    }
+	  else if(strcasecmp(optarg, "xz") == 0 ||
+		  strcasecmp(optarg, "warts.xz") == 0)
+	    {
+#ifdef HAVE_LIBLZMA
+	      outfile_type = "warts.xz";
+#else
+	      fprintf(stderr, "cannot write %s: did not link against liblzma\n",
+		      optarg);
+	      return -1;
+#endif
+	    }
 	  break;
 
 	case 'p':
@@ -357,9 +396,9 @@ static void ep_del(sc_ep_t *ep)
 {
   if((ep->flags & EP_FLAG_TRIE) != 0)
     {
-      if(SCAMPER_ADDR_TYPE_IS_IPV4(ep->addr))
+      if(scamper_addr_isipv4(ep->addr))
 	patricia_remove_item(probing4, ep);
-      else if(SCAMPER_ADDR_TYPE_IS_IPV6(ep->addr))
+      else if(scamper_addr_isipv6(ep->addr))
 	patricia_remove_item(probing6, ep);
     }
   if(ep->hn != NULL) heap_delete(waiting, ep->hn);
@@ -378,9 +417,9 @@ static int ep_tree_to_heap(scamper_addr_t *addr)
   patricia_t *pt;
   sc_ep_t fm, *ep;
 
-  if(SCAMPER_ADDR_TYPE_IS_IPV4(addr))
+  if(scamper_addr_isipv4(addr))
     pt = probing4;
-  else if(SCAMPER_ADDR_TYPE_IS_IPV6(addr))
+  else if(scamper_addr_isipv6(addr))
     pt = probing6;
   else
     return -1;
@@ -409,9 +448,9 @@ static int ep_add(scamper_addr_t *addr, const struct timeval *tv)
   patricia_t *pt;
   char buf[128];
 
-  if(SCAMPER_ADDR_TYPE_IS_IPV4(addr))
+  if(scamper_addr_isipv4(addr))
     pt = probing4;
-  else if(SCAMPER_ADDR_TYPE_IS_IPV6(addr))
+  else if(scamper_addr_isipv6(addr))
     pt = probing6;
   else
     return -1;
@@ -536,11 +575,11 @@ static int do_outfile(void)
     }
 
   gettimeofday_wrap(&now);
-  snprintf(buf, sizeof(buf), "%s.%ld.warts",
-	   outfile_name, (long int)now.tv_sec);
+  snprintf(buf, sizeof(buf), "%s.%ld.%s",
+	   outfile_name, (long int)now.tv_sec, outfile_type);
   logprint("%s\n", buf);
 
-  if((outfile = scamper_file_open(buf, 'w', "warts")) == NULL)
+  if((outfile = scamper_file_open(buf, 'w', outfile_type)) == NULL)
     {
       fprintf(stderr, "%s: could not open %s\n", __func__, buf);
       return -1;
@@ -645,9 +684,9 @@ static int do_ctrlsock_readline(void *param, uint8_t *buf, size_t len)
 
       if((sa = scamper_addr_resolve(AF_UNSPEC, line)) == NULL)
 	return 0;
-      if(SCAMPER_ADDR_TYPE_IS_IPV4(sa))
+      if(scamper_addr_isipv4(sa))
 	pt = probing4;
-      else if(SCAMPER_ADDR_TYPE_IS_IPV6(sa))
+      else if(scamper_addr_isipv6(sa))
 	pt = probing6;
       else
 	{
@@ -971,7 +1010,7 @@ static int do_decoderead(void)
   if(type == SCAMPER_FILE_OBJ_PING)
     {
       ping = data;
-      if(ep_tree_to_heap(ping->dst) != 0)
+      if(ep_tree_to_heap(scamper_ping_dst_get(ping)) != 0)
 	goto done;
       if(nooutfile == 0 && scamper_file_write_ping(outfile, ping, NULL) != 0)
 	goto done;
@@ -980,7 +1019,7 @@ static int do_decoderead(void)
   else if(type == SCAMPER_FILE_OBJ_TRACE)
     {
       trace = data;
-      if(ep_tree_to_heap(trace->dst) != 0)
+      if(ep_tree_to_heap(scamper_trace_dst_get(trace)) != 0)
 	goto done;
       if(nooutfile == 0 && scamper_file_write_trace(outfile, trace, NULL) != 0)
 	goto done;

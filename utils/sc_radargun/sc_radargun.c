@@ -1,7 +1,7 @@
 /*
  * sc_radargun : scamper driver to do radargun-style probing.
  *
- * $Id: sc_radargun.c,v 1.15 2023/01/02 22:09:01 mjl Exp $
+ * $Id: sc_radargun.c,v 1.18 2023/05/29 20:12:18 mjl Exp $
  *
  * Copyright (C) 2014      The Regents of the University of California
  * Copyright (C) 2016      The University of Waikato
@@ -1068,32 +1068,37 @@ static int do_method(void)
 
 static int ping_classify(scamper_ping_t *ping)
 {
-  scamper_ping_reply_t *rx;
+  const scamper_ping_reply_t *rx;
   int rc = -1, echo = 0, bs = 0, nobs = 0;
   int i, samples[65536];
   uint32_t u32, f, n0, n1;
   slist_t *list = NULL;
   slist_node_t *ln0, *ln1;
+  uint8_t stop_reason;
+  uint16_t ping_sent, reply_ipid;
 
-  if(ping->stop_reason == SCAMPER_PING_STOP_NONE ||
-     ping->stop_reason == SCAMPER_PING_STOP_ERROR)
+  stop_reason = scamper_ping_stop_reason_get(ping);
+  if(stop_reason == SCAMPER_PING_STOP_NONE ||
+     stop_reason == SCAMPER_PING_STOP_ERROR)
     return IPID_UNRESP;
 
   if((list = slist_alloc()) == NULL)
     goto done;
 
   memset(samples, 0, sizeof(samples));
-  for(i=0; i<ping->ping_sent; i++)
+  ping_sent = scamper_ping_sent_get(ping);
+  for(i=0; i<ping_sent; i++)
     {
-      if((rx = ping->ping_replies[i]) != NULL &&
-	 SCAMPER_PING_REPLY_FROM_TARGET(ping, rx))
+      if((rx = scamper_ping_reply_get(ping, i)) != NULL &&
+	 scamper_ping_reply_is_from_target(ping, rx))
 	{
 	  /*
 	   * if at least two of four samples have the same ipid as what was
 	   * sent, then declare it echos.  this handles the observed case
 	   * where some responses echo but others increment.
 	   */
-	  if(rx->probe_ipid == rx->reply_ipid && ++echo > 1)
+	  reply_ipid = scamper_ping_reply_ipid_get(rx);
+	  if(scamper_ping_reply_probe_ipid_get(rx) == reply_ipid && ++echo > 1)
 	    {
 	      rc = IPID_ECHO;
 	      goto done;
@@ -1103,13 +1108,13 @@ static int ping_classify(scamper_ping_t *ping)
 	   * if two responses have the same IPID value, declare that it
 	   * replies with a constant IPID
 	   */
-	  if(++samples[rx->reply_ipid] > 1)
+	  if(++samples[reply_ipid] > 1)
 	    {
 	      rc = IPID_CONST;
 	      goto done;
 	    }
 
-	  if(slist_tail_push(list, rx) == NULL)
+	  if(slist_tail_push(list, (void *)rx) == NULL)
 	    goto done;
 	}
     }
@@ -1125,8 +1130,8 @@ static int ping_classify(scamper_ping_t *ping)
   ln1 = slist_node_next(ln0);
   while(ln1 != NULL)
     {
-      rx = slist_node_item(ln0); n0 = rx->reply_ipid;
-      rx = slist_node_item(ln1); n1 = rx->reply_ipid;
+      rx = slist_node_item(ln0); n0 = scamper_ping_reply_ipid_get(rx);
+      rx = slist_node_item(ln1); n1 = scamper_ping_reply_ipid_get(rx);
 
       if(n0 < n1)
 	u32 = n1 - n0;
@@ -1169,7 +1174,7 @@ static int process_ping(scamper_ping_t *ping)
   char buf[64];
   int c;
 
-  if((tg = sc_target_findaddr(ping->dst)) == NULL ||
+  if((tg = sc_target_findaddr(scamper_ping_dst_get(ping))) == NULL ||
      (c = ping_classify(ping)) < 0)
     goto err;
   scamper_ping_free(ping); ping = NULL;
@@ -1210,11 +1215,15 @@ static int process_ping(scamper_ping_t *ping)
 
 static int process_dealias(scamper_dealias_t *dealias)
 {
-  scamper_dealias_radargun_t *srg = dealias->data;
+  const scamper_dealias_radargun_t *srg = scamper_dealias_radargun_get(dealias);
+  const scamper_dealias_probedef_t *def;
+  scamper_addr_t *dst;
   sc_radargun_t *rg;
   sc_target_t *tg;
 
-  if((tg = sc_target_findaddr(srg->probedefs[0].dst)) == NULL)
+  def = scamper_dealias_radargun_def_get(srg, 0);
+  dst = scamper_dealias_probedef_dst_get(def);
+  if((tg = sc_target_findaddr(dst)) == NULL)
     goto err;
   rg = tg->test->data;
   sc_radargun_free(rg);
@@ -1636,7 +1645,7 @@ static int sc_ipid_tx_cmp(const void *va, const void *vb)
   return timeval_cmp(&a->tx, &b->tx);
 }
 
-static int inseq(scamper_dealias_radargun_t *rg,
+static int inseq(const scamper_dealias_radargun_t *rg,
 		 sc_ipid_t *pts, int ptc, uint32_t limit)
 {
   int i;
@@ -1666,27 +1675,31 @@ static int inseq(scamper_dealias_radargun_t *rg,
 }
 
 static int points_add(scamper_dealias_t *dealias, sc_ipid_t *points,
-		      uint32_t *p, scamper_dealias_probedef_t *def)
+		      uint32_t *p, const scamper_dealias_probedef_t *def)
 {
-  scamper_dealias_radargun_t *rg = dealias->data;
-  scamper_dealias_probe_t *probe;
-  scamper_dealias_reply_t *reply;
-  uint32_t k, f=0, i=0;
+  const scamper_dealias_radargun_t *rg = scamper_dealias_radargun_get(dealias);
+  const scamper_dealias_probe_t *probe;
+  const scamper_dealias_reply_t *reply;
+  uint32_t f=0, i=0, def_id;
+  uint16_t k, rg_attempts;
 
-  for(k=0; k<rg->attempts; k++)
+  rg_attempts = scamper_dealias_radargun_attempts_get(rg);
+  def_id = scamper_dealias_probedef_id_get(def);
+
+  for(k=0; k<rg_attempts; k++)
     {
-      probe = dealias->probes[(def->id*rg->attempts)+k];
-      if(probe->replyc != 1)
+      probe = scamper_dealias_probe_get(dealias, (def_id * rg_attempts) + k);
+      if(scamper_dealias_probe_replyc_get(probe) != 1)
 	continue;
-      reply = probe->replies[0];
-      if(SCAMPER_DEALIAS_REPLY_FROM_TARGET(probe, reply) == 0)
+      reply = scamper_dealias_probe_reply_get(probe, 0);
+      if(scamper_dealias_reply_from_target(probe, reply) == 0)
 	continue;
 
-      points[*p+i].def  = def;
-      points[*p+i].seq  = probe->seq;
-      points[*p+i].ipid = f + reply->ipid;
-      timeval_cpy(&points[*p+i].tx, &probe->tx);
-      timeval_cpy(&points[*p+i].rx, &reply->rx);
+      points[*p+i].def  = (scamper_dealias_probedef_t *)def;
+      points[*p+i].seq  = scamper_dealias_probe_seq_get(probe);
+      points[*p+i].ipid = f + scamper_dealias_reply_ipid_get(reply);
+      timeval_cpy(&points[*p+i].tx, scamper_dealias_probe_tx_get(probe));
+      timeval_cpy(&points[*p+i].rx, scamper_dealias_reply_rx_get(reply));
 
       if(i > 0 && points[*p+i].ipid < points[*p+i-1].ipid)
 	{
@@ -1698,7 +1711,7 @@ static int points_add(scamper_dealias_t *dealias, sc_ipid_t *points,
     }
 
   /* need at least 25% of replies to make a reasonable comparison */
-  if(i * 4 < rg->attempts)
+  if(i * 4 < rg_attempts)
     return 0;
 
   *p += i;
@@ -1803,7 +1816,9 @@ static int sc_addrset_cmp(const sc_addrset_t *a, const sc_addrset_t *b)
 
 static int process_dealias_1(scamper_dealias_t *dealias)
 {
-  scamper_dealias_radargun_t *rg;
+  const scamper_dealias_radargun_t *rg;
+  const scamper_dealias_probedef_t *def_i, *def_j;
+  scamper_addr_t *dst_i, *dst_j;
   sc_ipid_t *points = NULL;
   splaytree_t *tree = NULL;
   dlist_t *list = NULL;
@@ -1811,14 +1826,15 @@ static int process_dealias_1(scamper_dealias_t *dealias)
   slist_node_t *sn;
   sc_addrset_t *addrset;
   sc_addr2set_t *a2s_a, *a2s_b, *a2s;
-  uint32_t i, j, p;
+  uint32_t i, j, p, probedefc;
+  uint16_t rg_attempts;
   char a[32], b[32];
 
-  if(!SCAMPER_DEALIAS_METHOD_IS_RADARGUN(dealias))
+  if((rg = scamper_dealias_radargun_get(dealias)) == NULL)
     return 0;
-  rg = dealias->data;
 
-  if((points = malloc(sizeof(sc_ipid_t) * rg->attempts * 2)) == NULL)
+  rg_attempts = scamper_dealias_radargun_attempts_get(rg);
+  if((points = malloc(sizeof(sc_ipid_t) * rg_attempts * 2)) == NULL)
     goto err;
 
   if((flags & FLAG_TC) != 0 &&
@@ -1827,31 +1843,36 @@ static int process_dealias_1(scamper_dealias_t *dealias)
     goto err;
 
   scamper_dealias_probes_sort_def(dealias);
-  for(i=0; i<rg->probedefc; i++)
+  probedefc = scamper_dealias_radargun_defc_get(rg);
+  for(i=0; i<probedefc; i++)
     {
-      for(j=i+1; j<rg->probedefc; j++)
+      def_i = scamper_dealias_radargun_def_get(rg, i);
+      for(j=i+1; j<probedefc; j++)
 	{
 	  p = 0;
-	  if(points_add(dealias, points, &p, &rg->probedefs[i]) == 0)
+	  if(points_add(dealias, points, &p, def_i) == 0)
 	    break;
-	  if(points_add(dealias, points, &p, &rg->probedefs[j]) == 0)
+	  def_j = scamper_dealias_radargun_def_get(rg, j);
+	  if(points_add(dealias, points, &p, def_j) == 0)
 	    continue;
 	  qsort(points, p, sizeof(sc_ipid_t), sc_ipid_tx_cmp);
 
 	  initialwrap(points, p);
 
-	  if(inseq(rg, points, p, rg->attempts) != 0)
+	  if(inseq(rg, points, p, rg_attempts) != 0)
 	    {
+	      dst_i = scamper_dealias_probedef_dst_get(def_i);
+	      dst_j = scamper_dealias_probedef_dst_get(def_j);
 	      if((flags & FLAG_TC) == 0)
 		{
-		  scamper_addr_tostr(rg->probedefs[i].dst, a, sizeof(a));
-		  scamper_addr_tostr(rg->probedefs[j].dst, b, sizeof(b));
+		  scamper_addr_tostr(dst_i, a, sizeof(a));
+		  scamper_addr_tostr(dst_j, b, sizeof(b));
 		  printf("%s %s\n", a, b);
 		}
 	      else
 		{
-		  a2s_a = sc_addr2set_get(tree, rg->probedefs[i].dst);
-		  a2s_b = sc_addr2set_get(tree, rg->probedefs[j].dst);
+		  a2s_a = sc_addr2set_get(tree, dst_i);
+		  a2s_b = sc_addr2set_get(tree, dst_j);
 		  if(a2s_a->set == NULL && a2s_b->set == NULL)
 		    {
 		      if((addrset = sc_addrset_alloc(list)) == NULL)
@@ -1937,14 +1958,16 @@ static int init_2(void)
 
 static int process_ping_2(scamper_ping_t *ping)
 {
+  scamper_addr_t *dst;
   sc_ping_t *scp = NULL;
   int class;
 
-  if((scp = sc_ping_find(ping->dst)) == NULL)
+  dst = scamper_ping_dst_get(ping);
+  if((scp = sc_ping_find(dst)) == NULL)
     {
       if((scp = malloc_zero(sizeof(sc_ping_t))) == NULL)
 	goto err;
-      scp->addr = scamper_addr_use(ping->dst);
+      scp->addr = scamper_addr_use(dst);
       scp->class = ping_classify(ping);
       if(splaytree_insert(pingtree, scp) == NULL)
 	goto err;

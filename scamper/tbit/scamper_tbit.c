@@ -9,7 +9,7 @@
  *
  * Authors: Ben Stasiewicz, Matthew Luckie
  *
- * $Id: scamper_tbit.c,v 1.54 2023/01/03 06:56:17 mjl Exp $
+ * $Id: scamper_tbit.c,v 1.59 2023/06/01 07:15:35 mjl Exp $
  *
  * This file implements algorithms described in the tbit-1.0 source code,
  * as well as the papers:
@@ -42,6 +42,7 @@
 #include "scamper_addr.h"
 #include "scamper_list.h"
 #include "scamper_tbit.h"
+#include "scamper_tbit_int.h"
 #include "utils.h"
 
 typedef struct tqe
@@ -250,7 +251,6 @@ void scamper_tbit_tcpq_free(scamper_tbit_tcpq_t *q, void (*ff)(void *))
 int scamper_tbit_tcpq_seg(scamper_tbit_tcpq_t *q, uint32_t *seq, uint16_t *len)
 {
   tqe_t *tqe;
-  assert(q->tqec >= 0);
   if(q->tqec == 0)
     return -1;
   tqe = q->tqes[0];
@@ -325,7 +325,6 @@ int scamper_tbit_tcpq_sack(scamper_tbit_tcpq_t *q, uint32_t *sack, int count)
   int off, c = 0;
   size_t i;
 
-  assert(q->tqec >= 0);
   if(q->tqec == 0)
     return 0;
 
@@ -541,8 +540,9 @@ int scamper_tbit_icw_size(const scamper_tbit_t *tbit, uint32_t *icw_out)
   return rc;
 }
 
-int scamper_tbit_stats(const scamper_tbit_t *tbit, scamper_tbit_stats_t *stats)
+int scamper_tbit_stats(const scamper_tbit_t *tbit, scamper_tbit_stats_t **stats_out)
 {
+  scamper_tbit_stats_t *stats = NULL;
   const scamper_tbit_pkt_t *pkt, *syn;
   scamper_tbit_tcpq_t *q = NULL;
   scamper_tbit_tcpqe_t *qe;
@@ -552,7 +552,8 @@ int scamper_tbit_stats(const scamper_tbit_t *tbit, scamper_tbit_stats_t *stats)
   uint32_t i;
   int off, seenfin = 0;
 
-  memset(stats, 0, sizeof(scamper_tbit_stats_t));
+  *stats_out = NULL;
+
   if(tbit->pktc < 1)
     return 0;
 
@@ -577,6 +578,8 @@ int scamper_tbit_stats(const scamper_tbit_t *tbit, scamper_tbit_stats_t *stats)
   if((pkt->data[iphlen+13] & (TH_SYN|TH_ACK)) != (TH_SYN|TH_ACK))
     goto err;
 
+  if((stats = malloc_zero(sizeof(scamper_tbit_stats_t))) == NULL)
+    goto err;
   timeval_diff_tv(&stats->synack_rtt, &syn->tv, &pkt->tv);
   rcv_nxt = bytes_ntohl(pkt->data+iphlen+4) + 1;
 
@@ -637,17 +640,19 @@ int scamper_tbit_stats(const scamper_tbit_t *tbit, scamper_tbit_stats_t *stats)
   if(seenfin == 0)
     goto err;
 
+  *stats_out = stats;
   scamper_tbit_tcpq_free(q, NULL);
   return 0;
 
  err:
+  if(stats != NULL) free(stats);
   scamper_tbit_tcpq_free(q, NULL);
   return -1;
 }
 
-char *scamper_tbit_type2str(const scamper_tbit_t *tbit, char *buf, size_t len)
+char *scamper_tbit_type_tostr(const scamper_tbit_t *tbit, char *buf, size_t len)
 {
-  static char *t[] = {
+  static const char *t[] = {
     NULL,
     "pmtud",
     "ecn",
@@ -660,19 +665,16 @@ char *scamper_tbit_type2str(const scamper_tbit_t *tbit, char *buf, size_t len)
     "blind-syn",
     "blind-fin",
   };
-
   if(tbit->type >= sizeof(t) / sizeof(char *) || t[tbit->type] == NULL)
-    {
-      snprintf(buf, len, "%d", tbit->type);
-      return buf;
-    }
-
-  return t[tbit->type];
+    snprintf(buf, len, "%d", tbit->type);
+  else
+    snprintf(buf, len, "%s", t[tbit->type]);
+  return buf;
 }
 
-char *scamper_tbit_res2str(const scamper_tbit_t *tbit, char *buf, size_t len)
+char *scamper_tbit_result_tostr(const scamper_tbit_t *tbit,char *buf,size_t len)
 {
-  static char *t[] = {
+  static const char *t[] = {
     "none",                /* 0 */
     "tcp-noconn",
     "tcp-rst",
@@ -761,12 +763,10 @@ char *scamper_tbit_res2str(const scamper_tbit_t *tbit, char *buf, size_t len)
   };
 
   if(tbit->result >= sizeof(t) / sizeof(char *) || t[tbit->result] == NULL)
-    {
-      snprintf(buf, len, "%d", tbit->result);
-      return buf;
-    }
-
-  return t[tbit->result];
+    snprintf(buf, len, "%d", tbit->result);
+  else
+    snprintf(buf, len, "%s", t[tbit->result]);
+  return buf;
 }
 
 scamper_tbit_pkt_t *scamper_tbit_pkt_alloc(uint8_t dir, uint8_t *data,
@@ -955,10 +955,7 @@ void scamper_tbit_free(scamper_tbit_t *tbit)
 	scamper_tbit_null_free(tbit->data);
       else if(tbit->type == SCAMPER_TBIT_TYPE_ICW)
 	scamper_tbit_icw_free(tbit->data);
-      else if(tbit->type == SCAMPER_TBIT_TYPE_BLIND_RST ||
-	      tbit->type == SCAMPER_TBIT_TYPE_BLIND_SYN ||
-	      tbit->type == SCAMPER_TBIT_TYPE_BLIND_DATA ||
-	      tbit->type == SCAMPER_TBIT_TYPE_BLIND_FIN)
+      else if(SCAMPER_TBIT_TYPE_IS_BLIND(tbit))
 	scamper_tbit_blind_free(tbit->data);
     }
 

@@ -9,7 +9,7 @@
  * Copyright (c) 2019-2023 Matthew Luckie
  * Authors: Brian Hammond, Matthew Luckie
  *
- * $Id: scamper_ping_json.c,v 1.26 2023/02/23 18:58:23 mjl Exp $
+ * $Id: scamper_ping_json.c,v 1.30 2023/06/01 07:10:45 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -32,8 +32,10 @@
 #include "internal.h"
 
 #include "scamper_addr.h"
+#include "scamper_addr_int.h"
 #include "scamper_list.h"
 #include "scamper_ping.h"
+#include "scamper_ping_int.h"
 #include "scamper_file.h"
 #include "scamper_file_json.h"
 #include "scamper_ping_json.h"
@@ -65,7 +67,7 @@ static char *ping_header(const scamper_ping_t *ping)
 
   string_concat(buf, sizeof(buf), &off,
 		"{\"type\":\"ping\", \"version\":\"0.4\", \"method\":\"%s\"",
-		scamper_ping_method2str(ping, tmp, sizeof(tmp)));
+		scamper_ping_method_tostr(ping, tmp, sizeof(tmp)));
   if(ping->src != NULL)
     string_concat(buf, sizeof(buf), &off, ", \"src\":\"%s\"",
 		  scamper_addr_tostr(ping->src, tmp, sizeof(tmp)));
@@ -191,7 +193,7 @@ static char *ping_reply(const scamper_ping_t *ping,
   string_concat(buf, sizeof(buf), &off, ", \"rtt\":%s",
 		timeval_tostr_us(&reply->rtt, tmp, sizeof(tmp)));
 
-  if(SCAMPER_PING_METHOD_VARY_SPORT(ping))
+  if(SCAMPER_PING_METHOD_IS_VARY_SPORT(ping))
     {
       if(SCAMPER_PING_METHOD_IS_TCP(ping))
 	pt = "tcp";
@@ -200,7 +202,7 @@ static char *ping_reply(const scamper_ping_t *ping,
 		    pt, ping->probe_sport + reply->probe_id,
 		    pt, ping->probe_dport);
     }
-  else if(SCAMPER_PING_METHOD_VARY_DPORT(ping))
+  else if(SCAMPER_PING_METHOD_IS_VARY_DPORT(ping))
     {
       if(SCAMPER_PING_METHOD_IS_UDP(ping))
 	pt = "udp";
@@ -255,11 +257,11 @@ static char *ping_reply(const scamper_ping_t *ping,
   if((v4rr = reply->v4rr) != NULL)
     {
       string_concat(buf, sizeof(buf), &off, ", \"RR\":[");
-      for(i=0; i<v4rr->rrc; i++)
+      for(i=0; i<v4rr->ipc; i++)
 	{
 	  if(i > 0) string_concat(buf, sizeof(buf), &off, ",");
 	  string_concat(buf, sizeof(buf), &off, "\"%s\"",
-			scamper_addr_tostr(v4rr->rr[i], tmp, sizeof(tmp)));
+			scamper_addr_tostr(v4rr->ip[i], tmp, sizeof(tmp)));
 	}
       string_concat(buf, sizeof(buf), &off, "]");
     }
@@ -345,7 +347,7 @@ int scamper_file_json_ping_write(const scamper_file_t *sf,
 				 const scamper_ping_t *ping, void *p)
 {
   scamper_ping_reply_t *reply;
-  uint32_t  reply_count = scamper_ping_reply_count(ping);
+  uint32_t  reply_count = scamper_ping_reply_total(ping);
   char     *header      = NULL;
   size_t    header_len  = 0;
   char    **replies     = NULL;
@@ -364,7 +366,7 @@ int scamper_file_json_ping_write(const scamper_file_t *sf,
   len = (header_len = strlen(header));
 
   /* put together a string for each reply */
-  len += 15; /* , \"responses\":[", */
+  len += 15; /* , \"responses\":[" */
   if(reply_count > 0)
     {
       if((replies    = malloc_zero(sizeof(char *) * reply_count)) == NULL ||
@@ -400,10 +402,7 @@ int scamper_file_json_ping_write(const scamper_file_t *sf,
   for(i=0; i<reply_count; i++)
     {
       if(i > 0)
-	{
-	  memcpy(str+wc, ",", 1);
-	  wc++;
-	}
+	str[wc++] = ',';
       memcpy(str+wc, replies[i], reply_lens[i]);
       wc += reply_lens[i];
     }

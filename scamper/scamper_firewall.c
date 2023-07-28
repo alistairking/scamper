@@ -1,10 +1,10 @@
 /*
  * scamper_firewall.c
  *
- * $Id: scamper_firewall.c,v 1.55 2022/12/09 09:37:42 mjl Exp $
+ * $Id: scamper_firewall.c,v 1.56 2023/05/29 21:24:06 mjl Exp $
  *
  * Copyright (C) 2008-2011 The University of Waikato
- * Copyright (C) 2016-2022 Matthew Luckie
+ * Copyright (C) 2016-2023 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -39,6 +39,7 @@
 #endif
 
 #include "scamper_addr.h"
+#include "scamper_addr_int.h"
 #include "scamper_debug.h"
 #include "scamper_firewall.h"
 #include "scamper_privsep.h"

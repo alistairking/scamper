@@ -1,12 +1,13 @@
 /*
  * scamper_control.c
  *
- * $Id: scamper_control.c,v 1.242 2023/01/24 20:41:15 mjl Exp $
+ * $Id: scamper_control.c,v 1.251 2023/05/29 21:22:26 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2012-2014 The Regents of the University of California
  * Copyright (C) 2014-2023 Matthew Luckie
+ * Copyright (C) 2023      The Regents of the University of California
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -53,6 +54,7 @@
 
 /* hack to deal with get / set nameserver */
 #include "scamper_addr.h"
+#include "scamper_addr_int.h"
 #include "host/scamper_host_do.h"
 
 #define REMOTE_HDRLEN 10
@@ -317,6 +319,10 @@ static int command_handler(command_t *handler, int cnt, client_t *client,
  *
  * go through the line and get parameters out, returning the start of
  * each parameter in the words array.
+ *
+ * the words array needs to be large enough for the expected command
+ *
+ * the input line is modified -- each parameter is null-terminated
  */
 static int params_get(char *line, char **words, int *count)
 {
@@ -354,7 +360,6 @@ static int params_get(char *line, char **words, int *count)
 	  while(line[i] != ' ' && line[i] != '\0') i++;
 
 	  if(line[i] == '\0') break;
-
 	}
 
       /* null terminate the word, skip towards the next word */
@@ -881,12 +886,19 @@ static int command_attach(client_t *client, char *buf)
   scamper_source_params_t ssp;
   scamper_file_t *sf;
   char sab[128];
-  long priority = 1;
-  char *priority_str = NULL, *format = NULL, *params[2], *next;
+  long long ll;
+  char *cycleid_str = NULL, *descr = NULL, *format = NULL;
+  char *listid_str = NULL, *monitor = NULL, *name = NULL, *priority_str = NULL;
+  char *params[14], *next;
   int i, cnt = sizeof(params) / sizeof(char *);
   param_t handlers[] = {
-    {"priority", &priority_str},
+    {"cycle_id", &cycleid_str},
+    {"descr", &descr},
     {"format", &format},
+    {"list_id", &listid_str},
+    {"monitor", &monitor},
+    {"name", &name},
+    {"priority", &priority_str},
   };
   int handler_cnt = sizeof(handlers) / sizeof(param_t);
 
@@ -906,32 +918,70 @@ static int command_attach(client_t *client, char *buf)
 	}
     }
 
-  if(priority_str != NULL && (string_tolong(priority_str, &priority) != 0 ||
-			      priority < 1 || priority > 100000))
+  if(client_sockaddr_tostr(client, sab, sizeof(sab)) == NULL)
+    goto err;
+
+  /*
+   * set the source parameters, processing the parameters in alphabetical
+   * order to make sure we get them all
+   */
+  memset(&ssp, 0, sizeof(ssp));
+  ssp.list_id    = 0;
+  ssp.cycle_id   = 1;
+  ssp.priority   = 1;
+
+  if(cycleid_str != NULL)
     {
-      client_send(client, "ERR invalid priority");
-      return 0;
+      if(string_tollong(cycleid_str, &ll) != 0 || ll < 0 || ll > UINT32_MAX)
+	{
+	  client_send(client, "ERR invalid cycle_id");
+	  return 0;
+	}
+      ssp.cycle_id = ll;
     }
+
+  ssp.descr = descr;
 
   if(format == NULL)
     format = "warts";
 
   if(strcasecmp(format, "warts") == 0)
-    {
-      client->sof_format = CLIENT_FORMAT_WARTS;
-    }
+    client->sof_format = CLIENT_FORMAT_WARTS;
   else if(strcasecmp(format, "json") == 0)
-    {
-      client->sof_format = CLIENT_FORMAT_JSON;
-    }
+    client->sof_format = CLIENT_FORMAT_JSON;
   else
     {
       client_send(client, "ERR format must be warts or json");
       return 0;
     }
 
-  if(client_sockaddr_tostr(client, sab, sizeof(sab)) == NULL)
-    goto err;
+  if(listid_str != NULL)
+    {
+      if(string_tollong(listid_str, &ll) != 0 || ll < 0 || ll > UINT32_MAX)
+	{
+	  client_send(client, "ERR invalid list_id");
+	  return 0;
+	}
+      ssp.list_id = ll;
+    }
+
+  ssp.monitor = monitor;
+
+  /* if no name specified, then create one based on the socket */
+  if(name == NULL)
+    ssp.name = sab;
+  else
+    ssp.name = name;
+
+  if(priority_str != NULL)
+    {
+      if(string_tollong(priority_str, &ll) != 0 || ll < 1 || ll > 100000)
+	{
+	  client_send(client, "ERR invalid priority");
+	  return 0;
+	}
+      ssp.priority = ll;
+    }
 
   if((client->sof_objs = slist_alloc()) == NULL)
     {
@@ -946,14 +996,9 @@ static int command_attach(client_t *client, char *buf)
     }
   sf = scamper_outfile_getfile(client->sof);
   scamper_file_setwritefunc(sf, client, client_data_send);
+  ssp.sof = client->sof;
 
   /* create the source */
-  memset(&ssp, 0, sizeof(ssp));
-  ssp.list_id    = 0;
-  ssp.cycle_id   = 1;
-  ssp.priority   = priority;
-  ssp.name       = sab;
-  ssp.sof        = client->sof;
   if((client->source = scamper_source_control_alloc(&ssp, client_signalmore,
 						    client_tostr,
 						    client)) == NULL)
@@ -1293,6 +1338,7 @@ static int command_outfile_open(client_t *client, char *buf)
   char *params[24];
   int   i, cnt = sizeof(params) / sizeof(char *);
   char *file = NULL, *mode = NULL, *name = NULL;
+  char  err[256];
   char *next;
   param_t handlers[] = {
     {"file", &file},
@@ -1333,9 +1379,9 @@ static int command_outfile_open(client_t *client, char *buf)
       return -1;
     }
 
-  if(scamper_outfile_open(name, file, mode) == NULL)
+  if(scamper_outfile_open(name, file, mode, err, sizeof(err)) == NULL)
     {
-      client_send(client, "ERR could not add outfile");
+      client_send(client, "ERR could not add outfile: %s", err);
       return -1;
     }
 
@@ -4075,7 +4121,6 @@ int scamper_control_add_unix(const char *file)
 
 #ifdef WITHOUT_PRIVSEP
   struct sockaddr_un sn;
-  uid_t uid;
 
   if(sockaddr_compose_un((struct sockaddr *)&sn, file) != 0)
     {
@@ -4092,12 +4137,6 @@ int scamper_control_add_unix(const char *file)
   if(bind(fd, (struct sockaddr *)&sn, sizeof(sn)) != 0)
     {
       printerror(__func__, "could not bind");
-      goto err;
-    }
-
-  if((uid = getuid()) != geteuid() && chown(file, uid, -1) != 0)
-    {
-      printerror(__func__, "could not chown");
       goto err;
     }
 

@@ -1,11 +1,12 @@
 /*
  * scamper_icmp6.c
  *
- * $Id: scamper_icmp6.c,v 1.102 2022/12/09 09:37:42 mjl Exp $
+ * $Id: scamper_icmp6.c,v 1.104 2023/05/29 21:22:26 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
- * Copyright (C) 2022      Matthew Luckie
+ * Copyright (C) 2022-2023 Matthew Luckie
+ * Copyright (C) 2023      The Regents of the University of California
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -30,6 +31,7 @@
 
 #include "scamper.h"
 #include "scamper_addr.h"
+#include "scamper_addr_int.h"
 #include "scamper_task.h"
 #include "scamper_dl.h"
 #include "scamper_probe.h"
@@ -554,14 +556,30 @@ int scamper_icmp6_open_fd(void)
 int scamper_icmp6_open(const void *addr)
 {
   struct sockaddr_in6 sin6;
-  int fd, opt;
+  int fd = -1, opt;
 
 #if defined(ICMP6_FILTER)
   struct icmp6_filter filter;
 #endif
 
 #if defined(WITHOUT_PRIVSEP)
+#ifndef _WIN32
+  uid_t uid = scamper_getuid();
+  uid_t euid = scamper_geteuid();
+  if(uid != euid && seteuid(euid) != 0)
+    {
+      printerror(__func__, "could not claim euid");
+      goto err;
+    }
+#endif
   fd = scamper_icmp6_open_fd();
+#ifndef _WIN32
+  if(uid != euid && seteuid(uid) != 0)
+    {
+      printerror(__func__, "could not return to uid");
+      exit(-errno);
+    }
+#endif
 #else
   fd = scamper_privsep_open_icmp(AF_INET6);
 #endif

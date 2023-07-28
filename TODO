@@ -1,10 +1,24 @@
-$Id: TODO,v 1.19 2020/03/01 07:42:04 mjl Exp $
+$Id: TODO,v 1.26 2023/05/29 21:42:20 mjl Exp $
 
 * compile without warnings when the following is passed in CFLAGS
   -Wall -Wno-unneeded-internal-declaration -Wno-unused-const-variable
-  -Wno-deprecated-declarations -Wshadow
+  -Wno-deprecated-declarations -Wno-unused-parameter -Wshadow -Wextra
 
-* investigate if gettimeofday has to be called so much
+* investigate if anyone uses the "source add" functionality and deorbit
+  if nobody does
+
+* monitor /etc/resolv.conf for changes.
+
+* try alternate nameserver entries if the first is unresponsive.
+
+* convert sc_bdrmap, sc_erosprober, sc_radargun, sc_tbitblind,
+  sc_tbitpmtud, and sc_uptime to libscamperctrl
+
+* in data collection drivers, ask for cycle start and stop records,
+  write them out.  done: sc_ally, sc_filterpolicy, sc_pinger,
+  sc_prefixprober, sc_prefixscan, sc_speedtrap
+
+* investigate if gettimeofday has to be called so much.
 
 * check that the TOS bits are being set properly on tx.
 
