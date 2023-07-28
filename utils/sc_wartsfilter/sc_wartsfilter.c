@@ -1,13 +1,14 @@
 /*
  * sc_wartsfilter
  *
- * $Id: sc_wartsfilter.c,v 1.9 2023/01/03 02:56:53 mjl Exp $
+ * $Id: sc_wartsfilter.c,v 1.13 2023/03/22 01:38:57 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
  *
  * Copyright (C) 2019-2020 The University of Waikato
  * Copyright (C) 2022-2023 Matthew Luckie
+ * Copyright (C) 2023      The Regents of the University of California
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -48,6 +49,7 @@
 
 static scamper_file_t        *infile   = NULL;
 static scamper_file_t        *outfile  = NULL;
+static char                  *outfile_type = "warts";
 static prefixtree_t          *addr_pt4 = NULL;
 static prefixtree_t          *addr_pt6 = NULL;
 static int                    addrc    = 0;
@@ -323,7 +325,41 @@ static int check_options(int argc, char *argv[])
     }
   else
     {
-      if((outfile = scamper_file_open(opt_outfile, 'w', "warts")) == NULL)
+      if(string_endswith(opt_outfile, ".gz") != 0)
+	{
+#ifdef HAVE_ZLIB
+	  outfile_type = "warts.gz";
+#else
+	  usage(OPT_OUTFILE);
+	  fprintf(stderr, "cannot write to %s: did not link against zlib\n",
+		  opt_outfile);
+	  goto err;
+#endif
+	}
+      else if(string_endswith(opt_outfile, ".bz2") != 0)
+	{
+#ifdef HAVE_LIBBZ2
+	  outfile_type = "warts.bz2";
+#else
+	  usage(OPT_OUTFILE);
+	  fprintf(stderr, "cannot write to %s: did not link against libbz2\n",
+		  opt_outfile);
+	  goto err;
+#endif
+	}
+      else if(string_endswith(opt_outfile, ".xz") != 0)
+	{
+#ifdef HAVE_LIBLZMA
+	  outfile_type = "warts.xz";
+#else
+	  usage(OPT_OUTFILE);
+	  fprintf(stderr, "cannot write to %s: did not link against liblzma\n",
+		  opt_outfile);
+	  goto err;
+#endif
+	}
+
+      if((outfile = scamper_file_open(opt_outfile, 'w', outfile_type)) == NULL)
         {
           usage(OPT_OUTFILE);
 	  goto err;

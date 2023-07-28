@@ -2,7 +2,7 @@
  * sc_pinger : scamper driver to probe destinations with various ping
  *             methods
  *
- * $Id: sc_pinger.c,v 1.12 2023/01/11 07:55:04 mjl Exp $
+ * $Id: sc_pinger.c,v 1.15 2023/03/22 01:38:57 mjl Exp $
  *
  * Copyright (C) 2020 The University of Waikato
  * Copyright (C) 2022 Matthew Luckie
@@ -45,6 +45,7 @@ static char                  *addrfile_buf  = NULL;
 static size_t                 addrfile_len  = 8192;
 static size_t                 addrfile_off  = 0;
 static char                  *outfile_name  = NULL;
+static char                  *outfile_type  = "warts";
 static scamper_file_t        *outfile       = NULL;
 static char                  *logfile_name  = NULL;
 static FILE                  *logfile_fd    = NULL;
@@ -241,6 +242,40 @@ static int check_options(int argc, char *argv[])
     {
       usage(OPT_ADDRFILE | OPT_OUTFILE | OPT_UNIX | OPT_PORT | OPT_REMOTE);
       goto done;
+    }
+
+  if(string_endswith(outfile_name, ".gz") != 0)
+    {
+#ifdef HAVE_ZLIB
+      outfile_type = "warts.gz";
+#else
+      usage(OPT_OUTFILE);
+      fprintf(stderr, "cannot write to %s: did not link against zlib\n",
+	      outfile_name);
+      goto done;
+#endif
+    }
+  else if(string_endswith(outfile_name, ".bz2") != 0)
+    {
+#ifdef HAVE_LIBBZ2
+      outfile_type = "warts.bz2";
+#else
+      usage(OPT_OUTFILE);
+      fprintf(stderr, "cannot write to %s: did not link against libbz2\n",
+	      outfile_name);
+      goto done;
+#endif
+    }
+  else if(string_endswith(outfile_name, ".xz") != 0)
+    {
+#ifdef HAVE_LIBLZMA
+      outfile_type = "warts.xz";
+#else
+      usage(OPT_OUTFILE);
+      fprintf(stderr, "cannot write to %s: did not link against liblzma\n",
+	      outfile_name);
+      goto done;
+#endif
     }
 
   if(opt_port != NULL)
@@ -634,7 +669,7 @@ static int pinger_data(void)
      (tree = splaytree_alloc((splaytree_cmp_t)sc_pinger_cmp)) == NULL ||
      (virgin = slist_alloc()) == NULL || (waiting = slist_alloc()) == NULL ||
      do_scamperconnect() != 0 ||
-     (outfile = scamper_file_open(outfile_name, 'w', "warts")) == NULL ||
+     (outfile = scamper_file_open(outfile_name, 'w', outfile_type)) == NULL ||
      (decode_sf = scamper_file_opennull('r', "warts")) == NULL ||
      (decode_rb = scamper_file_readbuf_alloc()) == NULL)
     {

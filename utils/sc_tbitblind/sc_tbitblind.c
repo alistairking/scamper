@@ -7,6 +7,7 @@
  *
  * Copyright (C) 2015      The Regents of the University of California
  * Copyright (C) 2022-2023 Matthew Luckie
+ * Copyright (C) 2023      The Regents of the University of California
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -46,6 +47,7 @@ static char                  *readbuf       = NULL;
 static size_t                 readbuf_len   = 0;
 static int                    port          = 31337;
 static char                  *addressfile   = NULL;
+static char                  *outfile_type  = "warts";
 static char                  *outfile_name  = NULL;
 static scamper_file_t        *outfile       = NULL;
 static int                    outfile_obj   = 0;
@@ -163,6 +165,39 @@ static int check_options(int argc, char *argv[])
 	case 'O':
 	  if(strcasecmp(optarg, "noshuffle") == 0)
 	    noshuffle = 1;
+	  else if(strcasecmp(optarg, "gz") == 0 ||
+		  strcasecmp(optarg, "warts.gz") == 0)
+	    {
+#ifdef HAVE_ZLIB
+	      outfile_type = "warts.gz";
+#else
+	      fprintf(stderr, "cannot write %s: did not link against zlib\n",
+		      optarg);
+	      return -1;
+#endif
+	    }
+	  else if(strcasecmp(optarg, "bz2") == 0 ||
+		  strcasecmp(optarg, "warts.bz2") == 0)
+	    {
+#ifdef HAVE_LIBBZ2
+	      outfile_type = "warts.bz2";
+#else
+	      fprintf(stderr, "cannot write %s: did not link against libbz2\n",
+		      optarg);
+	      return -1;
+#endif
+	    }
+	  else if(strcasecmp(optarg, "xz") == 0 ||
+		  strcasecmp(optarg, "warts.xz") == 0)
+	    {
+#ifdef HAVE_LIBLZMA
+	      outfile_type = "warts.xz";
+#else
+	      fprintf(stderr, "cannot write %s: did not link against liblzma\n",
+		      optarg);
+	      return -1;
+#endif
+	    }
 	  else
 	    {
 	      usage(OPT_OPTIONS);
@@ -839,8 +874,9 @@ static int do_decoderead(void)
 	  outfile = NULL;
 	}
       outfile_obj = 0;
-      snprintf(buf, sizeof(buf), "%s_%02d.warts", outfile_name, outfile_i++);
-      if((outfile = scamper_file_open(buf, 'w', "warts")) == NULL)
+      snprintf(buf, sizeof(buf), "%s_%02d.%s", outfile_name, outfile_i++,
+	       outfile_type);
+      if((outfile = scamper_file_open(buf, 'w', outfile_type)) == NULL)
 	return -1;
     }
 

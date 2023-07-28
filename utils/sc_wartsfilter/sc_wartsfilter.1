@@ -7,9 +7,9 @@
 .\" Copyright (c) 2022 Matthew Luckie
 .\"                    All rights reserved
 .\"
-.\" $Id: sc_wartsfilter.1,v 1.4 2022/06/18 05:17:36 mjl Exp $
+.\" $Id: sc_wartsfilter.1,v 1.5 2023/03/10 05:01:22 mjl Exp $
 .\"
-.Dd June 18, 2022
+.Dd March 10, 2023
 .Dt SC_WARTSFILTER 1
 .Os
 .Sh NAME
@@ -41,8 +41,14 @@ If there are multiple addresses or prefixes of interest, these can
 be specified with additional -a options.
 .It Fl i Ar input-file
 specifies the input warts file to process.
+If - is specified, then
+.Nm
+will read from stdin.
 .It Fl o Ar output-file
 specifies the output warts file to write records to.
+If - is specified, then
+.Nm
+will write to stdout.
 .It Fl O Ar option
 allows the behavior of
 .Nm

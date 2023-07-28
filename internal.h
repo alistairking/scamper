@@ -1,7 +1,7 @@
 /*
  * internal.h
  *
- * $Id: internal.h,v 1.52 2022/07/10 05:26:17 mjl Exp $
+ * $Id: internal.h,v 1.54 2023/03/21 07:38:01 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -247,6 +247,14 @@ typedef unsigned short sa_family_t;
 
 #if defined(HAVE_ZLIB)
 #include <zlib.h>
+#endif
+
+#if defined(HAVE_LIBBZ2)
+#include <bzlib.h>
+#endif
+
+#if defined(HAVE_LIBLZMA)
+#include <lzma.h>
 #endif
 
 #if defined(DMALLOC)

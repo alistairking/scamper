@@ -1,7 +1,7 @@
 /*
  * utils.h
  *
- * $Id: utils.h,v 1.132 2023/01/01 08:24:19 mjl Exp $
+ * $Id: utils.h,v 1.133 2023/03/15 06:46:06 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -222,6 +222,7 @@ char *string_concat(char *str, size_t len, size_t *off, const char *fs, ...);
 #endif
 const char *string_findlc(const char *str, const char *find);
 int   string_addrport(const char *in, char **addr, int *port);
+int   string_endswith(const char *in, const char *ending);
 
 #ifndef NDEBUG
 int   string_isdash(const char *str);

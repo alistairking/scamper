@@ -7,8 +7,9 @@
  * Copyright (C) 2017 Matthew Luckie
  * Copyright (C) 2018-2019 The University of Waikato
  * Copyright (C) 2023 Matthew Luckie
+ * Copyright (C) 2023 The Regents of the University of California
  *
- * $Id: sc_uptime.c,v 1.79 2023/01/03 02:19:11 mjl Exp $
+ * $Id: sc_uptime.c,v 1.84 2023/03/22 01:38:57 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -77,6 +78,7 @@ static int                    decode_out_fd = -1;
 static char                  *dbfile        = NULL;
 static char                  *srcaddr       = NULL;
 static scamper_file_t        *outfile       = NULL;
+static char                  *outfile_type  = "warts";
 static scamper_file_filter_t *ffilter       = NULL;
 static int                    data_left     = 0;
 static int                    more          = 0;
@@ -161,7 +163,7 @@ static void usage(uint32_t opt_mask)
 {
   fprintf(stderr,
     "usage: sc_uptime [-o] [-d dbfile] [-E expire] [-I interval]\n"
-    "                      [-l log] [-o outfile] [-O option] [-p port]\n"
+    "                      [-l log] [-O option] [-p port]\n"
     "                      [-S srcaddr] [-U unix] outfile.warts\n"
     "\n"
     "       sc_update [-a] [-d dbfile] [-E expire] [-O option] addrfile.txt\n"
@@ -440,6 +442,7 @@ static int check_options(int argc, char *argv[])
       return 0;
     }
 
+  /* at this stage, we know that we should be using -o */
   if((options & OPT_OUTFILE) == 0 ||
      (options & (OPT_PORT|OPT_UNIX)) == 0 ||
      (options & (OPT_PORT|OPT_UNIX)) == (OPT_PORT|OPT_UNIX) ||
@@ -447,6 +450,40 @@ static int check_options(int argc, char *argv[])
     {
       usage(OPT_OUTFILE|OPT_PORT|OPT_UNIX);
       return -1;
+    }
+
+  if(string_endswith(opt_args[0], ".gz") != 0)
+    {
+#ifdef HAVE_ZLIB
+      outfile_type = "warts.gz";
+#else
+      usage(OPT_OUTFILE);
+      fprintf(stderr, "cannot write to %s: did not link against zlib\n",
+	      opt_args[0]);
+      return -1;
+#endif
+    }
+  else if(string_endswith(opt_args[0], ".bz2") != 0)
+    {
+#ifdef HAVE_LIBBZ2
+      outfile_type = "warts.bz2";
+#else
+      usage(OPT_OUTFILE);
+      fprintf(stderr, "cannot write to %s: did not link against libbz2\n",
+	      opt_args[0]);
+      return -1;
+#endif
+    }
+  else if(string_endswith(opt_args[0], ".xz") != 0)
+    {
+#ifdef HAVE_LIBLZMA
+      outfile_type = "warts.xz";
+#else
+      usage(OPT_OUTFILE);
+      fprintf(stderr, "cannot write to %s: did not link against liblzma\n",
+	      opt_args[0]);
+      return -1;
+#endif
     }
 
   if(options & OPT_PORT)
@@ -1574,7 +1611,7 @@ static int up_data(void)
   if((list = slist_alloc()) == NULL ||
      (heap_p1 = heap_alloc((heap_cmp_t)sc_dst_next_cmp)) == NULL ||
      do_sqlite_state() != 0 || do_scamperconnect() != 0 ||
-     (outfile = scamper_file_open(opt_args[0], 'w', "warts")) == NULL ||
+     (outfile = scamper_file_open(opt_args[0], 'w', outfile_type)) == NULL ||
      (scamper_wb = scamper_writebuf_alloc()) == NULL ||
      (scamper_lp = scamper_linepoll_alloc(do_scamperread_line,NULL)) == NULL ||
      (decode_wb = scamper_writebuf_alloc()) == NULL ||

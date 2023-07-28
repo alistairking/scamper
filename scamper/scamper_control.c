@@ -1,7 +1,7 @@
 /*
  * scamper_control.c
  *
- * $Id: scamper_control.c,v 1.242 2023/01/24 20:41:15 mjl Exp $
+ * $Id: scamper_control.c,v 1.243 2023/03/22 01:03:30 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -1293,6 +1293,7 @@ static int command_outfile_open(client_t *client, char *buf)
   char *params[24];
   int   i, cnt = sizeof(params) / sizeof(char *);
   char *file = NULL, *mode = NULL, *name = NULL;
+  char  err[256];
   char *next;
   param_t handlers[] = {
     {"file", &file},
@@ -1333,9 +1334,9 @@ static int command_outfile_open(client_t *client, char *buf)
       return -1;
     }
 
-  if(scamper_outfile_open(name, file, mode) == NULL)
+  if(scamper_outfile_open(name, file, mode, err, sizeof(err)) == NULL)
     {
-      client_send(client, "ERR could not add outfile");
+      client_send(client, "ERR could not add outfile: %s", err);
       return -1;
     }
 

@@ -1,7 +1,7 @@
 /*
  * scamper_do_tracelb.c
  *
- * $Id: scamper_tracelb_do.c,v 1.289 2023/01/03 02:27:24 mjl Exp $
+ * $Id: scamper_tracelb_do.c,v 1.290 2023/03/14 18:59:52 mjl Exp $
  *
  * Copyright (C) 2008-2011 The University of Waikato
  * Copyright (C) 2012      The Regents of the University of California
@@ -419,19 +419,16 @@ static void tracelb_paths_assert(tracelb_state_t *state)
     {
       path = state->paths[p];
 
-      assert(path->linkc >= 0);
       if(path->linkc == 0)
 	assert(path->links == NULL);
       else
 	assert(path->links != NULL);
 
-      assert(path->fwdc >= 0);
       if(path->fwdc == 0)
 	assert(path->fwd == NULL);
       else
 	assert(path->fwd != NULL);
 
-      assert(path->backc >= 0);
       if(path->backc == 0)
 	assert(path->back == NULL);
       else

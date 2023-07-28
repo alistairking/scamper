@@ -1,7 +1,7 @@
 /*
  * sc_bdrmap: driver to map first hop border routers of networks
  *
- * $Id: sc_bdrmap.c,v 1.38 2023/02/24 04:30:23 mjl Exp $
+ * $Id: sc_bdrmap.c,v 1.41 2023/03/22 01:38:57 mjl Exp $
  *
  *         Matthew Luckie
  *         mjl@caida.org / mjl@wand.net.nz
@@ -11,6 +11,7 @@
  * Copyright (C) 2017      The Regents of the University of California
  * Copyright (C) 2018-2020 The University of Waikato
  * Copyright (C) 2020-2023 Matthew Luckie
+ * Copyright (C) 2023      The Regents of the University of California
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -538,6 +539,7 @@ static char                  *ip2name_fn    = NULL;
 static prefixtree_t          *ixp_pt        = NULL;
 static char                  *ixp_fn        = NULL;
 static char                  *outfile_fn    = NULL;
+static char                  *outfile_type  = "warts";
 static char                  *relfile_fn    = NULL;
 static char                  *logfile_fn    = NULL;
 static FILE                  *logfile       = NULL;
@@ -1210,6 +1212,40 @@ static int check_options(int argc, char *argv[])
     {
       usage(OPT_PORT|OPT_REMOTE|OPT_UNIX);
       goto done;
+    }
+
+  if(string_endswith(outfile_fn, ".gz") != 0)
+    {
+#ifdef HAVE_ZLIB
+      outfile_type = "warts.gz";
+#else
+      usage(OPT_OUTFILE);
+      fprintf(stderr, "cannot write to %s: did not link against zlib\n",
+	      outfile_fn);
+      goto done;
+#endif
+    }
+  else if(string_endswith(outfile_fn, ".bz2") != 0)
+    {
+#ifdef HAVE_LIBBZ2
+      outfile_type = "warts.bz2";
+#else
+      usage(OPT_OUTFILE);
+      fprintf(stderr, "cannot write to %s: did not link against libbz2\n",
+	      outfile_fn);
+      goto done;
+#endif
+    }
+  else if(string_endswith(outfile_fn, ".xz") != 0)
+    {
+#ifdef HAVE_LIBLZMA
+      outfile_type = "warts.xz";
+#else
+      usage(OPT_OUTFILE);
+      fprintf(stderr, "cannot write to %s: did not link against liblzma\n",
+	      outfile_fn);
+      goto done;
+#endif
     }
 
   if(options & OPT_PORT)
@@ -6135,7 +6171,7 @@ static int bdrmap_data(void)
     return -1;
 
   if(do_scamperconnect() != 0 ||
-     (outfile = scamper_file_open(outfile_fn, 'w', "warts")) == NULL ||
+     (outfile = scamper_file_open(outfile_fn, 'w', outfile_type)) == NULL ||
      socketpair(AF_UNIX, SOCK_STREAM, 0, pair) != 0)
     goto done;
   decode_in_fd  = pair[0];

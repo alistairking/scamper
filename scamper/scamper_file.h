@@ -1,7 +1,7 @@
 /*
  * scamper_file.c
  *
- * $Id: scamper_file.h,v 1.37 2023/03/01 01:49:16 mjl Exp $
+ * $Id: scamper_file.h,v 1.38 2023/03/14 20:02:41 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -43,20 +43,20 @@ typedef int (*scamper_file_readfunc_t)(void *param,
 typedef struct scamper_file_readbuf scamper_file_readbuf_t;
 
 /* types of objects that scamper understands */
-#define SCAMPER_FILE_OBJ_LIST          0x01
-#define SCAMPER_FILE_OBJ_CYCLE_START   0x02
-#define SCAMPER_FILE_OBJ_CYCLE_DEF     0x03
-#define SCAMPER_FILE_OBJ_CYCLE_STOP    0x04
-#define SCAMPER_FILE_OBJ_ADDR          0x05
-#define SCAMPER_FILE_OBJ_TRACE         0x06
-#define SCAMPER_FILE_OBJ_PING          0x07
-#define SCAMPER_FILE_OBJ_TRACELB       0x08
-#define SCAMPER_FILE_OBJ_DEALIAS       0x09
-#define SCAMPER_FILE_OBJ_NEIGHBOURDISC 0x0a
-#define SCAMPER_FILE_OBJ_TBIT          0x0b
-#define SCAMPER_FILE_OBJ_STING         0x0c
-#define SCAMPER_FILE_OBJ_SNIFF         0x0d
-#define SCAMPER_FILE_OBJ_HOST          0x0e
+#define SCAMPER_FILE_OBJ_LIST          1
+#define SCAMPER_FILE_OBJ_CYCLE_START   2
+#define SCAMPER_FILE_OBJ_CYCLE_DEF     3
+#define SCAMPER_FILE_OBJ_CYCLE_STOP    4
+#define SCAMPER_FILE_OBJ_ADDR          5
+#define SCAMPER_FILE_OBJ_TRACE         6
+#define SCAMPER_FILE_OBJ_PING          7
+#define SCAMPER_FILE_OBJ_TRACELB       8
+#define SCAMPER_FILE_OBJ_DEALIAS       9
+#define SCAMPER_FILE_OBJ_NEIGHBOURDISC 10
+#define SCAMPER_FILE_OBJ_TBIT          11
+#define SCAMPER_FILE_OBJ_STING         12
+#define SCAMPER_FILE_OBJ_SNIFF         13
+#define SCAMPER_FILE_OBJ_HOST          14
 
 scamper_file_t *scamper_file_open(const char *fn, char mode, const char *type);
 scamper_file_t *scamper_file_openfd(int fd, const char *fn, char mode,

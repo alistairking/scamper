@@ -3,7 +3,7 @@
  *
  * This is a utility program to concatenate warts data files together.
  *
- * $Id: sc_wartscat.c,v 1.29 2023/03/01 02:30:23 mjl Exp $
+ * $Id: sc_wartscat.c,v 1.33 2023/03/22 01:38:57 mjl Exp $
  *
  * Copyright (C) 2007-2011 The University of Waikato
  * Copyright (C) 2022      Matthew Luckie
@@ -99,6 +99,7 @@ static int check_options(int argc, char *argv[])
   int   i, ch;
   char *opts = "o:s?";
   char *opt_outfile = NULL;
+  char *outfile_type = "warts";
 
   while((i = getopt(argc, argv, opts)) != -1)
     {
@@ -149,7 +150,41 @@ static int check_options(int argc, char *argv[])
   /* open the output file, which is a regular file */
   if(options & OPT_OUTFILE)
     {
-      if((outfile = scamper_file_open(opt_outfile, 'a', "warts")) == NULL)
+      if(string_endswith(opt_outfile, ".gz") != 0)
+	{
+#ifdef HAVE_ZLIB
+	  outfile_type = "warts.gz";
+#else
+	  usage(argv[0], OPT_OUTFILE);
+	  fprintf(stderr, "cannot write to %s: did not link against zlib\n",
+		  opt_outfile);
+	  return -1;
+#endif
+	}
+      else if(string_endswith(opt_outfile, ".bz2") != 0)
+	{
+#ifdef HAVE_LIBBZ2
+	  outfile_type = "warts.bz2";
+#else
+	  usage(argv[0], OPT_OUTFILE);
+	  fprintf(stderr, "cannot write to %s: did not link against libbz2\n",
+		  opt_outfile);
+	  return -1;
+#endif
+	}
+      else if(string_endswith(opt_outfile, ".xz") != 0)
+	{
+#ifdef HAVE_LIBLZMA
+	  outfile_type = "warts.xz";
+#else
+	  usage(argv[0], OPT_OUTFILE);
+	  fprintf(stderr, "cannot write to %s: did not link against liblzma\n",
+		  opt_outfile);
+	  return -1;
+#endif
+	}
+
+      if((outfile = scamper_file_open(opt_outfile, 'a', outfile_type)) == NULL)
 	{
 	  usage(argv[0], OPT_OUTFILE);
 	  return -1;

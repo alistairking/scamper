@@ -1,4 +1,4 @@
-# $Id: Makefile.am,v 1.39.2.1 2023/03/02 04:07:41 mjl Exp $
+# $Id: Makefile.am,v 1.42 2023/03/21 07:38:01 mjl Exp $
 
 AUTOMAKE_OPTIONS = subdir-objects
 
@@ -10,7 +10,7 @@ lib_LTLIBRARIES = libscamperfile.la
 
 libscamperfile_la_LDFLAGS = -version-info 5:0:0
 
-libscamperfile_la_LIBADD = @ZLIB_LIBS@
+libscamperfile_la_LIBADD = @ZLIB_LIBS@ @LIBBZ2_LIBS@ @LIBLZMA_LIBS@
 
 libscamperfile_la_SOURCES = \
 	../mjl_splaytree.c \
@@ -143,7 +143,7 @@ scamper_SOURCES = \
 
 scamper_CFLAGS = $(AM_CFLAGS)
 
-scamper_LDADD = @OPENSSL_LIBS@ @ZLIB_LIBS@
+scamper_LDADD = @OPENSSL_LIBS@ @ZLIB_LIBS@ @LIBBZ2_LIBS@ @LIBLZMA_LIBS@
 scamper_LDFLAGS = @OPENSSL_LDFLAGS@
 
 include_HEADERS = \

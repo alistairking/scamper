@@ -9,12 +9,12 @@
 .\" Copyright (c) 2015-2023 Matthew Luckie
 .\"                         All rights reserved
 .\"
-.\" $Id: scamper.1,v 1.106 2023/03/01 04:22:27 mjl Exp $
+.\" $Id: scamper.1,v 1.109 2023/03/21 20:37:34 mjl Exp $
 .\"
 .\"  nroff -man scamper.1
 .\"  groff -man -Tascii scamper.1 | man2html -title scamper.1
 .\"
-.Dd March 1, 2023
+.Dd March 20, 2023
 .Dt SCAMPER 1
 .Os
 .\""""""""""""
@@ -221,6 +221,24 @@ output results in
 format.  Suitable for archiving measurement
 results and for use by researchers as it records details that cannot be
 easily represented with the text option.
+.It
+.Sy warts.gz:
+output results in
+.Xr warts 5
+format, compressed with
+.Xr gz 1 .
+.It
+.Sy warts.bz2:
+output results in
+.Xr warts 5
+format, compressed with
+.Xr bzip2 1 .
+.It
+.Sy warts.xz:
+output results in
+.Xr warts 5
+format, compressed with
+.Xr xz 1 .
 .It
 .Sy json:
 output results in JSON format.  Suitable for processing measurement

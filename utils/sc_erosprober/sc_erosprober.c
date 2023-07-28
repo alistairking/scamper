@@ -5,6 +5,7 @@
  * Authors       : Matthew Luckie
  *
  * Copyright (C) 2018-2023 Matthew Luckie
+ * Copyright (C) 2023      The Regents of the University of California
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -50,6 +51,7 @@ static int                    decode_in_fd  = -1;
 static int                    decode_out_fd = -1;
 static char                  *addrfile_name = NULL;
 static char                  *outfile_name  = NULL;
+static char                  *outfile_type  = "warts";
 static scamper_file_t        *outfile       = NULL;
 static scamper_file_filter_t *decode_filter = NULL;
 static FILE                  *logfile       = NULL;
@@ -138,8 +140,12 @@ static void usage(uint32_t opt_mask)
   if(opt_mask & OPT_OPTION)
     {
       fprintf(stderr, "   -O options\n");
+      fprintf(stderr, "      gz: gzip compress the warts output\n");
       fprintf(stderr, "      noshuffle: do not shuffle address file\n");
       fprintf(stderr, "      nooutfile: do not write an output file\n");
+      fprintf(stderr, "      warts.gz: gzip compress the warts output\n");
+      fprintf(stderr, "      warts.bz2: bzip2 compress the warts output\n");
+      fprintf(stderr, "      warts.xz: xz compress the warts output\n");
     }
   if(opt_mask & OPT_PORT)
     fprintf(stderr, "   -p port to find scamper on\n");
@@ -196,6 +202,39 @@ static int check_options(int argc, char *argv[])
 	    shuffle = 0;
 	  else if(strcasecmp(optarg, "nooutfile") == 0)
 	    nooutfile = 1;
+	  else if(strcasecmp(optarg, "gz") == 0 ||
+		  strcasecmp(optarg, "warts.gz") == 0)
+	    {
+#ifdef HAVE_ZLIB
+	      outfile_type = "warts.gz";
+#else
+	      fprintf(stderr, "cannot write %s: did not link against zlib\n",
+		      optarg);
+	      return -1;
+#endif
+	    }
+	  else if(strcasecmp(optarg, "bz2") == 0 ||
+		  strcasecmp(optarg, "warts.bz2") == 0)
+	    {
+#ifdef HAVE_LIBBZ2
+	      outfile_type = "warts.bz2";
+#else
+	      fprintf(stderr, "cannot write %s: did not link against libbz2\n",
+		      optarg);
+	      return -1;
+#endif
+	    }
+	  else if(strcasecmp(optarg, "xz") == 0 ||
+		  strcasecmp(optarg, "warts.xz") == 0)
+	    {
+#ifdef HAVE_LIBLZMA
+	      outfile_type = "warts.xz";
+#else
+	      fprintf(stderr, "cannot write %s: did not link against liblzma\n",
+		      optarg);
+	      return -1;
+#endif
+	    }
 	  break;
 
 	case 'p':
@@ -536,11 +575,11 @@ static int do_outfile(void)
     }
 
   gettimeofday_wrap(&now);
-  snprintf(buf, sizeof(buf), "%s.%ld.warts",
-	   outfile_name, (long int)now.tv_sec);
+  snprintf(buf, sizeof(buf), "%s.%ld.%s",
+	   outfile_name, (long int)now.tv_sec, outfile_type);
   logprint("%s\n", buf);
 
-  if((outfile = scamper_file_open(buf, 'w', "warts")) == NULL)
+  if((outfile = scamper_file_open(buf, 'w', outfile_type)) == NULL)
     {
       fprintf(stderr, "%s: could not open %s\n", __func__, buf);
       return -1;

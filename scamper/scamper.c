@@ -1,7 +1,7 @@
 /*
  * scamper
  *
- * $Id: scamper.c,v 1.284 2022/08/25 19:32:47 mjl Exp $
+ * $Id: scamper.c,v 1.288 2023/03/21 20:37:34 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -290,6 +290,15 @@ static void usage(uint32_t opt_mask)
       usage_str('O', "specify options to use:");
       usage_line("text: output results in plain text for interactive use");
       usage_line("warts: output results in warts format for science");
+#ifdef HAVE_ZLIB
+      usage_line("warts.gz: output results in gzipped warts format");
+#endif
+#ifdef HAVE_LIBBZ2
+      usage_line("warts.bz2: output results in bzip2 warts format"); 
+#endif
+#ifdef HAVE_LIBLZMA
+      usage_line("warts.xz: output results in xz warts format");
+#endif
       usage_line("tsps: input file for ping -T tsprespec=%s");
       usage_line("cmdfile: input file specifies whole commands");
       usage_line("json: output results in json format, better to use warts");
@@ -607,6 +616,18 @@ static int check_options(int argc, char *argv[])
 	    outtype = optarg;
 	  else if(strcasecmp(optarg, "json") == 0)
 	    outtype = optarg;
+#ifdef HAVE_ZLIB
+	  else if(strcasecmp(optarg, "warts.gz") == 0)
+	    outtype = optarg;
+#endif
+#ifdef HAVE_LIBBZ2
+	  else if(strcasecmp(optarg, "warts.bz2") == 0)
+	    outtype = optarg;
+#endif
+#ifdef HAVE_LIBLZMA
+	  else if(strcasecmp(optarg, "warts.xz") == 0)
+	    outtype = optarg;
+#endif
 	  else if(strcasecmp(optarg, "tsps") == 0)
 	    intype = optarg;
 	  else if(strcasecmp(optarg, "cmdfile") == 0)

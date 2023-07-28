@@ -1,7 +1,7 @@
 /*
  * utils.c
  *
- * $Id: utils.c,v 1.209 2023/01/03 02:17:09 mjl Exp $
+ * $Id: utils.c,v 1.211 2023/03/15 06:46:06 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -565,7 +565,7 @@ static int array_insert_0(void **array, size_t *nmemb, void *item,
 int array_insert(void ***array, size_t *nmemb, void *item, array_cmp_t cmp)
 {
   size_t len;
-  assert(nmemb != NULL); assert(*nmemb >= 0);
+  assert(nmemb != NULL);
   len = ((*nmemb) + 1) * sizeof(void *);
   if(realloc_wrap((void **)array, len) != 0)
     return -1;
@@ -577,7 +577,7 @@ int array_insert_gb(void ***array, size_t *nmemb, size_t *mmemb, size_t growby,
 {
   size_t len;
 
-  assert(nmemb != NULL && *nmemb >= 0);
+  assert(nmemb != NULL);
   if(*nmemb + 1 >= *mmemb)
     {
       assert(*mmemb + growby > *nmemb);
@@ -597,7 +597,7 @@ int array_insert_dm(void ***array, size_t *nmemb, void *item,
 {
   size_t len;
 
-  assert(nmemb != NULL && *nmemb >= 0);
+  assert(nmemb != NULL);
   len = ((*nmemb) + 1) * sizeof(void *);
   if(realloc_wrap_dm((void **)array, len, file, line) != 0)
     return -1;
@@ -611,7 +611,7 @@ int array_insert_gb_dm(void ***array, size_t *nmemb, size_t *mmemb,
 {
   size_t len;
 
-  assert(nmemb != NULL && *nmemb >= 0);
+  assert(nmemb != NULL);
   if(*nmemb + 1 >= *mmemb)
     {
       assert(*mmemb + growby > *nmemb);
@@ -628,7 +628,7 @@ int array_insert_gb_dm(void ***array, size_t *nmemb, size_t *mmemb,
 void array_remove(void **array, size_t *nmemb, size_t p)
 {
   assert(*nmemb > 0);
-  assert(p >= 0 && p < *nmemb);
+  assert(p < *nmemb);
   memmove(array+p, array+p+1, ((*nmemb)-p-1) * sizeof(void *));
   *nmemb = *nmemb - 1;
   return;
@@ -1422,6 +1422,16 @@ int string_isdash(const char *str)
   return 0;
 }
 #endif
+
+int string_endswith(const char *in, const char *ending)
+{
+  size_t in_len = strlen(in);
+  size_t end_len = strlen(ending);
+  if(end_len >= in_len ||
+     strcasecmp(in + in_len - end_len, ending) != 0)
+    return 0;
+  return 1;
+}
 
 void mem_concat(void *dst,const void *src,size_t len,size_t *off,size_t size)
 {

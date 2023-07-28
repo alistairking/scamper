@@ -1,7 +1,7 @@
 /*
  * sc_hoiho: Holistic Orthography of Internet Hostname Observations
  *
- * $Id: sc_hoiho.c,v 1.19 2023/01/03 02:43:13 mjl Exp $
+ * $Id: sc_hoiho.c,v 1.20 2023/03/16 00:09:36 mjl Exp $
  *
  *         Matthew Luckie
  *         mjl@luckie.org.nz
@@ -1215,8 +1215,8 @@ static int class_cmp(uint8_t a, uint8_t b)
    */
   static const uint8_t rank[] = {2, 0, 1, 3};
   uint8_t ar, br;
-  assert(a >= 0 && a <= 3);
-  assert(b >= 0 && b <= 3);
+  assert(a <= 3);
+  assert(b <= 3);
   ar = rank[a]; br = rank[b];
   if(ar < br) return -1;
   if(ar > br) return  1;
@@ -2405,7 +2405,6 @@ static int pt_to_bits_noip(const sc_ifacedom_t *ifd,
 
   for(i=0; i<cc; i+=2)
     {
-      assert(c[i] >= 0);
       assert(c[i+1] >= c[i]);
 
       /*
@@ -21728,7 +21727,7 @@ static int load_dict_geohints(void)
 	  goto done;
 	}
 
-      x = hint->code[0] - 'a'; assert(x >= 0 && x < 26);
+      x = hint->code[0] - 'a'; assert(x < 26);
       geohint_plc[x]++;
       hint->flags |= GEOHINT_FLAG_FACILITY;
     }
@@ -21950,7 +21949,6 @@ static int load_dict(void)
 static int rttload_router_finish(sc_rttload_t *rtl)
 {
   assert(rtl->rtr->rtts == NULL);
-  assert(rtl->rttc >= 0);
   if(rtl->rttc == 0)
     return 0;
   if((rtl->rtr->rtts = memdup(rtl->rtts, sizeof(sc_rtt_t) * rtl->rttc)) == NULL)

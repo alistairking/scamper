@@ -6,9 +6,9 @@
 .\" Copyright (c) 2019 Matthew Luckie
 .\"                    All rights reserved
 .\"
-.\" $Id: sc_erosprober.1,v 1.3 2021/10/25 21:13:48 mjl Exp $
+.\" $Id: sc_erosprober.1,v 1.5 2023/03/22 01:38:57 mjl Exp $
 .\"
-.Dd September 8, 2019
+.Dd March 22, 2023
 .Dt SC_EROSPROBER 1
 .Os
 .Sh NAME
@@ -80,6 +80,24 @@ do not shuffle the order of addresses before probing starts.
 .It
 .Sy nooutfile:
 do not write to warts files, just do the probing.
+.It
+.Sy gz:
+gzip compress the warts output.
+.It
+.Sy warts.gz:
+gzip compress the warts output.
+.It
+.Sy bz2:
+bzip2 compress the warts output.
+.It
+.Sy warts.bz2:
+bzip2 compress the warts output.
+.It
+.Sy xz:
+xz compress the warts output.
+.It
+.Sy warts.xz:
+xz compress the warts output.
 .El
 .It Fl p Ar port
 specifies the port on the local host where

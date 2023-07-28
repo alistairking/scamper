@@ -9,7 +9,7 @@
  *
  * Authors: Ben Stasiewicz, Matthew Luckie
  *
- * $Id: scamper_tbit.c,v 1.54 2023/01/03 06:56:17 mjl Exp $
+ * $Id: scamper_tbit.c,v 1.55 2023/03/14 18:59:52 mjl Exp $
  *
  * This file implements algorithms described in the tbit-1.0 source code,
  * as well as the papers:
@@ -250,7 +250,6 @@ void scamper_tbit_tcpq_free(scamper_tbit_tcpq_t *q, void (*ff)(void *))
 int scamper_tbit_tcpq_seg(scamper_tbit_tcpq_t *q, uint32_t *seq, uint16_t *len)
 {
   tqe_t *tqe;
-  assert(q->tqec >= 0);
   if(q->tqec == 0)
     return -1;
   tqe = q->tqes[0];
@@ -325,7 +324,6 @@ int scamper_tbit_tcpq_sack(scamper_tbit_tcpq_t *q, uint32_t *sack, int count)
   int off, c = 0;
   size_t i;
 
-  assert(q->tqec >= 0);
   if(q->tqec == 0)
     return 0;
 

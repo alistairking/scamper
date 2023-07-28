@@ -6,6 +6,7 @@
  *
  * Copyright (C) 2010,2018 The University of Waikato
  * Copyright (C) 2022-2023 Matthew Luckie
+ * Copyright (C) 2023      The Regents of the University of California
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -20,7 +21,7 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
- * $Id: sc_tbitpmtud.c,v 1.27 2023/02/24 04:06:14 mjl Exp $
+ * $Id: sc_tbitpmtud.c,v 1.31 2023/03/22 01:38:57 mjl Exp $
  */
 
 #ifdef HAVE_CONFIG_H
@@ -92,6 +93,7 @@ static char                  *readbuf       = NULL;
 static size_t                 readbuf_len   = 0;
 static int                    port          = 31337;
 static char                  *addressfile   = NULL;
+static char                  *outfile_type  = "warts";
 static char                  *outfile_name  = NULL;
 static scamper_file_t        *outfile       = NULL;
 static int                    outfile_obj   = 0;
@@ -170,6 +172,7 @@ typedef struct target
 #define OPT_MTU         0x0200
 #define OPT_DUMP        0x0400
 #define OPT_IP2AS       0x0800
+#define OPT_OPTIONS     0x1000
 
 static void usage(uint32_t opts)
 {
@@ -178,7 +181,7 @@ static void usage(uint32_t opts)
   fprintf(stderr,
   "usage: sc_tbitpmtud [-r] [-a addressfile] [-o outfile] [-p port]\n"
   "                    [-c completed] [-l limit] [-m mtu] [-t textfile]\n"
-  "                    [-w window]\n"
+  "                    [-O options] [-w window]\n"
   "\n"
   "       sc_tbitpmtud [-d dumpid] [-A ip2as] [-m mtu] file1 .. fileN\n");
 
@@ -212,9 +215,10 @@ static void usage(uint32_t opts)
     fprintf(stderr, "       -m: pseudo maximum transmission unit\n");
   if(opts & OPT_OUTFILE)
     fprintf(stderr, "       -o: write raw data to specified file\n");
+  if(opts & OPT_OPTIONS)
+    fprintf(stderr, "       -O: options\n");
   if(opts & OPT_PORT)
     fprintf(stderr, "       -p: find local scamper process on local port\n");
-  if(opts & OPT_LIMIT)
   if(opts & OPT_RANDOM)
     fprintf(stderr, "       -r: probe systems in random order\n");
   if(opts & OPT_TEXT)
@@ -228,7 +232,7 @@ static void usage(uint32_t opts)
 static int check_options(int argc, char *argv[])
 {
   int x = 0, ch; long lo;
-  char *opts = "?A:a:c:d:l:m:o:p:rt:w:";
+  char *opts = "?A:a:c:d:l:m:o:O:p:rt:w:";
   char *opt_port = NULL, *opt_text = NULL, *opt_limit = NULL;
   char *opt_window = NULL, *opt_comp = NULL, *opt_mtu = NULL;
   char *opt_dumpid = NULL;
@@ -274,6 +278,47 @@ static int check_options(int argc, char *argv[])
 	case 'o':
 	  options |= OPT_OUTFILE;
 	  outfile_name = optarg;
+	  break;
+
+	case 'O':
+	  if(strcasecmp(optarg, "gz") == 0 ||
+	     strcasecmp(optarg, "warts.gz") == 0)
+	    {
+#ifdef HAVE_ZLIB
+	      outfile_type = "warts.gz";
+#else
+	      fprintf(stderr, "cannot write %s: did not link against zlib\n",
+		      optarg);
+	      return -1;
+#endif
+	    }
+	  else if(strcasecmp(optarg, "bz2") == 0 ||
+		  strcasecmp(optarg, "warts.bz2") == 0)
+	    {
+#ifdef HAVE_LIBBZ2
+	      outfile_type = "warts.bz2";
+#else
+	      fprintf(stderr, "cannot write %s: did not link against libbz2\n",
+		      optarg);
+	      return -1;
+#endif
+	    }
+	  else if(strcasecmp(optarg, "xz") == 0 ||
+		  strcasecmp(optarg, "warts.xz") == 0)
+	    {
+#ifdef HAVE_LIBLZMA
+	      outfile_type = "warts.xz";
+#else
+	      fprintf(stderr, "cannot write %s: did not link against liblzma\n",
+		      optarg);
+	      return -1;
+#endif
+	    }
+	  else
+	    {
+	      usage(OPT_OPTIONS);
+	      return -1;
+	    }
 	  break;
 
 	case 'p':
@@ -1134,8 +1179,9 @@ static int do_decoderead(void)
 	  outfile = NULL;
 	}
       outfile_obj = 0;
-      snprintf(buf, sizeof(buf), "%s_%02d.warts", outfile_name, outfile_i++);
-      if((outfile = scamper_file_open(buf, 'w', "warts")) == NULL)
+      snprintf(buf, sizeof(buf), "%s_%02d.%s", outfile_name, outfile_i++,
+	       outfile_type);
+      if((outfile = scamper_file_open(buf, 'w', outfile_type)) == NULL)
 	return -1;
     }
 

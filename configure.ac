@@ -1,6 +1,6 @@
 # Process this file with autoconf to produce a configure script.
 
-AC_INIT([scamper],[20230302],[mjl@luckie.org.nz])
+AC_INIT([scamper],[20230323],[mjl@luckie.org.nz])
 
 AC_CONFIG_SRCDIR([scamper/scamper.c])
 AC_CONFIG_HEADERS([config.h])
@@ -147,6 +147,20 @@ AC_CHECK_LIB([z], [inflateEnd],
 	ZLIB_LIBS="-lz"
 	])
 AC_SUBST(ZLIB_LIBS)
+
+AC_CHECK_LIB([bz2], [BZ2_bzDecompressInit],
+	[
+	AC_DEFINE([HAVE_LIBBZ2], [1], [Define to 1 if you have libbz2])
+	LIBBZ2_LIBS="-lbz2"
+	])
+AC_SUBST(LIBBZ2_LIBS)
+
+AC_CHECK_LIB([lzma], [lzma_code],
+	[
+	AC_DEFINE([HAVE_LIBLZMA], [1], [Define to 1 if you have liblzma])
+	LIBLZMA_LIBS="-llzma"
+	])
+AC_SUBST(LIBLZMA_LIBS)
 
 # Checks for header files.
 AC_HEADER_SYS_WAIT
