@@ -1,20 +1,37 @@
 VERSION 0.6
-FROM debian:stable-slim
-WORKDIR /scamper
 
 all:
         BUILD +build
 
-deps:
+base-debian:
+        FROM debian:stable-slim
+        WORKDIR /scamper
+
+base-alpine:
+        FROM alpine:latest
+        WORKDIR /scamper
+
+deps-debian:
+        FROM +base-debian
         RUN apt-get update && \
             apt-get install -y \
                     build-essential \
                     autoconf \
                     libtool
 
+deps-alpine:
+        FROM +base-alpine
+        RUN apk add --update \
+             alpine-sdk \
+             autoconf \
+             automake \
+             libtool \
+             linux-headers
+
 # TODO: figure out how to get this to cache properly
 build:
-        FROM +deps
+        ARG base=debian
+        FROM +deps-${base}
         COPY --dir --keep-ts \
              *.[ch] lib scamper utils configure.ac Makefile.am m4 \
              ./
@@ -22,8 +39,22 @@ build:
         RUN ./configure
         RUN make
         ARG TARGETPLATFORM
-        SAVE ARTIFACT scamper/scamper ${TARGETPLATFORM}/scamper \
-             AS LOCAL ./build/${TARGETPLATFORM}/scamper
+        SAVE ARTIFACT scamper/scamper ${base}/${TARGETPLATFORM}/scamper \
+             AS LOCAL ./build/${base}/${TARGETPLATFORM}/scamper
+
+build-multiarch:
+        BUILD \
+              --platform=linux/arm/v7 \
+              --platform=linux/arm/v6 \
+              --platform=linux/arm64 \
+              --platform=linux/amd64 \
+              +build --base=debian
+        BUILD \
+              --platform=linux/arm/v7 \
+              --platform=linux/arm/v6 \
+              --platform=linux/arm64 \
+              --platform=linux/amd64 \
+              +build --base=alpine
 
 # TODO: fix
 dist:
@@ -33,17 +64,11 @@ dist:
         SAVE ARTIFACT scamper-cvs-*.tar.gz \
              AS LOCAL ./dist/
 
-build-multiarch:
-        BUILD \
-              --platform=linux/arm/v7 \
-              --platform=linux/arm/v6 \
-              --platform=linux/arm64 \
-              --platform=linux/amd64 \
-              +build
-
 docker:
         ARG TARGETPLATFORM
-        COPY +build/${TARGETPLATFORM}/scamper /usr/local/bin/scamper
+        ARG base=debian
+        FROM +base-${base}
+        COPY +build/${base}/${TARGETPLATFORM}/scamper /usr/local/bin/scamper
         ENTRYPOINT ["/usr/local/bin/scamper"]
         ARG EARTHLY_TARGET_TAG_DOCKER
         ARG EARTHLY_GIT_SHORT_HASH
@@ -51,10 +76,13 @@ docker:
         ARG img="${org}/scamper"
         IF [ "${EARTHLY_TARGET_TAG_DOCKER}" = "master" ]
            ARG latest="${img}:latest"
+           IF [ "${base}" != "debian" ]
+              ARG latest="${base}-${latest}"
+           END
         END
         SAVE IMAGE --push \
-             ${img}:${EARTHLY_TARGET_TAG_DOCKER} \
-             ${img}:${EARTHLY_GIT_SHORT_HASH} \
+             ${img}:${base}-${EARTHLY_TARGET_TAG_DOCKER} \
+             ${img}:${base}-${EARTHLY_GIT_SHORT_HASH} \
              ${latest}
 
 docker-multiarch:
@@ -63,7 +91,13 @@ docker-multiarch:
               --platform=linux/arm/v6 \
               --platform=linux/arm64 \
               --platform=linux/amd64 \
-              +docker
+              +docker --base=debian
+        BUILD \
+              --platform=linux/arm/v7 \
+              --platform=linux/arm/v6 \
+              --platform=linux/arm64 \
+              --platform=linux/amd64 \
+              +docker --base=alpine
 
 # Earthly has a bug so can't RUN without /bin/sh
 # https://github.com/earthly/earthly/issues/1097
@@ -72,6 +106,7 @@ pkg-fix:
         SAVE ARTIFACT /pkg kentik-pkg
 
 pkg:
+        FROM +base-debian
         COPY +pkg-fix/kentik-pkg /usr/bin/pkg
         ARG EARTHLY_TARGET_TAG
         ARG TARGETPLATFORM
@@ -80,7 +115,7 @@ pkg:
         ARG type=deb
         ARG version="${EARTHLY_TARGET_TAG}"
         ARG pkg_arch="${TARGETARCH}${TARGETVARIANT}"
-        COPY +build/${TARGETPLATFORM}/scamper ./
+        COPY +build/debian/${TARGETPLATFORM}/scamper ./
         COPY package.yml ./
         RUN rm -f *.${type}
         RUN /usr/bin/pkg \
@@ -104,6 +139,7 @@ pkg-multiarch:
               +pkg-deb-rpm
 
 docs-deps:
+        FROM +base-debian
         RUN apt-get update && \
             apt-get install -y \
                     perl groff ghostscript
@@ -115,7 +151,7 @@ docs:
         SAVE ARTIFACT man/*.pdf AS LOCAL docs/
 
 # To support native macos (etc.) builds
-# TODO: this feels clunky and repetetive. Is there no better way?
+# TODO: this feels clunky and repetitive. Is there no better way?
 bootstrap-native:
         LOCALLY
         RUN autoreconf -vfi
