@@ -21,7 +21,7 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
- * $Id: sc_tbitpmtud.c,v 1.31 2023/03/22 01:38:57 mjl Exp $
+ * $Id: sc_tbitpmtud.c,v 1.34 2023/05/29 21:22:27 mjl Exp $
  */
 
 #ifdef HAVE_CONFIG_H
@@ -797,8 +797,7 @@ static int parse_list(char *str, void *param)
     return -1;
 
   if(scamper_addr_isreserved(tf.addr) != 0 ||
-     (SCAMPER_ADDR_TYPE_IS_IPV6(tf.addr) &&
-      scamper_addr_isunicast(tf.addr) != 1))
+     (scamper_addr_isipv6(tf.addr) && scamper_addr_isunicast(tf.addr) != 1))
     {
       scamper_addr_free(tf.addr);
       return 0;
@@ -816,7 +815,7 @@ static int parse_list(char *str, void *param)
       target->addr  = scamper_addr_use(tf.addr);
       target->sport = 1024;
 
-      if(target->addr->type == SCAMPER_ADDR_TYPE_IPV4)
+      if(scamper_addr_isipv4(target->addr))
 	target->mss = 1460;
       else
 	target->mss = 1440;
@@ -1088,7 +1087,7 @@ static int process_tbit(target_t *target, scamper_tbit_t *tbit)
 
   target->sport++;
 
-  if(target->addr->type == SCAMPER_ADDR_TYPE_IPV6)
+  if(scamper_addr_isipv6(target->addr))
     ipv6 = 1;
 
   /* some conditions mean that we'll stop evaluating pmtud */
@@ -1188,7 +1187,7 @@ static int do_decoderead(void)
   if(type == SCAMPER_FILE_OBJ_PING)
     {
       ping = (scamper_ping_t *)data;
-      findme.addr = ping->dst;
+      findme.addr = scamper_ping_dst_get(ping);
       if(scamper_file_write_ping(outfile, ping, NULL) != 0)
 	return -1;
       outfile_obj++;
@@ -1196,7 +1195,7 @@ static int do_decoderead(void)
   else if(type == SCAMPER_FILE_OBJ_TBIT)
     {
       tbit = (scamper_tbit_t *)data;
-      findme.addr = tbit->dst;
+      findme.addr = scamper_tbit_dst_get(tbit);
       if(scamper_file_write_tbit(outfile, tbit, NULL) != 0)
 	return -1;
       outfile_obj++;
@@ -1391,13 +1390,13 @@ static sc_prefix_t *sc_prefix_alloc(int af, void *net, int len)
 
 static int ip2as_line(char *line, void *param)
 {
-  scamper_addr_t sa;
+  scamper_addr_t *sa;
   sc_prefix_t *p = NULL;
   char *n, *m, *a, *at;
   struct in_addr in;
   struct in6_addr in6;
   uint32_t u32, *ases = NULL;
-  int asc = 0, last = 0;
+  int asc = 0, last = 0, rsvd;
   long lo;
 
   if(line[0] == '\0' || line[0] == '#')
@@ -1429,9 +1428,11 @@ static int ip2as_line(char *line, void *param)
     {
       if(lo < IPV4_PREFIX_MIN || lo > IPV4_PREFIX_MAX)
 	return 0;
-      sa.type = SCAMPER_ADDR_TYPE_IPV4;
-      sa.addr = &in;
-      if(scamper_addr_isreserved(&sa))
+      if((sa = scamper_addr_alloc_ipv4(&in)) == NULL)
+	goto err;
+      rsvd = scamper_addr_isreserved(sa);
+      scamper_addr_free(sa);
+      if(rsvd != 0)
 	return 0;
       if((p = sc_prefix_alloc(AF_INET, &in, lo)) == NULL)
 	goto err;
@@ -1440,9 +1441,11 @@ static int ip2as_line(char *line, void *param)
     {
       if(lo < IPV6_PREFIX_MIN || lo > IPV6_PREFIX_MAX)
 	return 0;
-      sa.type = SCAMPER_ADDR_TYPE_IPV6;
-      sa.addr = &in6;
-      if(scamper_addr_isreserved(&sa))
+      if((sa = scamper_addr_alloc_ipv6(&in6)) == NULL)
+	goto err;
+      rsvd = scamper_addr_isreserved(sa);
+      scamper_addr_free(sa);
+      if(rsvd != 0)
 	return 0;
       if((p = sc_prefix_alloc(AF_INET6, &in6, lo)) == NULL)
 	goto err;
@@ -1491,20 +1494,21 @@ static int ip2as_line(char *line, void *param)
   return -1;
 }
 
-static sc_prefix_t *sc_prefix_find(scamper_addr_t *addr)
+static sc_prefix_t *sc_prefix_find(const scamper_addr_t *addr)
 {
+  const void *va = scamper_addr_addr_get(addr);
   prefix4_t *p4;
   prefix6_t *p6;
 
-  if(addr->type == SCAMPER_ADDR_TYPE_IPV4)
+  switch(scamper_addr_type_get(addr))
     {
-      if((p4 = prefixtree_find_ip4(ip2as_pt_4, addr->addr)) == NULL)
+    case SCAMPER_ADDR_TYPE_IPV4:
+      if((p4 = prefixtree_find_ip4(ip2as_pt_4, va)) == NULL)
         return NULL;
       return p4->ptr;
-    }
-  else if(addr->type == SCAMPER_ADDR_TYPE_IPV6)
-    {
-      if((p6 = prefixtree_find_ip6(ip2as_pt_6, addr->addr)) == NULL)
+
+    case SCAMPER_ADDR_TYPE_IPV6:
+      if((p6 = prefixtree_find_ip6(ip2as_pt_6, va)) == NULL)
         return NULL;
       return p6->ptr;
     }
@@ -1579,57 +1583,60 @@ static int init_1(void)
 
 static int process_1_tbit(scamper_tbit_t *tbit)
 {
-  scamper_tbit_pmtud_t *pmtud;
+  const scamper_tbit_pmtud_t *pmtud;
+  scamper_addr_t *dst;
   sc_mssresult_t *mr;
   sc_mssresult_t *tmr;
+  uint16_t server_mss;
   int rc = -1;
   int x;
 
-  if(tbit->server_mss == 0 || tbit->type != SCAMPER_TBIT_TYPE_PMTUD)
+  server_mss = scamper_tbit_server_mss_get(tbit);
+  if(server_mss == 0 || scamper_tbit_type_get(tbit) != SCAMPER_TBIT_TYPE_PMTUD)
     {
       rc = 0;
       goto done;
     }
 
-  pmtud = tbit->data;
-  if(pmtud->mtu != mtu)
+  pmtud = scamper_tbit_pmtud_get(tbit);
+  if(scamper_tbit_pmtud_mtu_get(pmtud) != mtu)
     {
       rc = 0;
       goto done;
     }
 
-  if(SCAMPER_ADDR_TYPE_IS_IPV4(tbit->dst))
+  dst = scamper_tbit_dst_get(tbit);
+  if(scamper_addr_isipv4(dst))
     {
-      if((mr = table_1_4[tbit->server_mss]) == NULL)
+      if((mr = table_1_4[server_mss]) == NULL)
 	{
 	  if((mr = malloc_zero(sizeof(sc_mssresult_t))) == NULL)
 	    goto done;
-	  table_1_4[tbit->server_mss] = mr;
-	  mr->mss = tbit->server_mss;
+	  table_1_4[server_mss] = mr;
+	  mr->mss = server_mss;
 	}
       tmr = total_1_4;
     }
-  else if(SCAMPER_ADDR_TYPE_IS_IPV6(tbit->dst))
+  else if(scamper_addr_isipv6(dst))
     {
-      if((mr = table_1_6[tbit->server_mss]) == NULL)
+      if((mr = table_1_6[server_mss]) == NULL)
 	{
 	  if((mr = malloc_zero(sizeof(sc_mssresult_t))) == NULL)
 	    goto done;
-	  table_1_6[tbit->server_mss] = mr;
-	  mr->mss = tbit->server_mss;
+	  table_1_6[server_mss] = mr;
+	  mr->mss = server_mss;
 	}
       tmr = total_1_6;
     }
   else goto done;
 
-  if(tbit->result == SCAMPER_TBIT_RESULT_PMTUD_SUCCESS)
-    x = 0;
-  else if(tbit->result == SCAMPER_TBIT_RESULT_PMTUD_FAIL)
-    x = 1;
-  else if(tbit->result == SCAMPER_TBIT_RESULT_PMTUD_TOOSMALL)
-    x = 2;
-  else
-    x = 3;
+  switch(scamper_tbit_result_get(tbit))
+    {
+    case SCAMPER_TBIT_RESULT_PMTUD_SUCCESS: x = 0; break;
+    case SCAMPER_TBIT_RESULT_PMTUD_FAIL: x = 1; break;
+    case SCAMPER_TBIT_RESULT_PMTUD_TOOSMALL: x = 2; break;
+    default: x = 3; break;
+    }
   mr->results[x]++;
   tmr->results[x]++;
   mr->count++;
@@ -1779,31 +1786,35 @@ static int init_2(void)
 
 static int process_2_tbit(scamper_tbit_t *tbit)
 {
-  scamper_tbit_pmtud_t *pmtud;
+  const scamper_tbit_pmtud_t *pmtud;
   sc_asnresult_t *tasr, *asr;
+  scamper_addr_t *dst;
   splaytree_t *artree;
   sc_prefix_t *pfx;
   int x, rc = -1;
 
-  if(tbit->server_mss == 0 || tbit->type != SCAMPER_TBIT_TYPE_PMTUD)
+  if(scamper_tbit_server_mss_get(tbit) == 0 ||
+     scamper_tbit_type_get(tbit) != SCAMPER_TBIT_TYPE_PMTUD)
     {
       rc = 0;
       goto done;
     }
 
-  pmtud = tbit->data;
-  if(pmtud->mtu != mtu || (pfx = sc_prefix_find(tbit->dst)) == NULL)
+  dst = scamper_tbit_dst_get(tbit);
+  pmtud = scamper_tbit_pmtud_get(tbit);
+  if(scamper_tbit_pmtud_mtu_get(pmtud) != mtu ||
+     (pfx = sc_prefix_find(dst)) == NULL)
     {
       rc = 0;
       goto done;
     }
 
-  if(SCAMPER_ADDR_TYPE_IS_IPV4(tbit->dst))
+  if(scamper_addr_isipv4(dst))
     {
       artree = tree_2_4;
       tasr = total_2_4;
     }
-  else if(SCAMPER_ADDR_TYPE_IS_IPV6(tbit->dst))
+  else if(scamper_addr_isipv6(dst))
     {
       artree = tree_2_6;
       tasr = total_2_6;
@@ -1812,15 +1823,14 @@ static int process_2_tbit(scamper_tbit_t *tbit)
 
   if((asr = sc_asnresult_get(artree, pfx->asmap)) == NULL)
     goto done;
-  
-  if(tbit->result == SCAMPER_TBIT_RESULT_PMTUD_SUCCESS)
-    x = 0;
-  else if(tbit->result == SCAMPER_TBIT_RESULT_PMTUD_FAIL)
-    x = 1;
-  else if(tbit->result == SCAMPER_TBIT_RESULT_PMTUD_TOOSMALL)
-    x = 2;
-  else
-    x = 3;
+
+  switch(scamper_tbit_result_get(tbit))
+    {
+    case SCAMPER_TBIT_RESULT_PMTUD_SUCCESS: x = 0; break;
+    case SCAMPER_TBIT_RESULT_PMTUD_FAIL: x = 1; break;
+    case SCAMPER_TBIT_RESULT_PMTUD_TOOSMALL: x = 2; break;
+    default: x = 3; break;
+    }
   asr->results[x]++;
   asr->count++;
   tasr->results[x]++;

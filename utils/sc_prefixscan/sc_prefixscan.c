@@ -2,10 +2,11 @@
  * sc_prefixscan : scamper driver to collect evidence of pt2pt links
  *                 using the prefixscan method
  *
- * $Id: sc_prefixscan.c,v 1.14 2023/01/03 06:48:23 mjl Exp $
+ * $Id: sc_prefixscan.c,v 1.22 2023/05/29 07:21:07 mjl Exp $
  *
- * Copyright (C) 2011, 2016 The University of Waikato
- * Copyright (C) 2019-2022  Matthew Luckie
+ * Copyright (C) 2011,2016 The University of Waikato
+ * Copyright (C) 2019-2023 Matthew Luckie
+ * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -64,6 +65,8 @@ static char                  *infile        = NULL;
 static unsigned int           port          = 0;
 static char                  *unix_name     = NULL;
 static char                  *outfile_name  = NULL;
+static char                  *outfile_type  = "warts";
+static scamper_file_t        *outfile       = NULL;
 static char                  *datafile      = NULL;
 static FILE                  *text          = NULL;
 static splaytree_t           *targets       = NULL;
@@ -75,7 +78,6 @@ static int                    more          = 0;
 static int                    probing       = 0;
 static unsigned int           waittime      = 5;
 static uint8_t                prefix_len    = 0;
-static int                    outfile_fd    = -1;
 static scamper_file_filter_t *ffilter       = NULL;
 static scamper_ctrl_t        *scamper_ctrl  = NULL;
 static scamper_inst_t        *scamper_inst  = NULL;
@@ -292,6 +294,40 @@ static int check_options(int argc, char *argv[])
     {
       usage(OPT_INFILE|OPT_OUTFILE|OPT_PORT|OPT_UNIX);
       return -1;
+    }
+
+  if(string_endswith(outfile_name, ".gz") != 0)
+    {
+#ifdef HAVE_ZLIB
+      outfile_type = "warts.gz";
+#else
+      usage(OPT_OUTFILE);
+      fprintf(stderr, "cannot write to %s: did not link against zlib\n",
+	      outfile_name);
+      return -1;
+#endif
+    }
+  else if(string_endswith(outfile_name, ".bz2") != 0)
+    {
+#ifdef HAVE_LIBBZ2
+      outfile_type = "warts.bz2";
+#else
+      usage(OPT_OUTFILE);
+      fprintf(stderr, "cannot write to %s: did not link against libbz2\n",
+	      outfile_name);
+      return -1;
+#endif
+    }
+  else if(string_endswith(outfile_name, ".xz") != 0)
+    {
+#ifdef HAVE_LIBLZMA
+      outfile_type = "warts.xz";
+#else
+      usage(OPT_OUTFILE);
+      fprintf(stderr, "cannot write to %s: did not link against liblzma\n",
+	      outfile_name);
+      return -1;
+#endif
     }
 
   if(options & OPT_PORT)
@@ -705,18 +741,20 @@ static int process_ping(scamper_ping_t *ping)
   sc_target_t *target, findme;
   sc_pingtest_t *pt;
   sc_ipidseq_t *seq;
-  scamper_ping_reply_t *r[4], *rx;
+  const scamper_ping_reply_t *r[4], *rx;
   sc_test_t *test;
   uint32_t u32;
   char addr[64], icmp[10], tcp[10], udp[10];
   int class, i, j, rc;
   int samples[65536];
+  uint8_t stop_reason;
+  uint16_t ping_sent, r_ipid, r1_ipid;
 
   assert(ping != NULL);
 
   probing--;
 
-  findme.addr = ping->dst;
+  findme.addr = scamper_ping_dst_get(ping);
   if((target = splaytree_find(targets, &findme)) == NULL)
     {
       fprintf(stderr, "%s: could not find dst %s\n", __func__,
@@ -732,19 +770,21 @@ static int process_ping(scamper_ping_t *ping)
       return -1;
     }
 
-  if(ping->stop_reason == SCAMPER_PING_STOP_NONE ||
-     ping->stop_reason == SCAMPER_PING_STOP_ERROR)
+  stop_reason = scamper_ping_stop_reason_get(ping);
+  if(stop_reason == SCAMPER_PING_STOP_NONE ||
+     stop_reason == SCAMPER_PING_STOP_ERROR)
     {
       class = IPID_UNRESP;
       goto done;
     }
 
   rc = 0;
-  for(j=0; j<ping->ping_sent && rc < 4; j++)
+  ping_sent = scamper_ping_sent_get(ping);
+  for(j=0; j<ping_sent && rc < 4; j++)
     {
-      if((rx = ping->ping_replies[j]) == NULL)
+      if((rx = scamper_ping_reply_get(ping, j)) == NULL)
 	continue;
-      if(SCAMPER_PING_REPLY_FROM_TARGET(ping, rx))
+      if(scamper_ping_reply_is_from_target(ping, rx))
 	r[rc++] = rx;
     }
 
@@ -762,7 +802,8 @@ static int process_ping(scamper_ping_t *ping)
   u32 = 0;
   for(i=0; i<4; i++)
     {
-      if(r[i]->probe_ipid == r[i]->reply_ipid)
+      if(scamper_ping_reply_probe_ipid_get(r[i]) ==
+	 scamper_ping_reply_ipid_get(r[i]))
 	u32++;
     }
   if(u32 > 1)
@@ -775,8 +816,9 @@ static int process_ping(scamper_ping_t *ping)
   memset(samples, 0, sizeof(samples));
   for(i=0; i<4; i++)
     {
-      samples[r[i]->reply_ipid]++;
-      if(samples[r[i]->reply_ipid] > 1)
+      r_ipid = scamper_ping_reply_ipid_get(r[i]);
+      samples[r_ipid]++;
+      if(samples[r_ipid] > 1)
 	u32++;
     }
   if(u32 > 1)
@@ -787,10 +829,12 @@ static int process_ping(scamper_ping_t *ping)
 
   for(i=0; i<3; i++)
     {
-      if(r[i+0]->reply_ipid < r[i+1]->reply_ipid)
-	u32 = r[i+1]->reply_ipid - r[i-0]->reply_ipid;
+      r_ipid  = scamper_ping_reply_ipid_get(r[i]);
+      r1_ipid = scamper_ping_reply_ipid_get(r[i+1]);
+      if(r_ipid < r1_ipid)
+	u32 = r1_ipid - r_ipid;
       else
-	u32 = (r[i+1]->reply_ipid + 0x10000) - r[i+0]->reply_ipid;
+	u32 = (r1_ipid + 0x10000) - r_ipid;
 
       if(u32 > 5000)
 	break;
@@ -802,11 +846,11 @@ static int process_ping(scamper_ping_t *ping)
     class = IPID_RAND;
 
  done:
-  if(SCAMPER_PING_METHOD_IS_UDP(ping))
+  if(scamper_ping_method_is_udp(ping))
     seq->udp = class;
-  else if(SCAMPER_PING_METHOD_IS_TCP(ping))
+  else if(scamper_ping_method_is_tcp(ping))
     seq->tcp = class;
-  else if(SCAMPER_PING_METHOD_IS_ICMP(ping))
+  else if(scamper_ping_method_is_icmp(ping))
     seq->icmp = class;
 
   scamper_addr_tostr(pt->addr, addr, sizeof(addr));
@@ -840,32 +884,36 @@ static int process_ping(scamper_ping_t *ping)
 
 static int process_scan(scamper_dealias_t *dealias)
 {
-  scamper_dealias_prefixscan_t *scan = dealias->data;
+  const scamper_dealias_prefixscan_t *scan =
+    scamper_dealias_prefixscan_get(dealias);
+  scamper_addr_t *a, *b, *ab;
   sc_target_t *target, findme;
   sc_scantest_t *ps;
   sc_test_t *test;
-  char a[64], b[64], ab[64], buf[64];
+  char abuf[64], bbuf[64], abbuf[64];
   int done = 0;
 
   probing--;
 
-  findme.addr = scan->a;
+  a = scamper_dealias_prefixscan_a_get(scan);
+  scamper_addr_tostr(a, abuf, sizeof(abuf));
+
+  findme.addr = a;
   if((target = splaytree_find(targets, &findme)) == NULL)
     {
-      fprintf(stderr, "%s: could not find dst %s\n", __func__,
-	      scamper_addr_tostr(findme.addr, buf, sizeof(buf)));
+      fprintf(stderr, "%s: could not find dst %s\n", __func__, abuf);
       goto err;
     }
   test = target->test;
   ps = test->data;
 
-  scamper_addr_tostr(scan->a, a, sizeof(a));
-  scamper_addr_tostr(scan->b, b, sizeof(b));
+  b = scamper_dealias_prefixscan_b_get(scan);
+  scamper_addr_tostr(b, bbuf, sizeof(bbuf));
 
-  if(scan->ab != NULL)
+  if((ab = scamper_dealias_prefixscan_ab_get(scan)) != NULL)
     {
-      status("done scan %s %s/%d %s", a, b, ps->pfx,
-	     scamper_addr_tostr(scan->ab, ab, sizeof(ab)));
+      status("done scan %s %s/%d %s", abuf, bbuf, ps->pfx,
+	     scamper_addr_tostr(ab, abbuf, sizeof(abbuf)));
       done = 1;
     }
 
@@ -879,7 +927,7 @@ static int process_scan(scamper_dealias_t *dealias)
       if(sc_waittest(test) != 0)
 	return -1;
 
-      status("wait scan %s %s/%d step %d", a, b, ps->pfx, ps->step);
+      status("wait scan %s %s/%d step %d", abuf, bbuf, ps->pfx, ps->step);
       return 0;
     }
 
@@ -1042,7 +1090,7 @@ static int do_method(void)
       /* got a command, send it */
       if(off != 0)
 	{
-	  if(scamper_inst_do(scamper_inst, cmd) == NULL)
+	  if(scamper_inst_do(scamper_inst, cmd, NULL) == NULL)
 	    {
 	      fprintf(stderr, "could not send %s\n", cmd);
 	      return -1;
@@ -1073,8 +1121,7 @@ static void ctrlcb(scamper_inst_t *inst, uint8_t type, scamper_task_t *task,
     }
   else if(type == SCAMPER_CTRL_TYPE_DATA)
     {
-      if(write_wrap(outfile_fd, data, NULL, len) != 0 ||
-	 scamper_file_readbuf_add(decode_rb, data, len) != 0 ||
+      if(scamper_file_readbuf_add(decode_rb, data, len) != 0 ||
 	 scamper_file_read(decode_sf, ffilter, &obj_type, &obj_data) != 0)
 	{
 	  fprintf(stderr, "%s: could not read\n", __func__);
@@ -1083,6 +1130,12 @@ static void ctrlcb(scamper_inst_t *inst, uint8_t type, scamper_task_t *task,
 
       if(obj_data == NULL)
 	return;
+
+      if(scamper_file_write_obj(outfile, obj_type, obj_data) != 0)
+	{
+	  fprintf(stderr, "%s: could not write obj %d\n", __func__, obj_type);
+	  goto err;
+	}
 
       if(obj_type == SCAMPER_FILE_OBJ_PING)
 	{
@@ -1094,11 +1147,27 @@ static void ctrlcb(scamper_inst_t *inst, uint8_t type, scamper_task_t *task,
 	  if(process_scan((scamper_dealias_t *)obj_data) != 0)
 	    goto err;
 	}
+      else if(obj_type == SCAMPER_FILE_OBJ_CYCLE_START ||
+	      obj_type == SCAMPER_FILE_OBJ_CYCLE_STOP)
+	{
+	  scamper_cycle_free(obj_data);
+	}
+    }
+  else if(type == SCAMPER_CTRL_TYPE_ERR)
+    {
+      /* XXX: handle a "command not accepted" more gracefully */
+      goto err;
     }
   else if(type == SCAMPER_CTRL_TYPE_EOF)
     {
       scamper_inst_free(scamper_inst);
       scamper_inst = NULL;
+    }
+  else if(type == SCAMPER_CTRL_TYPE_FATAL)
+    {
+      fprintf(stderr, "%s: fatal: %s\n", __func__,
+	      scamper_ctrl_strerror(scamper_ctrl));
+      goto err;
     }
   return;
 
@@ -1115,6 +1184,8 @@ static void ctrlcb(scamper_inst_t *inst, uint8_t type, scamper_task_t *task,
  */
 static int do_scamperconnect(void)
 {
+  const char *type = "unknown";
+
   if((scamper_ctrl = scamper_ctrl_alloc(ctrlcb)) == NULL)
     {
       fprintf(stderr, "could not alloc scamper_ctrl\n");
@@ -1123,31 +1194,34 @@ static int do_scamperconnect(void)
 
   if(options & OPT_PORT)
     {
-      if((scamper_inst = scamper_inst_inet(scamper_ctrl, NULL, port)) == NULL)
-	{
-	  fprintf(stderr, "could not alloc port inst\n");
-	  return -1;
-	}
-      return 0;
+      type = "port";
+      scamper_inst = scamper_inst_inet(scamper_ctrl, NULL, NULL, port);
     }
+#ifdef HAVE_SOCKADDR_UN
   else if(options & OPT_UNIX)
     {
-      if((scamper_inst = scamper_inst_unix(scamper_ctrl, unix_name)) == NULL)
-	{
-	  fprintf(stderr, "could not alloc unix inst\n");
-	  return -1;
-	}
-      return 0;
+      type = "unix";
+      scamper_inst = scamper_inst_unix(scamper_ctrl, NULL, unix_name);
     }
+#endif
 
-  return -1;
+  if(scamper_inst == NULL)
+    {
+      fprintf(stderr, "could not alloc %s inst\n", type);
+      return -1;
+    }
+  return 0;
 }
 
 static int pf_data(void)
 {
-  uint16_t types[] = {SCAMPER_FILE_OBJ_PING, SCAMPER_FILE_OBJ_DEALIAS};
-  mode_t mode = S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH;
-  int flags = O_WRONLY | O_CREAT | O_TRUNC;
+  uint16_t types[] = {
+    SCAMPER_FILE_OBJ_CYCLE_START,
+    SCAMPER_FILE_OBJ_CYCLE_STOP,
+    SCAMPER_FILE_OBJ_PING,
+    SCAMPER_FILE_OBJ_DEALIAS
+  };
+  int typec = sizeof(types) / sizeof(uint16_t);
   struct timeval tv, *tv_ptr;
   sc_waittest_t *wait;
   int done = 0;
@@ -1157,7 +1231,7 @@ static int pf_data(void)
      (ipidseqs = splaytree_alloc(sc_ipidseq_cmp)) == NULL ||
      (virgin = slist_alloc()) == NULL ||
      (waiting = heap_alloc(sc_waittest_cmp)) == NULL ||
-     (ffilter = scamper_file_filter_alloc(types, 2)) == NULL ||
+     (ffilter = scamper_file_filter_alloc(types, typec)) == NULL ||
      (decode_sf = scamper_file_opennull('r', "warts")) == NULL ||
      (decode_rb = scamper_file_readbuf_alloc()) == NULL)
     return -1;
@@ -1174,9 +1248,9 @@ static int pf_data(void)
   if(do_scamperconnect() != 0)
     return -1;
 
-  if((outfile_fd = open(outfile_name, flags, mode)) == -1)
+  if((outfile = scamper_file_open(outfile_name, 'w', outfile_type)) == NULL)
     {
-      fprintf(stderr, "could not open %s: %s\n", outfile_name, strerror(errno));
+      fprintf(stderr, "%s: could not open output file\n", __func__);
       return -1;
     }
 
@@ -1237,10 +1311,12 @@ static int pf_read(void)
   slist_t *list = NULL;
   scamper_file_t *in = NULL;
   scamper_dealias_t *dealias;
-  scamper_dealias_prefixscan_t *ps;
-  char a[64], b[64], ab[64];
+  const scamper_dealias_prefixscan_t *ps;
+  scamper_addr_t *b, *ab;
+  char abuf[64], bbuf[64], abbuf[64];
   sc_prefixscan_t *pfs;
   uint16_t type;
+  uint8_t x;
   void *data;
 
   if(string_isdash(datafile) != 0)
@@ -1266,21 +1342,21 @@ static int pf_read(void)
 	break;
 
       dealias = data;
-      if(SCAMPER_DEALIAS_METHOD_IS_PREFIXSCAN(dealias))
+      if((ps = scamper_dealias_prefixscan_get(dealias)) != NULL)
 	{
-	  ps = dealias->data;
-	  if(ps->ab != NULL &&
-	     scamper_addr_prefixhosts(ps->b, ps->ab) >=
-	     (prefix_len == 0 ? ps->prefix : 30))
+	  b = scamper_dealias_prefixscan_b_get(ps);
+	  x = scamper_dealias_prefixscan_prefix_get(ps);
+	  if((ab = scamper_dealias_prefixscan_ab_get(ps)) != NULL &&
+	     scamper_addr_prefixhosts(b, ab) >= (prefix_len == 0 ? x : 30))
 	    {
 	      if((pfs = malloc_zero(sizeof(sc_prefixscan_t))) == NULL)
 		{
 		  fprintf(stderr, "could not record scan result\n");
 		  goto err;
 		}
-	      pfs->a = scamper_addr_use(ps->a);
-	      pfs->b = scamper_addr_use(ps->b);
-	      pfs->ab = scamper_addr_use(ps->ab);
+	      pfs->a = scamper_addr_use(scamper_dealias_prefixscan_a_get(ps));
+	      pfs->b = scamper_addr_use(b);
+	      pfs->ab = scamper_addr_use(ab);
 	      if(splaytree_insert(tree, pfs) == NULL)
 		{
 		  fprintf(stderr, "could not add scan result\n");
@@ -1303,9 +1379,9 @@ static int pf_read(void)
   while((pfs = slist_head_pop(list)) != NULL)
     {
       printf("%s %s %s/%d\n",
-	     scamper_addr_tostr(pfs->a, a, sizeof(a)),
-	     scamper_addr_tostr(pfs->b, b, sizeof(b)),
-	     scamper_addr_tostr(pfs->ab, ab, sizeof(ab)),
+	     scamper_addr_tostr(pfs->a, abuf, sizeof(abuf)),
+	     scamper_addr_tostr(pfs->b, bbuf, sizeof(bbuf)),
+	     scamper_addr_tostr(pfs->ab, abbuf, sizeof(abbuf)),
 	     scamper_addr_prefixhosts(pfs->b, pfs->ab));
       sc_prefixscan_free(pfs);
     }
@@ -1377,6 +1453,12 @@ static void cleanup(void)
     {
       fclose(text);
       text = NULL;
+    }
+
+  if(outfile != NULL)
+    {
+      scamper_file_close(outfile);
+      outfile = NULL;
     }
 
   return;

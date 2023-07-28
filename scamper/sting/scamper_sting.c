@@ -1,10 +1,12 @@
 /*
- * scamper_dealias.c
+ * scamper_sting.c
  *
- * $Id: scamper_sting.c,v 1.12 2020/03/17 07:32:16 mjl Exp $
+ * $Id: scamper_sting.c,v 1.14 2023/05/31 23:22:18 mjl Exp $
  *
  * Copyright (C) 2008-2011 The University of Waikato
  * Copyright (C) 2014      The Regents of the University of California
+ * Copyright (C) 2023      Matthew Luckie
+ *
  * Author: Matthew Luckie
  *
  * This file implements algorithms described in the sting-0.7 source code,
@@ -37,6 +39,7 @@
 #include "scamper_addr.h"
 #include "scamper_list.h"
 #include "scamper_sting.h"
+#include "scamper_sting_int.h"
 #include "utils.h"
 
 scamper_sting_pkt_t *scamper_sting_pkt_alloc(uint8_t flags, uint8_t *data,

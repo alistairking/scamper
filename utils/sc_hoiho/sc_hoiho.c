@@ -1,7 +1,7 @@
 /*
  * sc_hoiho: Holistic Orthography of Internet Hostname Observations
  *
- * $Id: sc_hoiho.c,v 1.20 2023/03/16 00:09:36 mjl Exp $
+ * $Id: sc_hoiho.c,v 1.25 2023/05/29 21:48:00 mjl Exp $
  *
  *         Matthew Luckie
  *         mjl@luckie.org.nz
@@ -10,6 +10,7 @@
  *
  * Copyright (C) 2017-2021 The University of Waikato
  * Copyright (C) 2022-2023 Matthew Luckie
+ * Copyright (C) 2023      The Regents of the University of California
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -202,7 +203,7 @@ struct sc_state
  */
 typedef struct sc_rtt
 {
-  uint32_t        loc; /* index into a geohints array */
+  sc_geohint_t   *vp;  /* where the RTT measurement was from */
   uint16_t        rtt; /* rtt, in milliseconds */
 } sc_rtt_t;
 
@@ -610,6 +611,7 @@ typedef struct sc_dump
 #define GEOHINT_TYPE_ST       8
 #define GEOHINT_TYPE_COUNTRY  9
 #define GEOHINT_TYPE_STATE    10
+#define GEOHINT_TYPE_VP       11
 
 #define GEOHINT_FLAG_FACILITY 0x01
 
@@ -694,6 +696,8 @@ static sc_country_t   **geohint_cous = NULL; /* countries, sorted by cc */
 static size_t           geohint_couc = 0;
 static sc_state_t     **geohint_stas = NULL; /* states, sorted by st/cc */
 static size_t           geohint_stac = 0;
+static sc_geohint_t   **geohint_vps  = NULL;
+static size_t           geohint_vpc  = 0;
 static sc_clligp_t    **clligps      = NULL;
 static size_t           clligpc      = 0;
 static uint16_t         refine_mask  = 0;
@@ -719,7 +723,7 @@ static int              no_clli      = 0;
 static int              ip_v         = 4;
 static int              stop_id      = 0;
 static long             threadc      = -1;
-static threadpool_t    *tp           = NULL;
+static threadpool_t    *threadp      = NULL;
 static long             dump_id      = 1;
 static const sc_dump_t  dump_funcs[] = {
   {NULL, NULL, NULL},
@@ -1252,17 +1256,6 @@ static void sc_dump4_free(sc_dump4_t *d4)
   if(d4->rtt != NULL) free(d4->rtt);
   free(d4);
   return;
-}
-
-static int sc_rtt_cmp(const void *va, const void *vb)
-{
-  const sc_rtt_t *a = (const sc_rtt_t *)va;
-  const sc_rtt_t *b = (const sc_rtt_t *)vb;
-  if(a->rtt < b->rtt) return -1;
-  if(a->rtt > b->rtt) return  1;
-  if(a->loc < b->loc) return -1;
-  if(a->loc > b->loc) return  1;
-  return 0;
 }
 
 static int sc_domain_lock(sc_domain_t *dom)
@@ -2320,7 +2313,7 @@ static int pt_to_bits(const char *str, size_t len, size_t *c, size_t cc,
     for(j=d[i]; j<=d[i+1]; j++)
       plan[j] |= dig;
 
-  i = j = 0;
+  i = 0;
   while(i < len)
     {
       j = i+1;
@@ -3046,7 +3039,6 @@ static double sc_geohint_dist(const sc_geohint_t *a, const sc_geohint_t *b)
  */
 static int sc_geohint_checkrtt(const sc_geohint_t *hint, const sc_router_t *rtr)
 {
-  sc_geohint_t *vp;
   sc_rtt_t *sample;
   double distance;
   uint16_t rtt;
@@ -3056,10 +3048,7 @@ static int sc_geohint_checkrtt(const sc_geohint_t *hint, const sc_router_t *rtr)
   for(i=0; i<rtr->rttc; i++)
     {
       sample = &rtr->rtts[i];
-      assert(sample->loc < geohintc);
-
-      vp = geohints[sample->loc];
-      distance = sc_geohint_dist(hint, vp);
+      distance = sc_geohint_dist(hint, sample->vp);
       rtt = dist2rtt(distance);
       if(rtt > sample->rtt && rtt - sample->rtt > rtt_fudge)
 	return 0;
@@ -3115,16 +3104,17 @@ static int sc_geohint_checkmap(const sc_geohint_t *hint, const sc_geomap_t *map)
   return 0;
 }
 
-static void sc_geohint_sort(sc_geohint_t **geohints, size_t geohintc)
+static void sc_geohint_sort(sc_geohint_t **in_geohints, size_t in_geohintc)
 {
   sc_geohint_t *hint, *prev, *head;
   size_t i;
 
-  array_qsort((void **)geohints, geohintc, (array_cmp_t)sc_geohint_rank_cmp);
-  prev = NULL; head = geohints[0];
-  for(i=0; i<geohintc; i++)
+  array_qsort((void **)in_geohints, in_geohintc,
+	      (array_cmp_t)sc_geohint_rank_cmp);
+  prev = NULL; head = in_geohints[0];
+  for(i=0; i<in_geohintc; i++)
     {
-      hint = geohints[i];
+      hint = in_geohints[i];
       if(strcmp(head->code, hint->code) == 0)
 	{
 	  if(prev != NULL)
@@ -3179,6 +3169,23 @@ static sc_geohint_t *sc_geohint_find(const sc_regex_t *re,
 
   /* check the global geohint array */
   return sc_geohint_findx(geohints, geohintc, map);
+}
+
+static sc_geohint_t *sc_geohint_vpfind(const char *code)
+{
+  sc_geohint_t fm, *hint;
+  sc_geomap_t map;
+
+  /* check the VP array first */
+  fm.code = (char *)code;
+  if((hint = array_find((void **)geohint_vps, geohint_vpc, (void *)&fm,
+			(array_cmp_t)sc_geohint_cmp)) != NULL)
+    return hint;
+
+  /* otherwise check the general geohint array */
+  memset(&map, 0, sizeof(map));
+  snprintf(map.code, sizeof(map.code), "%s", code);
+  return sc_geohint_find(NULL, &map);
 }
 
 static int sc_geohint_fudgepre(const sc_geohint_t *hint,const sc_geomap_t *map)
@@ -3865,7 +3872,7 @@ static int sc_geohint_fudge_place(const sc_georef_t *gr,
 	}
       if(i != geohint_couc)
 	{
-	  if((x = sc_geohint_fudge_country(gr, re, country, geoeval_list)) < 0)
+	  if(sc_geohint_fudge_country(gr, re, country, geoeval_list) < 0)
 	    return -1;
 	  if(slist_count(geoeval_list) > 0)
 	    return 0;
@@ -5040,6 +5047,7 @@ static const char *geotype_tostr(uint8_t type)
     case GEOHINT_TYPE_FACILITY: return "facility";
     case GEOHINT_TYPE_CC:       return "cc";
     case GEOHINT_TYPE_ST:       return "st";
+    case GEOHINT_TYPE_VP:       return "vp";
     }
   return NULL;
 }
@@ -7663,7 +7671,7 @@ static sc_iface_t *sc_iface_alloc(char *ip, char *name)
      (name[0] != '\0' && (iface->name = strdup(name)) == NULL))
     goto err;
 
-  if(SCAMPER_ADDR_TYPE_IS_IPV4(iface->addr))
+  if(scamper_addr_isipv4(iface->addr))
     {
       if(ip_v != 4)
 	{
@@ -7674,7 +7682,7 @@ static sc_iface_t *sc_iface_alloc(char *ip, char *name)
 	  goto err;
 	}
     }
-  else if(SCAMPER_ADDR_TYPE_IS_IPV6(iface->addr))
+  else if(scamper_addr_isipv6(iface->addr))
     {
       if(ip_v != 6)
 	{
@@ -7700,8 +7708,9 @@ static sc_iface_t *sc_iface_alloc(char *ip, char *name)
 
 static int sc_iface_ip_find_4(sc_iface_t *iface, const char *suffix)
 {
-  uint32_t addr = ntohl(((struct in_addr *)iface->addr->addr)->s_addr);
-  const char *ptr = iface->name;
+  const struct in_addr *in;
+  uint32_t addr;
+  const char *ptr;
   const char *so[200][2]; /* string offsets */
   long sb[200]; /* string address bytes */
   long ab[4]; /* IP address bytes */
@@ -7709,6 +7718,10 @@ static int sc_iface_ip_find_4(sc_iface_t *iface, const char *suffix)
   int c, i, j, k, l, bo = 0, ip_s = -1, ip_e = -1;
   char *ep;
   char buf[128];
+
+  ptr = iface->name;
+  in = scamper_addr_addr_get(iface->addr);
+  addr = ntohl(in->s_addr);
 
   while((size_t)bo < sizeof(sb) / sizeof(long))
     {
@@ -7897,13 +7910,13 @@ static int sc_iface_ip_isok(const sc_iface_t *iface, const sc_charpos_t *cp)
   int i, j, x, nonzero[8], set[8], left, right;
   int blocksize, blocks, max;
 
-  if(SCAMPER_ADDR_TYPE_IS_IPV4(iface->addr))
+  if(scamper_addr_isipv4(iface->addr))
     {
       blocks = 4;
       blocksize = 2;
       max = 8;
     }
-  else if(SCAMPER_ADDR_TYPE_IS_IPV6(iface->addr))
+  else if(scamper_addr_isipv6(iface->addr))
     {
       blocks = 8;
       blocksize = 4;
@@ -8137,9 +8150,9 @@ static void sc_iface_ip_fill_zero4(sc_iface_t *iface, sc_charpos_t *cp)
 
 static void sc_iface_ip_fill_zero(sc_iface_t *iface, sc_charpos_t *cp)
 {
-  if(SCAMPER_ADDR_TYPE_IS_IPV4(iface->addr))
+  if(scamper_addr_isipv4(iface->addr))
     sc_iface_ip_fill_zero4(iface, cp);
-  else if(SCAMPER_ADDR_TYPE_IS_IPV6(iface->addr))
+  else if(scamper_addr_isipv6(iface->addr))
     sc_iface_ip_fill_zero6(iface, cp);
   return;
 }
@@ -8160,7 +8173,7 @@ static int sc_iface_ip_find_hex_rec(sc_iface_t *iface, const char *suffix,
   int a[4];
 
   /* for each 16 bit block, check for some basic properties or early reject */
-  if(SCAMPER_ADDR_TYPE_IS_IPV6(iface->addr) && (x % 4) == 0 && x != 0)
+  if(scamper_addr_isipv6(iface->addr) && (x % 4) == 0 && x != 0)
     {
       /* start offset */
       i = ((x / 4) - 1) * 4;
@@ -8242,7 +8255,7 @@ static int sc_iface_ip_find_hex_rec(sc_iface_t *iface, const char *suffix,
 static int sc_iface_ip_find_hex_enough(sc_iface_t *iface, sc_charpos_t *cp)
 {
   int i;
-  if(SCAMPER_ADDR_TYPE_IS_IPV4(iface->addr))
+  if(scamper_addr_isipv4(iface->addr))
     {
       if(cp->digits < 6)
 	return 0;
@@ -8251,7 +8264,7 @@ static int sc_iface_ip_find_hex_enough(sc_iface_t *iface, sc_charpos_t *cp)
 	  return 0;
       return 1;
     }
-  else if(SCAMPER_ADDR_TYPE_IS_IPV6(iface->addr))
+  else if(scamper_addr_isipv6(iface->addr))
     {
       if(cp->digits < 4)
 	return 0;
@@ -8281,9 +8294,9 @@ static int sc_iface_ip_find_hex(sc_iface_t *iface, const char *suffix)
   memset(posl, 0, sizeof(posl));
 
   /* Convert scamper address to IPv6 address string */
-  if(SCAMPER_ADDR_TYPE_IS_IPV4(iface->addr))
+  if(scamper_addr_isipv4(iface->addr))
     max = 8;
-  else if(SCAMPER_ADDR_TYPE_IS_IPV6(iface->addr))
+  else if(scamper_addr_isipv6(iface->addr))
     max = 32;
   else
     return -1;
@@ -8367,13 +8380,13 @@ static void sc_iface_ip_find_thread(sc_iface_t *iface)
 {
   const char *suffix = sc_suffix_find(iface->name);
   /* todo: integrate sc_iface_ip_find_unseparated_ipv4 */
-  if(SCAMPER_ADDR_TYPE_IS_IPV4(iface->addr))
+  if(scamper_addr_isipv4(iface->addr))
     {
       sc_iface_ip_find_4(iface, suffix);
       if((iface->flags & SC_IFACE_FLAG_IP) == 0)
 	sc_iface_ip_find_hex(iface, suffix);
     }
-  else if(SCAMPER_ADDR_TYPE_IS_IPV6(iface->addr))
+  else if(scamper_addr_isipv6(iface->addr))
     {
       sc_iface_ip_find_hex(iface, suffix);
     }
@@ -8569,7 +8582,7 @@ static void sc_iface_asname_find_thread(sc_ifacedom_t *ifd)
 	  k = j;
 	  while(k > i && isdigit(str[k-1]))
 	    k--;
-	  if((x = sc_iface_asname_find_check(list, iface, str, i, k)) < 0)
+	  if(sc_iface_asname_find_check(list, iface, str, i, k) < 0)
 	    goto done;
 	}
 
@@ -8605,6 +8618,15 @@ static void sc_iface_asname_find_thread(sc_ifacedom_t *ifd)
   return;
 }
 
+static int sc_rtt_cmp(const void *va, const void *vb)
+{
+  const sc_rtt_t *a = (const sc_rtt_t *)va;
+  const sc_rtt_t *b = (const sc_rtt_t *)vb;
+  if(a->rtt < b->rtt) return -1;
+  if(a->rtt > b->rtt) return  1;
+  return sc_geohint_cmp(a->vp, b->vp);
+}
+
 static void sc_router_rtt_sort(const sc_router_t *rtr)
 {
   qsort(rtr->rtts, rtr->rttc, sizeof(sc_rtt_t), sc_rtt_cmp);
@@ -8618,28 +8640,23 @@ static void sc_router_rtt_sort(const sc_router_t *rtr)
  * of range of the geohint
  */
 static int sc_router_ooridx(const sc_router_t *rtr, sc_geohint_t *hint,
-			    size_t *idx)
+			    sc_rtt_t **sample_out)
 {
-  sc_geohint_t *vp;
   sc_rtt_t *sample;
   double distance;
   uint16_t rtt;
   size_t i;
 
-  if(rtr->rttc == 0)
-    return -1;
+  *sample_out = NULL;
 
   for(i=0; i<rtr->rttc; i++)
     {
       sample = &rtr->rtts[i];
-      assert(sample->loc < geohintc);
-
-      vp = geohints[sample->loc];
-      distance = sc_geohint_dist(hint, vp);
+      distance = sc_geohint_dist(hint, sample->vp);
       rtt = dist2rtt(distance);
       if(rtt > sample->rtt && rtt - sample->rtt > rtt_fudge)
 	{
-	  *idx = i;
+	  *sample_out = sample;
 	  return 0;
 	}
     }
@@ -9261,7 +9278,6 @@ static sc_ifdptr_t *sc_ifdptr_get(splaytree_t *tree, sc_ifacedom_t *ifd)
 static splaytree_t *sc_ifdptr_tree(const slist_t *routers)
 {
   splaytree_t *ifp_tree = NULL;
-  sc_ifdptr_t *ifp;
   slist_node_t *sn;
   sc_routerdom_t *rd;
   int i;
@@ -9273,10 +9289,8 @@ static splaytree_t *sc_ifdptr_tree(const slist_t *routers)
     {
       rd = slist_node_item(sn);
       for(i=0; i<rd->ifacec; i++)
-	{
-	  if((ifp = sc_ifdptr_get(ifp_tree, rd->ifaces[i])) == NULL)
-	    goto err;
-	}
+	if(sc_ifdptr_get(ifp_tree, rd->ifaces[i]) == NULL)
+	  goto err;
     }
 
   return ifp_tree;
@@ -12813,7 +12827,7 @@ static size_t sc_regex_build_8(const char *name, const sc_rebuild_p_t *p,
   char *buf = p->buf;
   size_t len = p->len;
   size_t to = 0;
-  int j, x = rb->x;
+  int x = rb->x;
 
   /* do not allow partial starts for now */
   if(rb->o != bits[x+1])
@@ -12826,7 +12840,7 @@ static size_t sc_regex_build_8(const char *name, const sc_rebuild_p_t *p,
    * skip over any dashes and dots at the start of the string
    * XXX: figure out if this is even necessary
    */
-  if((j = sc_regex_build_skip(name, bits[x+1], buf, len, &to)) > bits[x+2])
+  if(sc_regex_build_skip(name, bits[x+1], buf, len, &to) > bits[x+2])
     return 0;
 
   /* string_concat(buf, len, &to, "\\d+"); */
@@ -13781,9 +13795,9 @@ static void dump_2_regex_iface(const sc_regex_t *re, sc_iface_t *iface,
 			       sc_ifaceinf_t *ifi)
 {
   char buf[256], *ptr;
-  sc_geohint_t *vp;
   sc_as2tag_t *a2t;
   double distance;
+  sc_rtt_t *sample;
   int x; size_t s;
 
   printf("{\"addr\":\"%s\"", scamper_addr_tostr(iface->addr,buf,sizeof(buf)));
@@ -13833,10 +13847,9 @@ static void dump_2_regex_iface(const sc_regex_t *re, sc_iface_t *iface,
   if(class == '!' && do_learngeo != 0)
     {
       assert(ifi != NULL && re != NULL && ifi->geohint != NULL);
-      x = sc_router_ooridx(iface->rtr, ifi->geohint, &s); assert(x == 0);
-      vp = geohints[iface->rtr->rtts[s].loc];
-      distance = sc_geohint_dist(vp, ifi->geohint);
-      printf(", \"fp\":[{\"loc\":\"%s\", \"rtt\":%u}]", vp->code,
+      x = sc_router_ooridx(iface->rtr, ifi->geohint, &sample); assert(x == 0);
+      distance = sc_geohint_dist(sample->vp, ifi->geohint);
+      printf(", \"fp\":[{\"loc\":\"%s\", \"rtt\":%u}]", sample->vp->code,
 	     dist2rtt(distance));
     }
 
@@ -14259,7 +14272,7 @@ static void dump_2_regex_router_geo(const sc_routerdom_t *rd, sc_css_t *css)
 	{
 	  rtt = &rd->rtr->rtts[0];
 	  printf("\"minrtt\":{\"loc\":\"%s\", \"rtt\":%u}, ",
-		 geohints[rtt->loc]->code, rtt->rtt);
+		 rtt->vp->code, rtt->rtt);
 	}
       if(css != NULL)
 	printf("\"loc\":\"%s\", ", sc_css_tostr(css, '|', buf, sizeof(buf)));
@@ -14930,6 +14943,8 @@ static int dump_4_regex_asnames(sc_domain_t *dom, sc_regex_t *re)
 static int dump_4_regex_geo(sc_domain_t *dom, sc_regex_t *re)
 {
   slist_t *ifi_list = NULL, *out_list = NULL, *m2h_list = NULL;
+  char buf[2048], rtt[16], render[136], fstr[64], restr[16];
+  size_t addr_len = 0, render_len = 0, rtt_len = 0, len;
   sc_rework_t *rew = NULL;
   sc_ifaceinf_t *ifi;
   sc_iface_t *iface;
@@ -14937,13 +14952,12 @@ static int dump_4_regex_geo(sc_domain_t *dom, sc_regex_t *re)
   sc_routerdom_t *rd;
   sc_geohint_t *vp;
   sc_geomap_t map;
+  sc_rtt_t *sample;
   sc_css_t *css = NULL;
   slist_node_t *sn;
   sc_dump4_t *d4 = NULL;
   int i, z, rc = -1;
   double distance;
-  char buf[2048], rtt[16], render[136], fstr[64], restr[16];
-  size_t addr_len = 0, render_len = 0, rtt_len = 0, len, idx;
 
   if((ifi_list = slist_alloc()) == NULL ||
      (out_list = slist_alloc()) == NULL ||
@@ -14982,7 +14996,7 @@ static int dump_4_regex_geo(sc_domain_t *dom, sc_regex_t *re)
       if(ifi->class == '+')
 	{
 	  assert(ifi->geohint != NULL);
-	  vp = geohints[rtr->rtts[0].loc];
+	  vp = rtr->rtts[0].vp;
 	  distance = sc_geohint_dist(vp, ifi->geohint);
 	  snprintf(rtt, sizeof(rtt), "%u<%u", dist2rtt(distance),
 		   rtr->rtts[0].rtt + rtt_fudge);
@@ -14990,23 +15004,23 @@ static int dump_4_regex_geo(sc_domain_t *dom, sc_regex_t *re)
       else if(ifi->class == '!')
 	{
 	  assert(ifi->geohint != NULL);
-	  i = sc_router_ooridx(rtr, ifi->geohint, &idx); assert(i == 0);
-	  vp = geohints[rtr->rtts[idx].loc];
+	  i = sc_router_ooridx(rtr, ifi->geohint, &sample); assert(i == 0);
+	  vp = sample->vp;
 	  distance = sc_geohint_dist(vp, ifi->geohint);
 	  snprintf(rtt, sizeof(rtt), "%u>%u", dist2rtt(distance),
-		   rtr->rtts[idx].rtt + rtt_fudge);
+		   sample->rtt + rtt_fudge);
 	}
       else if(ifi->class == '~')
 	{
 	  assert(ifi->geohint != NULL);
-	  vp = geohints[rtr->rtts[0].loc];
+	  vp = rtr->rtts[0].vp;
 	  distance = sc_geohint_dist(vp, ifi->geohint);
 	  snprintf(rtt, sizeof(rtt), "%u<%u", dist2rtt(distance),
 		   rtr->rtts[0].rtt + rtt_fudge);
 	}
       else if(ifi->class == '?' || ifi->class == ' ')
 	{
-	  vp = geohints[rtr->rtts[0].loc];
+	  vp = rtr->rtts[0].vp;
 	  snprintf(rtt, sizeof(rtt), "%u", rtr->rtts[0].rtt);
 	}
 
@@ -15199,7 +15213,7 @@ static int thin_regexes_domain_same(slist_t *regexes)
   slist_node_t *sn;
   int rc = -1;
 
-  if((sn = slist_head_node(regexes)) == NULL)
+  if(slist_head_node(regexes) == NULL)
     {
       rc = 0;
       goto done;
@@ -15415,21 +15429,24 @@ static int thin_regexes(int mode)
     return 0;
 
   gettimeofday_wrap(&start);
-  tp = threadpool_alloc(threadc);
+  threadp = threadpool_alloc(threadc);
 
   for(sn=slist_head_node(domain_list); sn != NULL; sn=slist_node_next(sn))
     {
       dom = slist_node_item(sn);
       from += slist_count(dom->regexes);
       if(mode == 0)
-	threadpool_tail_push(tp,(threadpool_func_t)thin_regexes_thread_0,dom);
+	threadpool_tail_push(threadp,
+			     (threadpool_func_t)thin_regexes_thread_0, dom);
       else if(mode == 1)
-	threadpool_tail_push(tp,(threadpool_func_t)thin_regexes_thread_1,dom);
+	threadpool_tail_push(threadp,
+			     (threadpool_func_t)thin_regexes_thread_1, dom);
       else if(mode == 2)
-	threadpool_tail_push(tp,(threadpool_func_t)thin_regexes_thread_2,dom);
+	threadpool_tail_push(threadp,
+			     (threadpool_func_t)thin_regexes_thread_2,dom);
     }
 
-  threadpool_join(tp); tp = NULL;
+  threadpool_join(threadp); threadp = NULL;
   gettimeofday_wrap(&finish);
 
   for(sn=slist_head_node(domain_list); sn != NULL; sn=slist_node_next(sn))
@@ -18161,6 +18178,10 @@ static int sc_regex_sets_isbetter(sc_regex_t *cur, sc_regex_t *can)
 	if(can->regexes[i]->tp_c > tp_max)
 	  tp_max = can->regexes[i]->tp_c;
 
+      /* XXX: prevent possible division by zero */
+      if(tp_max == 0)
+	return 0;
+
       /*
        * make sure each regex identifies at least three unique
        * geocodes, and has at least 1% of the TPs of the regex with
@@ -19279,14 +19300,15 @@ static int generate_regexes(void)
     return generate_regexes_supplied();
 
   gettimeofday_wrap(&start);
-  if((tp = threadpool_alloc(threadc)) == NULL)
+  if((threadp = threadpool_alloc(threadc)) == NULL)
     return -1;
   for(sn=slist_head_node(domain_list); sn != NULL; sn=slist_node_next(sn))
     {
       dom = slist_node_item(sn);
-      threadpool_tail_push(tp,(threadpool_func_t)generate_regexes_thread,dom);
+      threadpool_tail_push(threadp,
+			   (threadpool_func_t)generate_regexes_thread, dom);
     }
-  threadpool_join(tp); tp = NULL;
+  threadpool_join(threadp); threadp = NULL;
   gettimeofday_wrap(&finish);
 
   for(sn=slist_head_node(domain_list); sn != NULL; sn=slist_node_next(sn))
@@ -19317,18 +19339,19 @@ static int eval_regexes(void)
   char buf[32];
 
   gettimeofday_wrap(&start);
-  tp = threadpool_alloc(threadc);
+  threadp = threadpool_alloc(threadc);
   for(sn=slist_head_node(domain_list); sn != NULL; sn=slist_node_next(sn))
     {
       dom = slist_node_item(sn);
       for(s2=slist_head_node(dom->regexes); s2 != NULL; s2=slist_node_next(s2))
 	{
 	  re = slist_node_item(s2);
-	  threadpool_tail_push(tp,(threadpool_func_t)eval_regexes_thread,re);
+	  threadpool_tail_push(threadp,
+			       (threadpool_func_t)eval_regexes_thread, re);
 	  regexc++;
 	}
     }
-  threadpool_join(tp); tp = NULL;
+  threadpool_join(threadp); threadp = NULL;
   gettimeofday_wrap(&finish);
 
   fprintf(stderr, "evaluated %d regexes in %s\n", regexc,
@@ -19422,7 +19445,7 @@ static void refine_regexes_sets_onion_thread(sc_regex_sn_t *work)
     {
       sni = slist_node_item(sn);
       sn_next = slist_node_next(sn);
-      threadpool_head_push_nolock(tp,
+      threadpool_head_push_nolock(threadp,
 			    (threadpool_func_t)refine_regexes_sets_work_thread,
 			    sni);
       sn = sn_next;
@@ -19638,7 +19661,7 @@ static int refine_regexes_sets(void)
        * do the main bit of work which figures out which regex in the set
        * below makes the most sense to merge in
        */
-      if((tp = threadpool_alloc(threadc)) == NULL)
+      if((threadp = threadpool_alloc(threadc)) == NULL)
 	goto done;
       for(dn=dlist_head_node(domfn_list); dn != NULL; dn=dlist_node_next(dn))
 	{
@@ -19652,27 +19675,27 @@ static int refine_regexes_sets(void)
 		       sc_regex_score_tostr(work->re, score, sizeof(score)));
 	      if(work->done != 0)
 		continue;
-	      threadpool_tail_push_onion(tp,
+	      threadpool_tail_push_onion(threadp,
 			(threadpool_func_t)refine_regexes_sets_onion_thread,
 			work);
 	    }
 	}
-      threadpool_join(tp); tp = NULL;
+      threadpool_join(threadp); threadp = NULL;
 
       /*
        * go through the list of domains, and figure out which ones do
        * not need further work
        */
-      if((tp = threadpool_alloc(threadc)) == NULL)
+      if((threadp = threadpool_alloc(threadc)) == NULL)
 	goto done;
       for(dn=dlist_head_node(domfn_list); dn != NULL; dn=dlist_node_next(dn))
 	{
 	  domfn = dlist_node_item(dn);
-	  threadpool_tail_push(tp,
+	  threadpool_tail_push(threadp,
 			(threadpool_func_t)refine_regexes_sets_domain_check,
 			domfn);
 	}
-      threadpool_join(tp); tp = NULL;
+      threadpool_join(threadp); threadp = NULL;
 
       /* remove the ones that do not require further work */
       dn=dlist_head_node(domfn_list);
@@ -19714,7 +19737,7 @@ static int refine_regexes(const char *type, threadpool_func_t func,
   fprintf(stderr, "refining regexes: %s\n", type);
   gettimeofday_wrap(&start);
 
-  if((tp = threadpool_alloc(threadc)) == NULL)
+  if((threadp = threadpool_alloc(threadc)) == NULL)
     goto done;
   for(sn=slist_head_node(domain_list); sn != NULL; sn=slist_node_next(sn))
     {
@@ -19728,7 +19751,7 @@ static int refine_regexes(const char *type, threadpool_func_t func,
 	    continue;
 	  if(prep == NULL)
 	    {
-	      threadpool_tail_push(tp, func, re);
+	      threadpool_tail_push(threadp, func, re);
 	      if(s2 == sn_tail)
 		break;
 	    }
@@ -19738,11 +19761,11 @@ static int refine_regexes(const char *type, threadpool_func_t func,
 		break;
 	      if((ptr = prep(re, slist_node_next(s2))) == NULL)
 		goto done;
-	      threadpool_tail_push(tp, func, ptr);
+	      threadpool_tail_push(threadp, func, ptr);
 	    }
 	}
     }
-  threadpool_join(tp); tp = NULL;
+  threadpool_join(threadp); threadp = NULL;
 
   for(sn=slist_head_node(domain_list); sn != NULL; sn=slist_node_next(sn))
     {
@@ -19793,7 +19816,7 @@ static int refine_regexes_fp(void)
 
   fprintf(stderr, "refining regexes: false positives\n");
 
-  if((tp = threadpool_alloc(threadc)) == NULL)
+  if((threadp = threadpool_alloc(threadc)) == NULL)
     goto done;
 
   for(sn=slist_head_node(domain_list); sn != NULL; sn=slist_node_next(sn))
@@ -19806,12 +19829,12 @@ static int refine_regexes_fp(void)
 	  re = slist_node_item(s2);
 	  if(re->tp_c < best->tp_c || re->rt_c < 3 || re->fp_c < 2)
 	    continue;
-	  threadpool_tail_push(tp,
+	  threadpool_tail_push(threadp,
 			       (threadpool_func_t)refine_regexes_fp_thread,re);
 	}
     }
 
-  threadpool_join(tp); tp = NULL;
+  threadpool_join(threadp); threadp = NULL;
   rc = 0;
 
  done:
@@ -20238,7 +20261,7 @@ static int refine_dict_asnames(void)
   slist_free(list); list = NULL;
 
   /* infer which hostnames could embed an AS name */
-  tp = threadpool_alloc(threadc);
+  threadp = threadpool_alloc(threadc);
   for(sn=slist_head_node(domain_list); sn != NULL; sn=slist_node_next(sn))
     {
       dom = slist_node_item(sn);
@@ -20248,13 +20271,12 @@ static int refine_dict_asnames(void)
 	  for(i=0; i<rd->ifacec; i++)
 	    {
 	      ifd = rd->ifaces[i];
-	      threadpool_tail_push(tp,
-				   (threadpool_func_t)sc_iface_asname_find_thread,
-				   ifd);
+	      threadpool_tail_push(threadp,
+		   (threadpool_func_t)sc_iface_asname_find_thread, ifd);
 	    }
 	}
     }
-  threadpool_join(tp); tp = NULL;
+  threadpool_join(threadp); threadp = NULL;
 
   fprintf(stderr, "refining dictionary: %d entries\n", (int)tag2asc);
 
@@ -20525,18 +20547,18 @@ static int refine_dict_geo(void)
   fprintf(stderr, "refining regexes: dictionary\n");
   gettimeofday_wrap(&start);
 
-  if((tp = threadpool_alloc(threadc)) == NULL)
+  if((threadp = threadpool_alloc(threadc)) == NULL)
     goto done;
   for(sn=slist_head_node(domain_list); sn != NULL; sn=slist_node_next(sn))
     {
       dom = slist_node_item(sn);
       for(s2=slist_head_node(dom->regexes); s2 != NULL; s2=slist_node_next(s2))
 	{
-	  threadpool_tail_push(tp, (threadpool_func_t)refine_dict_geo_thread,
-			       slist_node_item(s2));
+	  threadpool_tail_push(threadp,
+	       (threadpool_func_t)refine_dict_geo_thread, slist_node_item(s2));
 	}
     }
-  threadpool_join(tp); tp = NULL;
+  threadpool_join(threadp); threadp = NULL;
 
   gettimeofday_wrap(&finish);
   fprintf(stderr, "refining regexes: dictionary finished in %s\n",
@@ -20582,17 +20604,18 @@ static void load_routers_alias(void)
   sc_domain_t *dom;
 
   /* compute likely names for the routers */
-  tp = threadpool_alloc(threadc);
+  threadp = threadpool_alloc(threadc);
   for(sn=slist_head_node(domain_list); sn != NULL; sn=slist_node_next(sn))
     {
       dom = slist_node_item(sn);
       for(s2=slist_head_node(dom->routers); s2 != NULL; s2=slist_node_next(s2))
 	{
-	  threadpool_tail_push(tp, (threadpool_func_t)sc_routerdom_lcs_thread,
+	  threadpool_tail_push(threadp,
+			       (threadpool_func_t)sc_routerdom_lcs_thread,
 			       slist_node_item(s2));
 	}
     }
-  threadpool_join(tp); tp = NULL;
+  threadpool_join(threadp); threadp = NULL;
 
   return;
 }
@@ -20605,7 +20628,7 @@ static void load_routers_asn(void)
   int i;
 
   /* infer if the hostname embeds an ASN */
-  tp = threadpool_alloc(threadc);
+  threadp = threadpool_alloc(threadc);
   for(sn=slist_head_node(domain_list); sn != NULL; sn=slist_node_next(sn))
     {
       dom = slist_node_item(sn);
@@ -20613,12 +20636,12 @@ static void load_routers_asn(void)
 	{
 	  rd = slist_node_item(s2);
 	  for(i=0; i<rd->ifacec; i++)
-	    threadpool_tail_push(tp,
+	    threadpool_tail_push(threadp,
 				 (threadpool_func_t)sc_iface_asn_find_thread,
 				 rd->ifaces[i]);
 	}
     }
-  threadpool_join(tp); tp = NULL;
+  threadpool_join(threadp); threadp = NULL;
   return;
 }
 
@@ -20780,7 +20803,7 @@ static int load_routers_asnames(void)
     return -1;
 
   /* infer which hostnames could embed an AS name */
-  tp = threadpool_alloc(threadc);
+  threadp = threadpool_alloc(threadc);
   for(sn=slist_head_node(domain_list); sn != NULL; sn=slist_node_next(sn))
     {
       dom = slist_node_item(sn);
@@ -20788,12 +20811,12 @@ static int load_routers_asnames(void)
 	{
 	  rd = slist_node_item(s2);
 	  for(i=0; i<rd->ifacec; i++)
-	    threadpool_tail_push(tp,
+	    threadpool_tail_push(threadp,
 				 (threadpool_func_t)sc_iface_asname_find_thread,
 				 rd->ifaces[i]);
 	}
     }
-  threadpool_join(tp); tp = NULL;
+  threadpool_join(threadp); threadp = NULL;
 
   return 0;
 }
@@ -20806,7 +20829,7 @@ static void load_routers_geo(void)
   int i;
 
   /* check each label for geocodes */
-  tp = threadpool_alloc(threadc);
+  threadp = threadpool_alloc(threadc);
   for(sn=slist_head_node(domain_list); sn != NULL; sn=slist_node_next(sn))
     {
       dom = slist_node_item(sn);
@@ -20814,12 +20837,12 @@ static void load_routers_geo(void)
 	{
 	  rd = slist_node_item(s2);
 	  for(i=0; i<rd->ifacec; i++)
-	    threadpool_tail_push(tp,
+	    threadpool_tail_push(threadp,
 				 (threadpool_func_t)sc_iface_geo_find_thread,
 				 rd->ifaces[i]);
 	}
     }
-  threadpool_join(tp); tp = NULL;
+  threadpool_join(threadp); threadp = NULL;
   return;
 }
 
@@ -20853,7 +20876,7 @@ static int load_routers_1(void)
   splaytree_inorder(domain_tree, tree_to_slist, domain_list);
 
   /* infer if the hostnames contain IP address literals */
-  tp = threadpool_alloc(threadc);
+  threadp = threadpool_alloc(threadc);
   for(sn=slist_head_node(domain_list); sn != NULL; sn=slist_node_next(sn))
     {
       if(do_ip == 0)
@@ -20865,13 +20888,13 @@ static int load_routers_1(void)
 	  for(i=0; i<rd->ifacec; i++)
 	    {
 	      iface = rd->ifaces[i]->iface;
-	      threadpool_tail_push(tp,
+	      threadpool_tail_push(threadp,
 				   (threadpool_func_t)sc_iface_ip_find_thread,
 				   iface);
 	    }
 	}
     }
-  threadpool_join(tp); tp = NULL;
+  threadpool_join(threadp); threadp = NULL;
 
   gettimeofday_wrap(&finish);
   fprintf(stderr, "loaded %d routers in %d domains in %s\n",
@@ -20988,6 +21011,8 @@ static int load_suffix(void)
 {
   slist_t *list = NULL;
   int rc = -1;
+
+  assert(suffix_file != NULL);
 
   if((list = slist_alloc()) == NULL)
     goto done;
@@ -21235,6 +21260,11 @@ static int geohints_file_line(char *line, void *param)
       type = GEOHINT_TYPE_STATE;
       j = 5;
     }
+  else if(strncmp(line, "vp ", 3) == 0)
+    {
+      type = GEOHINT_TYPE_VP;
+      j = 2;
+    }
   else
     {
       fprintf(stderr, "Invalid line: %s\n", line);
@@ -21266,6 +21296,22 @@ static int geohints_file_line(char *line, void *param)
 	  fprintf(stderr, "Invalid geocode: %s\n", line);
 	  goto err;
 	}
+    }
+  else if(type == GEOHINT_TYPE_VP)
+    {
+      for(i=0; i<sizeof(code); i++)
+	{
+	  if(isalnum(ptr[i]) == 0 && ptr[i] != '-')
+	    break;
+	  code[i] = tolower(ptr[i]);
+	}
+      if(i == sizeof(code) || isspace(ptr[i]) == 0)
+	{
+	  fprintf(stderr, "Invalid geocode: %s\n", line);
+	  goto err;
+	}
+      code[i] = '\0';
+      ptr += (i+1);
     }
   else if(type == GEOHINT_TYPE_PLACE || type == GEOHINT_TYPE_FACILITY)
     {
@@ -21336,8 +21382,8 @@ static int geohints_file_line(char *line, void *param)
       code[j] = '\0';
 
       /* make the hint and we're done */
-      if((hint = geohints_file_line_make(list, type, code, place,
-					 cc, st, lat, lng, popn)) == NULL)
+      if(geohints_file_line_make(list, type, code, place,
+				 cc, st, lat, lng, popn) == NULL)
 	goto err;
 
       return 0;
@@ -21365,8 +21411,8 @@ static int geohints_file_line(char *line, void *param)
       memcpy(code, st, sizeof(st));
 
       /* make the hint and we're done */
-      if((hint = geohints_file_line_make(list, type, code, place,
-					 cc, st, lat, lng, popn)) == NULL)
+      if(geohints_file_line_make(list, type, code, place,
+				 cc, st, lat, lng, popn) == NULL)
 	goto err;
 
       return 0;
@@ -21499,7 +21545,7 @@ static int load_dict_geohints(void)
   splaytree_t *clligp_tree = NULL, *strlist_tree = NULL;
   slist_t *geo_list = NULL, *clligp_list = NULL, *fac_list = NULL;
   slist_t *place_list = NULL, *other_list = NULL, *country_list = NULL;
-  slist_t *state_list = NULL, *list;
+  slist_t *state_list = NULL, *vp_list = NULL, *list;
   size_t *cou_hintc = NULL, *sta_hintc = NULL;
   size_t first[26];
   slist_node_t *sn;
@@ -21524,6 +21570,7 @@ static int load_dict_geohints(void)
      (other_list = slist_alloc()) == NULL ||
      (country_list = slist_alloc()) == NULL ||
      (state_list = slist_alloc()) == NULL ||
+     (vp_list = slist_alloc()) == NULL ||
      (clligp_tree = splaytree_alloc((splaytree_cmp_t)sc_clligp_3cmp)) == NULL||
      (strlist_tree = splaytree_alloc((splaytree_cmp_t)sc_strlist_cmp))== NULL||
      (clligp_list = slist_alloc()) == NULL)
@@ -21554,6 +21601,8 @@ static int load_dict_geohints(void)
 	list = country_list;
       else if(hint->type == GEOHINT_TYPE_STATE)
 	list = state_list;
+      else if(hint->type == GEOHINT_TYPE_VP)
+	list = vp_list;
       else
 	list = other_list;
       if(slist_tail_push(list, hint) == NULL)
@@ -21581,6 +21630,23 @@ static int load_dict_geohints(void)
   i = 0;
   while((hint = slist_head_pop(fac_list)) != NULL)
     geohint_facs[i++] = hint;
+
+  /* put vp geohints in their own array */
+  if((i = slist_count(vp_list)) > 0)
+    {
+      geohint_vpc = (size_t)i;
+      if((geohint_vps = malloc_zero(sizeof(sc_geohint_t *)*geohint_vpc))==NULL)
+	goto done;
+      s = 0;
+      while((hint = slist_head_pop(vp_list)) != NULL)
+	{
+	  geohint_vps[s] = hint;
+	  hint->index = s;
+	  s++;
+	}
+      array_qsort((void **)geohint_vps, geohint_vpc,
+		  (array_cmp_t)sc_geohint_cmp);
+    }
 
   /* put the states in their own array */
   if((i = slist_count(state_list)) > 0)
@@ -21782,6 +21848,7 @@ static int load_dict_geohints(void)
 
  done:
   if(geo_list != NULL) slist_free_cb(geo_list, (slist_free_t)sc_geohint_free);
+  if(vp_list != NULL) slist_free_cb(vp_list, (slist_free_t)sc_geohint_free);
   if(place_list != NULL)
     slist_free_cb(place_list, (slist_free_t)sc_geohint_free);
   if(other_list != NULL)
@@ -21967,7 +22034,6 @@ static int rtt_file_line(char *line, void *param)
   static int lineno = 0;
   sc_rttload_t *rtl = param;
   sc_geohint_t *vp;
-  sc_geomap_t map;
   sc_router_t rt;
   char *id_ptr, *vp_ptr, *rtt_ptr, *dup = NULL;
   long long id;
@@ -22029,9 +22095,7 @@ static int rtt_file_line(char *line, void *param)
       goto done;
     }
 
-  memset(&map, 0, sizeof(map));
-  snprintf(map.code, sizeof(map.code), "%s", vp_ptr);
-  if((vp = sc_geohint_find(NULL, &map)) == NULL)
+  if((vp = sc_geohint_vpfind(vp_ptr)) == NULL)
     {
       if(array_find((void **)rtl->unknown, rtl->unknownc, vp_ptr,
 		    (array_cmp_t)strcasecmp) == NULL)
@@ -22070,7 +22134,7 @@ static int rtt_file_line(char *line, void *param)
 	}
 
       rtl->rtts[rtl->rttc].rtt = rtt;
-      rtl->rtts[rtl->rttc].loc = vp->index;
+      rtl->rtts[rtl->rttc].vp = vp;
       rtl->rttc++;
     }
 
@@ -22141,17 +22205,17 @@ static int load_rtt(void)
   if(rtl.rtr != NULL)
     rttload_router_finish(&rtl);
 
-  tp = threadpool_alloc(threadc);
+  threadp = threadpool_alloc(threadc);
   for(i=0; i<rtl.routerc; i++)
     {
       if(rtl.routers[i]->rttc == 0)
 	continue;
       rtc++;
       rttc += rtl.routers[i]->rttc;
-      threadpool_tail_push(tp, (threadpool_func_t)sc_router_rtt_sort,
+      threadpool_tail_push(threadp, (threadpool_func_t)sc_router_rtt_sort,
 			   rtl.routers[i]);
     }
-  threadpool_join(tp); tp = NULL;
+  threadpool_join(threadp); threadp = NULL;
 
   gettimeofday_wrap(&finish);
   fprintf(stderr, "loaded %d rtts in %d routers in %s\n", rttc, rtc,
@@ -22223,6 +22287,14 @@ static void cleanup(void)
 	if(geohint_facs[i] != NULL)
 	  sc_geohint_free(geohint_facs[i]);
       free(geohint_facs); geohint_facs = NULL;
+    }
+
+  if(geohint_vps != NULL)
+    {
+      for(i=0; i<geohint_vpc; i++)
+	if(geohint_vps[i] != NULL)
+	  sc_geohint_free(geohint_vps[i]);
+      free(geohint_vps); geohint_vps = NULL;
     }
 
   if(geohint_cous != NULL)

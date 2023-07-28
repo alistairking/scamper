@@ -1,7 +1,7 @@
 /*
- * scamper_do_host
+ * scamper_host_do
  *
- * $Id: scamper_host_do.c,v 1.48 2023/02/24 03:56:22 mjl Exp $
+ * $Id: scamper_host_do.c,v 1.55 2023/06/04 04:41:53 mjl Exp $
  *
  * Copyright (C) 2018-2023 Matthew Luckie
  *
@@ -27,8 +27,10 @@
 
 #include "scamper.h"
 #include "scamper_addr.h"
+#include "scamper_addr_int.h"
 #include "scamper_list.h"
 #include "scamper_host.h"
+#include "scamper_host_int.h"
 #include "scamper_task.h"
 #include "scamper_getsrc.h"
 #include "scamper_queue.h"
@@ -36,7 +38,6 @@
 #include "scamper_debug.h"
 #include "scamper_host_do.h"
 #include "scamper_fds.h"
-#include "scamper_options.h"
 #include "scamper_privsep.h"
 #include "mjl_list.h"
 #include "mjl_splaytree.h"
@@ -46,12 +47,13 @@ static scamper_task_funcs_t host_funcs;
 static splaytree_t *queries = NULL;
 static uint8_t *pktbuf = NULL;
 static size_t pktbuf_len = 0;
-static scamper_addr_t *default_ns = NULL;
 static scamper_fd_t *dns4_fd = NULL;
 static scamper_queue_t *dns4_sq = NULL;
 static scamper_fd_t *dns6_fd = NULL;
 static scamper_queue_t *dns6_sq = NULL;
 static uint16_t dns_id = 1;
+
+scamper_addr_t *default_ns = NULL;
 
 typedef struct host_id
 {
@@ -84,29 +86,6 @@ struct scamper_host_do
   } un;
   dlist_node_t   *node;
 };
-
-#define HOST_OPT_NORECURSE 1
-#define HOST_OPT_RETRIES   2
-#define HOST_OPT_SERVER    3
-#define HOST_OPT_TYPE      4
-#define HOST_OPT_USERID    5
-#define HOST_OPT_WAIT      6
-
-static const scamper_option_in_t opts[] = {
-  {'r', NULL, HOST_OPT_NORECURSE, SCAMPER_OPTION_TYPE_NULL},
-  {'R', NULL, HOST_OPT_RETRIES,   SCAMPER_OPTION_TYPE_NUM},
-  {'s', NULL, HOST_OPT_SERVER,    SCAMPER_OPTION_TYPE_STR},
-  {'t', NULL, HOST_OPT_TYPE,      SCAMPER_OPTION_TYPE_STR},
-  {'U', NULL, HOST_OPT_USERID,    SCAMPER_OPTION_TYPE_NUM},
-  {'W', NULL, HOST_OPT_WAIT,      SCAMPER_OPTION_TYPE_NUM},
-};
-static const int opts_cnt = SCAMPER_OPTION_COUNT(opts);
-
-const char *scamper_do_host_usage(void)
-{
-  return
-    "host [-r] [-R number] [-s server] [-t type] [-U userid] [-W wait] name\n";
-}
 
 static int etc_resolv_line(char *line, void *param)
 {
@@ -148,7 +127,7 @@ static int etc_resolv_line(char *line, void *param)
   return 0;
 }
 
-static void etc_resolv(void)
+void etc_resolv(void)
 {
   int fd, flags = O_RDONLY;
 
@@ -554,8 +533,9 @@ static void do_host_read(const int fd, void *param)
   host_id_t *hid;
   scamper_host_query_t *q = NULL;
   scamper_host_rr_t *rr = NULL;
-  uint16_t id, flags, qdcount, ancount, nscount, arcount;
+  uint16_t id, qdcount, ancount, nscount, arcount;
   uint16_t qtype, qclass, rdlength, type, class;
+  uint8_t flags[2];
   uint32_t ttl;
   ssize_t off, len;
   char name[256], str[256];
@@ -567,11 +547,12 @@ static void do_host_read(const int fd, void *param)
     return;
 
   id = bytes_ntohs(pktbuf+0);
-  flags = bytes_ntohs(pktbuf+2);
+  flags[0] = pktbuf[2];
+  flags[1] = pktbuf[3];
   qdcount = bytes_ntohs(pktbuf+4);
 
   /* QR bit must be set, as we want a response, and one Q per query */
-  if((flags & 0x8000) == 0 || qdcount != 1)
+  if((flags[0] & 0x80) == 0 || qdcount != 1)
     return;
 
   ancount = bytes_ntohs(pktbuf+6);
@@ -629,6 +610,8 @@ static void do_host_read(const int fd, void *param)
   q->ancount = ancount;
   q->nscount = nscount;
   q->arcount = arcount;
+  q->rcode   = flags[1] & 0x0f;
+  q->flags   = ((flags[0] & 0x0f) << 4) | ((flags[1] & 0xf0) >> 4);
 
   for(i=0; i<3; i++)
     {
@@ -794,7 +777,7 @@ static void do_host_probe(scamper_task_t *task)
 	}
       else if(scamper_queue_event_update_time(dns4_sq, &tv) != 0)
 	{
-	  printerror(__func__, "could not updarte dns4_sq");
+	  printerror(__func__, "could not update dns4_sq");
 	  goto err;
 	}
 
@@ -828,7 +811,7 @@ static void do_host_probe(scamper_task_t *task)
 	}
       else if(scamper_queue_event_update_time(dns6_sq, &tv) != 0)
 	{
-	  printerror(__func__, "could not updarte dns6_sq");
+	  printerror(__func__, "could not update dns6_sq");
 	  goto err;
 	}
 
@@ -864,33 +847,26 @@ static void do_host_probe(scamper_task_t *task)
   bytes_htons(pktbuf+10, 0);     /* ARCOUNT */
   off = 12;
 
-  if(host->qtype == SCAMPER_HOST_TYPE_A ||
-     host->qtype == SCAMPER_HOST_TYPE_AAAA ||
-     host->qtype == SCAMPER_HOST_TYPE_PTR ||
-     host->qtype == SCAMPER_HOST_TYPE_MX)
+  ptr = state->qname;
+  for(;;)
     {
-      ptr = state->qname;
-      for(;;)
+      dot = ptr;
+      while(*dot != '.' && *dot != '\0')
+	dot++;
+      pktbuf[off++] = dot - ptr;
+      while(ptr != dot)
 	{
-	  dot = ptr;
-	  while(*dot != '.' && *dot != '\0')
-	    dot++;
-	  pktbuf[off++] = dot - ptr;
-	  while(ptr != dot)
-	    {
-	      pktbuf[off] = *ptr;
-	      ptr++; off++;
-	    }
-	  if(*ptr == '.')
-	    ptr++;
-	  else
-	    break;
+	  pktbuf[off] = *ptr;
+	  ptr++; off++;
 	}
-      pktbuf[off++] = 0;
-      bytes_htons(pktbuf+off, host->qtype); off += 2;
-      bytes_htons(pktbuf+off, host->qclass); off += 2;
+      if(*ptr == '.')
+	ptr++;
+      else
+	break;
     }
-  else return;
+  pktbuf[off++] = 0;
+  bytes_htons(pktbuf+off, host->qtype); off += 2;
+  bytes_htons(pktbuf+off, host->qclass); off += 2;
 
   if((q = scamper_host_query_alloc()) == NULL)
     {
@@ -922,58 +898,6 @@ static void do_host_handle_timeout(scamper_task_t *task)
   if(host->qcount >= host->retries + 1)
     host_stop(task, SCAMPER_HOST_STOP_TIMEOUT);
   return;
-}
-
-static int host_arg_param_validate(int optid, char *param, long long *out)
-{
-  scamper_addr_t *addr;
-  long tmp = 0;
-
-  switch(optid)
-    {
-    case HOST_OPT_NORECURSE:
-      return 0;
-
-    case HOST_OPT_RETRIES:
-      if(string_tolong(param, &tmp) != 0 || tmp < 0 || tmp > 3)
-	return -1;
-      break;
-
-    case HOST_OPT_SERVER:
-      if((addr = scamper_addr_resolve(AF_INET, param)) == NULL)
-	return -1;
-      scamper_addr_free(addr);
-      break;
-
-    case HOST_OPT_TYPE:
-      if(strcasecmp(param, "A") == 0)
-	tmp = SCAMPER_HOST_TYPE_A;
-      else if(strcasecmp(param, "AAAA") == 0)
-	tmp = SCAMPER_HOST_TYPE_AAAA;
-      else if(strcasecmp(param, "PTR") == 0)
-	tmp = SCAMPER_HOST_TYPE_PTR;
-      else if(strcasecmp(param, "MX") == 0)
-	tmp = SCAMPER_HOST_TYPE_MX;
-      else return -1;
-      break;
-
-    case HOST_OPT_WAIT:
-      if(string_tolong(param, &tmp) != 0 || tmp < 1 || tmp > 5)
-	return -1;
-      tmp *= 1000;
-      break;
-    }
-
-  if(out != NULL)
-    *out = (long long)tmp;
-
-  return 0;
-}
-
-int scamper_do_host_arg_validate(int argc, char *argv[], int *stop)
-{
-  return scamper_options_validate(opts, opts_cnt, argc, argv, stop,
-				  host_arg_param_validate);
 }
 
 scamper_task_t *scamper_do_host_alloctask(void *data, scamper_list_t *list,
@@ -1009,135 +933,6 @@ scamper_task_t *scamper_do_host_alloctask(void *data, scamper_list_t *list,
       scamper_task_setdatanull(task);
       scamper_task_free(task);
     }
-  return NULL;
-}
-
-void *scamper_do_host_alloc(char *str)
-{
-  scamper_host_t *host = NULL;
-  scamper_option_out_t *opts_out = NULL, *opt;
-  scamper_addr_t *server = NULL;
-  scamper_addr_t *name_addr = NULL;
-  char *name = NULL;
-  uint8_t retries = 0;
-  uint32_t userid = 0;
-  uint16_t wait = 5000;
-  uint16_t flags = 0;
-  uint16_t qclass = 1;
-  uint16_t qtype = 0;
-  long long tmp = 0;
-
-  /* try and parse the string passed in */
-  if(scamper_options_parse(str, opts, opts_cnt, &opts_out, &name) != 0)
-    {
-      scamper_debug(__func__, "could not parse command");
-      goto err;
-    }
-
-  if(name == NULL)
-    goto err;
-
-  for(opt = opts_out; opt != NULL; opt = opt->next)
-    {
-      if(opt->type != SCAMPER_OPTION_TYPE_NULL &&
-	 host_arg_param_validate(opt->id, opt->str, &tmp) != 0)
-	{
-	  scamper_debug(__func__, "validation of optid %d failed", opt->id);
-	  goto err;
-	}
-
-      switch(opt->id)
-	{
-	case HOST_OPT_NORECURSE:
-	  flags |= SCAMPER_HOST_FLAG_NORECURSE;
-	  break;
-
-	case HOST_OPT_RETRIES:
-	  retries = (uint8_t)tmp;
-	  break;
-
-	case HOST_OPT_SERVER:
-	  if(server != NULL)
-	    goto err;
-	  if((server = scamper_addr_resolve(AF_INET, opt->str)) == NULL)
-	    goto err;
-	  break;
-
-	case HOST_OPT_TYPE:
-	  qtype = (uint16_t)tmp;
-	  break;
-
-	case HOST_OPT_USERID:
-	  userid = (uint32_t)tmp;
-	  break;
-
-	case HOST_OPT_WAIT:
-	  wait = (uint16_t)tmp;
-	  break;
-
-	default:
-	  scamper_debug(__func__, "unhandled option %d", opt->id);
-	  goto err;
-	}
-    }
-  scamper_options_free(opts_out); opts_out = NULL;
-
-  if(qtype == 0)
-    {
-      if((name_addr = scamper_addr_resolve(AF_UNSPEC, name)) != NULL)
-	qtype = SCAMPER_HOST_TYPE_PTR;
-      else
-	qtype = SCAMPER_HOST_TYPE_A;
-    }
-  else if(qtype == SCAMPER_HOST_TYPE_A || qtype == SCAMPER_HOST_TYPE_AAAA ||
-	  qtype == SCAMPER_HOST_TYPE_MX)
-    {
-      if((name_addr = scamper_addr_resolve(AF_UNSPEC, name)) != NULL)
-	goto err;
-    }
-  else if(qtype == SCAMPER_HOST_TYPE_PTR)
-    {
-      if((name_addr = scamper_addr_resolve(AF_UNSPEC, name)) == NULL)
-	goto err;
-    }
-  else goto err;
-
-  if((host = scamper_host_alloc()) == NULL ||
-     (host->qname = strdup(name)) == NULL)
-    goto err;
-
-  host->userid  = userid;
-  host->flags  |= flags;
-  host->wait    = wait;
-  host->retries = retries;
-  host->qtype   = qtype;
-  host->qclass  = qclass;
-
-  if(server == NULL)
-    {
-      if(default_ns == NULL)
-	{
-	  etc_resolv();
-	  if(default_ns == NULL)
-	    goto err;
-	}
-      host->dst = scamper_addr_use(default_ns);
-    }
-  else
-    {
-      host->dst = server;
-      server = NULL;
-    }
-
-  scamper_debug(__func__, "ok %s", host->qname);
-  return host;
-
- err:
-  scamper_debug(__func__, "err");
-  if(host != NULL) scamper_host_free(host);
-  if(name_addr != NULL) scamper_addr_free(name_addr);
-  if(server != NULL) scamper_addr_free(server);
-  if(opts_out != NULL) scamper_options_free(opts_out);
   return NULL;
 }
 

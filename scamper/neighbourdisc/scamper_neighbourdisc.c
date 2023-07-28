@@ -1,9 +1,9 @@
 /*
  * scamper_neighbourdisc.c
  *
- * $Id: scamper_neighbourdisc.c,v 1.6 2021/08/24 09:03:07 mjl Exp $
+ * $Id: scamper_neighbourdisc.c,v 1.9 2023/05/31 23:22:18 mjl Exp $
  *
- * Copyright (C) 2009-2021 Matthew Luckie
+ * Copyright (C) 2009-2023 Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -28,14 +28,9 @@
 #include "scamper_list.h"
 #include "scamper_addr.h"
 #include "scamper_neighbourdisc.h"
+#include "scamper_neighbourdisc_int.h"
 
 #include "utils.h"
-
-scamper_addr_t *scamper_neighbourdisc_addr(const void *va)
-{
-  const scamper_neighbourdisc_t *nd = va;
-  return nd->dst_ip;
-}
 
 scamper_neighbourdisc_reply_t *scamper_neighbourdisc_reply_alloc(void)
 {

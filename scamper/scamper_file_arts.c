@@ -1,14 +1,14 @@
 /*
  * scamper_file_arts.c
  *
- * $Id: scamper_file_arts.c,v 1.67 2022/07/02 21:21:56 mjl Exp $
+ * $Id: scamper_file_arts.c,v 1.69 2023/05/29 20:21:27 mjl Exp $
  *
  * code to read the legacy arts data file format into scamper_hop structures.
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2014      The Regents of the University of California
- * Copyright (C) 2022      Matthew Luckie
+ * Copyright (C) 2022-2023 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -34,7 +34,9 @@
 #include "mjl_splaytree.h"
 #include "scamper_addr.h"
 #include "scamper_list.h"
+#include "scamper_list_int.h"
 #include "trace/scamper_trace.h"
+#include "trace/scamper_trace_int.h"
 #include "scamper_file.h"
 #include "scamper_file_arts.h"
 #include "utils.h"

@@ -1,10 +1,11 @@
 /*
  * scamper_ip6.c
  *
- * $Id: scamper_ip6.c,v 1.21 2023/01/03 02:33:57 mjl Exp $
+ * $Id: scamper_ip6.c,v 1.22 2023/05/29 21:22:26 mjl Exp $
  *
  * Copyright (C) 2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
+ * Copyright (C) 2023 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -28,6 +29,7 @@
 #include "internal.h"
 
 #include "scamper_addr.h"
+#include "scamper_addr_int.h"
 #include "scamper_dl.h"
 #include "scamper_probe.h"
 #include "scamper_ip6.h"

@@ -1,7 +1,7 @@
 /*
  * scamper_task.c
  *
- * $Id: scamper_task.c,v 1.75 2023/01/01 08:24:19 mjl Exp $
+ * $Id: scamper_task.c,v 1.76 2023/05/29 21:22:26 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -31,6 +31,7 @@
 
 #include "scamper.h"
 #include "scamper_addr.h"
+#include "scamper_addr_int.h"
 #include "scamper_icmp_resp.h"
 #include "scamper_fds.h"
 #include "scamper_task.h"

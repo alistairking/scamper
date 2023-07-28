@@ -5,10 +5,10 @@
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2014      The Regents of the University of California
  * Copyright (C) 2015      The University of Waikato
- * Copyright (C) 2015-2022 Matthew Luckie
+ * Copyright (C) 2015-2023 Matthew Luckie
  * Author: Matthew Luckie
  *
- * $Id: scamper_trace_warts.c,v 1.30 2022/02/13 08:48:16 mjl Exp $
+ * $Id: scamper_trace_warts.c,v 1.35 2023/05/29 21:22:27 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -31,9 +31,12 @@
 #include "internal.h"
 
 #include "scamper_addr.h"
+#include "scamper_addr_int.h"
 #include "scamper_list.h"
 #include "scamper_icmpext.h"
+#include "scamper_icmpext_int.h"
 #include "scamper_trace.h"
+#include "scamper_trace_int.h"
 #include "scamper_file.h"
 #include "scamper_file_warts.h"
 #include "scamper_trace_warts.h"
@@ -912,7 +915,8 @@ static int warts_trace_pmtud_state(const scamper_trace_t *trace,
     state->len += 2;
 
   /* count the number of hop records */
-  state->hopc = scamper_trace_pmtud_hop_count(trace);
+  for(hop = trace->pmtud->hops; hop != NULL; hop = hop->hop_next)
+    state->hopc++;
   if(state->hopc > 0)
     {
       /* allocate an array of address indexes for the pmtud hop addresses */
@@ -1365,7 +1369,7 @@ int scamper_file_warts_trace_write(const scamper_file_t *sf,
   uint8_t              trace_flags[trace_vars_mfb];
   uint16_t             trace_flags_len, trace_params_len;
   warts_trace_hop_t   *hop_state = NULL;
-  uint16_t             hop_recs;
+  uint16_t             hop_recs = 0;
   warts_trace_pmtud_t *pmtud = NULL;
   warts_trace_hop_t   *ld_state = NULL;
   uint16_t             ld_recs = 0;
@@ -1394,8 +1398,19 @@ int scamper_file_warts_trace_write(const scamper_file_t *sf,
   len = 8 + trace_flags_len + trace_params_len + 2;
   if(trace_params_len != 0) len += 2;
 
+  /* count the total number hop records */
+  for(i=0; i<trace->hop_count; i++)
+    {
+      for(hop = trace->hops[i]; hop != NULL; hop=hop->hop_next)
+	{
+	  if(hop_recs == UINT16_MAX)
+	    goto err;
+	  hop_recs++;
+	}
+    }
+
   /* for each hop, figure out what is going to be stored in this record */
-  if((hop_recs = scamper_trace_hop_count(trace)) > 0)
+  if(hop_recs > 0)
     {
       size = hop_recs * sizeof(warts_trace_hop_t);
       if((hop_state = (warts_trace_hop_t *)malloc_zero(size)) == NULL)
@@ -1432,7 +1447,8 @@ int scamper_file_warts_trace_write(const scamper_file_t *sf,
   if(trace->lastditch != NULL)
     {
       /* count the number of last-ditch hop records */
-      ld_recs = scamper_trace_lastditch_hop_count(trace);
+      for(hop = trace->lastditch; hop != NULL; hop=hop->hop_next)
+	ld_recs++;
 
       /* allocate an array of hop state structs for the lastditch hops */
       size = ld_recs * sizeof(warts_trace_hop_t);

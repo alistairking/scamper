@@ -883,7 +883,7 @@ static int do_decoderead(void)
   if(type == SCAMPER_FILE_OBJ_TBIT)
     {
       tbit = (scamper_tbit_t *)data;
-      findme.addr = tbit->dst;
+      findme.addr = scamper_tbit_dst_get(tbit);
       if(scamper_file_write_tbit(outfile, tbit, NULL) != 0)
 	return -1;
       outfile_obj++;

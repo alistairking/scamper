@@ -3,10 +3,10 @@
  *
  * Copyright (C) 2008-2011 The University of Waikato
  * Copyright (C) 2012      The Regents of the University of California
- * Copyright (C) 2022      Matthew Luckie
+ * Copyright (C) 2022-2023 Matthew Luckie
  * Author: Matthew Luckie
  *
- * $Id: scamper_tracelb_text.c,v 1.8 2022/02/13 08:48:16 mjl Exp $
+ * $Id: scamper_tracelb_text.c,v 1.9 2023/05/29 00:02:24 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -30,7 +30,9 @@
 
 #include "scamper_addr.h"
 #include "scamper_list.h"
+#include "scamper_icmpext.h"
 #include "scamper_tracelb.h"
+#include "scamper_tracelb_int.h"
 #include "scamper_file.h"
 #include "scamper_tracelb_text.h"
 #include "utils.h"

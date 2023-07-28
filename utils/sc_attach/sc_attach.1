@@ -7,12 +7,12 @@
 .\"               2012 The Regents of the University of California
 .\"                    All rights reserved
 .\"
-.\" $Id: sc_attach.1,v 1.11 2016/06/09 09:44:25 mjl Exp $
+.\" $Id: sc_attach.1,v 1.12 2023/04/10 07:39:57 mjl Exp $
 .\"
 .\"  nroff -man sc_attach.1
 .\"  groff -man -Tascii sc_attach.1 | man2html -title sc_attach.1
 .\"
-.Dd February 2, 2016
+.Dd April 10, 2023
 .Dt SC_ATTACH 1
 .Os
 .Sh NAME
@@ -28,8 +28,8 @@
 .Op Fl O Ar options
 .Op Fl p Ar [ip:]port
 .Op Fl P Ar priority
-.Op Fl R Ar unix-domain
-.Op Fl U Ar unix-domain
+.Op Fl R Ar unix-remote
+.Op Fl U Ar unix-local
 .Ek
 .\""""""""""""
 .Sh DESCRIPTION
@@ -93,14 +93,14 @@ connects to the specified port on the local host.
 specifies the mixing priority
 .Xr scamper 1
 should assign to the source.
-.It Fl R Ar unix-domain
+.It Fl R Ar unix-remote
 specifies the unix domain socket on the local host where a remote
 .Xr scamper 1
 instance is accepting commands.
-.It Fl U Ar unix-domain
+.It Fl U Ar unix-local
 specifies the unix domain socket on the local host where a local
 .Xr scamper 1
-isntance is accepting commands.
+instance is accepting commands.
 .El
 .Sh EXAMPLES
 Given a set of commands in a file named infile.txt:
@@ -115,7 +115,7 @@ ping -P icmp-echo 192.0.32.10
 .Pp
 and a
 .Xr scamper 1
-daemon listening on port 31337, then these commands can be executed using:
+instance listening on port 31337, then these commands can be executed using:
 .Pp
 sc_attach -i infile.txt -o outfile.warts -p 31337
 .Pp

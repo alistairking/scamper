@@ -1,6 +1,6 @@
 # Process this file with autoconf to produce a configure script.
 
-AC_INIT([scamper],[20230323],[mjl@luckie.org.nz])
+AC_INIT([scamper],[20230605],[mjl@luckie.org.nz])
 
 AC_CONFIG_SRCDIR([scamper/scamper.c])
 AC_CONFIG_HEADERS([config.h])
@@ -137,6 +137,15 @@ AC_ARG_WITH([sc_uptime],
 )
 AM_CONDITIONAL([WITH_SC_UPTIME], [test x$with_sc_uptime = xyes])
 
+# build tests
+AC_ARG_WITH([tests],
+  [AS_HELP_STRING([--with-tests],
+     [build tests])],
+     [with_tests=$withval],
+     [with_tests=no]
+)
+AM_CONDITIONAL([WITH_TESTS], [test x$with_tests = xyes])
+
 # Checks for libraries.
 AC_CHECK_LIB([iphlpapi], [GetIpNetTable])
 AC_CHECK_LIB([ws2_32], [WSAStartup])
@@ -272,6 +281,7 @@ AC_CHECK_FUNCS(gethostname)
 AC_CHECK_FUNCS(getifaddrs)
 AC_CHECK_FUNCS(getpagesize)
 AC_CHECK_FUNCS(gettimeofday)
+AC_CHECK_FUNCS(isatty)
 AC_CHECK_FUNCS(kqueue)
 AC_CHECK_FUNCS(memmove)
 AC_CHECK_FUNCS(memset)
@@ -474,7 +484,15 @@ AC_CONFIG_FILES([
 	Makefile
 	scamper/Makefile
 	lib/Makefile
-	lib/libscamperctrl/Makefile
+	lib/libscamperctrl/Makefile])
+
+if test "x$with_tests" != xno; then
+   	AC_CONFIG_FILES([
+   	tests/Makefile
+	])
+fi
+
+AC_CONFIG_FILES([
 	utils/Makefile
 	utils/sc_ally/Makefile
 	utils/sc_analysis_dump/Makefile
@@ -492,6 +510,7 @@ AC_CONFIG_FILES([
 	utils/sc_filterpolicy/Makefile
 	utils/sc_ipiddump/Makefile
 	utils/sc_pinger/Makefile
+	utils/sc_prefixprober/Makefile
 	utils/sc_prefixscan/Makefile
 	utils/sc_radargun/Makefile
 	utils/sc_remoted/Makefile

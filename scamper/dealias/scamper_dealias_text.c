@@ -2,10 +2,10 @@
  * scamper_dealias_text.c
  *
  * Copyright (C) 2008-2010 The University of Waikato
- * Copyright (C) 2013-2022 Matthew Luckie
+ * Copyright (C) 2013-2023 Matthew Luckie
  * Author: Matthew Luckie
  *
- * $Id: scamper_dealias_text.c,v 1.5 2022/02/13 08:48:15 mjl Exp $
+ * $Id: scamper_dealias_text.c,v 1.6 2023/05/29 07:17:30 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -31,6 +31,7 @@
 #include "scamper_list.h"
 #include "scamper_file.h"
 #include "scamper_dealias.h"
+#include "scamper_dealias_int.h"
 #include "scamper_dealias_text.h"
 #include "utils.h"
 

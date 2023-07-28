@@ -1,13 +1,13 @@
 /*
  * scamper_fds: manage events and file descriptors
  *
- * $Id: scamper_fds.c,v 1.100 2021/11/05 05:40:39 mjl Exp $
+ * $Id: scamper_fds.c,v 1.105 2023/04/27 23:31:26 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2012-2014 Matthew Luckie
  * Copyright (C) 2012-2015 The Regents of the University of California
- * Copyright (C) 2016-2020 Matthew Luckie
+ * Copyright (C) 2016-2023 Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -604,6 +604,8 @@ static int fds_select(struct timeval *timeout)
 #endif
   if((count = select(nfds+1, rfdsp, wfdsp, NULL, timeout)) < 0)
     {
+      if(errno == EINTR || errno == EAGAIN)
+	return 0;
       printerror(__func__, "select failed");
       goto err;
     }
@@ -743,6 +745,8 @@ static int fds_poll(struct timeval *tv)
 
   if((rc = poll(poll_fds, count, timeout)) < 0)
     {
+      if(errno == EINTR || errno == EAGAIN)
+	return 0;
       printerror(__func__, "could not poll");
       return -1;
     }
@@ -821,6 +825,8 @@ static int fds_kqueue(struct timeval *tv)
 
   if((c = kevent(kq, NULL, 0, kevlist, kevlistlen, tsp)) == -1)
     {
+      if(errno == EINTR)
+	return 0;
       printerror(__func__, "kevent failed");
       return -1;
     }
@@ -938,6 +944,8 @@ static int fds_epoll(struct timeval *tv)
 
   if((rc = epoll_wait(ep, ep_events, ep_event_c, timeout)) == -1)
     {
+      if(errno == EINTR)
+	return 0;
       printerror(__func__, "could not epoll_wait");
       return -1;
     }
@@ -1700,11 +1708,9 @@ scamper_fd_t *scamper_fd_dl(int ifindex)
       goto err;
     }
 
-  /*
-   * record the ifindex for the file descriptor, and then allocate the state
-   * that is maintained with it
-   */
+  /* record the ifindex for the file descriptor */
   fdn->fd_dl_ifindex = ifindex;
+  scamper_debug(__func__, "fd %d type %s", fdn->fd, fd_tostr(fdn));
 
   /*
    * 1. add the file descriptor to the splay tree
@@ -1724,12 +1730,11 @@ scamper_fd_t *scamper_fd_dl(int ifindex)
   fdn->write.param = NULL;
   scamper_fd_read_unpause(fdn);
 
-  scamper_debug(__func__, "fd %d type %s", fdn->fd, fd_tostr(fdn));
   return fdn;
 
  err:
-  if(fdn != NULL) free(fdn);
   if(fd != -1) scamper_dl_close(fd);
+  if(fdn != NULL) fd_free(fdn);
   return NULL;
 }
 
@@ -1920,30 +1925,38 @@ int scamper_fds_init()
   scamper_debug(__func__, "fd table size: %d", getdtablesize());
 #endif
 
-#ifdef HAVE_POLL
-  pollfunc = fds_poll;
-#endif
-
-#ifdef HAVE_KQUEUE
-  if(scamper_option_kqueue())
+  switch(scamper_option_pollfunc_get())
     {
+#ifdef HAVE_KQUEUE
+    case SCAMPER_OPTION_POLLFUNC_KQUEUE:
       pollfunc = fds_kqueue;
       if(fds_kqueue_init() != 0)
 	return -1;
-    }
+      break;
 #endif
 
 #ifdef HAVE_EPOLL
-  if(scamper_option_epoll())
-    {
+    case SCAMPER_OPTION_POLLFUNC_EPOLL:
       pollfunc = fds_epoll;
       if(fds_epoll_init() != 0)
 	return -1;
-    }
+      break;
 #endif
 
-  if(scamper_option_select() || pollfunc == NULL)
-    pollfunc = fds_select;
+#ifdef HAVE_POLL
+    case SCAMPER_OPTION_POLLFUNC_POLL:
+      pollfunc = fds_poll;
+      break;
+#endif
+
+    case SCAMPER_OPTION_POLLFUNC_SELECT:
+      pollfunc = fds_select;
+      break;
+
+    default:
+      printerror(__func__, "did not select pollfunc");
+      return -1;
+    }
 
   if((fd_list     = alloc_list("fd_list")) == NULL ||
      (read_fds    = alloc_list("read_fds"))   == NULL ||

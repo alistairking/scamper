@@ -1,9 +1,9 @@
 /*
  * scamper_file_json.c
  *
- * $Id: scamper_file_json.c,v 1.5 2022/02/13 08:48:15 mjl Exp $
+ * $Id: scamper_file_json.c,v 1.6 2023/05/29 20:21:27 mjl Exp $
  *
- * Copyright (C) 2017-2022 Matthew Luckie
+ * Copyright (C) 2017-2023 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -27,6 +27,7 @@
 #include "internal.h"
 
 #include "scamper_list.h"
+#include "scamper_list_int.h"
 #include "scamper_file.h"
 #include "scamper_file_json.h"
 #include "utils.h"

@@ -1,4 +1,4 @@
-# $Id: Makefile.am,v 1.42 2023/03/21 07:38:01 mjl Exp $
+# $Id: Makefile.am,v 1.56 2023/06/05 00:42:01 mjl Exp $
 
 AUTOMAKE_OPTIONS = subdir-objects
 
@@ -8,7 +8,7 @@ bin_PROGRAMS = scamper
 
 lib_LTLIBRARIES = libscamperfile.la
 
-libscamperfile_la_LDFLAGS = -version-info 5:0:0
+libscamperfile_la_LDFLAGS = -version-info 6:0:0
 
 libscamperfile_la_LIBADD = @ZLIB_LIBS@ @LIBBZ2_LIBS@ @LIBLZMA_LIBS@
 
@@ -23,35 +23,46 @@ libscamperfile_la_SOURCES = \
 	scamper_addr.c \
 	scamper_list.c \
 	scamper_icmpext.c \
+	scamper_icmpext_lib.c \
 	trace/scamper_trace.c \
 	trace/scamper_trace_warts.c \
 	trace/scamper_trace_text.c \
 	trace/scamper_trace_json.c \
+	trace/scamper_trace_lib.c \
 	ping/scamper_ping.c \
 	ping/scamper_ping_warts.c \
 	ping/scamper_ping_text.c \
 	ping/scamper_ping_json.c \
+	ping/scamper_ping_lib.c \
 	tracelb/scamper_tracelb.c \
 	tracelb/scamper_tracelb_warts.c \
 	tracelb/scamper_tracelb_text.c \
 	tracelb/scamper_tracelb_json.c \
+	tracelb/scamper_tracelb_lib.c \
 	dealias/scamper_dealias.c \
 	dealias/scamper_dealias_warts.c \
 	dealias/scamper_dealias_text.c \
 	dealias/scamper_dealias_json.c \
+	dealias/scamper_dealias_lib.c \
 	sting/scamper_sting.c \
 	sting/scamper_sting_warts.c \
 	sting/scamper_sting_text.c \
+	sting/scamper_sting_lib.c \
 	neighbourdisc/scamper_neighbourdisc.c \
 	neighbourdisc/scamper_neighbourdisc_warts.c \
+	neighbourdisc/scamper_neighbourdisc_lib.c \
 	tbit/scamper_tbit.c \
 	tbit/scamper_tbit_warts.c \
 	tbit/scamper_tbit_text.c \
 	tbit/scamper_tbit_json.c \
+	tbit/scamper_tbit_lib.c \
 	sniff/scamper_sniff.c \
 	sniff/scamper_sniff_warts.c \
+	sniff/scamper_sniff_lib.c \
 	host/scamper_host.c \
-	host/scamper_host_warts.c
+	host/scamper_host_warts.c \
+	host/scamper_host_json.c \
+	host/scamper_host_lib.c
 
 scamper_SOURCES = \
 	../mjl_list.c \
@@ -70,6 +81,7 @@ scamper_SOURCES = \
 	scamper_icmp6.c \
 	scamper_icmp_resp.c \
 	scamper_icmpext.c \
+	scamper_icmpext_int.c \
 	scamper_tcp4.c \
 	scamper_tcp6.c \
 	scamper_ip6.c \
@@ -106,39 +118,49 @@ scamper_SOURCES = \
 	trace/scamper_trace_warts.c \
 	trace/scamper_trace_text.c \
 	trace/scamper_trace_json.c \
+	trace/scamper_trace_cmd.c \
 	trace/scamper_trace_do.c \
 	ping/scamper_ping.c \
 	ping/scamper_ping_warts.c \
 	ping/scamper_ping_text.c \
 	ping/scamper_ping_json.c \
+	ping/scamper_ping_cmd.c \
 	ping/scamper_ping_do.c \
 	tracelb/scamper_tracelb.c \
 	tracelb/scamper_tracelb_warts.c \
 	tracelb/scamper_tracelb_text.c \
 	tracelb/scamper_tracelb_json.c \
+	tracelb/scamper_tracelb_cmd.c \
 	tracelb/scamper_tracelb_do.c \
 	dealias/scamper_dealias.c \
 	dealias/scamper_dealias_warts.c \
 	dealias/scamper_dealias_text.c \
 	dealias/scamper_dealias_json.c \
+	dealias/scamper_dealias_cmd.c \
 	dealias/scamper_dealias_do.c \
 	sting/scamper_sting.c \
 	sting/scamper_sting_warts.c \
 	sting/scamper_sting_text.c \
+	sting/scamper_sting_cmd.c \
 	sting/scamper_sting_do.c \
 	neighbourdisc/scamper_neighbourdisc.c \
 	neighbourdisc/scamper_neighbourdisc_warts.c \
+	neighbourdisc/scamper_neighbourdisc_cmd.c \
 	neighbourdisc/scamper_neighbourdisc_do.c \
 	tbit/scamper_tbit.c \
 	tbit/scamper_tbit_warts.c \
 	tbit/scamper_tbit_text.c \
 	tbit/scamper_tbit_json.c \
+	tbit/scamper_tbit_cmd.c \
 	tbit/scamper_tbit_do.c \
 	sniff/scamper_sniff.c \
 	sniff/scamper_sniff_warts.c \
+	sniff/scamper_sniff_cmd.c \
 	sniff/scamper_sniff_do.c \
 	host/scamper_host.c \
 	host/scamper_host_warts.c \
+	host/scamper_host_json.c \
+	host/scamper_host_cmd.c \
 	host/scamper_host_do.c
 
 scamper_CFLAGS = $(AM_CFLAGS)

@@ -4,10 +4,10 @@
  * Copyright (C) 2008-2011 The University of Waikato
  * Copyright (C) 2012      Matthew Luckie
  * Copyright (C) 2012-2014 The Regents of the University of California
- * Copyright (C) 2015-2022 Matthew Luckie
+ * Copyright (C) 2015-2023 Matthew Luckie
  * Author: Matthew Luckie
  *
- * $Id: scamper_dealias_warts.c,v 1.20 2022/02/13 08:48:15 mjl Exp $
+ * $Id: scamper_dealias_warts.c,v 1.23 2023/05/29 21:22:26 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -30,9 +30,12 @@
 #include "internal.h"
 
 #include "scamper_addr.h"
+#include "scamper_addr_int.h"
 #include "scamper_list.h"
 #include "scamper_icmpext.h"
+#include "scamper_icmpext_int.h"
 #include "scamper_dealias.h"
+#include "scamper_dealias_int.h"
 #include "scamper_file.h"
 #include "scamper_file_warts.h"
 #include "scamper_dealias_warts.h"

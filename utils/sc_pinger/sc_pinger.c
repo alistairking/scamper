@@ -2,11 +2,11 @@
  * sc_pinger : scamper driver to probe destinations with various ping
  *             methods
  *
- * $Id: sc_pinger.c,v 1.15 2023/03/22 01:38:57 mjl Exp $
+ * $Id: sc_pinger.c,v 1.27 2023/05/14 08:10:40 mjl Exp $
  *
- * Copyright (C) 2020 The University of Waikato
- * Copyright (C) 2022 Matthew Luckie
- * Copyright (C) 2023 The Regents of the University of California
+ * Copyright (C) 2020      The University of Waikato
+ * Copyright (C) 2022-2023 Matthew Luckie
+ * Copyright (C) 2023      The Regents of the University of California
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -35,7 +35,6 @@
 #include "scamper_file.h"
 #include "lib/libscamperctrl/libscamperctrl.h"
 #include "mjl_list.h"
-#include "mjl_splaytree.h"
 #include "utils.h"
 
 static uint32_t               options       = 0;
@@ -56,11 +55,11 @@ static scamper_ctrl_t        *scamper_ctrl  = NULL;
 static scamper_inst_t        *scamper_inst  = NULL;
 static scamper_file_t        *decode_sf     = NULL;
 static scamper_file_readbuf_t *decode_rb    = NULL;
+static int                    probing       = 0;
 static int                    more          = 0;
 static int                    completed     = 0;
 static int                    probe_count   = 5;
 static int                    reply_count   = 3;
-static splaytree_t           *tree          = NULL;
 static slist_t               *virgin        = NULL;
 static slist_t               *waiting       = NULL;
 static char                 **methods       = NULL;
@@ -72,7 +71,7 @@ static int                    error         = 0;
 #define OPT_OUTFILE     0x0004
 #define OPT_PORT        0x0008
 #define OPT_UNIX        0x0010
-#define OPT_TEXT        0x0020
+#define OPT_LOG         0x0020
 #define OPT_DAEMON      0x0040
 #define OPT_COUNT       0x0080
 #define OPT_REMOTE      0x0100
@@ -86,7 +85,6 @@ typedef struct sc_pinger
 {
   scamper_addr_t   *dst;
   int               step;
-  splaytree_node_t *node;
 } sc_pinger_t;
 
 static void usage(uint32_t opt_mask)
@@ -126,7 +124,7 @@ static void usage(uint32_t opt_mask)
   if(opt_mask & OPT_COUNT)
     fprintf(stderr, "     -c [replyc]/probec\n");
 
-  if(opt_mask & OPT_TEXT)
+  if(opt_mask & OPT_LOG)
     fprintf(stderr, "     -t logfile\n");
 
   return;
@@ -216,13 +214,13 @@ static int check_options(int argc, char *argv[])
 	  opt_port = optarg;
 	  break;
 
-	case 't':
-	  logfile_name = optarg;
-	  break;
-
 	case 'R':
 	  options |= OPT_REMOTE;
 	  scamper_unix = optarg;
+	  break;
+
+	case 't':
+	  logfile_name = optarg;
 	  break;
 
 	case 'U':
@@ -339,20 +337,15 @@ static void print(char *format, ...)
   gettimeofday_wrap(&tv);
 
   if((options & OPT_DAEMON) == 0)
-    printf("%ld: %s", (long int)tv.tv_sec, msg);
+    printf("%ld: %s\n", (long int)tv.tv_sec, msg);
 
   if(logfile_fd != NULL)
     {
-      fprintf(logfile_fd, "%ld: %s", (long int)tv.tv_sec, msg);
+      fprintf(logfile_fd, "%ld: %s\n", (long int)tv.tv_sec, msg);
       fflush(logfile_fd);
     }
 
   return;
-}
-
-static int sc_pinger_cmp(const sc_pinger_t *a, const sc_pinger_t *b)
-{
-  return scamper_addr_cmp(a->dst, b->dst);
 }
 
 static void sc_pinger_free(sc_pinger_t *pinger)
@@ -375,19 +368,19 @@ static int do_addrfile_line(char *buf)
 
   if((sa = scamper_addr_resolve(AF_UNSPEC, buf)) == NULL)
     {
-      print("could not resolve %s on line %d\n", buf, line);
+      print("could not resolve %s on line %d", buf, line);
       goto err;
     }
 
   if((pinger = malloc_zero(sizeof(sc_pinger_t))) == NULL)
     {
-      print("could not malloc pinger\n");
+      print("could not malloc pinger");
       goto err;
     }
   pinger->dst = sa; sa = NULL;
   if(slist_tail_push(virgin, pinger) == NULL)
     {
-      print("could not push %s onto list\n", buf);
+      print("could not push %s onto list", buf);
       goto err;
     }
 
@@ -440,8 +433,7 @@ static int do_addrfile(void)
       addrfile_off = off;
       if(realloc_wrap((void **)&addrfile_buf, addrfile_len) != 0)
 	{
-	  print("%s: could not realloc %d bytes\n", __func__,
-		(int)addrfile_len);
+	  print("%s: could not realloc %d bytes", __func__, (int)addrfile_len);
 	  goto err;
 	}
     }
@@ -482,95 +474,90 @@ static int do_method(void)
   string_concat(cmd, sizeof(cmd), &off, "ping -c %d -o %d -P %s %s",
 		probe_count, reply_count, methods[pinger->step], addr);
 
-  if((pinger->node = splaytree_insert(tree, pinger)) == NULL)
-    {
-      print("%s: could not add %s to tree\n", __func__, addr);
-      return -1;
-    }
-
   /* got a command, send it */
-  if(scamper_inst_do(scamper_inst, cmd) == NULL)
+  if(scamper_inst_do(scamper_inst, cmd, pinger) == NULL)
     {
-      print("%s: could not send %s\n", __func__, cmd);
+      print("%s: could not send %s", __func__, cmd);
       return -1;
     }
+  probing++;
   more--;
 
-  print("p %d, c %d: %s\n", splaytree_count(tree), completed, cmd);
+  print("p %d, c %d: %s", probing, completed, cmd);
 
   return 0;
 }
 
-static int do_decoderead_ping(scamper_ping_t *ping)
+static int process_pinger(sc_pinger_t *pinger, scamper_ping_t *ping)
 {
-  scamper_ping_reply_t *reply;
-  sc_pinger_t     fm, *pinger;
-  char            buf[128];
-  int             rc = -1;
-  int             i, replyc = 0;
+  const scamper_ping_reply_t *reply;
+  scamper_addr_t *dst, *r_addr;
+  uint16_t i, ping_sent;
+  char buf[128];
+  int replyc = 0;
 
-  scamper_addr_tostr(ping->dst, buf, sizeof(buf));
-  fm.dst = ping->dst;
-  if((pinger = splaytree_find(tree, &fm)) == NULL)
-    {
-      print("%s: could not find dst %s\n", __func__, buf);
-      goto done;
-    }
-  if(splaytree_remove_node(tree, pinger->node) != 0)
-    {
-      print("%s: could not remove node %s\n", __func__, buf);
-      goto done;
-    }
-  pinger->node = NULL;
-  pinger->step++;
+  probing--;
 
-  for(i=0; i<ping->ping_sent; i++)
+  if(ping != NULL)
     {
-      if((reply = ping->ping_replies[i]) == NULL ||
-	 (scamper_addr_cmp(ping->dst, reply->addr) != 0 &&
-	  SCAMPER_PING_REPLY_FROM_TARGET(ping, reply) == 0))
-	continue;
-      replyc++;
+      ping_sent = scamper_ping_sent_get(ping);
+      dst = scamper_ping_dst_get(ping);
+      for(i=0; i<ping_sent; i++)
+	{
+	  if((reply = scamper_ping_reply_get(ping, i)) == NULL)
+	    continue;
+	  r_addr = scamper_ping_reply_addr_get(reply);
+	  if(scamper_addr_cmp(dst, r_addr) != 0 &&
+	     scamper_ping_reply_is_from_target(ping, reply) == 0)
+	    continue;
+	  replyc++;
+	}
+      scamper_ping_free(ping);
+
+      /* successful ping, we're done */
+      if(replyc >= reply_count)
+	goto done;
     }
 
-  /* try with the next method if necessary */
-  if(replyc < reply_count && pinger->step < methodc)
+  /* try with the next method, if there is another method to try */
+  if(++pinger->step < methodc)
     {
       if(slist_tail_push(waiting, pinger) == NULL)
 	{
-	  print("%s: could not try next method for %s\n", __func__, buf);
-	  goto done;
+	  print("%s: could not try next method for %s", __func__,
+		scamper_addr_tostr(pinger->dst, buf, sizeof(buf)));
+	  return -1;
 	}
+      return 0;
     }
-  else
-    {
-      completed++;
-      sc_pinger_free(pinger);
-    }
-  rc = 0;
 
  done:
-  if(ping != NULL) scamper_ping_free(ping);
-  return rc;
+  completed++;
+  print("%s: done %s", __func__,
+	scamper_addr_tostr(pinger->dst, buf, sizeof(buf)));
+  sc_pinger_free(pinger);
+  return 0;
 }
 
 static void ctrlcb(scamper_inst_t *inst, uint8_t type, scamper_task_t *task,
 		   const void *data, size_t len)
 {
+  sc_pinger_t *pinger;
   uint16_t obj_type;
   void *obj_data;
 
   if(type == SCAMPER_CTRL_TYPE_MORE)
     {
       more++;
-      do_method();
+      if(do_method() != 0)
+	goto err;
     }
   else if(type == SCAMPER_CTRL_TYPE_DATA)
     {
       if(scamper_file_readbuf_add(decode_rb, data, len) != 0 ||
 	 scamper_file_read(decode_sf, ffilter, &obj_type, &obj_data) != 0)
 	{
-	  fprintf(stderr, "%s: could not read\n", __func__);
+	  print("%s: could not read", __func__);
 	  goto err;
 	}
 
@@ -579,12 +566,30 @@ static void ctrlcb(scamper_inst_t *inst, uint8_t type, scamper_task_t *task,
 
       if(scamper_file_write_obj(outfile, obj_type, obj_data) != 0)
 	{
-	  fprintf(stderr, "%s: could not write obj %d\n", __func__, obj_type);
+	  print("%s: could not write obj %d", __func__, obj_type);
 	  goto err;
 	}
 
-      assert(obj_type == SCAMPER_FILE_OBJ_PING);
-      if(do_decoderead_ping((scamper_ping_t *)obj_data) != 0)
+      if(obj_type == SCAMPER_FILE_OBJ_CYCLE_START ||
+	 obj_type == SCAMPER_FILE_OBJ_CYCLE_STOP)
+	{
+	  scamper_cycle_free(obj_data);
+	  return;
+	}
+
+      if(obj_type != SCAMPER_FILE_OBJ_PING)
+	{
+	  print("%s: unknown object %d", __func__, obj_type);
+	  goto err;
+	}
+      pinger = scamper_task_getparam(task);
+      if(process_pinger(pinger, (scamper_ping_t *)obj_data) != 0)
+	goto err;
+    }
+  else if(type == SCAMPER_CTRL_TYPE_ERR)
+    {
+      pinger = scamper_task_getparam(task);
+      if(process_pinger(pinger, NULL) != 0)
 	goto err;
     }
   else if(type == SCAMPER_CTRL_TYPE_EOF)
@@ -592,6 +597,12 @@ static void ctrlcb(scamper_inst_t *inst, uint8_t type, scamper_task_t *task,
       scamper_inst_free(scamper_inst);
       scamper_inst = NULL;
     }
+  else if(type == SCAMPER_CTRL_TYPE_FATAL)
+    {
+      print("fatal: %s", scamper_ctrl_strerror(scamper_ctrl));
+      goto err;
+    }
+
   return;
 
  err:
@@ -611,14 +622,14 @@ static int do_scamperconnect(void)
 
   if((scamper_ctrl = scamper_ctrl_alloc(ctrlcb)) == NULL)
     {
-      fprintf(stderr, "%s: could not alloc scamper_ctrl\n", __func__);
+      print("%s: could not alloc scamper_ctrl", __func__);
       return -1;
     }
 
   if(scamper_port != 0)
     {
       type = "port";
-      scamper_inst = scamper_inst_inet(scamper_ctrl, NULL, scamper_port);
+      scamper_inst = scamper_inst_inet(scamper_ctrl, NULL, NULL, scamper_port);
     }
 #ifdef HAVE_SOCKADDR_UN
   else if(scamper_unix != NULL)
@@ -626,7 +637,7 @@ static int do_scamperconnect(void)
       if(options & OPT_UNIX)
 	{
 	  type = "unix";
-	  scamper_inst = scamper_inst_unix(scamper_ctrl, scamper_unix);
+	  scamper_inst = scamper_inst_unix(scamper_ctrl, NULL, scamper_unix);
 	}
       else if(options & OPT_REMOTE)
 	{
@@ -638,7 +649,7 @@ static int do_scamperconnect(void)
 
   if(scamper_inst == NULL)
     {
-      print("%s: could not alloc %s inst: %s\n", __func__, type,
+      print("%s: could not alloc %s inst: %s", __func__, type,
 	    scamper_ctrl_strerror(scamper_ctrl));
       return -1;
     }
@@ -648,8 +659,11 @@ static int do_scamperconnect(void)
 
 static int pinger_data(void)
 {
-  uint16_t types[] = {SCAMPER_FILE_OBJ_PING};
+  uint16_t types[] = {SCAMPER_FILE_OBJ_CYCLE_START,
+		      SCAMPER_FILE_OBJ_CYCLE_STOP,
+		      SCAMPER_FILE_OBJ_PING};
   int typec = sizeof(types) / sizeof(uint16_t);
+  int done = 0;
 
 #ifdef HAVE_DAEMON
   /* start a daemon if asked to */
@@ -666,14 +680,13 @@ static int pinger_data(void)
      (addrfile_fd = open(addrfile_name, O_RDONLY)) < 0 ||
      (addrfile_buf = malloc(addrfile_len)) == NULL ||
      (ffilter = scamper_file_filter_alloc(types, typec)) == NULL ||
-     (tree = splaytree_alloc((splaytree_cmp_t)sc_pinger_cmp)) == NULL ||
      (virgin = slist_alloc()) == NULL || (waiting = slist_alloc()) == NULL ||
      do_scamperconnect() != 0 ||
      (outfile = scamper_file_open(outfile_name, 'w', outfile_type)) == NULL ||
      (decode_sf = scamper_file_opennull('r', "warts")) == NULL ||
      (decode_rb = scamper_file_readbuf_alloc()) == NULL)
     {
-      print("%s: could not init\n", __func__);
+      print("%s: could not init", __func__);
       return -1;
     }
 
@@ -689,11 +702,12 @@ static int pinger_data(void)
 	    return -1;
 	}
 
-      if(splaytree_count(tree) == 0 && slist_count(virgin) == 0 &&
-	 slist_count(waiting) == 0 && addrfile_fd == -1)
+      if(probing == 0 && slist_count(virgin) == 0 &&
+	 slist_count(waiting) == 0 && addrfile_fd == -1 && done == 0)
 	{
-	  print("%s: done\n", __func__);
-	  break;
+	  print("%s: done", __func__);
+	  scamper_inst_done(scamper_inst);
+	  done = 1;
 	}
 
       scamper_ctrl_wait(scamper_ctrl, NULL);
@@ -725,12 +739,6 @@ static void cleanup(void)
     {
       slist_free_cb(waiting, (slist_free_t)sc_pinger_free);
       waiting = NULL;
-    }
-
-  if(tree != NULL)
-    {
-      splaytree_free(tree, (splaytree_free_t)sc_pinger_free);
-      tree = NULL;
     }
 
   if(scamper_inst != NULL)
@@ -780,7 +788,7 @@ static void cleanup(void)
       free(addrfile_buf);
       addrfile_buf = NULL;
     }
-  
+
   return;
 }
 

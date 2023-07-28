@@ -1,7 +1,7 @@
 /*
  * scamper_do_tracelb.h
  *
- * $Id: scamper_tracelb_do.h,v 1.10 2018/05/26 21:00:30 mjl Exp $
+ * $Id: scamper_tracelb_do.h,v 1.11 2023/06/04 07:24:33 mjl Exp $
  *
  * Copyright (C) 2008-2010 The University of Waikato
  * Author: Matthew Luckie
@@ -28,18 +28,10 @@
 #ifndef __SCAMPER_DO_TRACELB_H
 #define __SCAMPER_DO_TRACELB_H
 
-void *scamper_do_tracelb_alloc(char *str);
-
 scamper_task_t *scamper_do_tracelb_alloctask(void *data,
 					     scamper_list_t *list,
 					     scamper_cycle_t *cycle);
-
-int scamper_do_tracelb_arg_validate(int argc, char *argv[], int *stop);
-
 void scamper_do_tracelb_free(void *);
-
-const char *scamper_do_tracelb_usage(void);
-
 void scamper_do_tracelb_cleanup(void);
 int scamper_do_tracelb_init(void);
 

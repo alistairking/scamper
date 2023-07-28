@@ -1,12 +1,12 @@
 /*
  * sc_ttlexp: dump all unique source IP addresses in TTL expired messages
  *
- * $Id: sc_ttlexp.c,v 1.9 2020/03/17 07:32:17 mjl Exp $
+ * $Id: sc_ttlexp.c,v 1.12 2023/05/29 21:22:27 mjl Exp $
  *
  *         Matthew Luckie
  *         mjl@luckie.org.nz
  *
- * Copyright (C) 2017-2018 Matthew Luckie
+ * Copyright (C) 2017-2023 Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -29,6 +29,7 @@
 #include "internal.h"
 
 #include "scamper_addr.h"
+#include "scamper_list.h"
 #include "trace/scamper_trace.h"
 #include "tracelb/scamper_tracelb.h"
 #include "scamper_file.h"
@@ -94,7 +95,7 @@ static int dump_addr(scamper_addr_t *addr)
   if(no_reserved != 0 && scamper_addr_isreserved(addr) == 1)
     return 0;
 
-  if(SCAMPER_ADDR_TYPE_IS_IPV4(addr))
+  if(scamper_addr_isipv4(addr))
     {
       if(splaytree_find(st_ip4, addr) != NULL)
 	return 0;
@@ -103,7 +104,7 @@ static int dump_addr(scamper_addr_t *addr)
       if(splaytree_insert(st_ip4, a) == NULL)
 	goto done;
     }
-  else if(SCAMPER_ADDR_TYPE_IS_IPV6(addr))
+  else if(scamper_addr_isipv6(addr))
     {
       if(splaytree_find(st_ip6, addr) != NULL)
 	return 0;
@@ -121,34 +122,41 @@ static int dump_addr(scamper_addr_t *addr)
 
 static int dump_tracelb(scamper_tracelb_t *trace)
 {
-  scamper_tracelb_link_t *link;
-  scamper_tracelb_node_t *node;
-  scamper_tracelb_probe_t *probe;
-  scamper_tracelb_reply_t *reply;
-  scamper_tracelb_probeset_t *set;
-  uint16_t i, j, k, l, m;
+  const scamper_tracelb_link_t *link;
+  const scamper_tracelb_node_t *node;
+  const scamper_tracelb_probe_t *probe;
+  const scamper_tracelb_reply_t *reply;
+  const scamper_tracelb_probeset_t *set;
+  scamper_addr_t *dst, *from;
+  uint16_t i, j, k, l, m, nodec, linkc, hopc, probec, rxc;
   int rc = -1;
 
-  for(i=0; i<trace->nodec; i++)
+  nodec = scamper_tracelb_nodec_get(trace);
+  dst = scamper_tracelb_dst_get(trace);
+  for(i=0; i<nodec; i++)
     {
-      node = trace->nodes[i];
-      for(j=0; j<node->linkc; j++)
+      node = scamper_tracelb_node_get(trace, i);
+      linkc = scamper_tracelb_node_linkc_get(node);
+      for(j=0; j<linkc; j++)
 	{
-	  link = node->links[j];
-	  for(k=0; k<link->hopc; k++)
+	  link = scamper_tracelb_node_link_get(node, j);
+	  hopc = scamper_tracelb_link_hopc_get(link);
+	  for(k=0; k<hopc; k++)
 	    {
-	      set = link->sets[k];
-	      for(l=0; l<set->probec; l++)
+	      set = scamper_tracelb_link_probeset_get(link, k);
+	      probec = scamper_tracelb_probeset_probec_get(set);
+	      for(l=0; l<probec; l++)
 		{
-		  probe = set->probes[l];
-		  for(m=0; m<probe->rxc; m++)
+		  probe = scamper_tracelb_probeset_probe_get(set, l);
+		  rxc = scamper_tracelb_probe_rxc_get(probe);
+		  for(m=0; m<rxc; m++)
 		    {
-		      reply = set->probes[l]->rxs[m];
-		      if(SCAMPER_TRACELB_REPLY_IS_ICMP_TTL_EXP(reply) == 0 ||
-			 (no_dst != 0 &&
-			  scamper_addr_cmp(reply->reply_from,trace->dst) == 0))
+		      reply = scamper_tracelb_probe_rx_get(probe, m);
+		      from = scamper_tracelb_reply_from_get(reply);
+		      if(scamper_tracelb_reply_is_icmp_ttl_exp(reply) == 0 ||
+			 (no_dst != 0 && scamper_addr_cmp(from, dst) == 0))
 			continue;
-		      if(dump_addr(reply->reply_from) != 0)
+		      if(dump_addr(from) != 0)
 			goto done;
 		    }
 		}
@@ -164,19 +172,23 @@ static int dump_tracelb(scamper_tracelb_t *trace)
 
 static int dump_trace(scamper_trace_t *trace)
 {
-  scamper_trace_hop_t *hop;
-  uint16_t u16;
+  const scamper_trace_hop_t *hop;
+  scamper_addr_t *dst, *hop_addr;
+  uint16_t u16, hop_count;
   int rc = -1;
 
-  for(u16=0; u16<trace->hop_count; u16++)
+  hop_count = scamper_trace_hop_count_get(trace);
+  dst = scamper_trace_dst_get(trace);
+  for(u16=0; u16<hop_count; u16++)
     {
-      for(hop = trace->hops[u16]; hop != NULL; hop = hop->hop_next)
+      for(hop = scamper_trace_hop_get(trace, u16); hop != NULL;
+	  hop = scamper_trace_hop_next_get(hop))
 	{
-	  if(SCAMPER_TRACE_HOP_IS_ICMP_TTL_EXP(hop) == 0 ||
-	     (no_dst != 0 &&
-	      scamper_addr_cmp(hop->hop_addr, trace->dst) == 0))
+	  hop_addr = scamper_trace_hop_addr_get(hop);
+	  if(scamper_trace_hop_is_icmp_ttl_exp(hop) == 0 ||
+	     (no_dst != 0 && scamper_addr_cmp(hop_addr, dst) == 0))
 	    continue;
-	  if(dump_addr(hop->hop_addr) != 0)
+	  if(dump_addr(hop_addr) != 0)
 	    goto done;
 	}
     }

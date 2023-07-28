@@ -1,7 +1,7 @@
 /*
  * sc_speedtrap
  *
- * $Id: sc_speedtrap.c,v 1.75 2023/03/22 01:38:57 mjl Exp $
+ * $Id: sc_speedtrap.c,v 1.84 2023/05/29 07:17:30 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -1479,7 +1479,7 @@ static int do_method_ping(void)
       return -1;
     }
 
-  if(scamper_inst_do(scamper_inst, buf) == NULL)
+  if(scamper_inst_do(scamper_inst, buf, NULL) == NULL)
     {
       fprintf(stderr, "could not send %s\n", buf);
       return -1;
@@ -1518,7 +1518,7 @@ static int do_method_ally(void)
   string_concat(cmd, sizeof(cmd), &off, " %s",
 		scamper_addr_tostr(tg->addr, addr, sizeof(addr)));
 
-  if(scamper_inst_do(scamper_inst, cmd) == NULL)
+  if(scamper_inst_do(scamper_inst, cmd, NULL) == NULL)
     {
       fprintf(stderr, "could not send %s\n", cmd);
       return -1;
@@ -1857,34 +1857,40 @@ static int do_decoderead_ping(scamper_ping_t *ping)
     reply_overlap,
     reply_descend2,
   };
+  const scamper_ping_reply_t *reply;
+  const struct timeval   *tx;
   sc_target_t            *target;
   char                    buf[64];
-  scamper_ping_reply_t   *reply;
   int                     rc = -1;
   sc_targetipid_t         p[6];
-  uint16_t                u16;
+  uint16_t                u16, ping_sent;
   uint16_t                probes_rxd = 0;
   uint16_t                ipids_rxd = 0;
+  scamper_addr_t         *dst;
 
-  if((target = sc_target_findtree(ping->dst)) == NULL)
+  dst = scamper_ping_dst_get(ping);
+  if((target = sc_target_findtree(dst)) == NULL)
     {
       fprintf(stderr, "do_decoderead: could not find dst %s\n",
-	      scamper_addr_tostr(ping->dst, buf, sizeof(buf)));
+	      scamper_addr_tostr(dst, buf, sizeof(buf)));
       goto done;
     }
   sc_target_detachtree(target);
 
-  for(u16=0; u16<ping->ping_sent; u16++)
+  ping_sent = scamper_ping_sent_get(ping);
+  for(u16=0; u16<ping_sent; u16++)
     {
-      if((reply = ping->ping_replies[u16]) == NULL ||
-	 SCAMPER_PING_REPLY_IS_ICMP_ECHO_REPLY(reply) == 0)
+      if((reply = scamper_ping_reply_get(ping, u16)) == NULL ||
+	 scamper_ping_reply_is_icmp_echo_reply(reply) == 0)
 	continue;
       probes_rxd++;
-      if(reply->flags & SCAMPER_PING_REPLY_FLAG_REPLY_IPID)
+      if(scamper_ping_reply_flag_is_reply_ipid(reply))
 	{
-	  timeval_cpy(&p[ipids_rxd].tx, &reply->tx);
-	  timeval_add_tv3(&p[ipids_rxd].rx, &reply->tx, &reply->rtt);
-	  p[ipids_rxd].ipid = reply->reply_ipid32;
+	  tx = scamper_ping_reply_tx_get(reply);
+	  timeval_cpy(&p[ipids_rxd].tx, tx);
+	  timeval_add_tv3(&p[ipids_rxd].rx, tx,
+			  scamper_ping_reply_rtt_get(reply));
+	  p[ipids_rxd].ipid = scamper_ping_reply_ipid32_get(reply);
 	  ipids_rxd++;
 	}
     }
@@ -1899,7 +1905,8 @@ static int do_decoderead_ping(scamper_ping_t *ping)
 
 static int do_decoderead_dealias(scamper_dealias_t *dealias)
 {
-  scamper_dealias_ally_t *ally = dealias->data;
+  const scamper_dealias_ally_t *ally = scamper_dealias_ally_get(dealias);
+  const scamper_dealias_probedef_t *def;
   sc_addr2router_t *a2r_a, *a2r_b, *a2r_c;
   scamper_addr_t *a, *b;
   sc_targetset_t *ts;
@@ -1909,11 +1916,19 @@ static int do_decoderead_dealias(scamper_dealias_t *dealias)
   slist_node_t *sn;
   slist_t *list;
   int rc = -1;
+  uint8_t result;
 
-  assert(SCAMPER_DEALIAS_METHOD_IS_ALLY(dealias));
+  assert(ally != NULL);
 
-  a = ally->probedefs[0].dst; scamper_addr_tostr(a, ab, sizeof(ab));
-  b = ally->probedefs[1].dst; scamper_addr_tostr(b, bb, sizeof(bb));
+  result = scamper_dealias_result_get(dealias);
+
+  def = scamper_dealias_ally_def0_get(ally);
+  a = scamper_dealias_probedef_dst_get(def);
+  scamper_addr_tostr(a, ab, sizeof(ab));
+
+  def = scamper_dealias_ally_def1_get(ally);
+  b = scamper_dealias_probedef_dst_get(def);
+  scamper_addr_tostr(b, bb, sizeof(bb));
 
   a2r_a = sc_addr2router_find(a);
   assert(a2r_a != NULL); assert(a2r_a->router != NULL);
@@ -1928,9 +1943,9 @@ static int do_decoderead_dealias(scamper_dealias_t *dealias)
   ts = tg->ts;
 
   logprint(1, "%s %s %s\n", ab, bb,
-	   scamper_dealias_result_tostr(dealias, r, sizeof(r)));
+	   scamper_dealias_result_tostr(result, r, sizeof(r)));
 
-  if(dealias->result == SCAMPER_DEALIAS_RESULT_ALIASES)
+  if(result == SCAMPER_DEALIAS_RESULT_ALIASES)
     {
       /* merge two routers together */
       if(a2r_a->router != a2r_b->router)
@@ -1952,7 +1967,7 @@ static int do_decoderead_dealias(scamper_dealias_t *dealias)
 	  assert(a2r_b->router == a2r_a->router);
 	}
     }
-  else if(dealias->result == SCAMPER_DEALIAS_RESULT_NOTALIASES)
+  else if(result == SCAMPER_DEALIAS_RESULT_NOTALIASES)
     {
       /* mark these routers as not being aliases to save further probing */
       if(a2r_a->router != a2r_b->router)
@@ -1961,7 +1976,7 @@ static int do_decoderead_dealias(scamper_dealias_t *dealias)
 	    goto done;
 	}
     }
-  else if(dealias->result == SCAMPER_DEALIAS_RESULT_NONE && ts->attempt < 2)
+  else if(result == SCAMPER_DEALIAS_RESULT_NONE && ts->attempt < 2)
     {
       ts->attempt++;
       timeval_add_s(&tv, &now, 1);
@@ -2039,7 +2054,6 @@ static void ctrlcb(scamper_inst_t *inst, uint8_t type, scamper_task_t *task,
 
       if(obj_data == NULL)
 	return;
-      probing--;
 
       if(scamper_file_write_obj(outfile, obj_type, obj_data) != 0)
 	{
@@ -2047,17 +2061,34 @@ static void ctrlcb(scamper_inst_t *inst, uint8_t type, scamper_task_t *task,
 	  goto err;
 	}
 
+      if(obj_type == SCAMPER_FILE_OBJ_CYCLE_START ||
+	 obj_type == SCAMPER_FILE_OBJ_CYCLE_STOP)
+	{
+	  scamper_cycle_free(obj_data);
+	  return;
+	}
+
+      probing--;
       if((obj_type == SCAMPER_FILE_OBJ_PING &&
 	  do_decoderead_ping(obj_data) != 0) ||
 	 (obj_type == SCAMPER_FILE_OBJ_DEALIAS &&
 	  do_decoderead_dealias(obj_data) != 0))
 	goto err;
-
+    }
+  else if(type == SCAMPER_CTRL_TYPE_ERR)
+    {
+      /* XXX: handle a "command not accepted" more gracefully */
+      goto err;
     }
   else if(type == SCAMPER_CTRL_TYPE_EOF)
     {
       scamper_inst_free(scamper_inst);
       scamper_inst = NULL;
+    }
+  else if(type == SCAMPER_CTRL_TYPE_FATAL)
+    {
+      logprint(1, "fatal: %s", scamper_ctrl_strerror(scamper_ctrl));
+      goto err;
     }
   return;
 
@@ -2146,6 +2177,8 @@ static int do_addressfile(void)
  */
 static int do_scamperconnect(void)
 {
+  const char *type = "unknown";
+
   if((scamper_ctrl = scamper_ctrl_alloc(ctrlcb)) == NULL)
     {
       fprintf(stderr, "could not alloc scamper_ctrl\n");
@@ -2154,27 +2187,23 @@ static int do_scamperconnect(void)
 
   if(options & OPT_PORT)
     {
-      if((scamper_inst = scamper_inst_inet(scamper_ctrl,
-					   dst_addr, dst_port)) == NULL)
-	{
-	  fprintf(stderr, "could not alloc port inst\n");
-	  return -1;
-	}
-      return 0;
+      type = "port";
+      scamper_inst = scamper_inst_inet(scamper_ctrl, NULL, dst_addr, dst_port);
     }
 #ifdef HAVE_SOCKADDR_UN
   else if(options & OPT_UNIX)
     {
-      if((scamper_inst = scamper_inst_unix(scamper_ctrl, unix_name)) == NULL)
-	{
-	  fprintf(stderr, "could not alloc unix inst\n");
-	  return -1;
-	}
-      return 0;
+      type = "unix";
+      scamper_inst = scamper_inst_unix(scamper_ctrl, NULL, unix_name);
     }
 #endif
 
-  return -1;
+  if(scamper_inst == NULL)
+    {
+      fprintf(stderr, "could not alloc %s inst\n", type);
+      return -1;
+    }
+  return 0;
 }
 
 static int speedtrap_data(void)
@@ -2266,24 +2295,26 @@ static int speedtrap_data(void)
 static int ping_read(const scamper_ping_t *ping, uint32_t *ipids,
 		     int *ipidc, int *replyc)
 {
-  scamper_ping_reply_t *reply;
-  int i, maxipidc = *ipidc;
+  const scamper_ping_reply_t *reply;
+  uint16_t i, ping_sent;
+  int maxipidc = *ipidc;
 
   *ipidc = 0;
   *replyc = 0;
 
-  for(i=0; i<ping->ping_sent; i++)
+  ping_sent = scamper_ping_sent_get(ping);
+  for(i=0; i<ping_sent; i++)
     {
-      if((reply = ping->ping_replies[i]) == NULL)
+      if((reply = scamper_ping_reply_get(ping, i)) == NULL)
 	continue;
-      if(SCAMPER_PING_REPLY_IS_ICMP_ECHO_REPLY(reply) == 0)
+      if(scamper_ping_reply_is_icmp_echo_reply(reply) == 0)
 	continue;
       (*replyc)++;
-      if(reply->flags & SCAMPER_PING_REPLY_FLAG_REPLY_IPID)
+      if(scamper_ping_reply_flag_is_reply_ipid(reply))
 	{
 	  if(*ipidc == maxipidc)
 	    return -1;
-	  ipids[*ipidc] = reply->reply_ipid32;
+	  ipids[*ipidc] = scamper_ping_reply_ipid32_get(reply);
 	  (*ipidc)++;
 	}
     }
@@ -2295,10 +2326,11 @@ static int process_1_ping(const scamper_ping_t *ping)
 {
   sc_router_t *r;
   sc_addr2router_t *a2r;
+  scamper_addr_t *dst;
   uint32_t ipids[10];
   int ipidc, replyc;
 
-  if(ping->userid != 0)
+  if(scamper_ping_userid_get(ping) != 0)
     return 0;
 
   ipidc = sizeof(ipids) / sizeof(uint32_t);
@@ -2307,11 +2339,12 @@ static int process_1_ping(const scamper_ping_t *ping)
   if(ipid_incr(ipids, ipidc) == 0)
     return 0;
 
-  if(sc_addr2router_find(ping->dst) != NULL)
+  dst = scamper_ping_dst_get(ping);
+  if(sc_addr2router_find(dst) != NULL)
     return 0;
 
   if((r = sc_router_alloc()) == NULL ||
-     (a2r = sc_addr2router_alloc(ping->dst, r)) == NULL ||
+     (a2r = sc_addr2router_alloc(dst, r)) == NULL ||
      slist_tail_push(r->addrs, a2r) == NULL)
     return -1;
   return 0;
@@ -2319,16 +2352,21 @@ static int process_1_ping(const scamper_ping_t *ping)
 
 static int process_1_ally(const scamper_dealias_t *dealias)
 {
-  const scamper_dealias_ally_t *ally = dealias->data;
+  const scamper_dealias_ally_t *ally = scamper_dealias_ally_get(dealias);
+  const scamper_dealias_probedef_t *def;
   sc_addr2router_t *a2r_a, *a2r_b, *a2r_c;
   slist_t *list;
   sc_router_t *r;
   slist_node_t *sn;
-  scamper_addr_t *a = ally->probedefs[0].dst;
-  scamper_addr_t *b = ally->probedefs[1].dst;
+  scamper_addr_t *a, *b;
 
-  if(dealias->result != SCAMPER_DEALIAS_RESULT_ALIASES)
+  if(scamper_dealias_result_get(dealias) != SCAMPER_DEALIAS_RESULT_ALIASES)
     return 0;
+
+  def = scamper_dealias_ally_def0_get(ally);
+  a = scamper_dealias_probedef_dst_get(def);
+  def = scamper_dealias_ally_def1_get(ally);
+  b = scamper_dealias_probedef_dst_get(def);
 
   a2r_a = sc_addr2router_find(a);
   a2r_b = sc_addr2router_find(b);
@@ -2415,7 +2453,7 @@ static int process_2_ping(const scamper_ping_t *ping)
   int ipidc, replyc;
   char buf[64];
 
-  if(ping->userid != 0)
+  if(scamper_ping_userid_get(ping) != 0)
     {
       dump_stop = 1;
       return 0;
@@ -2425,7 +2463,7 @@ static int process_2_ping(const scamper_ping_t *ping)
   if(ping_read(ping, ipids, &ipidc, &replyc) != 0)
     return -1;
 
-  scamper_addr_tostr(ping->dst, buf, sizeof(buf));
+  scamper_addr_tostr(scamper_ping_dst_get(ping), buf, sizeof(buf));
   if(ipidc == 0)
     {
       if(replyc == 0)
@@ -2451,25 +2489,30 @@ static struct timeval d3_states_last[6];
 
 static int process_3_ping(const scamper_ping_t *ping)
 {
-  uint32_t id = ping->userid;
-  if(timeval_cmp(&d3_states_first[id], &ping->start) > 0 ||
+  const struct timeval *start = scamper_ping_start_get(ping);
+  uint32_t id = scamper_ping_userid_get(ping);
+
+  if(timeval_cmp(&d3_states_first[id], start) > 0 ||
      d3_states_first[id].tv_sec == 0)
-    timeval_cpy(&d3_states_first[id], &ping->start);
-  if(timeval_cmp(&d3_states_last[id], &ping->start) < 0)
-    timeval_cpy(&d3_states_last[id], &ping->start);
-  d3_states_probec[id] += ping->ping_sent;
+    timeval_cpy(&d3_states_first[id], start);
+  if(timeval_cmp(&d3_states_last[id], start) < 0)
+    timeval_cpy(&d3_states_last[id], start);
+  d3_states_probec[id] += scamper_ping_sent_get(ping);
   return 0;
 }
 
 static int process_3_ally(const scamper_dealias_t *dealias)
 {
-  uint32_t id = dealias->userid;
-  d3_states_probec[id] += dealias->probec;
-  if(timeval_cmp(&d3_states_first[id], &dealias->start) > 0 ||
+  uint32_t id = scamper_dealias_userid_get(dealias);
+  const struct timeval *start = scamper_dealias_start_get(dealias);
+
+  d3_states_probec[id] += scamper_dealias_probec_get(dealias);
+  if(timeval_cmp(&d3_states_first[id], start) > 0 ||
      d3_states_first[id].tv_sec == 0)
-    timeval_cpy(&d3_states_first[id], &dealias->start);
-  if(timeval_cmp(&d3_states_last[id], &dealias->start) < 0)
-    timeval_cpy(&d3_states_last[id], &dealias->start);
+    timeval_cpy(&d3_states_first[id], start);
+  if(timeval_cmp(&d3_states_last[id], start) < 0)
+    timeval_cpy(&d3_states_last[id], start);
+
   return 0;
 }
 
@@ -2497,40 +2540,47 @@ static void finish_3(void)
 
 static int process_4_ping(const scamper_ping_t *ping)
 {
-  scamper_ping_reply_t *reply;
+  const scamper_ping_reply_t *reply;
+  const struct timeval *tx;
   sc_target_t *target;
   sc_targetipid_t ti;
-  uint16_t u16;
+  uint32_t userid;
+  uint16_t u16, ping_sent;
+  scamper_addr_t *dst;
 
   /* only interested in the first three stages */
-  if(ping->userid != MODE_DESCEND &&
-     ping->userid != MODE_OVERLAP &&
-     ping->userid != MODE_DESCEND2)
+  userid = scamper_ping_userid_get(ping);
+  if(userid != MODE_DESCEND &&
+     userid != MODE_OVERLAP &&
+     userid != MODE_DESCEND2)
     return 0;
 
   if(targets == NULL &&
      (targets = splaytree_alloc((splaytree_cmp_t)sc_target_addr_cmp)) == NULL)
     return -1;
 
-  if((target = sc_target_findtree(ping->dst)) == NULL)
+  dst = scamper_ping_dst_get(ping);
+  if((target = sc_target_findtree(dst)) == NULL)
     {
-      if((target = sc_target_alloc(ping->dst)) == NULL ||
+      if((target = sc_target_alloc(dst)) == NULL ||
 	 (target->tree_node = splaytree_insert(targets, target)) == NULL)
 	return -1;
     }
 
-  for(u16=0; u16<ping->ping_sent; u16++)
+  ping_sent = scamper_ping_sent_get(ping);
+  for(u16=0; u16<ping_sent; u16++)
     {
-      if((reply = ping->ping_replies[u16]) == NULL ||
-	 SCAMPER_PING_REPLY_IS_ICMP_ECHO_REPLY(reply) == 0 ||
-	 (reply->flags & SCAMPER_PING_REPLY_FLAG_REPLY_IPID) == 0)
+      if((reply = scamper_ping_reply_get(ping, u16)) == NULL ||
+	 scamper_ping_reply_is_icmp_echo_reply(reply) == 0 ||
+	 scamper_ping_reply_flag_is_reply_ipid(reply) == 0)
 	continue;
 
       /* record the response */
       ti.target = target;
-      ti.ipid = reply->reply_ipid32;
-      timeval_cpy(&ti.tx, &reply->tx);
-      timeval_add_tv3(&ti.rx, &reply->tx, &reply->rtt);
+      ti.ipid = scamper_ping_reply_ipid32_get(reply);
+      tx = scamper_ping_reply_tx_get(reply);
+      timeval_cpy(&ti.tx, tx);
+      timeval_add_tv3(&ti.rx, tx, scamper_ping_reply_rtt_get(reply));
       if(sc_target_sample(target, &ti) == NULL)
 	return -1;
     }
@@ -2650,13 +2700,20 @@ static int speedtrap_read(void)
 
 static int speedtrap_init(void)
 {
-  uint16_t types[] = {SCAMPER_FILE_OBJ_PING, SCAMPER_FILE_OBJ_DEALIAS};
-  int typec = sizeof(types) / sizeof(uint16_t);
+  uint16_t types[4];
+  int typec = 0;
 
 #ifdef HAVE_PTHREAD
   int i;
 #endif
 
+  types[typec++] = SCAMPER_FILE_OBJ_PING;
+  types[typec++] = SCAMPER_FILE_OBJ_DEALIAS;
+  if(options & OPT_OUTFILE)
+    {
+      types[typec++] = SCAMPER_FILE_OBJ_CYCLE_START;
+      types[typec++] = SCAMPER_FILE_OBJ_CYCLE_STOP;
+    }
   if((ffilter = scamper_file_filter_alloc(types, typec)) == NULL)
     return -1;
 

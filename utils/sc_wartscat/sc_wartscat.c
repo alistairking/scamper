@@ -3,10 +3,10 @@
  *
  * This is a utility program to concatenate warts data files together.
  *
- * $Id: sc_wartscat.c,v 1.33 2023/03/22 01:38:57 mjl Exp $
+ * $Id: sc_wartscat.c,v 1.45 2023/05/29 20:21:28 mjl Exp $
  *
  * Copyright (C) 2007-2011 The University of Waikato
- * Copyright (C) 2022      Matthew Luckie
+ * Copyright (C) 2022-2023 Matthew Luckie
  * Copyright (C) 2023      The Regents of the University of California
  * Author: Matthew Luckie
  *
@@ -100,6 +100,7 @@ static int check_options(int argc, char *argv[])
   char *opts = "o:s?";
   char *opt_outfile = NULL;
   char *outfile_type = "warts";
+  char m = 'a';
 
   while((i = getopt(argc, argv, opts)) != -1)
     {
@@ -184,7 +185,19 @@ static int check_options(int argc, char *argv[])
 #endif
 	}
 
-      if((outfile = scamper_file_open(opt_outfile, 'a', outfile_type)) == NULL)
+      if(strcmp(outfile_type, "warts") != 0)
+	{
+	  if(access(opt_outfile, F_OK) == 0)
+	    {
+	      usage(argv[0], OPT_OUTFILE);
+	      fprintf(stderr, "cannot write to %s: cannot append to %s file\n",
+		      opt_outfile, outfile_type);
+	      return -1;
+	    }
+	  m = 'w';
+	}
+
+      if((outfile = scamper_file_open(opt_outfile, m, outfile_type)) == NULL)
 	{
 	  usage(argv[0], OPT_OUTFILE);
 	  return -1;
@@ -192,14 +205,16 @@ static int check_options(int argc, char *argv[])
     }
   else
     {
+#ifdef HAVE_ISATTY
       /* writing to stdout; don't dump a binary structure to a tty. */
-      if(isatty(1) != 0)
+      if(isatty(STDOUT_FILENO) != 0)
 	{
 	  fprintf(stderr, "not going to dump warts to a tty, sorry\n");
 	  return -1;
 	}
+#endif
 
-      if((outfile = scamper_file_openfd(1, "-", 'w', "warts")) == NULL)
+      if((outfile = scamper_file_openfd(STDOUT_FILENO,"-",'w',"warts")) == NULL)
 	{
 	  fprintf(stderr, "could not wrap scamper_file around stdout\n");
 	  return -1;
@@ -410,49 +425,49 @@ static int sort_cat_fill(heap_t *heap, sort_struct_t *s)
       switch(s->type)
 	{
 	case SCAMPER_FILE_OBJ_CYCLE_START:
-	  s->tv.tv_sec = ((scamper_cycle_t *)s->data)->start_time;
+	  s->tv.tv_sec = scamper_cycle_start_time_get(s->data);
 	  s->tv.tv_usec = 0;
 	  break;
 
 	case SCAMPER_FILE_OBJ_CYCLE_STOP:
-	  s->tv.tv_sec = ((scamper_cycle_t *)s->data)->stop_time;
+	  s->tv.tv_sec = scamper_cycle_stop_time_get(s->data);
 	  s->tv.tv_usec = 1000000;
 	  break;
 
 	case SCAMPER_FILE_OBJ_TRACE:
-	  timeval_cpy(&s->tv, &((scamper_trace_t *)s->data)->start);
+	  timeval_cpy(&s->tv, scamper_trace_start_get(s->data));
 	  break;
 
 	case SCAMPER_FILE_OBJ_PING:
-	  timeval_cpy(&s->tv, &((scamper_ping_t *)s->data)->start);
+	  timeval_cpy(&s->tv, scamper_ping_start_get(s->data));
 	  break;
 
 	case SCAMPER_FILE_OBJ_TRACELB:
-	  timeval_cpy(&s->tv, &((scamper_tracelb_t *)s->data)->start);
+	  timeval_cpy(&s->tv, scamper_tracelb_start_get(s->data));
 	  break;
 
 	case SCAMPER_FILE_OBJ_DEALIAS:
-	  timeval_cpy(&s->tv, &((scamper_dealias_t *)s->data)->start);
+	  timeval_cpy(&s->tv, scamper_dealias_start_get(s->data));
 	  break;
 
 	case SCAMPER_FILE_OBJ_NEIGHBOURDISC:
-	  timeval_cpy(&s->tv, &((scamper_neighbourdisc_t *)s->data)->start);
+	  timeval_cpy(&s->tv, scamper_neighbourdisc_start_get(s->data));
 	  break;
 
 	case SCAMPER_FILE_OBJ_TBIT:
-	  timeval_cpy(&s->tv, &((scamper_tbit_t *)s->data)->start);
+	  timeval_cpy(&s->tv, scamper_tbit_start_get(s->data));
 	  break;
 
 	case SCAMPER_FILE_OBJ_STING:
-	  timeval_cpy(&s->tv, &((scamper_sting_t *)s->data)->start);
+	  timeval_cpy(&s->tv, scamper_sting_start_get(s->data));
 	  break;
 
 	case SCAMPER_FILE_OBJ_SNIFF:
-	  timeval_cpy(&s->tv, &((scamper_sniff_t *)s->data)->start);
+	  timeval_cpy(&s->tv, scamper_sniff_start_get(s->data));
 	  break;
 
 	case SCAMPER_FILE_OBJ_HOST:
-	  timeval_cpy(&s->tv, &((scamper_host_t *)s->data)->start);
+	  timeval_cpy(&s->tv, scamper_host_start_get(s->data));
 	  break;
 	}
 

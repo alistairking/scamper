@@ -6,11 +6,11 @@
  * Copyright (C) 2011-2013 Internap Network Services Corporation
  * Copyright (C) 2013-2014 The Regents of the University of California
  * Copyright (C) 2015      The University of Waikato
- * Copyright (C) 2016-2022 Matthew Luckie
+ * Copyright (C) 2016-2023 Matthew Luckie
  *
  * Authors: Brian Hammond, Matthew Luckie
  *
- * $Id: scamper_trace_json.c,v 1.24 2022/12/09 09:37:42 mjl Exp $
+ * $Id: scamper_trace_json.c,v 1.27 2023/05/29 21:22:27 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -33,9 +33,12 @@
 #include "internal.h"
 
 #include "scamper_addr.h"
+#include "scamper_addr_int.h"
 #include "scamper_list.h"
 #include "scamper_trace.h"
+#include "scamper_trace_int.h"
 #include "scamper_icmpext.h"
+#include "scamper_icmpext_int.h"
 #include "scamper_file.h"
 #include "scamper_file_json.h"
 #include "scamper_trace_json.h"

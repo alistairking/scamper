@@ -8,7 +8,7 @@
  * mjl_patricia.  Note, we cannot use a generic Patricia Trie to do
  * longest matching prefix lookup, hence this tree.
  *
- * Copyright (C) 2016 Matthew Luckie. All rights reserved.
+ * Copyright (C) 2016-2023 Matthew Luckie. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -31,14 +31,23 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  *
- * $Id: mjl_prefixtree.c,v 1.14 2020/03/17 07:32:15 mjl Exp $
+ * $Id: mjl_prefixtree.c,v 1.18 2023/06/01 04:15:41 mjl Exp $
  *
  */
 
 #include <sys/types.h>
+
+#ifndef _WIN32
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#else
+#include <ws2tcpip.h>
+typedef unsigned __int8 uint8_t;
+typedef unsigned __int16 uint16_t;
+typedef unsigned __int32 uint32_t;
+#endif
+
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
@@ -80,7 +89,8 @@ struct prefixtree
   int                v;
 };
 
-static const uint32_t uint32_netmask[] = {
+static const uint32_t uint32_mask[] = {
+  0x00000000,
   0x80000000, 0xc0000000, 0xe0000000, 0xf0000000,
   0xf8000000, 0xfc000000, 0xfe000000, 0xff000000,
   0xff800000, 0xffc00000, 0xffe00000, 0xfff00000,
@@ -93,6 +103,7 @@ static const uint32_t uint32_netmask[] = {
 
 #ifdef _WIN32
 static const uint16_t uint16_mask[] = {
+  0x0000,
   0x8000, 0xc000, 0xe000, 0xf000,
   0xf800, 0xfc00, 0xfe00, 0xff00,
   0xff80, 0xffc0, 0xffe0, 0xfff0,
@@ -313,9 +324,10 @@ static int prefix4_fbd(const prefix4_t *a, const prefix4_t *b)
 
 static int prefix6_fbd(const prefix6_t *a, const prefix6_t *b)
 {
-  uint32_t v;
   int i, r;
 
+#ifndef _WIN32
+  uint32_t v;
   for(i=0; i<4; i++)
     {
       if((v = ntohl(a->net.s6_addr32[i] ^ b->net.s6_addr32[i])) == 0)
@@ -335,16 +347,35 @@ static int prefix6_fbd(const prefix6_t *a, const prefix6_t *b)
 
       return r;
     }
+#else
+  uint16_t v;
+  for(i=0; i<8; i++)
+    {
+      if((v = ntohs(a->net.u.Word[i] ^ b->net.u.Word[i])) == 0)
+	continue;
+      if(v & 0xFF00)     { v >>= 8;  r += 8;  }
+      if(v & 0xF0)       { v >>= 4;  r += 4;  }
+      if(v & 0xC)        { v >>= 2;  r += 2;  }
+      if(v & 0x2)        {           r += 1;  }
+      r = (15 - r) + (i * 16);
+      return r;
+    }
+#endif
 
   return 128;
+}
+
+int prefix4_isvalid(const struct in_addr *net, uint8_t len)
+{
+  if(len > 32 || (net->s_addr & htonl(~uint32_mask[len])) != 0)
+    return 0;
+  return 1;
 }
 
 static int prefix4_ip_in(const prefix4_t *p4, const struct in_addr *ip4)
 {
   assert(p4->len <= 32);
-  if(p4->len == 0)
-    return 1;
-  if(((ip4->s_addr ^ p4->net.s_addr) & htonl(uint32_netmask[p4->len-1])) == 0)
+  if(((ip4->s_addr ^ p4->net.s_addr) & htonl(uint32_mask[p4->len])) == 0)
     return 1;
   return 0;
 }
@@ -366,14 +397,10 @@ static int prefix6_ip_in(const prefix6_t *p6, const struct in6_addr *ip6)
 #ifndef _WIN32
   for(i=0; i<4; i++)
     {
-      /*
-       * handle the fact that we can only check 32 bits at a time.
-       * no need to change byte order as all bytes are the same
-       */
       if(len > 32)
-	mask = uint32_netmask[31];
+	mask = uint32_mask[32];
       else
-	mask = htonl(uint32_netmask[len-1]);
+	mask = htonl(uint32_mask[len]);
 
       if(((ip6->s6_addr32[i] ^ p6->net.s6_addr32[i]) & mask) != 0)
 	return 0;
@@ -387,9 +414,9 @@ static int prefix6_ip_in(const prefix6_t *p6, const struct in6_addr *ip6)
   for(i=0; i<8; i++)
     {
       if(len > 16)
-	mask = uint16_mask[15];
+	mask = uint16_mask[16];
       else
-	mask = htons(uint16_mask[len-1]);
+	mask = htons(uint16_mask[len]);
 
       if(((ip6->u.Word[i] ^ p6->net.u.Word[i]) & mask) != 0)
 	return 0;
@@ -402,6 +429,53 @@ static int prefix6_ip_in(const prefix6_t *p6, const struct in6_addr *ip6)
 #endif
 
   return -1;
+}
+
+int prefix6_isvalid(const struct in6_addr *net, uint8_t len)
+{
+  uint8_t off = 0;
+  int i;
+
+  if(len > 128)
+    return 0;
+
+#ifndef _WIN32
+  for(i=0; i<4; i++)
+    {
+      if(off < len)
+	{
+	  if(len - off >= 32)
+	    {
+	      off += 32;
+	      continue;
+	    }
+
+	  if((net->s6_addr32[i] & htonl(~uint32_mask[len-off])) != 0)
+	    return 0;
+	}
+      else if(net->s6_addr32[i] != 0)
+	return 0;
+    }
+#else
+  for(i=0; i<8; i++)
+    {
+      if(off < len)
+	{
+	  if(len - off >= 16)
+	    {
+	      off += 16;
+	      continue;
+	    }
+
+	  if((net->u.Word[i] & htonl(~uint16_mask[len-off])) != 0)
+	    return 0;
+	}
+      else if(net->u.Word[i] != 0)
+	return 0;
+    }
+#endif
+
+  return 1;     
 }
 
 prefix4_t *prefixtree_find_ip4(const prefixtree_t *tree,
@@ -565,6 +639,10 @@ prefixtree_node_t *prefixtree_insert4_dm(prefixtree_t *tree, prefix4_t *pref,
 
   assert(tree->v == 4);
 
+  /* do not attempt to insert an invalid prefix into the tree */
+  if(prefix4_isvalid(&pref->net, pref->len) == 0)
+    return NULL;
+
   if((x = tree->head) == NULL)
     {
 #ifndef DMALLOC
@@ -706,6 +784,10 @@ prefixtree_node_t *prefixtree_insert6_dm(prefixtree_t *tree, prefix6_t *pref,
   int bit, fbd;
 
   assert(tree->v == 6);
+
+  /* do not attempt to insert an invalid prefix into the tree */
+  if(prefix6_isvalid(&pref->net, pref->len) == 0)
+    return NULL;
 
   if((x = tree->head) == NULL)
     {

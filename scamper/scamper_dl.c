@@ -1,7 +1,7 @@
 /*
  * scamper_dl: manage BPF/PF_PACKET datalink instances for scamper
  *
- * $Id: scamper_dl.c,v 1.189 2023/01/03 03:10:39 mjl Exp $
+ * $Id: scamper_dl.c,v 1.192 2023/05/29 21:22:26 mjl Exp $
  *
  *          Matthew Luckie
  *          Ben Stasiewicz added fragmentation support.
@@ -18,6 +18,7 @@
  * Copyright (C) 2012      Matthew Luckie
  * Copyright (C) 2014-2015 The Regents of the University of California
  * Copyright (C) 2022-2023 Matthew Luckie
+ * Copyright (C) 2023      The Regents of the University of California
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -46,6 +47,7 @@
 #include "scamper.h"
 #include "scamper_debug.h"
 #include "scamper_addr.h"
+#include "scamper_addr_int.h"
 #include "scamper_fds.h"
 #include "scamper_dl.h"
 #include "scamper_privsep.h"
@@ -2068,15 +2070,32 @@ int scamper_dl_open_fd(const int ifindex)
  */
 int scamper_dl_open(const int ifindex)
 {
-  int fd;
+  int fd = -1;
 
 #if defined(WITHOUT_PRIVSEP)
-  if((fd = scamper_dl_open_fd(ifindex)) == -1)
-#else
-  if((fd = scamper_privsep_open_datalink(ifindex)) == -1)
-#endif
+#ifndef _WIN32
+  uid_t uid = scamper_getuid();
+  uid_t euid = scamper_geteuid();
+  if(uid != euid && seteuid(euid) != 0)
     {
-      scamper_debug(__func__, "could not open ifindex %d", ifindex);
+      printerror(__func__, "could not claim euid");
+      return -1;
+    }
+#endif
+  fd = scamper_dl_open_fd(ifindex);
+#ifndef _WIN32
+  if(uid != euid && seteuid(uid) != 0)
+    {
+      printerror(__func__, "could not return to uid");
+      exit(-errno);
+    }
+#endif
+#else
+  fd = scamper_privsep_open_datalink(ifindex);
+#endif
+  if(fd == -1)
+    {
+      printerror(__func__, "could not open ifindex %d", ifindex);
       return -1;
     }
 
@@ -2097,10 +2116,25 @@ void scamper_dl_cleanup()
 int scamper_dl_init()
 {
 #if defined(HAVE_BPF)
-  if(dl_bpf_init() == -1)
+  int rc;
+#ifndef _WIN32
+  uid_t uid = scamper_getuid();
+  uid_t euid = scamper_geteuid();
+  if(uid != euid && seteuid(euid) != 0)
     {
+      printerror(__func__, "could not claim euid");
       return -1;
     }
+#endif
+  rc = dl_bpf_init();
+#ifndef _WIN32
+  if(uid != euid && seteuid(uid) != 0)
+    {
+      printerror(__func__, "could not return to uid");
+      exit(-errno);
+    }
+#endif
+  return rc;
 #elif defined(__linux__)
   readbuf_len = 128;
   if((readbuf = malloc_zero(readbuf_len)) == NULL)

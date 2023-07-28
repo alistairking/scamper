@@ -1,7 +1,7 @@
 /*
  * scamper_rtsock: code to deal with a route socket or equivalent
  *
- * $Id: scamper_rtsock.c,v 1.92 2023/02/24 04:00:51 mjl Exp $
+ * $Id: scamper_rtsock.c,v 1.94 2023/05/29 21:22:26 mjl Exp $
  *
  *          Matthew Luckie
  *
@@ -24,7 +24,8 @@
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2010 The University of Waikato
  * Copyright (C) 2014      The Regents of the University of California
- * Copyright (C) 2016-2022 Matthew Luckie
+ * Copyright (C) 2016-2023 Matthew Luckie
+ * Copyright (C) 2023      The Regents of the University of California
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -106,6 +107,7 @@ struct rtmsg
 
 #include "scamper.h"
 #include "scamper_addr.h"
+#include "scamper_addr_int.h"
 #include "scamper_list.h"
 #include "scamper_fds.h"
 #include "scamper_rtsock.h"
@@ -703,10 +705,27 @@ int scamper_rtsock_open()
   int fd;
 
 #if defined(WITHOUT_PRIVSEP)
-  if((fd = scamper_rtsock_open_fd()) == -1)
-#else
-  if((fd = scamper_privsep_open_rtsock()) == -1)
+#ifndef _WIN32
+  uid_t uid = scamper_getuid();
+  uid_t euid = scamper_geteuid();
+  if(uid != euid && seteuid(euid) != 0)
+    {
+      printerror(__func__, "could not claim euid");
+      return -1;
+    }
 #endif
+  fd = scamper_rtsock_open_fd();
+#ifndef _WIN32
+  if(uid != euid && seteuid(uid) != 0)
+    {
+      printerror(__func__, "could not return to uid");
+      exit(-errno);
+    }
+#endif
+#else
+  fd = scamper_privsep_open_rtsock();
+#endif
+  if(fd == -1)
     {
       printerror(__func__, "could not open route socket");
       return -1;

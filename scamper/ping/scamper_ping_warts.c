@@ -4,10 +4,10 @@
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2012-2014 The Regents of the University of California
- * Copyright (C) 2016-2022 Matthew Luckie
+ * Copyright (C) 2016-2023 Matthew Luckie
  * Author: Matthew Luckie
  *
- * $Id: scamper_ping_warts.c,v 1.24 2022/06/03 23:19:34 mjl Exp $
+ * $Id: scamper_ping_warts.c,v 1.26 2023/05/29 21:22:26 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -30,10 +30,12 @@
 #include "internal.h"
 
 #include "scamper_addr.h"
+#include "scamper_addr_int.h"
 #include "scamper_list.h"
 #include "scamper_icmpext.h"
 #include "scamper_ping.h"
 #include "scamper_file.h"
+#include "scamper_ping_int.h"
 #include "scamper_file_warts.h"
 #include "scamper_ping_warts.h"
 
@@ -171,9 +173,9 @@ static void insert_ping_reply_v4rr(uint8_t *buf, uint32_t *off,
   uint8_t i;
 
   assert(len - *off >= 1);
-  buf[(*off)++] = rr->rrc;
-  for(i=0; i<rr->rrc; i++)
-    insert_addr(buf, off, len, rr->rr[i], param);
+  buf[(*off)++] = rr->ipc;
+  for(i=0; i<rr->ipc; i++)
+    insert_addr(buf, off, len, rr->ip[i], param);
 
   return;
 }
@@ -184,21 +186,21 @@ static int extract_ping_reply_v4rr(const uint8_t *buf, uint32_t *off,
 				   void *param)
 {
   scamper_addr_t *addr;
-  uint8_t i, rrc;
+  uint8_t i, ipc;
 
   if(*off >= len || len - *off < 1)
     return -1;
 
-  rrc = buf[(*off)++];
+  ipc = buf[(*off)++];
 
-  if((*out = scamper_ping_reply_v4rr_alloc(rrc)) == NULL)
+  if((*out = scamper_ping_reply_v4rr_alloc(ipc)) == NULL)
     return -1;
 
-  for(i=0; i<rrc; i++)
+  for(i=0; i<ipc; i++)
     {
       if(extract_addr(buf, off, len, &addr, param) != 0)
 	return -1;
-      (*out)->rr[i] = addr;
+      (*out)->ip[i] = addr;
     }
 
   return 0;
@@ -353,8 +355,8 @@ static void warts_ping_reply_params(const scamper_ping_t *ping,
       else if(var->id == WARTS_PING_REPLY_V4RR)
 	{
 	  *params_len += 1;
-	  for(j=0; j<reply->v4rr->rrc; j++)
-	    *params_len += warts_addr_size(table, reply->v4rr->rr[j]);
+	  for(j=0; j<reply->v4rr->ipc; j++)
+	    *params_len += warts_addr_size(table, reply->v4rr->ip[j]);
 	}
       else if(var->id == WARTS_PING_REPLY_V4TS)
 	{
@@ -861,7 +863,7 @@ int scamper_file_warts_ping_write(const scamper_file_t *sf,
   /* length of the ping's flags, parameters, and number of reply records */
   len = 8 + flags_len + 2 + params_len + 2;
 
-  if((reply_count = scamper_ping_reply_count(ping)) > 0)
+  if((reply_count = scamper_ping_reply_total(ping)) > 0)
     {
       size = reply_count * sizeof(warts_ping_reply_t);
       if((reply_state = (warts_ping_reply_t *)malloc_zero(size)) == NULL)

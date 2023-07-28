@@ -6,9 +6,9 @@
 .\" Copyright (c) 2020 University of Waikato
 .\"                    All rights reserved
 .\"
-.\" $Id: sc_pinger.1,v 1.1 2020/06/23 23:58:20 mjl Exp $
+.\" $Id: sc_pinger.1,v 1.2 2023/04/10 07:44:21 mjl Exp $
 .\"
-.Dd Jun 24, 2020
+.Dd April 10, 2023
 .Dt SC_PINGER 1
 .Os
 .Sh NAME
@@ -19,12 +19,13 @@
 .Bk -words
 .Op Fl ?D
 .Op Fl a Ar infile
-.Op Fl o Ar outfile
-.Op Fl p Ar port
-.Op Fl U Ar unix-socket
 .Op Fl c Ar probe-count
 .Op Fl m Ar method
+.Op Fl o Ar outfile
+.Op Fl p Ar port
+.Op Fl R Ar unix-remote
 .Op Fl t Ar logfile
+.Op Fl U Ar unix-socket
 .Ek
 .\""""""""""""
 .Sh DESCRIPTION
@@ -55,19 +56,6 @@ to detach and become a daemon.
 .It Fl a Ar infile
 specifies the name of the input file which consists of a sequence of
 IPv4 and IPv6 addresses, one per line.
-.It Fl o Ar outfile
-specifies the name of the output file to be written.
-The output file will use the
-.Xr warts 5
-format.
-.It Fl p Ar port
-specifies the port on the local host where
-.Xr scamper 1
-is accepting control socket connections.
-.It Fl U Ar unix-socket
-specifies the name of a unix domain socket where
-.Xr scamper 1
-is accepting control socket connections.
 .It Fl c Ar probe-count
 specifies the number of probes to send for each method.
 .Nm
@@ -87,10 +75,27 @@ manual page.
 By default,
 .Nm
 uses ICMP-echo, UDP-dport, and TCP-ack-sport to destination port 80.
+.It Fl o Ar outfile
+specifies the name of the output file to be written.
+The output file will use the
+.Xr warts 5
+format.
+.It Fl p Ar port
+specifies the port on the local host where
+.Xr scamper 1
+is accepting control socket connections.
+.It Fl R Ar unix-remote
+specifies the name of a unix domain socket on the local host where a remote
+.Xr scamper 1
+instance is accepting commands.
 .It Fl t Ar logfile
 specifies the name of a file to log output from
 .Nm
 generated at run time.
+.It Fl U Ar unix-local
+specifies the name of a unix domain socket on the local host where a local
+.Xr scamper 1
+instance is accepting commands.
 .El
 .\""""""""""""
 .Sh EXAMPLES

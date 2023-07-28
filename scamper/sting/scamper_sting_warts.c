@@ -3,10 +3,11 @@
  *
  * Copyright (C) 2010-2011 The University of Waikato
  * Copyright (C) 2012-2014 The Regents of the University of California
- * Copyright (C) 2016-2022 Matthew Luckie
+ * Copyright (C) 2016-2023 Matthew Luckie
+ *
  * Author: Matthew Luckie
  *
- * $Id: scamper_sting_warts.c,v 1.13 2022/02/13 08:48:15 mjl Exp $
+ * $Id: scamper_sting_warts.c,v 1.14 2023/05/15 20:55:06 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -32,6 +33,7 @@
 #include "scamper_list.h"
 #include "scamper_icmpext.h"
 #include "scamper_sting.h"
+#include "scamper_sting_int.h"
 #include "scamper_file.h"
 #include "scamper_file_warts.h"
 #include "scamper_sting_warts.h"

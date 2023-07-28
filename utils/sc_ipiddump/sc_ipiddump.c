@@ -1,13 +1,14 @@
 /*
  * sc_ipiddump
  *
- * $Id: sc_ipiddump.c,v 1.17 2022/03/20 04:38:23 mjl Exp $
+ * $Id: sc_ipiddump.c,v 1.22 2023/05/29 21:22:27 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
  *
  * Copyright (C) 2013 The Regents of the University of California
  * Copyright (C) 2015 The University of Waikato
+ * Copyright (C) 2023 Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -132,6 +133,11 @@ static int check_options(int argc, char *argv[])
       switch(ch)
 	{
 	case 'i':
+	  if(opt_ips != NULL)
+	    {
+	      usage(OPT_IP);
+	      goto done;
+	    }
 	  opt_ips = strdup(optarg);
 	  break;
 
@@ -146,6 +152,11 @@ static int check_options(int argc, char *argv[])
 	  break;
 
 	case 'U':
+	  if(opt_userid != NULL)
+	    {
+	      usage(OPT_USERID);
+	      goto done;
+	    }
 	  opt_userid = strdup(optarg);
 	  break;
 
@@ -238,7 +249,7 @@ static int ipid_sample_cmp(const ipid_sample_t *a, const ipid_sample_t *b)
 
 static char *ipid_sample_ipid(const ipid_sample_t *sample,char *buf,size_t len)
 {
-  if(SCAMPER_ADDR_TYPE_IS_IPV4(sample->addr))
+  if(scamper_addr_isipv4(sample->addr))
     snprintf(buf, len, "%04x", sample->ipid);
   else
     snprintf(buf, len, "%08x", sample->ipid);
@@ -259,38 +270,46 @@ static void ipid_sample_free(ipid_sample_t *sample)
 
 static int process_dealias(scamper_dealias_t *dealias)
 {
-  scamper_dealias_probe_t *probe;
-  scamper_dealias_reply_t *reply;
+  const scamper_dealias_probe_t *probe;
+  const scamper_dealias_reply_t *reply;
+  const scamper_dealias_probedef_t *def;
+  scamper_addr_t *reply_src, *def_src;
   ipid_sample_t *sample;
-  uint32_t i, u32;
-  uint16_t j;
+  uint32_t i, u32, probec;
+  uint16_t j, replyc;
 
-  if(useridc > 0 && uint32_find(userids, useridc, dealias->userid) == 0)
+  if(useridc > 0 && uint32_find(userids, useridc,
+				scamper_dealias_userid_get(dealias)) == 0)
     goto done;
 
-  for(i=0; i<dealias->probec; i++)
+  probec = scamper_dealias_probec_get(dealias);
+  for(i=0; i<probec; i++)
     {
-      probe = dealias->probes[i];
-      for(j=0; j<probe->replyc; j++)
+      probe = scamper_dealias_probe_get(dealias, i);
+      replyc = scamper_dealias_probe_replyc_get(probe);
+      for(j=0; j<replyc; j++)
 	{
-	  reply = probe->replies[j];
-	  if(ipc > 0 && ip_find(ips, ipc, reply->src) == 0)
+	  reply = scamper_dealias_probe_reply_get(probe, j);
+	  reply_src =  scamper_dealias_reply_src_get(reply);
+	  if(ipc > 0 && ip_find(ips, ipc, reply_src) == 0)
 	    continue;
 
-	  if(SCAMPER_ADDR_TYPE_IS_IPV4(reply->src))
-	    u32 = reply->ipid;
-	  else if(reply->flags & SCAMPER_DEALIAS_REPLY_FLAG_IPID32)
-	    u32 = reply->ipid32;
+	  if(scamper_addr_isipv4(reply_src))
+	    u32 = scamper_dealias_reply_ipid_get(reply);
+	  else if(scamper_dealias_reply_is_ipid32(reply))
+	    u32 = scamper_dealias_reply_ipid32_get(reply);
 	  else
 	    continue;
 
 	  if((sample = malloc_zero(sizeof(ipid_sample_t))) == NULL)
 	    goto err;
-	  sample->probe_src = scamper_addr_use(probe->def->src);
-	  sample->addr = scamper_addr_use(reply->src);
+	  def = scamper_dealias_probe_def_get(probe);
+	  def_src = scamper_dealias_probedef_src_get(def);
+	  sample->probe_src = scamper_addr_use(def_src);
+	  sample->addr = scamper_addr_use(reply_src);
 	  sample->ipid = u32;
-	  timeval_cpy(&sample->tx, &probe->tx);
-	  timeval_cpy(&sample->rx, &reply->rx);
+	  timeval_cpy(&sample->tx, scamper_dealias_probe_tx_get(probe));
+	  timeval_cpy(&sample->rx, scamper_dealias_reply_rx_get(reply));
 
 	  if(slist_tail_push(list, sample) == NULL)
 	    goto err;
@@ -308,37 +327,44 @@ static int process_dealias(scamper_dealias_t *dealias)
 
 static int process_ping(scamper_ping_t *ping)
 {
-  scamper_ping_reply_t *reply;
+  const scamper_ping_reply_t *reply;
+  const struct timeval *tx;
+  scamper_addr_t *r_addr;
   ipid_sample_t *sample;
-  uint16_t i;
+  uint16_t i, ping_sent;
   uint32_t u32;
 
-  if(useridc > 0 && uint32_find(userids, useridc, ping->userid) == 0)
+  if(useridc > 0 &&
+     uint32_find(userids, useridc, scamper_ping_userid_get(ping)) == 0)
     goto done;
 
-  for(i=0; i<ping->ping_sent; i++)
+  ping_sent = scamper_ping_sent_get(ping);
+  for(i=0; i<ping_sent; i++)
     {
-      for(reply = ping->ping_replies[i]; reply != NULL; reply = reply->next)
+      for(reply = scamper_ping_reply_get(ping, i); reply != NULL;
+	  reply = scamper_ping_reply_next_get(reply))
 	{
-	  if(reply->tx.tv_sec == 0)
+	  tx = scamper_ping_reply_tx_get(reply);
+	  if(tx->tv_sec == 0)
 	    continue;
-	  if(ipc > 0 && ip_find(ips, ipc, reply->addr) == 0)
+	  r_addr = scamper_ping_reply_addr_get(reply);
+	  if(ipc > 0 && ip_find(ips, ipc, r_addr) == 0)
 	    continue;
 
-	  if(SCAMPER_ADDR_TYPE_IS_IPV4(reply->addr))
-	    u32 = reply->reply_ipid;
-	  else if(reply->flags & SCAMPER_PING_REPLY_FLAG_REPLY_IPID)
-	    u32 = reply->reply_ipid32;
+	  if(scamper_addr_isipv4(r_addr))
+	    u32 = scamper_ping_reply_ipid_get(reply);
+	  else if(scamper_ping_reply_flag_is_reply_ipid(reply))
+	    u32 = scamper_ping_reply_ipid32_get(reply);
 	  else
 	    continue;
 
 	  if((sample = malloc_zero(sizeof(ipid_sample_t))) == NULL)
 	    goto err;
-	  sample->probe_src = scamper_addr_use(ping->src);
-	  sample->addr = scamper_addr_use(reply->addr);
+	  sample->probe_src = scamper_addr_use(scamper_ping_src_get(ping));
+	  sample->addr = scamper_addr_use(r_addr);
 	  sample->ipid = u32;
-	  timeval_cpy(&sample->tx, &reply->tx);
-	  timeval_add_tv3(&sample->rx, &reply->tx, &reply->rtt);
+	  timeval_cpy(&sample->tx, tx);
+	  timeval_add_tv3(&sample->rx, tx, scamper_ping_reply_rtt_get(reply));
 
 	  if(slist_tail_push(list, sample) == NULL)
 	    goto err;
@@ -356,34 +382,44 @@ static int process_ping(scamper_ping_t *ping)
 
 static int process_trace(scamper_trace_t *trace)
 {
-  scamper_trace_hop_t *hop;
+  const scamper_trace_hop_t *hop;
+  const struct timeval *tv;
+  scamper_addr_t *hop_addr, *src_addr;
   ipid_sample_t *sample;
   uint16_t u16;
+  uint8_t hop_count;
 
   /* only grab IPID values from IPv4 traceroutes */
-  if(trace->dst->type != SCAMPER_ADDR_TYPE_IPV4)
+  if(scamper_trace_dst_is_ipv4(trace) == 0)
     goto done;
 
   /* only include traceroutes for specified userids */
-  if(useridc > 0 && uint32_find(userids, useridc, trace->userid) == 0)
+  if(useridc > 0 && uint32_find(userids, useridc,
+				scamper_trace_userid_get(trace)) == 0)
     goto done;
 
-  for(u16=trace->firsthop-1; u16<trace->hop_count; u16++)
+  hop_count = scamper_trace_hop_count_get(trace);
+  src_addr = scamper_trace_src_get(trace);
+  for(u16=scamper_trace_firsthop_get(trace)-1; u16<hop_count; u16++)
     {
-      for(hop = trace->hops[u16]; hop != NULL; hop = hop->hop_next)
-	{      
-	  if(hop->hop_tx.tv_sec == 0)
+      for(hop = scamper_trace_hop_get(trace, u16); hop != NULL;
+	  hop = scamper_trace_hop_next_get(hop))
+	{
+	  tv = scamper_trace_hop_tx_get(hop);
+	  if(tv->tv_sec == 0)
 	    continue;
-	  if(ipc > 0 && ip_find(ips, ipc, hop->hop_addr) == 0)
+	  hop_addr = scamper_trace_hop_addr_get(hop);
+	  if(ipc > 0 && ip_find(ips, ipc, hop_addr) == 0)
 	    continue;
 
 	  if((sample = malloc_zero(sizeof(ipid_sample_t))) == NULL)
 	    goto err;
-	  sample->probe_src = scamper_addr_use(trace->src);
-	  sample->addr = scamper_addr_use(hop->hop_addr);
-	  sample->ipid = hop->hop_reply_ipid;
-	  timeval_cpy(&sample->tx, &hop->hop_tx);
-	  timeval_add_tv3(&sample->rx, &hop->hop_tx, &hop->hop_rtt);
+	  sample->probe_src = scamper_addr_use(src_addr);
+	  sample->addr = scamper_addr_use(hop_addr);
+	  sample->ipid = scamper_trace_hop_reply_ipid_get(hop);
+	  timeval_cpy(&sample->tx, tv);
+	  tv = scamper_trace_hop_rtt_get(hop);
+	  timeval_add_tv3(&sample->rx, &sample->tx, tv);
 
 	  if(slist_tail_push(list, sample) == NULL)
 	    goto err;

@@ -1,12 +1,12 @@
 /*
  * scamper_addr.c
  *
- * $Id: scamper_addr.c,v 1.74 2020/08/01 21:22:11 mjl Exp $
+ * $Id: scamper_addr.c,v 1.75 2023/05/29 21:22:26 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2013-2014 The Regents of the University of California
- * Copyright (C) 2016-2020 Matthew Luckie
+ * Copyright (C) 2016-2023 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -31,6 +31,7 @@
 
 #include "mjl_splaytree.h"
 #include "scamper_addr.h"
+#include "scamper_addr_int.h"
 #include "utils.h"
 
 /*
@@ -881,6 +882,16 @@ const char *scamper_addr_tostr(const scamper_addr_t *sa,
   return dst;
 }
 
+int scamper_addr_type_get(const scamper_addr_t *addr)
+{
+  return addr->type;
+}
+
+const void *scamper_addr_addr_get(const scamper_addr_t *addr)
+{
+  return addr->addr;
+}
+
 #ifndef DMALLOC
 scamper_addr_t *scamper_addr_alloc(const int type, const void *addr)
 #else
@@ -1064,6 +1075,16 @@ int scamper_addr_isreserved(const scamper_addr_t *sa)
   if(handlers[sa->type-1].isreserved == NULL)
     return -1;
   return handlers[sa->type-1].isreserved(sa);
+}
+
+int scamper_addr_isipv4(const scamper_addr_t *sa)
+{
+  return SCAMPER_ADDR_TYPE_IS_IPV4(sa);
+}
+
+int scamper_addr_isipv6(const scamper_addr_t *sa)
+{
+  return SCAMPER_ADDR_TYPE_IS_IPV6(sa);
 }
 
 scamper_addr_t *scamper_addrcache_get(scamper_addrcache_t *ac,

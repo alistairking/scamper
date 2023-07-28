@@ -6,9 +6,9 @@
 .\" Copyright (c) 2019-2020 Matthew Luckie
 .\"               All rights reserved
 .\"
-.\" $Id: sc_hoiho.1,v 1.9 2021/12/12 00:05:06 mjl Exp $
+.\" $Id: sc_hoiho.1,v 1.10 2023/05/08 15:51:22 mjl Exp $
 .\"
-.Dd September 21, 2020
+.Dd May 8, 2023
 .Dt SC_HOIHO 1
 .Os
 .Sh NAME
@@ -439,6 +439,8 @@ facility "city" cc-st lat lng "street" "name"
 country iso3166-2 iso3166-3 "name"
 .br
 state cc-st "name"
+.br
+vp code lat lng
 .fi
 .in -.3i
 .Pp
@@ -461,8 +463,18 @@ facility "Washington" US-DC 38.902918 -77.029149 "1275 K Street, NW" "CoreSite -
 country us usa "United States"
 .br
 state US-DC "Washington, D.C."
+.br
+vp hlz2-nz 37.86 175.33
 .fi
 .in -.3i
+.Pp
+The VP geohints in the file are used by
+.Nm
+to record where a given VP is located, and are used to identify the location
+associated with an RTT sample.
+VP geohints are not used when searching a hostname for location identifier.
+If the RTT file contains VP codes without a VP geohint, the VP code
+must match one of the other codes with a lat/lng.
 .Pp
 For the RTT measurements, the format of each line of the file is as
 follows:

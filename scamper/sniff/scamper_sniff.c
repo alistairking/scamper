@@ -1,7 +1,7 @@
 /*
  * scamper_sniff.c
  *
- * $Id: scamper_sniff.c,v 1.3 2020/03/17 07:32:16 mjl Exp $
+ * $Id: scamper_sniff.c,v 1.5 2023/05/31 23:22:18 mjl Exp $
  *
  * Copyright (C) 2011 The University of Waikato
  * Author: Matthew Luckie
@@ -29,6 +29,7 @@
 #include "scamper_list.h"
 #include "scamper_addr.h"
 #include "scamper_sniff.h"
+#include "scamper_sniff_int.h"
 
 #include "utils.h"
 

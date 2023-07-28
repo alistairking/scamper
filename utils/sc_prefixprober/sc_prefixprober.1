@@ -1,0 +1,216 @@
+.\"
+.\" sc_prefixprober.1
+.\"
+.\" Author: Matthew Luckie <mjl@luckie.org.nz>
+.\"
+.\" Copyright (c) 2023 The Regents of the University of California
+.\"
+.\" $Id: sc_prefixprober.1,v 1.7 2023/04/20 09:22:18 mjl Exp $
+.\"
+.Dd April 20, 2023
+.Dt SC_PREFIXPROBER 1
+.Os
+.Sh NAME
+.Nm sc_prefixprober
+.Nd scamper driver to probe addresses in specified prefixes
+.Sh SYNOPSIS
+.Nm
+.Bk -words
+.Op Fl ?D
+.Op Fl a Ar in-file
+.Op Fl c Ar command
+.Op Fl d Ar duration
+.Op Fl l Ar limit
+.Op Fl L Ar list-attr
+.Op Fl m Ar move-dir
+.Op Fl o Ar out-file
+.Op Fl O Ar options
+.Op Fl p Ar port
+.Op Fl R Ar unix-remote
+.Op Fl t Ar log-file
+.Op Fl U Ar unix-local
+.Op Fl x Ar dnp-file
+.Ek
+.\""""""""""""
+.Sh DESCRIPTION
+The
+.Nm
+utility provides the ability to connect to a running
+.Xr scamper 1
+instance and use it to probe addresses in specified prefixes.
+.Pp
+.Nm
+can probe both the first and a randomly-selected address in each prefix.
+When
+.Nm
+is instructed to probe both,
+.Nm
+will probe the addresses in a single prefix serially, and back-to-back
+so that measurements within a single prefix occur close in time.
+.Pp
+The supplied prefixes can be nested.
+If a /24 prefix is contained in a less-specific /23,
+.Nm
+will probe addresses in both the specified /24, and the remaining /24
+contained in the /23.
+.Pp
+The command line options for
+.Nm
+are as follows:
+.Bl -tag -width Ds
+.It Fl ?
+prints a list of command line options and a synopsis of each.
+.It Fl D
+causes
+.Nm
+to detach and become a daemon.
+.It Fl a Ar in-file
+specifies the name of the input file which consists of IPv4 and IPv6
+prefixes, one per line.
+.It Fl c Ar command
+specifies the command to use with each address.
+Valid commands are ping, trace, and tracelb.
+By default,
+.Nm
+uses trace.
+.It Fl d Ar duration
+specifies the total duration allowed for all measurements.
+.Nm
+will space probing of individual prefixes out over the total duration
+specified.
+By default,
+.Nm
+probes prefixes as fast as allowed by
+.Xr scamper 1 .
+.It Fl l Ar limit
+specifies the number of objects to write to an output file, before
+closing it and opening the next file.
+The output file must contain a %u format specifier, which
+.Nm
+uses to embed a counter value that increments with each new output file.
+If the user uses the move option,
+.Nm
+moves the file when it closes the file.
+.It Fl L Ar list-attr
+allows
+.Nm
+to override
+.Xr scamper 1
+default values for list and cycle objects.
+The current choices for this option are:
+.Bl -dash -offset 2n -compact -width 1n
+.It
+.Sy id=%u
+specify a 32-bit unsigned integer for the list id.
+.It
+.Sy name=%s
+specify a string for the list's name attribute.
+.It
+.Sy descr=%s
+specify a string for the list's description attribute.
+.It
+.Sy monitor=%s
+specify a string for the list's monitor attribute.
+.It
+.Sy cycle-id=%u
+specify a 32-bit unsigned integer for the cycle id.
+.El
+.It Fl m Ar move-dir
+specifies the name of the directory to move completed files to.
+By default,
+.Nm
+leaves completed files in place.
+.It Fl o Ar out-file
+specifies the prefix of the name of the output file to be written.
+The output file will use the
+.Xr warts 5
+format, and can be compressed with gz, bz2, or xz at collection time if
+the specified outfile has the equivalent extension.
+.It Fl O Ar options
+allows the behavior of
+.Nm
+to be further tailored.
+The current choices for this option are:
+.Bl -dash -offset 2n -compact -width 1n
+.It
+.Sy first:
+probe first address in prefix.
+.It
+.Sy random:
+probe random address in prefix.
+.It
+.Sy noshuffle:
+do not shuffle probe order.
+.El
+.It Fl p Ar port
+specifies the port on the local host where
+.Xr scamper 1
+is accepting control socket connections.
+.It Fl R Ar unix-remote
+specifies the unix domain socket on the local host where a remote
+.Xr scamper 1
+instance is accepting commands.
+.It Fl t Ar log-file
+specifies the name of a file to log output from
+.Nm
+generated at run time.
+.It Fl U Ar unix-local
+specifies the unix domain socket on the local host where a local
+.Xr scamper 1
+instance is accepting commands.
+.It Fl x Ar dnp-file
+specifies a file containing prefixes whose addresses must not be probed.
+.El
+.Sh EXAMPLES
+Given a set of prefixes in a file named infile.txt:
+.Pp
+.in +.3i
+.nf
+192.0.30.0/23
+192.0.30.0/24
+192.0.2.0/24
+.fi
+.in -.3i
+.Pp
+and a
+.Xr scamper 1
+instance listening on port 31337, then both the first and a randomly
+selected address within each prefix can be tracerouted using ICMP-paris
+as follows:
+.Pp
+.Dl sc_prefixprober -c 'trace -P icmp-paris' -a infile.txt -o outfile.warts -p 31337 -O random -O first -L name=foo
+.Pp
+In this scenario,
+.Nm
+may probe 192.0.30.1, 192.0.30.69, 192.0.31.1, 192.0.31.169, 192.0.2.1,
+and 192.0.2.233.
+These are addresses in the two specified /24s, and a /24 contained in
+the less-specific /23 that was not covered by a more-specific /24.
+The output
+.Xr warts 5
+file will have the list's name recorded as foo.
+.Pp
+The following command writes a series of gzip-compressed
+.Xr warts 5
+files, each of which have up to 1000 objects in them, with names such
+as outfile_0000.warts.gz, outfile_0001.warts.gz, moving them to the
+finished directory:
+.Pp
+.Dl sc_prefixprober -c 'ping' -a infile.txt -o outfile_%04u.warts.gz -p 31337 -O first -l 1000 -m finished
+.Pp
+A user can concatenate these files into a final bzip2-compressed
+.Xr warts 5
+file with
+.Xr sc_wartscat 1 :
+.Pp
+.Dl sc_wartscat -o outfile_final.warts.bz2 outfile_0000.warts.gz outfile_0001.warts.gz
+.Pp
+.Sh SEE ALSO
+.Xr scamper 1 ,
+.Xr sc_wartscat 1 ,
+.Xr sc_wartsdump 1 ,
+.Xr sc_warts2json 1 ,
+.Xr warts 5
+.Sh AUTHORS
+.Nm
+was written by Matthew Luckie <mjl@luckie.org.nz>.

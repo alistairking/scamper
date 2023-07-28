@@ -1,7 +1,7 @@
 /*
  * libscamperctrl
  *
- * $Id: libscamperctrl.h,v 1.9 2023/01/10 07:42:18 mjl Exp $
+ * $Id: libscamperctrl.h,v 1.14 2023/04/24 08:07:44 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -26,6 +26,7 @@
 typedef struct scamper_ctrl scamper_ctrl_t;
 typedef struct scamper_inst scamper_inst_t;
 typedef struct scamper_task scamper_task_t;
+typedef struct scamper_attp scamper_attp_t;
 
 #define SCAMPER_CTRL_TYPE_DATA  1
 #define SCAMPER_CTRL_TYPE_MORE  2
@@ -52,17 +53,37 @@ int scamper_ctrl_isdone(scamper_ctrl_t *ctrl);
 
 const char *scamper_ctrl_strerror(const scamper_ctrl_t *ctrl);
 
-scamper_inst_t *scamper_inst_unix(scamper_ctrl_t *ctrl, const char *path);
+scamper_inst_t *scamper_inst_unix(scamper_ctrl_t *ctrl,
+				  const scamper_attp_t *attp,
+				  const char *path);
 scamper_inst_t *scamper_inst_inet(scamper_ctrl_t *ctrl,
+				  const scamper_attp_t *attp,
 				  const char *addr, uint16_t port);
 scamper_inst_t *scamper_inst_remote(scamper_ctrl_t *ctrl, const char *path);
 void scamper_inst_free(scamper_inst_t *inst);
-scamper_task_t *scamper_inst_do(scamper_inst_t *inst, const char *cmd);
+scamper_task_t *scamper_inst_do(scamper_inst_t *inst, const char *cmd, void *p);
 int scamper_inst_halt(scamper_inst_t *inst, scamper_task_t *task);
 int scamper_inst_done(scamper_inst_t *inst);
 
 void *scamper_inst_getparam(const scamper_inst_t *inst);
 void scamper_inst_setparam(scamper_inst_t *inst, void *param);
 
+void *scamper_task_getparam(scamper_task_t *task);
+char *scamper_task_getcmd(scamper_task_t *task, char *buf, size_t len);
 void scamper_task_free(scamper_task_t *task);
 void scamper_task_use(scamper_task_t *task);
+
+#ifdef DMALLOC
+scamper_attp_t *scamper_attp_alloc_dm(const char *file, const int line);
+#define scamper_attp_alloc() scamper_attp_alloc_dm(__FILE__, __LINE__)
+#else
+scamper_attp_t *scamper_attp_alloc(void);
+#endif
+
+void scamper_attp_set_listid(scamper_attp_t *attp, uint32_t list_id);
+int scamper_attp_set_listname(scamper_attp_t *attp, char *list_name);
+int scamper_attp_set_listdescr(scamper_attp_t *attp, char *list_descr);
+int scamper_attp_set_listmonitor(scamper_attp_t *attp, char *list_monitor);
+void scamper_attp_set_cycleid(scamper_attp_t *attp, uint32_t cycle_id);
+void scamper_attp_set_priority(scamper_attp_t *attp, uint32_t priority);
+void scamper_attp_free(scamper_attp_t *attp);

@@ -2,10 +2,10 @@
  * scamper_tracelb_warts.c
  *
  * Copyright (C) 2008-2011 The University of Waikato
- * Copyright (C) 2016-2022 Matthew Luckie
+ * Copyright (C) 2016-2023 Matthew Luckie
  * Author: Matthew Luckie
  *
- * $Id: scamper_tracelb_warts.c,v 1.16 2022/06/14 05:26:16 mjl Exp $
+ * $Id: scamper_tracelb_warts.c,v 1.18 2023/05/29 08:05:37 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -30,7 +30,9 @@
 #include "scamper_addr.h"
 #include "scamper_list.h"
 #include "scamper_icmpext.h"
+#include "scamper_icmpext_int.h"
 #include "scamper_tracelb.h"
+#include "scamper_tracelb_int.h"
 #include "scamper_file.h"
 #include "scamper_file_warts.h"
 #include "scamper_tracelb_warts.h"

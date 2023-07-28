@@ -1,9 +1,11 @@
 /*
  * scamper_ip4.c
  *
- * $Id: scamper_ip4.c,v 1.18 2020/03/17 07:32:16 mjl Exp $
+ * $Id: scamper_ip4.c,v 1.20 2023/05/29 21:22:26 mjl Exp $
  *
  * Copyright (C) 2009-2011 The University of Waikato
+ * Copyright (C) 2023      The Regents of the University of California
+ * Copyright (C) 2023      Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -26,7 +28,10 @@
 #endif
 #include "internal.h"
 
+#include "scamper.h"
+
 #include "scamper_addr.h"
+#include "scamper_addr_int.h"
 #include "scamper_dl.h"
 #include "scamper_probe.h"
 #include "scamper_ip4.h"
@@ -68,11 +73,31 @@ int scamper_ip4_openraw_fd(void)
 
 int scamper_ip4_openraw(void)
 {
+  int fd = -1;
+  
 #if defined(WITHOUT_PRIVSEP)
-  return scamper_ip4_openraw_fd();
-#else
-  return scamper_privsep_open_rawip();
+#ifndef _WIN32
+  uid_t uid = scamper_getuid();
+  uid_t euid = scamper_geteuid();
+  if(uid != euid && seteuid(euid) != 0)
+    {
+      printerror(__func__, "could not claim euid");
+      return -1;
+    }
 #endif
+  fd = scamper_ip4_openraw_fd();
+#ifndef _WIN32
+  if(uid != euid && seteuid(uid) != 0)
+    {
+      printerror(__func__, "could not return to uid");
+      exit(-errno);
+    }
+#endif
+#else
+  fd = scamper_privsep_open_rawip();
+#endif
+
+  return fd;
 }
 
 int scamper_ip4_hlen(scamper_probe_t *pr, size_t *hlen)

@@ -1,7 +1,7 @@
 /*
  * internal.h
  *
- * $Id: internal.h,v 1.54 2023/03/21 07:38:01 mjl Exp $
+ * $Id: internal.h,v 1.56 2023/05/14 02:29:14 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -749,6 +749,14 @@ struct sockaddr_nl
 
 #ifndef TCP_MAX_SEQNUM
 #define TCP_MAX_SEQNUM 4294967295U
+#endif
+
+#ifndef UINT32_MAX
+#define UINT32_MAX 4294967295U
+#endif
+
+#ifndef UINT16_MAX
+#define UINT16_MAX 65535U
 #endif
 
 #ifndef SEQ_LT

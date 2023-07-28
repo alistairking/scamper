@@ -1,7 +1,7 @@
 /*
  * scamper_do_trace.h
  *
- * $Id: scamper_trace_do.h,v 1.16 2012/04/05 18:00:54 mjl Exp $
+ * $Id: scamper_trace_do.h,v 1.17 2023/06/04 05:45:33 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2010 The University of Waikato
@@ -25,17 +25,11 @@
 #ifndef __SCAMPER_DO_TRACE_H
 #define __SCAMPER_DO_TRACE_H
 
-void *scamper_do_trace_alloc(char *str);
-
 scamper_task_t *scamper_do_trace_alloctask(void *data,
 					   scamper_list_t *list,
 					   scamper_cycle_t *cycle);
 
-int scamper_do_trace_arg_validate(int argc, char *argv[], int *stop);
-
 void scamper_do_trace_free(void *data);
-
-const char *scamper_do_trace_usage(void);
 
 int scamper_do_trace_dtree_lss_clear(char *name);
 

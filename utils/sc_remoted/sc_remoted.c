@@ -1,7 +1,7 @@
 /*
  * sc_remoted
  *
- * $Id: sc_remoted.c,v 1.98 2023/02/09 22:13:28 mjl Exp $
+ * $Id: sc_remoted.c,v 1.99 2023/04/21 23:13:35 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -2969,7 +2969,7 @@ static int select_loop(void)
 
       if((count = select(nfds+1, &rfds, wfdsp, NULL, timeout)) < 0)
 	{
-	  if(errno == EINTR)
+	  if(errno == EINTR || errno == EAGAIN)
 	    continue;
 	  remote_debug(__func__, "select failed: %s", strerror(errno));
 	  return -1;

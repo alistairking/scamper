@@ -1,7 +1,7 @@
 /*
  * scamper_do_trace.c
  *
- * $Id: scamper_trace_do.c,v 1.335 2023/03/01 04:22:27 mjl Exp $
+ * $Id: scamper_trace_do.c,v 1.343 2023/06/04 05:45:33 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -35,9 +35,12 @@
 
 #include "scamper.h"
 #include "scamper_addr.h"
+#include "scamper_addr_int.h"
 #include "scamper_list.h"
 #include "scamper_icmpext.h"
+#include "scamper_icmpext_int.h"
 #include "scamper_trace.h"
+#include "scamper_trace_int.h"
 #include "scamper_task.h"
 #include "scamper_queue.h"
 #include "scamper_icmp_resp.h"
@@ -51,7 +54,6 @@
 #include "scamper_debug.h"
 #include "scamper_trace_do.h"
 #include "scamper_addr2mac.h"
-#include "scamper_options.h"
 #include "scamper_icmp4.h"
 #include "scamper_icmp6.h"
 #include "scamper_tcp4.h"
@@ -63,61 +65,6 @@
 #include "mjl_splaytree.h"
 #include "mjl_list.h"
 #include "utils.h"
-
-#define SCAMPER_DO_TRACE_ATTEMPTS_MIN  1
-#define SCAMPER_DO_TRACE_ATTEMPTS_DEF  2
-#define SCAMPER_DO_TRACE_ATTEMPTS_MAX  20
-
-#define SCAMPER_DO_TRACE_DPORT_MIN     1
-#define SCAMPER_DO_TRACE_DPORT_DEF     (32768+666+1) /* probe_id starts at 0 */
-#define SCAMPER_DO_TRACE_DPORT_MAX     65535
-
-#define SCAMPER_DO_TRACE_FIRSTHOP_MIN  1
-#define SCAMPER_DO_TRACE_FIRSTHOP_DEF  1
-#define SCAMPER_DO_TRACE_FIRSTHOP_MAX  255
-
-#define SCAMPER_DO_TRACE_GAPLIMIT_MIN  1
-#define SCAMPER_DO_TRACE_GAPLIMIT_DEF  5
-#define SCAMPER_DO_TRACE_GAPLIMIT_MAX  255
-
-#define SCAMPER_DO_TRACE_GAPACTION_MIN 1
-#define SCAMPER_DO_TRACE_GAPACTION_DEF SCAMPER_TRACE_GAPACTION_STOP
-#define SCAMPER_DO_TRACE_GAPACTION_MAX 2
-
-#define SCAMPER_DO_TRACE_HOPLIMIT_MIN  0
-#define SCAMPER_DO_TRACE_HOPLIMIT_DEF  0
-#define SCAMPER_DO_TRACE_HOPLIMIT_MAX  255
-
-#define SCAMPER_DO_TRACE_LOOPS_MIN     0
-#define SCAMPER_DO_TRACE_LOOPS_DEF     1 /* stop on the first loop found */
-#define SCAMPER_DO_TRACE_LOOPS_MAX     255
-
-#define SCAMPER_DO_TRACE_OFFSET_MIN 0
-#define SCAMPER_DO_TRACE_OFFSET_DEF 0
-#define SCAMPER_DO_TRACE_OFFSET_MAX 8190
-
-#define SCAMPER_DO_TRACE_PPS_MIN       1
-#define SCAMPER_DO_TRACE_PPS_MAX       1000
-#define SCAMPER_DO_TRACE_PPS_DEF       20
-
-#define SCAMPER_DO_TRACE_SPORT_MIN     0
-#define SCAMPER_DO_TRACE_SPORT_MAX     65535
-
-#define SCAMPER_DO_TRACE_SQUERIES_MIN  1
-#define SCAMPER_DO_TRACE_SQUERIES_DEF  1
-#define SCAMPER_DO_TRACE_SQUERIES_MAX  255
-
-#define SCAMPER_DO_TRACE_TOS_MIN 0
-#define SCAMPER_DO_TRACE_TOS_DEF 0
-#define SCAMPER_DO_TRACE_TOS_MAX 255
-
-#define SCAMPER_DO_TRACE_WAIT_MIN   1
-#define SCAMPER_DO_TRACE_WAIT_DEF   5
-#define SCAMPER_DO_TRACE_WAIT_MAX   10
-
-#define SCAMPER_DO_TRACE_WAITPROBE_MIN 0
-#define SCAMPER_DO_TRACE_WAITPROBE_DEF 0
-#define SCAMPER_DO_TRACE_WAITPROBE_MAX 200 /* 2 seconds */
 
 /*
  * pmtud_L2_state
@@ -377,71 +324,6 @@ static const pmtud_L2_t L2[] =
 static const pmtud_L2_t *L2_1454 = &L2[9];
 static const pmtud_L2_t *L2_1500 = &L2[12];
 static const int         L2_cnt  = sizeof(L2) / sizeof(pmtud_L2_t);
-
-#define TRACE_OPT_DPORT       1
-#define TRACE_OPT_FIRSTHOP    2
-#define TRACE_OPT_GAPLIMIT    3
-#define TRACE_OPT_GAPACTION   4
-#define TRACE_OPT_LOOPS       5
-#define TRACE_OPT_MAXTTL      7
-#define TRACE_OPT_PMTUD       8
-#define TRACE_OPT_PAYLOAD     9
-#define TRACE_OPT_PROTOCOL    10
-#define TRACE_OPT_ATTEMPTS    11
-#define TRACE_OPT_ALLATTEMPTS 12
-#define TRACE_OPT_SPORT       13
-#define TRACE_OPT_TOS         14
-#define TRACE_OPT_TTLDST      15
-#define TRACE_OPT_USERID      16
-#define TRACE_OPT_WAIT        17
-#define TRACE_OPT_SRCADDR     18
-#define TRACE_OPT_CONFIDENCE  19
-#define TRACE_OPT_WAITPROBE   20
-#define TRACE_OPT_GSSENTRY    21
-#define TRACE_OPT_LSSNAME     22
-#define TRACE_OPT_OFFSET      23
-#define TRACE_OPT_OPTION      24
-#define TRACE_OPT_RTRADDR     25
-#define TRACE_OPT_SQUERIES    26
-
-static const scamper_option_in_t opts[] = {
-  {'c', NULL, TRACE_OPT_CONFIDENCE,  SCAMPER_OPTION_TYPE_NUM},
-  {'d', NULL, TRACE_OPT_DPORT,       SCAMPER_OPTION_TYPE_STR},
-  {'f', NULL, TRACE_OPT_FIRSTHOP,    SCAMPER_OPTION_TYPE_NUM},
-  {'g', NULL, TRACE_OPT_GAPLIMIT,    SCAMPER_OPTION_TYPE_NUM},
-  {'G', NULL, TRACE_OPT_GAPACTION,   SCAMPER_OPTION_TYPE_NUM},
-  {'l', NULL, TRACE_OPT_LOOPS,       SCAMPER_OPTION_TYPE_NUM},
-  {'m', NULL, TRACE_OPT_MAXTTL,      SCAMPER_OPTION_TYPE_NUM},
-  {'M', NULL, TRACE_OPT_PMTUD,       SCAMPER_OPTION_TYPE_NULL},
-  {'N', NULL, TRACE_OPT_SQUERIES,    SCAMPER_OPTION_TYPE_NUM},
-  {'o', NULL, TRACE_OPT_OFFSET,      SCAMPER_OPTION_TYPE_NUM},
-  {'O', NULL, TRACE_OPT_OPTION,      SCAMPER_OPTION_TYPE_STR},
-  {'p', NULL, TRACE_OPT_PAYLOAD,     SCAMPER_OPTION_TYPE_STR},
-  {'P', NULL, TRACE_OPT_PROTOCOL,    SCAMPER_OPTION_TYPE_STR},
-  {'q', NULL, TRACE_OPT_ATTEMPTS,    SCAMPER_OPTION_TYPE_NUM},
-  {'Q', NULL, TRACE_OPT_ALLATTEMPTS, SCAMPER_OPTION_TYPE_NULL},
-  {'r', NULL, TRACE_OPT_RTRADDR,     SCAMPER_OPTION_TYPE_STR},
-  {'s', NULL, TRACE_OPT_SPORT,       SCAMPER_OPTION_TYPE_NUM},
-  {'S', NULL, TRACE_OPT_SRCADDR,     SCAMPER_OPTION_TYPE_STR},
-  {'t', NULL, TRACE_OPT_TOS,         SCAMPER_OPTION_TYPE_NUM},
-  {'T', NULL, TRACE_OPT_TTLDST,      SCAMPER_OPTION_TYPE_NULL},
-  {'U', NULL, TRACE_OPT_USERID,      SCAMPER_OPTION_TYPE_NUM},
-  {'w', NULL, TRACE_OPT_WAIT,        SCAMPER_OPTION_TYPE_NUM},
-  {'W', NULL, TRACE_OPT_WAITPROBE,   SCAMPER_OPTION_TYPE_NUM},
-  {'z', NULL, TRACE_OPT_GSSENTRY,    SCAMPER_OPTION_TYPE_STR},
-  {'Z', NULL, TRACE_OPT_LSSNAME,     SCAMPER_OPTION_TYPE_STR},
-};
-static const int opts_cnt = SCAMPER_OPTION_COUNT(opts);
-
-const char *scamper_do_trace_usage(void)
-{
-  return
-    "trace [-MQT] [-c confidence] [-d dport] [-f firsthop]\n"
-    "      [-g gaplimit] [-G gapaction] [-l loops] [-m maxttl] [-N squeries]\n"
-    "      [-o offset] [-O options] [-p payload] [-P method] [-q attempts]\n"
-    "      [-r rtraddr] [-s sport] [-S srcaddr] [-t tos] [-U userid]\n"
-    "      [-w wait-timeout] [-W wait-probe] [-z gss-entry] [-Z lss-name]";
-}
 
 static scamper_trace_t *trace_getdata(const scamper_task_t *task)
 {
@@ -705,12 +587,6 @@ static int trace_queue(scamper_task_t *task, const struct timeval *now)
 
  done:
   scamper_task_queue_done(task, 0);
-  return 0;
-}
-
-static int trace_gss_add(scamper_trace_dtree_t *dtree, scamper_addr_t *addr)
-{
-  dtree->gss[dtree->gssc++] = scamper_addr_use(addr);
   return 0;
 }
 
@@ -1599,7 +1475,7 @@ static scamper_trace_hop_t *trace_dl_hop(scamper_task_t *task,
 
 static uint8_t trace_first_mode(const scamper_trace_t *trace)
 {
-  if(SCAMPER_TRACE_IS_DOUBLETREE(trace))
+  if(SCAMPER_TRACE_FLAG_IS_DOUBLETREE(trace))
     return MODE_DTREE_FIRST;
   if(trace->squeries > 1)
     return MODE_PARALLEL;
@@ -1632,7 +1508,7 @@ static void trace_next_mode(scamper_task_t *task, const struct timeval *now)
       goto done;
     }
 
-  if(SCAMPER_TRACE_IS_DOUBLETREE(trace))
+  if(SCAMPER_TRACE_FLAG_IS_DOUBLETREE(trace))
     {
       if(state->mode == MODE_DTREE_FWD)
 	{
@@ -1651,7 +1527,7 @@ static void trace_next_mode(scamper_task_t *task, const struct timeval *now)
       return;
     }
 
-  if(SCAMPER_TRACE_IS_PMTUD(trace))
+  if(SCAMPER_TRACE_FLAG_IS_PMTUD(trace))
     {
       if(trace->stop_reason == SCAMPER_TRACE_STOP_HOPLIMIT ||
 	 trace->stop_reason == SCAMPER_TRACE_STOP_GAPLIMIT ||
@@ -1745,7 +1621,7 @@ static void trace_stop_reason(scamper_trace_t *trace, scamper_trace_hop_t *hop,
       *stop_data   = 0;
     }
   else if(SCAMPER_TRACE_HOP_IS_ICMP_TTL_EXP(hop) &&
-	  SCAMPER_TRACE_IS_IGNORETTLDST(trace) == 0 &&
+	  SCAMPER_TRACE_FLAG_IS_IGNORETTLDST(trace) == 0 &&
 	  scamper_addr_cmp(trace->dst, hop->hop_addr) == 0)
     {
       /*
@@ -1761,7 +1637,7 @@ static void trace_stop_reason(scamper_trace_t *trace, scamper_trace_hop_t *hop,
       *stop_reason = SCAMPER_TRACE_STOP_COMPLETED;
       *stop_data   = 0;
     }
-  else if(SCAMPER_TRACE_IS_DOUBLETREE(trace) &&
+  else if(SCAMPER_TRACE_FLAG_IS_DOUBLETREE(trace) &&
 	  scamper_trace_dtree_gss_find(trace, hop->hop_addr) != NULL)
     {
       *stop_reason = SCAMPER_TRACE_STOP_GSS;
@@ -1832,7 +1708,7 @@ static int handleicmp_trace(scamper_task_t *task,
    *
    * check if we are to send all allotted probes to the target
    */
-  if(SCAMPER_TRACE_IS_ALLATTEMPTS(trace))
+  if(SCAMPER_TRACE_FLAG_IS_ALLATTEMPTS(trace))
     {
       assert(trace->confidence == 0);
 
@@ -1947,7 +1823,7 @@ static int handleicmp_trace(scamper_task_t *task,
    * a probe, then check it now.  the else block below handles the case
    * where we want a larger number of responses from a hop.
    */
-  if(trace->confidence == 0 && SCAMPER_TRACE_IS_ALLATTEMPTS(trace) == 0)
+  if(trace->confidence == 0 && SCAMPER_TRACE_FLAG_IS_ALLATTEMPTS(trace) == 0)
     {
       /* check to see if we have a stop reason from the ICMP response */
       trace_stop_reason(trace, hop, state, &stop_reason, &stop_data);
@@ -2737,7 +2613,7 @@ static void timeout_trace(scamper_task_t *task)
    * got any responses on this hop, and if we did, check to see if we
    * should stop probing this target yet
    */
-  if(SCAMPER_TRACE_IS_ALLATTEMPTS(trace) || trace->confidence != 0)
+  if(SCAMPER_TRACE_FLAG_IS_ALLATTEMPTS(trace) || trace->confidence != 0)
     {
       for(hop = trace->hops[trace->hop_count-1];hop != NULL; hop=hop->hop_next)
 	{
@@ -2820,7 +2696,7 @@ static void timeout_dtree_back(scamper_task_t *task)
     goto next_mode;
 
   if(state->lsst != NULL &&
-     (SCAMPER_TRACE_IS_ALLATTEMPTS(trace) || trace->confidence != 0))
+     (SCAMPER_TRACE_FLAG_IS_ALLATTEMPTS(trace) || trace->confidence != 0))
     {
       for(hop = trace->hops[state->ttl-1]; hop != NULL; hop = hop->hop_next)
 	{
@@ -3076,7 +2952,7 @@ static int handletp_trace(scamper_task_t *task, scamper_dl_rec_t *dl,
     probe->rx++;
 
   /* if we are sending all allotted probes to the target */
-  if(SCAMPER_TRACE_IS_ALLATTEMPTS(trace))
+  if(SCAMPER_TRACE_FLAG_IS_ALLATTEMPTS(trace))
     {
       if(probe->attempt != trace->attempts)
 	goto probe;
@@ -3647,7 +3523,7 @@ static void trace_handle_rt(scamper_route_t *rt)
    * router, or sending fragments, determine the underlying framing to
    * use with each probe packet that will be sent on the datalink.
    */
-  if(SCAMPER_TRACE_IS_PMTUD(trace) ||
+  if(SCAMPER_TRACE_FLAG_IS_PMTUD(trace) ||
      (SCAMPER_TRACE_TYPE_IS_TCP(trace) && state->raw == NULL) ||
      trace->offset != 0 || trace->rtr != NULL ||
      (trace->flags & SCAMPER_TRACE_FLAG_DL) != 0 ||
@@ -3749,6 +3625,37 @@ static void trace_state_free(trace_state_t *state)
   return;
 }
 
+/*
+ * trace_probe_headerlen
+ *
+ * return the length of headers sent on probe packets with this trace
+ */
+static uint16_t trace_probe_headerlen(const scamper_trace_t *trace)
+{
+  uint16_t len;
+
+  if(SCAMPER_ADDR_TYPE_IS_IPV4(trace->dst))
+    len = 20;
+  else if(SCAMPER_ADDR_TYPE_IS_IPV6(trace->dst))
+    len = 40;
+  else
+    return 0;
+
+  if(trace->offset > 0)
+    return len;
+
+  if(SCAMPER_TRACE_TYPE_IS_UDP(trace))
+    len += 8;
+  else if(SCAMPER_TRACE_TYPE_IS_ICMP(trace))
+    len += (1 + 1 + 2 + 2 + 2);
+  else if(SCAMPER_TRACE_TYPE_IS_TCP(trace))
+    len += 20;
+  else
+    return 0;
+
+  return len;
+}
+
 static int trace_state_alloc(scamper_task_t *task)
 {
   scamper_trace_t *trace = trace_getdata(task);
@@ -3814,15 +3721,21 @@ static int trace_state_alloc(scamper_task_t *task)
       goto err;
     }
 
+  if((state->header_size = trace_probe_headerlen(trace)) == 0)
+    {
+      printerror_msg(__func__, "unknown probe headerlen");
+      goto err;
+    }
+  assert(trace->probe_size >= state->header_size);
+
   state->dl           = NULL;
   state->dlhdr        = NULL;
   state->ttl          = trace->firsthop;
-  state->header_size  = scamper_trace_probe_headerlen(trace);
   state->payload_size = trace->probe_size - state->header_size;
   state->id_max       = id_max;
 
   /* if scamper has to get the ifindex, then start in the rtsock mode */
-  if(SCAMPER_TRACE_IS_PMTUD(trace) || SCAMPER_TRACE_IS_DL(trace) ||
+  if(SCAMPER_TRACE_FLAG_IS_PMTUD(trace) || SCAMPER_TRACE_FLAG_IS_DL(trace) ||
      SCAMPER_TRACE_TYPE_IS_TCP(trace) || trace->offset != 0 ||
      trace->rtr != NULL ||
      (SCAMPER_TRACE_TYPE_IS_UDP_PARIS(trace) && sunos != 0))
@@ -4291,556 +4204,6 @@ static void do_trace_probe(scamper_task_t *task)
   if(tp != NULL) free(tp);
   trace_handleerror(task, errno);
   return;
-}
-
-static int trace_arg_param_validate(int optid, char *param, long long *out)
-{
-  long tmp = 0;
-
-  switch(optid)
-    {
-    case TRACE_OPT_DPORT:
-      if(string_tolong(param, &tmp) == -1 ||
-	 tmp < SCAMPER_DO_TRACE_DPORT_MIN ||
-	 tmp > SCAMPER_DO_TRACE_DPORT_MAX)
-	{
-	  goto err;
-	}
-      break;
-
-    case TRACE_OPT_FIRSTHOP:
-      if(string_tolong(param, &tmp) == -1    ||
-	 tmp < SCAMPER_DO_TRACE_FIRSTHOP_MIN ||
-	 tmp > SCAMPER_DO_TRACE_FIRSTHOP_MAX)
-	{
-	  goto err;
-	}
-      break;
-
-    case TRACE_OPT_GAPLIMIT:
-      if(string_tolong(param, &tmp) == -1    ||
-	 tmp < SCAMPER_DO_TRACE_GAPLIMIT_MIN ||
-	 tmp > SCAMPER_DO_TRACE_GAPLIMIT_MAX)
-	{
-	  goto err;
-	}
-      break;
-
-    case TRACE_OPT_GAPACTION:
-      if(string_tolong(param, &tmp) == -1     ||
-	 tmp < SCAMPER_DO_TRACE_GAPACTION_MIN ||
-	 tmp > SCAMPER_DO_TRACE_GAPACTION_MAX)
-	{
-	  goto err;
-	}
-      break;
-
-    case TRACE_OPT_LOOPS:
-      if(string_tolong(param, &tmp) == -1 ||
-	 tmp < SCAMPER_DO_TRACE_LOOPS_MIN ||
-	 tmp > SCAMPER_DO_TRACE_LOOPS_MAX)
-	{
-	  goto err;
-	}
-      break;
-
-    case TRACE_OPT_OFFSET:
-      if(string_tolong(param, &tmp) == -1 ||
-	 tmp < SCAMPER_DO_TRACE_OFFSET_MIN ||
-	 tmp > SCAMPER_DO_TRACE_OFFSET_MAX)
-	{
-	  goto err;
-	}
-      break;
-
-    case TRACE_OPT_OPTION:
-      if(strcasecmp(param, "dl") != 0 &&
-	 strcasecmp(param, "const-payload") != 0 &&
-	 strcasecmp(param, "dtree-noback") != 0 &&
-	 strcasecmp(param, "ptr") != 0)
-	goto err;
-      break;
-
-    case TRACE_OPT_MAXTTL:
-      if(string_tolong(param, &tmp) == -1    ||
-	 tmp < SCAMPER_DO_TRACE_HOPLIMIT_MIN ||
-	 tmp > SCAMPER_DO_TRACE_HOPLIMIT_MAX)
-	{
-	  goto err;
-	}
-      break;
-
-    case TRACE_OPT_PAYLOAD:
-      if((strlen(param) % 2) != 0)
-	goto err;
-      break;
-
-    case TRACE_OPT_PROTOCOL:
-      if(strcasecmp(param, "UDP") == 0)
-	tmp = SCAMPER_TRACE_TYPE_UDP;
-      else if(strcasecmp(param, "TCP") == 0)
-	tmp = SCAMPER_TRACE_TYPE_TCP;
-      else if(strcasecmp(param, "ICMP") == 0)
-	tmp = SCAMPER_TRACE_TYPE_ICMP_ECHO;
-      else if(strcasecmp(param, "ICMP-paris") == 0)
-	tmp = SCAMPER_TRACE_TYPE_ICMP_ECHO_PARIS;
-      else if(strcasecmp(param, "UDP-paris") == 0)
-	tmp = SCAMPER_TRACE_TYPE_UDP_PARIS;
-      else if(strcasecmp(param, "TCP-ack") == 0)
-	tmp = SCAMPER_TRACE_TYPE_TCP_ACK;
-      else goto err;
-      break;
-
-    case TRACE_OPT_ATTEMPTS:
-      if(string_tolong(param, &tmp) == -1    ||
-	 tmp < SCAMPER_DO_TRACE_ATTEMPTS_MIN ||
-	 tmp > SCAMPER_DO_TRACE_ATTEMPTS_MAX)
-	{
-	  goto err;
-	}
-      break;
-
-    case TRACE_OPT_SPORT:
-      if(string_tolong(param, &tmp) == -1 ||
-	 tmp < SCAMPER_DO_TRACE_SPORT_MIN ||
-	 tmp > SCAMPER_DO_TRACE_SPORT_MAX)
-	{
-	  goto err;
-	}
-      break;
-
-    case TRACE_OPT_SQUERIES:
-      if(string_tolong(param, &tmp) == -1 ||
-	 tmp < SCAMPER_DO_TRACE_SQUERIES_MIN ||
-	 tmp > SCAMPER_DO_TRACE_SQUERIES_MAX)
-	{
-	  goto err;
-	}
-      break;
-
-    case TRACE_OPT_TOS:
-      if(string_tolong(param, &tmp) == -1 ||
-	 tmp < SCAMPER_DO_TRACE_TOS_MIN ||
-	 tmp > SCAMPER_DO_TRACE_TOS_MAX)
-	{
-	  goto err;
-	}
-      break;
-
-    case TRACE_OPT_WAIT:
-      if(string_tolong(param, &tmp) == -1 ||
-	 tmp < SCAMPER_DO_TRACE_WAIT_MIN ||
-	 tmp > SCAMPER_DO_TRACE_WAIT_MAX)
-	{
-	  goto err;
-	}
-      break;
-
-    case TRACE_OPT_CONFIDENCE:
-      if(string_tolong(param, &tmp) != 0 || (tmp != 95 && tmp != 99))
-	goto err;
-      break;
-
-    case TRACE_OPT_WAITPROBE:
-      if(string_tolong(param, &tmp) == -1 ||
-	 tmp < SCAMPER_DO_TRACE_WAITPROBE_MIN ||
-	 tmp > SCAMPER_DO_TRACE_WAITPROBE_MAX)
-	{
-	  goto err;
-	}
-      break;
-
-    case TRACE_OPT_USERID:
-      if(string_tolong(param, &tmp) != 0 || tmp < 0)
-	goto err;
-      break;
-
-    case TRACE_OPT_SRCADDR:
-    case TRACE_OPT_GSSENTRY:
-    case TRACE_OPT_LSSNAME:
-    case TRACE_OPT_RTRADDR:
-      /* these parameters are validated at execution time */
-      break;
-
-    case TRACE_OPT_PMTUD:
-    case TRACE_OPT_ALLATTEMPTS:
-    case TRACE_OPT_TTLDST:
-      /* these options don't have parameters */
-      break;
-
-    default:
-      return -1;
-    }
-
-  /* valid parameter */
-  if(out != NULL)
-    *out = (long long)tmp;
-  return 0;
-
- err:
-  return -1;
-}
-
-/*
- * scamper_do_trace_alloc
- *
- * given a string representing a traceroute task, parse the parameters and
- * assemble a trace.  return the trace structure so that it is all ready to
- * go.
- */
-void *scamper_do_trace_alloc(char *str)
-{
-  /* default values of various trace parameters */
-  uint8_t  type        = SCAMPER_TRACE_TYPE_UDP_PARIS;
-  uint32_t flags       = 0;
-  uint8_t  attempts    = SCAMPER_DO_TRACE_ATTEMPTS_DEF;
-  uint8_t  firsthop    = SCAMPER_DO_TRACE_FIRSTHOP_DEF;
-  uint8_t  gaplimit    = SCAMPER_DO_TRACE_GAPLIMIT_DEF;
-  uint8_t  gapaction   = SCAMPER_DO_TRACE_GAPACTION_DEF;
-  uint8_t  hoplimit    = SCAMPER_DO_TRACE_HOPLIMIT_DEF;
-  uint8_t  squeries    = SCAMPER_DO_TRACE_SQUERIES_DEF;
-  uint8_t  tos         = SCAMPER_DO_TRACE_TOS_DEF;
-  uint8_t  wait        = SCAMPER_DO_TRACE_WAIT_DEF;
-  uint8_t  wait_probe  = SCAMPER_DO_TRACE_WAITPROBE_DEF;
-  uint8_t  loops       = SCAMPER_DO_TRACE_LOOPS_DEF;
-  uint8_t  confidence  = 0;
-  uint8_t  dtree_flags = 0;
-  int      sport       = -1;
-  uint16_t dport       = SCAMPER_DO_TRACE_DPORT_DEF;
-  uint16_t offset      = SCAMPER_DO_TRACE_OFFSET_DEF;
-  uint8_t *payload     = NULL;
-  uint16_t payload_len = 0;
-  uint32_t userid      = 0;
-  char    *lss         = NULL;
-  slist_t *gss         = NULL;
-  size_t   i, len;
-  scamper_option_out_t *opts_out = NULL, *opt;
-  scamper_trace_t *trace = NULL;
-  splaytree_t *gss_tree = NULL;
-  scamper_addr_t *sa;
-  char *addr;
-  long long tmp = 0;
-  char *src = NULL, *rtr = NULL;
-  int af, x;
-  uint32_t optids = 0;
-  uint16_t u16;
-
-  /* try and parse the string passed in */
-  if(scamper_options_parse(str, opts, opts_cnt, &opts_out, &addr) != 0)
-    goto err;
-
-  /* if there is no IP address after the options string, then stop now */
-  if(addr == NULL)
-    goto err;
-
-  /* parse the options, do preliminary sanity checks */
-  for(opt = opts_out; opt != NULL; opt = opt->next)
-    {
-      if(opt->type != SCAMPER_OPTION_TYPE_NULL &&
-	 trace_arg_param_validate(opt->id, opt->str, &tmp) != 0)
-	{
-	  scamper_debug(__func__, "validation of optid %d failed", opt->id);
-	  goto err;
-	}
-
-      optids |= (0x1 << opt->id);
-
-      switch(opt->id)
-	{
-	case TRACE_OPT_DPORT:
-	  dport = (uint16_t)tmp;
-	  break;
-
-	case TRACE_OPT_FIRSTHOP:
-	  firsthop = (uint8_t)tmp;
-	  break;
-
-	case TRACE_OPT_GAPLIMIT:
-	  gaplimit = (uint8_t)tmp;
-	  break;
-
-	case TRACE_OPT_GAPACTION:
-	  gapaction = (uint8_t)tmp;
-	  break;
-
-	case TRACE_OPT_LOOPS:
-	  loops = (uint8_t)tmp;
-	  break;
-
-	case TRACE_OPT_MAXTTL:
-	  hoplimit = (uint8_t)tmp;
-	  break;
-
-	case TRACE_OPT_OFFSET:
-	  offset = (uint16_t)tmp;
-	  break;
-
-	case TRACE_OPT_OPTION:
-	  if(strcasecmp(opt->str, "dl") == 0)
-	    flags |= SCAMPER_TRACE_FLAG_DL;
-	  else if(strcasecmp(opt->str, "const-payload") == 0)
-	    flags |= SCAMPER_TRACE_FLAG_CONSTPAYLOAD;
-	  else if(strcasecmp(opt->str, "dtree-noback") == 0)
-	    dtree_flags |= SCAMPER_TRACE_DTREE_FLAG_NOBACK;
-	  else if(strcasecmp(opt->str, "ptr") == 0)
-	    flags |= SCAMPER_TRACE_FLAG_PTR;
-	  break;
-
-	case TRACE_OPT_PAYLOAD:
-	  len = strlen(opt->str);
-	  payload_len = len/2;
-	  if((payload = malloc_zero(payload_len)) == NULL)
-	    {
-	      printerror(__func__, "could not malloc payload");
-	      goto err;
-	    }
-	  for(i=0; i<len; i+=2)
-	    payload[i/2] = hex2byte(opt->str[i], opt->str[i+1]);
-	  break;
-
-	case TRACE_OPT_PMTUD:
-	  flags |= SCAMPER_TRACE_FLAG_PMTUD;
-	  break;
-
-	case TRACE_OPT_PROTOCOL:
-	  type = (uint8_t)tmp;
-	  break;
-
-	case TRACE_OPT_ATTEMPTS:
-	  attempts = (uint8_t)tmp;
-	  break;
-
-	case TRACE_OPT_ALLATTEMPTS:
-	  flags |= SCAMPER_TRACE_FLAG_ALLATTEMPTS;
-	  break;
-
-	case TRACE_OPT_SPORT:
-	  sport = (int)tmp;
-	  break;
-
-	case TRACE_OPT_SQUERIES:
-	  squeries = (uint8_t)tmp;
-	  break;
-
-	case TRACE_OPT_TOS:
-	  tos = (uint8_t)tmp;
-	  break;
-
-	case TRACE_OPT_TTLDST:
-	  flags |= SCAMPER_TRACE_FLAG_IGNORETTLDST;
-	  break;
-
-	case TRACE_OPT_WAIT:
-	  wait = (uint8_t)tmp;
-	  break;
-
-	case TRACE_OPT_RTRADDR:
-	  if(rtr != NULL)
-	    goto err;
-	  rtr = opt->str;
-	  break;
-
-	case TRACE_OPT_SRCADDR:
-	  if(src != NULL)
-	    goto err;
-	  src = opt->str;
-	  break;
-
-	case TRACE_OPT_CONFIDENCE:
-	  confidence = (uint8_t)tmp;
-	  break;
-
-	case TRACE_OPT_USERID:
-	  userid = (uint32_t)tmp;
-	  break;
-
-	case TRACE_OPT_WAITPROBE:
-	  wait_probe = (uint8_t)tmp;
-	  break;
-
-	case TRACE_OPT_LSSNAME:
-	  lss = opt->str;
-	  break;
-
-	case TRACE_OPT_GSSENTRY:
-	  if((gss == NULL && (gss = slist_alloc()) == NULL) ||
-	     slist_tail_push(gss, opt->str) == NULL)
-	    {
-	      goto err;
-	    }
-	  break;
-	}
-    }
-  scamper_options_free(opts_out); opts_out = NULL;
-
-  /* sanity check that we don't begin beyond our probe hoplimit */
-  if(firsthop > hoplimit && hoplimit != 0)
-    goto err;
-
-  /* can't really do pmtud properly without all of the path */
-  if((flags & SCAMPER_TRACE_FLAG_PMTUD) != 0 &&
-     (firsthop > 1 || gss != NULL || lss != NULL))
-    goto err;
-
-  /* cannot specify both a confidence value and tell it to send all attempts */
-  if(confidence != 0 && (flags & SCAMPER_TRACE_FLAG_ALLATTEMPTS))
-    goto err;
-
-  /* can't really do pmtud properly without a UDP traceroute method */
-  if((flags & SCAMPER_TRACE_FLAG_PMTUD) != 0 &&
-     type != SCAMPER_TRACE_TYPE_UDP && type != SCAMPER_TRACE_TYPE_UDP_PARIS)
-    goto err;
-
-  if(sport == -1)
-    sport = scamper_sport_default();
-  else if(sport == 0)
-    {
-      random_u16(&u16);
-      sport = u16 | 0x8000;
-    }
-
-  if((trace = scamper_trace_alloc()) == NULL)
-    {
-      printerror(__func__, "could not alloc trace");
-      goto err;
-    }
-  if((trace->dst= scamper_addrcache_resolve(addrcache,AF_UNSPEC,addr)) == NULL)
-    goto err;
-
-  trace->type        = type;
-  trace->flags       = flags;
-  trace->attempts    = attempts;
-  trace->hoplimit    = hoplimit;
-  trace->squeries    = squeries;
-  trace->gaplimit    = gaplimit;
-  trace->gapaction   = gapaction;
-  trace->firsthop    = firsthop;
-  trace->tos         = tos;
-  trace->wait        = wait;
-  trace->loops       = loops;
-  trace->sport       = sport;
-  trace->dport       = dport;
-  trace->payload     = payload; payload = NULL;
-  trace->payload_len = payload_len;
-  trace->confidence  = confidence;
-  trace->wait_probe  = wait_probe;
-  trace->offset      = offset;
-  trace->userid      = userid;
-
-  /* to start with, we are this far into the path */
-  trace->hop_count = firsthop - 1;
-
-  /* don't allow tcptraceroute to have a payload */
-  if(SCAMPER_TRACE_TYPE_IS_TCP(trace) && trace->payload_len > 0)
-    goto err;
-
-  /* don't allow fragment traceroute with IPv4 for now */
-  if(trace->offset != 0 && trace->dst->type == SCAMPER_ADDR_TYPE_IPV4)
-    goto err;
-
-  /* do not allow more outstanding probes than gaplimit allows */
-  if(trace->squeries > trace->gaplimit)
-    goto err;
-
-  switch(trace->dst->type)
-    {
-    case SCAMPER_ADDR_TYPE_IPV4:
-      if(SCAMPER_TRACE_TYPE_IS_TCP(trace))
-	trace->probe_size = 40;
-      else if(trace->payload_len == 0)
-	trace->probe_size = 44;
-      else
-	trace->probe_size = 20 + 8 + trace->payload_len;
-      break;
-
-    case SCAMPER_ADDR_TYPE_IPV6:
-      if(trace->offset != 0)
-	trace->probe_size = 40 + 8 + 4 + trace->payload_len;
-      else if(trace->payload_len == 0 || SCAMPER_TRACE_TYPE_IS_TCP(trace))
-	trace->probe_size = 60;
-      else
-	trace->probe_size = 40 + 8 + trace->payload_len;
-      break;
-
-    default:
-      goto err;
-    }
-
-  af = scamper_addr_af(trace->dst);
-  if(af != AF_INET && af != AF_INET6)
-    goto err;
-
-  if(src != NULL &&
-     (trace->src = scamper_addrcache_resolve(addrcache, af, src)) == NULL)
-    goto err;
-
-  if(rtr != NULL &&
-     (trace->rtr = scamper_addrcache_resolve(addrcache, af, rtr)) == NULL)
-    goto err;
-
-  /*
-   * if icmp paris traceroute is being used, say that the csum used can be
-   * found in the trace->dport value.
-   */
-  if(trace->type == SCAMPER_TRACE_TYPE_ICMP_ECHO_PARIS)
-    {
-      trace->flags |= SCAMPER_TRACE_FLAG_ICMPCSUMDP;
-      if((optids & (0x1 << TRACE_OPT_DPORT)) == 0)
-	trace->dport = scamper_sport_default();
-    }
-
-  /* add the nodes to the global stop set for this trace */
-  if(gss != NULL || lss != NULL)
-    {
-      if(scamper_trace_dtree_alloc(trace) != 0)
-	goto err;
-      trace->flags |= SCAMPER_TRACE_FLAG_DOUBLETREE;
-      trace->dtree->firsthop = trace->firsthop;
-      trace->dtree->flags = dtree_flags;
-    }
-
-  if(lss != NULL && scamper_trace_dtree_lss(trace, lss) != 0)
-    goto err;
-
-  if(gss != NULL)
-    {
-      if((gss_tree=splaytree_alloc((splaytree_cmp_t)scamper_addr_cmp)) == NULL)
-	goto err;
-      while((addr = slist_head_pop(gss)) != NULL)
-	{
-	  if((sa = scamper_addrcache_resolve(addrcache, af, addr)) == NULL ||
-	     (splaytree_find(gss_tree, sa) == NULL &&
-	      splaytree_insert(gss_tree, sa) == NULL))
-	    goto err;
-	}
-      slist_free(gss);
-      gss = NULL;
-
-      if((x = splaytree_count(gss_tree)) >= 65535 ||
-	 scamper_trace_dtree_gss_alloc(trace, x) != 0)
-	goto err;
-      splaytree_inorder(gss_tree,(splaytree_inorder_t)trace_gss_add,trace->dtree);
-      splaytree_free(gss_tree, (splaytree_free_t)scamper_addr_free);
-      gss_tree = NULL;
-      scamper_trace_dtree_gss_sort(trace);
-    }
-
-  return trace;
-
- err:
-  if(payload != NULL) free(payload);
-  if(gss != NULL) slist_free(gss);
-  if(gss_tree != NULL)
-    splaytree_free(gss_tree, (splaytree_free_t)scamper_addr_free);
-  if(trace != NULL) scamper_trace_free(trace);
-  if(opts_out != NULL) scamper_options_free(opts_out);
-  return NULL;
-}
-
-int scamper_do_trace_arg_validate(int argc, char *argv[], int *stop)
-{
-  return scamper_options_validate(opts, opts_cnt, argc, argv, stop,
-				  trace_arg_param_validate);
 }
 
 void scamper_do_trace_free(void *data)

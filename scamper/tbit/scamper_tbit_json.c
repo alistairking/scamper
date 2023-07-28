@@ -1,13 +1,13 @@
 /*
  * scamper_tbit_json.c
  *
- * Copyright (c) 2014 Matthew Luckie
- * Copyright (C) 2015 The Regents of the University of California
- * Copyright (C) 2022 Matthew Luckie
+ * Copyright (c) 2014      Matthew Luckie
+ * Copyright (C) 2015      The Regents of the University of California
+ * Copyright (C) 2022-2023 Matthew Luckie
  *
  * Author: Matthew Luckie
  *
- * $Id: scamper_tbit_json.c,v 1.28 2022/12/09 09:37:42 mjl Exp $
+ * $Id: scamper_tbit_json.c,v 1.30 2023/06/01 07:15:35 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -32,6 +32,7 @@
 #include "scamper_addr.h"
 #include "scamper_list.h"
 #include "scamper_tbit.h"
+#include "scamper_tbit_int.h"
 #include "scamper_file.h"
 #include "scamper_file_json.h"
 #include "scamper_tbit_json.h"
@@ -97,7 +98,7 @@ static char *tbit_header_tostr(const scamper_tbit_t *tbit,
 
   string_concat(buf, sizeof(buf), &off,
 		"{\"type\":\"tbit\", \"tbit_type\":\"%s\", \"userid\":%u",
-		scamper_tbit_type2str(tbit, tmp, sizeof(tmp)),
+		scamper_tbit_type_tostr(tbit, tmp, sizeof(tmp)),
 		tbit->userid);
   string_concat(buf, sizeof(buf), &off, ", \"src\":\"%s\"",
 		scamper_addr_tostr(tbit->src, tmp, sizeof(tmp)));
@@ -112,7 +113,7 @@ static char *tbit_header_tostr(const scamper_tbit_t *tbit,
 		", \"client_mss\":%u, \"server_mss\":%u, \"ttl\":%u",
 		tbit->client_mss, tbit->server_mss, tbit->ttl);
   string_concat(buf, sizeof(buf), &off, ", \"result\":\"%s\"",
-		scamper_tbit_res2str(tbit, tmp, sizeof(tmp)));
+		scamper_tbit_result_tostr(tbit, tmp, sizeof(tmp)));
   if(tbit->options != 0)
     string_concat(buf, sizeof(buf), &off, ", \"options\":[%s]",
 		  tbit_bits_encode(tmp, sizeof(tmp), tbit->options, 16,

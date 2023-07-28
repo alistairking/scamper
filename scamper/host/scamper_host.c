@@ -1,9 +1,9 @@
 /*
  * scamper_host
  *
- * $Id: scamper_host.c,v 1.6 2021/08/23 08:31:27 mjl Exp $
+ * $Id: scamper_host.c,v 1.13 2023/05/31 23:22:18 mjl Exp $
  *
- * Copyright (C) 2018-2021 Matthew Luckie
+ * Copyright (C) 2018-2023 Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -28,6 +28,7 @@
 #include "scamper_list.h"
 #include "scamper_addr.h"
 #include "scamper_host.h"
+#include "scamper_host_int.h"
 
 #include "utils.h"
 
@@ -91,6 +92,17 @@ scamper_host_rr_mx_t *scamper_host_rr_mx_alloc(uint16_t pref, const char *exch)
     }
   mx->preference = pref;
   return mx;
+}
+
+const char *scamper_host_rr_data_str_typestr(uint16_t class, uint16_t type)
+{
+  if(class == SCAMPER_HOST_CLASS_IN)
+    {
+      if(type == SCAMPER_HOST_TYPE_NS) return "nsdname";
+      if(type == SCAMPER_HOST_TYPE_CNAME) return "cname";
+      if(type == SCAMPER_HOST_TYPE_PTR) return "ptrdname";
+    }
+  return NULL;
 }
 
 int scamper_host_rr_data_type(uint16_t class, uint16_t type)
@@ -232,6 +244,76 @@ int scamper_host_query_rr_alloc(scamper_host_query_t *query)
 scamper_host_query_t *scamper_host_query_alloc(void)
 {
   return malloc_zero(sizeof(scamper_host_query_t));
+}
+
+char *scamper_host_rcode_tostr(uint8_t rcode, char *b, size_t l)
+{
+  switch(rcode)
+    {
+    case SCAMPER_HOST_QUERY_RCODE_NOERROR:  snprintf(b, l, "NoError");  break;
+    case SCAMPER_HOST_QUERY_RCODE_FORMERR:  snprintf(b, l, "FormErr");  break;
+    case SCAMPER_HOST_QUERY_RCODE_SERVFAIL: snprintf(b, l, "ServFail"); break;
+    case SCAMPER_HOST_QUERY_RCODE_NXDOMAIN: snprintf(b, l, "NXDomain"); break;
+    case SCAMPER_HOST_QUERY_RCODE_NOTIMP:   snprintf(b, l, "NotImp");   break;
+    case SCAMPER_HOST_QUERY_RCODE_REFUSED:  snprintf(b, l, "Refused");  break;
+    case SCAMPER_HOST_QUERY_RCODE_YXDOMAIN: snprintf(b, l, "YXDomain"); break;
+    case SCAMPER_HOST_QUERY_RCODE_YXRRSET:  snprintf(b, l, "YXRRSet");  break;
+    case SCAMPER_HOST_QUERY_RCODE_NXRRSET:  snprintf(b, l, "NXRRSet");  break;
+    case SCAMPER_HOST_QUERY_RCODE_NOTAUTH:  snprintf(b, l, "NotAuth");  break;
+    case SCAMPER_HOST_QUERY_RCODE_NOTZONE:  snprintf(b, l, "NotZone");  break;
+    default: snprintf(b, l, "%u", rcode); break;
+    }
+
+  return b;
+}
+
+char *scamper_host_qtype_tostr(uint16_t qtype, char *b, size_t l)
+{
+  switch(qtype)
+    {
+    case SCAMPER_HOST_TYPE_A: snprintf(b, l, "A"); break;
+    case SCAMPER_HOST_TYPE_NS: snprintf(b, l, "NS"); break;
+    case SCAMPER_HOST_TYPE_CNAME: snprintf(b, l, "CNAME"); break;
+    case SCAMPER_HOST_TYPE_SOA: snprintf(b, l, "SOA"); break;
+    case SCAMPER_HOST_TYPE_PTR: snprintf(b, l, "PTR"); break;
+    case SCAMPER_HOST_TYPE_MX: snprintf(b, l, "MX"); break;
+    case SCAMPER_HOST_TYPE_TXT: snprintf(b, l, "TXT"); break;
+    case SCAMPER_HOST_TYPE_AAAA: snprintf(b, l, "AAAA"); break;
+    case SCAMPER_HOST_TYPE_DS: snprintf(b, l, "DS"); break;
+    case SCAMPER_HOST_TYPE_SSHFP: snprintf(b, l, "SSHFP"); break;
+    case SCAMPER_HOST_TYPE_RRSIG: snprintf(b, l, "RRSIG"); break;
+    case SCAMPER_HOST_TYPE_NSEC: snprintf(b, l, "NSEC"); break;
+    case SCAMPER_HOST_TYPE_DNSKEY: snprintf(b, l, "DNSKEY"); break;
+    default: snprintf(b, l, "%u", qtype); break;
+    }
+
+  return b;
+}
+
+char *scamper_host_qclass_tostr(uint16_t qclass, char *b, size_t l)
+{
+  if(qclass == SCAMPER_HOST_CLASS_IN)
+    snprintf(b, l, "IN");
+  else
+    snprintf(b, l, "%u", qclass);
+  return b;
+}
+
+char *scamper_host_stop_tostr(const scamper_host_t *h, char *b, size_t l)
+{
+  static const char *r[] = {
+    "NONE",
+    "DONE",
+    "TIMEOUT",
+    "HALTED",
+    "ERROR",
+  };
+  if(h->stop >= sizeof(r) / sizeof(char *))
+    snprintf(b, l, "%d", h->stop);
+  else
+    snprintf(b, l, "%s", r[h->stop]);
+  return b;
+
 }
 
 void scamper_host_free(scamper_host_t *host)

@@ -1,7 +1,7 @@
 /*
  * scamper_dealias.c
  *
- * $Id: scamper_dealias.c,v 1.55 2023/01/01 08:24:19 mjl Exp $
+ * $Id: scamper_dealias.c,v 1.58 2023/05/31 23:22:18 mjl Exp $
  *
  * Copyright (C) 2008-2010 The University of Waikato
  * Copyright (C) 2012-2013 The Regents of the University of California
@@ -33,113 +33,12 @@
 #include "internal.h"
 
 #include "scamper_addr.h"
+#include "scamper_addr_int.h"
 #include "scamper_list.h"
 #include "scamper_icmpext.h"
 #include "scamper_dealias.h"
+#include "scamper_dealias_int.h"
 #include "utils.h"
-
-int scamper_dealias_ipid(const scamper_dealias_probe_t **probes,
-			 uint32_t probec, scamper_dealias_ipid_t *ipid)
-{
-  const scamper_dealias_probe_t *p;
-  const scamper_dealias_reply_t *r;
-  uint32_t bs_mind = 0x30000;
-  uint32_t bs_maxd = 0;
-  uint32_t bs_sum  = 0;
-  uint32_t mind = 0x30000;
-  uint32_t maxd = 0;
-  uint32_t sum  = 0;
-  uint32_t diff;
-  uint32_t cur, prev;
-  uint32_t i;
-  int echo, cons;
-
-  ipid->type = SCAMPER_DEALIAS_IPID_UNKNOWN;
-
-  echo = 1;
-  cons = 1;
-
-  if(probec == 0 || probes[0] == NULL || probes[0]->replyc != 1)
-    return 0;
-
-  prev = probes[0]->replies[0]->ipid;
-  for(i=1; i<probec; i++)
-    {
-      if((p = probes[i]) == NULL)
-	return 0;
-
-      if(p->replyc != 1)
-	return 0;
-
-      if((r = p->replies[0]) == NULL)
-	return 0;
-
-      /* non byteswap case */
-      cur = r->ipid;
-      if(cur > prev)
-	diff = cur - prev;
-      else if(cur < prev)
-	diff = 0x10000 + cur - prev;
-      else
-	diff = 0;
-      if(diff < mind)
-	mind = diff;
-      if(diff > maxd)
-	maxd = diff;
-      sum += diff;
-
-      /* byteswap case */
-      cur = byteswap16(r->ipid);
-      prev = byteswap16(prev);
-      if(cur > prev)
-	diff = cur - prev;
-      else if(cur < prev)
-	diff = 0x10000 + cur - prev;
-      else
-	diff = 0;
-      if(diff < bs_mind)
-	bs_mind = diff;
-      if(diff > maxd)
-	bs_maxd = diff;
-      bs_sum += diff;
-
-      if(echo != 0 && p->ipid != r->ipid && p->ipid != byteswap16(r->ipid))
-	echo = 0;
-      else if(cons != 0 && probes[i-1]->replies[0]->ipid != r->ipid)
-	cons = 0;
-
-      prev = r->ipid;
-    }
-
-  if(cons == 0 && echo == 0)
-    {
-      /* figure out which byte ordering best explains the sequence */
-      if(sum < bs_sum)
-	{
-	  ipid->mind = mind;
-	  ipid->maxd = maxd;
-	}
-      else
-	{
-	  ipid->mind = bs_mind;
-	  ipid->maxd = bs_maxd;
-	}
-      ipid->type = SCAMPER_DEALIAS_IPID_INCR;
-    }
-  else if(cons != 0)
-    {
-      if(probes[0]->replies[0]->ipid == 0)
-	ipid->type = SCAMPER_DEALIAS_IPID_ZERO;
-      else
-	ipid->type = SCAMPER_DEALIAS_IPID_CONST;
-    }
-  else if(echo != 0)
-    {
-      ipid->type = SCAMPER_DEALIAS_IPID_ECHO;
-    }
-
-  return 0;
-}
 
 static void dealias_probedef_free(scamper_dealias_probedef_t *probedef)
 {
@@ -1010,7 +909,7 @@ int scamper_dealias_radargun_fudge(scamper_dealias_t *dealias,
   return -1;
 }
 
-const char *scamper_dealias_method_tostr(const scamper_dealias_t *d, char *b, size_t l)
+const char *scamper_dealias_method_tostr(uint8_t method, char *b, size_t l)
 {
   static const char *m[] = {
     NULL,
@@ -1020,15 +919,15 @@ const char *scamper_dealias_method_tostr(const scamper_dealias_t *d, char *b, si
     "prefixscan",
     "bump",
   };
-  if(d->method >= sizeof(m) / sizeof(char *) || m[d->method] == NULL)
+  if(method >= sizeof(m) / sizeof(char *) || m[method] == NULL)
     {
-      snprintf(b, l, "%d", d->method);
+      snprintf(b, l, "%d", method);
       return b;
     }
-  return m[d->method];
+  return m[method];
 }
 
-const char *scamper_dealias_result_tostr(const scamper_dealias_t *d, char *b, size_t l)
+const char *scamper_dealias_result_tostr(uint8_t result, char *b, size_t l)
 {
   static const char *t[] = {
     "none",
@@ -1037,12 +936,12 @@ const char *scamper_dealias_result_tostr(const scamper_dealias_t *d, char *b, si
     "halted",
     "ipid-echo",
   };
-  if(d->result >= sizeof(t) / sizeof(char *) || t[d->result] == NULL)
+  if(result >= sizeof(t) / sizeof(char *) || t[result] == NULL)
     {
-      snprintf(b, l, "%d", d->result);
+      snprintf(b, l, "%d", result);
       return b;
     }
-  return t[d->result];
+  return t[result];
 }
 
 void scamper_dealias_free(scamper_dealias_t *dealias)

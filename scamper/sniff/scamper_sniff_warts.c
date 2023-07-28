@@ -3,10 +3,10 @@
  *
  * Copyright (C) 2011      The University of Waikato
  * Copyright (C) 2014      The Regents of the University of California
- * Copyright (C) 2016-2022 Matthew Luckie
+ * Copyright (C) 2016-2023 Matthew Luckie
  * Author: Matthew Luckie
  *
- * $Id: scamper_sniff_warts.c,v 1.12 2022/02/13 08:48:15 mjl Exp $
+ * $Id: scamper_sniff_warts.c,v 1.13 2023/05/14 21:35:40 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -31,6 +31,7 @@
 #include "scamper_addr.h"
 #include "scamper_list.h"
 #include "scamper_sniff.h"
+#include "scamper_sniff_int.h"
 #include "scamper_file.h"
 #include "scamper_file_warts.h"
 #include "scamper_sniff_warts.h"

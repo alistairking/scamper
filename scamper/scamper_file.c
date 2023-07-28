@@ -1,7 +1,7 @@
 /*
  * scamper_file.c
  *
- * $Id: scamper_file.c,v 1.115 2023/03/22 21:17:30 mjl Exp $
+ * $Id: scamper_file.c,v 1.116 2023/05/03 20:48:13 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -67,6 +67,7 @@
 #include "sniff/scamper_sniff_warts.h"
 #include "host/scamper_host.h"
 #include "host/scamper_host_warts.h"
+#include "host/scamper_host_json.h"
 
 #include "utils.h"
 
@@ -194,7 +195,7 @@ static write_handlers_t json_write_handlers =
   NULL,                                   /* neighbourdisc */
   scamper_file_json_tbit_write,           /* tbit */
   NULL,                                   /* sniff */
-  NULL,                                   /* host */
+  scamper_file_json_host_write,           /* host */
 };
 
 static write_handlers_t text_write_handlers =

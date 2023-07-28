@@ -1,7 +1,7 @@
 /*
  * scamper_tracelb.c
  *
- * $Id: scamper_tracelb.c,v 1.63 2023/01/01 08:24:19 mjl Exp $
+ * $Id: scamper_tracelb.c,v 1.75 2023/06/01 21:50:13 mjl Exp $
  *
  * Copyright (C) 2008-2010 The University of Waikato
  * Copyright (C) 2012      The Regents of the University of California
@@ -33,17 +33,12 @@
 #include "internal.h"
 
 #include "scamper_addr.h"
+#include "scamper_addr_int.h"
 #include "scamper_list.h"
 #include "scamper_icmpext.h"
 #include "scamper_tracelb.h"
+#include "scamper_tracelb_int.h"
 #include "utils.h"
-
-typedef struct tracelb_fwdpathc
-{
-  int pathc;
-  int pathcc;
-  int loop;
-} tracelb_fwdpathc_t;
 
 void
 scamper_tracelb_probeset_summary_free(scamper_tracelb_probeset_summary_t *sum)
@@ -194,264 +189,6 @@ int scamper_tracelb_link_cmp(const scamper_tracelb_link_t *a,
     return -1;
 }
 
-/*
- * tracelb_node_link_cmp
- *
- * compare the `to' node of two links.
- * the from node is the same; this function is used to compare a set of links
- * attached to a single node and order them accordingly.
- */
-static int tracelb_node_link_cmp(const scamper_tracelb_link_t *a,
-				 const scamper_tracelb_link_t *b)
-{
-  assert(a->from == b->from);
-  return scamper_tracelb_node_cmp(a->to, b->to);
-}
-
-/*
- * scamper_tracelb_nodes_extract
- *
- * function to extract a set of nodes between two points in the graph.
- */
-static void tracelb_nodes_extract(const scamper_tracelb_t *trace,
-				  scamper_tracelb_node_t *from,
-				  scamper_tracelb_node_t *to,
-				  scamper_tracelb_node_t **nodes,size_t *nodec)
-{
-  uint16_t i;
-
-  if(array_find((void **)nodes, *nodec, from,
-		(array_cmp_t)scamper_tracelb_node_cmp) != NULL)
-    return;
-
-  nodes[*nodec] = from;
-  *nodec = *nodec + 1;
-  array_qsort((void **)nodes, *nodec, (array_cmp_t)scamper_tracelb_node_cmp);
-
-  if(to != NULL && from == to)
-    return;
-
-  for(i=0; i<from->linkc; i++)
-    {
-      tracelb_nodes_extract(trace, from->links[i]->to, to, nodes, nodec);
-    }
-
-  return;
-}
-
-/*
- * tracelb_nodes_extract
- *
- * recursive function to extract a set of nodes between two points in the
- * graph.
- */
-int scamper_tracelb_nodes_extract(const scamper_tracelb_t *trace,
-				  scamper_tracelb_node_t *from,
-				  scamper_tracelb_node_t *to,
-				  scamper_tracelb_node_t **nodes)
-{
-  size_t nodec = 0;
-  tracelb_nodes_extract(trace, from, to, nodes, &nodec);
-  return nodec;
-}
-
-/*
- * tracelb_node_index
- *
- * find the corresponding index for a node in the trace.
- */
-static int tracelb_node_index(const scamper_tracelb_t *trace,
-			      const scamper_tracelb_node_t *node)
-{
-  uint16_t i;
-  for(i=0; i<trace->nodec; i++)
-    {
-      if(trace->nodes[i] == node)
-	return i;
-    }
-  return -1;
-}
-
-int scamper_tracelb_node_convergencepoint(const scamper_tracelb_t *trace,
-					  const int *fwdpathc,
-					  int from, int *to)
-{
-  scamper_tracelb_node_t *node;
-  int n, nn, rc = -1;
-  int *loop;
-
-  /* if there are no forward links, then there is no convergence point */
-  if(trace->nodes[from]->linkc == 0)
-    {
-      *to = -1;
-      return 0;
-    }
-
-  /*
-   * if there is only one forward link, then the convergence point is the
-   * next node
-   */
-  if(trace->nodes[from]->linkc == 1)
-    {
-      if((n=tracelb_node_index(trace, trace->nodes[from]->links[0]->to)) == -1)
-	return -1;
-      *to = n;
-      return 0;
-    }
-
-  /*
-   * allocate an array to keep track of which nodes have been visited so
-   * far on this exploration
-   */
-  if((loop = malloc_zero(sizeof(int) * trace->nodec)) == NULL)
-    return -1;
-  n = nn = from;
-  loop[n] = 1;
-
-  for(;;)
-    {
-      node = trace->nodes[n];
-
-      /* if there is no forward link, then there is no convergence point */
-      if(node->linkc == 0)
-	{
-	  *to = -1; rc = 0;
-	  break;
-	}
-
-      /* get the index into the node array of the next node to visit */
-      if((n = tracelb_node_index(trace, node->links[0]->to)) == -1)
-	break;
-
-      /* check for loops (i.e. already visited) */
-      if(loop[n] != 0)
-	{
-	  *to = -1; rc = 0;
-	  break;
-	}
-      loop[n] = 1;
-
-      /*
-       * if the path converges here, then return the index into the node array
-       * where it converges
-       */
-      if(fwdpathc[n] >= fwdpathc[nn])
-	{
-	  *to = n; rc = 0;
-	  break;
-	}
-    }
-
-  free(loop);
-  return rc;
-}
-
-/*
- * tracelb_fwdpathc
- *
- * recursive function used to help determine how many unique forward
- * paths can be observed at a particular node.
- *
- */
-static int tracelb_fwdpathc(const scamper_tracelb_t *trace, int n,
-			    tracelb_fwdpathc_t *nodes)
-{
-  scamper_tracelb_link_t *link;
-  scamper_tracelb_node_t *node;
-  uint16_t i;
-  int nn, c, t;
-
-  if(nodes[n].pathc != 0)
-    {
-      /*
-       * if we have already visited the nodes below this point
-       * (non-zero pathc for the current node) then we increment the
-       * number of paths observable going forward by the number of
-       * unique paths from that point
-       */
-      nodes[n].pathcc += nodes[n].pathc;
-
-      node = trace->nodes[n];
-      for(i=0; i<node->linkc; i++)
-	{
-	  link = node->links[i];
-	  nn = tracelb_node_index(trace, link->to);
-	  assert(nn >= 0 && nn < trace->nodec);
-	  tracelb_fwdpathc(trace, nn, nodes);
-	}
-    }
-  else if(trace->nodes[n]->linkc > 0)
-    {
-      /*
-       * count the number of unique paths forward from this point by visiting
-       * each node forward from this point
-       */
-      nodes[n].loop = 1;
-      c = 0;
-      node = trace->nodes[n];
-      for(i=0; i<node->linkc; i++)
-	{
-	  link = node->links[i];
-
-	  /* get the index of the next node */
-	  nn = tracelb_node_index(trace, link->to);
-	  assert(nn >= 0 && nn < trace->nodec);
-
-	  /* skip over any nodes that would cause us to get into a loop */
-	  if(nodes[nn].loop != 0)
-	    continue;
-
-	  /* count the number of paths beneath it */
-	  t = tracelb_fwdpathc(trace, nn, nodes);
-	  assert(t > 0);
-
-	  /* more paths! */
-	  c += t;
-	}
-
-      /* at the end, we store the number of unique paths with the node */
-      nodes[n].pathcc = nodes[n].pathc = c;
-      nodes[n].loop = 0;
-    }
-  else
-    {
-      /*
-       * can't go any further.  the first time this node has been visited.
-       * it is part of one unique path so far.
-       */
-      nodes[n].pathcc = nodes[n].pathc = 1;
-    }
-
-  return nodes[n].pathc;
-}
-
-/*
- * scamper_tracelb_fwdpathc
- *
- * count the number of unique paths visible from one point towards a
- * destination.
- */
-int scamper_tracelb_fwdpathc(const scamper_tracelb_t *trace, int *nodes)
-{
-  tracelb_fwdpathc_t *fwdpathc;
-  uint16_t i;
-
-  if(trace->nodec == 0)
-    return 0;
-
-  if((fwdpathc = malloc_zero(sizeof(tracelb_fwdpathc_t)*trace->nodec)) == NULL)
-    return -1;
-
-  tracelb_fwdpathc(trace, 0, fwdpathc);
-  for(i=0; i<trace->nodec; i++)
-    {
-      nodes[i] = fwdpathc[i].pathcc;
-    }
-  free(fwdpathc);
-
-  return 0;
-}
-
 scamper_tracelb_node_t *scamper_tracelb_node_alloc(scamper_addr_t *addr)
 {
   scamper_tracelb_node_t *node;
@@ -479,19 +216,6 @@ void scamper_tracelb_node_free(scamper_tracelb_node_t *node)
 
   free(node);
   return;
-}
-
-int scamper_tracelb_node_add(scamper_tracelb_t *trace,
-			     scamper_tracelb_node_t *node)
-{
-  size_t len = (trace->nodec + 1) * sizeof(scamper_tracelb_node_t *);
-  if(realloc_wrap((void **)&trace->nodes, len) == 0)
-    {
-      trace->nodes[trace->nodec++] = node;
-      return 0;
-    }
-
-  return -1;
 }
 
 scamper_tracelb_node_t *scamper_tracelb_node_find(scamper_tracelb_t *trace,
@@ -556,24 +280,10 @@ void scamper_tracelb_probe_free(scamper_tracelb_probe_t *probe)
     {
       for(i=0; i<probe->rxc; i++)
 	scamper_tracelb_reply_free(probe->rxs[i]);
-
       free(probe->rxs);
     }
   free(probe);
   return;
-}
-
-int scamper_tracelb_probe_reply(scamper_tracelb_probe_t *probe,
-				scamper_tracelb_reply_t *reply)
-{
-  size_t len;
-
-  /* extend the replies array and store the reply in it */
-  len = (probe->rxc + 1) * sizeof(scamper_tracelb_reply_t *);
-  if(realloc_wrap((void **)&probe->rxs, len) != 0)
-    return -1;
-  probe->rxs[probe->rxc++] = reply;
-  return 0;
 }
 
 int scamper_tracelb_probeset_probes_alloc(scamper_tracelb_probeset_t *set,
@@ -620,13 +330,6 @@ void scamper_tracelb_probeset_free(scamper_tracelb_probeset_t *set)
   return;
 }
 
-scamper_tracelb_link_t *scamper_tracelb_link_find(const scamper_tracelb_t *tr,
-						  scamper_tracelb_link_t *link)
-{
-  return array_find((void **)tr->links, tr->linkc, link,
-		    (array_cmp_t)scamper_tracelb_link_cmp);
-}
-
 scamper_tracelb_link_t *scamper_tracelb_link_alloc(void)
 {
   return (scamper_tracelb_link_t *)malloc_zero(sizeof(scamper_tracelb_link_t));
@@ -651,68 +354,7 @@ void scamper_tracelb_link_free(scamper_tracelb_link_t *link)
   return;
 }
 
-int scamper_tracelb_link_add(scamper_tracelb_t *trace,
-			     scamper_tracelb_link_t *link)
-{
-  scamper_tracelb_node_t *node = NULL;
-  size_t size;
-  uint16_t i;
 
-  /*
-   * to start with, find the node the link originates from, and add the link
-   * to that node
-   */
-  for(i=0; i<trace->nodec; i++)
-    {
-      if((node = trace->nodes[i]) == link->from)
-	break;
-    }
-  if(i == trace->nodec)
-    return -1;
-  assert(node != NULL);
-
-  /* add the link to the node */
-  size = sizeof(scamper_tracelb_link_t *) * (node->linkc+1);
-  if(realloc_wrap((void **)&node->links, size) == 0)
-    {
-      node->links[node->linkc++] = link;
-      array_qsort((void **)node->links, node->linkc,
-		  (array_cmp_t)scamper_tracelb_link_cmp);
-    }
-  else return -1;
-
-  /* add the link to the set of links held in the trace */
-  size = sizeof(scamper_tracelb_link_t *) * (trace->linkc+1);
-  if(realloc_wrap((void **)&trace->links, size) == 0)
-    {
-      trace->links[trace->linkc++] = link;
-      array_qsort((void **)trace->links, trace->linkc,
-		  (array_cmp_t)scamper_tracelb_link_cmp);
-      return 0;
-    }
-  return -1;
-}
-
-/*
- * scamper_tracelb_link_zerottlfwd
- *
- * determine if a link is a case of zero-ttl forwarding.
- */
-int scamper_tracelb_link_zerottlfwd(const scamper_tracelb_link_t *link)
-{
-  if(link->from->addr == NULL)
-    return 0;
-  if(scamper_addr_cmp(link->from->addr, link->to->addr) != 0)
-    return 0;
-  if(SCAMPER_TRACELB_NODE_QTTL(link->from) == 0)
-    return 0;
-  if(SCAMPER_TRACELB_NODE_QTTL(link->to) == 0)
-    return 0;
-  if(link->from->q_ttl != 0 || link->to->q_ttl != 1)
-    return 0;
-
-  return 1;
-}
 
 int scamper_tracelb_link_probesets_alloc(scamper_tracelb_link_t *link,
 					 uint8_t hopc)
@@ -727,13 +369,10 @@ int scamper_tracelb_link_probeset(scamper_tracelb_link_t *link,
 				  scamper_tracelb_probeset_t *set)
 {
   size_t len = (link->hopc + 1) * sizeof(scamper_tracelb_probeset_t *);
-  if(realloc_wrap((void **)&link->sets, len) == 0)
-    {
-      link->sets[link->hopc++] = set;
-      return 0;
-    }
-
-  return -1;
+  if(realloc_wrap((void **)&link->sets, len) != 0)
+    return -1;
+  link->sets[link->hopc++] = set;
+  return 0;
 }
 
 int scamper_tracelb_nodes_alloc(scamper_tracelb_t *trace, uint16_t count)
@@ -770,101 +409,23 @@ int scamper_tracelb_probe_replies_alloc(scamper_tracelb_probe_t *probe,
   return -1;
 }
 
-void scamper_tracelb_node_links_sort(scamper_tracelb_node_t *node)
+char *scamper_tracelb_type_tostr(const scamper_tracelb_t *trace,
+				 char *buf, size_t len)
 {
-  array_qsort((void **)node->links, node->linkc,
-	      (array_cmp_t)tracelb_node_link_cmp);
-  return;
-}
+  static const char *m[] = {
+    NULL,
+    "udp-dport",
+    "icmp-echo",
+    "udp-sport",
+    "tcp-sport",
+    "tcp-ack-sport",
+  };
 
-scamper_addr_t *scamper_tracelb_addr(const void *va)
-{
-  return ((scamper_tracelb_t *)va)->dst;
-}
-
-const char *scamper_tracelb_type_tostr(const scamper_tracelb_t *trace)
-{
-  if(trace->type == SCAMPER_TRACELB_TYPE_UDP_DPORT)
-    return "udp-dport";
-  if(trace->type == SCAMPER_TRACELB_TYPE_ICMP_ECHO)
-    return "icmp-echo";
-  if(trace->type == SCAMPER_TRACELB_TYPE_UDP_SPORT)
-    return "udp-sport";
-  if(trace->type == SCAMPER_TRACELB_TYPE_TCP_SPORT)
-    return "tcp-sport";
-  if(trace->type == SCAMPER_TRACELB_TYPE_TCP_ACK_SPORT)
-    return "tcp-ack-sport";
-  return NULL;
-}
-
-int scamper_tracelb_sort(scamper_tracelb_t *trace)
-{
-  scamper_tracelb_node_t **nodes = NULL;
-  scamper_tracelb_node_t **nq = NULL;
-  int i, k, n, q, qt;
-  size_t size;
-  uint16_t j;
-
-  if(trace->nodec == 0)
-    return 0;
-
-  size = sizeof(scamper_tracelb_node_t *) * trace->nodec;
-  if((nodes = malloc_zero(size)) == NULL || (nq = malloc_zero(size)) == NULL)
-    goto err;
-
-  n = 0;
-  q = 0;
-
-  nq[q++] = trace->nodes[0];
-
-  while(q > 0)
-    {
-      qt = q;
-
-      for(i=0; i<qt; i++)
-	{
-	  assert(n < trace->nodec);
-	  nodes[n++] = nq[i];
-
-	  for(j=0; j<nq[i]->linkc; j++)
-	    {
-	      for(k=0; k<q; k++)
-		{
-		  if(nq[i]->links[j]->to == nq[k])
-		    break;
-		}
-
-	      if(k != q)
-		continue;
-
-	      for(k=0; k<n; k++)
-		{
-		  if(nq[i]->links[j]->to == nodes[k])
-		    break;
-		}
-
-	      if(k != n)
-		continue;
-
-	      assert(q < trace->nodec);
-	      nq[q++] = nq[i]->links[j]->to;
-	    }
-	}
-
-      memmove(nq, nq+qt, (q-qt) * sizeof(scamper_tracelb_node_t *));
-      q -= qt;
-    }
-
-  assert(n == trace->nodec);
-  memcpy(trace->nodes, nodes, trace->nodec*sizeof(scamper_tracelb_node_t *));
-  free(nodes);
-  free(nq);
-  return 0;
-
- err:
-  if(nodes != NULL) free(nodes);
-  if(nq != NULL) free(nq);
-  return -1;
+  if(trace->type >= sizeof(m) / sizeof(char *) || trace->type == 0)
+    snprintf(buf, len, "%d", trace->type);
+  else
+    snprintf(buf, len, "%s", m[trace->type]);
+  return buf;
 }
 
 /*

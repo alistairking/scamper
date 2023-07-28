@@ -1,7 +1,7 @@
 /*
  * sc_wartsfilter
  *
- * $Id: sc_wartsfilter.c,v 1.13 2023/03/22 01:38:57 mjl Exp $
+ * $Id: sc_wartsfilter.c,v 1.21 2023/05/29 21:22:27 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -311,12 +311,15 @@ static int check_options(int argc, char *argv[])
   /* determine where to write the filtered records */
   if(opt_outfile == NULL || string_isdash(opt_outfile) != 0)
     {
+#ifdef HAVE_ISATTY
       /* writing to stdout; don't dump a binary structure to a tty. */
       if(isatty(STDOUT_FILENO) != 0)
         {
           fprintf(stderr, "not going to dump warts to a tty\n");
 	  goto err;
         }
+#endif
+
       if((outfile = scamper_file_openfd(STDOUT_FILENO,"-",'w',"warts")) == NULL)
         {
           fprintf(stderr, "could not open stdout\n");
@@ -377,14 +380,14 @@ static int check_options(int argc, char *argv[])
 
 static int addr_matched(scamper_addr_t *addr)
 {
-  if(SCAMPER_ADDR_TYPE_IS_IPV4(addr))
+  if(scamper_addr_isipv4(addr))
     {
-      if(prefixtree_find_ip4(addr_pt4, addr->addr) == NULL)
+      if(prefixtree_find_ip4(addr_pt4, scamper_addr_addr_get(addr)) == NULL)
 	return 0;
     }
-  else if(SCAMPER_ADDR_TYPE_IS_IPV6(addr))
+  else if(scamper_addr_isipv6(addr))
     {
-      if(prefixtree_find_ip6(addr_pt6, addr->addr) == NULL)
+      if(prefixtree_find_ip6(addr_pt6, scamper_addr_addr_get(addr)) == NULL)
 	return 0;
     }
   else return 0;
@@ -393,43 +396,51 @@ static int addr_matched(scamper_addr_t *addr)
 
 static void process_dealias(scamper_dealias_t *dealias)
 {
-  scamper_dealias_mercator_t *mc;
-  scamper_dealias_ally_t *ally;
-  scamper_dealias_radargun_t *rg;
-  scamper_dealias_prefixscan_t *pfs;
-  uint32_t i;
+  const scamper_dealias_mercator_t *mc;
+  const scamper_dealias_ally_t *ally;
+  const scamper_dealias_radargun_t *rg;
+  const scamper_dealias_prefixscan_t *pfs;
+  const scamper_dealias_probedef_t *def, *def1;
+  uint32_t i, probedefc;
 
   if(addrc > 0)
     {
-      if(SCAMPER_DEALIAS_METHOD_IS_MERCATOR(dealias))
+      if((mc = scamper_dealias_mercator_get(dealias)) != NULL)
 	{
-	  mc = dealias->data;
-	  if(addr_matched(mc->probedef.dst) == 0)
+	  def = scamper_dealias_mercator_def_get(mc);
+	  if(addr_matched(scamper_dealias_probedef_dst_get(def)) == 0)
 	    goto done;
 	}
-      else if(SCAMPER_DEALIAS_METHOD_IS_ALLY(dealias))
+      else if((ally = scamper_dealias_ally_get(dealias)) != NULL)
 	{
-	  ally = dealias->data;
-	  if(addr_matched(ally->probedefs[0].dst) == 0 &&
-	     addr_matched(ally->probedefs[1].dst) == 0)
+	  def = scamper_dealias_ally_def0_get(ally);
+	  def1 = scamper_dealias_ally_def1_get(ally);
+	  if(addr_matched(scamper_dealias_probedef_dst_get(def)) == 0 &&
+	     addr_matched(scamper_dealias_probedef_dst_get(def1)) == 0)
 	    goto done;
 	}
-      else if(SCAMPER_DEALIAS_METHOD_IS_RADARGUN(dealias))
+      else if((rg = scamper_dealias_radargun_get(dealias)) != NULL)
 	{
-	  rg = dealias->data;
-	  for(i=0; i<rg->probedefc; i++)
-	    if(addr_matched(rg->probedefs[i].dst) != 0)
-	      break;
-	  if(i == rg->probedefc)
+	  probedefc = scamper_dealias_radargun_defc_get(rg);
+	  for(i=0; i<probedefc; i++)
+	    {
+	      def = scamper_dealias_radargun_def_get(rg, i);
+	      if(addr_matched(scamper_dealias_probedef_dst_get(def)) != 0)
+		break;
+	    }
+	  if(i == probedefc)
 	    goto done;
 	}
-      else if(SCAMPER_DEALIAS_METHOD_IS_PREFIXSCAN(dealias))
+      else if((pfs = scamper_dealias_prefixscan_get(dealias)) != NULL)
 	{
-	  pfs = dealias->data;
-	  for(i=0; i<pfs->probedefc; i++)
-	    if(addr_matched(pfs->probedefs[i].dst) != 0)
-	      break;
-	  if(i == pfs->probedefc)
+	  probedefc = scamper_dealias_prefixscan_defc_get(pfs);
+	  for(i=0; i<probedefc; i++)
+	    {
+	      def = scamper_dealias_prefixscan_def_get(pfs, i);
+	      if(addr_matched(scamper_dealias_probedef_dst_get(def)) != 0)
+		break;
+	    }
+	  if(i == probedefc)
 	    goto done;
 	}
       else goto done;
@@ -443,7 +454,7 @@ static void process_dealias(scamper_dealias_t *dealias)
 
 static void process_ping(scamper_ping_t *ping)
 {
-  if(addrc > 0 && addr_matched(ping->dst) == 0)
+  if(addrc > 0 && addr_matched(scamper_ping_dst_get(ping)) == 0)
     goto done;
   scamper_file_write_ping(outfile, ping, NULL);
 
@@ -454,7 +465,7 @@ static void process_ping(scamper_ping_t *ping)
 
 static void process_tbit(scamper_tbit_t *tbit)
 {
-  if(addrc > 0 && addr_matched(tbit->dst) == 0)
+  if(addrc > 0 && addr_matched(scamper_tbit_dst_get(tbit)) == 0)
     goto done;
   scamper_file_write_tbit(outfile, tbit, NULL);
 
@@ -465,26 +476,32 @@ static void process_tbit(scamper_tbit_t *tbit)
 
 static void process_trace(scamper_trace_t *trace)
 {
-  scamper_trace_hop_t *hop;
-  uint16_t i;
+  const scamper_trace_hop_t *hop;
+  scamper_addr_t *addr;
+  uint16_t i, hop_count;
 
   if(addrc == 0)
     {
       scamper_file_write_trace(outfile, trace, NULL);
       goto done;
     }
-  else if(addr_matched(trace->dst) != 0)
+  addr = scamper_trace_dst_get(trace);
+  if(addr_matched(addr) != 0)
     {
       scamper_file_write_trace(outfile, trace, NULL);
       goto done;
     }
-  else if(check_hops != 0)
+
+  if(check_hops != 0)
     {
-      for(i=0; i<trace->hop_count; i++)
+      hop_count = scamper_trace_hop_count_get(trace);
+      for(i=0; i<hop_count; i++)
 	{
-	  for(hop=trace->hops[i]; hop != NULL; hop=hop->hop_next)
+	  for(hop = scamper_trace_hop_get(trace, i); hop != NULL;
+	      hop = scamper_trace_hop_next_get(hop))
 	    {
-	      if(addr_matched(hop->hop_addr) != 0)
+	      addr = scamper_trace_hop_addr_get(hop);
+	      if(addr_matched(addr) != 0)
 		{
 		  scamper_file_write_trace(outfile, trace, NULL);
 		  goto done;
@@ -500,54 +517,62 @@ static void process_trace(scamper_trace_t *trace)
 
 static int process_tracelb(scamper_tracelb_t *tracelb)
 {
-  scamper_tracelb_node_t *node;
-  scamper_tracelb_link_t *link;
-  scamper_tracelb_probeset_t *set;
-  scamper_tracelb_probe_t *probe;
-  scamper_tracelb_reply_t *reply;
-  uint16_t i, j, l, m;
-  uint8_t k;
+  const scamper_tracelb_node_t *node, *to;
+  const scamper_tracelb_link_t *link;
+  const scamper_tracelb_probeset_t *set;
+  const scamper_tracelb_probe_t *probe;
+  const scamper_tracelb_reply_t *reply;
+  uint16_t i, j, l, m, rxc, nodec, linkc, probec;
+  scamper_addr_t *addr;
+  uint8_t k, hopc;
 
   if(addrc == 0)
     {
       scamper_file_write_tracelb(outfile, tracelb, NULL);
       goto done;
     }
-  else if(addr_matched(tracelb->dst) != 0)
+  else if(addr_matched(scamper_tracelb_dst_get(tracelb)) != 0)
     {
       scamper_file_write_tracelb(outfile, tracelb, NULL);
       goto done;
     }
   else if(check_hops != 0)
     {
-      for(i=0; i<tracelb->nodec; i++)
+      nodec = scamper_tracelb_nodec_get(tracelb);
+      for(i=0; i<nodec; i++)
 	{
-	  node = tracelb->nodes[i];
-	  if(node->addr != NULL && addr_matched(node->addr) != 0)
+	  node = scamper_tracelb_node_get(tracelb, i);
+	  if((addr = scamper_tracelb_node_addr_get(node)) != NULL &&
+	     addr_matched(addr) != 0)
 	    {
 	      scamper_file_write_tracelb(outfile, tracelb, NULL);
 	      goto done;
 	    }
-	  for(j=0; j<node->linkc; j++)
+	  linkc = scamper_tracelb_node_linkc_get(node);
+	  for(j=0; j<linkc; j++)
 	    {
-	      link = node->links[j];
-	      if(link->to != NULL && addr_matched(link->to->addr) != 0)
+	      link = scamper_tracelb_node_link_get(node, j);
+	      if((to = scamper_tracelb_link_to_get(link)) != NULL &&
+		 addr_matched(scamper_tracelb_node_addr_get(to)) != 0)
 		{
 		  scamper_file_write_tracelb(outfile, tracelb, NULL);
 		  goto done;
 		}
-	      if(link->hopc < 1)
+	      if((hopc = scamper_tracelb_link_hopc_get(link)) < 1)
 		continue;
-	      for(k=0; k<link->hopc-1; k++)
+	      for(k=0; k<hopc-1; k++)
 		{
-		  set = link->sets[k];
-		  for(l=0; l<set->probec; l++)
+		  set = scamper_tracelb_link_probeset_get(link, k);
+		  probec = scamper_tracelb_probeset_probec_get(set);
+		  for(l=0; l<probec; l++)
 		    {
-		      probe = set->probes[l];
-		      for(m=0; m<probe->rxc; m++)
+		      probe = scamper_tracelb_probeset_probe_get(set, l);
+		      rxc = scamper_tracelb_probe_rxc_get(probe);
+		      for(m=0; m<rxc; m++)
 			{
-			  reply = probe->rxs[m];
-			  if(addr_matched(reply->reply_from) != 0)
+			  reply = scamper_tracelb_probe_rx_get(probe, m);
+			  addr = scamper_tracelb_reply_from_get(reply);
+			  if(addr_matched(addr) != 0)
 			    {
 			      scamper_file_write_tracelb(outfile,tracelb,NULL);
 			      goto done;

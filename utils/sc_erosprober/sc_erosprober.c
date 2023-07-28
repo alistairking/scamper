@@ -396,9 +396,9 @@ static void ep_del(sc_ep_t *ep)
 {
   if((ep->flags & EP_FLAG_TRIE) != 0)
     {
-      if(SCAMPER_ADDR_TYPE_IS_IPV4(ep->addr))
+      if(scamper_addr_isipv4(ep->addr))
 	patricia_remove_item(probing4, ep);
-      else if(SCAMPER_ADDR_TYPE_IS_IPV6(ep->addr))
+      else if(scamper_addr_isipv6(ep->addr))
 	patricia_remove_item(probing6, ep);
     }
   if(ep->hn != NULL) heap_delete(waiting, ep->hn);
@@ -417,9 +417,9 @@ static int ep_tree_to_heap(scamper_addr_t *addr)
   patricia_t *pt;
   sc_ep_t fm, *ep;
 
-  if(SCAMPER_ADDR_TYPE_IS_IPV4(addr))
+  if(scamper_addr_isipv4(addr))
     pt = probing4;
-  else if(SCAMPER_ADDR_TYPE_IS_IPV6(addr))
+  else if(scamper_addr_isipv6(addr))
     pt = probing6;
   else
     return -1;
@@ -448,9 +448,9 @@ static int ep_add(scamper_addr_t *addr, const struct timeval *tv)
   patricia_t *pt;
   char buf[128];
 
-  if(SCAMPER_ADDR_TYPE_IS_IPV4(addr))
+  if(scamper_addr_isipv4(addr))
     pt = probing4;
-  else if(SCAMPER_ADDR_TYPE_IS_IPV6(addr))
+  else if(scamper_addr_isipv6(addr))
     pt = probing6;
   else
     return -1;
@@ -684,9 +684,9 @@ static int do_ctrlsock_readline(void *param, uint8_t *buf, size_t len)
 
       if((sa = scamper_addr_resolve(AF_UNSPEC, line)) == NULL)
 	return 0;
-      if(SCAMPER_ADDR_TYPE_IS_IPV4(sa))
+      if(scamper_addr_isipv4(sa))
 	pt = probing4;
-      else if(SCAMPER_ADDR_TYPE_IS_IPV6(sa))
+      else if(scamper_addr_isipv6(sa))
 	pt = probing6;
       else
 	{
@@ -1010,7 +1010,7 @@ static int do_decoderead(void)
   if(type == SCAMPER_FILE_OBJ_PING)
     {
       ping = data;
-      if(ep_tree_to_heap(ping->dst) != 0)
+      if(ep_tree_to_heap(scamper_ping_dst_get(ping)) != 0)
 	goto done;
       if(nooutfile == 0 && scamper_file_write_ping(outfile, ping, NULL) != 0)
 	goto done;
@@ -1019,7 +1019,7 @@ static int do_decoderead(void)
   else if(type == SCAMPER_FILE_OBJ_TRACE)
     {
       trace = data;
-      if(ep_tree_to_heap(trace->dst) != 0)
+      if(ep_tree_to_heap(scamper_trace_dst_get(trace)) != 0)
 	goto done;
       if(nooutfile == 0 && scamper_file_write_trace(outfile, trace, NULL) != 0)
 	goto done;

@@ -1,7 +1,7 @@
 /*
  * scamper
  *
- * $Id: scamper.c,v 1.288 2023/03/21 20:37:34 mjl Exp $
+ * $Id: scamper.c,v 1.308 2023/06/04 07:24:32 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -10,7 +10,8 @@
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2012      Matthew Luckie
  * Copyright (C) 2014      The Regents of the University of California
- * Copyright (C) 2014-2022 Matthew Luckie
+ * Copyright (C) 2014-2023 Matthew Luckie
+ * Copyright (C) 2023      The Regents of the University of California
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -59,14 +60,23 @@
 #include "scamper_privsep.h"
 #include "scamper_control.h"
 #include "scamper_osinfo.h"
+#include "trace/scamper_trace_cmd.h"
 #include "trace/scamper_trace_do.h"
+#include "ping/scamper_ping_cmd.h"
 #include "ping/scamper_ping_do.h"
+#include "tracelb/scamper_tracelb_cmd.h"
 #include "tracelb/scamper_tracelb_do.h"
+#include "dealias/scamper_dealias_cmd.h"
 #include "dealias/scamper_dealias_do.h"
+#include "sting/scamper_sting_cmd.h"
 #include "sting/scamper_sting_do.h"
+#include "neighbourdisc/scamper_neighbourdisc_cmd.h"
 #include "neighbourdisc/scamper_neighbourdisc_do.h"
+#include "tbit/scamper_tbit_cmd.h"
 #include "tbit/scamper_tbit_do.h"
+#include "sniff/scamper_sniff_cmd.h"
 #include "sniff/scamper_sniff_do.h"
+#include "host/scamper_host_cmd.h"
 #include "host/scamper_host_do.h"
 
 #include "utils.h"
@@ -107,6 +117,7 @@
 #if defined(IP_RECVERR) || defined(IPV6_RECVERR)
 #define FLAG_ICMP_RECVERR    0x00000400
 #endif
+#define FLAG_POLL            0x00000800
 
 /*
  * parameters configurable by the command line:
@@ -140,7 +151,7 @@ static char  *command      = NULL;
 static int    pps          = SCAMPER_OPTION_PPS_DEF;
 static int    window       = SCAMPER_OPTION_WINDOW_DEF;
 static char  *outfile      = "-";
-static char  *outtype      = "text";
+static char  *outtype      = NULL;
 static char  *intype       = NULL;
 static char  *ctrl_inet_addr = NULL;
 static int    ctrl_inet_port = 0;
@@ -161,6 +172,11 @@ static char  *pidfile      = NULL;
 static char  *debugfile    = NULL;
 #endif
 
+#ifndef _WIN32
+static uid_t  uid;
+static uid_t  euid;
+#endif
+
 /*
  * parameters calculated by scamper at run time:
  *
@@ -171,6 +187,11 @@ static char  *debugfile    = NULL;
 static int    wait_between   = 1000000 / SCAMPER_OPTION_PPS_DEF;
 static int    probe_window   = 250000;
 static int    exit_when_done = 1;
+
+#ifndef WITHOUT_PRIVSEP
+static scamper_fd_t *privsep_fdn = NULL;
+static int           exit_now = 0;
+#endif
 
 /* central cache of addresses that scamper is dealing with */
 scamper_addrcache_t *addrcache = NULL;
@@ -185,6 +206,7 @@ static char *remote_client_certfile = NULL;
 
 /* Source port to use in our probes */
 static uint16_t default_sport = 0;
+static uint16_t pid_u16 = 0;
 
 typedef struct scamper_multicall
 {
@@ -317,13 +339,16 @@ static void usage(uint32_t opt_mask)
       usage_line("client-privfile=file: use privkey in file for remote auth");
 #endif
 #ifndef _WIN32
-      usage_line("select: use select(2) rather than poll(2)");
+      usage_line("select: use select(2)");
 #endif
 #ifdef HAVE_KQUEUE
-      usage_line("kqueue: use kqueue(2) rather than poll(2)");
+      usage_line("kqueue: use kqueue(2)");
 #endif
 #ifdef HAVE_EPOLL
-      usage_line("epoll: use epoll(7) rather than poll(2)");
+      usage_line("epoll: use epoll(7)");
+#endif
+#ifdef HAVE_POLL
+      usage_line("poll: use poll(2)");
 #endif
 #ifndef WITHOUT_DEBUGFILE
       usage_line("debugfileappend: append to debugfile, rather than truncate");
@@ -661,6 +686,10 @@ static int check_options(int argc, char *argv[])
 	  else if(strcasecmp(optarg, "epoll") == 0)
 	    flags |= FLAG_EPOLL;
 #endif
+#ifdef HAVE_POLL
+	  else if(strcasecmp(optarg, "poll") == 0)
+	    flags |= FLAG_POLL;
+#endif
 #ifndef WITHOUT_DEBUGFILE
 	  else if(strcasecmp(optarg, "debugfileappend") == 0)
 	    flags |= FLAG_DEBUGFILEAPPEND;
@@ -726,7 +755,6 @@ static int check_options(int argc, char *argv[])
       return -1;
     }
 
- 
   /*
    * if one of -IPRUi is not provided, pretend that -f was for backward
    * compatibility
@@ -754,6 +782,12 @@ static int check_options(int argc, char *argv[])
 	  usage(OPT_PPS|OPT_WINDOW);
 	  return -1;
 	}
+    }
+
+  if(countbits32(flags & (FLAG_SELECT|FLAG_KQUEUE|FLAG_EPOLL|FLAG_POLL)) > 1)
+    {
+      usage(OPT_OPTION);
+      return -1;
     }
 
   if(options & OPT_FIREWALL && (firewall = strdup(opt_firewall)) == NULL)
@@ -808,6 +842,67 @@ static int check_options(int argc, char *argv[])
       printerror(__func__, "could not strdup pidfile");
       return -1;
     }
+
+  if(outtype == NULL)
+    {
+      assert(outfile != NULL); /* initialised to "-" */
+
+      if(string_endswith(outfile, ".warts.gz") != 0)
+	{
+#ifdef HAVE_ZLIB
+	  outtype = "warts.gz";
+#else
+	  usage(OPT_OUTFILE);
+	  fprintf(stderr, "cannot write to %s: did not link against zlib\n",
+		  outfile);
+	  return -1;
+#endif
+	}
+      else if(string_endswith(outfile, ".warts.bz2") != 0)
+	{
+#ifdef HAVE_LIBBZ2
+	  outtype = "warts.bz2";
+#else
+	  usage(OPT_OUTFILE);
+	  fprintf(stderr, "cannot write to %s: did not link against libbz2\n",
+		  outfile);
+	  return -1;
+#endif
+	}
+      else if(string_endswith(outfile, ".warts.xz") != 0)
+	{
+#ifdef HAVE_LIBLZMA
+	  outtype = "warts.xz";
+#else
+	  usage(OPT_OUTFILE);
+	  fprintf(stderr, "cannot write to %s: did not link against liblzma\n",
+		  outfile);
+	  return -1;
+#endif
+	}
+      else if(string_endswith(outfile, ".json") != 0)
+	{
+	  outtype = "json";
+	}
+      else if(string_endswith(outfile, ".warts") != 0)
+	{
+	  outtype = "warts";
+	}
+      else
+	{
+	  outtype = "text";
+	}
+    }
+
+#ifdef HAVE_ISATTY
+  if(strncasecmp(outtype, "warts", 5) == 0 && strcasecmp(outfile, "-") == 0 &&
+     isatty(STDOUT_FILENO) != 0)
+    {
+      usage(OPT_OUTFILE);
+      fprintf(stderr, "not going to dump %s to a tty, sorry\n", outtype);
+      return -1;
+    }
+#endif
 
   /* these are the left-over arguments */
   arglist     = argv + optind;
@@ -1040,22 +1135,29 @@ int scamper_option_planetlab(void)
   return 0;
 }
 
-int scamper_option_select(void)
+int scamper_option_pollfunc_get(void)
 {
-  if(flags & FLAG_SELECT) return 1;
-  return 0;
-}
+  if(countbits32(flags & (FLAG_SELECT|FLAG_KQUEUE|FLAG_EPOLL|FLAG_POLL)) == 1)
+    {
+      if(flags & FLAG_KQUEUE)
+	return SCAMPER_OPTION_POLLFUNC_KQUEUE;
+      if(flags & FLAG_EPOLL)
+	return SCAMPER_OPTION_POLLFUNC_EPOLL;
+      if(flags & FLAG_POLL)
+	return SCAMPER_OPTION_POLLFUNC_POLL;
+      if(flags & FLAG_SELECT)
+	return SCAMPER_OPTION_POLLFUNC_SELECT;
+    }
 
-int scamper_option_kqueue(void)
-{
-  if(flags & FLAG_KQUEUE) return 1;
-  return 0;
-}
-
-int scamper_option_epoll(void)
-{
-  if(flags & FLAG_EPOLL) return 1;
-  return 0;
+#if defined(HAVE_KQUEUE)
+  return SCAMPER_OPTION_POLLFUNC_KQUEUE;
+#elif defined(HAVE_EPOLL)
+  return SCAMPER_OPTION_POLLFUNC_EPOLL;
+#elif defined(HAVE_POLL)
+  return SCAMPER_OPTION_POLLFUNC_POLL;
+#else
+  return SCAMPER_OPTION_POLLFUNC_SELECT;
+#endif
 }
 
 int scamper_option_noinitndc(void)
@@ -1104,12 +1206,32 @@ int scamper_option_daemon(void)
   return 0;
 }
 
-static int scamper_pidfile(void)
+#ifndef _WIN32
+uid_t scamper_getuid(void)
 {
+  return uid;
+}
+
+uid_t scamper_geteuid(void)
+{
+  return euid;
+}
+#endif
+
+/*
+ * scamper_pidfile
+ *
+ * this function is called in scamper.c:scamper() if not compiled with
+ * privilege separation, or by scamper_privsep.c:privsep_do() if
+ * scamper is compiled with privilege separation.
+ */
+int scamper_pidfile(void)
+{
+  int fd_flags = O_WRONLY | O_TRUNC | O_CREAT;
+  int fd = -1;
   char buf[32];
   mode_t mode;
   size_t len;
-  int fd, fd_flags = O_WRONLY | O_TRUNC | O_CREAT;
 
 #ifndef _WIN32
   pid_t pid = getpid();
@@ -1119,10 +1241,26 @@ static int scamper_pidfile(void)
   mode = _S_IREAD | _S_IWRITE;
 #endif
 
-#if defined(WITHOUT_PRIVSEP)
+  /* do not need to do anything if user did not request a pidfile */
+  if((options & OPT_PIDFILE) == 0)
+    return 0;
+
+#if !defined(_WIN32) && !defined(WITHOUT_PRIVSEP)
+  if(seteuid(uid) != 0)
+    {
+      printerror(__func__, "could not claim uid");
+      goto err;
+    }
+#endif
+
   fd = open(pidfile, fd_flags, mode);
-#else
-  fd = scamper_privsep_open_file(pidfile, fd_flags, mode);
+
+#if !defined(_WIN32) && !defined(WITHOUT_PRIVSEP)
+  if(seteuid(euid) != 0)
+    {
+      printerror(__func__, "could not return to euid");
+      exit(-errno);
+    }
 #endif
 
   if(fd == -1)
@@ -1147,40 +1285,23 @@ static int scamper_pidfile(void)
   return -1;
 }
 
-#ifndef _WIN32
-static void scamper_chld(int sig)
+#ifndef WITHOUT_PRIVSEP
+static void privsep_read(const int fd, void *param)
 {
-  int status;
-
-  if(sig != SIGCHLD)
-    return;
-
-  for(;;)
-    {
-      if(waitpid(-1, &status, WNOHANG) == -1)
-	{
-	  break;
-	}
-    }
-
+  scamper_debug(__func__, "exit now");
+  exit_now = 1;
   return;
 }
 #endif
-
-static void scamper_sport_init(void)
-{
-#ifndef _WIN32
-  pid_t pid = getpid();
-#else
-  DWORD pid = GetCurrentProcessId();
-#endif
-  default_sport = (pid & 0x7fff) + 0x8000;
-  return;
-}
 
 uint16_t scamper_sport_default(void)
 {
   return default_sport;
+}
+
+uint16_t scamper_pid_u16(void)
+{
+  return pid_u16;
 }
 
 /*
@@ -1198,7 +1319,14 @@ static int scamper_timeout(struct timeval *timeout, struct timeval *nextprobe,
 {
   struct timeval tv;
   int probe = 0;
-  
+
+#ifndef WITHOUT_PRIVSEP
+  if(exit_now != 0)
+    {
+      return 2;
+    }
+#endif
+
   if(scamper_queue_readycount() > 0 ||
      ((window == 0 || scamper_queue_windowcount() < window) &&
       scamper_sources_isready() != 0))
@@ -1269,6 +1397,10 @@ static int scamper(int argc, char *argv[])
   scamper_file_t          *file;
   int                      x;
 
+#ifndef WITHOUT_PRIVSEP
+  int                      privsep_fd;
+#endif
+
   if(check_options(argc, argv) == -1)
     {
       return -1;
@@ -1288,8 +1420,8 @@ static int scamper(int argc, char *argv[])
 
 #ifndef WITHOUT_DEBUGFILE
   /*
-   * open the debug file immediately so initialisation debugging information
-   * makes it to the file
+   * open the debug file immediately so that any initialisation
+   * debugging information makes it to the file
    */
   if(debugfile != NULL && scamper_debug_open(debugfile) != 0)
     {
@@ -1364,16 +1496,19 @@ static int scamper(int argc, char *argv[])
 #endif
 
 #ifndef WITHOUT_PRIVSEP
-  /* revoke the root privileges we started with */
-  if(scamper_privsep_init() == -1)
-    {
-      return -1;
-    }
-#endif
-
-  /* now that we've forked for privsep, write the pidfile */
-  if((options & OPT_PIDFILE) != 0 && scamper_pidfile() != 0)
+  /*
+   * revoke the root privileges we started with
+   * note: privsep_fd is a copy of lame_fd held in scamper_privsep.c,
+   * and scamper_privsep_cleanup closes that fd, so we do not need to
+   * worry about closing privsep_fd here.
+   */
+  if((privsep_fd = scamper_privsep_init()) == -1)
     return -1;
+#else
+  /* if not doing privsep, write the pidfile */
+  if(scamper_pidfile() != 0)
+    return -1;
+#endif
 
   random_seed();
 
@@ -1386,7 +1521,12 @@ static int scamper(int argc, char *argv[])
     }
 
   /* determine a suitable default value for the source port in packets */
-  scamper_sport_init();
+#ifndef _WIN32
+  pid_u16       = getpid() & 0xffff;
+#else
+  pid_u16       = GetCurrentProcessId() & 0xffff;
+#endif
+  default_sport = pid_u16 | 0x8000;
 
   /* allocate the cache of addresses for scamper to keep track of */
   if((addrcache = scamper_addrcache_alloc()) == NULL)
@@ -1533,6 +1673,12 @@ static int scamper(int argc, char *argv[])
       scamper_sources_add(source);
       scamper_source_free(source);
     }
+
+#ifndef WITHOUT_PRIVSEP
+  privsep_fdn = scamper_fd_private(privsep_fd, NULL, privsep_read, NULL);
+  if(privsep_fdn == NULL)
+    return -1;
+#endif
 
   gettimeofday_wrap(&lastprobe);
 
@@ -1696,6 +1842,15 @@ static void cleanup(void)
 
   scamper_sources_cleanup();
   scamper_outfiles_cleanup();
+
+#ifndef WITHOUT_PRIVSEP
+  if(privsep_fdn != NULL)
+    {
+      scamper_fd_free(privsep_fdn);
+      privsep_fdn = NULL;
+    }
+#endif
+
   scamper_fds_cleanup();
 
 #ifndef WITHOUT_PRIVSEP
@@ -1784,12 +1939,15 @@ int main(int argc, char *argv[])
 {
   int i;
 
-#ifndef _WIN32
-  struct sigaction si_sa;
-#endif
-
 #ifdef _WIN32
   WSADATA wsaData;
+#endif
+
+#ifndef _WIN32
+  uid = getuid();
+  euid = geteuid();
+  if(uid != euid && seteuid(uid) != 0)
+    exit(-1);
 #endif
 
   /*
@@ -1802,8 +1960,6 @@ int main(int argc, char *argv[])
    */
 #if defined(DMALLOC)
   free(malloc(1));
-#elif !defined (NDEBUG) && defined(__FreeBSD__) && __FreeBSD_version >= 500014 && __FreeBSD_version < 1000011
-  _malloc_options = "AJ";
 #endif
 
 #ifdef _WIN32
@@ -1817,16 +1973,12 @@ int main(int argc, char *argv[])
       printerror(__func__, "could not ignore SIGPIPE");
       return -1;
     }
-
-  sigemptyset(&si_sa.sa_mask);
-  si_sa.sa_flags   = 0;
-  si_sa.sa_handler = scamper_chld;
-  if(sigaction(SIGCHLD, &si_sa, 0) == -1)
+  if(signal(SIGCHLD, SIG_IGN) == SIG_ERR)
     {
-      printerror(__func__, "could not set sigaction for SIGCHLD");
+      printerror(__func__, "could not ignore SIGCHLD");
       return -1;
     }
-#endif
+#endif /* _WIN32 */
 
   i = scamper(argc, argv);
 

@@ -1,11 +1,12 @@
 /*
  * scamper_udp4.c
  *
- * $Id: scamper_udp4.c,v 1.76 2022/12/09 09:37:42 mjl Exp $
+ * $Id: scamper_udp4.c,v 1.78 2023/05/29 21:22:26 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2010 The University of Waikato
- * Copyright (C) 2022      Matthew Luckie
+ * Copyright (C) 2022-2023 Matthew Luckie
+ * Copyright (C) 2023      The Regents of the University of California
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -28,7 +29,9 @@
 #endif
 #include "internal.h"
 
+#include "scamper.h"
 #include "scamper_addr.h"
+#include "scamper_addr_int.h"
 #include "scamper_dl.h"
 #include "scamper_probe.h"
 #include "scamper_ip4.h"
@@ -286,15 +289,31 @@ int scamper_udp4_openraw_fd(const void *addr)
 
 int scamper_udp4_openraw(const void *addr)
 {
-  int fd, opt;
+  int fd = -1, opt;
 
 #if defined(WITHOUT_PRIVSEP)
+#ifndef _WIN32
+  uid_t uid = scamper_getuid();
+  uid_t euid = scamper_geteuid();
+  if(uid != euid && seteuid(euid) != 0)
+    {
+      printerror(__func__, "could not claim euid");
+      goto err;
+    }
+#endif
   fd = scamper_udp4_openraw_fd(addr);
+#ifndef _WIN32
+  if(uid != euid && seteuid(uid) != 0)
+    {
+      printerror(__func__, "could not return to uid");
+      exit(-errno);
+    }
+#endif
 #else
   fd = scamper_privsep_open_rawudp(addr);
 #endif
   if(fd == -1)
-    return -1;
+    goto err;
 
   opt = 65535 + 128;
   if(setsockopt(fd, SOL_SOCKET, SO_SNDBUF, (char *)&opt, sizeof(opt)) == -1)

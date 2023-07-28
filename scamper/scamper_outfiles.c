@@ -1,7 +1,7 @@
 /*
  * scamper_outfiles: hold a collection of output targets together
  *
- * $Id: scamper_outfiles.c,v 1.52 2023/03/22 01:03:30 mjl Exp $
+ * $Id: scamper_outfiles.c,v 1.53 2023/03/27 04:24:56 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -192,10 +192,6 @@ scamper_outfile_t *scamper_outfile_open(const char *name, const char *file,
   char sf_mode;
   int fd;
 
-#if defined(WITHOUT_PRIVSEP) && !defined(_WIN32)
-  uid_t uid;
-#endif
-
   if(name == NULL || file == NULL || mo == NULL)
     {
       snprintf(err, errlen, "missing parameter");
@@ -272,11 +268,6 @@ scamper_outfile_t *scamper_outfile_open(const char *name, const char *file,
       snprintf(err, errlen, "could not open %s", file);
       return NULL;
     }
-
-#if defined(WITHOUT_PRIVSEP) && !defined(_WIN32)
-  if((uid = getuid()) != geteuid() && fchown(fd, uid, -1) != 0)
-    printerror(__func__, "could not fchown");
-#endif
 
   if((sf = scamper_file_openfd(fd, file, sf_mode, outfile_type)) == NULL)
     {
