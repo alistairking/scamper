@@ -1,7 +1,7 @@
 /*
  * scamper
  *
- * $Id: scamper.c,v 1.308 2023/06/04 07:24:32 mjl Exp $
+ * $Id: scamper.c,v 1.310 2023/06/13 22:36:24 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -215,12 +215,6 @@ typedef struct scamper_multicall
   int         (*validate)(int, char **, int *);
   const char *(*usage)(void);
 } scamper_multicall_t;
-
-static void version(void)
-{
-  fprintf(stderr, "scamper version %s\n", SCAMPER_VERSION);
-  return;
-}
 
 static void usage_str(char c, const char *str)
 {
@@ -436,8 +430,8 @@ static int multicall_do(const scamper_multicall_t *mc, int argc, char *argv[])
   scamper_option_command_set(str);
   free(str);
 
-  options |= OPT_IP;
-
+  options    |= OPT_IP;
+  outtype     = "text";
   arglist     = argv + stop;
   arglist_len = argc - stop;
 
@@ -749,11 +743,9 @@ static int check_options(int argc, char *argv[])
 	}
     }
 
+  /* handle this in scamper() */
   if(options & OPT_VERSION)
-    {
-      version();
-      return -1;
-    }
+    return 0;
 
   /*
    * if one of -IPRUi is not provided, pretend that -f was for backward
@@ -1404,6 +1396,13 @@ static int scamper(int argc, char *argv[])
   if(check_options(argc, argv) == -1)
     {
       return -1;
+    }
+
+  /* if asked for scamper version, print it out, and return 0 (not -1) */
+  if(options & OPT_VERSION)
+    {
+      printf("scamper version %s\n", SCAMPER_VERSION);
+      return 0;
     }
 
 #ifdef HAVE_DAEMON

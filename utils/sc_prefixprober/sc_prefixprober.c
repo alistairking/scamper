@@ -2,7 +2,7 @@
  * sc_prefixprober : scamper driver to probe addresses in specified
  *                   prefixes
  *
- * $Id: sc_prefixprober.c,v 1.30 2023/05/29 00:02:24 mjl Exp $
+ * $Id: sc_prefixprober.c,v 1.31 2023/06/11 07:33:54 mjl Exp $
  *
  * Copyright (C) 2023 The Regents of the University of California
  * Author: Matthew Luckie
@@ -965,6 +965,7 @@ static int rec_target_4_addrs(sc_prefix_t *p,
       sa = NULL;
     }
 
+  /* do not shuffle addresses within an IPv4 prefix if told not to shuffle */
   if((flags & FLAG_NOSHUFFLE) == 0)
     slist_shuffle(p->addrs);
   rc = 0;
@@ -1114,7 +1115,9 @@ static int rec_target_6_addrs(sc_prefix_t *p, const struct in6_addr *x,
       sa = NULL;
     }
 
-  slist_shuffle(p->addrs);
+  /* do not shuffle addresses within an IPv6 prefix if told not to shuffle */
+  if((flags & FLAG_NOSHUFFLE) == 0)
+    slist_shuffle(p->addrs);
   rc = 0;
 
  done:
@@ -1635,6 +1638,8 @@ static int pp_data(void)
       goto done;
     }
   slist_free(list); list = NULL;
+
+  /* do not shuffle probe order if told not to shuffle */
   if((flags & FLAG_NOSHUFFLE) == 0)
     slist_shuffle(prefix_list);
 

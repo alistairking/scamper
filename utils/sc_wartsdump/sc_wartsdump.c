@@ -1,7 +1,7 @@
 /*
  * sc_wartsdump
  *
- * $Id: sc_wartsdump.c,v 1.258 2023/06/01 08:06:04 mjl Exp $
+ * $Id: sc_wartsdump.c,v 1.259 2023/06/11 23:38:20 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -354,10 +354,11 @@ static void dump_trace(scamper_trace_t *trace)
   printf(" attempts: %d, hoplimit: %d, loops: %d, probec: %d\n",
 	 scamper_trace_attempts_get(trace), scamper_trace_hoplimit_get(trace),
 	 scamper_trace_loops_get(trace), scamper_trace_probec_get(trace));
-  printf(" squeries: %d, gaplimit: %d, gapaction: %s\n",
-	 scamper_trace_squeries_get(trace), scamper_trace_gaplimit_get(trace),
+  printf(" squeries: %d, firsthop: %d, gaplimit: %d, gapaction: %s\n",
+	 scamper_trace_squeries_get(trace),
+	 scamper_trace_firsthop_get(trace),
+	 scamper_trace_gaplimit_get(trace),
 	 scamper_trace_gapaction_tostr(trace, buf, sizeof(buf)));
-
   printf(" wait-timeout: %ds", scamper_trace_wait_get(trace));
   if((u8 = scamper_trace_wait_probe_get(trace)) != 0)
     printf(", wait-probe: %dms", u8 * 10);
