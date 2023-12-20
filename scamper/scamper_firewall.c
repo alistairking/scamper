@@ -1,7 +1,7 @@
 /*
  * scamper_firewall.c
  *
- * $Id: scamper_firewall.c,v 1.56 2023/05/29 21:24:06 mjl Exp $
+ * $Id: scamper_firewall.c,v 1.56.4.2 2023/10/05 06:59:18 mjl Exp $
  *
  * Copyright (C) 2008-2011 The University of Waikato
  * Copyright (C) 2016-2023 Matthew Luckie
@@ -739,7 +739,7 @@ static int ipfw_init(char *opts)
   if(firewall_freeslots_alloc(start, end) != 0)
     return -1;
 
-#ifdef WITHOUT_PRIVSEP
+#ifdef DISABLE_PRIVSEP
   if(scamper_firewall_ipfw_init() != 0)
     return -1;
 #else
@@ -791,7 +791,7 @@ static int ipfw_add(int ruleno, scamper_firewall_rule_t *sfw)
   else
     d = sfw->sfw_5tuple_dst->addr;
 
-#ifdef WITHOUT_PRIVSEP
+#ifdef DISABLE_PRIVSEP
   if(scamper_firewall_ipfw_add(ruleno, af, p, s, d, sp, dp) != 0)
     return -1;
 #else
@@ -805,7 +805,7 @@ static int ipfw_add(int ruleno, scamper_firewall_rule_t *sfw)
 int ipfw_del(const scamper_firewall_entry_t *entry)
 {
   int af = scamper_addr_af(entry->rule->sfw_5tuple_src);
-#ifdef WITHOUT_PRIVSEP
+#ifdef DISABLE_PRIVSEP
   return scamper_firewall_ipfw_del(entry->slot, af);
 #else
   return scamper_privsep_ipfw_del(entry->slot, af);
@@ -829,8 +829,18 @@ static char *pf_name = NULL;
  */
 int scamper_firewall_pf_init(const char *name)
 {
-  struct pf_status status;
   size_t len;
+
+#if defined(DIOCGETSTATUSNV)
+  nvlist_t *nvl;
+  struct pfioc_nv nv;
+  size_t nvlen;
+  uint8_t buf[4096];
+  void *data;
+  int rc;
+#else
+  struct pf_status status;
+#endif
 
   if(pf_fd != -1 || pf_inited != 0)
     return -1;
@@ -849,6 +859,31 @@ int scamper_firewall_pf_init(const char *name)
       return -1;
     }
 
+#if defined(DIOCGETSTATUSNV)
+  nvl = nvlist_create(0);
+  data = nvlist_pack(nvl, &nvlen);
+  memcpy(buf, data, nvlen);
+  free(data);
+  nv.data = buf;
+  nv.len = nvlen;
+  nv.size = sizeof(buf);
+  rc = ioctl(pf_fd, DIOCGETSTATUSNV, &nv);
+  nvlist_destroy(nvl);
+  if(rc == -1)
+    {
+      printerror(__func__, "could not get status");
+      return -1;
+    }
+
+  nvl = nvlist_unpack(nv.data, nv.len, 0);
+  rc = nvlist_get_bool(nvl, "running");
+  nvlist_destroy(nvl);
+  if(rc == 0)
+    {
+      scamper_debug(__func__, "pf not running");
+      return -1;
+    }
+#else
   if(ioctl(pf_fd, DIOCGETSTATUS, &status) == -1)
     {
       printerror(__func__, "could not get status");
@@ -859,6 +894,7 @@ int scamper_firewall_pf_init(const char *name)
       scamper_debug(__func__, "pf not running");
       return -1;
     }
+#endif
 
   pf_pid = getpid();
   pf_inited = 1;
@@ -1021,7 +1057,7 @@ static int pf_add(int n, scamper_firewall_rule_t *sfw)
   s  = sfw->sfw_5tuple_src->addr;
   d  = sfw->sfw_5tuple_dst->addr;
 
-#ifdef WITHOUT_PRIVSEP
+#ifdef DISABLE_PRIVSEP
   if(scamper_firewall_pf_add(n, af, p, s, d, sp, dp) != 0)
     return -1;
 #else
@@ -1033,7 +1069,7 @@ static int pf_add(int n, scamper_firewall_rule_t *sfw)
 
 static int pf_del(int n)
 {
-#ifdef WITHOUT_PRIVSEP
+#ifdef DISABLE_PRIVSEP
   return scamper_firewall_pf_del(n);
 #else
   return scamper_privsep_pf_del(n);
@@ -1071,7 +1107,7 @@ static int pf_init(char *opts)
   if(firewall_freeslots_alloc(1, num) != 0)
     return -1;
 
-#ifdef WITHOUT_PRIVSEP
+#ifdef DISABLE_PRIVSEP
   if(scamper_firewall_pf_init(name_str) != 0)
     return -1;
 #else
@@ -1243,7 +1279,7 @@ void scamper_firewall_cleanup(void)
 #ifdef HAVE_IPFW
   if(ipfw_use != 0)
     {
-#ifdef WITHOUT_PRIVSEP
+#ifdef DISABLE_PRIVSEP
       scamper_firewall_ipfw_cleanup();
 #else
       if(ipfw_inited != 0)
@@ -1255,7 +1291,7 @@ void scamper_firewall_cleanup(void)
 #ifdef HAVE_PF
   if(pf_use != 0)
     {
-#ifdef WITHOUT_PRIVSEP
+#ifdef DISABLE_PRIVSEP
       scamper_firewall_pf_cleanup();
 #else
       if(pf_inited != 0)

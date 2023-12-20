@@ -1,7 +1,7 @@
 /*
  * sc_radargun : scamper driver to do radargun-style probing.
  *
- * $Id: sc_radargun.c,v 1.18 2023/05/29 20:12:18 mjl Exp $
+ * $Id: sc_radargun.c,v 1.18.4.1 2023/08/20 08:07:09 mjl Exp $
  *
  * Copyright (C) 2014      The Regents of the University of California
  * Copyright (C) 2016      The University of Waikato
@@ -1555,11 +1555,10 @@ static int do_addrfile(void)
  */
 static int do_files(void)
 {
-  mode_t mode = S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH;
   int fd_flags = O_WRONLY | O_CREAT | O_TRUNC;
   int pair[2];
 
-  if((outfile_fd = open(outfile_name, fd_flags, mode)) == -1)
+  if((outfile_fd = open(outfile_name, fd_flags, MODE_644)) == -1)
     return -1;
 
   /*

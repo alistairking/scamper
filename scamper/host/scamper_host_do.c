@@ -1,7 +1,7 @@
 /*
  * scamper_host_do
  *
- * $Id: scamper_host_do.c,v 1.55.4.1 2023/08/07 22:32:15 mjl Exp $
+ * $Id: scamper_host_do.c,v 1.55.4.5 2023/08/26 21:26:45 mjl Exp $
  *
  * Copyright (C) 2018-2023 Matthew Luckie
  *
@@ -131,7 +131,7 @@ void etc_resolv(void)
 {
   int fd, flags = O_RDONLY;
 
-#if defined(WITHOUT_PRIVSEP)
+#ifdef DISABLE_PRIVSEP
   fd = open("/etc/resolv.conf", flags);
 #else
   fd = scamper_privsep_open_file("/etc/resolv.conf", flags, 0);
@@ -157,7 +157,12 @@ void etc_resolv(void)
 static int host_fd_close(void *param)
 {
   scamper_fd_t *fdp = param;
+
+#ifndef _WIN32 /* SOCKET vs int on windows */
   int fd = scamper_fd_fd_get(fdp);
+#else
+  SOCKET fd = scamper_fd_fd_get(fdp);
+#endif
 
   if(fdp == dns4_fd)
     {
@@ -174,7 +179,7 @@ static int host_fd_close(void *param)
   else return -1;
 
   scamper_fd_free(fdp);
-  close(fd);
+  socket_close(fd);
   return 0;
 }
 
@@ -329,7 +334,7 @@ static host_state_t *host_state_alloc(scamper_task_t *task)
   char qname[128];
   int i;
 
-#ifdef _WIN32
+#ifdef _WIN32 /* windows does not have s6_addr32 for in6_addr */
   uint16_t u16;
 #endif
 
@@ -357,7 +362,7 @@ static host_state_t *host_state_alloc(scamper_task_t *task)
       else if(SCAMPER_ADDR_TYPE_IS_IPV6(sa))
 	{
 	  in6 = sa->addr; off = 0;
-#ifndef _WIN32
+#ifndef _WIN32 /* windows does not have s6_addr32 for in6_addr */
 	  for(i=3; i>=0; i--)
 	    {
 	      u32 = ntohl(in6->s6_addr32[i]);
@@ -520,15 +525,19 @@ static int extract_mx(scamper_host_rr_t *rr,
   return 0;
 }
 
-static void do_host_read(const int fd, void *param)
+#ifndef _WIN32 /* SOCKET vs int on windows */
+static void do_host_read(int fd, void *param)
+#else
+static void do_host_read(SOCKET fd, void *param)
+#endif
 {
-  scamper_task_t *task;
-  scamper_host_t *host;
+  scamper_task_t *task = NULL;
+  scamper_host_t *host = NULL;
   host_state_t *state;
   struct in6_addr in6;
   struct in_addr in4;
   slist_t *rr_list = NULL;
-  scamper_host_rr_t **rrs;
+  scamper_host_rr_t **rrs = NULL;
   dlist_node_t *dn;
   host_id_t *hid;
   scamper_host_query_t *q = NULL;
@@ -733,7 +742,12 @@ static void do_host_probe(scamper_task_t *task)
   struct timeval tv;
   uint16_t id;
   size_t off;
+
+#ifndef _WIN32 /* SOCKET vs int on windows */
   int fd;
+#else
+  SOCKET fd;
+#endif
 
 #ifdef HAVE_SCAMPER_DEBUG
   char buf[128], qtype[16];
@@ -760,7 +774,8 @@ static void do_host_probe(scamper_task_t *task)
     {
       if(dns4_fd == NULL)
 	{
-	  if((fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)) == -1)
+	  fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+	  if(socket_isinvalid(fd))
 	    {
 	      printerror(__func__, "could not open dns4_fd");
 	      goto err;
@@ -794,7 +809,8 @@ static void do_host_probe(scamper_task_t *task)
     {
       if(dns6_fd == NULL)
 	{
-	  if((fd = socket(AF_INET6, SOCK_DGRAM, IPPROTO_UDP)) == -1)
+	  fd = socket(AF_INET6, SOCK_DGRAM, IPPROTO_UDP);
+	  if(socket_isinvalid(fd))
 	    {
 	      printerror(__func__, "could not open dns6_fd");
 	      return;
@@ -1148,14 +1164,18 @@ void scamper_do_host_free(void *data)
 
 void scamper_do_host_cleanup()
 {
+#ifndef _WIN32 /* SOCKET vs int on windows */
   int fd;
+#else
+  SOCKET fd;
+#endif
 
   if(dns4_fd != NULL)
     {
       fd = scamper_fd_fd_get(dns4_fd);
       scamper_fd_free(dns4_fd);
       dns4_fd = NULL;
-      close(fd);
+      socket_close(fd);
     }
   if(dns4_sq != NULL)
     {
@@ -1168,7 +1188,7 @@ void scamper_do_host_cleanup()
       fd = scamper_fd_fd_get(dns6_fd);
       scamper_fd_free(dns6_fd);
       dns6_fd = NULL;
-      close(fd);
+      socket_close(fd);
     }
   if(dns6_sq != NULL)
     {

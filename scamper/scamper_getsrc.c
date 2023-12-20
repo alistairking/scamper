@@ -1,7 +1,7 @@
 /*
  * scamper_getsrc.c
  *
- * $Id: scamper_getsrc.c,v 1.21 2023/05/29 21:22:26 mjl Exp $
+ * $Id: scamper_getsrc.c,v 1.21.4.3 2023/08/20 02:03:49 mjl Exp $
  *
  * Copyright (C) 2005 Matthew Luckie
  * Copyright (C) 2007-2010 The University of Waikato
@@ -35,8 +35,13 @@
 #include "scamper_getsrc.h"
 #include "utils.h"
 
+#ifndef _WIN32 /* SOCKET vs int on windows */
 static int udp4 = -1;
 static int udp6 = -1;
+#else
+static SOCKET udp4 = INVALID_SOCKET;
+static SOCKET udp6 = INVALID_SOCKET;
+#endif
 
 extern scamper_addrcache_t *addrcache;
 
@@ -51,16 +56,25 @@ scamper_addr_t *scamper_getsrc(const scamper_addr_t *dst, int ifindex)
   struct sockaddr_storage sas;
   scamper_addr_t *src;
   socklen_t socklen, sockleno;
-  int sock;
   void *addr;
   char buf[64];
 
+#ifndef _WIN32 /* SOCKET vs int on windows */
+  int sock;
+#else
+  SOCKET sock;
+#endif
+
   if(dst->type == SCAMPER_ADDR_TYPE_IPV4)
     {
-      if(udp4 == -1 && (udp4 = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)) == -1)
+      if(socket_isinvalid(udp4))
 	{
-	  printerror(__func__, "could not open udp4 sock");
-	  return NULL;
+	  udp4 = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+	  if(socket_isinvalid(udp4))
+	    {
+	      printerror(__func__, "could not open udp4 sock");
+	      return NULL;
+	    }
 	}
 
       sock = udp4;
@@ -71,10 +85,14 @@ scamper_addr_t *scamper_getsrc(const scamper_addr_t *dst, int ifindex)
     }
   else if(dst->type == SCAMPER_ADDR_TYPE_IPV6)
     {
-      if(udp6 == -1 && (udp6 = socket(AF_INET6, SOCK_DGRAM,IPPROTO_UDP)) == -1)
+      if(socket_isinvalid(udp6))
 	{
-	  printerror(__func__, "could not open udp6 sock");
-	  return NULL;
+	  udp6 = socket(AF_INET6, SOCK_DGRAM, IPPROTO_UDP);
+	  if(socket_isinvalid(udp6))
+	    {
+	      printerror(__func__, "could not open udp6 sock");
+	      return NULL;
+	    }
 	}
 
       sock = udp6;
@@ -121,22 +139,14 @@ void scamper_getsrc_cleanup()
 {
   if(udp4 != -1)
     {
-#ifndef _WIN32
-      close(udp4);
-#else
-      closesocket(udp4);
-#endif
-      udp4 = -1;
+      socket_close(udp4);
+      udp4 = socket_invalid();
     }
 
   if(udp6 != -1)
     {
-#ifndef _WIN32
-      close(udp6);
-#else
-      closesocket(udp6);
-#endif
-      udp6 = -1;
+      socket_close(udp6);
+      udp6 = socket_invalid();
     }
 
   return;

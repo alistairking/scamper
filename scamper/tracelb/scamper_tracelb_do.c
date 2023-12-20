@@ -1,7 +1,7 @@
 /*
  * scamper_tracelb_do.c
  *
- * $Id: scamper_tracelb_do.c,v 1.298 2023/06/04 07:24:32 mjl Exp $
+ * $Id: scamper_tracelb_do.c,v 1.298.4.2 2023/08/26 07:36:27 mjl Exp $
  *
  * Copyright (C) 2008-2011 The University of Waikato
  * Copyright (C) 2012      The Regents of the University of California
@@ -55,7 +55,9 @@
 #include "scamper_queue.h"
 #include "scamper_file.h"
 #include "scamper_debug.h"
+#ifndef DISABLE_SCAMPER_HOST
 #include "host/scamper_host_do.h"
+#endif
 #include "scamper_tracelb_do.h"
 #include "utils.h"
 #include "mjl_list.h"
@@ -195,6 +197,7 @@ struct tracelb_probe
   uint8_t                  mode;     /* mode the probe was sent in */
 };
 
+#ifndef DISABLE_SCAMPER_HOST
 typedef struct tracelb_host
 {
   scamper_task_t          *task;
@@ -202,6 +205,7 @@ typedef struct tracelb_host
   scamper_tracelb_node_t  *node;
   dlist_node_t            *dn;
 } tracelb_host_t;
+#endif
 
 /*
  * tracelb_state
@@ -216,7 +220,7 @@ typedef struct tracelb_state
   scamper_fd_t            *dl;           /* datalink fd to tx on */
   splaytree_t             *addrs;        /* set of addresses */
 
-#ifndef _WIN32
+#ifndef _WIN32 /* windows does not have a routing socket */
   scamper_fd_t            *rtsock;       /* route socket */
 #endif
 
@@ -233,7 +237,10 @@ typedef struct tracelb_state
   size_t                   linkc;        /* count of links */
   tracelb_path_t         **paths;        /* paths established */
   size_t                   pathc;        /* count of paths */
+
+#ifndef DISABLE_SCAMPER_HOST
   dlist_t                 *ths;          /* tracelb_host_t */
+#endif
 } tracelb_state_t;
 
 /* temporary buffer shared amongst traceroutes */
@@ -1682,6 +1689,7 @@ static void tracelb_queue(scamper_task_t *task)
   return;
 }
 
+#ifndef DISABLE_SCAMPER_HOST
 static void tracelb_host_free(tracelb_state_t *state, tracelb_host_t *th)
 {
   if(th->dn != NULL) dlist_node_pop(state->ths, th->dn);
@@ -1697,10 +1705,8 @@ static void tracelb_node_ptr_cb(void *param, const char *name)
   tracelb_state_t *state = tracelb_getstate(task);
 
   th->hostdo = NULL;
-
   if(name != NULL)
     th->node->name = strdup(name);
-
   tracelb_host_free(state, th);
 
   return;
@@ -1745,6 +1751,7 @@ static int tracelb_node_ptr(scamper_task_t *task, scamper_tracelb_node_t *node)
   if(th != NULL) tracelb_host_free(state, th);
   return -1;
 }
+#endif
 
 static int tracelb_link_add(scamper_tracelb_t *trace,
 			    scamper_tracelb_link_t *link)
@@ -1848,8 +1855,11 @@ static int tracelb_process_hops(scamper_task_t *task, tracelb_branch_t *br)
       if(to == NULL)
 	{
 	  to = br->newnodes[i]->node;
-	  if(tracelb_node_ptr(task, to) != 0 ||
-	     tracelb_node_add(trace, to) != 0)
+#ifndef DISABLE_SCAMPER_HOST
+	  if(tracelb_node_ptr(task, to) != 0)
+	    goto err;
+#endif
+	  if(tracelb_node_add(trace, to) != 0)
 	    goto err;
 	  splice = 0;
 	}
@@ -2788,7 +2798,9 @@ static void handleicmp_firstaddr(scamper_task_t *task, scamper_icmp_resp_t *ir,
 
   /* record the details of the first hop */
   if((node = scamper_tracelb_node_alloc(from)) == NULL ||
+#ifndef DISABLE_SCAMPER_HOST
      tracelb_node_ptr(task, node) != 0 ||
+#endif
      tracelb_node_add(trace, node) != 0)
     {
       printerror(__func__, "could not alloc node");
@@ -3326,7 +3338,9 @@ static void handletimeout_firstaddr(scamper_task_t *task, tracelb_branch_t *br)
   heap_delete(state->active, br->heapnode);
 
   if((node = scamper_tracelb_node_alloc(NULL)) == NULL ||
+#ifndef DISABLE_SCAMPER_HOST
      tracelb_node_ptr(task, node) != 0 ||
+#endif
      tracelb_node_add(trace, node) != 0)
     {
       printerror(__func__, "could not alloc node");
@@ -3522,7 +3536,9 @@ static void handletcp_firstaddr(scamper_task_t *task, scamper_dl_rec_t *dl,
 
   /* record the details of the first hop */
   if((node = scamper_tracelb_node_alloc(from)) == NULL ||
+#ifndef DISABLE_SCAMPER_HOST
      tracelb_node_ptr(task, node) != 0 ||
+#endif
      tracelb_node_add(trace, node) != 0)
     {
       printerror(__func__, "could not alloc node");
@@ -3704,7 +3720,7 @@ static void tracelb_handle_rt(scamper_route_t *rt)
   tracelb_branch_t *br;
   scamper_dl_t *dl;
 
-#ifndef _WIN32
+#ifndef _WIN32 /* windows does not have a routing socket */
   if(state->rtsock == NULL)
     goto done;
 #endif
@@ -3716,7 +3732,7 @@ static void tracelb_handle_rt(scamper_route_t *rt)
   br = heap_head_item(state->active);
   assert(br->mode == MODE_RTSOCK);
 
-#ifndef _WIN32
+#ifndef _WIN32 /* windows does not have a routing socket */
   scamper_fd_free(state->rtsock);
   state->rtsock = NULL;
 #endif
@@ -3788,8 +3804,11 @@ static void tracelb_state_free(scamper_tracelb_t *trace,tracelb_state_t *state)
 {
   tracelb_branch_t *br;
   tracelb_probe_t *pr;
-  tracelb_host_t *th;
   size_t i;
+
+#ifndef DISABLE_SCAMPER_HOST
+  tracelb_host_t *th;
+#endif
 
   tracelb_paths_dump(state);
   tracelb_links_dump(state);
@@ -3798,6 +3817,7 @@ static void tracelb_state_free(scamper_tracelb_t *trace,tracelb_state_t *state)
   if(state->addrs != NULL)
     splaytree_free(state->addrs, (splaytree_free_t)scamper_addr_free);
 
+#ifndef DISABLE_SCAMPER_HOST
   /* free any outstanding ptr requests */
   if(state->ths != NULL)
     {
@@ -3808,6 +3828,7 @@ static void tracelb_state_free(scamper_tracelb_t *trace,tracelb_state_t *state)
 	}
       dlist_free(state->ths);
     }
+#endif
 
   /* free the active branch records */
   if(state->active != NULL)
@@ -3859,7 +3880,7 @@ static void tracelb_state_free(scamper_tracelb_t *trace,tracelb_state_t *state)
 
   if(state->icmp != NULL)     scamper_fd_free(state->icmp);
   if(state->dl != NULL)       scamper_fd_free(state->dl);
-#ifndef _WIN32
+#ifndef _WIN32 /* windows does not have a routing socket */
   if(state->rtsock != NULL)   scamper_fd_free(state->rtsock);
 #endif
   if(state->dlhdr != NULL)    scamper_dlhdr_free(state->dlhdr);
@@ -3980,7 +4001,7 @@ static int tracelb_state_alloc(scamper_task_t *task)
     {
       branch->mode = MODE_RTSOCK;
 
-#ifndef _WIN32
+#ifndef _WIN32 /* windows does not have a routing socket */
       if((state->rtsock = scamper_fd_rtsock()) == NULL)
 	{
 	  goto err;
@@ -4126,7 +4147,7 @@ static void do_tracelb_probe(scamper_task_t *task)
       if(state->route == NULL)
 	goto err;
 
-#ifndef _WIN32
+#ifndef _WIN32 /* windows does not have a routing socket */
       if(scamper_rtsock_getroute(state->rtsock, state->route) != 0)
 	goto err;
 #else

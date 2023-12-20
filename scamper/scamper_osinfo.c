@@ -1,7 +1,7 @@
 /*
  * scamper_osinfo.c
  *
- * $Id: scamper_osinfo.c,v 1.6.20.1 2023/08/07 22:38:42 mjl Exp $
+ * $Id: scamper_osinfo.c,v 1.6.20.2 2023/08/18 21:25:04 mjl Exp $
  *
  * Copyright (C) 2006 Matthew Luckie
  * Copyright (C) 2014 The Regents of the University of California
@@ -152,7 +152,7 @@ scamper_osinfo_t *scamper_osinfo_alloc(const char *sysname, char *release)
 
 int scamper_osinfo_init(void)
 {
-#ifndef _WIN32
+#ifndef _WIN32 /* windows does not have uname */
   struct utsname utsname;
 
   /* call uname to get the information */

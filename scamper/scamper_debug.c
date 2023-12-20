@@ -1,7 +1,7 @@
 /*
  * scamper_debug.c
  *
- * $Id: scamper_debug.c,v 1.43 2023/03/29 06:21:54 mjl Exp $
+ * $Id: scamper_debug.c,v 1.43.4.2 2023/08/20 08:07:08 mjl Exp $
  *
  * routines to reduce the impact of debugging cruft in scamper's code.
  *
@@ -315,21 +315,14 @@ void scamper_debug(const char *func, const char *format, ...)
 #ifndef WITHOUT_DEBUGFILE
 int scamper_debug_open(const char *file)
 {
-  mode_t mode;
   int flags, fd;
-
-#ifndef _WIN32
-  mode = S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH;
-#else
-  mode = _S_IREAD | _S_IWRITE;
-#endif
 
   if(scamper_option_debugfileappend() == 0)
     flags = O_WRONLY | O_CREAT | O_TRUNC;
   else
     flags = O_WRONLY | O_CREAT | O_APPEND;
 
-  if((fd = open(file, flags, mode)) == -1)
+  if((fd = open(file, flags, MODE_644)) == -1)
     {
       printerror(__func__, "could not open debugfile %s", file);
       return -1;

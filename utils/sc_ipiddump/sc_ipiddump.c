@@ -1,7 +1,7 @@
 /*
  * sc_ipiddump
  *
- * $Id: sc_ipiddump.c,v 1.22 2023/05/29 21:22:27 mjl Exp $
+ * $Id: sc_ipiddump.c,v 1.22.4.1 2023/08/18 21:25:04 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -496,7 +496,7 @@ int main(int argc, char *argv[])
 
   atexit(cleanup);
 
-#ifdef _WIN32
+#ifdef _WIN32 /* windows needs WSAStartup */
   WSADATA wsaData;
   WSAStartup(MAKEWORD(2,2), &wsaData);
 #endif

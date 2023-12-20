@@ -1,7 +1,7 @@
 /*
  * utils.c
  *
- * $Id: utils.c,v 1.216 2023/05/03 19:23:19 mjl Exp $
+ * $Id: utils.c,v 1.216.4.2 2023/09/18 07:07:13 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -42,11 +42,11 @@ int sockaddr_len(const struct sockaddr *sa)
   if(sa->sa_family == AF_INET)  return sizeof(struct sockaddr_in);
   if(sa->sa_family == AF_INET6) return sizeof(struct sockaddr_in6);
 
-#if defined(AF_LINK)
+#ifdef AF_LINK
   if(sa->sa_family == AF_LINK)  return sizeof(struct sockaddr_dl);
 #endif
 
-#if defined(AF_UNIX) && !defined(_WIN32)
+#ifdef HAVE_SOCKADDR_UN
   if(sa->sa_family == AF_UNIX)  return sizeof(struct sockaddr_un);
 #endif
 
@@ -93,7 +93,7 @@ int sockaddr_compose(struct sockaddr *sa,
 
 int sockaddr_compose_un(struct sockaddr *sa, const char *file)
 {
-#if defined(AF_UNIX) && !defined(_WIN32)
+#ifdef HAVE_SOCKADDR_UN
   struct sockaddr_un *sn = (struct sockaddr_un *)sa;
 
   if(strlen(file) + 1 > sizeof(sn->sun_path))
@@ -215,7 +215,7 @@ char *sockaddr_tostr(const struct sockaddr *sa, char *buf, const size_t len)
 
   if(sa->sa_family == AF_INET)
     {
-#ifndef _WIN32
+#ifndef _WIN32 /* windows did not have inet_ntop until 2008 */
       if(inet_ntop(AF_INET, &((const struct sockaddr_in *)sa)->sin_addr,
 		   addr, sizeof(addr)) == NULL)
 	{
@@ -234,7 +234,7 @@ char *sockaddr_tostr(const struct sockaddr *sa, char *buf, const size_t len)
     }
   else if(sa->sa_family == AF_INET6)
     {
-#ifndef _WIN32
+#ifndef _WIN32 /* windows did not have inet_ntop until 2008 */
       if(inet_ntop(AF_INET6, &((const struct sockaddr_in6 *)sa)->sin6_addr,
 		   addr, sizeof(addr)) == NULL)
 	{
@@ -257,7 +257,7 @@ char *sockaddr_tostr(const struct sockaddr *sa, char *buf, const size_t len)
       return link_tostr((const struct sockaddr_dl *)sa, buf, len);
     }
 #endif
-#if defined(AF_UNIX) && !defined(_WIN32)
+#ifdef HAVE_SOCKADDR_UN
   else if(sa->sa_family == AF_UNIX)
     {
       snprintf(buf, len, "%s", ((const struct sockaddr_un *)sa)->sun_path);
@@ -296,7 +296,7 @@ int addr6_human_cmp(const struct in6_addr *a, const struct in6_addr *b)
 {
   int i;
 
-#ifndef _WIN32
+#ifndef _WIN32 /* windows does not have s6_addr32 for in6_addr */
   uint32_t ua, ub;
   for(i=0; i<4; i++)
     {
@@ -407,14 +407,14 @@ int addr_cmp(const int af, const void *a, const void *b)
   return 0;
 }
 
-#ifndef _WIN32
+#ifndef _WIN32 /* windows did not have inet_ntop until 2008 */
 const char *addr_tostr(int af, const void *addr, char *buf, size_t len)
 {
   return inet_ntop(af, addr, buf, len);
 }
 #endif
 
-#ifdef _WIN32
+#ifdef _WIN32 /* windows did not have inet_ntop until 2008 */
 const char *addr_tostr(int af, const void *addr, char *buf, size_t len)
 {
   struct sockaddr_storage sas;
@@ -732,18 +732,12 @@ void array_qsort(void **a, size_t n, array_cmp_t cmp)
   return;
 }
 
-#ifndef _WIN32
 void gettimeofday_wrap(struct timeval *tv)
 {
+#ifndef _WIN32 /* windows does not have gettimeofday */
   struct timezone tz;
   gettimeofday(tv, &tz);
-  return;
-}
-#endif
-
-#ifdef _WIN32
-void gettimeofday_wrap(struct timeval *tv)
-{
+#else
   FILETIME ft;
   uint64_t u64;
   GetSystemTimeAsFileTime(&ft);
@@ -755,9 +749,9 @@ void gettimeofday_wrap(struct timeval *tv)
   u64 -= 11644473600000000LL;
   tv->tv_sec = (long)(u64 / 1000000UL);
   tv->tv_usec = (long)(u64 % 1000000UL);
+#endif
   return;
 }
-#endif
 
 int timeval_cmp(const struct timeval *a, const struct timeval *b)
 {
@@ -930,7 +924,7 @@ char *timeval_tostr_us(const struct timeval *rtt, char *str, size_t len)
   return str;
 }
 
-#ifndef _WIN32
+#ifdef HAVE_FCNTL
 int fcntl_unset(const int fd, const int flags)
 {
   int i;
@@ -1774,7 +1768,7 @@ int sysctl_wrap(int *mib, u_int len, void **buf, size_t *size)
 
 void random_seed(void)
 {
-#if defined(_WIN32) || defined(HAVE_ARC4RANDOM)
+#if defined(_WIN32) || defined(HAVE_ARC4RANDOM) /* seed crypto-insecure prng */
   return;
 #else
   struct timeval tv;
@@ -1786,7 +1780,7 @@ void random_seed(void)
 
 int random_u32(uint32_t *r)
 {
-#if defined(_WIN32)
+#if defined(_WIN32) /* use rand_s on windows */
   unsigned int ui;
   if(rand_s(&ui) != 0)
     return -1;
@@ -1801,7 +1795,7 @@ int random_u32(uint32_t *r)
 
 int random_u16(uint16_t *r)
 {
-#ifdef _WIN32
+#ifdef _WIN32 /* use rand_s on windows */
   unsigned int ui;
   if(rand_s(&ui) != 0)
     return -1;
@@ -1816,7 +1810,7 @@ int random_u16(uint16_t *r)
 
 int random_u8(uint8_t *r)
 {
-#ifdef _WIN32
+#ifdef _WIN32 /* use rand_s on windows */
   unsigned int ui;
   if(rand_s(&ui) != 0)
     return -1;

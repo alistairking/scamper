@@ -1,7 +1,7 @@
 /*
  * sc_wartsdump
  *
- * $Id: sc_wartsdump.c,v 1.259.2.1 2023/08/08 00:55:23 mjl Exp $
+ * $Id: sc_wartsdump.c,v 1.259.2.2 2023/08/18 21:25:04 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -2273,7 +2273,7 @@ int main(int argc, char *argv[])
   uint16_t  type;
   int       f;
 
-#ifdef _WIN32
+#ifdef _WIN32 /* windows needs WSAStartup */
   WSADATA wsaData;
   WSAStartup(MAKEWORD(2,2), &wsaData);
 #endif

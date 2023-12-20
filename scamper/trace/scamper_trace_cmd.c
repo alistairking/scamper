@@ -1,7 +1,7 @@
 /*
  * scamper_trace_cmd.c
  *
- * $Id: scamper_trace_cmd.c,v 1.3 2023/06/04 23:53:07 mjl Exp $
+ * $Id: scamper_trace_cmd.c,v 1.3.4.3 2023/08/26 07:36:27 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -381,7 +381,11 @@ static int trace_gss_add(scamper_trace_dtree_t *dtree, scamper_addr_t *addr)
 void *scamper_do_trace_alloc(char *str)
 {
   /* default values of various trace parameters */
+#ifndef _WIN32 /* use ICMP echo paris traceroute on windows by default */
   uint8_t  type        = SCAMPER_TRACE_TYPE_UDP_PARIS;
+#else
+  uint8_t  type        = SCAMPER_TRACE_TYPE_ICMP_ECHO_PARIS;
+#endif
   uint32_t flags       = 0;
   uint8_t  attempts    = SCAMPER_DO_TRACE_ATTEMPTS_DEF;
   uint8_t  firsthop    = SCAMPER_DO_TRACE_FIRSTHOP_DEF;
@@ -479,7 +483,14 @@ void *scamper_do_trace_alloc(char *str)
 	  else if(strcasecmp(opt->str, "dtree-noback") == 0)
 	    dtree_flags |= SCAMPER_TRACE_DTREE_FLAG_NOBACK;
 	  else if(strcasecmp(opt->str, "ptr") == 0)
-	    flags |= SCAMPER_TRACE_FLAG_PTR;
+	    {
+#ifndef DISABLE_SCAMPER_HOST
+	      flags |= SCAMPER_TRACE_FLAG_PTR;
+#else
+	      printerror_msg(__func__, "scamper not built with host support");
+	      goto err;
+#endif
+	    }
 	  break;
 
 	case TRACE_OPT_PAYLOAD:

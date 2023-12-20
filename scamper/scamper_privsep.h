@@ -1,7 +1,7 @@
 /*
  * scamper_privsep.h
  *
- * $Id: scamper_privsep.h,v 1.25 2016/08/07 10:27:56 mjl Exp $
+ * $Id: scamper_privsep.h,v 1.25.38.1 2023/08/26 21:26:45 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -26,7 +26,7 @@
 #ifndef __SCAMPER_PRIVSEP_H
 #define __SCAMPER_PRIVSEP_H
 
-#ifndef WITHOUT_PRIVSEP
+#ifndef DISABLE_PRIVSEP
 
 int scamper_privsep_open_datalink(const int ifindex);
 

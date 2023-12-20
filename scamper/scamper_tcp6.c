@@ -1,11 +1,12 @@
 /*
  * scamper_tcp6.c
  *
- * $Id: scamper_tcp6.c,v 1.35 2020/03/17 07:32:16 mjl Exp $
+ * $Id: scamper_tcp6.c,v 1.35.20.3 2023/09/18 06:33:48 mjl Exp $
  *
  * Copyright (C) 2006      Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2012,2015 The Regents of the University of California
+ * Copyright (C) 2023      Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -256,7 +257,7 @@ int scamper_tcp6_build(scamper_probe_t *probe, uint8_t *buf, size_t *len)
       while((tcphlen % 4) != 0)
 	tcphlen += tcp_nop(buf+ip6hlen+tcphlen);
 
-#ifndef _WIN32
+#ifndef _WIN32 /* windows does not separate th_off and th_x2 */
       tcp->th_off   = tcphlen >> 2;
       tcp->th_x2    = 0;
 #else
@@ -280,27 +281,27 @@ int scamper_tcp6_build(scamper_probe_t *probe, uint8_t *buf, size_t *len)
   return -1;
 }
 
-void scamper_tcp6_close(int fd)
-{
-#ifndef _WIN32
-  close(fd);
-#else
-  closesocket(fd);
-#endif
-  return;
-}
-
+#ifndef _WIN32 /* SOCKET vs int on windows */
 int scamper_tcp6_open(const void *addr, int sport)
+#else
+SOCKET scamper_tcp6_open(const void *addr, int sport)
+#endif
 {
   struct sockaddr_in6 sin6;
   char tmp[128];
+
+#ifndef _WIN32 /* SOCKET vs int on windows */
   int fd = -1;
+#else
+  SOCKET fd = INVALID_SOCKET;
+#endif
 
 #ifdef IPV6_V6ONLY
   int opt;
 #endif
 
-  if((fd = socket(AF_INET6, SOCK_STREAM, IPPROTO_TCP)) == -1)
+  fd = socket(AF_INET6, SOCK_STREAM, IPPROTO_TCP);
+  if(socket_isinvalid(fd))
     {
       printerror(__func__, "could not open socket");
       goto err;
@@ -308,7 +309,7 @@ int scamper_tcp6_open(const void *addr, int sport)
 
 #ifdef IPV6_V6ONLY
   opt = 1;
-  if(setsockopt(fd,IPPROTO_IPV6,IPV6_V6ONLY, (char *)&opt,sizeof(opt)) == -1)
+  if(setsockopt(fd,IPPROTO_IPV6,IPV6_V6ONLY, (void *)&opt,sizeof(opt)) == -1)
     {
       printerror(__func__, "could not set IPV6_V6ONLY");
       goto err;
@@ -328,6 +329,7 @@ int scamper_tcp6_open(const void *addr, int sport)
   return fd;
 
  err:
-  if(fd != -1) scamper_tcp6_close(fd);
-  return -1;
+  if(socket_isvalid(fd))
+    socket_close(fd);
+  return socket_invalid();
 }

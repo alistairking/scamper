@@ -1,7 +1,7 @@
 /*
  * scamper_control.c
  *
- * $Id: scamper_control.c,v 1.251.4.1 2023/08/08 01:15:55 mjl Exp $
+ * $Id: scamper_control.c,v 1.251.4.7 2023/08/26 21:26:44 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -34,6 +34,7 @@
 #include "scamper_control.h"
 #include "scamper_debug.h"
 #include "scamper_fds.h"
+#include "scamper_list.h"
 #include "scamper_linepoll.h"
 #include "scamper_writebuf.h"
 #include "scamper_file.h"
@@ -48,13 +49,17 @@
 #include "utils.h"
 
 /* hack to deal with lss clear */
-#include "scamper_list.h"
+#ifndef DISABLE_SCAMPER_TRACE
 #include "trace/scamper_trace_do.h"
+#endif
 
 /* hack to deal with get / set nameserver */
 #include "scamper_addr.h"
 #include "scamper_addr_int.h"
+
+#ifndef DISABLE_SCAMPER_HOST
 #include "host/scamper_host_do.h"
+#endif
 
 #define REMOTE_HDRLEN 10
 
@@ -64,7 +69,7 @@
  */
 typedef struct client_obj
 {
-  void     *data;
+  uint8_t  *data;
   size_t    len;
   uint32_t  id;
   uint8_t   flags;
@@ -91,7 +96,7 @@ typedef struct client_message
 {
   uint32_t            sequence;
   uint32_t            channel;
-  uint16_t            msglen;
+  size_t              msglen;
   void               *data;
 } client_message_t;
 
@@ -421,7 +426,7 @@ static char *client_sockaddr_tostr(client_t *client, char *buf, size_t len)
    * if the socket is a unix domain socket, make something up that
    * is sensible.
    */
-#if defined(AF_UNIX) && !defined(_WIN32)
+#ifdef HAVE_SOCKADDR_UN
   if(client->un.sock.sa->sa_family == AF_UNIX)
     {
       if(ctrl_unix->name == NULL)
@@ -451,7 +456,11 @@ static char *client_sockaddr_tostr(client_t *client, char *buf, size_t len)
  */
 static void client_free(client_t *client)
 {
+#ifndef _WIN32 /* SOCKET vs int on windows */
   int fd;
+#else
+  SOCKET fd;
+#endif
 
   if(client == NULL)
     return;
@@ -465,7 +474,7 @@ static void client_free(client_t *client)
 	  scamper_fd_free(client->un.sock.fdn);
 	  client->un.sock.fdn = NULL;
 	  shutdown(fd, SHUT_RDWR);
-	  close(fd);
+	  socket_close(fd);
 	}
 
       if(client->un.sock.wb != NULL)
@@ -554,7 +563,8 @@ static int client_send(client_t *client, char *fs, ...)
   int ret;
 
   va_start(ap, fs);
-  ret = len = vsnprintf(msg, sizeof(msg), fs, ap);
+  len = vsnprintf(msg, sizeof(msg), fs, ap);
+  ret = (int)len;
   if(len < size)
     {
       va_end(ap);
@@ -874,7 +884,6 @@ static char *client_tostr(void *param, char *buf, size_t len)
  * socket connection.
  *
  */
-#ifndef _WIN32
 static int command_attach(client_t *client, char *buf)
 {
   scamper_source_params_t ssp;
@@ -931,7 +940,7 @@ static int command_attach(client_t *client, char *buf)
 	  client_send(client, "ERR invalid cycle_id");
 	  return 0;
 	}
-      ssp.cycle_id = ll;
+      ssp.cycle_id = (uint32_t)ll;
     }
 
   ssp.descr = descr;
@@ -956,7 +965,7 @@ static int command_attach(client_t *client, char *buf)
 	  client_send(client, "ERR invalid list_id");
 	  return 0;
 	}
-      ssp.list_id = ll;
+      ssp.list_id = (uint32_t)ll;
     }
 
   ssp.monitor = monitor;
@@ -974,7 +983,7 @@ static int command_attach(client_t *client, char *buf)
 	  client_send(client, "ERR invalid priority");
 	  return 0;
 	}
-      ssp.priority = ll;
+      ssp.priority = (uint32_t)ll;
     }
 
   if((client->sof_objs = slist_alloc()) == NULL)
@@ -1017,23 +1026,22 @@ static int command_attach(client_t *client, char *buf)
   client_free(client);
   return 0;
 }
-#endif
 
 static int command_lss_clear(client_t *client, char *buf)
 {
+#ifndef DISABLE_SCAMPER_TRACE
   if(buf == NULL)
     {
       client_send(client, "ERR usage: lss-clear [lss-name]");
       return 0;
     }
   string_nextword(buf);
-
   if(scamper_do_trace_dtree_lss_clear(buf) != 0)
-    {
-      return client_send(client, "ERR lss-clear %s failed", buf);
-    }
-
+    return client_send(client, "ERR lss-clear %s failed", buf);
   return client_send(client, "OK lss-clear %s", buf);
+#else
+  return client_send(client, "ERR scamper not built with trace support");
+#endif
 }
 
 static int command_exit(client_t *client, char *buf)
@@ -1064,17 +1072,21 @@ static int command_get_monitorname(client_t *client, char *buf)
 
 static int command_get_nameserver(client_t *client, char *buf)
 {
+#ifndef DISABLE_SCAMPER_HOST
   const scamper_addr_t *nsip = scamper_do_host_getns();
   char nsbuf[128];
   if(nsip == NULL)
     return client_send(client, "OK null nameserver");
   return client_send(client, "OK nameserver %s",
 		     scamper_addr_tostr(nsip, nsbuf, sizeof(nsbuf)));
+#else
+  return client_send(client, "ERR scamper not built with host support");
+#endif
 }
 
 static int command_get_pid(client_t *client, char *buf)
 {
-#ifndef _WIN32
+#ifndef _WIN32 /* windows does not have getpid */
   pid_t pid = getpid();
 #else
   DWORD pid = GetCurrentProcessId();
@@ -1388,6 +1400,7 @@ static int command_outfile_open(client_t *client, char *buf)
  *
  * outfile socket name <alias> type <type>
  */
+#ifndef _WIN32 /* outfile socket not supported on windows */
 static int command_outfile_socket(client_t *client, char *buf)
 {
   char *params[4], *next;
@@ -1442,6 +1455,7 @@ static int command_outfile_socket(client_t *client, char *buf)
   client_send(client, "OK");
   return 0;
 }
+#endif
 
 /*
  * outfile swap
@@ -1490,7 +1504,9 @@ static int command_outfile(client_t *client, char *buf)
     {"close",  command_outfile_close},
     {"list",   command_outfile_list},
     {"open",   command_outfile_open},
+#ifndef _WIN32 /* outfile socket not supported on windows */
     {"socket", command_outfile_socket},
+#endif
     {"swap",   command_outfile_swap},
   };
   static int handler_cnt = sizeof(handlers) / sizeof(command_t);
@@ -1732,6 +1748,7 @@ static int command_set_monitorname(client_t *client, char *buf)
 
 static int command_set_nameserver(client_t *client, char *buf)
 {
+#ifndef DISABLE_SCAMPER_HOST
   if(scamper_do_host_setns(buf) == -1)
     {
       client_send(client, "ERR could not set nameserver");
@@ -1739,6 +1756,10 @@ static int command_set_nameserver(client_t *client, char *buf)
     }
   client_send(client, "OK");
   return 0;
+#else
+  client_send(client, "ERR scamper not built with host support");
+  return -1;
+#endif  
 }
 
 static int command_set_pps(client_t *client, char *buf)
@@ -2393,9 +2414,7 @@ static int client_attached_cb(client_t *client, uint8_t *buf, size_t len)
 static int client_interactive_cb(client_t *client, uint8_t *buf, size_t len)
 {
   static command_t handlers[] = {
-#ifndef _WIN32
     {"attach",     command_attach},
-#endif
     {"exit",       command_exit},
     {"get",        command_get},
     {"help",       command_help},
@@ -2494,11 +2513,11 @@ static void client_read(const int fd, client_t *client)
   assert(scamper_fd_fd_get(client->un.sock.fdn) == fd);
 
   /* handle error conditions */
-  if((rrc = read(fd, buf, sizeof(buf))) < 0)
+  if((rrc = recv(fd, buf, sizeof(buf), 0)) < 0)
     {
       if(errno == EAGAIN || errno == EINTR)
 	return;
-      printerror(__func__, "could not read from %d", fd);
+      printerror(__func__, "could not recv from %d", fd);
       client_free(client);
       return;
     }
@@ -2693,8 +2712,13 @@ static control_remote_t *remote_find(const char *name, int port)
 static void remote_free(control_remote_t *rm, int mode)
 {
   client_t *client;
+
+#ifndef _WIN32 /* SOCKET vs int on windows */
   int fd;
-  
+#else
+  SOCKET fd;
+#endif
+
 #ifdef HAVE_OPENSSL
   if(rm->ssl != NULL)
     {
@@ -2718,7 +2742,7 @@ static void remote_free(control_remote_t *rm, int mode)
       fd = scamper_fd_fd_get(rm->fd);
       scamper_fd_free(rm->fd); rm->fd = NULL;
       shutdown(fd, SHUT_RDWR);
-      close(fd);
+      socket_close(fd);
     }
 
   if(rm->wb != NULL)
@@ -2964,14 +2988,16 @@ static int remote_sock_is_valid_cert(control_remote_t *rm)
  * remote_sock_write
  *
  */
-static int remote_sock_write(control_remote_t *rm, void *ptr, uint16_t len,
+static int remote_sock_write(control_remote_t *rm, void *ptr, size_t len,
 			     uint32_t sequence, uint32_t channel)
 {
   uint8_t hdr[REMOTE_HDRLEN];
 
+  assert(len <= 65535);
+
   bytes_htonl(hdr+0, sequence);
   bytes_htonl(hdr+4, channel);
-  bytes_htons(hdr+8, len);
+  bytes_htons(hdr+8, (uint16_t)len);
 
 #ifdef HAVE_OPENSSL
   if(rm->ssl != NULL)
@@ -3480,9 +3506,8 @@ static int remote_read_payload(control_remote_t *rm,
 			       const uint8_t *buf, size_t len)
 {
   client_t *client;
-  uint16_t msglen, x, y;
   uint32_t channel_id, seq;
-  size_t off = 0;
+  size_t off = 0, msglen, x, y;
 
   while(off < len)
     {
@@ -3582,7 +3607,7 @@ static int remote_send_master(control_remote_t *rm)
   if(monitorname != NULL)
     {
       tmp = strlen(monitorname) + 1;
-      buf[off++] = tmp;
+      buf[off++] = (uint8_t)tmp; /* we checked strlen(monitorname) <= 254 */
       memcpy(buf+off, monitorname, tmp);
     }
   else
@@ -3634,17 +3659,23 @@ static int remote_read_sock(control_remote_t *rm)
 {
   ssize_t rrc;
   uint8_t buf[4096];
-  int fd = scamper_fd_fd_get(rm->fd);
+
+#ifndef _WIN32 /* SOCKET vs int on windows */
+  int fd;
+#else
+  SOCKET fd;
+#endif
 
 #ifdef HAVE_OPENSSL
   int ecode, ret;
 #endif
 
-  if((rrc = read(fd, buf, sizeof(buf))) < 0)
+  fd = scamper_fd_fd_get(rm->fd);
+  if((rrc = recv(fd, buf, sizeof(buf), 0)) < 0)
     {
       if(errno == EAGAIN || errno == EINTR)
 	return 1;
-      printerror(__func__, "could not read from %d", fd);
+      printerror(__func__, "could not recv from %d", fd);
       return -1;
     }
 
@@ -3720,7 +3751,11 @@ static int remote_read_sock(control_remote_t *rm)
  * traffic.
  *
  */
-static void remote_read(const int fd, void *param)
+#ifndef _WIN32 /* SOCKET vs int on windows */
+static void remote_read(int fd, void *param)
+#else
+static void remote_read(SOCKET fd, void *param)
+#endif
 {
   control_remote_t *rm = param;
   struct timeval tv;
@@ -3775,7 +3810,11 @@ static int client_channel_send(client_t *client, void *buf, size_t len)
   return 0;  
 }
 
-static void remote_write(const int fd, void *param)
+#ifndef _WIN32 /* SOCKET vs int on windows */
+static void remote_write(int fd, void *param)
+#else
+static void remote_write(SOCKET fd, void *param)
+#endif
 {
   control_remote_t *rm = param;
   struct timeval tv;
@@ -3852,7 +3891,11 @@ static void remote_write(const int fd, void *param)
  * remote_socket
  *
  */
+#ifndef _WIN32 /* SOCKET vs int on windows */
 static int remote_socket(control_remote_t *rm, int fd)
+#else
+static int remote_socket(control_remote_t *rm, SOCKET fd)
+#endif
 {
   int opt = 1;
 
@@ -3862,7 +3905,7 @@ static int remote_socket(control_remote_t *rm, int fd)
       goto err;
     }
 
-  if(setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, (char *)&opt, sizeof(opt)) != 0)
+  if(setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, (void *)&opt, sizeof(opt)) != 0)
     {
       printerror(__func__, "could not set TCP_NODELAY");
       goto err;
@@ -3885,7 +3928,8 @@ static int remote_socket(control_remote_t *rm, int fd)
   return 0;
 
  err:
-  if(fd != -1) close(fd);
+  if(socket_isvalid(fd))
+    socket_close(fd);
   return -1;
 }
 
@@ -3898,20 +3942,31 @@ static void remote_host_cb(control_remote_t *rm, scamper_addr_t **a, int c)
   struct timeval tv;
   struct sockaddr *sa;
   struct sockaddr_in sin;
-  int fd = -1, i;
+  int i;
+
+#ifndef _WIN32 /* SOCKET vs int on windows */
+  int fd = -1;
+#else
+  SOCKET fd = INVALID_SOCKET;
+#endif
 
   for(i=0; i<c; i++)
     {
       sa = (struct sockaddr *)&sin;
       sockaddr_compose(sa, AF_INET, a[i]->addr, rm->server_port);
-      if((fd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) < 0)
+      fd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+      if(socket_isinvalid(fd))
 	continue;
       if(connect(fd, sa, sockaddr_len(sa)) != 0)
-	continue;
+	{
+	  socket_close(fd);
+	  fd = socket_invalid();
+	  continue;
+	}
       break;
     }
 
-  if(fd < 0)
+  if(socket_isinvalid(fd))
     {
       printerror(__func__, "could not connect to %s:%d",
 		 rm->server_name, rm->server_port);
@@ -3962,7 +4017,12 @@ static int remote_connect(control_remote_t *rm)
   struct addrinfo hints, *res, *res0 = NULL;
   struct timeval tv;
   char port[8];
+
+#ifndef _WIN32 /* SOCKET vs int on windows */
   int fd = -1;
+#else
+  SOCKET fd = INVALID_SOCKET;
+#endif
 
   snprintf(port, sizeof(port), "%d", rm->server_port);
   memset(&hints, 0, sizeof(hints));
@@ -3977,26 +4037,33 @@ static int remote_connect(control_remote_t *rm)
    */
   if(getaddrinfo(rm->server_name, port, &hints, &res0) != 0)
     {
+#ifndef DISABLE_SCAMPER_HOST
       if(scamper_do_host_do_a(rm->server_name, rm,
 			      (scamper_host_do_a_cb_t)remote_host_cb) == NULL)
 	remote_retry(rm, 0);
       return 0;
+#else
+      printerror_msg(__func__, "scamper not built with host support");
+      goto err;
+#endif
     }
 
   /* find the first address that we can connect to */
   for(res=res0; res != NULL; res = res->ai_next)
     {
-      if((fd = socket(res->ai_family, res->ai_socktype, res->ai_protocol)) < 0)
+      fd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
+      if(socket_isinvalid(fd))
 	continue;
       if(connect(fd, res->ai_addr, res->ai_addrlen) != 0)
 	{
-	  close(fd); fd = -1;
+	  socket_close(fd);
+	  fd = socket_invalid();
 	  continue;
 	}
       break;
     }
 
-  if(fd < 0)
+  if(socket_isinvalid(fd))
     {
       printerror(__func__, "could not connect to %s:%s",
 		 rm->server_name, port);
@@ -4039,16 +4106,26 @@ static int remote_reconnect(void *param)
   return remote_connect(rm);
 }
 
-static void control_accept(const int fd, void *param)
+#ifndef _WIN32 /* SOCKET vs int on windows */
+static void control_accept(int fd, void *param)
+#else
+static void control_accept(SOCKET fd, void *param)
+#endif
 {
   struct sockaddr_storage ss;
   socklen_t socklen;
   client_t *c = NULL;
+
+#ifndef _WIN32 /* SOCKET vs int on windows */
   int s;
+#else
+  SOCKET s;
+#endif
 
   /* accept the new client */
   socklen = sizeof(ss);
-  if((s = accept(fd, (struct sockaddr *)&ss, &socklen)) == -1)
+  s = accept(fd, (struct sockaddr *)&ss, &socklen);
+  if(socket_isinvalid(s))
     {
       printerror(__func__, "could not accept");
       return;
@@ -4057,7 +4134,7 @@ static void control_accept(const int fd, void *param)
   scamper_debug(__func__, "fd %d", s);
 
   /* make the socket non-blocking, so a read or write will not hang scamper */
-#ifndef _WIN32
+#ifdef HAVE_FCNTL
   if(fcntl_set(s, O_NONBLOCK) == -1)
     {
       printerror(__func__, "could not set NONBLOCK");
@@ -4082,7 +4159,8 @@ static void control_accept(const int fd, void *param)
   return;
 
  err:
-  close(s);
+  if(socket_isvalid(s))
+    socket_close(s);
   if(c != NULL) client_free(c);
   return;
 }
@@ -4115,10 +4193,10 @@ int scamper_control_add_remote(const char *name, int port, int ssl)
 
 int scamper_control_add_unix(const char *file)
 {
-#if defined(AF_UNIX) && !defined(_WIN32)
+#ifdef HAVE_SOCKADDR_UN
   int fd = -1;
 
-#ifdef WITHOUT_PRIVSEP
+#ifdef DISABLE_PRIVSEP
   struct sockaddr_un sn;
 
   if(sockaddr_compose_un((struct sockaddr *)&sn, file) != 0)
@@ -4175,7 +4253,13 @@ int scamper_control_add_inet(const char *ip, int port)
   struct sockaddr_storage sas;
   struct sockaddr *sa = (struct sockaddr *)&sas;
   struct in_addr in;
-  int af = AF_INET, fd = -1, opt;
+  int af = AF_INET, opt;
+
+#ifndef _WIN32 /* SOCKET vs int on windows */
+  int fd = -1;
+#else
+  SOCKET fd = INVALID_SOCKET;
+#endif
 
   if(ip != NULL)
     {
@@ -4195,21 +4279,22 @@ int scamper_control_add_inet(const char *ip, int port)
     }
   
   /* open the TCP socket we are going to listen on */
-  if((fd = socket(af, SOCK_STREAM, IPPROTO_TCP)) == -1)
+  fd = socket(af, SOCK_STREAM, IPPROTO_TCP);
+  if(socket_isinvalid(fd))
     {
       printerror(__func__, "could not create socket");
       goto err;
     }
 
   opt = 1;
-  if(setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, (char *)&opt, sizeof(opt)) != 0)
+  if(setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, (void *)&opt, sizeof(opt)) != 0)
     {
       printerror(__func__, "could not set SO_REUSEADDR");
       goto err;
     }
 
   opt = 1;
-  if(setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, (char *)&opt, sizeof(opt)) != 0)
+  if(setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, (void *)&opt, sizeof(opt)) != 0)
     {
       printerror(__func__, "could not set TCP_NODELAY");
       goto err;
@@ -4241,8 +4326,8 @@ int scamper_control_add_inet(const char *ip, int port)
   return 0;
 
  err:
-  if(fd != -1 && (ctrl_inet == NULL || ctrl_inet->fd == NULL))
-    close(fd);
+  if(socket_isvalid(fd) && (ctrl_inet == NULL || ctrl_inet->fd == NULL))
+    socket_close(fd);
   return -1;
 }
 
@@ -4262,7 +4347,12 @@ void scamper_control_cleanup(void)
 {
   control_remote_t *rm;
   client_t *client;
+
+#ifndef _WIN32 /* SOCKET vs int on windows */
   int fd;
+#else
+  SOCKET fd;
+#endif
 
   if(client_list != NULL)
     {
@@ -4283,14 +4373,15 @@ void scamper_control_cleanup(void)
     {
       if(ctrl_unix->fd != NULL)
 	{
-	  if((fd = scamper_fd_fd_get(ctrl_unix->fd)) != -1)
+	  fd = scamper_fd_fd_get(ctrl_unix->fd);
+	  if(socket_isvalid(fd))
 	    {
-	      close(fd);
+	      socket_close(fd);
 
-#if defined(AF_UNIX) && !defined(_WIN32)
+#ifdef HAVE_SOCKADDR_UN
 	      if(ctrl_unix->name != NULL)
 		{
-#ifndef WITHOUT_PRIVSEP
+#ifndef DISABLE_PRIVSEP
 		  scamper_privsep_unlink(ctrl_unix->name);
 #else
 		  unlink(ctrl_unix->name);
@@ -4315,8 +4406,9 @@ void scamper_control_cleanup(void)
     {
       if(ctrl_inet->fd != NULL)
 	{
-	  if((fd = scamper_fd_fd_get(ctrl_inet->fd)) != -1)
-	    close(fd);
+	  fd = scamper_fd_fd_get(ctrl_inet->fd);
+	  if(socket_isvalid(fd))
+	    socket_close(fd);
 	  scamper_fd_free(ctrl_inet->fd);
 	  ctrl_inet->fd = NULL;
 	}

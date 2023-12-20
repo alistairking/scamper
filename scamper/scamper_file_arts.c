@@ -1,7 +1,7 @@
 /*
  * scamper_file_arts.c
  *
- * $Id: scamper_file_arts.c,v 1.69 2023/05/29 20:21:27 mjl Exp $
+ * $Id: scamper_file_arts.c,v 1.69.4.2 2023/08/19 03:36:28 mjl Exp $
  *
  * code to read the legacy arts data file format into scamper_hop structures.
  *
@@ -269,7 +269,7 @@ static int arts_hop_read(scamper_trace_hop_t *hop, const uint8_t *buf,
 
 static scamper_trace_hop_t *arts_hops_read(const arts_header_t *ah,
 					   const uint8_t *buf,
-					   int count, int *off)
+					   uint8_t count, uint32_t *off)
 {
   scamper_trace_hop_t *head = NULL, *hop = NULL;
   int i = 0;
@@ -300,7 +300,7 @@ static scamper_trace_hop_t *arts_hops_read(const arts_header_t *ah,
       i += rc;
     }
 
-  *off += i;
+  *off += (uint32_t)i;
 
   return head;
 
@@ -376,8 +376,7 @@ static scamper_trace_t *arts_read_trace(const scamper_file_t *sf,
   arts_state_t        *state = scamper_file_getstate(sf);
   scamper_trace_t     *trace = NULL;
   uint8_t             *buf = NULL;
-  int                  i;
-  uint32_t             junk32;
+  uint32_t             i, junk32;
   uint8_t              junk8;
   uint8_t              hop_distance;
   uint8_t              halt_reason;
@@ -555,7 +554,7 @@ static scamper_trace_t *arts_read_trace(const scamper_file_t *sf,
 	}
     }
 
-  if((uint32_t)i != ah->data_length)
+  if(i != ah->data_length)
     goto err;
   free(buf); buf = NULL;
 
@@ -633,7 +632,7 @@ static int arts_skip(const scamper_file_t *sf, uint32_t bytes)
       len = (sizeof(buf) < bytes) ? sizeof(buf) : bytes;
       if(read_wrap(fd, buf, NULL, len) != 0)
 	return -1;
-      bytes -= len;
+      bytes -= (uint32_t)len;
     }
 
   return 0;

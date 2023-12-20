@@ -1,7 +1,7 @@
 /*
  * linked list routines
  *
- * $Id: mjl_list.c,v 1.80 2023/06/01 04:03:31 mjl Exp $
+ * $Id: mjl_list.c,v 1.80.4.1 2023/08/18 21:26:35 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -31,7 +31,7 @@
  *
  */
 
-#ifdef _WIN32
+#ifdef _WIN32 /* define _CRT_RAND_S before stdlib.h to get rand_s */
 #define _CRT_RAND_S
 #endif
 
@@ -97,7 +97,7 @@ struct clist
 
 static int random_u32(unsigned int *r)
 {
-#ifdef _WIN32
+#ifdef _WIN32 /* use rand_s on windows */
   unsigned int ui;
   if(rand_s(&ui) != 0)
     return -1;

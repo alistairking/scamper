@@ -6,7 +6,7 @@ SUBDIRS = \
 	sc_erosprober \
 	sc_filterpolicy
 
-if WITH_SC_HOIHO
+if ENABLE_SC_HOIHO
 SUBDIRS+= sc_hoiho
 endif
 
@@ -23,7 +23,7 @@ SUBDIRS+= \
 	sc_tracediff \
 	sc_ttlexp
 
-if WITH_SC_UPTIME
+if ENABLE_SC_UPTIME
 SUBDIRS+= sc_uptime
 endif
 

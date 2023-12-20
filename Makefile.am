@@ -1,6 +1,6 @@
 SUBDIRS = scamper lib utils
 
-if WITH_TESTS
+if ENABLE_TESTS
 SUBDIRS += tests
 endif
 

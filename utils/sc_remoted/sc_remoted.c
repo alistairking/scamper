@@ -1,7 +1,7 @@
 /*
  * sc_remoted
  *
- * $Id: sc_remoted.c,v 1.99.4.1 2023/08/08 01:27:28 mjl Exp $
+ * $Id: sc_remoted.c,v 1.99.4.4 2023/08/20 20:48:33 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -2555,19 +2555,16 @@ static int remoted_tlsctx_reload(void)
 static int remoted_pidfile(void)
 {
   char buf[32];
-  mode_t mode;
   size_t len;
   int fd, fd_flags = O_WRONLY | O_TRUNC | O_CREAT;
 
-#ifndef _WIN32
+#ifndef _WIN32 /* windows does not have getpid */
   pid_t pid = getpid();
-  mode = S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH;
 #else
   DWORD pid = GetCurrentProcessId();
-  mode = _S_IREAD | _S_IWRITE;
 #endif
 
-  if((fd = open(pidfile, fd_flags, mode)) == -1)
+  if((fd = open(pidfile, fd_flags, MODE_644)) == -1)
     {
       remote_debug(__func__, "could not open %s: %s", pidfile, strerror(errno));
       return -1;
@@ -2589,19 +2586,16 @@ static int remoted_pidfile(void)
   return -1;
 }
 
-static void remoted_sighup(int sig)
+#ifdef HAVE_SIGACTION
+static void remoted_sigaction(int sig)
 {
   if(sig == SIGHUP)
     reload = 1;
-  return;
-}
-
-static void remoted_sigint(int sig)
-{
-  if(sig == SIGINT)
+  else if(sig == SIGINT)
     stop = 1;
   return;
 }
+#endif
 
 #if defined(HAVE_EPOLL) || defined(HAVE_KQUEUE)
 #if defined(HAVE_EPOLL)
@@ -3024,7 +3018,7 @@ int main(int argc, char *argv[])
 {
   int i;
 
-#ifndef _WIN32
+#ifdef HAVE_SIGACTION
   struct sigaction si_sa;
 #endif
 
@@ -3060,16 +3054,18 @@ int main(int argc, char *argv[])
     return -1;
 #endif
 
-#ifndef _WIN32
+#ifdef HAVE_SIGNAL
   if(signal(SIGPIPE, SIG_IGN) == SIG_ERR)
     {
       remote_debug(__func__, "could not ignore SIGPIPE");
       return -1;
     }
+#endif
 
+#ifdef HAVE_SIGACTION
   sigemptyset(&si_sa.sa_mask);
   si_sa.sa_flags   = 0;
-  si_sa.sa_handler = remoted_sighup;
+  si_sa.sa_handler = remoted_sigaction;
   if(sigaction(SIGHUP, &si_sa, 0) == -1)
     {
       remote_debug(__func__, "could not set sigaction for SIGHUP");
@@ -3078,7 +3074,7 @@ int main(int argc, char *argv[])
 
   sigemptyset(&si_sa.sa_mask);
   si_sa.sa_flags   = 0;
-  si_sa.sa_handler = remoted_sigint;
+  si_sa.sa_handler = remoted_sigaction;
   if(sigaction(SIGINT, &si_sa, 0) == -1)
     {
       remote_debug(__func__, "could not set sigaction for SIGINT");

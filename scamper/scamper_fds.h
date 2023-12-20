@@ -1,11 +1,11 @@
 /*
  * scamper_fds: manage events for file descriptors
  *
- * $Id: scamper_fds.h,v 1.24.20.1 2023/08/08 01:18:05 mjl Exp $
+ * $Id: scamper_fds.h,v 1.24.20.3 2023/08/20 01:24:40 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
- * Copyright (C) 2014-2020 Matthew Luckie
+ * Copyright (C) 2014-2023 Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -29,7 +29,11 @@
 typedef struct scamper_fd scamper_fd_t;
 
 /* when an event occurs, this is the format of the callback used */
-typedef void (*scamper_fd_cb_t)(const int fd, void *param);
+#ifndef _WIN32 /* SOCKET vs int on windows */
+typedef void (*scamper_fd_cb_t)(int fd, void *param);
+#else
+typedef void (*scamper_fd_cb_t)(SOCKET fd, void *param);
+#endif
 
 /* these functions allocate reference to a socket shared throughout scamper */
 scamper_fd_t *scamper_fd_icmp4(void *addr);
@@ -43,7 +47,7 @@ scamper_fd_t *scamper_fd_tcp6(void *addr, uint16_t sport);
 scamper_fd_t *scamper_fd_dl(int ifindex);
 scamper_fd_t *scamper_fd_ip4(void);
 
-#ifndef _WIN32
+#ifndef _WIN32 /* windows does not have a routing socket */
 scamper_fd_t *scamper_fd_rtsock(void);
 scamper_fd_t *scamper_fd_ifsock(void);
 #endif
@@ -54,8 +58,13 @@ int scamper_fd_sport(const scamper_fd_t *fdn, uint16_t *sport);
 int scamper_fd_addr(const scamper_fd_t *fdn, void *addr, size_t len);
 
 /* this function allocates a socket that is exclusively held by the caller */
-scamper_fd_t *scamper_fd_private(int fd, void *param, scamper_fd_cb_t read_cb,
-				 scamper_fd_cb_t write_cb);
+#ifndef _WIN32 /* SOCKET vs int on windows */
+scamper_fd_t *scamper_fd_private(int fd, void *param,
+				 scamper_fd_cb_t r_cb, scamper_fd_cb_t w_cb);
+#else
+scamper_fd_t *scamper_fd_private(SOCKET fd, void *param,
+				 scamper_fd_cb_t r_cb, scamper_fd_cb_t w_cb);
+#endif
 
 /*
  * this function reduces the reference count of the fdn, and closes the fd
@@ -64,7 +73,11 @@ scamper_fd_t *scamper_fd_private(int fd, void *param, scamper_fd_cb_t read_cb,
 void scamper_fd_free(scamper_fd_t *fdn);
 
 /* get the fd associated with the structure */
+#ifndef _WIN32 /* SOCKET vs int on windows */
 int scamper_fd_fd_get(const scamper_fd_t *fdn);
+#else
+SOCKET scamper_fd_fd_get(const scamper_fd_t *fdn);
+#endif
 
 /* functions to temporarily unmonitor a fd, and then have it rejoin */
 void scamper_fd_read_pause(scamper_fd_t *fdn);

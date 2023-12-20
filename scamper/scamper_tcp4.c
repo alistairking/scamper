@@ -1,7 +1,7 @@
 /*
  * scamper_tcp4.c
  *
- * $Id: scamper_tcp4.c,v 1.61 2023/05/29 21:22:26 mjl Exp $
+ * $Id: scamper_tcp4.c,v 1.61.4.3 2023/09/18 06:33:48 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -206,7 +206,7 @@ static void tcp4_build(scamper_probe_t *probe, uint8_t *buf)
   while((tcphlen % 4) != 0)
     tcphlen += tcp_nop(buf+tcphlen);
 
-#ifndef _WIN32
+#ifndef _WIN32 /* windows does not separate th_off and th_x2 */
   tcp->th_off   = tcphlen >> 2;
   tcp->th_x2    = 0;
 #else
@@ -355,37 +355,38 @@ void scamper_tcp4_cleanup()
   return;
 }
 
-void scamper_tcp4_close(int fd)
-{
-#ifndef _WIN32
-  close(fd);
-#else
-  closesocket(fd);
-#endif
-  return;
-}
-
+#ifndef _WIN32 /* SOCKET vs int on windows */
 int scamper_tcp4_open(const void *addr, int sport)
+#else
+SOCKET scamper_tcp4_open(const void *addr, int sport)
+#endif
 {
   struct sockaddr_in sin4;
   char tmp[32];
-  int opt, fd = -1;
+  int opt;
 
-  if((fd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) == -1)
+#ifndef _WIN32 /* SOCKET vs int on windows */
+  int fd = -1;
+#else
+  SOCKET fd = INVALID_SOCKET;
+#endif
+
+  fd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+  if(socket_isinvalid(fd))
     {
       printerror(__func__, "could not open socket");
       goto err;
     }
 
   opt = 1;
-  if(setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, (char *)&opt, sizeof(opt)) != 0)
+  if(setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, (void *)&opt, sizeof(opt)) != 0)
     {
       printerror(__func__, "could not set SO_REUSEADDR");
       goto err;
     }
 
   opt = 65535 + 128;
-  if(setsockopt(fd, SOL_SOCKET, SO_SNDBUF, (char *)&opt, sizeof(opt)) != 0)
+  if(setsockopt(fd, SOL_SOCKET, SO_SNDBUF, (void *)&opt, sizeof(opt)) != 0)
     {
       printerror(__func__, "could not set SO_SNDBUF");
       return -1;
@@ -404,6 +405,7 @@ int scamper_tcp4_open(const void *addr, int sport)
   return fd;
 
  err:
-  if(fd != -1) scamper_tcp4_close(fd);
-  return -1;
+  if(socket_isvalid(fd))
+    socket_close(fd);
+  return socket_invalid();
 }

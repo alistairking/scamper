@@ -1,12 +1,13 @@
 /*
  * scamper_dl.h
  *
- * $Id: scamper_dl.h,v 1.62 2015/09/15 04:49:06 mjl Exp $
+ * $Id: scamper_dl.h,v 1.62.38.1 2023/08/20 01:24:40 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2012      Matthew Luckie
  * Copyright (c) 2013-2015 The Regents of the University of California
+ * Copyright (C) 2023      Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -523,7 +524,6 @@ int scamper_dl_tx_type(scamper_dl_t *);
  */
 int scamper_dl_open(const int ifindex);
 int scamper_dl_open_fd(const int ifindex);
-void scamper_dl_close(int fd);
 
 /*
  * scamper_dl_state_alloc: allocate state to be held with fd
@@ -537,7 +537,11 @@ void scamper_dl_state_free(scamper_dl_t *dl);
 /*
  * scamper_dl_read_cb: callback for read events
  */
-void scamper_dl_read_cb(const int fd, void *param);
+#ifndef _WIN32 /* SOCKET vs int on windows */
+void scamper_dl_read_cb(int fd, void *param);
+#else
+void scamper_dl_read_cb(SOCKET fd, void *param);
+#endif
 
 /*
  * scamper_dl_tx:

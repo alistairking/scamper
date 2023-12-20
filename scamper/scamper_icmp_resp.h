@@ -1,12 +1,12 @@
 /*
  * scamper_icmp_resp.h
  *
- * $Id: scamper_icmp_resp.h,v 1.35 2022/06/12 01:39:59 mjl Exp $
+ * $Id: scamper_icmp_resp.h,v 1.35.10.1 2023/08/20 01:24:40 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2013      The Regents of the University of California
- * Copyright (C) 2020      Matthew Luckie
+ * Copyright (C) 2020-2023 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -107,7 +107,11 @@ typedef struct scamper_icmp_resp
   int               ir_af;
 
   /* the icmp file descriptor the message was received on */
+#ifndef _WIN32 /* SOCKET vs int on windows */
   int               ir_fd;
+#else
+  SOCKET            ir_fd;
+#endif
 
   /* when the ICMP response was received */
   struct timeval    ir_rx;

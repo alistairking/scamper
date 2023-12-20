@@ -1,7 +1,7 @@
 /*
  * scamper_udp4.c
  *
- * $Id: scamper_udp4.c,v 1.78 2023/05/29 21:22:26 mjl Exp $
+ * $Id: scamper_udp4.c,v 1.78.4.5 2023/09/18 06:33:48 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2010 The University of Waikato
@@ -211,30 +211,31 @@ void scamper_udp4_cleanup()
   return;
 }
 
-void scamper_udp4_close(int fd)
-{
-#ifndef _WIN32
-  close(fd);
-#else
-  closesocket(fd);
-#endif
-  return;
-}
-
+#ifndef _WIN32 /* SOCKET vs int on windows */
 int scamper_udp4_opendgram(const void *addr, int sport)
+#else
+SOCKET scamper_udp4_opendgram(const void *addr, int sport)
+#endif
 {
   struct sockaddr_in sin4;
   char tmp[32];
-  int fd, opt;
+  int opt;
 
-  if((fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)) == -1)
+#ifndef _WIN32 /* SOCKET vs int on windows */
+  int fd;
+#else
+  SOCKET fd;
+#endif
+
+  fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+  if(socket_isinvalid(fd))
     {
       printerror(__func__, "could not open socket");
       goto err;
     }
 
   opt = 1;
-  if(setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, (char *)&opt, sizeof(opt)) != 0)
+  if(setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, (void *)&opt, sizeof(opt)) != 0)
     {
       printerror(__func__, "could not set SO_REUSEADDR");
       goto err;
@@ -251,17 +252,29 @@ int scamper_udp4_opendgram(const void *addr, int sport)
   return fd;
 
  err:
-  if(fd != -1) scamper_udp4_close(fd);
-  return -1;
+  if(socket_isvalid(fd))
+    socket_close(fd);
+  return socket_invalid();
 }
 
+#ifndef _WIN32 /* SOCKET vs int on windows */
 int scamper_udp4_openraw_fd(const void *addr)
+#else
+SOCKET scamper_udp4_openraw_fd(const void *addr)
+#endif
 {
   struct sockaddr_in sin4;
-  int hdr, fd;
+  int hdr;
   char tmp[32];
 
-  if((fd = socket(AF_INET, SOCK_RAW, IPPROTO_UDP)) == -1)
+#ifndef _WIN32 /* SOCKET vs int on windows */
+  int fd;
+#else
+  SOCKET fd;
+#endif
+
+  fd = socket(AF_INET, SOCK_RAW, IPPROTO_UDP);
+  if(socket_isinvalid(fd))
     {
       printerror(__func__, "could not open socket");
       goto err;
@@ -283,16 +296,27 @@ int scamper_udp4_openraw_fd(const void *addr)
   return fd;
 
  err:
-  if(fd != -1) scamper_udp4_close(fd);
-  return -1;
+  if(socket_isvalid(fd))
+    socket_close(fd);
+  return socket_invalid();
 }
 
+#ifndef _WIN32 /* SOCKET vs int on windows */
 int scamper_udp4_openraw(const void *addr)
+#else
+SOCKET scamper_udp4_openraw(const void *addr)
+#endif
 {
-  int fd = -1, opt;
+  int opt;
 
-#if defined(WITHOUT_PRIVSEP)
-#ifndef _WIN32
+#ifndef _WIN32 /* SOCKET vs int on windows */
+  int fd = -1;
+#else
+  SOCKET fd = INVALID_SOCKET;
+#endif
+
+#ifdef DISABLE_PRIVSEP
+#ifdef HAVE_SETEUID
   uid_t uid = scamper_getuid();
   uid_t euid = scamper_geteuid();
   if(uid != euid && seteuid(euid) != 0)
@@ -302,7 +326,7 @@ int scamper_udp4_openraw(const void *addr)
     }
 #endif
   fd = scamper_udp4_openraw_fd(addr);
-#ifndef _WIN32
+#ifdef HAVE_SETEUID
   if(uid != euid && seteuid(uid) != 0)
     {
       printerror(__func__, "could not return to uid");
@@ -312,11 +336,11 @@ int scamper_udp4_openraw(const void *addr)
 #else
   fd = scamper_privsep_open_rawudp(addr);
 #endif
-  if(fd == -1)
+  if(socket_isinvalid(fd))
     goto err;
 
   opt = 65535 + 128;
-  if(setsockopt(fd, SOL_SOCKET, SO_SNDBUF, (char *)&opt, sizeof(opt)) == -1)
+  if(setsockopt(fd, SOL_SOCKET, SO_SNDBUF, (void *)&opt, sizeof(opt)) == -1)
     {
       printerror(__func__, "could not set SO_SNDBUF");
       goto err;
@@ -324,6 +348,7 @@ int scamper_udp4_openraw(const void *addr)
   return fd;
 
  err:
-  if(fd != -1) scamper_udp4_close(fd);
-  return -1;
+  if(socket_isvalid(fd))
+    socket_close(fd);
+  return socket_invalid();
 }

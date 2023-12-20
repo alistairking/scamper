@@ -1,13 +1,13 @@
 /*
  * scamper_probe.h
  *
- * $Id: scamper_probe.h,v 1.47 2020/06/12 23:29:25 mjl Exp $
+ * $Id: scamper_probe.h,v 1.47.20.1 2023/08/20 01:24:40 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2012      Matthew Luckie
  * Copyright (C) 2012-2015 The Regents of the University of California
- * Copyright (C) 2020      Matthew Luckie
+ * Copyright (C) 2020-2023 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -116,7 +116,11 @@ typedef struct scamper_probe
    * if the caller requires the packet to be sent on a datalink socket, it
    * must supply the datalink socket to use (in pr_dl) and a datalink header.
    */
+#ifndef _WIN32 /* SOCKET vs int on windows */
   int                    pr_fd;
+#else
+  SOCKET                 pr_fd;
+#endif
   scamper_dl_t          *pr_dl;
   uint8_t               *pr_dl_buf;
   uint16_t               pr_dl_len;

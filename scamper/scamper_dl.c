@@ -1,7 +1,7 @@
 /*
  * scamper_dl: manage BPF/PF_PACKET datalink instances for scamper
  *
- * $Id: scamper_dl.c,v 1.192 2023/05/29 21:22:26 mjl Exp $
+ * $Id: scamper_dl.c,v 1.192.4.4 2023/08/26 21:26:44 mjl Exp $
  *
  *          Matthew Luckie
  *          Ben Stasiewicz added fragmentation support.
@@ -119,7 +119,7 @@ static int dl_parse_ip(scamper_dl_rec_t *dl, uint8_t *pktbuf, size_t pktlen)
     {
       ip4 = (struct ip *)pkt;
 
-#ifndef _WIN32
+#ifndef _WIN32 /* windows does not separate ip_v and ip_hl */
       iplen = (ip4->ip_hl << 2);
 #else
       iplen = ((ip4->ip_vhl) & 0xf) << 2;
@@ -260,7 +260,7 @@ static int dl_parse_ip(scamper_dl_rec_t *dl, uint8_t *pktbuf, size_t pktlen)
       dl->dl_tcp_sport  = ntohs(tcp->th_sport);
       dl->dl_tcp_seq    = ntohl(tcp->th_seq);
       dl->dl_tcp_ack    = ntohl(tcp->th_ack);
-#ifndef _WIN32
+#ifndef _WIN32 /* windows does not separate th_off and th_x2 */
       dl->dl_tcp_hl     = tcp->th_off * 4;
 #else
       dl->dl_tcp_hl     = (tcp->th_offx2 >> 4) * 4;
@@ -384,7 +384,7 @@ static int dl_parse_ip(scamper_dl_rec_t *dl, uint8_t *pktbuf, size_t pktlen)
 	   * the ICMP response should include the IP header and the first
 	   * 8 bytes of the transport header.
 	   */
-#ifndef _WIN32
+#ifndef _WIN32 /* windows does not separate ip_v and ip_hl */
 	  if((size_t)(ICMP_MINLEN + (ip4->ip_hl << 2) + 8) > len)
 #else
 	  if((size_t)(ICMP_MINLEN + ((ip4->ip_vhl & 0xf) << 2) + 8) > len)
@@ -395,7 +395,7 @@ static int dl_parse_ip(scamper_dl_rec_t *dl, uint8_t *pktbuf, size_t pktlen)
 
 	  pkt = (uint8_t *)ip4;
 
-#ifndef _WIN32
+#ifndef _WIN32 /* windows does not separate ip_v and ip_hl */
 	  iplen = (ip4->ip_hl << 2);
 #else
 	  iplen = ((ip4->ip_vhl & 0xf) << 2);
@@ -467,7 +467,7 @@ static int dl_parse_ip(scamper_dl_rec_t *dl, uint8_t *pktbuf, size_t pktlen)
 
 	  if(dl->dl_icmp_type == ICMP6_PACKET_TOO_BIG)
 	    {
-#ifndef _WIN32
+#ifndef _WIN32 /* windows does not provide icmp6_mtu in struct icmp6_hdr */
 	      dl->dl_icmp_nhmtu = (ntohl(icmp6->icmp6_mtu) % 0xffff);
 #else
 	      dl->dl_icmp_nhmtu = ntohs(icmp6->icmp6_seq);
@@ -1951,7 +1951,11 @@ void scamper_dl_rec_icmp_print(const scamper_dl_rec_t *dl)
  * this function is called by scamper_fds when a BPF fd fires as being
  * available to read from.
  */
-void scamper_dl_read_cb(const int fd, void *param)
+#ifndef _WIN32 /* SOCKET vs int on windows */
+void scamper_dl_read_cb(int fd, void *param)
+#else
+void scamper_dl_read_cb(SOCKET fd, void *param)
+#endif
 {
   assert(param != NULL);
 
@@ -2035,14 +2039,6 @@ int scamper_dl_tx_type(scamper_dl_t *dl)
   return dl->tx_type;
 }
 
-void scamper_dl_close(int fd)
-{
-#ifndef _WIN32
-  close(fd);
-#endif
-  return;
-}
-
 /*
  * scamper_dl_open_fd
  *
@@ -2057,7 +2053,7 @@ int scamper_dl_open_fd(const int ifindex)
   return dl_linux_open(ifindex);
 #elif defined(HAVE_DLPI)
   return dl_dlpi_open(ifindex);
-#elif defined(_WIN32)
+#elif defined(_WIN32) /* no supported datalink interface on windows */
   return -1;
 #endif
 }
@@ -2072,8 +2068,8 @@ int scamper_dl_open(const int ifindex)
 {
   int fd = -1;
 
-#if defined(WITHOUT_PRIVSEP)
-#ifndef _WIN32
+#ifdef DISABLE_PRIVSEP
+#ifdef HAVE_SETEUID
   uid_t uid = scamper_getuid();
   uid_t euid = scamper_geteuid();
   if(uid != euid && seteuid(euid) != 0)
@@ -2083,7 +2079,7 @@ int scamper_dl_open(const int ifindex)
     }
 #endif
   fd = scamper_dl_open_fd(ifindex);
-#ifndef _WIN32
+#ifdef HAVE_SETEUID
   if(uid != euid && seteuid(uid) != 0)
     {
       printerror(__func__, "could not return to uid");
@@ -2117,7 +2113,7 @@ int scamper_dl_init()
 {
 #if defined(HAVE_BPF)
   int rc;
-#ifndef _WIN32
+#ifdef HAVE_SETEUID
   uid_t uid = scamper_getuid();
   uid_t euid = scamper_geteuid();
   if(uid != euid && seteuid(euid) != 0)
@@ -2127,7 +2123,7 @@ int scamper_dl_init()
     }
 #endif
   rc = dl_bpf_init();
-#ifndef _WIN32
+#ifdef HAVE_SETEUID
   if(uid != euid && seteuid(uid) != 0)
     {
       printerror(__func__, "could not return to uid");

@@ -1,7 +1,7 @@
 /*
  * sc_tracediff
  *
- * $Id: sc_tracediff.c,v 1.15 2023/05/29 21:22:27 mjl Exp $
+ * $Id: sc_tracediff.c,v 1.15.4.1 2023/08/18 21:25:04 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -443,7 +443,7 @@ int main(int argc, char *argv[])
   char buf[256];
   int i, filec_open;
 
-#ifdef _WIN32
+#ifdef _WIN32 /* windows needs WSAStartup */
   WSADATA wsaData;
   WSAStartup(MAKEWORD(2,2), &wsaData);
 #endif

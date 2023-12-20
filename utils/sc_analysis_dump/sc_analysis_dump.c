@@ -1,7 +1,7 @@
 /*
  * sc_analysis_dump
  *
- * $Id: sc_analysis_dump.c,v 1.66 2023/06/01 07:37:50 mjl Exp $
+ * $Id: sc_analysis_dump.c,v 1.66.4.1 2023/08/18 21:25:04 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -1115,7 +1115,7 @@ int main(int argc, char *argv[])
   uint16_t type = SCAMPER_FILE_OBJ_TRACE;
   int i;
 
-#ifdef _WIN32
+#ifdef _WIN32 /* windows needs WSAStartup */
   WSADATA wsaData;
   WSAStartup(MAKEWORD(2,2), &wsaData);
 #endif

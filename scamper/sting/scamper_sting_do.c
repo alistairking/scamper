@@ -1,7 +1,7 @@
 /*
  * scamper_do_sting.c
  *
- * $Id: scamper_sting_do.c,v 1.53 2023/06/04 07:09:36 mjl Exp $
+ * $Id: scamper_sting_do.c,v 1.53.4.1 2023/08/18 21:25:04 mjl Exp $
  *
  * Copyright (C) 2008-2011 The University of Waikato
  * Copyright (C) 2012      The Regents of the University of California
@@ -62,7 +62,7 @@ typedef struct sting_state
   uint8_t                   mode;
   struct timeval            next_tx;
 
-#ifndef _WIN32
+#ifndef _WIN32 /* windows does not have a routing socket */
   scamper_fd_t             *rtsock;
 #endif
 
@@ -411,7 +411,7 @@ static void sting_handle_rt(scamper_route_t *rt)
   if(state->mode != MODE_RTSOCK || state->route != rt)
     goto done;
 
-#ifndef _WIN32
+#ifndef _WIN32 /* windows does not have a routing socket */
   if(state->rtsock != NULL)
     {
       scamper_fd_free(state->rtsock);
@@ -478,7 +478,7 @@ static void sting_state_free(sting_state_t *state)
     return;
 
   if(state->fw != NULL)     scamper_firewall_entry_free(state->fw);
-#ifndef _WIN32
+#ifndef _WIN32 /* windows does not have a routing socket */
   if(state->rtsock != NULL) scamper_fd_free(state->rtsock);
 #endif
   if(state->dl != NULL)     scamper_fd_free(state->dl);
@@ -514,7 +514,7 @@ static int sting_state_alloc(scamper_task_t *task)
     }
   state->isn = u16;
 
-#ifndef _WIN32
+#ifndef _WIN32 /* windows does not have a routing socket */
   if((state->rtsock = scamper_fd_rtsock()) == NULL)
     {
       goto err;
@@ -580,7 +580,7 @@ static void do_sting_probe(scamper_task_t *task)
       if(state->route == NULL)
 	goto err;
 
-#ifndef _WIN32
+#ifndef _WIN32 /* windows does not have a routing socket */
       if(scamper_rtsock_getroute(state->rtsock, state->route) != 0)
 	goto err;
 #else

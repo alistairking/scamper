@@ -1,7 +1,7 @@
 /*
  * internal.h
  *
- * $Id: internal.h,v 1.56 2023/05/14 02:29:14 mjl Exp $
+ * $Id: internal.h,v 1.56.4.3 2023/08/20 08:07:08 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -10,6 +10,7 @@
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2013-2015 The Regents of the University of California
  * Copyright (C) 2014-2016 Matthew Luckie
+ * Copyright (C) 2023      Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -25,6 +26,11 @@
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
  */
+
+#ifdef _WIN32 /* use rand_s on windows */
+#define _CRT_RAND_S
+#define _CRT_SECURE_NO_WARNINGS
+#endif
 
 #if defined(_MSC_VER)
 typedef unsigned __int8 uint8_t;
@@ -45,7 +51,7 @@ typedef unsigned short sa_family_t;
 #include <sys/types.h>
 #include <sys/stat.h>
 
-#ifdef _WIN32
+#ifdef _WIN32 /* include windows headers */
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include <io.h>
@@ -55,10 +61,9 @@ typedef unsigned short sa_family_t;
 #include <mmsystem.h>
 #if defined(HAVE_UNISTD_H)
 #include <unistd.h>
-#else
+#elif defined(HAVE_WINGETOPT_H)
 #include "wingetopt.h"
 #endif
-#define _CRT_RAND_S
 #endif
 
 #if defined(__APPLE__)
@@ -113,7 +118,7 @@ typedef unsigned short sa_family_t;
 #define HAVE_EPOLL
 #endif
 
-#ifndef _WIN32
+#ifndef _WIN32 /* include headers that are not on windows */
 #include <sys/param.h>
 #include <sys/time.h>
 #include <sys/uio.h>
@@ -220,7 +225,7 @@ typedef unsigned short sa_family_t;
 #include <time.h>
 #include <math.h>
 
-#if defined(AF_UNIX) && !defined(_WIN32)
+#if defined(AF_UNIX) && !defined(_WIN32) /* windows does not have sockaddr_un */
 #define HAVE_SOCKADDR_UN
 #endif
 
@@ -261,16 +266,10 @@ typedef unsigned short sa_family_t;
 #include <dmalloc.h>
 #endif
 
-#ifdef _WIN32
+#ifdef _WIN32 /* make windows look like other platforms */
 #define SHUT_RDWR SD_BOTH
 #define STDIN_FILENO 0
 #define STDOUT_FILENO 1
-#ifndef S_IRUSR
-#define S_IRUSR _S_IREAD
-#endif
-#ifndef S_IWUSR
-#define S_IWUSR _S_IWRITE
-#endif
 #ifndef S_IFIFO
 #define S_IFIFO _S_IFIFO
 #endif
@@ -295,7 +294,7 @@ typedef unsigned short sa_family_t;
 
 #include <assert.h>
 
-#if defined(__sun__) || defined(_WIN32)
+#if defined(__sun__) || defined(_WIN32) /* define ip6_ext on sun and windows */
 struct ip6_ext
 {
   uint8_t ip6e_nxt;
@@ -303,7 +302,7 @@ struct ip6_ext
 };
 #endif
 
-#ifdef _WIN32
+#ifdef _WIN32 /* define various IP headers on windows */
 struct ip
 {
   uint8_t        ip_vhl;
@@ -773,4 +772,24 @@ struct sockaddr_nl
 
 #ifndef SEQ_GEQ
 #define SEQ_GEQ(a,b) ((int)((a)-(b)) >= 0)
+#endif
+
+#ifndef _WIN32 /* interfaces for windows sockets */
+#define socket_close(s) close((s))
+#define socket_isvalid(s) ((s) != -1)
+#define socket_isinvalid(s) ((s) == -1)
+#define socket_invalid() (-1)
+#define socket_setnfds(nfds, s) ((nfds) < (s) ? (s) : (nfds))
+#else
+#define socket_close(s) closesocket((s))
+#define socket_isvalid(s) ((s) != INVALID_SOCKET)
+#define socket_isinvalid(s) ((s) == INVALID_SOCKET)
+#define socket_invalid() (INVALID_SOCKET)
+#define socket_setnfds(nfds, s) (0)
+#endif
+
+#ifndef _WIN32 /* mode parameter */
+#define MODE_644 (S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH)
+#else
+#define MODE_644 (_S_IREAD | _S_IWRITE)
 #endif

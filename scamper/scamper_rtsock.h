@@ -1,7 +1,7 @@
 /*
  * scamper_rtsock.h
  *
- * $Id: scamper_rtsock.h,v 1.19 2020/06/10 08:59:15 mjl Exp $
+ * $Id: scamper_rtsock.h,v 1.19.20.1 2023/08/18 21:25:04 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2010 The University of Waikato
@@ -38,14 +38,14 @@ scamper_route_t *scamper_route_alloc(scamper_addr_t *dst, void *param,
 #endif
 void scamper_route_free(scamper_route_t *route);
 
-#ifndef _WIN32
+#ifndef _WIN32 /* windows does not have a routing socket */
 int scamper_rtsock_open(void);
 int scamper_rtsock_open_fd(void);
 void scamper_rtsock_read_cb(const int fd, void *param);
 void scamper_rtsock_close(int fd);
 #endif
 
-#if defined(_WIN32)
+#if defined(_WIN32) /* windows does not have a routing socket */
 int scamper_rtsock_getroute(scamper_route_t *route);
 #elif defined(__SCAMPER_FD_H)
 int scamper_rtsock_getroute(scamper_fd_t *fd, scamper_route_t *route);

@@ -1,7 +1,7 @@
 /*
  * scamper_do_trace.c
  *
- * $Id: scamper_trace_do.c,v 1.343 2023/06/04 05:45:33 mjl Exp $
+ * $Id: scamper_trace_do.c,v 1.343.4.2 2023/08/26 07:36:27 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -61,7 +61,9 @@
 #include "scamper_udp6.h"
 #include "scamper_if.h"
 #include "scamper_osinfo.h"
+#ifndef DISABLE_SCAMPER_HOST
 #include "host/scamper_host_do.h"
+#endif
 #include "mjl_splaytree.h"
 #include "mjl_list.h"
 #include "utils.h"
@@ -136,6 +138,7 @@ typedef struct trace_probe
   uint16_t        id;     /* the probe's ID value */
 } trace_probe_t;
 
+#ifndef DISABLE_SCAMPER_HOST
 typedef struct trace_host
 {
   scamper_addr_t          *addr;   /* address to look up */
@@ -143,6 +146,7 @@ typedef struct trace_host
   scamper_host_do_t       *hostdo; /* hostdo structure while waiting */
   slist_t                 *hops;   /* list of hops that want the answer */
 } trace_host_t;
+#endif
 
 #define TRACE_PROBE_FLAG_DL_TX   0x01
 #define TRACE_PROBE_FLAG_DL_RX   0x02
@@ -197,9 +201,11 @@ typedef struct trace_state
   dlist_t             *window;        /* current window of probes */
   slist_t             *probeq;        /* probes to retry */
 
+#ifndef DISABLE_SCAMPER_HOST
   splaytree_t         *ths;           /* tree for host lookups */
+#endif
 
-#ifndef _WIN32
+#ifndef _WIN32 /* windows does not have a routing socket */
   scamper_fd_t        *rtsock;        /* fd to query route socket with */
 #endif
 
@@ -426,6 +432,7 @@ static void trace_stop_hoplimit(scamper_trace_t *trace)
   return;
 }
 
+#ifndef DISABLE_SCAMPER_HOST
 static int trace_host_cmp(const trace_host_t *a, const trace_host_t *b)
 {
   return scamper_addr_cmp(a->addr, b->addr);
@@ -455,6 +462,7 @@ static trace_host_t *trace_host_alloc(scamper_trace_hop_t *hop)
   if(th != NULL) trace_host_free(th);
   return NULL;
 }
+#endif
 
 /*
  * trace_queue
@@ -1213,6 +1221,7 @@ static int trace_handleerror(scamper_task_t *task, const int error)
   return 0;
 }
 
+#ifndef DISABLE_SCAMPER_HOST
 static void trace_hop_ptr_cb(void *param, const char *name)
 {
   trace_host_t *th = param;
@@ -1292,6 +1301,7 @@ static int trace_hop_ptr(const scamper_task_t *task, scamper_trace_hop_t *hop)
  err:
   return -1;
 }
+#endif
 
 /*
  * trace_hop
@@ -1313,12 +1323,19 @@ static scamper_trace_hop_t *trace_hop(const scamper_task_t *task,
   else goto err;
 
   if((hop = scamper_trace_hop_alloc()) == NULL ||
-     (hop->hop_addr = scamper_addrcache_get(addrcache, type, addr)) == NULL ||
-     trace_hop_ptr(task, hop) != 0)
+     (hop->hop_addr = scamper_addrcache_get(addrcache, type, addr)) == NULL)
     {
       printerror(__func__, "could not alloc hop");
       goto err;
     }
+
+#ifndef DISABLE_SCAMPER_HOST
+  if(trace_hop_ptr(task, hop) != 0)
+    {
+      printerror(__func__, "could not lookup ptr");
+      goto err;
+    }
+#endif
 
   hop->hop_probe_ttl  = probe->ttl;
   hop->hop_probe_id   = probe->attempt;
@@ -3476,7 +3493,7 @@ static void trace_handle_rt(scamper_route_t *rt)
   if(state->mode != MODE_RTSOCK || state->route != rt)
     goto done;
 
-#ifndef _WIN32
+#ifndef _WIN32 /* windows does not have a routing socket */
   if(state->rtsock != NULL)
     {
       scamper_fd_free(state->rtsock);
@@ -3603,7 +3620,7 @@ static void trace_state_free(trace_state_t *state)
       free(state->probes);
     }
 
-#ifndef _WIN32
+#ifndef _WIN32 /* windows does not have a routing socket */
   if(state->rtsock != NULL)     scamper_fd_free(state->rtsock);
 #endif
 
@@ -3618,8 +3635,10 @@ static void trace_state_free(trace_state_t *state)
   if(state->pmtud != NULL)      trace_pmtud_state_free(state->pmtud);
   if(state->window != NULL)     dlist_free_cb(state->window, free);
   if(state->probeq != NULL)     slist_free_cb(state->probeq, free);
+#ifndef DISABLE_SCAMPER_HOST
   if(state->ths != NULL)
     splaytree_free(state->ths, (splaytree_free_t)trace_host_free);
+#endif
 
   free(state);
   return;
@@ -3741,7 +3760,7 @@ static int trace_state_alloc(scamper_task_t *task)
      (SCAMPER_TRACE_TYPE_IS_UDP_PARIS(trace) && sunos != 0))
     {
       state->mode = MODE_RTSOCK;
-#ifndef _WIN32
+#ifndef _WIN32 /* windows does not have a routing socket */
       if((state->rtsock = scamper_fd_rtsock()) == NULL)
 	goto err;
 #endif
@@ -3889,7 +3908,7 @@ static void do_trace_probe(scamper_task_t *task)
       if(state->route == NULL)
 	goto err;
 
-#ifndef _WIN32
+#ifndef _WIN32 /* windows does not have a routing socket */
       if(scamper_rtsock_getroute(state->rtsock, state->route) != 0)
 	goto err;
       state->attempt++;

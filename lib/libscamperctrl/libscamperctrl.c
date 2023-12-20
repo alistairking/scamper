@@ -1,7 +1,7 @@
 /*
  * libscamperctrl
  *
- * $Id: libscamperctrl.c,v 1.32.4.2 2023/08/10 07:22:31 mjl Exp $
+ * $Id: libscamperctrl.c,v 1.32.4.3 2023/08/20 01:51:04 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -28,6 +28,8 @@
 #endif
 
 #include <sys/types.h>
+
+#ifndef _WIN32 /* include headers that are not on windows */
 #include <sys/uio.h>
 #include <sys/un.h>
 #include <sys/socket.h>
@@ -35,6 +37,23 @@
 #include <sys/select.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#define HAVE_SOCKADDR_UN
+#define socket_close(s) close((s))
+#define socket_isvalid(s) ((s) != -1)
+#define socket_isinvalid(s) ((s) == -1)
+#define socket_invalid() (-1)
+#define socket_setnfds(nfds, s) ((nfds) < (s) ? (s) : (nfds))
+#endif
+
+#ifdef _WIN32 /* include windows headers */
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#define socket_close(s) closesocket((s))
+#define socket_isvalid(s) ((s) != INVALID_SOCKET)
+#define socket_isinvalid(s) ((s) == INVALID_SOCKET)
+#define socket_invalid() (INVALID_SOCKET)
+#define socket_setnfds(nfds, s) (0)
+#endif
 
 #ifdef HAVE_KQUEUE
 #include <sys/event.h>
@@ -49,12 +68,18 @@
 #include <fcntl.h>
 #include <limits.h>
 #include <ctype.h>
+#ifdef HAVE_NETDB_H
 #include <netdb.h>
+#endif
 #include <errno.h>
 #include <assert.h>
 
 #if defined(DMALLOC)
 #include <dmalloc.h>
+#endif
+
+#if defined(HAVE_STDINT_H)
+#include <stdint.h>
 #endif
 
 #include "libscamperctrl.h"
@@ -83,7 +108,11 @@ struct scamper_inst
   void              *param;    /* user-supplied parameter */
   uint8_t            type;     /* types: inet, unix, or remote */
   uint8_t            flags;    /* flags: done */
+#ifndef _WIN32 /* type: int vs SOCKET */
   int                fd;       /* file descriptor for socket */
+#else
+  SOCKET             fd;       /* file descriptor for socket */
+#endif
   uint32_t           seq;      /* next sequence number to assign */
   dlist_t           *queue;    /* list of commands queued */
   slist_t           *waitok;   /* commands we are waiting for an ok for */
@@ -92,13 +121,13 @@ struct scamper_inst
 
   /*
    * temporary buffer for storing incomplete lines in between to calls
-   * to read
+   * to recv
    */
   uint8_t            line[128];
   size_t             line_off;
 
   /*
-   * temporary buffer for storing data objects as we read them from
+   * temporary buffer for storing data objects as we recv them from
    * the control socket.  data_left is the number of bytes still to
    * come over the control socket; the data buffer we allocate will be
    * smaller if the data is uuencoded.  data_o says where in data we
@@ -449,8 +478,8 @@ static void scamper_inst_freedo(scamper_inst_t *inst)
 {
   if(inst->dn != NULL)
     dlist_node_pop(inst->list, inst->dn);
-  if(inst->fd != -1)
-    close(inst->fd);
+  if(socket_isvalid(inst->fd))
+    socket_close(inst->fd);
   if(inst->name != NULL)
     free(inst->name);
   if(inst->waitok != NULL)
@@ -495,12 +524,22 @@ void scamper_inst_free(scamper_inst_t *inst)
 
 #ifndef DMALLOC
 static scamper_inst_t *scamper_inst_alloc(scamper_ctrl_t *ctrl, uint8_t t,
-					  const char *name, int fd)
+#ifndef _WIN32 /* SOCKET vs int on windows */
+					  int fd,
 #else
-#define scamper_inst_alloc(ctrl,t,name,fd) \
-  scamper_inst_alloc_dm((ctrl), (t), (name), (fd), __FILE__, __LINE__)
+					  SOCKET fd,
+#endif
+					  const char *name)
+#else
+#define scamper_inst_alloc(ctrl, t, fd, name)				\
+  scamper_inst_alloc_dm((ctrl), (t), (fd), (name), __FILE__, __LINE__)
 static scamper_inst_t *scamper_inst_alloc_dm(scamper_ctrl_t *ctrl, uint8_t t,
-					     const char *name, int fd,
+#ifndef _WIN32 /* SOCKET vs int on windows */
+					     int fd,
+#else
+					     SOCKET fd,
+#endif
+					     const char *name,
 					     const char *file, const int line)
 #endif
 {
@@ -523,8 +562,8 @@ static scamper_inst_t *scamper_inst_alloc_dm(scamper_ctrl_t *ctrl, uint8_t t,
       goto err;
     }
 
-  memset(inst, 0, sizeof(scamper_inst_t));
-  inst->fd = -1;
+  memset(inst, 0, len);
+  inst->fd = socket_invalid();
 
   if((inst->name = strdup(name)) == NULL ||
      (inst->waitok = slist_alloc()) == NULL ||
@@ -549,6 +588,7 @@ static scamper_inst_t *scamper_inst_alloc_dm(scamper_ctrl_t *ctrl, uint8_t t,
   inst->list = ctrl->insts;
   inst->ctrl = ctrl;
   inst->type = t;
+  inst->fd   = fd;
 
 #ifdef HAVE_KQUEUE
   EV_SET(&kev, fd, EVFILT_READ, EV_ADD, 0, 0, inst);
@@ -559,7 +599,6 @@ static scamper_inst_t *scamper_inst_alloc_dm(scamper_ctrl_t *ctrl, uint8_t t,
     }
 #endif
 
-  inst->fd = fd;
   return inst;
 
  err:
@@ -623,7 +662,12 @@ scamper_inst_t *scamper_inst_inet(scamper_ctrl_t *ctrl,
   scamper_inst_t *inst = NULL;
   char buf[512];
   char servname[6];
+
+#ifndef _WIN32 /* type: int vs SOCKET */
   int fd = -1;
+#else
+  SOCKET fd = INVALID_SOCKET;
+#endif
 
   if(addr == NULL)
     addr = "127.0.0.1";
@@ -652,7 +696,8 @@ scamper_inst_t *scamper_inst_inet(scamper_ctrl_t *ctrl,
     }
 
   /* connect to the scamper instance and set non-blocking */
-  if((fd = socket(res->ai_family, SOCK_STREAM, IPPROTO_TCP)) == -1)
+  fd = socket(res->ai_family, SOCK_STREAM, IPPROTO_TCP);
+  if(socket_isinvalid(fd))
     {
       snprintf(ctrl->err, sizeof(ctrl->err),
 	       "could not create inet socket: %s", strerror(errno));
@@ -664,21 +709,24 @@ scamper_inst_t *scamper_inst_inet(scamper_ctrl_t *ctrl,
 	       "could not connect: %s", strerror(errno));
       goto err;
     }
+
+#ifdef HAVE_FCNTL
   if(fcntl(fd, F_SETFL, O_NONBLOCK) == -1)
     {
       snprintf(ctrl->err, sizeof(ctrl->err),
 	       "could not set nonblocking: %s", strerror(errno));
       goto err;
     }
+#endif
 
   if(res->ai_family == PF_INET)
     snprintf(buf, sizeof(buf), "%s:%d", addr, port);
   else
     snprintf(buf, sizeof(buf), "[%s]:%d", addr, port);
 
-  if((inst = scamper_inst_alloc(ctrl, SCAMPER_INST_TYPE_INET, buf, fd)) == NULL)
+  if((inst = scamper_inst_alloc(ctrl, SCAMPER_INST_TYPE_INET, fd, buf)) == NULL)
     goto err;
-  fd = -1;
+  fd = socket_invalid();
   if(scamper_inst_attach(attp, buf, sizeof(buf)) != 0)
     {
       snprintf(ctrl->err, sizeof(ctrl->err), "could not form attach");
@@ -693,13 +741,14 @@ scamper_inst_t *scamper_inst_inet(scamper_ctrl_t *ctrl,
  err:
   if(res0 != NULL)
     freeaddrinfo(res0);
-  if(fd != -1)
-    close(fd);
+  if(socket_isvalid(fd))
+    socket_close(fd);
   if(inst != NULL)
     scamper_inst_freedo(inst);
   return NULL;
 }
 
+#ifdef HAVE_SOCKADDR_UN
 static int scamper_inst_unix_fd(scamper_ctrl_t *ctrl, const char *path)
 {
   struct sockaddr_un sun;
@@ -748,17 +797,19 @@ static int scamper_inst_unix_fd(scamper_ctrl_t *ctrl, const char *path)
   if(fd != -1) close(fd);
   return -1;
 }
+#endif
 
 scamper_inst_t *scamper_inst_unix(scamper_ctrl_t *ctrl,
 				  const scamper_attp_t *attp,
 				  const char *path)
 {
+#ifdef HAVE_SOCKADDR_UN
   scamper_inst_t *inst = NULL;
   char buf[512];
   int fd = -1;
 
   if((fd = scamper_inst_unix_fd(ctrl, path)) == -1 ||
-     (inst = scamper_inst_alloc(ctrl,SCAMPER_INST_TYPE_UNIX,path,fd)) == NULL ||
+     (inst = scamper_inst_alloc(ctrl,SCAMPER_INST_TYPE_UNIX,fd,path)) == NULL ||
      scamper_inst_attach(attp, buf, sizeof(buf)) != 0 ||
      scamper_inst_cmd(inst, SCAMPER_CMD_TYPE_ATTACH, buf) == NULL)
     goto err;
@@ -768,16 +819,20 @@ scamper_inst_t *scamper_inst_unix(scamper_ctrl_t *ctrl,
  err:
   if(fd != -1) close(fd);
   if(inst != NULL) scamper_inst_freedo(inst);
+#else
+  snprintf(ctrl->err, sizeof(ctrl->err), "no sockaddr_un");
+#endif
   return NULL;
 }
 
 scamper_inst_t *scamper_inst_remote(scamper_ctrl_t *ctrl, const char *path)
 {
+#ifdef HAVE_SOCKADDR_UN
   scamper_inst_t *inst = NULL;
   int fd = -1;
 
   if((fd = scamper_inst_unix_fd(ctrl, path)) == -1 ||
-     (inst = scamper_inst_alloc(ctrl,SCAMPER_INST_TYPE_REMOTE,path,fd)) == NULL)
+     (inst = scamper_inst_alloc(ctrl,SCAMPER_INST_TYPE_REMOTE,fd,path)) == NULL)
     goto err;
 
   return inst;
@@ -785,6 +840,9 @@ scamper_inst_t *scamper_inst_remote(scamper_ctrl_t *ctrl, const char *path)
  err:
   if(fd != -1) close(fd);
   if(inst != NULL) scamper_inst_freedo(inst);
+#else
+  snprintf(ctrl->err, sizeof(ctrl->err), "no sockaddr_un");
+#endif
   return NULL;
 }
 
@@ -808,12 +866,13 @@ static int scamper_inst_read(scamper_inst_t *inst)
   assert(inst->ctrl != NULL);
   ctrl = inst->ctrl;
 
-  rc = read(inst->fd, buf + inst->line_off, sizeof(buf) - inst->line_off);
+  rc = recv(inst->fd, buf + inst->line_off, sizeof(buf) - inst->line_off, 0);
 
   /* if the scamper process exits, pass that through */
   if(rc == 0)
     {
-      close(inst->fd); inst->fd = -1;
+      socket_close(inst->fd);
+      inst->fd = socket_invalid();
 
       /*
        * signal EOF on callback.  the callback might call scamper_inst_free.
@@ -830,17 +889,17 @@ static int scamper_inst_read(scamper_inst_t *inst)
 
   if(rc < 0)
     {
-      /* didn't read anything but no fatal error */
+      /* didn't recv anything but no fatal error */
       if(errno == EINTR || errno == EAGAIN)
 	return 0;
 
       /* fatal error */
-      snprintf(ctrl->err, sizeof(ctrl->err), "could not read: %s",
+      snprintf(ctrl->err, sizeof(ctrl->err), "could not recv: %s",
 	       strerror(errno));
       goto fatal;
     }
 
-  /* adjust for any partial read left over from last time */
+  /* adjust for any partial recv left over from last time */
   memcpy(buf, inst->line, inst->line_off);
   len = rc + inst->line_off;
   inst->line_off = 0;
@@ -1056,7 +1115,7 @@ static int scamper_inst_read(scamper_inst_t *inst)
       start = (char *)(buf+x);
     }
 
-  /* if we didn't read a complete line, buffer the remainder */
+  /* if we didn't recv a complete line, buffer the remainder */
   if(start != (char *)(buf+x))
     {
       if(start > (char *)(buf+x))
@@ -1098,10 +1157,10 @@ static int scamper_inst_write(scamper_inst_t *inst)
   cmd = dlist_head_item(inst->queue);
   assert(cmd != NULL);
 
-  /* test if write was successful */
-  if((rc = write(inst->fd, cmd->str + cmd->off, cmd->len - cmd->off)) == -1)
+  /* test if send was successful */
+  if((rc = send(inst->fd, cmd->str + cmd->off, cmd->len - cmd->off, 0)) == -1)
     {
-      snprintf(ctrl->err, sizeof(ctrl->err), "could not write: %s",
+      snprintf(ctrl->err, sizeof(ctrl->err), "could not send: %s",
 	       strerror(errno));
       return -1;
     }
@@ -1192,12 +1251,12 @@ int scamper_ctrl_wait(scamper_ctrl_t *ctrl, struct timeval *to)
   for(i=0; i<c; i++)
     {
       inst = events[i].udata;
-      if(events[i].filter == EVFILT_READ && inst->fd != -1)
+      if(events[i].filter == EVFILT_READ && socket_isvalid(inst->fd))
 	{
 	  if(scamper_inst_read(inst) != 0)
 	    goto done;
 	}
-      else if(events[i].filter == EVFILT_WRITE && inst->fd != -1)
+      else if(events[i].filter == EVFILT_WRITE && socket_isvalid(inst->fd))
 	{
 	  if(scamper_inst_write(inst) != 0)
 	    goto done;
@@ -1225,17 +1284,23 @@ int scamper_ctrl_wait(scamper_ctrl_t *ctrl, struct timeval *to)
   scamper_inst_t *inst;
   dlist_node_t *dn;
   fd_set rfds, wfds, *wfdsp, *rfdsp;
-  int count = 0, rc = -1, nfds, fd;
+  int count = 0, rc = -1, nfds;
 
-  nfds = 0; FD_ZERO(&rfds); FD_ZERO(&wfds); wfdsp = NULL; rfdsp = NULL;
+#ifndef _WIN32 /* type: int vs SOCKET */
+  int fd;
+#else
+  SOCKET fd;
+#endif
+
+  nfds = -1; FD_ZERO(&rfds); FD_ZERO(&wfds); wfdsp = NULL; rfdsp = NULL;
   dn = dlist_head_node(ctrl->insts);
   while(dn != NULL)
     {
       inst = dlist_node_item(dn); assert(dn == inst->dn);
       dn = dlist_node_next(dn);
-      assert(inst->fd != -1);
+      assert(socket_isvalid(inst->fd));
       FD_SET(inst->fd, &rfds); rfdsp = &rfds;
-      if(nfds < inst->fd) nfds = inst->fd;
+      nfds = socket_setnfds(nfds, inst->fd);
       if(dlist_count(inst->queue) > 0)
 	{
 	  FD_SET(inst->fd, &wfds);
@@ -1262,7 +1327,10 @@ int scamper_ctrl_wait(scamper_ctrl_t *ctrl, struct timeval *to)
     {
       inst = dlist_node_item(dn);
       dn = dlist_node_next(dn);
-      fd = inst->fd; /* take a copy incase FD becomes -1, to work with count */
+
+      /* take a copy incase FD becomes invalid, to work with count */
+      fd = inst->fd;
+
       if(FD_ISSET(fd, &rfds))
 	{
 	  count--;
@@ -1272,7 +1340,7 @@ int scamper_ctrl_wait(scamper_ctrl_t *ctrl, struct timeval *to)
       if(wfdsp != NULL && FD_ISSET(fd, wfdsp))
 	{
 	  count--;
-	  if(inst->fd != -1 && scamper_inst_write(inst) != 0)
+	  if(socket_isvalid(inst->fd) && scamper_inst_write(inst) != 0)
 	    goto done;
 	}
     }

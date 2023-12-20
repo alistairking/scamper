@@ -3,7 +3,7 @@
  *
  * the warts file format
  *
- * $Id: scamper_file_warts.c,v 1.271 2023/05/29 21:22:26 mjl Exp $
+ * $Id: scamper_file_warts.c,v 1.271.4.1 2023/08/26 07:36:27 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -40,7 +40,9 @@
 #include "scamper_icmpext.h"
 #include "scamper_icmpext_int.h"
 #include "trace/scamper_trace.h"
+#if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_TRACE)
 #include "trace/scamper_trace_warts.h"
+#endif
 #include "ping/scamper_ping.h"
 #include "ping/scamper_ping_warts.h"
 #include "tracelb/scamper_tracelb.h"
@@ -2000,6 +2002,7 @@ void warts_icmpext_write(uint8_t *buf,uint32_t *off,const uint32_t len,
  * scamper_file_warts_read
  *
  */
+#ifndef BUILDING_SCAMPER
 int scamper_file_warts_read(scamper_file_t *sf,
 			    const scamper_file_filter_t *filter,
 			    uint16_t *type, void **data)
@@ -2143,6 +2146,7 @@ int scamper_file_warts_read(scamper_file_t *sf,
 	  hdr.magic, hdr.type, hdr.len);
   return -1;
 }
+#endif
 
 int scamper_file_warts_cyclestart_write(const scamper_file_t *sf,
 					scamper_cycle_t *c)

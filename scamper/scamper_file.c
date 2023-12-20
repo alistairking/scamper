@@ -1,7 +1,7 @@
 /*
  * scamper_file.c
  *
- * $Id: scamper_file.c,v 1.116 2023/05/03 20:48:13 mjl Exp $
+ * $Id: scamper_file.c,v 1.116.4.4 2023/09/14 07:12:55 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -37,37 +37,52 @@
 #include "scamper_file_text.h"
 #include "scamper_file_arts.h"
 #include "scamper_file_json.h"
-
+#if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_TRACE)
 #include "trace/scamper_trace.h"
 #include "trace/scamper_trace_text.h"
 #include "trace/scamper_trace_warts.h"
 #include "trace/scamper_trace_json.h"
+#endif
+#if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_PING)
 #include "ping/scamper_ping.h"
 #include "ping/scamper_ping_text.h"
 #include "ping/scamper_ping_warts.h"
 #include "ping/scamper_ping_json.h"
-#include "sting/scamper_sting.h"
-#include "sting/scamper_sting_text.h"
-#include "sting/scamper_sting_warts.h"
+#endif
+#if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_TRACELB)
 #include "tracelb/scamper_tracelb.h"
 #include "tracelb/scamper_tracelb_text.h"
 #include "tracelb/scamper_tracelb_warts.h"
 #include "tracelb/scamper_tracelb_json.h"
+#endif
+#if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_DEALIAS)
 #include "dealias/scamper_dealias.h"
 #include "dealias/scamper_dealias_text.h"
 #include "dealias/scamper_dealias_warts.h"
 #include "dealias/scamper_dealias_json.h"
+#endif
 #include "neighbourdisc/scamper_neighbourdisc.h"
 #include "neighbourdisc/scamper_neighbourdisc_warts.h"
+#if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_TBIT)
 #include "tbit/scamper_tbit.h"
 #include "tbit/scamper_tbit_text.h"
 #include "tbit/scamper_tbit_warts.h"
 #include "tbit/scamper_tbit_json.h"
+#endif
+#if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_STING)
+#include "sting/scamper_sting.h"
+#include "sting/scamper_sting_text.h"
+#include "sting/scamper_sting_warts.h"
+#endif
+#if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_SNIFF)
 #include "sniff/scamper_sniff.h"
 #include "sniff/scamper_sniff_warts.h"
+#endif
+#if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_HOST)
 #include "host/scamper_host.h"
 #include "host/scamper_host_warts.h"
 #include "host/scamper_host_json.h"
+#endif
 
 #include "utils.h"
 
@@ -154,78 +169,158 @@ typedef struct write_handlers
 {
   int (*cycle_start)(const scamper_file_t *sf, scamper_cycle_t *cycle);
   int (*cycle_stop)(const scamper_file_t *sf, scamper_cycle_t *cycle);
+#if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_TRACE)
   int (*trace)(const scamper_file_t *sf, const scamper_trace_t *trace, void *p);
+#endif
+#if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_PING)
   int (*ping)(const scamper_file_t *sf, const scamper_ping_t *ping, void *p);
+#endif
+#if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_TRACELB)
   int (*tracelb)(const scamper_file_t *sf,
 		 const scamper_tracelb_t *trace, void *p);
-  int (*sting)(const scamper_file_t *sf, const scamper_sting_t *sting, void *p);
+#endif
+#if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_DEALIAS)
   int (*dealias)(const scamper_file_t *sf,
 		 const scamper_dealias_t *dealias, void *p);
+#endif
   int (*neighbourdisc)(const scamper_file_t *sf,
 		       const scamper_neighbourdisc_t *nd, void *p);
+#if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_TBIT)
   int (*tbit)(const scamper_file_t *sf, const scamper_tbit_t *tbit, void *p);
+#endif
+#if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_STING)
+  int (*sting)(const scamper_file_t *sf, const scamper_sting_t *sting, void *p);
+#endif
+#if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_SNIFF)
   int (*sniff)(const scamper_file_t *sf, const scamper_sniff_t *sniff, void *p);
+#endif
+#if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_HOST)
   int (*host)(const scamper_file_t *sf, const scamper_host_t *host, void *p);
+#endif
 } write_handlers_t;
 
 static write_handlers_t warts_write_handlers =
 {
   scamper_file_warts_cyclestart_write,    /* cycle_start */
   scamper_file_warts_cyclestop_write,     /* cycle_stop */
+#if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_TRACE)
   scamper_file_warts_trace_write,         /* trace */
+#endif
+#if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_PING)
   scamper_file_warts_ping_write,          /* ping */
+#endif
+#if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_TRACELB)
   scamper_file_warts_tracelb_write,       /* tracelb */
-  scamper_file_warts_sting_write,         /* sting */
+#endif
+#if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_DEALIAS)
   scamper_file_warts_dealias_write,       /* dealias */
+#endif
   scamper_file_warts_neighbourdisc_write, /* neighbourdisc */
+#if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_TBIT)
   scamper_file_warts_tbit_write,          /* tbit */
+#endif
+#if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_STING)
+  scamper_file_warts_sting_write,         /* sting */
+#endif
+#if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_SNIFF)
   scamper_file_warts_sniff_write,         /* sniff */
+#endif
+#if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_HOST)
   scamper_file_warts_host_write,          /* host */
+#endif
 };
 
 static write_handlers_t json_write_handlers =
 {
   scamper_file_json_cyclestart_write,     /* cycle_start */
   scamper_file_json_cyclestop_write,      /* cycle_stop */
+#if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_TRACE)
   scamper_file_json_trace_write,          /* trace */
+#endif
+#if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_PING)
   scamper_file_json_ping_write,           /* ping */
+#endif
+#if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_TRACELB)
   scamper_file_json_tracelb_write,        /* tracelb */
-  NULL,                                   /* sting */
+#endif
+#if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_DEALIAS)
   scamper_file_json_dealias_write,        /* dealias */
+#endif
   NULL,                                   /* neighbourdisc */
+#if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_TBIT)
   scamper_file_json_tbit_write,           /* tbit */
+#endif
+#if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_STING)
+  NULL,                                   /* sting */
+#endif
+#if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_SNIFF)
   NULL,                                   /* sniff */
+#endif
+#if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_HOST)
   scamper_file_json_host_write,           /* host */
+#endif
 };
 
 static write_handlers_t text_write_handlers =
 {
   NULL,                                   /* cycle_start */
   NULL,                                   /* cycle_stop */
+#if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_TRACE)
   scamper_file_text_trace_write,          /* trace */
+#endif
+#if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_PING)
   scamper_file_text_ping_write,           /* ping */
+#endif
+#if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_TRACELB)
   scamper_file_text_tracelb_write,        /* tracelb */
-  scamper_file_text_sting_write,          /* sting */
+#endif
+#if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_DEALIAS)
   scamper_file_text_dealias_write,        /* dealias */
+#endif
   NULL,                                   /* neighbourdisc */
+#if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_TBIT)
   scamper_file_text_tbit_write,           /* tbit */
+#endif
+#if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_STING)
+  scamper_file_text_sting_write,          /* sting */
+#endif
+#if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_SNIFF)
   NULL,                                   /* sniff */
+#endif
+#if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_HOST)
   NULL,                                   /* host */
+#endif
 };
 
 static write_handlers_t null_write_handlers =
 {
   NULL,                                   /* cycle_start */
   NULL,                                   /* cycle_stop */
+#if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_TRACE)
   NULL,                                   /* trace */
+#endif
+#if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_PING)
   NULL,                                   /* ping */
+#endif
+#if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_TRACELB)
   NULL,                                   /* tracelb */
-  NULL,                                   /* sting */
+#endif
+#if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_DEALIAS)
   NULL,                                   /* dealias */
+#endif
   NULL,                                   /* neighbourdisc */
+#if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_TBIT)
   NULL,                                   /* tbit */
+#endif
+#if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_STING)
+  NULL,                                   /* sting */
+#endif
+#if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_SNIFF)
   NULL,                                   /* sniff */
+#endif
+#if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_HOST)
   NULL,                                   /* host */
+#endif
 };
 
 struct handler
@@ -236,8 +331,10 @@ struct handler
   int (*init_write)(scamper_file_t *sf);
   int (*init_append)(scamper_file_t *sf);
 
+#ifndef BUILDING_SCAMPER
   int (*read)(scamper_file_t *sf, const scamper_file_filter_t *filter,
 	      uint16_t *type, void **data);
+#endif
 
   write_handlers_t *write;
 
@@ -249,7 +346,9 @@ static struct handler handlers[] = {
    init_fail,                              /* init_read */
    init_fail,                              /* init_write */
    init_fail,                              /* init_append */
+#ifndef BUILDING_SCAMPER
    NULL,                                   /* read */
+#endif
    &null_write_handlers,                   /* write */
    NULL,                                   /* free_state */
   },
@@ -257,23 +356,37 @@ static struct handler handlers[] = {
    init_fail,                              /* init_read */
    init_noop,                              /* init_write */
    init_noop,                              /* init_append */
+#ifndef BUILDING_SCAMPER
    NULL,                                   /* read */
+#endif
    &text_write_handlers,                   /* write */
    NULL,                                   /* free_state */
   },
   {"arts",                                 /* type */
+#ifndef BUILDING_SCAMPER
    scamper_file_arts_init_read,            /* init_read */
+#else
+   init_fail,
+#endif
    init_fail,                              /* init_write */
    init_fail,                              /* init_append */
+#ifndef BUILDING_SCAMPER
    scamper_file_arts_read,                 /* read */
+#endif
    &null_write_handlers,                   /* write */
+#ifndef BUILDING_SCAMPER
    scamper_file_arts_free_state,           /* free_state */
+#else
+   NULL,
+#endif
   },
   {"warts",                                /* type */
    scamper_file_warts_init_read,           /* init_read */
    scamper_file_warts_init_write,          /* init_write */
    scamper_file_warts_init_append,         /* init_append */
+#ifndef BUILDING_SCAMPER
    scamper_file_warts_read,                /* read */
+#endif
    &warts_write_handlers,                  /* write */
    scamper_file_warts_free_state,          /* free_state */
   },
@@ -281,7 +394,9 @@ static struct handler handlers[] = {
    init_fail,                              /* init_read */
    scamper_file_json_init_write,           /* init_write */
    scamper_file_json_init_write,           /* init_append */
+#ifndef BUILDING_SCAMPER
    NULL,                                   /* read */
+#endif
    &json_write_handlers,                   /* write */
    scamper_file_json_free_state,           /* free_state */
   },
@@ -289,7 +404,9 @@ static struct handler handlers[] = {
    init_fail,                              /* init_read */
    init_write_warts_gz,                    /* init_write */
    init_fail,                              /* init_append */
+#ifndef BUILDING_SCAMPER
    NULL,                                   /* read */
+#endif
    &warts_write_handlers,                  /* write */
    scamper_file_warts_free_state,          /* free_state */
   },
@@ -297,7 +414,9 @@ static struct handler handlers[] = {
    init_fail,                              /* init_read */
    init_write_warts_bz2,                   /* init_write */
    init_fail,                              /* init_append */
+#ifndef BUILDING_SCAMPER
    NULL,                                   /* read */
+#endif
    &warts_write_handlers,                  /* write */
    scamper_file_warts_free_state,          /* free_state */
   },
@@ -305,7 +424,9 @@ static struct handler handlers[] = {
    init_fail,                              /* init_read */
    init_write_warts_xz,                    /* init_write */
    init_fail,                              /* init_append */
+#ifndef BUILDING_SCAMPER
    NULL,                                   /* read */
+#endif
    &warts_write_handlers,                  /* write */
    scamper_file_warts_free_state,          /* free_state */
   },
@@ -386,6 +507,7 @@ int scamper_file_write_cycle_stop(scamper_file_t *sf, scamper_cycle_t *cycle)
   return -1;
 }
 
+#if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_TRACE)
 int scamper_file_write_trace(scamper_file_t *sf,
 			     const scamper_trace_t *trace, void *p)
 {
@@ -394,7 +516,9 @@ int scamper_file_write_trace(scamper_file_t *sf,
     return handlers[sf->type].write->trace(sf, trace, p);
   return -1;
 }
+#endif
 
+#if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_PING)
 int scamper_file_write_ping(scamper_file_t *sf,
 			    const scamper_ping_t *ping, void *p)
 {
@@ -403,7 +527,9 @@ int scamper_file_write_ping(scamper_file_t *sf,
     return handlers[sf->type].write->ping(sf, ping, p);
   return -1;
 }
+#endif
 
+#if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_TRACELB)
 int scamper_file_write_tracelb(scamper_file_t *sf,
 			       const scamper_tracelb_t *trace, void *p)
 {
@@ -412,16 +538,9 @@ int scamper_file_write_tracelb(scamper_file_t *sf,
     return handlers[sf->type].write->tracelb(sf, trace, p);
   return -1;
 }
+#endif
 
-int scamper_file_write_sting(scamper_file_t *sf,
-			     const scamper_sting_t *sting, void *p)
-{
-  assert(sf->type < handler_cnt);
-  if(handlers[sf->type].write->sting != NULL)
-    return handlers[sf->type].write->sting(sf, sting,  p);
-  return -1;
-}
-
+#if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_DEALIAS)
 int scamper_file_write_dealias(scamper_file_t *sf,
 			       const scamper_dealias_t *dealias, void *p)
 {
@@ -430,6 +549,7 @@ int scamper_file_write_dealias(scamper_file_t *sf,
     return handlers[sf->type].write->dealias(sf, dealias, p);
   return -1;
 }
+#endif
 
 int scamper_file_write_neighbourdisc(scamper_file_t *sf,
 				     const scamper_neighbourdisc_t *nd,
@@ -441,6 +561,7 @@ int scamper_file_write_neighbourdisc(scamper_file_t *sf,
   return -1;
 }
 
+#if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_TBIT)
 int scamper_file_write_tbit(scamper_file_t *sf,
 			    const scamper_tbit_t *tbit, void *p)
 {
@@ -449,7 +570,20 @@ int scamper_file_write_tbit(scamper_file_t *sf,
     return handlers[sf->type].write->tbit(sf, tbit, p);
   return -1;
 }
+#endif
 
+#if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_STING)
+int scamper_file_write_sting(scamper_file_t *sf,
+			     const scamper_sting_t *sting, void *p)
+{
+  assert(sf->type < handler_cnt);
+  if(handlers[sf->type].write->sting != NULL)
+    return handlers[sf->type].write->sting(sf, sting,  p);
+  return -1;
+}
+#endif
+
+#if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_SNIFF)
 int scamper_file_write_sniff(scamper_file_t *sf,
 			     const scamper_sniff_t *sniff, void *p)
 {
@@ -458,7 +592,9 @@ int scamper_file_write_sniff(scamper_file_t *sf,
     return handlers[sf->type].write->sniff(sf, sniff, p);
   return -1;
 }
+#endif
 
+#if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_HOST)
 int scamper_file_write_host(scamper_file_t *sf,
 			    const scamper_host_t *host, void *p)
 {
@@ -467,6 +603,7 @@ int scamper_file_write_host(scamper_file_t *sf,
     return handlers[sf->type].write->host(sf, host, p);
   return -1;
 }
+#endif
 
 int scamper_file_write_obj(scamper_file_t *sf, uint16_t type, const void *data)
 {
@@ -477,15 +614,35 @@ int scamper_file_write_obj(scamper_file_t *sf, uint16_t type, const void *data)
     NULL, /* SCAMPER_FILE_OBJ_CYCLE_DEF */
     NULL, /* SCAMPER_FILE_OBJ_CYCLE_STOP */
     NULL, /* SCAMPER_FILE_OBJ_ADDR */
+#if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_TRACE)
     (write_obj_func_t)scamper_file_write_trace,
+#else
+    NULL,
+#endif
+#if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_PING)
     (write_obj_func_t)scamper_file_write_ping,
+#else
+    NULL,
+#endif
+#if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_TRACELB)
     (write_obj_func_t)scamper_file_write_tracelb,
+#endif
+#if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_DEALIAS)
     (write_obj_func_t)scamper_file_write_dealias,
+#endif
     (write_obj_func_t)scamper_file_write_neighbourdisc,
+#if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_TBIT)
     (write_obj_func_t)scamper_file_write_tbit,
+#endif
+#if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_STING)
     (write_obj_func_t)scamper_file_write_sting,
+#endif
+#if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_SNIFF)
     (write_obj_func_t)scamper_file_write_sniff,
+#endif
+#if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_HOST)
     (write_obj_func_t)scamper_file_write_host,
+#endif
   };
   if(type > 14)
     return -1;
@@ -503,6 +660,7 @@ int scamper_file_write_obj(scamper_file_t *sf, uint16_t type, const void *data)
  *
  *
  */
+#ifndef BUILDING_SCAMPER
 int scamper_file_read(scamper_file_t *sf,
 		      const scamper_file_filter_t *filter,
 		      uint16_t *type, void **object)
@@ -512,6 +670,7 @@ int scamper_file_read(scamper_file_t *sf,
     return handlers[sf->type].read(sf, filter, type, object);
   return -1;
 }
+#endif
 
 /*
  * scamper_file_filter_isset
@@ -1457,16 +1616,9 @@ scamper_file_t *scamper_file_open(const char *filename, char mode,
 				  const char *type)
 {
   scamper_file_t *sf;
-  mode_t mo;
   size_t ft = file_type_get(type);
   int flags = 0;
   int fd = -1;
-
-#ifndef _WIN32
-  mo = S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH;
-#else
-  mo = _S_IREAD | _S_IWRITE;
-#endif
 
   if(mode == 'r')
     {
@@ -1496,14 +1648,14 @@ scamper_file_t *scamper_file_open(const char *filename, char mode,
       return NULL;
     }
 
-#ifdef _WIN32
+#ifdef _WIN32 /* windows needs O_BINARY */
   flags |= O_BINARY;
 #endif
 
   if(fd == -1)
     {
       if(mode == 'r') fd = open(filename, flags);
-      else            fd = open(filename, flags, mo);
+      else            fd = open(filename, flags, MODE_644);
 
       if(fd == -1)
 	{

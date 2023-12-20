@@ -1,7 +1,7 @@
 /*
  * scamper_task.h
  *
- * $Id: scamper_task.h,v 1.46.10.1 2023/08/07 22:34:50 mjl Exp $
+ * $Id: scamper_task.h,v 1.46.10.3 2023/08/26 07:36:27 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -38,8 +38,12 @@ struct scamper_sourcetask;
 
 #define SCAMPER_TASK_SIG_TYPE_TX_IP 1
 #define SCAMPER_TASK_SIG_TYPE_TX_ND 2
+#ifndef DISABLE_SCAMPER_SNIFF
 #define SCAMPER_TASK_SIG_TYPE_SNIFF 3
+#endif
+#ifndef DISABLE_SCAMPER_HOST
 #define SCAMPER_TASK_SIG_TYPE_HOST  4
+#endif
 
 typedef struct scamper_task scamper_task_t;
 typedef struct scamper_task_anc scamper_task_anc_t;
@@ -77,17 +81,21 @@ typedef struct scamper_task_sig
     {
       struct scamper_addr *ip;
     } nd;
+#ifndef DISABLE_SCAMPER_SNIFF
     struct sniff
     {
       struct scamper_addr *src;
       uint16_t             icmpid;
     } sniff;
+#endif
+#ifndef DISABLE_SCAMPER_HOST
     struct host
     {
       struct scamper_addr *dst;
       char                *name;
       uint16_t             type;
     } host;
+#endif
   } un;
 } scamper_task_sig_t;
 
@@ -105,11 +113,15 @@ typedef struct scamper_task_sig
 #define sig_tx_ip_tcp_dport_x un.ip.un.tcp.dport_x
 #define sig_tx_ip_tcp_dport_y un.ip.un.tcp.dport_y
 #define sig_tx_nd_ip          un.nd.ip
+#ifndef DISABLE_SCAMPER_SNIFF
 #define sig_sniff_src         un.sniff.src
 #define sig_sniff_icmp_id     un.sniff.icmpid
+#endif
+#ifndef DISABLE_SCAMPER_HOST
 #define sig_host_dst          un.host.dst
 #define sig_host_name         un.host.name
 #define sig_host_type         un.host.type
+#endif
 
 typedef struct scamper_task_funcs
 {
@@ -185,7 +197,7 @@ scamper_fd_t *scamper_task_fd_dl(scamper_task_t *task, int ifindex);
 scamper_fd_t *scamper_task_fd_ip4(scamper_task_t *task);
 #endif
 
-#if defined(__SCAMPER_FD_H) && !defined(_WIN32)
+#if defined(__SCAMPER_FD_H) && !defined(_WIN32) /* no routing socket */
 scamper_fd_t *scamper_task_fd_rtsock(scamper_task_t *task);
 #endif
 

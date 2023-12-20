@@ -1,7 +1,7 @@
 /*
  * scamper_source_file.c
  *
- * $Id: scamper_source_file.c,v 1.28.10.1 2023/08/08 01:16:59 mjl Exp $
+ * $Id: scamper_source_file.c,v 1.28.10.3 2023/08/26 21:26:45 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -92,7 +92,7 @@ static int ssf_open(const char *filename)
   int fd = -1;
 
   /* get a file descriptor to the file */
-#if defined(WITHOUT_PRIVSEP)
+#ifdef DISABLE_PRIVSEP
   fd = open(filename, O_RDONLY);
 #else
   fd = scamper_privsep_open_file(filename, O_RDONLY, 0);
@@ -181,7 +181,8 @@ static int ssf_read_line(void *param, uint8_t *buf, size_t len)
  *
  * simplified read path for when the input file is stdin
  */
-static void ssf_read_stdin(const int fd, void *param)
+#ifndef _WIN32 /* windows cannot treat stdin like a socket */
+static void ssf_read_stdin(int fd, void *param)
 {
   scamper_source_file_t *ssf = (scamper_source_file_t *)param;
   scamper_source_t *source = ssf->source;
@@ -232,6 +233,7 @@ static void ssf_read_stdin(const int fd, void *param)
   ssf->cycles = 0;
   return;
 }
+#endif
 
 static void ssf_read_file(scamper_source_file_t *ssf)
 {
@@ -495,6 +497,7 @@ scamper_source_t *scamper_source_file_alloc(scamper_source_params_t *ssp,
   /* if we're reading from stdin */
   if(string_isdash(filename) != 0)
     {
+#ifndef _WIN32 /* windows cannot treat stdin like a socket */
       fd = STDIN_FILENO;
 #ifdef O_NONBLOCK
       fcntl_set(fd, O_NONBLOCK);
@@ -502,6 +505,10 @@ scamper_source_t *scamper_source_file_alloc(scamper_source_params_t *ssp,
       /* allocate a scamper_fd_t to monitor when new data is able to be read */
       if((ssf->fdn = scamper_fd_private(fd, ssf, ssf_read_stdin, NULL)) == NULL)
 	goto err;
+#else
+      scamper_debug(__func__, "reading from stdin not supported on windows");
+      goto err;
+#endif
     }
   else
     {
