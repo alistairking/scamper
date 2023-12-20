@@ -1,7 +1,7 @@
 /*
  * scamper
  *
- * $Id: scamper.c,v 1.310 2023/06/13 22:36:24 mjl Exp $
+ * $Id: scamper.c,v 1.310.2.1 2023/08/08 01:09:37 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -44,7 +44,6 @@
 #include "scamper_sources.h"
 #include "scamper_source_cmdline.h"
 #include "scamper_source_file.h"
-#include "scamper_source_tsps.h"
 #include "scamper_queue.h"
 #include "scamper_getsrc.h"
 #include "scamper_addr2mac.h"
@@ -315,7 +314,6 @@ static void usage(uint32_t opt_mask)
 #ifdef HAVE_LIBLZMA
       usage_line("warts.xz: output results in xz warts format");
 #endif
-      usage_line("tsps: input file for ping -T tsprespec=%s");
       usage_line("cmdfile: input file specifies whole commands");
       usage_line("json: output results in json format, better to use warts");
       usage_line("planetlab: necessary to use safe raw sockets on planetlab");
@@ -647,8 +645,6 @@ static int check_options(int argc, char *argv[])
 	  else if(strcasecmp(optarg, "warts.xz") == 0)
 	    outtype = optarg;
 #endif
-	  else if(strcasecmp(optarg, "tsps") == 0)
-	    intype = optarg;
 	  else if(strcasecmp(optarg, "cmdfile") == 0)
 	    intype = optarg;
 	  else if(strcasecmp(optarg, "planetlab") == 0)
@@ -1659,8 +1655,6 @@ static int scamper(int argc, char *argv[])
     {
       if(intype == NULL)
 	source = scamper_source_file_alloc(&ssp, arglist[0], command, 1, 0);
-      else if(strcasecmp(intype, "tsps") == 0)
-	source = scamper_source_tsps_alloc(&ssp, arglist[0]);
       else if(strcasecmp(intype, "cmdfile") == 0)
 	source = scamper_source_file_alloc(&ssp, arglist[0], NULL, 1, 0);
       if(source == NULL)

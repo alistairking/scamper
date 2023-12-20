@@ -1,7 +1,7 @@
 /*
  * sc_remoted
  *
- * $Id: sc_remoted.c,v 1.99 2023/04/21 23:13:35 mjl Exp $
+ * $Id: sc_remoted.c,v 1.99.4.1 2023/08/08 01:27:28 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -2792,7 +2792,7 @@ static int kqueue_loop(void)
 	    }
 
 #if defined(HAVE_EPOLL)
-	  if(events[i].events & EPOLLIN && scu->gc == 0)
+	  if(events[i].events & (EPOLLIN|EPOLLHUP) && scu->gc == 0)
 	    read_cb[scfd->type](scu->data);
 	  if(events[i].events & EPOLLOUT && scu->gc == 0)
 	    write_cb[scfd->type](scu->data);

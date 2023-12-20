@@ -9,12 +9,12 @@
 .\" Copyright (c) 2015-2023 Matthew Luckie
 .\"                         All rights reserved
 .\"
-.\" $Id: scamper.1,v 1.114 2023/05/06 23:51:01 mjl Exp $
+.\" $Id: scamper.1,v 1.114.4.1 2023/08/08 01:30:03 mjl Exp $
 .\"
 .\"  nroff -man scamper.1
 .\"  groff -man -Tascii scamper.1 | man2html -title scamper.1
 .\"
-.Dd May 6, 2023
+.Dd August 7, 2023
 .Dt SCAMPER 1
 .Os
 .\""""""""""""
@@ -290,10 +290,6 @@ on systems where
 .Xr epoll 7
 is available.
 .It
-.Sy tsps:
-the input file consists of a sequence of IP addresses for pre-specified
-IP timestamps.
-.It
 .Sy cmdfile:
 the input file consists of complete commands.
 .It
@@ -540,8 +536,9 @@ ping
 .Bl -tag -width Ds
 .It Fl A Ar TCP-ack
 specifies the number to use in the acknowledgement field of the TCP
-header, or the sequence number field of the TCP header when sending
-TCP-syn, TCP-syn-sport, and TCP-rst probes.
+header when using the TCP-ack, tcp-ack-sport, and TCP-synack methods,
+or the number to use in the sequence number field of the TCP header
+when using the TCP-syn, TCP-syn-sport, and TCP-rst methods.
 .It Fl B Ar payload
 specifies, in a hexadecimal string, the payload to include in each probe.
 .It Fl c Ar probecount
@@ -684,8 +681,8 @@ in probedefs defined with
 .Fl p
 for other alias resolution methods.
 .It Fl f Ar fudge
-specifies a fudge factor for alias matching. Defaults to 200. Only valid for
-ally and bump.
+specifies a fudge factor for alias matching. Defaults to 200. Valid for
+ally, bump, and prefixscan.
 .It Fl m Ar method
 specifies which method to use for alias resolution.
 Valid options are: ally, bump, mercator, prefixscan, and radargun, and

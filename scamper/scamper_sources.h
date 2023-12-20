@@ -1,7 +1,7 @@
 /*
  * scamper_source
  *
- * $Id: scamper_sources.h,v 1.16 2023/04/20 01:00:01 mjl Exp $
+ * $Id: scamper_sources.h,v 1.16.4.1 2023/08/08 01:12:05 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -32,10 +32,9 @@ typedef struct scamper_source scamper_source_t;
 #define SCAMPER_SOURCE_TYPE_FILE    1
 #define SCAMPER_SOURCE_TYPE_CMDLINE 2
 #define SCAMPER_SOURCE_TYPE_CONTROL 3
-#define SCAMPER_SOURCE_TYPE_TSPS    4
 
 #define SCAMPER_SOURCE_TYPE_MIN     1
-#define SCAMPER_SOURCE_TYPE_MAX     4
+#define SCAMPER_SOURCE_TYPE_MAX     3
 
 /* a mapping between a task and the source that delivered it */
 typedef struct scamper_sourcetask scamper_sourcetask_t;

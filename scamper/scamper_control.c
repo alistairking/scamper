@@ -1,7 +1,7 @@
 /*
  * scamper_control.c
  *
- * $Id: scamper_control.c,v 1.251 2023/05/29 21:22:26 mjl Exp $
+ * $Id: scamper_control.c,v 1.251.4.1 2023/08/08 01:15:55 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -43,7 +43,6 @@
 #include "scamper_sources.h"
 #include "scamper_source_file.h"
 #include "scamper_source_control.h"
-#include "scamper_source_tsps.h"
 #include "scamper_privsep.h"
 #include "mjl_list.h"
 #include "utils.h"
@@ -725,11 +724,6 @@ static char *source_tostr(char *str, const size_t len,
 
     case SCAMPER_SOURCE_TYPE_CONTROL:
       snprintf(type, sizeof(type), "type 'control'");
-      break;
-
-    case SCAMPER_SOURCE_TYPE_TSPS:
-      snprintf(type, sizeof(type), "type 'tsps' file '%s'",
-	       scamper_source_tsps_getfilename(source));
       break;
 
     default:
@@ -1857,6 +1851,11 @@ static int command_source_add(client_t *client, char *buf)
   if(file == NULL)
     {
       client_send(client, "ERR required parameter 'file' missing");
+      return -1;
+    }
+  if(string_isdash(file) != 0)
+    {
+      client_send(client, "ERR file cannot be stdin");
       return -1;
     }
 

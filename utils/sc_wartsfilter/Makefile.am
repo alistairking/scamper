@@ -7,7 +7,8 @@ bin_PROGRAMS = sc_wartsfilter
 sc_wartsfilter_SOURCES = \
 	sc_wartsfilter.c \
 	../../mjl_list.c \
-	../../mjl_prefixtree.c
+	../../mjl_prefixtree.c \
+	../../utils.c
 
 sc_wartsfilter_LDADD = ../../scamper/libscamperfile.la
 

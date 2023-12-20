@@ -1,7 +1,7 @@
 /*
  * scamper_fds: manage events for file descriptors
  *
- * $Id: scamper_fds.h,v 1.24 2020/04/27 07:32:21 mjl Exp $
+ * $Id: scamper_fds.h,v 1.24.20.1 2023/08/08 01:18:05 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -57,17 +57,14 @@ int scamper_fd_addr(const scamper_fd_t *fdn, void *addr, size_t len);
 scamper_fd_t *scamper_fd_private(int fd, void *param, scamper_fd_cb_t read_cb,
 				 scamper_fd_cb_t write_cb);
 
-scamper_fd_t *scamper_fd_file(int fd, scamper_fd_cb_t read_cb, void *param);
-
 /*
  * this function reduces the reference count of the fdn, and closes the fd
  * if there are no remaining references
  */
 void scamper_fd_free(scamper_fd_t *fdn);
 
-/* get/set the fd associated with the structure */
+/* get the fd associated with the structure */
 int scamper_fd_fd_get(const scamper_fd_t *fdn);
-int scamper_fd_fd_set(scamper_fd_t *fdn, int fd);
 
 /* functions to temporarily unmonitor a fd, and then have it rejoin */
 void scamper_fd_read_pause(scamper_fd_t *fdn);

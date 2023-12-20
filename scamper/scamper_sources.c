@@ -1,7 +1,7 @@
 /*
  * scamper_source
  *
- * $Id: scamper_sources.c,v 1.71 2023/06/04 07:24:32 mjl Exp $
+ * $Id: scamper_sources.c,v 1.71.4.1 2023/08/08 01:11:44 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -1265,7 +1265,6 @@ const char *scamper_source_type_tostr(const scamper_source_t *source)
     case SCAMPER_SOURCE_TYPE_FILE:    return "file";
     case SCAMPER_SOURCE_TYPE_CMDLINE: return "cmdline";
     case SCAMPER_SOURCE_TYPE_CONTROL: return "control";
-    case SCAMPER_SOURCE_TYPE_TSPS:    return "tsps";
     }
 
   return NULL;

@@ -1,7 +1,7 @@
 /*
  * libscamperctrl
  *
- * $Id: libscamperctrl.c,v 1.32 2023/04/24 08:07:44 mjl Exp $
+ * $Id: libscamperctrl.c,v 1.32.4.1 2023/08/07 22:19:53 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -64,28 +64,31 @@
 struct scamper_ctrl
 {
   dlist_t           *insts;    /* the instances under management */
+  dlist_t           *freelist; /* items queued to be freed */
   scamper_ctrl_cb_t  cb;       /* callback to call */
   uint8_t            wait;     /* are we currently in scamper_ctrl_wait */
   char               err[128]; /* error string */
+  void              *param;    /* optional parameter */
 #ifdef HAVE_KQUEUE
   int                kqfd;     /* kqueue fd */
-  dlist_t           *freelist; /* items queued to be freed */
 #endif
 };
 
 struct scamper_inst
 {
-  scamper_ctrl_t    *ctrl;    /* backpointer to overall control structure */
-  dlist_node_t      *dn;      /* dlist node in ctrl->insts or ctrl->freelist */
-  void              *param;   /* user-supplied parameter */
-  uint8_t            type;    /* types: inet, unix, or remote */
-  uint8_t            flags;   /* flags: done */
-  uint8_t            gc;      /* scamper_inst_free called, garbage collect */
-  int                fd;      /* file descriptor for socket */
-  uint32_t           seq;     /* next sequence number to assign */
-  dlist_t           *queue;   /* list of commands queued */
-  slist_t           *waitok;  /* commands we are waiting for an ok for */
-  splaytree_t       *tree;    /* tasks searchable by their ID */
+  scamper_ctrl_t    *ctrl;     /* backpointer to overall control structure */
+  dlist_t           *list;     /* ctrl->insts or ctrl->freelist or NULL */
+  dlist_node_t      *dn;       /* dlist node in ctrl->insts or ctrl->freelist */
+  char              *name;     /* string representing name of instance */
+  void              *param;    /* user-supplied parameter */
+  uint8_t            type;     /* types: inet, unix, or remote */
+  uint8_t            flags;    /* flags: done */
+  int                fd;       /* file descriptor for socket */
+  uint32_t           seq;      /* next sequence number to assign */
+  dlist_t           *queue;    /* list of commands queued */
+  slist_t           *waitok;   /* commands we are waiting for an ok for */
+  splaytree_t       *tree;     /* tasks searchable by their ID */
+  char               err[128]; /* error string */
 
   /*
    * temporary buffer for storing incomplete lines in between to calls
@@ -146,10 +149,6 @@ struct scamper_attp
 #define SCAMPER_INST_FLAG_WRITE  0x02
 #endif
 
-#define SCAMPER_INST_TYPE_UNIX   1
-#define SCAMPER_INST_TYPE_INET   2
-#define SCAMPER_INST_TYPE_REMOTE 3
-
 #define SCAMPER_CMD_TYPE_ATTACH  1
 #define SCAMPER_CMD_TYPE_HALT    2
 #define SCAMPER_CMD_TYPE_TASK    3
@@ -194,6 +193,12 @@ void *scamper_task_getparam(scamper_task_t *task)
   return task->param;
 }
 
+void scamper_task_setparam(scamper_task_t *task, void *param)
+{
+  task->param = param;
+  return;
+}
+
 char *scamper_task_getcmd(scamper_task_t *task, char *buf, size_t len)
 {
   size_t x;
@@ -211,12 +216,6 @@ static void scamper_cmd_free(scamper_cmd_t *cmd)
   if(cmd->str != NULL)
     free(cmd->str);
   free(cmd);
-  return;
-}
-
-static void scamper_inst_onremove(scamper_inst_t *inst)
-{
-  inst->dn = NULL;
   return;
 }
 
@@ -251,14 +250,14 @@ static scamper_cmd_t *scamper_inst_cmd(scamper_inst_t *inst,
     }
   if(len == 0)
     {
-      snprintf(inst->ctrl->err, sizeof(inst->ctrl->err), "no command");
+      snprintf(inst->err, sizeof(inst->err), "no command");
       goto err;
     }
   for(i=0; i<len; i++)
     {
       if(isprint(str[i]) == 0)
 	{
-	  snprintf(inst->ctrl->err, sizeof(inst->ctrl->err),
+	  snprintf(inst->err, sizeof(inst->err),
 		   "unprintable character in command");
 	  goto err;
 	}
@@ -266,8 +265,7 @@ static scamper_cmd_t *scamper_inst_cmd(scamper_inst_t *inst,
 
   if((cmd = malloc(sizeof(scamper_cmd_t))) == NULL)
     {
-      snprintf(inst->ctrl->err, sizeof(inst->ctrl->err),
-	       "could not malloc cmd");
+      snprintf(inst->err, sizeof(inst->err), "could not malloc cmd");
       goto err;
     }
   memset(cmd, 0, sizeof(scamper_cmd_t));
@@ -276,8 +274,7 @@ static scamper_cmd_t *scamper_inst_cmd(scamper_inst_t *inst,
 
   if((cmd->str = malloc(len+2)) == NULL)
     {
-      snprintf(inst->ctrl->err, sizeof(inst->ctrl->err),
-	       "could not malloc cmd->str");
+      snprintf(inst->err, sizeof(inst->err), "could not malloc cmd->str");
       goto err;
     }
   memcpy(cmd->str, str, len);
@@ -287,7 +284,7 @@ static scamper_cmd_t *scamper_inst_cmd(scamper_inst_t *inst,
 
   if((cmd->dn = dlist_tail_push(inst->queue, cmd)) == NULL)
     {
-      snprintf(inst->ctrl->err, sizeof(inst->ctrl->err), "could not push cmd");
+      snprintf(inst->err, sizeof(inst->err), "could not push cmd");
       goto err;
     }
 
@@ -319,16 +316,31 @@ void scamper_inst_setparam(scamper_inst_t *inst, void *param)
   return;
 }
 
+const char *scamper_inst_getname(const scamper_inst_t *inst)
+{
+  return inst->name;
+}
+
+uint8_t scamper_inst_gettype(const scamper_inst_t *inst)
+{
+  return inst->type;
+}
+
 scamper_task_t *scamper_inst_do(scamper_inst_t *inst, const char *str, void *p)
 {
   scamper_task_t *task = NULL;
   scamper_cmd_t *cmd = NULL;
 
+  if(inst->ctrl == NULL)
+    {
+      snprintf(inst->err, sizeof(inst->err), "no corresponding control");
+      return NULL;
+    }
+
   /* can't send a command after sending done message */
   if((inst->flags & SCAMPER_INST_FLAG_DONE) != 0)
     {
-      snprintf(inst->ctrl->err, sizeof(inst->ctrl->err),
-	       "instance marked done");
+      snprintf(inst->err, sizeof(inst->err), "instance marked done");
       return NULL;
     }
 
@@ -337,16 +349,14 @@ scamper_task_t *scamper_inst_do(scamper_inst_t *inst, const char *str, void *p)
      strncasecmp(str, "halt", 4) == 0 &&
      strncasecmp(str, "done", 4) == 0)
     {
-      snprintf(inst->ctrl->err, sizeof(inst->ctrl->err),
-	       "%s invalid command", str);
+      snprintf(inst->err, sizeof(inst->err), "%s invalid command", str);
       return NULL;
     }
 
   /* allocate a task to return to the caller */
   if((task = malloc(sizeof(scamper_task_t))) == NULL)
     {
-      snprintf(inst->ctrl->err, sizeof(inst->ctrl->err),
-	       "could not malloc task");
+      snprintf(inst->err, sizeof(inst->err), "could not malloc task");
       return NULL;
     }
   memset(task, 0, sizeof(scamper_task_t));
@@ -368,13 +378,19 @@ int scamper_inst_halt(scamper_inst_t *inst, scamper_task_t *task)
 {
   char buf[20];
 
+  if(inst->ctrl == NULL)
+    {
+      snprintf(inst->err, sizeof(inst->err), "no corresponding control");
+      return -1;
+    }
+
   /*
    * if the user is halting a task which we have already given them
    * data for, then flag this error
    */
   if((task->flags & SCAMPER_TASK_FLAG_DONE) != 0)
     {
-      snprintf(inst->ctrl->err, sizeof(inst->ctrl->err), "task already done");
+      snprintf(inst->err, sizeof(inst->err), "task already done");
       return -1;
     }
 
@@ -410,29 +426,31 @@ int scamper_inst_halt(scamper_inst_t *inst, scamper_task_t *task)
 
 int scamper_inst_done(scamper_inst_t *inst)
 {
+  /* set the done flag if not already set */
   if((inst->flags & SCAMPER_INST_FLAG_DONE) != 0)
     return 0;
   inst->flags |= SCAMPER_INST_FLAG_DONE;
+
+  /* nothing else to do without a corresponding ctrl */
+  if(inst->ctrl == NULL)
+    return 0;
+
   if(scamper_inst_cmd(inst, SCAMPER_CMD_TYPE_DONE, "done") == NULL)
     return -1;
   return 0;
+}
+
+const char *scamper_inst_strerror(const scamper_inst_t *inst)
+{
+  return inst->err;
 }
 
 static void scamper_inst_freedo(scamper_inst_t *inst)
 {
   if(inst->fd != -1)
     close(inst->fd);
-  if(inst->dn != NULL)
-    {
-#ifdef HAVE_KQUEUE
-      if(inst->gc == 0)
-	dlist_node_pop(inst->ctrl->insts, inst->dn);
-      else
-	dlist_node_pop(inst->ctrl->freelist, inst->dn);
-#else
-      dlist_node_pop(inst->ctrl->insts, inst->dn);
-#endif
-    }
+  if(inst->name != NULL)
+    free(inst->name);
   if(inst->waitok != NULL)
     slist_free_cb(inst->waitok, (slist_free_t)scamper_cmd_free);
   if(inst->queue != NULL)
@@ -445,39 +463,43 @@ static void scamper_inst_freedo(scamper_inst_t *inst)
   return;
 }
 
+/*
+ * scamper_inst_free
+ *
+ * this function is called by a user to free the instance handle.
+ */
 void scamper_inst_free(scamper_inst_t *inst)
 {
   assert(inst != NULL);
 
   /*
    * if we are in the body of a scamper_inst_wait call, then mark the
-   * instance for garbage collection
+   * instance for garbage collection by placing it in the freelist
    */
-  if(inst->ctrl->wait != 0)
+  if(inst->list != NULL && inst->ctrl != NULL && inst->ctrl->wait != 0)
     {
-      if(inst->gc == 0)
+      if(inst->list != inst->ctrl->freelist)
 	{
-	  inst->gc = 1;
-#ifdef HAVE_KQUEUE
 	  dlist_node_tail_push(inst->ctrl->freelist, inst->dn);
-#endif
+	  inst->list = inst->ctrl->freelist;
 	}
-      return;
     }
-
-  scamper_inst_freedo(inst);
+  else
+    {
+      scamper_inst_freedo(inst);
+    }
   return;
 }
 
 #ifndef DMALLOC
 static scamper_inst_t *scamper_inst_alloc(scamper_ctrl_t *ctrl, uint8_t t,
-					  int fd)
+					  const char *name, int fd)
 #else
-#define scamper_inst_alloc(ctrl,t,fd) scamper_inst_alloc_dm((ctrl),(t),(fd), \
-							    __FILE__, __LINE__)
+#define scamper_inst_alloc(ctrl,t,name,fd) \
+  scamper_inst_alloc_dm((ctrl), (t), (name), (fd), __FILE__, __LINE__)
 static scamper_inst_t *scamper_inst_alloc_dm(scamper_ctrl_t *ctrl, uint8_t t,
-					     int fd, const char *file,
-					     const int line)
+					     const char *name, int fd,
+					     const char *file, const int line)
 #endif
 {
   scamper_inst_t *inst;
@@ -494,15 +516,22 @@ static scamper_inst_t *scamper_inst_alloc_dm(scamper_ctrl_t *ctrl, uint8_t t,
 					  DMALLOC_FUNC_MALLOC, 0, 0);
 #endif
   if(inst == NULL)
-    goto err;
+    {
+      snprintf(ctrl->err, sizeof(ctrl->err), "could not alloc instance");
+      goto err;
+    }
 
   memset(inst, 0, sizeof(scamper_inst_t));
   inst->fd = -1;
 
-  if((inst->waitok = slist_alloc()) == NULL ||
+  if((inst->name = strdup(name)) == NULL ||
+     (inst->waitok = slist_alloc()) == NULL ||
      (inst->queue = dlist_alloc()) == NULL ||
      (inst->tree = splaytree_alloc((splaytree_cmp_t)scamper_task_cmp)) == NULL)
-    goto err;
+    {
+      snprintf(ctrl->err, sizeof(ctrl->err), "could not initialise instance");
+      goto err;
+    }
 
 #ifndef DMALLOC
   inst->dn = dlist_tail_push(ctrl->insts, inst);
@@ -510,33 +539,34 @@ static scamper_inst_t *scamper_inst_alloc_dm(scamper_ctrl_t *ctrl, uint8_t t,
   inst->dn = dlist_tail_push_dm(ctrl->insts, inst, file, line);
 #endif
   if(inst->dn == NULL)
-    goto err;
+    {
+      snprintf(ctrl->err, sizeof(ctrl->err), "could not put inst on list");
+      goto err;
+    }
 
+  inst->list = ctrl->insts;
   inst->ctrl = ctrl;
   inst->type = t;
-  inst->fd   = fd;
 
 #ifdef HAVE_KQUEUE
-  EV_SET(&kev, inst->fd, EVFILT_READ, EV_ADD, 0, 0, inst);
+  EV_SET(&kev, fd, EVFILT_READ, EV_ADD, 0, 0, inst);
   if(kevent(ctrl->kqfd, &kev, 1, NULL, 0, NULL) != 0)
-    goto err;
+    {
+      snprintf(ctrl->err, sizeof(ctrl->err), "could not kevent inst");
+      goto err;
+    }
 #endif
 
+  inst->fd = fd;
   return inst;
 
  err:
-  snprintf(ctrl->err, sizeof(ctrl->err), "could not alloc instance");
-  if(inst == NULL)
-    return NULL;
-  if(inst->dn != NULL)
-    dlist_node_pop(ctrl->insts, inst->dn);
-  if(inst->waitok != NULL)
-    slist_free(inst->waitok);
-  if(inst->queue != NULL)
-    dlist_free(inst->queue);
-  if(inst->tree != NULL)
-    splaytree_free(inst->tree, NULL);
-  free(inst);
+  if(inst != NULL)
+    {
+      if(inst->dn != NULL)
+	dlist_node_pop(ctrl->insts, inst->dn);
+      scamper_inst_freedo(inst);
+    }
   return NULL;
 }
 
@@ -643,7 +673,12 @@ scamper_inst_t *scamper_inst_inet(scamper_ctrl_t *ctrl,
       goto err;
     }
 
-  if((inst = scamper_inst_alloc(ctrl, SCAMPER_INST_TYPE_INET, fd)) == NULL)
+  if(res->ai_family == PF_INET)
+    snprintf(buf, sizeof(buf), "%s:%d", addr, port);
+  else
+    snprintf(buf, sizeof(buf), "[%s]:%d", addr, port);
+
+  if((inst = scamper_inst_alloc(ctrl, SCAMPER_INST_TYPE_INET, buf, fd)) == NULL)
     goto err;
   fd = -1;
   if(scamper_inst_attach(attp, buf, sizeof(buf)) != 0)
@@ -663,7 +698,7 @@ scamper_inst_t *scamper_inst_inet(scamper_ctrl_t *ctrl,
   if(fd != -1)
     close(fd);
   if(inst != NULL)
-    scamper_inst_free(inst);
+    scamper_inst_freedo(inst);
   return NULL;
 }
 
@@ -725,7 +760,7 @@ scamper_inst_t *scamper_inst_unix(scamper_ctrl_t *ctrl,
   int fd = -1;
 
   if((fd = scamper_inst_unix_fd(ctrl, path)) == -1 ||
-     (inst = scamper_inst_alloc(ctrl, SCAMPER_INST_TYPE_UNIX, fd)) == NULL ||
+     (inst = scamper_inst_alloc(ctrl,SCAMPER_INST_TYPE_UNIX,path,fd)) == NULL ||
      scamper_inst_attach(attp, buf, sizeof(buf)) != 0 ||
      scamper_inst_cmd(inst, SCAMPER_CMD_TYPE_ATTACH, buf) == NULL)
     goto err;
@@ -734,7 +769,7 @@ scamper_inst_t *scamper_inst_unix(scamper_ctrl_t *ctrl,
 
  err:
   if(fd != -1) close(fd);
-  if(inst != NULL) scamper_inst_free(inst);
+  if(inst != NULL) scamper_inst_freedo(inst);
   return NULL;
 }
 
@@ -744,14 +779,14 @@ scamper_inst_t *scamper_inst_remote(scamper_ctrl_t *ctrl, const char *path)
   int fd = -1;
 
   if((fd = scamper_inst_unix_fd(ctrl, path)) == -1 ||
-     (inst = scamper_inst_alloc(ctrl, SCAMPER_INST_TYPE_REMOTE, fd)) == NULL)
+     (inst = scamper_inst_alloc(ctrl,SCAMPER_INST_TYPE_REMOTE,path,fd)) == NULL)
     goto err;
 
   return inst;
 
  err:
   if(fd != -1) close(fd);
-  if(inst != NULL) scamper_inst_free(inst);
+  if(inst != NULL) scamper_inst_freedo(inst);
   return NULL;
 }
 
@@ -762,7 +797,7 @@ scamper_inst_t *scamper_inst_remote(scamper_ctrl_t *ctrl, const char *path)
  */
 static int scamper_inst_read(scamper_inst_t *inst)
 {
-  scamper_ctrl_t *ctrl = inst->ctrl;
+  scamper_ctrl_t *ctrl;
   scamper_task_t fm;
   scamper_cmd_t *cmd;
   uint8_t buf[8192];
@@ -771,12 +806,27 @@ static int scamper_inst_read(scamper_inst_t *inst)
   char *start, *ptr, a, b, c, d;
   long lo;
 
+  assert(inst != NULL);
+  assert(inst->ctrl != NULL);
+  ctrl = inst->ctrl;
+
   rc = read(inst->fd, buf + inst->line_off, sizeof(buf) - inst->line_off);
 
   /* if the scamper process exits, pass that through */
   if(rc == 0)
     {
+      close(inst->fd); inst->fd = -1;
+
+      /*
+       * signal EOF on callback.  the callback might call scamper_inst_free.
+       * if not, then remove it from the monitored list.
+       */
       ctrl->cb(inst, SCAMPER_CTRL_TYPE_EOF, NULL, NULL, 0);
+      if(inst->list == ctrl->insts)
+	{
+	  dlist_node_pop(inst->list, inst->dn);
+	  inst->dn = NULL; inst->list = NULL;
+	}
       return 0;
     }
 
@@ -863,6 +913,7 @@ static int scamper_inst_read(scamper_inst_t *inst)
 	      cmd = slist_head_pop(inst->waitok);
 	      assert(cmd->type == SCAMPER_CMD_TYPE_TASK);
 	      ctrl->cb(inst, SCAMPER_CTRL_TYPE_ERR, cmd->task, NULL, 0);
+	      scamper_task_free(cmd->task); cmd->task = NULL;
 	      ctrl->cb(inst, SCAMPER_CTRL_TYPE_MORE, NULL, NULL, 0);
 	      scamper_cmd_free(cmd);
 	    }
@@ -1033,13 +1084,18 @@ static int scamper_inst_read(scamper_inst_t *inst)
 
 static int scamper_inst_write(scamper_inst_t *inst)
 {
-  scamper_cmd_t *cmd;
+  scamper_ctrl_t *ctrl;
   scamper_task_t *task;
+  scamper_cmd_t *cmd;
   ssize_t rc;
 
 #ifdef HAVE_KQUEUE
   struct kevent kev;
 #endif
+
+  assert(inst != NULL);
+  assert(inst->ctrl != NULL);
+  ctrl = inst->ctrl;
 
   cmd = dlist_head_item(inst->queue);
   assert(cmd != NULL);
@@ -1047,7 +1103,7 @@ static int scamper_inst_write(scamper_inst_t *inst)
   /* test if write was successful */
   if((rc = write(inst->fd, cmd->str + cmd->off, cmd->len - cmd->off)) == -1)
     {
-      snprintf(inst->ctrl->err, sizeof(inst->ctrl->err), "could not write: %s",
+      snprintf(ctrl->err, sizeof(ctrl->err), "could not write: %s",
 	       strerror(errno));
       return -1;
     }
@@ -1071,7 +1127,7 @@ static int scamper_inst_write(scamper_inst_t *inst)
       /* add the command to the list of commands waiting for an OK */
       if(slist_tail_push(inst->waitok, cmd) == NULL)
 	{
-	  snprintf(inst->ctrl->err, sizeof(inst->ctrl->err),
+	  snprintf(ctrl->err, sizeof(ctrl->err),
 		   "could not push cmd onto waitok");
 	  return -1;
 	}
@@ -1087,9 +1143,9 @@ static int scamper_inst_write(scamper_inst_t *inst)
   if(dlist_count(inst->queue) == 0)
     {
       EV_SET(&kev, inst->fd, EVFILT_WRITE, EV_DELETE, 0, 0, inst);
-      if(kevent(inst->ctrl->kqfd, &kev, 1, NULL, 0, NULL) != 0)
+      if(kevent(ctrl->kqfd, &kev, 1, NULL, 0, NULL) != 0)
 	{
-	  snprintf(inst->ctrl->err, sizeof(inst->ctrl->err),
+	  snprintf(ctrl->err, sizeof(ctrl->err),
 		   "could not remove inst from kqueue");
 	  return -1;
 	}
@@ -1100,6 +1156,11 @@ static int scamper_inst_write(scamper_inst_t *inst)
   return 0;
 }
 
+scamper_ctrl_t *scamper_inst_getctrl(const scamper_inst_t *inst)
+{
+  return inst->ctrl;
+}
+
 #ifdef HAVE_KQUEUE
 int scamper_ctrl_wait(scamper_ctrl_t *ctrl, struct timeval *to)
 {
@@ -1108,8 +1169,6 @@ int scamper_ctrl_wait(scamper_ctrl_t *ctrl, struct timeval *to)
   struct timespec ts, *timeout;
   scamper_inst_t *inst;
   int i, c, rc = -1;
-
-  ctrl->wait = 1;
 
   if(to != NULL)
     {
@@ -1131,15 +1190,16 @@ int scamper_ctrl_wait(scamper_ctrl_t *ctrl, struct timeval *to)
       goto done;
     }
 
+  ctrl->wait = 1;
   for(i=0; i<c; i++)
     {
       inst = events[i].udata;
-      if(events[i].filter == EVFILT_READ)
+      if(events[i].filter == EVFILT_READ && inst->fd != -1)
 	{
 	  if(scamper_inst_read(inst) != 0)
 	    goto done;
 	}
-      else if(events[i].filter == EVFILT_WRITE && inst->gc == 0)
+      else if(events[i].filter == EVFILT_WRITE && inst->fd != -1)
 	{
 	  if(scamper_inst_write(inst) != 0)
 	    goto done;
@@ -1149,6 +1209,10 @@ int scamper_ctrl_wait(scamper_ctrl_t *ctrl, struct timeval *to)
   rc = 0;
 
  done:
+  /*
+   * the nodes in the freelist were put in there by the user calling
+   * scamper_inst_free while in scamper_ctrl_wait.  free them now
+   */
   ctrl->wait = 0;
   while((inst = dlist_head_pop(ctrl->freelist)) != NULL)
     scamper_inst_freedo(inst);
@@ -1159,16 +1223,17 @@ int scamper_ctrl_wait(scamper_ctrl_t *ctrl, struct timeval *to)
 {
   scamper_inst_t *inst;
   dlist_node_t *dn;
-  fd_set rfds, wfds, *wfdsp;
-  int rc = -1, nfds;
+  fd_set rfds, wfds, *wfdsp, *rfdsp;
+  int count = 0, rc = -1, nfds, fd;
 
-  nfds = 0; FD_ZERO(&rfds); FD_ZERO(&wfds); wfdsp = NULL;
-  ctrl->wait = 1;
-
-  for(dn=dlist_head_node(ctrl->insts); dn != NULL; dn=dlist_node_next(dn))
+  nfds = 0; FD_ZERO(&rfds); FD_ZERO(&wfds); wfdsp = NULL; rfdsp = NULL;
+  dn = dlist_head_node(ctrl->insts);
+  while(dn != NULL)
     {
-      inst = dlist_node_item(dn);
-      FD_SET(inst->fd, &rfds);
+      inst = dlist_node_item(dn); assert(dn == inst->dn);
+      dn = dlist_node_next(dn);
+      assert(inst->fd != -1);
+      FD_SET(inst->fd, &rfds); rfdsp = &rfds;
       if(nfds < inst->fd) nfds = inst->fd;
       if(dlist_count(inst->queue) > 0)
 	{
@@ -1177,7 +1242,7 @@ int scamper_ctrl_wait(scamper_ctrl_t *ctrl, struct timeval *to)
 	}
     }
 
-  if(select(nfds+1, &rfds, wfdsp, NULL, to) < 0)
+  if((count = select(nfds+1, rfdsp, wfdsp, NULL, to)) < 0)
     {
       if(errno == EINTR || errno == EAGAIN)
 	rc = 0;
@@ -1187,26 +1252,40 @@ int scamper_ctrl_wait(scamper_ctrl_t *ctrl, struct timeval *to)
       goto done;
     }
 
+  if(rfdsp == NULL)
+    return 0;
+
+  ctrl->wait = 1;
   dn=dlist_head_node(ctrl->insts);
-  while(dn != NULL)
+  while(dn != NULL && count > 0)
     {
       inst = dlist_node_item(dn);
       dn = dlist_node_next(dn);
-      if(FD_ISSET(inst->fd, &rfds) && scamper_inst_read(inst) != 0)
-	goto done;
-      if(inst->gc == 0)
+      fd = inst->fd; /* take a copy incase FD becomes -1, to work with count */
+      if(FD_ISSET(fd, &rfds))
 	{
-	  if(wfdsp != NULL && FD_ISSET(inst->fd, wfdsp) &&
-	     scamper_inst_write(inst) != 0)
+	  count--;
+	  if(scamper_inst_read(inst) != 0)
 	    goto done;
 	}
-      else scamper_inst_freedo(inst);
+      if(wfdsp != NULL && FD_ISSET(fd, wfdsp))
+	{
+	  count--;
+	  if(inst->fd != -1 && scamper_inst_write(inst) != 0)
+	    goto done;
+	}
     }
 
   rc = 0;
 
  done:
+  /*
+   * the nodes in the freelist were put in there by the user calling
+   * scamper_inst_free while in scamper_ctrl_wait.  free them now
+   */
   ctrl->wait = 0;
+  while((inst = dlist_head_pop(ctrl->freelist)) != NULL)
+    scamper_inst_freedo(inst);
   return rc;
 }
 #endif
@@ -1221,17 +1300,26 @@ void scamper_ctrl_free(scamper_ctrl_t *ctrl)
   if(ctrl->insts != NULL)
     {
       while((inst = dlist_head_pop(ctrl->insts)) != NULL)
-	scamper_inst_free(inst);
+	{
+	  inst->ctrl = NULL;
+	  inst->list = NULL;
+	  inst->dn = NULL;
+	}
       dlist_free(ctrl->insts);
     }
 
-#ifdef HAVE_KQUEUE
   if(ctrl->freelist != NULL)
     {
       while((inst = dlist_head_pop(ctrl->freelist)) != NULL)
-	scamper_inst_free(inst);
+	{
+	  inst->ctrl = NULL;
+	  inst->list = NULL;
+	  inst->dn = NULL;
+	}
       dlist_free(ctrl->freelist);
     }
+
+#ifdef HAVE_KQUEUE
   if(ctrl->kqfd != -1)
     close(ctrl->kqfd);
 #endif
@@ -1264,25 +1352,18 @@ scamper_ctrl_t *scamper_ctrl_alloc_dm(scamper_ctrl_cb_t cb,
 #ifdef HAVE_KQUEUE
   if((ctrl->kqfd = kqueue()) == -1)
     goto err;
-#ifndef DMALLOC
-  ctrl->freelist = dlist_alloc();
-#else
-  ctrl->freelist = dlist_alloc_dm(file, line);
-#endif
-  if(ctrl->freelist == NULL)
-    goto err;
-  dlist_onremove(ctrl->freelist, (dlist_onremove_t)scamper_inst_onremove);
 #endif
 
 #ifndef DMALLOC
   ctrl->insts = dlist_alloc();
+  ctrl->freelist = dlist_alloc();
 #else
   ctrl->insts = dlist_alloc_dm(file, line);
+  ctrl->freelist = dlist_alloc_dm(file, line);
 #endif
 
-  if(ctrl->insts == NULL)
+  if(ctrl->insts == NULL || ctrl->freelist == NULL)
     goto err;
-  dlist_onremove(ctrl->insts, (dlist_onremove_t)scamper_inst_onremove);
 
   ctrl->cb = cb;
 
@@ -1292,6 +1373,14 @@ scamper_ctrl_t *scamper_ctrl_alloc_dm(scamper_ctrl_cb_t cb,
   if(ctrl != NULL) scamper_ctrl_free(ctrl);
   return NULL;
 }
+
+#ifdef DMALLOC
+#undef scamper_ctrl_alloc
+scamper_ctrl_t *scamper_ctrl_alloc(scamper_ctrl_cb_t cb)
+{
+  return scamper_ctrl_alloc_dm(cb, __FILE__, __LINE__);
+}
+#endif
 
 const char *scamper_ctrl_type_tostr(uint8_t type)
 {
@@ -1311,6 +1400,17 @@ int scamper_ctrl_isdone(scamper_ctrl_t *ctrl)
   if(dlist_count(ctrl->insts) > 0)
     return 0;
   return 1;
+}
+
+void *scamper_ctrl_getparam(const scamper_ctrl_t *ctrl)
+{
+  return ctrl->param;
+}
+
+void scamper_ctrl_setparam(scamper_ctrl_t *ctrl, void *param)
+{
+  ctrl->param = param;
+  return;
 }
 
 const char *scamper_ctrl_strerror(const scamper_ctrl_t *ctrl)
@@ -1338,6 +1438,14 @@ scamper_attp_t *scamper_attp_alloc_dm(const char *file, const int line)
   memset(attp, 0, len);
   return attp;
 }  
+
+#ifdef DMALLOC
+#undef scamper_attp_alloc
+scamper_attp_t *scamper_attp_alloc(void)
+{
+  return scamper_attp_alloc_dm(__FILE__, __LINE__);
+}
+#endif
 
 /*
  * scamper_attp_str_isvalid:

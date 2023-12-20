@@ -1,10 +1,11 @@
 /*
  * scamper_osinfo.c
  *
- * $Id: scamper_osinfo.c,v 1.6 2020/03/17 07:32:16 mjl Exp $
+ * $Id: scamper_osinfo.c,v 1.6.20.1 2023/08/07 22:38:42 mjl Exp $
  *
  * Copyright (C) 2006 Matthew Luckie
  * Copyright (C) 2014 The Regents of the University of California
+ * Copyright (C) 2023 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -40,144 +41,150 @@ const scamper_osinfo_t *scamper_osinfo_get(void)
 }
 
 /*
- * uname_wrap
+ * scamper_osinfo_alloc
  *
  * do some basic parsing on the output from uname
  */
-#ifndef _WIN32
-int scamper_osinfo_init(void)
+scamper_osinfo_t *scamper_osinfo_alloc(const char *sysname, char *release)
 {
-  struct utsname    utsname;
+  scamper_osinfo_t *os = NULL;
   int               i;
   char             *str, *ptr;
   slist_t          *nos = NULL;
   size_t            size;
 
-  /* call uname to get the information */
-  if(uname(&utsname) < 0)
-    {
-      printerror(__func__, "could not uname");
-      goto err;
-    }
-
   /* allocate our wrapping struct */
-  if((osinfo = malloc_zero(sizeof(scamper_osinfo_t))) == NULL)
+  if((os = malloc_zero(sizeof(scamper_osinfo_t))) == NULL)
     {
       printerror(__func__, "could not malloc osinfo");
       goto err;
     }
 
   /* copy sysname in */
-  if((osinfo->os = strdup(utsname.sysname)) == NULL)
+  if((os->os = strdup(sysname)) == NULL)
     {
       printerror(__func__, "could not strdup sysname");
       goto err;
     }
 
   /* parse the OS name */
-  if(strcasecmp(osinfo->os, "FreeBSD") == 0)
-    osinfo->os_id = SCAMPER_OSINFO_OS_FREEBSD;
-  else if(strcasecmp(osinfo->os, "OpenBSD") == 0)
-    osinfo->os_id = SCAMPER_OSINFO_OS_OPENBSD;
-  else if(strcasecmp(osinfo->os, "NetBSD") == 0)
-    osinfo->os_id = SCAMPER_OSINFO_OS_NETBSD;
-  else if(strcasecmp(osinfo->os, "SunOS") == 0)
-    osinfo->os_id = SCAMPER_OSINFO_OS_SUNOS;
-  else if(strcasecmp(osinfo->os, "Linux") == 0)
-    osinfo->os_id = SCAMPER_OSINFO_OS_LINUX;
-  else if(strcasecmp(osinfo->os, "Darwin") == 0)
-    osinfo->os_id = SCAMPER_OSINFO_OS_DARWIN;
+  if(strcasecmp(os->os, "FreeBSD") == 0)
+    os->os_id = SCAMPER_OSINFO_OS_FREEBSD;
+  else if(strcasecmp(os->os, "OpenBSD") == 0)
+    os->os_id = SCAMPER_OSINFO_OS_OPENBSD;
+  else if(strcasecmp(os->os, "NetBSD") == 0)
+    os->os_id = SCAMPER_OSINFO_OS_NETBSD;
+  else if(strcasecmp(os->os, "SunOS") == 0)
+    os->os_id = SCAMPER_OSINFO_OS_SUNOS;
+  else if(strcasecmp(os->os, "Linux") == 0)
+    os->os_id = SCAMPER_OSINFO_OS_LINUX;
+  else if(strcasecmp(os->os, "Darwin") == 0)
+    os->os_id = SCAMPER_OSINFO_OS_DARWIN;
+  else if(strcasecmp(os->os, "Windows") == 0)
+    os->os_id = SCAMPER_OSINFO_OS_WINDOWS;
 
-  /* parse the release integer string */
-  if((nos = slist_alloc()) == NULL)
+  if(release != NULL)
     {
-      printerror(__func__, "could not alloc nos");
-      goto err;
-    }
-
-  str = utsname.release;
-  for(;;)
-    {
-      ptr = str;
-      while(isdigit((int)*ptr) != 0)
-	ptr++;
-
-      if(*ptr == '.')
+      /* parse the release integer string */
+      if((nos = slist_alloc()) == NULL)
 	{
-	  *ptr = '\0';
-	  if(slist_tail_push(nos, str) == NULL)
-	    {
-	      printerror(__func__, "could not push str");
-	      goto err;
-	    }
-	  str = ptr + 1;
-	  continue;
-	}
-
-      *ptr = '\0';
-      if(str != ptr)
-	{
-	  if(slist_tail_push(nos, str) == NULL)
-	    {
-	      printerror(__func__, "could not push str");
-	      goto err;
-	    }
-	  break;
-	}
-    }
-
-  osinfo->os_rel_dots = slist_count(nos);
-  if(osinfo->os_rel_dots != 0)
-    {
-      size = osinfo->os_rel_dots * sizeof(long);
-      if((osinfo->os_rel = malloc_zero(size)) == NULL)
-	{
-	  printerror(__func__, "could not malloc os_rel");
+	  printerror(__func__, "could not alloc nos");
 	  goto err;
 	}
 
-      i = 0;
-      while((str = slist_head_pop(nos)) != NULL)
+      str = release;
+      while(isdigit((int)*str))
 	{
-	  if(string_tolong(str, &osinfo->os_rel[i]) != 0)
+	  ptr = str; ptr++;
+	  while(isdigit((int)*ptr) != 0)
+	    ptr++;
+
+	  if(slist_tail_push(nos, str) == NULL)
 	    {
-	      printerror(__func__, "could not tolong");
+	      printerror(__func__, "could not push str");
 	      goto err;
 	    }
-	  i++;
+
+	  if(*ptr == '.')
+	    {
+	      *ptr = '\0';
+	      str = ptr + 1;
+	    }
+	  else
+	    {
+	      *ptr = '\0';
+	      break;
+	    }
 	}
+
+      os->os_rel_dots = slist_count(nos);
+      if(os->os_rel_dots != 0)
+	{
+	  size = os->os_rel_dots * sizeof(long);
+	  if((os->os_rel = malloc_zero(size)) == NULL)
+	    {
+	      printerror(__func__, "could not malloc os_rel");
+	      goto err;
+	    }
+
+	  i = 0;
+	  while((str = slist_head_pop(nos)) != NULL)
+	    {
+	      if(string_tolong(str, &os->os_rel[i]) != 0)
+		{
+		  printerror(__func__, "could not tolong");
+		  goto err;
+		}
+	      i++;
+	    }
+	}
+
+      slist_free(nos);
     }
 
-  slist_free(nos);
-  return 0;
+  return os;
 
  err:
   if(nos != NULL) slist_free(nos);
-  return -1;
+  if(os != NULL) scamper_osinfo_free(os);
+  return NULL;
 }
-#endif
 
-#ifdef _WIN32
 int scamper_osinfo_init(void)
 {
-  if((osinfo = malloc_zero(sizeof(scamper_osinfo_t))) == NULL)
-    goto err;
-  if((osinfo->os = strdup("Windows")) == NULL)
-    goto err;
-  osinfo->os_id = SCAMPER_OSINFO_OS_WINDOWS;
-  return 0;
+#ifndef _WIN32
+  struct utsname utsname;
 
- err:
-  return -1;
-}
+  /* call uname to get the information */
+  if(uname(&utsname) < 0)
+    {
+      printerror(__func__, "could not uname");
+      return -1;
+    }
+
+  if((osinfo = scamper_osinfo_alloc(utsname.sysname, utsname.release)) == NULL)
+    return -1;
+#else
+  if((osinfo = scamper_osinfo_alloc("Windows", NULL)) == NULL)
+    return -1;
 #endif
+  return 0;
+}
+
+void scamper_osinfo_free(scamper_osinfo_t *os)
+{
+  if(os->os != NULL) free(os->os);
+  if(os->os_rel != NULL) free(os->os_rel);
+  free(os);
+  return;
+}
 
 void scamper_osinfo_cleanup(void)
 {
-  if(osinfo == NULL)
-    return;
-  if(osinfo->os != NULL) free(osinfo->os);
-  if(osinfo->os_rel != NULL) free(osinfo->os_rel);
-  free(osinfo);
+  if(osinfo != NULL)
+    {
+      scamper_osinfo_free(osinfo);
+      osinfo = NULL;
+    }
   return;
 }

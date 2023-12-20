@@ -1,12 +1,13 @@
 # Process this file with autoconf to produce a configure script.
 
-AC_INIT([scamper],[20230614],[mjl@luckie.org.nz])
+AC_INIT([scamper],[20230614a],[mjl@luckie.org.nz])
 
 AC_CONFIG_SRCDIR([scamper/scamper.c])
 AC_CONFIG_HEADERS([config.h])
 AC_CONFIG_MACRO_DIR([m4])
 AC_CANONICAL_TARGET
-AM_INIT_AUTOMAKE
+AM_INIT_AUTOMAKE([foreign])
+AM_MAINTAINER_MODE([disable])
 
 LT_INIT
 AC_PROG_CC
@@ -120,56 +121,35 @@ AC_SUBST(PCRE_CFLAGS)
 AC_SUBST(PCRE_LIBS)
 
 # sc_hoiho utlity
-AC_ARG_WITH([sc_hoiho],
-  [AS_HELP_STRING([--with-sc_hoiho],
+AC_ARG_ENABLE([sc_hoiho],
+  [AS_HELP_STRING([--enable-sc_hoiho],
      [enable support for sc_hoiho])],
-     [with_sc_hoiho=$withval],
-     [with_sc_hoiho=no]
+     [enable_sc_hoiho=$enableval],
+     [enable_sc_hoiho=no]
 )
-AM_CONDITIONAL([WITH_SC_HOIHO], [test x$with_sc_hoiho = xyes])
+AM_CONDITIONAL([WITH_SC_HOIHO], [test x$enable_sc_hoiho = xyes])
 
 # sc_uptime prober support
-AC_ARG_WITH([sc_uptime],
-  [AS_HELP_STRING([--with-sc_uptime],
+AC_ARG_ENABLE([sc_uptime],
+  [AS_HELP_STRING([--enable-sc_uptime],
      [enable support for sc_uptime])],
-     [with_sc_uptime=$withval],
-     [with_sc_uptime=no]
+     [enable_sc_uptime=$enableval],
+     [enable_sc_uptime=no]
 )
-AM_CONDITIONAL([WITH_SC_UPTIME], [test x$with_sc_uptime = xyes])
+AM_CONDITIONAL([WITH_SC_UPTIME], [test x$enable_sc_uptime = xyes])
 
 # build tests
-AC_ARG_WITH([tests],
-  [AS_HELP_STRING([--with-tests],
+AC_ARG_ENABLE([tests],
+  [AS_HELP_STRING([--enable-tests],
      [build tests])],
-     [with_tests=$withval],
-     [with_tests=no]
+     [enable_tests=$enableval],
+     [enable_tests=no]
 )
-AM_CONDITIONAL([WITH_TESTS], [test x$with_tests = xyes])
+AM_CONDITIONAL([WITH_TESTS], [test x$enable_tests = xyes])
 
 # Checks for libraries.
 AC_CHECK_LIB([iphlpapi], [GetIpNetTable])
 AC_CHECK_LIB([ws2_32], [WSAStartup])
-
-AC_CHECK_LIB([z], [inflateEnd],
-	[
-	AC_DEFINE([HAVE_ZLIB], [1], [Define to 1 if you have zlib])
-	ZLIB_LIBS="-lz"
-	])
-AC_SUBST(ZLIB_LIBS)
-
-AC_CHECK_LIB([bz2], [BZ2_bzDecompressInit],
-	[
-	AC_DEFINE([HAVE_LIBBZ2], [1], [Define to 1 if you have libbz2])
-	LIBBZ2_LIBS="-lbz2"
-	])
-AC_SUBST(LIBBZ2_LIBS)
-
-AC_CHECK_LIB([lzma], [lzma_code],
-	[
-	AC_DEFINE([HAVE_LIBLZMA], [1], [Define to 1 if you have liblzma])
-	LIBLZMA_LIBS="-llzma"
-	])
-AC_SUBST(LIBLZMA_LIBS)
 
 # Checks for header files.
 AC_HEADER_SYS_WAIT
@@ -463,6 +443,120 @@ if test "x$have_openssl" = xyes; then
    LIBS="$save_LIBS"
 fi
 
+# zlib support
+AC_ARG_WITH([zlib],
+  [AS_HELP_STRING([--with-zlib],
+    [support reading and writing gz streams @<:@default=check@:>@])],
+  [],
+  [with_zlib=check])
+AS_IF([test "x$with_zlib" != xno],[
+  save_LIBS="$LIBS"
+  LIBS="$LIBS -lz"
+  AC_MSG_CHECKING([for inflateInit2 in -lz])
+  AC_LINK_IFELSE([AC_LANG_PROGRAM(
+    [[
+      #ifdef HAVE_STRING_H
+      #include <string.h>
+      #endif
+      #include <zlib.h>
+    ]],
+    [[
+      z_stream zs;
+      memset(&zs, 0, sizeof(zs));
+      inflateInit2(&zs, MAX_WBITS + 32);
+    ]]
+  )],
+  [
+    AC_MSG_RESULT([yes])
+    AC_DEFINE([HAVE_ZLIB], [1], [Define to 1 if you have zlib])
+    ZLIB_LIBS="-lz"
+  ],
+  [
+    if test "x$with_zlib" != xcheck; then
+      AC_MSG_FAILURE([--with-zlib was given, but test for zlib failed])
+    fi
+    AC_MSG_RESULT([no])
+  ])
+  LIBS="$save_LIBS"
+])
+AC_SUBST(ZLIB_LIBS)
+
+# bz2 support
+AC_ARG_WITH([bz2],
+  [AS_HELP_STRING([--with-bz2],
+    [support reading and writing bz2 streams @<:@default=check@:>@])],
+  [],
+  [with_bz2=check])
+AS_IF([test "x$with_bz2" != xno],[
+  save_LIBS="$LIBS"
+  LIBS="$LIBS -lbz2"
+  AC_MSG_CHECKING([for BZ2_bzDecompressInit in -lbz2])
+  AC_LINK_IFELSE([AC_LANG_PROGRAM(
+    [[
+      #ifdef HAVE_STRING_H
+      #include <string.h>
+      #endif
+      #include <bzlib.h>
+    ]],
+    [[
+      bz_stream zs;
+      memset(&zs, 0, sizeof(zs));
+      BZ2_bzDecompressInit(&zs, 0, 0);
+    ]]
+  )],
+  [
+    AC_MSG_RESULT([yes])
+    AC_DEFINE([HAVE_LIBBZ2], [1], [Define to 1 if you have libbz2])
+    LIBBZ2_LIBS="-lbz2"
+  ],
+  [
+    if test "x$with_bz2" != xcheck; then
+      AC_MSG_FAILURE([--with-bz2 was given, but test for bz2 failed])
+    fi
+    AC_MSG_RESULT([no])
+  ])
+  LIBS="$save_LIBS"
+])
+AC_SUBST(LIBBZ2_LIBS)
+
+# lzma (xz) support
+AC_ARG_WITH([lzma],
+  [AS_HELP_STRING([--with-lzma],
+    [support reading and writing xz streams @<:@default=check@:>@])],
+  [],
+  [with_lzma=check])
+AS_IF([test "x$with_lzma" != xno],[
+  save_LIBS="$LIBS"
+  LIBS="$LIBS -llzma"
+  AC_MSG_CHECKING([for lzma_stream_decoder in -llzma])
+  AC_LINK_IFELSE([AC_LANG_PROGRAM(
+    [[
+      #ifdef HAVE_STRING_H
+      #include <string.h>
+      #endif
+      #include <lzma.h>
+    ]],
+    [[
+      lzma_stream zs;
+      memset(&zs, 0, sizeof(zs));
+      lzma_stream_decoder(&zs, UINT64_MAX, 0);
+    ]]
+  )],
+  [
+    AC_MSG_RESULT([yes])
+    AC_DEFINE([HAVE_LIBLZMA], [1], [Define to 1 if you have liblzma])
+    LIBLZMA_LIBS="-llzma"
+  ],
+  [
+    if test "x$with_lzma" != xcheck; then
+      AC_MSG_FAILURE([--with-lzma was given, but test for lzma failed])
+    fi
+    AC_MSG_RESULT([no])
+  ])
+  LIBS="$save_LIBS"
+])
+AC_SUBST(LIBLZMA_LIBS)
+
 AX_GCC_BUILTIN(__builtin_clz)
 
 # No thread support
@@ -486,11 +580,10 @@ AC_CONFIG_FILES([
 	lib/Makefile
 	lib/libscamperctrl/Makefile])
 
-if test "x$with_tests" != xno; then
-   	AC_CONFIG_FILES([
-   	tests/Makefile
-	])
-fi
+AM_COND_IF([WITH_TESTS],
+   	[AC_CONFIG_FILES([
+	tests/Makefile
+	])])
 
 AC_CONFIG_FILES([
 	utils/Makefile
@@ -500,11 +593,10 @@ AC_CONFIG_FILES([
 	utils/sc_bdrmap/Makefile
 	utils/sc_erosprober/Makefile])
 
-if test "x$with_sc_hoiho" != xno; then
-   AC_CONFIG_FILES([
-   utils/sc_hoiho/Makefile
-   ])
-fi
+AM_COND_IF([WITH_SC_HOIHO],
+	[AC_CONFIG_FILES([
+	utils/sc_hoiho/Makefile
+	])])
 
 AC_CONFIG_FILES([
 	utils/sc_filterpolicy/Makefile
@@ -521,11 +613,10 @@ AC_CONFIG_FILES([
 	utils/sc_ttlexp/Makefile
 ])
 
-if test "x$with_sc_uptime" != xno; then
-   AC_CONFIG_FILES([
-   utils/sc_uptime/Makefile
-   ])
-fi
+AM_COND_IF([WITH_SC_UPTIME],
+	[AC_CONFIG_FILES([
+	utils/sc_uptime/Makefile
+	])])
 
 AC_CONFIG_FILES([
 	utils/sc_warts2csv/Makefile

@@ -8,7 +8,7 @@
  * Copyright (C) 2015-2023 Matthew Luckie
  * Author: Matthew Luckie
  *
- * $Id: scamper_trace_warts.c,v 1.35 2023/05/29 21:22:27 mjl Exp $
+ * $Id: scamper_trace_warts.c,v 1.35.4.1 2023/08/08 00:59:03 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -1051,6 +1051,7 @@ static void warts_trace_pmtud_free(warts_trace_pmtud_t *state)
   if(state == NULL)
     return;
   if(state->hops != NULL) free(state->hops);
+  if(state->notes != NULL) free(state->notes);
   free(state);
   return;
 }

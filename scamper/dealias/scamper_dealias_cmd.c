@@ -1,7 +1,7 @@
 /*
  * scamper_dealias_cmd.c
  *
- * $Id: scamper_dealias_cmd.c,v 1.1 2023/06/04 05:55:33 mjl Exp $
+ * $Id: scamper_dealias_cmd.c,v 1.1.4.1 2023/08/07 22:48:51 mjl Exp $
  *
  * Copyright (C) 2008-2011 The University of Waikato
  * Copyright (C) 2012-2013 Matthew Luckie
@@ -782,9 +782,9 @@ static int dealias_alloc_prefixscan(scamper_dealias_t *d, dealias_options_t *o)
   int af;
 
   /* check the sanity of various parameters */
-  if(slist_count(o->probedefs) != 1 || o->addr == NULL || o->dport != 0 ||
-     o->sport != 0 || o->ttl != 0 || o->shuffle != 0 ||
-     (o->inseq != 0 && o->fudge != 0))
+  if(o->probedefs == NULL || slist_count(o->probedefs) != 1 ||
+     o->addr == NULL || o->dport != 0 || o->sport != 0 || o->ttl != 0 ||
+     o->shuffle != 0 || (o->inseq != 0 && o->fudge != 0))
     {
       scamper_debug(__func__, "invalid parameters for prefixscan");
       goto err;
@@ -917,9 +917,10 @@ static int dealias_alloc_bump(scamper_dealias_t *d, dealias_options_t *o)
 
   memset(&pd, 0, sizeof(pd));
 
-  if(slist_count(o->probedefs) != 2 || o->xs != NULL || o->dport != 0 ||
-     o->sport != 0 || o->ttl != 0 || o->replyc != 0 || o->shuffle != 0 ||
-     o->addr != NULL || (o->inseq != 0 && o->fudge != 0))
+  if(o->probedefs == NULL || slist_count(o->probedefs) != 2 ||
+     o->xs != NULL || o->dport != 0 || o->sport != 0 || o->ttl != 0 ||
+     o->replyc != 0 || o->shuffle != 0 || o->addr != NULL ||
+     (o->inseq != 0 && o->fudge != 0))
     {
       scamper_debug(__func__, "invalid parameters for bump");
       goto err;
@@ -1132,7 +1133,7 @@ void *scamper_do_dealias_alloc(char *str)
 
  err:
   if(opts_out != NULL) scamper_options_free(opts_out);
-  if(o.probedefs != NULL) free(o.probedefs);
+  if(o.probedefs != NULL) slist_free(o.probedefs);
   if(dealias != NULL) scamper_dealias_free(dealias);
   return NULL;
 }

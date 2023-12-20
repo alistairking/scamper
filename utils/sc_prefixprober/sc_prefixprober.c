@@ -2,7 +2,7 @@
  * sc_prefixprober : scamper driver to probe addresses in specified
  *                   prefixes
  *
- * $Id: sc_prefixprober.c,v 1.31 2023/06/11 07:33:54 mjl Exp $
+ * $Id: sc_prefixprober.c,v 1.31.2.1 2023/08/07 22:02:54 mjl Exp $
  *
  * Copyright (C) 2023 The Regents of the University of California
  * Author: Matthew Luckie
@@ -149,6 +149,15 @@ static void usage(uint32_t opt_mask)
       fprintf(stderr, "        first: probe first address in prefix\n");
       fprintf(stderr, "        random: probe random address in prefix\n");
       fprintf(stderr, "        noshuffle: do not shuffle probe order\n");
+#ifdef HAVE_ZLIB
+      fprintf(stderr, "        warts.gz: compress warts output using gzip compression\n");
+#endif
+#ifdef HAVE_LIBBZ2
+      fprintf(stderr, "        warts.bz2: compress warts output using bzip2 compression\n");
+#endif
+#ifdef HAVE_LIBLZMA
+      fprintf(stderr, "        warts.xz: compress warts output using xz compression\n");
+#endif
     }
 
   if(opt_mask & OPT_PORT)
@@ -242,7 +251,7 @@ static int check_options(int argc, char *argv[])
 {
   char *opts = "a:c:d:Dl:L:m:o:O:p:R:t:U:x:?";
   char *opt_port = NULL, *opt_cmd = NULL, *opt_duration = NULL;
-  char *opt_limit = NULL, *opt, *dup = NULL, *param;
+  char *opt_limit = NULL, *opt, *dup = NULL, *opt_outtype = NULL, *param;
   struct stat sb;
   slist_t *list = NULL;
   int ch, rc = -1;
@@ -302,6 +311,15 @@ static int check_options(int argc, char *argv[])
 	    flags |= FLAG_RANDOM;
 	  else if(strcasecmp(optarg, "noshuffle") == 0)
 	    flags |= FLAG_NOSHUFFLE;
+	  else if(strcasecmp(optarg, "gz") == 0 ||
+		  strcasecmp(optarg, "warts.gz") == 0)
+	    opt_outtype = "warts.gz";
+	  else if(strcasecmp(optarg, "bz2") == 0 ||
+		  strcasecmp(optarg, "warts.bz2") == 0)
+	    opt_outtype = "warts.bz2";
+	  else if(strcasecmp(optarg, "xz") == 0 ||
+		  strcasecmp(optarg, "warts.xz") == 0)
+	    opt_outtype = "warts.xz";
 	  else {
 	    usage(OPT_OPTIONS);
 	    return -1;
@@ -347,7 +365,8 @@ static int check_options(int argc, char *argv[])
       goto done;
     }
 
-  if(string_endswith(outfile_name, ".gz") != 0)
+  if((opt_outtype != NULL && strcmp(opt_outtype, "warts.gz") == 0) ||
+     string_endswith(outfile_name, ".gz") != 0)
     {
 #ifdef HAVE_ZLIB
       outfile_type = "warts.gz";
@@ -358,7 +377,8 @@ static int check_options(int argc, char *argv[])
       goto done;
 #endif
     }
-  else if(string_endswith(outfile_name, ".bz2") != 0)
+  else if((opt_outtype != NULL && strcmp(opt_outtype, "warts.bz2") == 0) ||
+	  string_endswith(outfile_name, ".bz2") != 0)
     {
 #ifdef HAVE_LIBBZ2
       outfile_type = "warts.bz2";
@@ -369,7 +389,8 @@ static int check_options(int argc, char *argv[])
       goto done;
 #endif
     }
-  else if(string_endswith(outfile_name, ".xz") != 0)
+  else if((opt_outtype != NULL && strcmp(opt_outtype, "warts.xz") == 0) ||
+	  string_endswith(outfile_name, ".xz") != 0)
     {
 #ifdef HAVE_LIBLZMA
       outfile_type = "warts.xz";
@@ -1334,7 +1355,7 @@ static int do_method(void)
 {
   char cmd[512], buf[192];
   size_t off = 0;
-  scamper_addr_t *sa = NULL;
+  scamper_addr_t *sa;
   sc_prefix_t *prefix;
 
   if(more < 1)
@@ -1360,6 +1381,7 @@ static int do_method(void)
 
   sa = slist_head_pop(prefix->addrs);
   scamper_addr_tostr(sa, buf, sizeof(buf));
+  scamper_addr_free(sa);
 
   string_concat(cmd, sizeof(cmd), &off, "%s %s", scamper_cmd, buf);
   if(scamper_inst_do(scamper_inst, cmd, prefix) == NULL)

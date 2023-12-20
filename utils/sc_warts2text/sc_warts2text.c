@@ -1,7 +1,7 @@
 /*
  * warts2traceroute
  *
- * $Id: sc_warts2text.c,v 1.33 2023/05/29 00:02:24 mjl Exp $
+ * $Id: sc_warts2text.c,v 1.33.4.1 2023/08/08 00:52:26 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -261,13 +261,13 @@ int main(int argc, char *argv[])
     SCAMPER_FILE_OBJ_TBIT,
     SCAMPER_FILE_OBJ_STING,
   };
-  scamper_file_t *in, *out;
-  scamper_file_filter_t *filter;
+  scamper_file_t *in = NULL, *out = NULL;
+  scamper_file_filter_t *filter = NULL;
   scamper_addr_t *addr;
   uint16_t type;
   void *data;
   char *descr;
-  int i;
+  int rc = -1, i;
 
   if(check_options(argc, argv) != 0)
     {
@@ -284,7 +284,7 @@ int main(int argc, char *argv[])
   if(filter == NULL)
     {
       fprintf(stderr, "could not allocate filter\n");
-      return -1;
+      goto done;
     }
 
   for(i=0; i<=filec; i++)
@@ -294,7 +294,7 @@ int main(int argc, char *argv[])
 	  if((in = scamper_file_openfd(STDIN_FILENO,"-",'r',"warts")) == NULL)
 	    {
 	      fprintf(stderr, "could not use stdin\n");
-	      return -1;
+	      goto done;
 	    }
 	}
       else if(i < filec)
@@ -303,7 +303,7 @@ int main(int argc, char *argv[])
 	    {
 	      fprintf(stderr, "could not open %s: %s\n",
 		      files[i], strerror(errno));
-	      return -1;
+	      goto done;
 	    }
 	}
       else break;
@@ -326,9 +326,14 @@ int main(int argc, char *argv[])
 	  funcs[type].datafree(data);
 	}
 
-      scamper_file_close(in);
+      scamper_file_close(in); in = NULL;
     }
 
-  scamper_file_close(out);
-  return 0;
+  rc = 0;
+
+ done:
+  if(in != NULL) scamper_file_close(in);
+  if(out != NULL) scamper_file_close(out);
+  if(filter != NULL) scamper_file_filter_free(filter);
+  return rc;
 }

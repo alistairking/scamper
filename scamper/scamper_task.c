@@ -1,7 +1,7 @@
 /*
  * scamper_task.c
  *
- * $Id: scamper_task.c,v 1.76 2023/05/29 21:22:26 mjl Exp $
+ * $Id: scamper_task.c,v 1.76.4.1 2023/08/07 22:33:54 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -163,7 +163,7 @@ static int host_cmp(const s2t_t *a, const s2t_t *b)
     return -1;
   if(a->sig->sig_host_type > b->sig->sig_host_type)
     return 1;
-  return 0;
+  return scamper_addr_cmp(a->sig->sig_host_dst, b->sig->sig_host_dst);
 }
 
 static void trie_s2t_free(trie_s2t_t *ts2t)
@@ -499,6 +499,7 @@ void scamper_task_sig_free(scamper_task_sig_t *sig)
 
     case SCAMPER_TASK_SIG_TYPE_HOST:
       if(sig->sig_host_name != NULL) free(sig->sig_host_name);
+      if(sig->sig_host_dst != NULL) scamper_addr_free(sig->sig_host_dst);
       break;
     }
 
@@ -623,8 +624,16 @@ scamper_task_t *scamper_task_find(scamper_task_sig_t *sig)
       else
 	s2t = patricia_find(tx_nd6, &s2t_fm);
     }
+  else if(sig->sig_type == SCAMPER_TASK_SIG_TYPE_HOST)
+    {
+      s2t_fm.sig = sig;
+      s2t = splaytree_find(host, &s2t_fm);
+    }
   else
-    return NULL;
+    {
+      assert(sig->sig_type == SCAMPER_TASK_SIG_TYPE_SNIFF);
+      return NULL;
+    }
 
   if(s2t != NULL)
     return s2t->task;

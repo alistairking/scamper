@@ -1,4 +1,4 @@
-# $Id: Makefile.am,v 1.56 2023/06/05 00:42:01 mjl Exp $
+# $Id: Makefile.am,v 1.56.4.4 2023/08/08 06:17:13 mjl Exp $
 
 AUTOMAKE_OPTIONS = subdir-objects
 
@@ -8,7 +8,7 @@ bin_PROGRAMS = scamper
 
 lib_LTLIBRARIES = libscamperfile.la
 
-libscamperfile_la_LDFLAGS = -version-info 6:0:0
+libscamperfile_la_LDFLAGS = -version-info 7:0:1 -no-undefined
 
 libscamperfile_la_LIBADD = @ZLIB_LIBS@ @LIBBZ2_LIBS@ @LIBLZMA_LIBS@
 
@@ -113,7 +113,6 @@ scamper_SOURCES = \
 	scamper_source_cmdline.c \
 	scamper_source_control.c \
 	scamper_source_file.c \
-	scamper_source_tsps.c \
 	trace/scamper_trace.c \
 	trace/scamper_trace_warts.c \
 	trace/scamper_trace_text.c \

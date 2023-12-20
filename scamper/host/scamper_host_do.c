@@ -1,7 +1,7 @@
 /*
  * scamper_host_do
  *
- * $Id: scamper_host_do.c,v 1.55 2023/06/04 04:41:53 mjl Exp $
+ * $Id: scamper_host_do.c,v 1.55.4.1 2023/08/07 22:32:15 mjl Exp $
  *
  * Copyright (C) 2018-2023 Matthew Luckie
  *
@@ -735,6 +735,10 @@ static void do_host_probe(scamper_task_t *task)
   size_t off;
   int fd;
 
+#ifdef HAVE_SCAMPER_DEBUG
+  char buf[128], qtype[16];
+#endif
+
   if(state == NULL && (state = host_state_alloc(task)) == NULL)
     goto err;
 
@@ -745,7 +749,9 @@ static void do_host_probe(scamper_task_t *task)
       gettimeofday_wrap(&host->start);
     }
 
-  scamper_debug(__func__, "%s", state->qname);
+  scamper_debug(__func__, "%s %s %s", state->qname,
+		scamper_host_qtype_tostr(host->qtype, qtype, sizeof(qtype)),
+		scamper_addr_tostr(host->dst, buf, sizeof(buf)));
 
   /* when to close the DNS fd */
   gettimeofday_wrap(&tv); tv.tv_sec += 10;
@@ -915,6 +921,7 @@ scamper_task_t *scamper_do_host_alloctask(void *data, scamper_list_t *list,
     goto err;
   sig->sig_host_type = host->qtype;
   sig->sig_host_name = strdup(host->qname);
+  sig->sig_host_dst  = scamper_addr_use(host->dst);
   if((host->src = scamper_getsrc(host->dst, 0)) == NULL)
     goto err;
   if(scamper_task_sig_add(task, sig) != 0)
@@ -994,16 +1001,6 @@ static scamper_host_do_t *scamper_do_host_do_host(const char *qname,
   scamper_host_t *host = NULL;
   scamper_task_t *task = NULL;
 
-  if(default_ns == NULL)
-    {
-      etc_resolv();
-      if(default_ns == NULL)
-	{
-	  scamper_debug(__func__, "no nameserver available");
-	  goto err;
-	}
-    }
-
   if((host = scamper_host_alloc()) == NULL ||
      (host->qname = strdup(qname)) == NULL)
     {
@@ -1063,10 +1060,21 @@ scamper_host_do_t *scamper_do_host_do_a(const char *qname, void *param,
   scamper_host_do_t *hostdo;
   scamper_task_t *task;
 
+  if(default_ns == NULL)
+    {
+      etc_resolv();
+      if(default_ns == NULL)
+	{
+	  scamper_debug(__func__, "no nameserver available");
+	  return NULL;
+	}
+    }
+
   memset(&sig, 0, sizeof(sig));
   sig.sig_type = SCAMPER_TASK_SIG_TYPE_HOST;
   sig.sig_host_type = SCAMPER_HOST_TYPE_A;
   sig.sig_host_name = (char *)qname;
+  sig.sig_host_dst  = default_ns;
 
   /* piggy back on existing host task if there is one */
   if((task = scamper_task_find(&sig)) != NULL)
@@ -1098,12 +1106,23 @@ scamper_host_do_t *scamper_do_host_do_ptr(scamper_addr_t *ip, void *param,
   scamper_task_t *task;
   char qname[128];
 
+  if(default_ns == NULL)
+    {
+      etc_resolv();
+      if(default_ns == NULL)
+	{
+	  scamper_debug(__func__, "no nameserver available");
+	  return NULL;
+	}
+    }
+
   scamper_addr_tostr(ip, qname, sizeof(qname));
 
   memset(&sig, 0, sizeof(sig));
   sig.sig_type = SCAMPER_TASK_SIG_TYPE_HOST;
   sig.sig_host_type = SCAMPER_HOST_TYPE_PTR;
   sig.sig_host_name = qname;
+  sig.sig_host_dst  = default_ns;
 
   /* piggy back on existing host task if there is one */
   if((task = scamper_task_find(&sig)) != NULL)
