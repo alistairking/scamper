@@ -378,7 +378,7 @@ static int trace_gss_add(scamper_trace_dtree_t *dtree, scamper_addr_t *addr)
  * assemble a trace.  return the trace structure so that it is all ready to
  * go.
  */
-void *scamper_do_trace_alloc(char *str)
+void *scamper_do_trace_alloc(char *str, uint32_t *id)
 {
   /* default values of various trace parameters */
 #ifndef _WIN32 /* use ICMP echo paris traceroute on windows by default */
@@ -632,7 +632,7 @@ void *scamper_do_trace_alloc(char *str)
   trace->confidence  = confidence;
   trace->wait_probe  = wait_probe;
   trace->offset      = offset;
-  trace->userid      = userid;
+  trace->userid      = *id = userid;
 
   /* to start with, we are this far into the path */
   trace->hop_count = firsthop - 1;
@@ -743,4 +743,3 @@ void *scamper_do_trace_alloc(char *str)
   if(opts_out != NULL) scamper_options_free(opts_out);
   return NULL;
 }
-

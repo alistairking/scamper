@@ -103,7 +103,7 @@ int scamper_do_neighbourdisc_arg_validate(int argc, char *argv[], int *stop)
 				  nd_arg_param_validate);
 }
 
-void *scamper_do_neighbourdisc_alloc(char *str)
+void *scamper_do_neighbourdisc_alloc(char *str, uint32_t *id)
 {
   scamper_neighbourdisc_t *nd = NULL;
   scamper_option_out_t *opts_out = NULL, *opt;

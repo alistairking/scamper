@@ -980,7 +980,7 @@ static int dealias_alloc_bump(scamper_dealias_t *d, dealias_options_t *o)
  * assemble a dealias.  return the dealias structure so that it is all ready
  * to go.
  */
-void *scamper_do_dealias_alloc(char *str)
+void *scamper_do_dealias_alloc(char *str, uint32_t *id)
 {
   static int (*const alloc_func[])(scamper_dealias_t *, dealias_options_t *) = {
     dealias_alloc_mercator,
@@ -1118,7 +1118,7 @@ void *scamper_do_dealias_alloc(char *str)
       goto err;
     }
   dealias->method = method;
-  dealias->userid = userid;
+  dealias->userid = *id = userid;
 
   assert(method >= 1 && method <= 5);
   if(alloc_func[method-1](dealias, &o) != 0)

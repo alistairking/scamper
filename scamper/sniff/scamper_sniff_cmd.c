@@ -76,7 +76,7 @@ int scamper_do_sniff_arg_validate(int argc, char *argv[], int *stop)
 				  sniff_arg_param_validate);
 }
 
-void *scamper_do_sniff_alloc(char *str)
+void *scamper_do_sniff_alloc(char *str, uint32_t *id)
 {
   scamper_option_out_t *opts_out = NULL, *opt;
   scamper_sniff_t *sniff = NULL;
@@ -152,7 +152,7 @@ void *scamper_do_sniff_alloc(char *str)
 
   sniff->limit_pktc = limit_pktc;
   sniff->limit_time = limit_time;
-  sniff->userid     = userid;
+  sniff->userid     = *id = userid;
   sniff->icmpid     = (uint16_t)icmpid;
 
   return sniff;

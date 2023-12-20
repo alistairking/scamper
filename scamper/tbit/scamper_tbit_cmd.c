@@ -508,7 +508,7 @@ static int tbit_alloc_null(scamper_tbit_t *tbit, tbit_options_t *o)
  * Given a string representing a tbit task, parse the parameters and assemble
  * a tbit. Return the tbit structure so that it is all ready to go.
  */
-void *scamper_do_tbit_alloc(char *str)
+void *scamper_do_tbit_alloc(char *str, uint32_t *id)
 {
   static int (* const type_func[])(scamper_tbit_t *, tbit_options_t *) = {
     NULL,
@@ -678,7 +678,7 @@ void *scamper_do_tbit_alloc(char *str)
       goto err;
     }
   tbit->type       = type;
-  tbit->userid     = userid;
+  tbit->userid     = *id = userid;
   tbit->wscale     = wscale;
   tbit->ttl        = ttl;
   tbit->client_mss = o.mss;
