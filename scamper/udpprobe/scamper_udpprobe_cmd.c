@@ -118,7 +118,7 @@ int scamper_do_udpprobe_arg_validate(int argc, char *argv[], int *stop)
 				  udpprobe_arg_param_validate);
 }
 
-void *scamper_do_udpprobe_alloc(char *str)
+void *scamper_do_udpprobe_alloc(char *str, uint32_t *id)
 {
   scamper_option_out_t *opts_out = NULL, *opt;
   scamper_udpprobe_t *up = NULL;
@@ -194,7 +194,7 @@ void *scamper_do_udpprobe_alloc(char *str)
 	  break;
 
 	case UDPPROBE_OPT_USERID:
-	  userid = (uint32_t)tmp;
+	  userid = *id = (uint32_t)tmp;
 	  break;
 
 	case UDPPROBE_OPT_TIMEOUT:

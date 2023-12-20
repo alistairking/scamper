@@ -121,7 +121,7 @@ int scamper_do_host_arg_validate(int argc, char *argv[], int *stop)
 				  host_arg_param_validate);
 }
 
-void *scamper_do_host_alloc(char *str)
+void *scamper_do_host_alloc(char *str, uint32_t *id)
 {
   scamper_host_t *host = NULL;
   scamper_option_out_t *opts_out = NULL, *opt;
@@ -236,7 +236,7 @@ void *scamper_do_host_alloc(char *str)
      (host->qname = strdup(name)) == NULL)
     goto err;
 
-  host->userid  = userid;
+  host->userid  = *id = userid;
   host->flags  |= flags;
   host->retries = retries;
   host->qtype   = qtype;
