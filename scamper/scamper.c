@@ -1,7 +1,7 @@
 /*
  * scamper
  *
- * $Id: scamper.c,v 1.310 2023/06/13 22:36:24 mjl Exp $
+ * $Id: scamper.c,v 1.310.2.11 2023/10/05 06:01:02 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -44,7 +44,6 @@
 #include "scamper_sources.h"
 #include "scamper_source_cmdline.h"
 #include "scamper_source_file.h"
-#include "scamper_source_tsps.h"
 #include "scamper_queue.h"
 #include "scamper_getsrc.h"
 #include "scamper_addr2mac.h"
@@ -60,24 +59,40 @@
 #include "scamper_privsep.h"
 #include "scamper_control.h"
 #include "scamper_osinfo.h"
+#ifndef DISABLE_SCAMPER_TRACE
 #include "trace/scamper_trace_cmd.h"
 #include "trace/scamper_trace_do.h"
+#endif
+#ifndef DISABLE_SCAMPER_PING
 #include "ping/scamper_ping_cmd.h"
 #include "ping/scamper_ping_do.h"
+#endif
+#ifndef DISABLE_SCAMPER_TRACELB
 #include "tracelb/scamper_tracelb_cmd.h"
 #include "tracelb/scamper_tracelb_do.h"
+#endif
+#ifndef DISABLE_SCAMPER_DEALIAS
 #include "dealias/scamper_dealias_cmd.h"
 #include "dealias/scamper_dealias_do.h"
-#include "sting/scamper_sting_cmd.h"
-#include "sting/scamper_sting_do.h"
+#endif
 #include "neighbourdisc/scamper_neighbourdisc_cmd.h"
 #include "neighbourdisc/scamper_neighbourdisc_do.h"
+#ifndef DISABLE_SCAMPER_TBIT
 #include "tbit/scamper_tbit_cmd.h"
 #include "tbit/scamper_tbit_do.h"
+#endif
+#ifndef DISABLE_SCAMPER_STING
+#include "sting/scamper_sting_cmd.h"
+#include "sting/scamper_sting_do.h"
+#endif
+#ifndef DISABLE_SCAMPER_SNIFF
 #include "sniff/scamper_sniff_cmd.h"
 #include "sniff/scamper_sniff_do.h"
+#endif
+#ifndef DISABLE_SCAMPER_HOST
 #include "host/scamper_host_cmd.h"
 #include "host/scamper_host_do.h"
+#endif
 
 #include "utils.h"
 
@@ -172,7 +187,7 @@ static char  *pidfile      = NULL;
 static char  *debugfile    = NULL;
 #endif
 
-#ifndef _WIN32
+#ifdef HAVE_SETEUID
 static uid_t  uid;
 static uid_t  euid;
 #endif
@@ -188,9 +203,13 @@ static int    wait_between   = 1000000 / SCAMPER_OPTION_PPS_DEF;
 static int    probe_window   = 250000;
 static int    exit_when_done = 1;
 
-#ifndef WITHOUT_PRIVSEP
+#if !defined(DISABLE_PRIVSEP) || defined(HAVE_SIGACTION)
+#define HAVE_EXIT_NOW
+static int    exit_now = 0;
+#endif
+
+#ifndef DISABLE_PRIVSEP
 static scamper_fd_t *privsep_fdn = NULL;
-static int           exit_now = 0;
 #endif
 
 /* central cache of addresses that scamper is dealing with */
@@ -241,7 +260,7 @@ static void usage(uint32_t opt_mask)
     "               [-d debugfile]\n"
 #endif
     "               [-i IPs | -I cmds | -f file | -P [ip:]port | -R name:port"
-#if defined(AF_UNIX) && !defined(_WIN32)
+#ifdef HAVE_SOCKADDR_UN
     " |\n                -U unix]\n");
 #else
     "]\n");
@@ -315,7 +334,6 @@ static void usage(uint32_t opt_mask)
 #ifdef HAVE_LIBLZMA
       usage_line("warts.xz: output results in xz warts format");
 #endif
-      usage_line("tsps: input file for ping -T tsprespec=%s");
       usage_line("cmdfile: input file specifies whole commands");
       usage_line("json: output results in json format, better to use warts");
       usage_line("planetlab: necessary to use safe raw sockets on planetlab");
@@ -332,7 +350,7 @@ static void usage(uint32_t opt_mask)
       usage_line("client-certfile=file: use cert in file for remote auth");
       usage_line("client-privfile=file: use privkey in file for remote auth");
 #endif
-#ifndef _WIN32
+#ifndef _WIN32 /* windows only has select, so not using it is not an option */
       usage_line("select: use select(2)");
 #endif
 #ifdef HAVE_KQUEUE
@@ -496,24 +514,40 @@ static int ppswindow_set(int p, int w)
 static int check_options(int argc, char *argv[])
 {
   static const scamper_multicall_t multicall[] = {
+#ifndef DISABLE_SCAMPER_TRACE
     {"scamper-trace",   "trace",
      scamper_do_trace_arg_validate, scamper_do_trace_usage},
+#endif
+#ifndef DISABLE_SCAMPER_PING
     {"scamper-ping",    "ping",
      scamper_do_ping_arg_validate, scamper_do_ping_usage},
+#endif
+#ifndef DISABLE_SCAMPER_TRACELB
     {"scamper-tracelb", "tracelb",
      scamper_do_tracelb_arg_validate, scamper_do_tracelb_usage},
+#endif
+#ifndef DISABLE_SCAMPER_DEALIAS
     {"scamper-dealias", "dealias",
      scamper_do_dealias_arg_validate, scamper_do_dealias_usage},
-    {"scamper-sting",   "sting",
-     scamper_do_sting_arg_validate, scamper_do_sting_usage},
+#endif
     {"scamper-neighbourdisc", "neighbourdisc",
      scamper_do_neighbourdisc_arg_validate, scamper_do_neighbourdisc_usage},
+#ifndef DISABLE_SCAMPER_TBIT
     {"scamper-tbit", "tbit",
      scamper_do_tbit_arg_validate, scamper_do_tbit_usage},
+#endif
+#ifndef DISABLE_SCAMPER_STING
+    {"scamper-sting",   "sting",
+     scamper_do_sting_arg_validate, scamper_do_sting_usage},
+#endif
+#ifndef DISABLE_SCAMPER_SNIFF
     {"scamper-sniff", "sniff",
      scamper_do_sniff_arg_validate, scamper_do_sniff_usage},
+#endif
+#ifndef DISABLE_SCAMPER_HOST
     {"scamper-host", "host",
      scamper_do_host_arg_validate, scamper_do_host_usage},
+#endif
   };
   int   i;
   long  lo_w = window, lo_p = pps;
@@ -547,10 +581,10 @@ static int check_options(int argc, char *argv[])
 #ifndef WITHOUT_DEBUGFILE
   string_concat(opts, sizeof(opts), &off, "d:");
 #endif
-#if HAVE_DAEMON
+#ifdef HAVE_DAEMON
   string_concat(opts, sizeof(opts), &off, "D");
 #endif
-#if defined(AF_UNIX)
+#ifdef HAVE_SOCKADDR_UN
   string_concat(opts, sizeof(opts), &off, "U:");
 #endif
 
@@ -647,8 +681,6 @@ static int check_options(int argc, char *argv[])
 	  else if(strcasecmp(optarg, "warts.xz") == 0)
 	    outtype = optarg;
 #endif
-	  else if(strcasecmp(optarg, "tsps") == 0)
-	    intype = optarg;
 	  else if(strcasecmp(optarg, "cmdfile") == 0)
 	    intype = optarg;
 	  else if(strcasecmp(optarg, "planetlab") == 0)
@@ -668,7 +700,7 @@ static int check_options(int argc, char *argv[])
 	    flags |= FLAG_NOTLS_REMOTE;
 	  else if(strcasecmp(optarg, "notls") == 0)
 	    flags |= FLAG_NOTLS;
-#ifndef _WIN32
+#ifndef _WIN32 /* windows only has select, so not using it is not an option */
 	  else if(strcasecmp(optarg, "select") == 0)
 	    flags |= FLAG_SELECT;
 #endif
@@ -1198,7 +1230,7 @@ int scamper_option_daemon(void)
   return 0;
 }
 
-#ifndef _WIN32
+#ifdef HAVE_SETEUID
 uid_t scamper_getuid(void)
 {
   return uid;
@@ -1222,22 +1254,19 @@ int scamper_pidfile(void)
   int fd_flags = O_WRONLY | O_TRUNC | O_CREAT;
   int fd = -1;
   char buf[32];
-  mode_t mode;
   size_t len;
 
-#ifndef _WIN32
+#ifndef _WIN32 /* windows does not have getpid */
   pid_t pid = getpid();
-  mode = S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH;
 #else
   DWORD pid = GetCurrentProcessId();
-  mode = _S_IREAD | _S_IWRITE;
 #endif
 
   /* do not need to do anything if user did not request a pidfile */
   if((options & OPT_PIDFILE) == 0)
     return 0;
 
-#if !defined(_WIN32) && !defined(WITHOUT_PRIVSEP)
+#if defined(HAVE_SETEUID) && !defined(DISABLE_PRIVSEP)
   if(seteuid(uid) != 0)
     {
       printerror(__func__, "could not claim uid");
@@ -1245,9 +1274,9 @@ int scamper_pidfile(void)
     }
 #endif
 
-  fd = open(pidfile, fd_flags, mode);
+  fd = open(pidfile, fd_flags, MODE_644);
 
-#if !defined(_WIN32) && !defined(WITHOUT_PRIVSEP)
+#if defined(HAVE_SETEUID) && !defined(DISABLE_PRIVSEP)
   if(seteuid(euid) != 0)
     {
       printerror(__func__, "could not return to euid");
@@ -1277,11 +1306,20 @@ int scamper_pidfile(void)
   return -1;
 }
 
-#ifndef WITHOUT_PRIVSEP
+#ifndef DISABLE_PRIVSEP
 static void privsep_read(const int fd, void *param)
 {
   scamper_debug(__func__, "exit now");
   exit_now = 1;
+  return;
+}
+#endif
+
+#ifdef HAVE_SIGACTION
+static void scamper_sigaction(int sig)
+{
+  if(sig == SIGINT || sig == SIGTERM)
+    exit_now = 1;
   return;
 }
 #endif
@@ -1312,7 +1350,7 @@ static int scamper_timeout(struct timeval *timeout, struct timeval *nextprobe,
   struct timeval tv;
   int probe = 0;
 
-#ifndef WITHOUT_PRIVSEP
+#ifdef HAVE_EXIT_NOW
   if(exit_now != 0)
     {
       return 2;
@@ -1370,6 +1408,157 @@ static int scamper_timeout(struct timeval *timeout, struct timeval *nextprobe,
 }
 
 /*
+ * cleanup:
+ *
+ * be nice to the system and clean up all our mallocs
+ */
+static void cleanup(void)
+{
+  scamper_firewall_cleanup();
+  scamper_getsrc_cleanup();
+  scamper_rtsock_cleanup();
+
+  scamper_icmp4_cleanup();
+  scamper_icmp6_cleanup();
+  scamper_udp4_cleanup();
+  scamper_tcp4_cleanup();
+
+  scamper_addr2mac_cleanup();
+
+#ifndef DISABLE_SCAMPER_TRACE
+  scamper_do_trace_cleanup();
+#endif
+#ifndef DISABLE_SCAMPER_PING
+  scamper_do_ping_cleanup();
+#endif
+#ifndef DISABLE_SCAMPER_TRACELB
+  scamper_do_tracelb_cleanup();
+#endif
+#ifndef DISABLE_SCAMPER_DEALIAS
+  scamper_do_dealias_cleanup();
+#endif
+  scamper_do_neighbourdisc_cleanup();
+#ifndef DISABLE_SCAMPER_TBIT
+  scamper_do_tbit_cleanup();
+#endif
+#ifndef DISABLE_SCAMPER_STING
+  scamper_do_sting_cleanup();
+#endif
+#ifndef DISABLE_SCAMPER_SNIFF
+  scamper_do_sniff_cleanup();
+#endif
+#ifndef DISABLE_SCAMPER_HOST
+  scamper_do_host_cleanup();
+#endif
+
+  scamper_dl_cleanup();
+
+  if(options & (OPT_CTRL_INET|OPT_CTRL_UNIX|OPT_CTRL_REMOTE))
+    scamper_control_cleanup();
+
+  scamper_sources_cleanup();
+  scamper_outfiles_cleanup();
+
+#ifndef DISABLE_PRIVSEP
+  if(privsep_fdn != NULL)
+    {
+      scamper_fd_free(privsep_fdn);
+      privsep_fdn = NULL;
+    }
+#endif
+
+  scamper_fds_cleanup();
+
+#ifndef DISABLE_PRIVSEP
+  scamper_privsep_cleanup();
+#endif
+
+  /* free the address cache, if one was used */
+  if(addrcache != NULL)
+    {
+      scamper_addrcache_free(addrcache);
+      addrcache = NULL;
+    }
+
+  if(ctrl_inet_addr != NULL)
+    {
+      free(ctrl_inet_addr);
+      ctrl_inet_addr = NULL;
+    }
+
+  if(ctrl_rem_name != NULL)
+    {
+      free(ctrl_rem_name);
+      ctrl_rem_name = NULL;
+    }
+
+  if(monitorname != NULL)
+    {
+      free(monitorname);
+      monitorname = NULL;
+    }
+
+  if(nameserver != NULL)
+    {
+      free(nameserver);
+      nameserver = NULL;
+    }
+
+  if(firewall != NULL)
+    {
+      free(firewall);
+      firewall = NULL;
+    }
+
+  if(command != NULL)
+    {
+      free(command);
+      command = NULL;
+    }
+  scamper_queue_cleanup();
+  scamper_task_cleanup();
+  scamper_probe_cleanup();
+
+#ifndef WITHOUT_DEBUGFILE
+  if(options & OPT_DEBUGFILE)
+    scamper_debug_close();
+#endif
+
+  scamper_osinfo_cleanup();
+
+#ifndef WITHOUT_DEBUGFILE
+  if(debugfile != NULL)
+    {
+      free(debugfile);
+      debugfile = NULL;
+    }
+#endif
+
+  if(pidfile != NULL)
+    {
+      free(pidfile);
+      pidfile = NULL;
+    }
+
+#ifdef HAVE_OPENSSL
+  if(remote_tls_ctx != NULL)
+    {
+      SSL_CTX_free(remote_tls_ctx);
+      remote_tls_ctx = NULL;
+    }
+#endif
+
+#ifdef HAVE_TIMEBEGINPERIOD
+  timeEndPeriod(1);
+#endif
+#ifdef HAVE_WSASTARTUP
+  WSACleanup();
+#endif
+
+  return;
+}
+
+/*
  * scamper:
  *
  * this bit of code contains most of the logic for driving the parallel
@@ -1387,22 +1576,91 @@ static int scamper(int argc, char *argv[])
   scamper_task_t          *task;
   scamper_outfile_t       *sof, *sof2;
   scamper_file_t          *file;
-  int                      x;
+  int                      x, rc = -1;
 
-#ifndef WITHOUT_PRIVSEP
+#ifndef DISABLE_PRIVSEP
   int                      privsep_fd;
 #endif
 
-  if(check_options(argc, argv) == -1)
+#ifdef HAVE_SIGACTION
+  struct sigaction si_sa;
+#endif
+
+#ifdef HAVE_WSASTARTUP
+  WSADATA wsaData;
+#endif
+
+#ifdef HAVE_SETEUID
+  uid = getuid();
+  euid = geteuid();
+  if(uid != euid && seteuid(uid) != 0)
+    exit(-1);
+#endif
+
+  /*
+   * if we are using dmalloc, then we want to get it to register its
+   * logdump function to occur after we have used cleanup to free up
+   * scamper's core data structures.  this is a dirty hack.
+   *
+   * if we are running a debug build on freebsd, make poor malloc use more
+   * prone to causing scamper to crash.
+   */
+#if defined(DMALLOC)
+  free(malloc(1));
+#endif
+
+#ifdef HAVE_WSASTARTUP
+  WSAStartup(MAKEWORD(2,2), &wsaData);
+#endif
+#ifdef HAVE_TIMEBEGINPERIOD
+  timeBeginPeriod(1);
+#endif
+
+  /* ignore SIGPIPE and SIGCHLD */
+#if defined(HAVE_SIGNAL) && defined(SIGPIPE)
+  if(signal(SIGPIPE, SIG_IGN) == SIG_ERR)
     {
-      return -1;
+      printerror(__func__, "could not ignore SIGPIPE");
+      goto done;
     }
+#endif
+#if defined(HAVE_SIGNAL) && defined(SIGCHLD)
+  if(signal(SIGCHLD, SIG_IGN) == SIG_ERR)
+    {
+      printerror(__func__, "could not ignore SIGCHLD");
+      goto done;
+    }
+#endif
+
+  /* set handlers for SIGINT and SIGTERM so that scamper can exit cleanly */
+#if defined(HAVE_SIGACTION)
+  sigemptyset(&si_sa.sa_mask);
+  si_sa.sa_flags   = 0;
+  si_sa.sa_handler = scamper_sigaction;
+  if(sigaction(SIGINT, &si_sa, 0) == -1)
+    {
+      printerror(__func__, "could not set sigaction for SIGINT");
+      goto done;
+    }
+  sigemptyset(&si_sa.sa_mask);
+  si_sa.sa_flags   = 0;
+  si_sa.sa_handler = scamper_sigaction;
+  if(sigaction(SIGTERM, &si_sa, 0) == -1)
+    {
+      printerror(__func__, "could not set sigaction for SIGTERM");
+      goto done;
+    }
+#endif
+
+  if(check_options(argc, argv) == -1)
+    goto done;
 
   /* if asked for scamper version, print it out, and return 0 (not -1) */
   if(options & OPT_VERSION)
     {
       printf("scamper version %s\n", SCAMPER_VERSION);
-      return 0;
+      rc = 0;
+      goto done;
     }
 
 #ifdef HAVE_DAEMON
@@ -1411,7 +1669,7 @@ static int scamper(int argc, char *argv[])
       if(daemon(1, 0) != 0)
 	{
 	  printerror(__func__, "could not daemon");
-	  return -1;
+	  goto done;
 	}
       scamper_debug_daemon();
     }
@@ -1423,13 +1681,11 @@ static int scamper(int argc, char *argv[])
    * debugging information makes it to the file
    */
   if(debugfile != NULL && scamper_debug_open(debugfile) != 0)
-    {
-      return -1;
-    }
+    goto done;
 #endif
 
   if(scamper_osinfo_init() != 0)
-    return -1;
+    goto done;
 
   /*
    * this has to be done before privilege separation, as if scamper is
@@ -1437,9 +1693,7 @@ static int scamper(int argc, char *argv[])
    * version compatibility
    */
   if(scamper_dl_init() == -1)
-    {
-      return -1;
-    }
+    goto done;
 
 #ifdef HAVE_OPENSSL
   if((flags & FLAG_NOTLS) == 0)
@@ -1448,7 +1702,7 @@ static int scamper(int argc, char *argv[])
       if((remote_tls_ctx = SSL_CTX_new(SSLv23_client_method())) == NULL)
 	{
 	  printerror_msg(__func__, "could not create ssl_ctx");
-	  return -1;
+	  goto done;
 	}
       SSL_CTX_set_options(remote_tls_ctx,
 			  SSL_OP_NO_SSLv2 | SSL_OP_NO_SSLv3 | SSL_OP_NO_TLSv1);
@@ -1460,7 +1714,7 @@ static int scamper(int argc, char *argv[])
 	  if(SSL_CTX_set_default_verify_paths(remote_tls_ctx) != 1)
 	    {
 	      printerror_ssl(__func__, "could not load default CA certs");
-	      return -1;
+	      goto done;
 	    }
 	}
       else
@@ -1470,7 +1724,7 @@ static int scamper(int argc, char *argv[])
 	    {
 	      printerror_ssl(__func__, "could not load certs from %s",
 			     remote_cafile);
-	      return -1;
+	      goto done;
 	    }
 	}
 
@@ -1481,7 +1735,7 @@ static int scamper(int argc, char *argv[])
 	{
 	  printerror_ssl(__func__, "could load client cert from %s",
 			 remote_client_certfile);
-	  return -1;
+	  goto done;
 	}
       if(remote_client_privfile != NULL &&
 	 SSL_CTX_use_PrivateKey_file(remote_tls_ctx, remote_client_privfile,
@@ -1489,12 +1743,12 @@ static int scamper(int argc, char *argv[])
 	{
 	  printerror_ssl(__func__, "could not load client privkey from %s",
 			 remote_client_privfile);
-	  return -1;
+	  goto done;
 	}
     }
 #endif
 
-#ifndef WITHOUT_PRIVSEP
+#ifndef DISABLE_PRIVSEP
   /*
    * revoke the root privileges we started with
    * note: privsep_fd is a copy of lame_fd held in scamper_privsep.c,
@@ -1502,11 +1756,11 @@ static int scamper(int argc, char *argv[])
    * worry about closing privsep_fd here.
    */
   if((privsep_fd = scamper_privsep_init()) == -1)
-    return -1;
+    goto done;
 #else
   /* if not doing privsep, write the pidfile */
   if(scamper_pidfile() != 0)
-    return -1;
+    goto done;
 #endif
 
   random_seed();
@@ -1514,13 +1768,13 @@ static int scamper(int argc, char *argv[])
   if(firewall != NULL)
     {
       if(scamper_firewall_init(firewall) != 0)
-	return -1;
+	goto done;
       free(firewall);
       firewall = NULL;
     }
 
   /* determine a suitable default value for the source port in packets */
-#ifndef _WIN32
+#ifndef _WIN32 /* windows does not have getpid */
   pid_u16       = getpid() & 0xffff;
 #else
   pid_u16       = GetCurrentProcessId() & 0xffff;
@@ -1529,89 +1783,95 @@ static int scamper(int argc, char *argv[])
 
   /* allocate the cache of addresses for scamper to keep track of */
   if((addrcache = scamper_addrcache_alloc()) == NULL)
-    {
-      return -1;
-    }
+    goto done;
 
   /* init the probing code */
   if(scamper_probe_init() != 0)
-    return -1;
+    goto done;
 
   /* initialise the queues that hold the current tasks */
   if(scamper_queue_init() == -1)
-    return -1;
+    goto done;
 
   /* setup the file descriptor monitoring code */
   if(scamper_fds_init() == -1)
-    {
-      return -1;
-    }
+    goto done;
 
   /* initialise the subsystem responsible for obtaining source addresses */
   if(scamper_getsrc_init() == -1)
-    {
-      return -1;
-    }
+    goto done;
 
   /* initialise the subsystem responsible for recording mac addresses */
   if(scamper_addr2mac_init() == -1)
-    {
-      return -1;
-    }
+    goto done;
 
   if(scamper_rtsock_init() == -1)
-    {
-      return -1;
-    }
+    goto done;
 
   /* initialise the structures necessary to keep track of addresses to probe */
   if(scamper_sources_init() == -1)
-    {
-      return -1;
-    }
+    goto done;
 
   /*
    * initialise the data structures necessary to keep track of the signatures
    * of tasks currently being probed
    */
   if(scamper_task_init() == -1)
-    {
-      return -1;
-    }
+    goto done;
 
   /*
    * initialise the data structures necessary to keep track of output files
    * currently being written to
    */
   if(scamper_outfiles_init(outfile, outtype) == -1)
-    {
-      return -1;
-    }
+    goto done;
 
-  /* initialise scamper so it is ready to traceroute and ping */
-  if(scamper_do_trace_init() != 0 ||
-     scamper_do_ping_init() != 0 ||
-     scamper_do_tracelb_init() != 0 ||
-     scamper_do_dealias_init() != 0 ||
-     scamper_do_sting_init() != 0 ||
-     scamper_do_neighbourdisc_init() != 0 ||
-     scamper_do_tbit_init() != 0 ||
-     scamper_do_sniff_init() != 0 ||
-     scamper_do_host_init() != 0)
-    {
-      return -1;
-    }
+  /* initialise scamper measurement methods */
+  if(scamper_do_neighbourdisc_init() != 0)
+    goto done;  
+#ifndef DISABLE_SCAMPER_TRACE
+  if(scamper_do_trace_init() != 0)
+    goto done;
+#endif
+#ifndef DISABLE_SCAMPER_PING
+  if(scamper_do_ping_init() != 0)
+    goto done;
+#endif
+#ifndef DISABLE_SCAMPER_TRACELB
+  if(scamper_do_tracelb_init() != 0)
+    goto done;
+#endif
+#ifndef DISABLE_SCAMPER_DEALIAS
+  if(scamper_do_dealias_init() != 0)
+    goto done;
+#endif
+#ifndef DISABLE_SCAMPER_TBIT
+  if(scamper_do_tbit_init() != 0)
+    goto done;
+#endif
+#ifndef DISABLE_SCAMPER_STING
+  if(scamper_do_sting_init() != 0)
+    goto done;
+#endif
+#ifndef DISABLE_SCAMPER_SNIFF
+  if(scamper_do_sniff_init() != 0)
+    goto done;
+#endif
+#ifndef DISABLE_SCAMPER_HOST
+  if(scamper_do_host_init() != 0)
+    goto done;
+#endif
 
   if(options & (OPT_CTRL_INET|OPT_CTRL_UNIX|OPT_CTRL_REMOTE))
     {
       if(scamper_control_init() != 0)
-	return -1;
+	goto done;
       if(options & OPT_CTRL_INET &&
 	 scamper_control_add_inet(ctrl_inet_addr, ctrl_inet_port) != 0)
-	return -1;
+	goto done;
       if(options & OPT_CTRL_UNIX &&
 	 scamper_control_add_unix(ctrl_unix) != 0)
-	return -1;
+	goto done;
       if(options & OPT_CTRL_REMOTE)
 	{
 #ifdef HAVE_OPENSSL
@@ -1623,7 +1883,7 @@ static int scamper(int argc, char *argv[])
 	  x = 0;
 #endif
 	  if(scamper_control_add_remote(ctrl_rem_name, ctrl_rem_port, x) != 0)
-	    return -1;
+	    goto done;
 	}
 
       /* wait for more tasks when finished with the active window */
@@ -1651,20 +1911,16 @@ static int scamper(int argc, char *argv[])
     {
       if((source = scamper_source_cmdline_alloc(&ssp, command,
 						arglist, arglist_len)) == NULL)
-	{
-	  return -1;
-	}
+	goto done;
     }
   else if((options & (OPT_CTRL_INET|OPT_CTRL_UNIX|OPT_CTRL_REMOTE)) == 0)
     {
       if(intype == NULL)
 	source = scamper_source_file_alloc(&ssp, arglist[0], command, 1, 0);
-      else if(strcasecmp(intype, "tsps") == 0)
-	source = scamper_source_tsps_alloc(&ssp, arglist[0]);
       else if(strcasecmp(intype, "cmdfile") == 0)
 	source = scamper_source_file_alloc(&ssp, arglist[0], NULL, 1, 0);
       if(source == NULL)
-	return -1;
+	goto done;
     }
 
   if(source != NULL)
@@ -1673,10 +1929,10 @@ static int scamper(int argc, char *argv[])
       scamper_source_free(source);
     }
 
-#ifndef WITHOUT_PRIVSEP
+#ifndef DISABLE_PRIVSEP
   privsep_fdn = scamper_fd_private(privsep_fd, NULL, privsep_read, NULL);
   if(privsep_fdn == NULL)
-    return -1;
+    goto done;
 #endif
 
   gettimeofday_wrap(&lastprobe);
@@ -1708,13 +1964,13 @@ static int scamper(int argc, char *argv[])
 
       /* listen until it is time to send the next probe */
       if(scamper_fds_poll(timeout_ptr) == -1)
-	return -1;
+	goto done;
 
       /* get the current time */
       gettimeofday_wrap(&tv);
 
       if(scamper_queue_event_proc(&tv) != 0)
-	return -1;
+	goto done;
       
       /* take any 'done' tasks and output them now */
       while((task = scamper_queue_getdone(&tv)) != NULL)
@@ -1802,191 +2058,15 @@ static int scamper(int argc, char *argv[])
 	    }
 	}
     }
+  rc = 0;
 
-  return 0;
-}
+ done:
+  cleanup();
 
-/*
- * cleanup:
- *
- * be nice to the system and clean up all our mallocs
- */
-static void cleanup(void)
-{
-  scamper_firewall_cleanup();
-  scamper_getsrc_cleanup();
-  scamper_rtsock_cleanup();
-
-  scamper_icmp4_cleanup();
-  scamper_icmp6_cleanup();
-  scamper_udp4_cleanup();
-  scamper_tcp4_cleanup();
-
-  scamper_addr2mac_cleanup();
-
-  scamper_do_trace_cleanup();
-  scamper_do_ping_cleanup();
-  scamper_do_tracelb_cleanup();
-  scamper_do_dealias_cleanup();
-  scamper_do_sting_cleanup();
-  scamper_do_neighbourdisc_cleanup();
-  scamper_do_tbit_cleanup();
-  scamper_do_sniff_cleanup();
-  scamper_do_host_cleanup();
-
-  scamper_dl_cleanup();
-
-  if(options & (OPT_CTRL_INET|OPT_CTRL_UNIX|OPT_CTRL_REMOTE))
-    scamper_control_cleanup();
-
-  scamper_sources_cleanup();
-  scamper_outfiles_cleanup();
-
-#ifndef WITHOUT_PRIVSEP
-  if(privsep_fdn != NULL)
-    {
-      scamper_fd_free(privsep_fdn);
-      privsep_fdn = NULL;
-    }
-#endif
-
-  scamper_fds_cleanup();
-
-#ifndef WITHOUT_PRIVSEP
-  scamper_privsep_cleanup();
-#endif
-
-  /* free the address cache, if one was used */
-  if(addrcache != NULL)
-    {
-      scamper_addrcache_free(addrcache);
-      addrcache = NULL;
-    }
-
-  if(ctrl_inet_addr != NULL)
-    {
-      free(ctrl_inet_addr);
-      ctrl_inet_addr = NULL;
-    }
-
-  if(ctrl_rem_name != NULL)
-    {
-      free(ctrl_rem_name);
-      ctrl_rem_name = NULL;
-    }
-
-  if(monitorname != NULL)
-    {
-      free(monitorname);
-      monitorname = NULL;
-    }
-
-  if(nameserver != NULL)
-    {
-      free(nameserver);
-      nameserver = NULL;
-    }
-
-  if(firewall != NULL)
-    {
-      free(firewall);
-      firewall = NULL;
-    }
-
-  if(command != NULL)
-    {
-      free(command);
-      command = NULL;
-    }
-  scamper_queue_cleanup();
-  scamper_task_cleanup();
-  scamper_probe_cleanup();
-
-#ifndef WITHOUT_DEBUGFILE
-  if(options & OPT_DEBUGFILE)
-    scamper_debug_close();
-#endif
-
-  scamper_osinfo_cleanup();
-
-#ifndef WITHOUT_DEBUGFILE
-  if(debugfile != NULL)
-    {
-      free(debugfile);
-      debugfile = NULL;
-    }
-#endif
-
-  if(pidfile != NULL)
-    {
-      free(pidfile);
-      pidfile = NULL;
-    }
-
-#ifdef HAVE_OPENSSL
-  if(remote_tls_ctx != NULL)
-    {
-      SSL_CTX_free(remote_tls_ctx);
-      remote_tls_ctx = NULL;
-    }
-#endif
-
-  return;
+  return rc;
 }
 
 int main(int argc, char *argv[])
 {
-  int i;
-
-#ifdef _WIN32
-  WSADATA wsaData;
-#endif
-
-#ifndef _WIN32
-  uid = getuid();
-  euid = geteuid();
-  if(uid != euid && seteuid(uid) != 0)
-    exit(-1);
-#endif
-
-  /*
-   * if we are using dmalloc, then we want to get it to register its
-   * logdump function to occur after we have used cleanup to free up
-   * scamper's core data structures.  this is a dirty hack.
-   *
-   * if we are running a debug build on freebsd, make poor malloc use more
-   * prone to causing scamper to crash.
-   */
-#if defined(DMALLOC)
-  free(malloc(1));
-#endif
-
-#ifdef _WIN32
-  WSAStartup(MAKEWORD(2,2), &wsaData);
-  timeBeginPeriod(1);
-#endif
-
-#ifndef _WIN32
-  if(signal(SIGPIPE, SIG_IGN) == SIG_ERR)
-    {
-      printerror(__func__, "could not ignore SIGPIPE");
-      return -1;
-    }
-  if(signal(SIGCHLD, SIG_IGN) == SIG_ERR)
-    {
-      printerror(__func__, "could not ignore SIGCHLD");
-      return -1;
-    }
-#endif /* _WIN32 */
-
-  i = scamper(argc, argv);
-
-  cleanup();
-
-#ifdef _WIN32
-  timeEndPeriod(1);
-  WSACleanup();
-#endif
-
-  return i;
+  return scamper(argc, argv);
 }

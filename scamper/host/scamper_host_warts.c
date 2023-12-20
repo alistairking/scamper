@@ -4,7 +4,7 @@
  * Copyright (C) 2019-2023 Matthew Luckie
  * Author: Matthew Luckie
  *
- * $Id: scamper_host_warts.c,v 1.11 2023/05/20 05:10:56 mjl Exp $
+ * $Id: scamper_host_warts.c,v 1.11.4.1 2023/08/08 00:57:27 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -191,7 +191,8 @@ typedef struct warts_host_rr
   union
   {
     warts_host_rr_soa_t *soa;
-    warts_host_rr_mx_t *mx;
+    warts_host_rr_mx_t  *mx;
+    void                *v;
   } data_un;
 } warts_host_rr_t;
 
@@ -951,6 +952,9 @@ int scamper_file_warts_host_write(const scamper_file_t *sf,
 				&rr_state[r++], table);
 	}
       free(query_state); query_state = NULL;
+      for(i=0; i<r; i++)
+	if(rr_state[i].data_un.v != NULL)
+	  free(rr_state[i].data_un.v);
       free(rr_state); rr_state = NULL;
     }
 

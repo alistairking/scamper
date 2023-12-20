@@ -1,7 +1,7 @@
 /*
  * scamper_probe.c
  *
- * $Id: scamper_probe.c,v 1.81 2023/05/29 21:22:26 mjl Exp $
+ * $Id: scamper_probe.c,v 1.81.4.1 2023/08/18 21:25:04 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -578,7 +578,7 @@ static void probe_dlhdr_cb(scamper_dlhdr_t *dlhdr)
 	  goto err;
 	}
 
-#ifndef _WIN32
+#ifndef _WIN32 /* windows does not have a routing socket */
       if(scamper_rtsock_getroute(pt->rtsock, pt->rx_rt) != 0)
 	{
 	  pt->error = errno;
@@ -680,7 +680,7 @@ static int probe_task_dl(scamper_probe_t *pr, scamper_task_t *task)
   pt->task = task;
   pt->mode = PROBE_MODE_TX_RT;
 
-#ifndef _WIN32
+#ifndef _WIN32 /* windows does not have a routing socket */
   if((pt->rtsock = scamper_task_fd_rtsock(task)) == NULL)
     {
       pr->pr_errno = errno;
@@ -698,7 +698,7 @@ static int probe_task_dl(scamper_probe_t *pr, scamper_task_t *task)
       goto err;
     }
 
-#ifndef _WIN32
+#ifndef _WIN32 /* windows does not have a routing socket */
   if(scamper_rtsock_getroute(pt->rtsock, pt->tx_rt) != 0)
     {
       pr->pr_errno = errno;

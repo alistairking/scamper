@@ -1,12 +1,12 @@
 /*
  * scamper_source_file.c
  *
- * $Id: scamper_source_file.c,v 1.28 2022/12/09 09:37:42 mjl Exp $
+ * $Id: scamper_source_file.c,v 1.28.10.3 2023/08/26 21:26:45 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2014      The Regents of the University of California
- * Copyright (C) 2017-2022 Matthew Luckie
+ * Copyright (C) 2017-2023 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -56,12 +56,11 @@ typedef struct scamper_source_file
   /* run-time state */
   int                 reload;
   time_t              mtime;
-  scamper_fd_t       *fd;
+  scamper_fd_t       *fdn;
+  int                 fd;
   scamper_linepoll_t *lp;
 
 } scamper_source_file_t;
-
-static int stdin_used = 0;
 
 /*
  * ssf_free
@@ -70,37 +69,19 @@ static int stdin_used = 0;
  */
 static void ssf_free(scamper_source_file_t *ssf)
 {
-  int fd = -1;
-
   if(ssf->lp != NULL)
-    {
-      scamper_linepoll_free(ssf->lp, 0);
-      ssf->lp = NULL;
-    }
+    scamper_linepoll_free(ssf->lp, 0);
 
   if(ssf->filename != NULL)
-    {
-      free(ssf->filename);
-      ssf->filename = NULL;
-    }
+    free(ssf->filename);
 
   if(ssf->command != NULL)
-    {
-      free(ssf->command);
-      ssf->command = NULL;
-    }
+    free(ssf->command);
 
-  if(ssf->fd != NULL)
-    {
-      fd = scamper_fd_fd_get(ssf->fd);
-      scamper_fd_free(ssf->fd);
-      ssf->fd = NULL;
-    }
-
-  if(fd != -1)
-    {
-      close(fd);
-    }
+  if(ssf->fdn != NULL)
+    scamper_fd_free(ssf->fdn);
+  else if(ssf->fd != -1)
+    close(ssf->fd);
 
   free(ssf);
   return;
@@ -111,48 +92,16 @@ static int ssf_open(const char *filename)
   int fd = -1;
 
   /* get a file descriptor to the file */
-  if(string_isdash(filename) == 0)
-    {
-#if defined(WITHOUT_PRIVSEP)
-      fd = open(filename, O_RDONLY);
+#ifdef DISABLE_PRIVSEP
+  fd = open(filename, O_RDONLY);
 #else
-      fd = scamper_privsep_open_file(filename, O_RDONLY, 0);
+  fd = scamper_privsep_open_file(filename, O_RDONLY, 0);
 #endif
 
-      if(fd == -1)
-	{
-	  printerror(__func__, "could not open %s", filename);
-	  goto err;
-	}
-    }
-  else
-    {
-      if(stdin_used == 0)
-	{
-	  fd = STDIN_FILENO;
-	  stdin_used = 1;
-	}
-      else
-	{
-	  printerror_msg(__func__, "stdin already used");
-	  goto err;
-	}
-    }
-
-
-#ifdef O_NONBLOCK
-  if(fcntl_set(fd, O_NONBLOCK) == -1)
-    {
-      printerror(__func__, "could not set O_NONBLOCK on %s", filename);
-      goto err;
-    }
-#endif
+  if(fd == -1)
+    printerror(__func__, "could not open %s", filename);
 
   return fd;
-
- err:
-  if(fd != -1) close(fd);
-  return -1;
 }
 
 /*
@@ -227,15 +176,18 @@ static int ssf_read_line(void *param, uint8_t *buf, size_t len)
   return -1;
 }
 
-static void ssf_read(const int fd, void *param)
+/*
+ * ssf_read_stdin:
+ *
+ * simplified read path for when the input file is stdin
+ */
+#ifndef _WIN32 /* windows cannot treat stdin like a socket */
+static void ssf_read_stdin(int fd, void *param)
 {
   scamper_source_file_t *ssf = (scamper_source_file_t *)param;
   scamper_source_t *source = ssf->source;
   uint8_t buf[1024];
   ssize_t rc;
-  time_t mtime;
-  int reload = 0;
-  int newfd;
 
   assert(ssf->cycles != 0);
 
@@ -249,16 +201,61 @@ static void ssf_read(const int fd, void *param)
        * don't read any more for the time being
        */
       if(scamper_source_getcommandcount(source) >= scamper_option_pps_get())
+	scamper_fd_read_pause(ssf->fdn);
+    }
+  else if(rc == 0)
+    {
+      /* got EOF; this is the last cycle over an input file */
+      scamper_linepoll_flush(ssf->lp);
+      ssf->cycles = 0;
+      scamper_fd_read_pause(ssf->fdn);
+      if(scamper_source_isfinished(source) != 0)
+	scamper_source_finished(source);
+    }
+  else
+    {
+      assert(rc == -1);
+      if(errno != EAGAIN && errno != EINTR)
 	{
-	  scamper_fd_read_pause(ssf->fd);
+	  printerror(__func__, "read failed fd %d", fd);
+	  goto err;
 	}
+    }
+
+  return;
+
+ err:
+  /*
+   * an error occurred.  the simplest way to cause the source to disappear
+   * gracefully is to set the cycles parameter to zero, which will signal
+   * to the sources code that there are no more commands to come
+   */
+  ssf->cycles = 0;
+  return;
+}
+#endif
+
+static void ssf_read_file(scamper_source_file_t *ssf)
+{
+  scamper_source_t *source = ssf->source;
+  uint8_t buf[1024];
+  ssize_t rc;
+  time_t mtime;
+  int reload = 0;
+  int newfd;
+
+  assert(ssf->cycles != 0);
+
+  if((rc = read(ssf->fd, buf, sizeof(buf))) > 0)
+    {
+      /* got data to read. parse the buffer for addresses, one per line. */
+      scamper_linepoll_handle(ssf->lp, buf, (size_t)rc);
     }
   else if(rc == 0 && ssf->cycles == 1)
     {
       /* got EOF; this is the last cycle over an input file */
       scamper_linepoll_flush(ssf->lp);
       ssf->cycles = 0;
-      scamper_fd_read_pause(ssf->fd);
       if(scamper_source_isfinished(source) != 0)
 	scamper_source_finished(source);
     }
@@ -268,18 +265,14 @@ static void ssf_read(const int fd, void *param)
 
       /* a cycle value of -1 means cycle indefinitely */
       if(ssf->cycles != -1)
-	{
-	  ssf->cycles--;
-	}
+	ssf->cycles--;
 
       /* decide if we should reload the file at this point */
       if(ssf->reload == 1)
 	{
 	  /* stat the file so we have an mtime value for later */
 	  if(stat_mtime(ssf->filename, &mtime) == 0)
-	    {
-	      reload = 1;
-	    }
+	    reload = 1;
 	}
       else if(ssf->autoreload == 1)
 	{
@@ -288,44 +281,27 @@ static void ssf_read(const int fd, void *param)
 	   * mtime being different to whatever our record of the mtime is
 	   */
 	  if(stat_mtime(ssf->filename, &mtime) == 0 && ssf->mtime != mtime)
-	    {
-	      reload = 1;
-	    }
+	    reload = 1;
 	}
 
       /* we have to reload the file (if we can open it) */
       if(reload == 1 && (newfd = ssf_open(ssf->filename)) != -1)
 	{
-	  /* use the new file descriptor */
-	  if(scamper_fd_fd_set(ssf->fd, newfd) == -1)
-	    {
-	      goto err;
-	    }
-
 	  /* close the existing file */
-	  close(fd);
+	  close(ssf->fd);
 
 	  /* update file details; ensure reload is reset to zero */
+	  ssf->fd = newfd;
 	  ssf->mtime = mtime;
 	  ssf->reload = 0;
 	}
       else
 	{
 	  /* rewind the current file position */
-	  if(lseek(fd, 0, SEEK_SET) == -1)
+	  if(lseek(ssf->fd, 0, SEEK_SET) == -1)
 	    {
 	      goto err;
 	    }
-	}
-
-      /* check to see if we should pause, or allow reading to continue */
-      if(scamper_source_getcyclecount(ssf->source) < 1)
-	{
-	  scamper_fd_read_unpause(ssf->fd);
-	}
-      else
-	{
-	  scamper_fd_read_pause(ssf->fd);
 	}
 
       /* create a new cycle record, etc */
@@ -337,10 +313,9 @@ static void ssf_read(const int fd, void *param)
   else
     {
       assert(rc == -1);
-
       if(errno != EAGAIN && errno != EINTR)
 	{
-	  printerror(__func__, "read failed fd %d", fd);
+	  printerror(__func__, "read failed fd %d", ssf->fd);
 	  goto err;
 	}
     }
@@ -372,8 +347,10 @@ static char *ssf_tostr(void *data, char *str, size_t len)
 
   string_concat(str, len, &off, "type file ");
 
-  if(ssf->fd != NULL)
-    string_concat(str, len, &off, "fd %d ", scamper_fd_fd_get(ssf->fd));
+  if(ssf->fdn != NULL)
+    string_concat(str, len, &off, "fd %d ", scamper_fd_fd_get(ssf->fdn));
+  else
+    string_concat(str, len, &off, "fd %d ", ssf->fd);
 
   if(ssf->filename != NULL)
     string_concat(str, len, &off, "file \"%s\" ", ssf->filename);
@@ -398,7 +375,10 @@ static int ssf_take(void *data)
      scamper_source_getcommandcount(ssf->source) < scamper_option_pps_get() &&
      ssf->cycles != 0)
     {
-      scamper_fd_read_unpause(ssf->fd);
+      if(ssf->fdn != NULL)
+	scamper_fd_read_unpause(ssf->fdn);
+      else if(ssf->fd != -1)
+	ssf_read_file(ssf);
     }
 
   return 0;
@@ -420,48 +400,32 @@ static void ssf_freedata(void *data)
 static int ssf_isfinished(void *data)
 {
   scamper_source_file_t *ssf = (scamper_source_file_t *)data;
-
   if(ssf->cycles != 0)
-    {
-      return 0;
-    }
-
+    return 0;
   return 1;
 }
 
 int scamper_source_file_getcycles(const scamper_source_t *source)
 {
   scamper_source_file_t *ssf;
-
   if((ssf = (scamper_source_file_t *)scamper_source_getdata(source)) != NULL)
-    {
-      return ssf->cycles;
-    }
-
+    return ssf->cycles;
   return -1;
 }
 
 int scamper_source_file_getautoreload(const scamper_source_t *source)
 {
   scamper_source_file_t *ssf;
-
   if((ssf = (scamper_source_file_t *)scamper_source_getdata(source)) != NULL)
-    {
-      return ssf->autoreload;
-    }
-
+    return ssf->autoreload;
   return -1;
 }
 
 const char *scamper_source_file_getfilename(const scamper_source_t *source)
 {
   scamper_source_file_t *ssf;
-
   if((ssf = (scamper_source_file_t *)scamper_source_getdata(source)) != NULL)
-    {
-      return ssf->filename;
-    }
-
+    return ssf->filename;
   return NULL;
 }
 
@@ -511,16 +475,14 @@ scamper_source_t *scamper_source_file_alloc(scamper_source_params_t *ssp,
 
   /* sanity checks */
   if(ssp == NULL || filename == NULL)
-    {
-      goto err;
-    }
+    goto err;
 
   /* allocate the structure for keeping track of the address list file */
-  if((ssf = malloc_zero(sizeof(scamper_source_file_t))) == NULL ||
-     (ssf->filename = strdup(filename)) == NULL)
-    {
-      goto err;
-    }
+  if((ssf = malloc_zero(sizeof(scamper_source_file_t))) == NULL)
+    goto err;
+  ssf->fd = -1;
+  if((ssf->filename = strdup(filename)) == NULL)
+    goto err;
   ssf->cycles     = cycles;
   ssf->autoreload = autoreload;
 
@@ -532,25 +494,31 @@ scamper_source_t *scamper_source_file_alloc(scamper_source_params_t *ssp,
       ssf->command_len = strlen(ssf->command);
     }
 
-  if((fd = ssf_open(filename)) == -1)
+  /* if we're reading from stdin */
+  if(string_isdash(filename) != 0)
     {
+#ifndef _WIN32 /* windows cannot treat stdin like a socket */
+      fd = STDIN_FILENO;
+#ifdef O_NONBLOCK
+      fcntl_set(fd, O_NONBLOCK);
+#endif
+      /* allocate a scamper_fd_t to monitor when new data is able to be read */
+      if((ssf->fdn = scamper_fd_private(fd, ssf, ssf_read_stdin, NULL)) == NULL)
+	goto err;
+#else
+      scamper_debug(__func__, "reading from stdin not supported on windows");
       goto err;
+#endif
     }
-
-  /* allocate a scamper_fd_t to monitor when new data is able to be read */
-  if(string_isdash(filename) == 0)
-    ssf->fd = scamper_fd_file(fd, ssf_read, ssf);
   else
-    ssf->fd = scamper_fd_private(fd, ssf, ssf_read, NULL);
-
-  if(ssf->fd == NULL)
-    goto err;
-  fd = -1;
+    {
+      if((fd = ssf_open(filename)) == -1)
+	goto err;
+      ssf->fd = fd;
+    }
 
   if((ssf->lp = scamper_linepoll_alloc(ssf_read_line, ssf)) == NULL)
-    {
-      goto err;
-    }
+    goto err;
 
   /*
    * data and callback functions that scamper_source_alloc needs to know about
@@ -576,6 +544,5 @@ scamper_source_t *scamper_source_file_alloc(scamper_source_params_t *ssp,
       assert(ssf->source == NULL);
       ssf_free(ssf);
     }
-  if(fd != -1) close(fd);
   return NULL;
 }

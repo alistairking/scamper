@@ -1,11 +1,11 @@
 /*
  * scamper_icmp4.h
  *
- * $Id: scamper_icmp4.h,v 1.22 2020/04/27 07:32:21 mjl Exp $
+ * $Id: scamper_icmp4.h,v 1.22.20.1 2023/08/20 01:24:40 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2009 The University of Waikato
- * Copyright (C) 2020      Matthew Luckie
+ * Copyright (C) 2020-2023 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -26,14 +26,25 @@
 #ifndef __SCAMPER_ICMP4_H
 #define __SCAMPER_ICMP4_H
 
+#ifndef _WIN32 /* SOCKET vs int on windows */
 int scamper_icmp4_open(const void *addr);
 int scamper_icmp4_open_fd(void);
 int scamper_icmp4_open_err(const void *addr);
-void scamper_icmp4_close(int fd);
+#else
+SOCKET scamper_icmp4_open(const void *addr);
+SOCKET scamper_icmp4_open_fd(void);
+SOCKET scamper_icmp4_open_err(const void *addr);
+#endif
 
 void scamper_icmp4_cleanup(void);
-void scamper_icmp4_read_cb(const int fd, void *param);
-void scamper_icmp4_read_err_cb(const int fd, void *param);
+
+#ifndef _WIN32 /* SOCKET vs int on windows */
+void scamper_icmp4_read_cb(int fd, void *param);
+void scamper_icmp4_read_err_cb(int fd, void *param);
+#else
+void scamper_icmp4_read_cb(SOCKET fd, void *param);
+void scamper_icmp4_read_err_cb(SOCKET fd, void *param);
+#endif
 
 #ifdef __SCAMPER_PROBE_H
 int scamper_icmp4_probe(scamper_probe_t *probe);
@@ -42,8 +53,13 @@ uint16_t scamper_icmp4_cksum(scamper_probe_t *probe);
 #endif
 
 #ifdef __SCAMPER_ICMP_RESP_H
+#ifndef _WIN32 /* SOCKET vs int on windows */
 int scamper_icmp4_recv(int fd, scamper_icmp_resp_t *resp);
 int scamper_icmp4_recv_user(int fd, scamper_icmp_resp_t *resp);
+#else
+int scamper_icmp4_recv(SOCKET fd, scamper_icmp_resp_t *resp);
+int scamper_icmp4_recv_user(SOCKET fd, scamper_icmp_resp_t *resp);
+#endif
 #endif
 
 #endif /* __SCAMPER_ICMP4_H */

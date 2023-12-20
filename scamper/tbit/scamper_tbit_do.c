@@ -1,7 +1,7 @@
 /*
  * scamper_do_tbit.c
  *
- * $Id: scamper_tbit_do.c,v 1.195 2023/06/04 06:05:34 mjl Exp $
+ * $Id: scamper_tbit_do.c,v 1.195.4.1 2023/08/18 21:25:04 mjl Exp $
  *
  * Copyright (C) 2009-2010 Ben Stasiewicz
  * Copyright (C) 2009-2010 Stephen Eichler
@@ -122,7 +122,7 @@ typedef struct tbit_probe
 
 typedef struct tbit_state
 {
-#ifndef _WIN32
+#ifndef _WIN32 /* windows does not have a routing socket */
   scamper_fd_t               *rtsock;
 #endif
   scamper_fd_t               *dl;
@@ -3278,7 +3278,7 @@ static void tbit_handle_rt(scamper_route_t *rt)
   if(state->mode != MODE_RTSOCK || state->route != rt)
     goto done;
 
-#ifndef _WIN32
+#ifndef _WIN32 /* windows does not have a routing socket */
   if(state->rtsock != NULL)
     {
       scamper_fd_free(state->rtsock);
@@ -3374,7 +3374,7 @@ static void tbit_state_free(scamper_task_t *task)
   if(state->fw != NULL)
     scamper_firewall_entry_free(state->fw);
 
-#ifndef _WIN32
+#ifndef _WIN32 /* windows does not have a routing socket */
   if(state->rtsock != NULL)
     scamper_fd_free(state->rtsock);
 #endif
@@ -3468,7 +3468,7 @@ static int tbit_state_alloc(scamper_task_t *task)
   if(tbit->dst->type == SCAMPER_ADDR_TYPE_IPV4)
     random_u16(&state->ipid);
 
-#ifndef _WIN32
+#ifndef _WIN32 /* windows does not have a routing socket */
   if((state->rtsock = scamper_fd_rtsock()) == NULL)
     {
       printerror(__func__, "could not get rtsock");
@@ -3718,7 +3718,7 @@ static void do_tbit_probe(scamper_task_t *task)
       if(state->route == NULL)
 	goto err;
 
-#ifndef _WIN32
+#ifndef _WIN32 /* windows does not have a routing socket */
       if(scamper_rtsock_getroute(state->rtsock, state->route) != 0)
 	goto err;
 #else

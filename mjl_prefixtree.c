@@ -31,13 +31,13 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  *
- * $Id: mjl_prefixtree.c,v 1.18 2023/06/01 04:15:41 mjl Exp $
+ * $Id: mjl_prefixtree.c,v 1.18.4.2 2023/08/18 21:33:02 mjl Exp $
  *
  */
 
 #include <sys/types.h>
 
-#ifndef _WIN32
+#ifndef _WIN32 /* include headers that are not on windows */
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -101,7 +101,7 @@ static const uint32_t uint32_mask[] = {
   0xfffffff8, 0xfffffffc, 0xfffffffe, 0xffffffff,
 };
 
-#ifdef _WIN32
+#ifdef _WIN32 /* need uint16_mask for windows in6_addr */
 static const uint16_t uint16_mask[] = {
   0x0000,
   0x8000, 0xc000, 0xe000, 0xf000,
@@ -219,7 +219,7 @@ void prefix6_free(prefix6_t *pref)
 int prefix6_cmp(const prefix6_t *a, const prefix6_t *b)
 {
   int i;
-#ifndef _WIN32
+#ifndef _WIN32 /* windows does not have s6_addr32 for in6_addr */
   uint32_t ua, ub;
   for(i=0; i<4; i++)
     {
@@ -276,7 +276,7 @@ static int ip4_bit(const struct in_addr *ip, int bit)
 static int ip6_bit(const struct in6_addr *ip, int bit)
 {
   assert(bit >= 0); assert(bit < 128);
-#ifndef _WIN32
+#ifndef _WIN32 /* windows does not have s6_addr32 for in6_addr */
   return (ntohl(ip->s6_addr32[bit/32]) >> (32 - ((bit+1) % 32))) & 1;
 #else
   return (ntohs(ip->u.Word[bit/16]) >> (16 - ((bit+1) % 16))) & 1;
@@ -292,7 +292,7 @@ static int prefix4_bit(const prefix4_t *pref, int bit)
 static int prefix6_bit(const prefix6_t *pref, int bit)
 {
   assert(bit >= 0); assert(bit < 128);
-#ifndef _WIN32
+#ifndef _WIN32 /* windows does not have s6_addr32 for in6_addr */
   return (ntohl(pref->net.s6_addr32[bit/32]) >> (32 - ((bit+1) % 32))) & 1;
 #else
   return (ntohs(pref->net.u.Word[bit/16]) >> (16 - ((bit+1) % 16))) & 1;
@@ -326,7 +326,7 @@ static int prefix6_fbd(const prefix6_t *a, const prefix6_t *b)
 {
   int i, r;
 
-#ifndef _WIN32
+#ifndef _WIN32 /* windows does not have s6_addr32 for in6_addr */
   uint32_t v;
   for(i=0; i<4; i++)
     {
@@ -353,6 +353,7 @@ static int prefix6_fbd(const prefix6_t *a, const prefix6_t *b)
     {
       if((v = ntohs(a->net.u.Word[i] ^ b->net.u.Word[i])) == 0)
 	continue;
+      r = 0;
       if(v & 0xFF00)     { v >>= 8;  r += 8;  }
       if(v & 0xF0)       { v >>= 4;  r += 4;  }
       if(v & 0xC)        { v >>= 2;  r += 2;  }
@@ -384,7 +385,7 @@ static int prefix6_ip_in(const prefix6_t *p6, const struct in6_addr *ip6)
 {
   int i, len;
 
-#ifndef _WIN32
+#ifndef _WIN32 /* windows does not have s6_addr32 for in6_addr */
   uint32_t mask;
 #else
   uint16_t mask;
@@ -394,7 +395,7 @@ static int prefix6_ip_in(const prefix6_t *p6, const struct in6_addr *ip6)
   if((len = p6->len) == 0)
     return 1;
 
-#ifndef _WIN32
+#ifndef _WIN32 /* windows does not have s6_addr32 for in6_addr */
   for(i=0; i<4; i++)
     {
       if(len > 32)
@@ -439,7 +440,7 @@ int prefix6_isvalid(const struct in6_addr *net, uint8_t len)
   if(len > 128)
     return 0;
 
-#ifndef _WIN32
+#ifndef _WIN32 /* windows does not have s6_addr32 for in6_addr */
   for(i=0; i<4; i++)
     {
       if(off < len)

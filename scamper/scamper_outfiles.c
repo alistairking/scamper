@@ -1,7 +1,7 @@
 /*
  * scamper_outfiles: hold a collection of output targets together
  *
- * $Id: scamper_outfiles.c,v 1.53 2023/03/27 04:24:56 mjl Exp $
+ * $Id: scamper_outfiles.c,v 1.53.4.3 2023/08/26 21:26:45 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -188,7 +188,6 @@ scamper_outfile_t *scamper_outfile_open(const char *name, const char *file,
   scamper_file_t *sf;
   char *outfile_type = "warts";
   int flags;
-  mode_t mode;
   char sf_mode;
   int fd;
 
@@ -249,17 +248,14 @@ scamper_outfile_t *scamper_outfile_open(const char *name, const char *file,
       return NULL;
     }
 
-#ifndef _WIN32
-  mode = S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH;
-#else
-  mode = _S_IREAD | _S_IWRITE;
+#ifdef _WIN32 /* windows needs O_BINARY */
   flags |= O_BINARY;
 #endif
 
-#if defined(WITHOUT_PRIVSEP)
-  fd = open(file, flags, mode);
+#ifdef DISABLE_PRIVSEP
+  fd = open(file, flags, MODE_644);
 #else
-  fd = scamper_privsep_open_file(file, flags, mode);
+  fd = scamper_privsep_open_file(file, flags, MODE_644);
 #endif
 
   /* make sure the fd is valid, otherwise bail */
@@ -291,17 +287,13 @@ static int outfile_opendef(char *filename, char *type)
 {
   scamper_file_t *sf;
   int flags;
-  mode_t mode;
   char sf_mode;
   int fd;
 
   flags = O_WRONLY | O_TRUNC | O_CREAT;
   sf_mode = 'w';
 
-#ifndef _WIN32
-  mode = S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH;
-#else
-  mode = _S_IREAD | _S_IWRITE;
+#ifdef _WIN32 /* windows needs O_BINARY */
   flags |= O_BINARY;
 #endif
 
@@ -311,10 +303,10 @@ static int outfile_opendef(char *filename, char *type)
     }
   else
     {
-#if defined(WITHOUT_PRIVSEP)
-      fd = open(filename, flags, mode);
+#ifdef DISABLE_PRIVSEP
+      fd = open(filename, flags, MODE_644);
 #else
-      fd = scamper_privsep_open_file(filename, flags, mode);
+      fd = scamper_privsep_open_file(filename, flags, MODE_644);
 #endif
 
       if(fd == -1)

@@ -1,7 +1,7 @@
 /*
  * scamper_dl: manage BPF/PF_PACKET datalink instances for scamper
  *
- * $Id: scamper_dl.c,v 1.192 2023/05/29 21:22:26 mjl Exp $
+ * $Id: scamper_dl.c,v 1.192.4.5 2023/10/09 06:49:21 mjl Exp $
  *
  *          Matthew Luckie
  *          Ben Stasiewicz added fragmentation support.
@@ -119,7 +119,7 @@ static int dl_parse_ip(scamper_dl_rec_t *dl, uint8_t *pktbuf, size_t pktlen)
     {
       ip4 = (struct ip *)pkt;
 
-#ifndef _WIN32
+#ifndef _WIN32 /* windows does not separate ip_v and ip_hl */
       iplen = (ip4->ip_hl << 2);
 #else
       iplen = ((ip4->ip_vhl) & 0xf) << 2;
@@ -260,7 +260,7 @@ static int dl_parse_ip(scamper_dl_rec_t *dl, uint8_t *pktbuf, size_t pktlen)
       dl->dl_tcp_sport  = ntohs(tcp->th_sport);
       dl->dl_tcp_seq    = ntohl(tcp->th_seq);
       dl->dl_tcp_ack    = ntohl(tcp->th_ack);
-#ifndef _WIN32
+#ifndef _WIN32 /* windows does not separate th_off and th_x2 */
       dl->dl_tcp_hl     = tcp->th_off * 4;
 #else
       dl->dl_tcp_hl     = (tcp->th_offx2 >> 4) * 4;
@@ -288,7 +288,7 @@ static int dl_parse_ip(scamper_dl_rec_t *dl, uint8_t *pktbuf, size_t pktlen)
 	      if(tmp[1] == 0)
 		break;
 
-	      /* make sure the option can be extracted */
+	      /* make sure the option's length is sensible */
 	      if(off + tmp[1] > dl->dl_tcp_hl)
 		break;
 
@@ -323,16 +323,14 @@ static int dl_parse_ip(scamper_dl_rec_t *dl, uint8_t *pktbuf, size_t pktlen)
 		{
 		  dl->dl_tcp_opts |= SCAMPER_DL_TCP_OPT_FO;
 		  dl->dl_tcp_fo_cookielen = tmp[1] - 2;
-		  for(i=0; i<dl->dl_tcp_fo_cookielen; i++)
-		    dl->dl_tcp_fo_cookie[i] = tmp[2+i];
+		  memcpy(dl->dl_tcp_fo_cookie, tmp+2, dl->dl_tcp_fo_cookielen);
 		}
 
 	      if(tmp[0] == 254 && tmp[1] >= 4 && bytes_ntohs(tmp+2) == 0xF989)
 		{
 		  dl->dl_tcp_opts |= SCAMPER_DL_TCP_OPT_FO_EXP;
 		  dl->dl_tcp_fo_cookielen = tmp[1] - 4;
-		  for(i=0; i<dl->dl_tcp_fo_cookielen; i++)
-		    dl->dl_tcp_fo_cookie[i] = tmp[4+i];
+		  memcpy(dl->dl_tcp_fo_cookie, tmp+4, dl->dl_tcp_fo_cookielen);
 		}
 
 	      off += tmp[1];
@@ -384,7 +382,7 @@ static int dl_parse_ip(scamper_dl_rec_t *dl, uint8_t *pktbuf, size_t pktlen)
 	   * the ICMP response should include the IP header and the first
 	   * 8 bytes of the transport header.
 	   */
-#ifndef _WIN32
+#ifndef _WIN32 /* windows does not separate ip_v and ip_hl */
 	  if((size_t)(ICMP_MINLEN + (ip4->ip_hl << 2) + 8) > len)
 #else
 	  if((size_t)(ICMP_MINLEN + ((ip4->ip_vhl & 0xf) << 2) + 8) > len)
@@ -395,7 +393,7 @@ static int dl_parse_ip(scamper_dl_rec_t *dl, uint8_t *pktbuf, size_t pktlen)
 
 	  pkt = (uint8_t *)ip4;
 
-#ifndef _WIN32
+#ifndef _WIN32 /* windows does not separate ip_v and ip_hl */
 	  iplen = (ip4->ip_hl << 2);
 #else
 	  iplen = ((ip4->ip_vhl & 0xf) << 2);
@@ -467,7 +465,7 @@ static int dl_parse_ip(scamper_dl_rec_t *dl, uint8_t *pktbuf, size_t pktlen)
 
 	  if(dl->dl_icmp_type == ICMP6_PACKET_TOO_BIG)
 	    {
-#ifndef _WIN32
+#ifndef _WIN32 /* windows does not provide icmp6_mtu in struct icmp6_hdr */
 	      dl->dl_icmp_nhmtu = (ntohl(icmp6->icmp6_mtu) % 0xffff);
 #else
 	      dl->dl_icmp_nhmtu = ntohs(icmp6->icmp6_seq);
@@ -933,6 +931,7 @@ static int dl_bpf_read(const int fd, scamper_dl_t *node)
   scamper_dl_rec_t   dl;
   ssize_t            len;
   uint8_t           *buf = readbuf;
+  int                ifindex;
 
   while((len = read(fd, buf, node->readbuf_len)) == -1)
     {
@@ -944,7 +943,7 @@ static int dl_bpf_read(const int fd, scamper_dl_t *node)
     }
 
   /* record the ifindex now, as the cb may need it */
-  if(scamper_fd_ifindex(node->fdn, &dl.dl_ifindex) != 0)
+  if(scamper_fd_ifindex(node->fdn, &ifindex) != 0)
     {
       return -1;
     }
@@ -955,6 +954,7 @@ static int dl_bpf_read(const int fd, scamper_dl_t *node)
 
       /* reset the datalink record */
       memset(&dl, 0, sizeof(dl));
+      dl.dl_ifindex = ifindex;
 
       if(node->dlt_cb(&dl, buf + bpf_hdr->bh_hdrlen, bpf_hdr->bh_caplen))
 	{
@@ -1951,7 +1951,11 @@ void scamper_dl_rec_icmp_print(const scamper_dl_rec_t *dl)
  * this function is called by scamper_fds when a BPF fd fires as being
  * available to read from.
  */
-void scamper_dl_read_cb(const int fd, void *param)
+#ifndef _WIN32 /* SOCKET vs int on windows */
+void scamper_dl_read_cb(int fd, void *param)
+#else
+void scamper_dl_read_cb(SOCKET fd, void *param)
+#endif
 {
   assert(param != NULL);
 
@@ -2035,14 +2039,6 @@ int scamper_dl_tx_type(scamper_dl_t *dl)
   return dl->tx_type;
 }
 
-void scamper_dl_close(int fd)
-{
-#ifndef _WIN32
-  close(fd);
-#endif
-  return;
-}
-
 /*
  * scamper_dl_open_fd
  *
@@ -2057,7 +2053,7 @@ int scamper_dl_open_fd(const int ifindex)
   return dl_linux_open(ifindex);
 #elif defined(HAVE_DLPI)
   return dl_dlpi_open(ifindex);
-#elif defined(_WIN32)
+#elif defined(_WIN32) /* no supported datalink interface on windows */
   return -1;
 #endif
 }
@@ -2072,8 +2068,8 @@ int scamper_dl_open(const int ifindex)
 {
   int fd = -1;
 
-#if defined(WITHOUT_PRIVSEP)
-#ifndef _WIN32
+#ifdef DISABLE_PRIVSEP
+#ifdef HAVE_SETEUID
   uid_t uid = scamper_getuid();
   uid_t euid = scamper_geteuid();
   if(uid != euid && seteuid(euid) != 0)
@@ -2083,7 +2079,7 @@ int scamper_dl_open(const int ifindex)
     }
 #endif
   fd = scamper_dl_open_fd(ifindex);
-#ifndef _WIN32
+#ifdef HAVE_SETEUID
   if(uid != euid && seteuid(uid) != 0)
     {
       printerror(__func__, "could not return to uid");
@@ -2117,7 +2113,7 @@ int scamper_dl_init()
 {
 #if defined(HAVE_BPF)
   int rc;
-#ifndef _WIN32
+#ifdef HAVE_SETEUID
   uid_t uid = scamper_getuid();
   uid_t euid = scamper_geteuid();
   if(uid != euid && seteuid(euid) != 0)
@@ -2127,7 +2123,7 @@ int scamper_dl_init()
     }
 #endif
   rc = dl_bpf_init();
-#ifndef _WIN32
+#ifdef HAVE_SETEUID
   if(uid != euid && seteuid(uid) != 0)
     {
       printerror(__func__, "could not return to uid");

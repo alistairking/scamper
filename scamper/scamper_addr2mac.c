@@ -1,7 +1,7 @@
 /*
  * scamper_addr2mac.c: handle a cache of IP to MAC address mappings
  *
- * $Id: scamper_addr2mac.c,v 1.47 2023/01/03 02:59:53 mjl Exp $
+ * $Id: scamper_addr2mac.c,v 1.47.10.2 2023/09/18 07:07:13 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -558,7 +558,7 @@ static int addr2mac_init_bsd(void)
 }
 #endif
 
-#ifdef _WIN32
+#ifdef HAVE_GETIPNETTABLE
 static int GetIpNetTable_wrap(MIB_IPNETTABLE **table, ULONG *size)
 {
   int rc;
@@ -636,7 +636,7 @@ int scamper_addr2mac_init()
     }
 #endif
 
-#ifdef _WIN32
+#ifdef HAVE_GETIPNETTABLE
   if(addr2mac_init_win32() != 0)
     {
       return -1;

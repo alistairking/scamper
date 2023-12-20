@@ -1,7 +1,7 @@
 /*
  * scamper_privsep.c: code that does root-required tasks
  *
- * $Id: scamper_privsep.c,v 1.99 2023/05/29 22:30:24 mjl Exp $
+ * $Id: scamper_privsep.c,v 1.99.4.1 2023/08/26 21:26:45 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -28,8 +28,6 @@
 #ifdef HAVE_CONFIG_H
 #include "config.h"
 #endif
-
-#ifndef WITHOUT_PRIVSEP
 
 #include "internal.h"
 #include "scamper.h"
@@ -1454,5 +1452,3 @@ void scamper_privsep_cleanup()
 
   return;
 }
-
-#endif /* ifndef WITHOUT_PRIVSEP */

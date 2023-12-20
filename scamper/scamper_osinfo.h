@@ -1,9 +1,10 @@
 /*
  * scamper_osinfo.h
  *
- * $Id: scamper_osinfo.h,v 1.1 2012/05/08 17:27:22 mjl Exp $
+ * $Id: scamper_osinfo.h,v 1.1.52.1 2023/08/07 22:38:04 mjl Exp $
  *
  * Copyright (C) 2006 Matthew Luckie
+ * Copyright (C) 2023 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -46,5 +47,7 @@ typedef struct scamper_osinfo
 
 int scamper_osinfo_init(void);
 void scamper_osinfo_cleanup(void);
-
 const scamper_osinfo_t *scamper_osinfo_get(void);
+
+scamper_osinfo_t *scamper_osinfo_alloc(const char *sysname, char *release);
+void scamper_osinfo_free(scamper_osinfo_t *os);

@@ -1,7 +1,7 @@
 /*
  * scamper_rtsock: code to deal with a route socket or equivalent
  *
- * $Id: scamper_rtsock.c,v 1.94 2023/05/29 21:22:26 mjl Exp $
+ * $Id: scamper_rtsock.c,v 1.94.4.3 2023/08/26 21:26:45 mjl Exp $
  *
  *          Matthew Luckie
  *
@@ -119,7 +119,7 @@ struct rtmsg
 
 extern scamper_addrcache_t *addrcache;
 
-#ifndef _WIN32
+#ifndef _WIN32 /* windows does not have a routing socket */
 typedef struct rtsock_pair
 {
   scamper_route_t *route; /* query */
@@ -704,8 +704,8 @@ int scamper_rtsock_open()
 {
   int fd;
 
-#if defined(WITHOUT_PRIVSEP)
-#ifndef _WIN32
+#ifdef DISABLE_PRIVSEP
+#ifdef HAVE_SETEUID
   uid_t uid = scamper_getuid();
   uid_t euid = scamper_geteuid();
   if(uid != euid && seteuid(euid) != 0)
@@ -715,7 +715,7 @@ int scamper_rtsock_open()
     }
 #endif
   fd = scamper_rtsock_open_fd();
-#ifndef _WIN32
+#ifdef HAVE_SETEUID
   if(uid != euid && seteuid(uid) != 0)
     {
       printerror(__func__, "could not return to uid");
@@ -735,7 +735,7 @@ int scamper_rtsock_open()
 }
 #endif
 
-#ifdef _WIN32
+#ifdef _WIN32 /* windows does not have a routing socket */
 static int scamper_rtsock_getroute4(scamper_route_t *route)
 {
   struct in_addr *in = route->dst->addr;
@@ -780,7 +780,7 @@ void scamper_route_free(scamper_route_t *route)
 {
   if(route == NULL)
     return;
-#ifndef _WIN32
+#ifndef _WIN32 /* windows does not have a routing socket */
   if(route->internal != NULL)
     rtsock_pair_free(route->internal);
 #endif
@@ -806,7 +806,7 @@ scamper_route_t *scamper_route_alloc(scamper_addr_t *dst, void *param,
 
 int scamper_rtsock_init()
 {
-#ifndef _WIN32
+#ifndef _WIN32 /* windows does not have a routing socket */
   if((pairs = dlist_alloc()) == NULL)
     {
       printerror(__func__, "could not allocate pair list");
@@ -820,7 +820,7 @@ int scamper_rtsock_init()
 
 void scamper_rtsock_cleanup()
 {
-#ifndef _WIN32
+#ifndef _WIN32 /* windows does not have a routing socket */
   rtsock_pair_t *pair;
 
   if(pairs != NULL)

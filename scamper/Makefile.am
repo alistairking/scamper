@@ -1,4 +1,4 @@
-# $Id: Makefile.am,v 1.56 2023/06/05 00:42:01 mjl Exp $
+# $Id: Makefile.am,v 1.56.4.8 2023/10/05 06:59:18 mjl Exp $
 
 AUTOMAKE_OPTIONS = subdir-objects
 
@@ -8,9 +8,9 @@ bin_PROGRAMS = scamper
 
 lib_LTLIBRARIES = libscamperfile.la
 
-libscamperfile_la_LDFLAGS = -version-info 6:0:0
+libscamperfile_la_LDFLAGS = -version-info 7:0:1 -no-undefined
 
-libscamperfile_la_LIBADD = @ZLIB_LIBS@ @LIBBZ2_LIBS@ @LIBLZMA_LIBS@
+libscamperfile_la_LIBADD = @ZLIB_LIBS@ @LIBBZ2_LIBS@ @LIBLZMA_LIBS@ @WINSOCK_LIBS@
 
 libscamperfile_la_SOURCES = \
 	../mjl_splaytree.c \
@@ -18,7 +18,6 @@ libscamperfile_la_SOURCES = \
 	scamper_file.c \
 	scamper_file_arts.c \
 	scamper_file_warts.c \
-	scamper_file_text.c \
 	scamper_file_json.c \
 	scamper_addr.c \
 	scamper_list.c \
@@ -94,7 +93,6 @@ scamper_SOURCES = \
 	scamper_linepoll.c \
 	scamper_writebuf.c \
 	scamper_dlhdr.c \
-	scamper_privsep.c \
 	scamper_getsrc.c \
 	scamper_control.c \
 	scamper_firewall.c \
@@ -105,67 +103,96 @@ scamper_SOURCES = \
 	scamper_cyclemon.c \
 	scamper_options.c \
 	scamper_file.c \
-	scamper_file_arts.c \
 	scamper_file_warts.c \
-	scamper_file_text.c \
 	scamper_file_json.c \
 	scamper_sources.c \
 	scamper_source_cmdline.c \
 	scamper_source_control.c \
-	scamper_source_file.c \
-	scamper_source_tsps.c \
+	scamper_source_file.c
+if ENABLE_PRIVSEP
+scamper_SOURCES += \
+	scamper_privsep.c
+endif
+if ENABLE_SCAMPER_TRACE
+scamper_SOURCES += \
 	trace/scamper_trace.c \
 	trace/scamper_trace_warts.c \
 	trace/scamper_trace_text.c \
 	trace/scamper_trace_json.c \
 	trace/scamper_trace_cmd.c \
-	trace/scamper_trace_do.c \
+	trace/scamper_trace_do.c
+endif
+if ENABLE_SCAMPER_PING
+scamper_SOURCES += \
 	ping/scamper_ping.c \
 	ping/scamper_ping_warts.c \
 	ping/scamper_ping_text.c \
 	ping/scamper_ping_json.c \
 	ping/scamper_ping_cmd.c \
-	ping/scamper_ping_do.c \
+	ping/scamper_ping_do.c
+endif
+if ENABLE_SCAMPER_TRACELB
+scamper_SOURCES += \
 	tracelb/scamper_tracelb.c \
 	tracelb/scamper_tracelb_warts.c \
 	tracelb/scamper_tracelb_text.c \
 	tracelb/scamper_tracelb_json.c \
 	tracelb/scamper_tracelb_cmd.c \
-	tracelb/scamper_tracelb_do.c \
+	tracelb/scamper_tracelb_do.c
+endif
+if ENABLE_SCAMPER_DEALIAS
+scamper_SOURCES += \
 	dealias/scamper_dealias.c \
 	dealias/scamper_dealias_warts.c \
 	dealias/scamper_dealias_text.c \
 	dealias/scamper_dealias_json.c \
 	dealias/scamper_dealias_cmd.c \
-	dealias/scamper_dealias_do.c \
-	sting/scamper_sting.c \
-	sting/scamper_sting_warts.c \
-	sting/scamper_sting_text.c \
-	sting/scamper_sting_cmd.c \
-	sting/scamper_sting_do.c \
+	dealias/scamper_dealias_do.c
+endif
+scamper_SOURCES += \
 	neighbourdisc/scamper_neighbourdisc.c \
 	neighbourdisc/scamper_neighbourdisc_warts.c \
 	neighbourdisc/scamper_neighbourdisc_cmd.c \
-	neighbourdisc/scamper_neighbourdisc_do.c \
+	neighbourdisc/scamper_neighbourdisc_do.c
+if ENABLE_SCAMPER_TBIT
+scamper_SOURCES += \
 	tbit/scamper_tbit.c \
 	tbit/scamper_tbit_warts.c \
 	tbit/scamper_tbit_text.c \
 	tbit/scamper_tbit_json.c \
 	tbit/scamper_tbit_cmd.c \
-	tbit/scamper_tbit_do.c \
+	tbit/scamper_tbit_do.c
+endif
+if ENABLE_SCAMPER_STING
+scamper_SOURCES += \
+	sting/scamper_sting.c \
+	sting/scamper_sting_warts.c \
+	sting/scamper_sting_text.c \
+	sting/scamper_sting_cmd.c \
+	sting/scamper_sting_do.c
+endif
+if ENABLE_SCAMPER_SNIFF
+scamper_SOURCES += \
 	sniff/scamper_sniff.c \
 	sniff/scamper_sniff_warts.c \
 	sniff/scamper_sniff_cmd.c \
-	sniff/scamper_sniff_do.c \
+	sniff/scamper_sniff_do.c
+endif
+if ENABLE_SCAMPER_HOST
+scamper_SOURCES += \
 	host/scamper_host.c \
 	host/scamper_host_warts.c \
 	host/scamper_host_json.c \
 	host/scamper_host_cmd.c \
 	host/scamper_host_do.c
+endif
 
-scamper_CFLAGS = $(AM_CFLAGS)
+scamper_CFLAGS = $(AM_CFLAGS) -DBUILDING_SCAMPER
 
-scamper_LDADD = @OPENSSL_LIBS@ @ZLIB_LIBS@ @LIBBZ2_LIBS@ @LIBLZMA_LIBS@
+scamper_LDADD = @OPENSSL_LIBS@ @LIBNV_LIBS@ \
+	@ZLIB_LIBS@ @LIBBZ2_LIBS@ @LIBLZMA_LIBS@ \
+	@WINSOCK_LIBS@ @WINMM_LIBS@ @IPHLPAPI_LIBS@
+
 scamper_LDFLAGS = @OPENSSL_LDFLAGS@
 
 include_HEADERS = \

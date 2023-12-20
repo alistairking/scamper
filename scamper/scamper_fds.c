@@ -1,7 +1,7 @@
 /*
  * scamper_fds: manage events and file descriptors
  *
- * $Id: scamper_fds.c,v 1.105 2023/04/27 23:31:26 mjl Exp $
+ * $Id: scamper_fds.c,v 1.105.4.3 2023/08/20 01:24:40 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -40,7 +40,7 @@
 #include "scamper_tcp6.h"
 #include "scamper_ip4.h"
 #include "scamper_dl.h"
-#ifndef _WIN32
+#ifndef _WIN32 /* windows does not have a routing socket */
 #include "scamper_rtsock.h"
 #endif
 #include "utils.h"
@@ -70,7 +70,11 @@ typedef struct scamper_fd_poll
  */
 struct scamper_fd
 {
+#ifndef _WIN32 /* SOCKET vs int on windows */
   int               fd;           /* the file descriptor being polled */
+#else
+  SOCKET            fd;
+#endif
   scamper_fd_t     *raw;          /* if udp4, the raw udp socket */
   int               type;         /* the type of the file descriptor */
   int               refcnt;       /* number of references to this structure */
@@ -123,11 +127,10 @@ struct scamper_fd
 #define SCAMPER_FD_TYPE_TCP6     0x09
 #define SCAMPER_FD_TYPE_DL       0x0a
 #define SCAMPER_FD_TYPE_IP4      0x0b
-#define SCAMPER_FD_TYPE_FILE     0x0c
 
-#ifndef _WIN32
-#define SCAMPER_FD_TYPE_RTSOCK   0x0d
-#define SCAMPER_FD_TYPE_IFSOCK   0x0e
+#ifndef _WIN32 /* windows does not have a routing socket */
+#define SCAMPER_FD_TYPE_RTSOCK   0x0c
+#define SCAMPER_FD_TYPE_IFSOCK   0x0d
 #endif
 
 #define SCAMPER_FD_TYPE_IS_UDP(fd) (      \
@@ -172,7 +175,11 @@ struct scamper_fd
 #define fd_dl_dl      fd_t_un.fd_t_dl.dl
 
 static scamper_fd_t **fd_array    = NULL;
+#ifndef _WIN32 /* SOCKET vs int on windows */
 static int            fd_array_s  = 0;
+#else
+static SOCKET         fd_array_s  = 0;
+#endif
 static splaytree_t   *fd_tree     = NULL;
 static dlist_t       *fd_list     = NULL;
 static dlist_t       *read_fds    = NULL;
@@ -207,9 +214,6 @@ static char *fd_tostr(scamper_fd_t *fdn)
 
     case SCAMPER_FD_TYPE_IP4:
       return "ip4";
-
-    case SCAMPER_FD_TYPE_FILE:
-      return "file";
 
     case SCAMPER_FD_TYPE_ICMP4:
       snprintf(buf, sizeof(buf), "icmp4%s",
@@ -285,51 +289,26 @@ static void fd_close(scamper_fd_t *fdn)
   switch(fdn->type)
     {
     case SCAMPER_FD_TYPE_PRIVATE:
-    case SCAMPER_FD_TYPE_FILE:
       break;
 
     case SCAMPER_FD_TYPE_ICMP4:
     case SCAMPER_FD_TYPE_ICMP4ERR:
-      scamper_icmp4_close(fdn->fd);
-      break;
-
     case SCAMPER_FD_TYPE_ICMP6:
-      scamper_icmp6_close(fdn->fd);
-      break;
-
     case SCAMPER_FD_TYPE_UDP4:
     case SCAMPER_FD_TYPE_UDP4DG:
-      scamper_udp4_close(fdn->fd);
-      break;
-
     case SCAMPER_FD_TYPE_UDP6:
     case SCAMPER_FD_TYPE_UDP6ERR:
-      scamper_udp6_close(fdn->fd);
-      break;
-
     case SCAMPER_FD_TYPE_TCP4:
-      scamper_tcp4_close(fdn->fd);
-      break;
-
     case SCAMPER_FD_TYPE_TCP6:
-      scamper_tcp6_close(fdn->fd);
-      break;
-
     case SCAMPER_FD_TYPE_DL:
-      scamper_dl_close(fdn->fd);
-      break;
-
 #ifdef SCAMPER_FD_TYPE_RTSOCK
     case SCAMPER_FD_TYPE_RTSOCK:
-      scamper_rtsock_close(fdn->fd);
-      break;
 #endif
-
 #ifdef SCAMPER_FD_TYPE_IFSOCK
     case SCAMPER_FD_TYPE_IFSOCK:
-      close(fdn->fd);
-      break;
 #endif
+      socket_close(fdn->fd);
+      break;
     }
 
   return;
@@ -411,8 +390,7 @@ static void fd_refcnt_0(scamper_fd_t *fdn)
    * if this is a private fd and the reference count has reached zero,
    * then the scamper_fd structure can be freed up completely now
    */
-  if(fdn->type == SCAMPER_FD_TYPE_PRIVATE ||
-     fdn->type == SCAMPER_FD_TYPE_FILE)
+  if(fdn->type == SCAMPER_FD_TYPE_PRIVATE)
     {
       fd_free(fdn);
       return;
@@ -448,7 +426,7 @@ static int fd_poll_setlist(void *item, void *param)
  * given a list of scamper_fd_poll_t structures held in a list, compose an
  * fd_set for them to pass to select.
  */
-static int fds_select_assemble(dlist_t *fds, slist_t **file_list,
+static int fds_select_assemble(dlist_t *fds,
 			       fd_set *fdset, fd_set **fdsp, int *nfds)
 {
   scamper_fd_poll_t *fdp;
@@ -481,21 +459,12 @@ static int fds_select_assemble(dlist_t *fds, slist_t **file_list,
 	  continue;
 	}
 
-      if(fdp->fdn->type == SCAMPER_FD_TYPE_FILE)
-	{
-	  if((*file_list == NULL && (*file_list = slist_alloc()) == NULL) ||
-	     slist_tail_push(*file_list, fdp) == NULL)
-	    return -1;
-	  continue;
-	}
-
       /* monitor this file descriptor */
       FD_SET(fdp->fdn->fd, fdset);
       count++;
 
       /* update the maxfd seen if appropriate */
-      if(*nfds < fdp->fdn->fd)
-	*nfds = fdp->fdn->fd;
+      *nfds = socket_setnfds(*nfds, fdp->fdn->fd);
     }
 
   /*
@@ -551,27 +520,10 @@ static void fds_select_check(fd_set *fdset, dlist_t *fds, int *count)
   return;
 }
 
-static void fds_files_check(dlist_t *fds, slist_t *list)
-{
-  scamper_fd_poll_t *fdp;
-
-  if(list == NULL)
-    return;
-
-  dlist_lock(fds);
-  while((fdp = slist_head_pop(list)) != NULL)
-    fdp->cb(fdp->fdn->fd, fdp->param);
-  dlist_unlock(fds);
-
-  return;
-}
-
 static int fds_select(struct timeval *timeout)
 {
-  struct timeval tv;
   fd_set rfds, *rfdsp;
   fd_set wfds, *wfdsp;
-  slist_t *rfiles = NULL, *wfiles = NULL;
   int count, nfds = -1;
 
   /* concat any new fds to monitor now */
@@ -581,20 +533,14 @@ static int fds_select(struct timeval *timeout)
   dlist_concat(write_fds, write_queue);
 
   /* compose the sets of file descriptors to monitor */
-  if(fds_select_assemble(read_fds, &rfiles, &rfds, &rfdsp, &nfds) != 0)
+  if(fds_select_assemble(read_fds, &rfds, &rfdsp, &nfds) != 0)
     goto err;
-  if(fds_select_assemble(write_fds, &wfiles, &wfds, &wfdsp, &nfds) != 0)
+  if(fds_select_assemble(write_fds, &wfds, &wfdsp, &nfds) != 0)
     goto err;
-
-  if(rfiles != NULL || wfiles != NULL)
-    {
-      tv.tv_sec = 0; tv.tv_usec = 0;
-      timeout = &tv;
-    }
 
   /* find out which file descriptors have an event */
-#ifdef _WIN32
-  if(nfds == -1 && rfiles == NULL && wfiles == NULL)
+#ifdef _WIN32 /* must pass at least one FD to select on windows */
+  if(nfds == -1)
     {
       if(timeout != NULL && timeout->tv_sec >= 0 && timeout->tv_usec >= 0)
 	Sleep((timeout->tv_sec * 1000) + (timeout->tv_usec / 1000));
@@ -610,19 +556,6 @@ static int fds_select(struct timeval *timeout)
       goto err;
     }
 
-  /* read and write to files outside of select */
-  if(rfiles != NULL)
-    {
-      fds_files_check(read_fds, rfiles);
-      slist_free(rfiles); rfiles = NULL;
-    }
-
-  if(wfiles != NULL)
-    {
-      fds_files_check(write_fds, wfiles);
-      slist_free(wfiles); wfiles = NULL;
-    }
-
   /* if there are fds to check, then check them */
   if(count > 0)
     {
@@ -633,8 +566,6 @@ static int fds_select(struct timeval *timeout)
   return 0;
 
  err:
-  if(rfiles != NULL) slist_free(rfiles);
-  if(wfiles != NULL) slist_free(wfiles);
   return -1;
 }
 
@@ -794,10 +725,10 @@ static void fds_kqueue_set(scamper_fd_t *fd, short filter, u_short flags)
 
 static int fds_kqueue(struct timeval *tv)
 {
+  int i, fd, c;
   scamper_fd_t *fdp;
   struct timespec ts, *tsp = NULL;
   struct kevent *kev;
-  int fd, i, c;
 
   if((c = dlist_count(read_fds) + dlist_count(write_fds)) >= kevlistlen)
     {
@@ -956,7 +887,7 @@ static int fds_epoll(struct timeval *tv)
       if(fd < 0 || fd >= fd_array_s)
 	continue;
 
-      if(ep_events[i].events & EPOLLIN)
+      if(ep_events[i].events & (EPOLLIN|EPOLLHUP))
 	{
 	  if((fdp = fd_array[fd]) == NULL)
 	    continue;
@@ -1047,16 +978,28 @@ static int fd_cmp(const scamper_fd_t *a, const scamper_fd_t *b)
  * allocate a scamper_fd_t structure and do generic setup tasks.
  */
 #ifndef DMALLOC
+#ifndef _WIN32 /* SOCKET vs int on windows */
 static scamper_fd_t *fd_alloc(int type, int fd)
 #else
+static scamper_fd_t *fd_alloc(int type, SOCKET fd)
+#endif
+#else
 #define fd_alloc(type, fd) fd_alloc_dm((type), (fd), __FILE__, __LINE__)
-static scamper_fd_t *fd_alloc_dm(int type, int fd, const char *file,
-				 const int line)
+#ifndef _WIN32 /* SOCKET vs int on windows */
+static scamper_fd_t *fd_alloc_dm(int type, int fd, const char *file, int line)
+#else
+static scamper_fd_t *fd_alloc_dm(int type, SOCKET fd, const char *file, int line)
+#endif
 #endif
 {
   scamper_fd_t *fdn = NULL;
   size_t size;
+
+#ifndef _WIN32 /* SOCKET vs int on windows */
   int i;
+#else
+  SOCKET i;
+#endif
 
 #ifndef DMALLOC
   if((fdn = malloc_zero(sizeof(scamper_fd_t))) == NULL)
@@ -1140,14 +1083,17 @@ static scamper_fd_t *fd_find(scamper_fd_t *findme)
 static scamper_fd_t *fd_null(int type)
 {
   scamper_fd_t *fdn = NULL, findme;
+
+#ifndef _WIN32 /* SOCKET vs int on windows */
   int fd = -1;
+#else
+  SOCKET fd = INVALID_SOCKET;
+#endif
 
   /* first check if a sharable fd exists for this type */
   findme.type = type;
   if((fdn = fd_find(&findme)) != NULL)
-    {
-      return fdn;
-    }
+    return fdn;
 
   switch(type)
     {
@@ -1168,7 +1114,7 @@ static scamper_fd_t *fd_null(int type)
       break;
     }
 
-  if(fd == -1 || (fdn = fd_alloc(type, fd)) == NULL ||
+  if(socket_isinvalid(fd) || (fdn = fd_alloc(type, fd)) == NULL ||
      (fdn->fd_tree_node = splaytree_insert(fd_tree, fdn)) == NULL ||
      (fdn->fd_list_node = dlist_tail_push(fd_list, fdn)) == NULL)
     {
@@ -1179,27 +1125,8 @@ static scamper_fd_t *fd_null(int type)
   return fdn;
 
  err:
-  if(fd != -1)
-    {
-      switch(type)
-	{
-#if defined(SCAMPER_FD_TYPE_RTSOCK)
-	case SCAMPER_FD_TYPE_RTSOCK:
-	  scamper_rtsock_close(fd);
-	  break;
-#endif
-
-#if defined(SCAMPER_FD_TYPE_IFSOCK)
-	case SCAMPER_FD_TYPE_IFSOCK:
-	  close(fd);
-	  break;
-#endif
-
-	case SCAMPER_FD_TYPE_IP4:
-	  scamper_ip4_close(fd);
-	  break;
-	}
-    }
+  if(socket_isvalid(fd))
+    socket_close(fd);
   if(fdn != NULL) fd_free(fdn);
   return NULL;
 }
@@ -1208,15 +1135,18 @@ static scamper_fd_t *fd_icmp(int type, void *addr)
 {
   scamper_fd_t *fdn = NULL, findme;
   size_t len = 0;
+
+#ifndef _WIN32 /* SOCKET vs int on windows */
   int fd = -1;
+#else
+  SOCKET fd = INVALID_SOCKET;
+#endif
 
   findme.type = type;
   findme.fd_icmp_addr = addr;
 
   if((fdn = fd_find(&findme)) != NULL)
-    {
-      return fdn;
-    }
+    return fdn;
 
   if(type == SCAMPER_FD_TYPE_ICMP4)
     {
@@ -1234,7 +1164,7 @@ static scamper_fd_t *fd_icmp(int type, void *addr)
       len = sizeof(struct in_addr);
     }
 
-  if(fd == -1 || (fdn = fd_alloc(type, fd)) == NULL ||
+  if(socket_isinvalid(fd) || (fdn = fd_alloc(type, fd)) == NULL ||
      (addr != NULL && (fdn->fd_icmp_addr = memdup(addr, len)) == NULL) ||
      (fdn->fd_tree_node = splaytree_insert(fd_tree, fdn)) == NULL ||
      (fdn->fd_list_node = dlist_tail_push(fd_list, fdn)) == NULL)
@@ -1246,13 +1176,8 @@ static scamper_fd_t *fd_icmp(int type, void *addr)
   return fdn;
 
  err:
-  if(fd != -1)
-    {
-      if(type == SCAMPER_FD_TYPE_ICMP4 || type == SCAMPER_FD_TYPE_ICMP4ERR)
-	scamper_icmp4_close(fd);
-      else if(type == SCAMPER_FD_TYPE_ICMP6)
-	scamper_icmp6_close(fd);
-    }
+  if(socket_isvalid(fd))
+    socket_close(fd);
   if(fdn != NULL) fd_free(fdn);
   return NULL;
 }
@@ -1261,7 +1186,12 @@ static scamper_fd_t *fd_tcp(int type, void *addr, uint16_t sport)
 {
   scamper_fd_t *fdn, findme;
   size_t len = 0;
+
+#ifndef _WIN32 /* SOCKET vs int on windows */
   int fd = -1;
+#else
+  SOCKET fd = INVALID_SOCKET;
+#endif
 
   assert(type == SCAMPER_FD_TYPE_TCP4 ||
 	 type == SCAMPER_FD_TYPE_TCP6);
@@ -1284,7 +1214,7 @@ static scamper_fd_t *fd_tcp(int type, void *addr, uint16_t sport)
       len = sizeof(struct in6_addr);
     }
 
-  if(fd == -1 || (fdn = fd_alloc(type, fd)) == NULL ||
+  if(socket_isinvalid(fd) || (fdn = fd_alloc(type, fd)) == NULL ||
      (addr != NULL && (fdn->fd_tcp_addr = memdup(addr, len)) == NULL))
     {
       goto err;
@@ -1301,13 +1231,8 @@ static scamper_fd_t *fd_tcp(int type, void *addr, uint16_t sport)
   return fdn;
 
  err:
-  if(fd != -1)
-    {
-      if(type == SCAMPER_FD_TYPE_TCP4)
-	scamper_tcp4_close(fd);
-      else if(type == SCAMPER_FD_TYPE_TCP6)
-	scamper_tcp6_close(fd);
-    }
+  if(socket_isvalid(fd))
+    socket_close(fd);
   if(fdn != NULL) fd_free(fdn);
   return NULL;
 }
@@ -1316,7 +1241,12 @@ static scamper_fd_t *fd_udp(int type, void *addr, uint16_t sport)
 {
   scamper_fd_t *fdn, findme;
   size_t len = 0;
+
+#ifndef _WIN32 /* SOCKET vs int on windows */
   int fd = -1;
+#else
+  SOCKET fd = INVALID_SOCKET;
+#endif
 
   findme.type = type;
   findme.fd_udp_addr = addr;
@@ -1346,7 +1276,7 @@ static scamper_fd_t *fd_udp(int type, void *addr, uint16_t sport)
       len = sizeof(struct in6_addr);
     }
 
-  if(fd == -1 || (fdn = fd_alloc(type, fd)) == NULL ||
+  if(socket_isinvalid(fd) || (fdn = fd_alloc(type, fd)) == NULL ||
      (addr != NULL && (fdn->fd_udp_addr = memdup(addr, len)) == NULL))
     {
       printerror(__func__, "could not open socket");
@@ -1369,13 +1299,8 @@ static scamper_fd_t *fd_udp(int type, void *addr, uint16_t sport)
   return fdn;
 
  err:
-  if(fd != -1)
-    {
-      if(type == SCAMPER_FD_TYPE_UDP4 || type == SCAMPER_FD_TYPE_UDP4DG)
-	scamper_udp4_close(fd);
-      else if(type == SCAMPER_FD_TYPE_UDP6 || type == SCAMPER_FD_TYPE_UDP6ERR)
-	scamper_udp6_close(fd);
-    }
+  if(socket_isvalid(fd))
+    socket_close(fd);
   if(fdn != NULL) fd_free(fdn);
   return NULL;
 }
@@ -1427,22 +1352,15 @@ int scamper_fds_poll(struct timeval *timeout)
  *
  * return the actual file descriptor associated with the scamper_fd_t
  */
+#ifndef _WIN32 /* SOCKET vs int on windows */
 int scamper_fd_fd_get(const scamper_fd_t *fdn)
+#else
+SOCKET scamper_fd_fd_get(const scamper_fd_t *fdn)
+#endif
 {
   if(fdn->raw == NULL)
     return fdn->fd;
   return fdn->raw->fd;
-}
-
-/*
- * scamper_fd_fd_set
- *
- * set the file descriptor being monitored with the scamper_fd_t
- */
-int scamper_fd_fd_set(scamper_fd_t *fdn, int fd)
-{
-  fdn->fd = fd;
-  return 0;
 }
 
 /*
@@ -1612,7 +1530,7 @@ scamper_fd_t *scamper_fd_icmp6(void *addr)
   return fdn;
 }
 
-#ifndef _WIN32
+#ifndef _WIN32 /* windows does not have a routing socket */
 scamper_fd_t *scamper_fd_rtsock(void)
 {
   scamper_fd_t *fdn;
@@ -1677,7 +1595,7 @@ scamper_fd_t *scamper_fd_ip4(void)
   return fd_null(SCAMPER_FD_TYPE_IP4);
 }
 
-#ifndef _WIN32
+#ifndef _WIN32 /* do not use ifsock on windows */
 scamper_fd_t *scamper_fd_ifsock(void)
 {
   return fd_null(SCAMPER_FD_TYPE_IFSOCK);
@@ -1687,7 +1605,12 @@ scamper_fd_t *scamper_fd_ifsock(void)
 scamper_fd_t *scamper_fd_dl(int ifindex)
 {
   scamper_fd_t *fdn = NULL, findme;
+
+#ifndef _WIN32 /* SOCKET vs int on windows */
   int fd = -1;
+#else
+  SOCKET fd = INVALID_SOCKET;
+#endif
 
   findme.type = SCAMPER_FD_TYPE_DL;
   findme.fd_dl_ifindex = ifindex;
@@ -1702,7 +1625,8 @@ scamper_fd_t *scamper_fd_dl(int ifindex)
    * open the file descriptor for the ifindex, and then allocate a scamper_fd
    * for the file descriptor
    */
-  if((fd  = scamper_dl_open(ifindex)) == -1 ||
+  fd = scamper_dl_open(ifindex);
+  if(socket_isinvalid(fd) ||
      (fdn = fd_alloc(SCAMPER_FD_TYPE_DL, fd)) == NULL)
     {
       goto err;
@@ -1733,7 +1657,8 @@ scamper_fd_t *scamper_fd_dl(int ifindex)
   return fdn;
 
  err:
-  if(fd != -1) scamper_dl_close(fd);
+  if(socket_isvalid(fd))
+    socket_close(fd);
   if(fdn != NULL) fd_free(fdn);
   return NULL;
 }
@@ -1744,48 +1669,31 @@ scamper_fd_t *scamper_fd_dl(int ifindex)
  * allocate a private fd for scamper to manage.  this fd is not shared amongst
  * scamper.
  */
-scamper_fd_t *scamper_fd_private(int fd, void *param, scamper_fd_cb_t read_cb,
-				 scamper_fd_cb_t write_cb)
+#ifndef _WIN32 /* SOCKET vs int on windows */
+scamper_fd_t *scamper_fd_private(int fd,
+#else
+scamper_fd_t *scamper_fd_private(SOCKET fd,
+#endif
+				 void *param,
+				 scamper_fd_cb_t r_cb, scamper_fd_cb_t w_cb)
 {
   scamper_fd_t *fdn = NULL;
 
-  if((fdn = fd_alloc(SCAMPER_FD_TYPE_PRIVATE, fd)) == NULL)
-    {
-      goto err;
-    }
-
-  if((fdn->fd_list_node = dlist_tail_push(fd_list, fdn)) == NULL)
+  if((fdn = fd_alloc(SCAMPER_FD_TYPE_PRIVATE, fd)) == NULL ||
+     (fdn->fd_list_node = dlist_tail_push(fd_list, fdn)) == NULL)
     goto err;
 
-  if(read_cb != NULL)
+  if(r_cb != NULL)
     {
-      scamper_fd_read_set(fdn, read_cb, param);
+      scamper_fd_read_set(fdn, r_cb, param);
       scamper_fd_read_unpause(fdn);
     }
 
-  if(write_cb != NULL)
+  if(w_cb != NULL)
     {
-      scamper_fd_write_set(fdn, write_cb, param);
+      scamper_fd_write_set(fdn, w_cb, param);
       scamper_fd_write_unpause(fdn);
     }
-
-  return fdn;
-
- err:
-  if(fdn != NULL) fd_free(fdn);
-  return NULL;
-}
-
-scamper_fd_t *scamper_fd_file(int fd, scamper_fd_cb_t read_cb, void *param)
-{
-  scamper_fd_t *fdn = NULL;
-
-  if((fdn = fd_alloc(SCAMPER_FD_TYPE_FILE, fd)) == NULL ||
-     (fdn->fd_list_node = dlist_tail_push(fd_list, fdn)) == NULL)
-    goto err;
-  fdn->read.cb = read_cb;
-  fdn->read.param = param;
-  scamper_fd_read_unpause(fdn);
 
   return fdn;
 

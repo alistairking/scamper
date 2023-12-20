@@ -1,10 +1,11 @@
 /*
  * scamper_icmp6.h
  *
- * $Id: scamper_icmp6.h,v 1.20 2015/04/23 21:57:49 mjl Exp $
+ * $Id: scamper_icmp6.h,v 1.20.38.1 2023/08/20 01:24:40 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2009 The University of Waikato
+ * Copyright (C) 2023      Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -25,12 +26,17 @@
 #ifndef __SCAMPER_ICMP6_H
 #define __SCAMPER_ICMP6_H
 
+#ifndef _WIN32 /* SOCKET vs int on windows */
 int scamper_icmp6_open(const void *addr);
 int scamper_icmp6_open_fd(void);
-void scamper_icmp6_close(int fd);
+void scamper_icmp6_read_cb(int fd, void *param);
+#else
+SOCKET scamper_icmp6_open(const void *addr);
+SOCKET scamper_icmp6_open_fd(void);
+void scamper_icmp6_read_cb(SOCKET fd, void *param);
+#endif
 
 void scamper_icmp6_cleanup(void);
-void scamper_icmp6_read_cb(const int fd, void *param);
 
 #ifdef __SCAMPER_PROBE_H
 int scamper_icmp6_probe(scamper_probe_t *probe);
@@ -39,7 +45,11 @@ uint16_t scamper_icmp6_cksum(scamper_probe_t *probe);
 #endif
 
 #ifdef __SCAMPER_ICMP_RESP_H
+#ifndef _WIN32 /* SOCKET vs int on windows */
 int scamper_icmp6_recv(int fd, scamper_icmp_resp_t *resp);
+#else
+int scamper_icmp6_recv(SOCKET fd, scamper_icmp_resp_t *resp);
+#endif
 #endif
 
 #endif /* __SCAMPER_ICMP6_H */

@@ -105,3 +105,6 @@ utils/sc_wartsfix/sc_wartsfix
 
 # Upstream files that we don't want
 .cvsignore
+
+# Local build artifacts
+build/

@@ -1,7 +1,7 @@
 /*
  * scamper_tracelb_cmd.c
  *
- * $Id: scamper_tracelb_cmd.c,v 1.1 2023/06/04 07:24:32 mjl Exp $
+ * $Id: scamper_tracelb_cmd.c,v 1.1.4.1 2023/08/26 07:36:27 mjl Exp $
  *
  * Copyright (C) 2008-2011 The University of Waikato
  * Copyright (C) 2012      The Regents of the University of California
@@ -317,7 +317,14 @@ void *scamper_do_tracelb_alloc(char *str)
 
 	case TRACE_OPT_OPTION:
 	  if(strcasecmp(opt->str, "ptr") == 0)
-	    flags |= SCAMPER_TRACELB_FLAG_PTR;
+	    {
+#ifndef DISABLE_SCAMPER_HOST
+	      flags |= SCAMPER_TRACELB_FLAG_PTR;
+#else
+	      printerror_msg(__func__, "scamper not built with host support");
+	      goto err;
+#endif
+	    }
 	  else
 	    {
 	      scamper_debug(__func__, "unknown option %s", opt->str);

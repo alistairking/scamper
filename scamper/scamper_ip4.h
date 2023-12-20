@@ -1,9 +1,10 @@
 /*
  * scamper_ip4.h
  *
- * $Id: scamper_ip4.h,v 1.5 2015/04/23 21:57:49 mjl Exp $
+ * $Id: scamper_ip4.h,v 1.5.38.1 2023/08/20 01:24:40 mjl Exp $
  *
  * Copyright (C) 2009-2011 The University of Waikato
+ * Copyright (C) 2023      Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -30,8 +31,12 @@ int scamper_ip4_hlen(scamper_probe_t *probe, size_t *len);
 int scamper_ip4_frag_build(scamper_probe_t *probe, uint8_t *buf, size_t *len);
 #endif
 
+#ifndef _WIN32 /* SOCKET vs int on windows */
 int scamper_ip4_openraw(void);
 int scamper_ip4_openraw_fd(void);
-void scamper_ip4_close(int fd);
+#else
+SOCKET scamper_ip4_openraw(void);
+SOCKET scamper_ip4_openraw_fd(void);
+#endif
 
 #endif /* __SCAMPER_IP4_H */

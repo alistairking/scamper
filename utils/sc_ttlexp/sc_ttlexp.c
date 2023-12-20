@@ -1,7 +1,7 @@
 /*
  * sc_ttlexp: dump all unique source IP addresses in TTL expired messages
  *
- * $Id: sc_ttlexp.c,v 1.12 2023/05/29 21:22:27 mjl Exp $
+ * $Id: sc_ttlexp.c,v 1.12.4.1 2023/08/18 21:25:04 mjl Exp $
  *
  *         Matthew Luckie
  *         mjl@luckie.org.nz
@@ -230,7 +230,7 @@ int main(int argc, char *argv[])
   uint16_t  type;
   int       f;
 
-#ifdef _WIN32
+#ifdef _WIN32 /* windows needs WSAStartup */
   WSADATA wsaData;
   WSAStartup(MAKEWORD(2,2), &wsaData);
 #endif

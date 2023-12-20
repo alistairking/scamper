@@ -1,7 +1,7 @@
 /*
  * scamper_if.c
  *
- * $Id: scamper_if.c,v 1.27 2023/03/27 04:24:56 mjl Exp $
+ * $Id: scamper_if.c,v 1.27.4.2 2023/08/26 21:26:44 mjl Exp $
  *
  * Copyright (C) 2008-2011 The University of Waikato
  * Copyright (C) 2014      The Regents of the University of California
@@ -34,9 +34,9 @@
 #include "scamper_privsep.h"
 #include "utils.h"
 
-#ifndef _WIN32
 int scamper_if_getifindex(const char *ifname, int *ifindex)
 {
+#ifndef _WIN32 /* windows does not have if_nametoindex */
   unsigned int i;
 
   if((i = if_nametoindex(ifname)) == 0)
@@ -47,17 +47,12 @@ int scamper_if_getifindex(const char *ifname, int *ifindex)
 
   *ifindex = i;
   return 0;
-}
-#endif
-
-#ifdef _WIN32
-int scamper_if_getifindex(const char *ifname, int *ifindex)
-{
+#else
   return -1;
-}
 #endif
+}
 
-#ifdef _WIN32
+#ifdef _WIN32 /* windows does not have if_indextoname */
 int scamper_if_getifname(char *str, size_t len, int ifindex)
 {
   MIB_IFROW row;
@@ -74,7 +69,7 @@ int scamper_if_getifname(char *str, size_t len, int ifindex)
 }
 #endif
 
-#ifndef _WIN32
+#ifndef _WIN32 /* windows does not have if_indextoname */
 int scamper_if_getifname(char *str, size_t len, int ifindex)
 {
   char ifname[IFNAMSIZ];
@@ -102,7 +97,7 @@ int scamper_if_getifname(char *str, size_t len, int ifindex)
  * given an interface index, return the MTU of it.  return zero if
  * we can't get the interface's MTU.
  */
-#ifndef _WIN32
+#ifndef _WIN32 /* windows returns MTU with GetIfEntry */
 int scamper_if_getmtu(const int ifindex, uint16_t *ifmtu)
 {
   scamper_fd_t *fd;
@@ -148,7 +143,7 @@ int scamper_if_getmtu(const int ifindex, uint16_t *ifmtu)
 }
 #endif
 
-#ifdef _WIN32
+#ifdef _WIN32 /* windows returns MTU with GetIfEntry */
 int scamper_if_getmtu(const int ifindex, uint16_t *ifmtu)
 {
   MIB_IFROW row;
@@ -195,7 +190,7 @@ int scamper_if_getmac(const int ifindex, uint8_t *mac)
   if(fd != NULL) scamper_fd_free(fd);
   return -1;
 }
-#elif defined(_WIN32)
+#elif defined(_WIN32) /* windows returns MAC address with GetIfEntry */
 int scamper_if_getmac(const int ifindex, uint8_t *mac)
 {
   MIB_IFROW row;
@@ -219,7 +214,7 @@ int scamper_if_getmac(const int ifindex, uint8_t *mac)
   struct strbuf ctl;
   int fd = -1, flags;
 
-#ifdef WITHOUT_PRIVSEP
+#ifdef DISABLE_PRIVSEP
   char ifname[5+IFNAMSIZ];
   uid_t uid = scamper_getuid();
   uid_t euid = scamper_geteuid();
@@ -293,7 +288,7 @@ int scamper_if_getmac(const int ifindex, uint8_t *mac)
 
  err:
   if(fd != -1) close(fd);
-#ifdef WITHOUT_PRIVSEP
+#ifdef DISABLE_PRIVSEP
   if(sete != 0 && seteuid(uid) != 0)
     exit(-errno);
 #endif

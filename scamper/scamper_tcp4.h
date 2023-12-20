@@ -1,10 +1,11 @@
 /*
  * scamper_tcp4.h
  *
- * $Id: scamper_tcp4.h,v 1.15 2012/04/05 18:00:54 mjl Exp $
+ * $Id: scamper_tcp4.h,v 1.15.52.1 2023/08/20 01:24:40 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
+ * Copyright (C) 2023      Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -25,8 +26,12 @@
 #ifndef __SCAMPER_TCP4_H
 #define __SCAMPER_TCP4_H
 
+#ifndef _WIN32 /* SOCKET vs int on windows */
 int scamper_tcp4_open(const void *addr, int sport);
-void scamper_tcp4_close(int fd);
+#else
+SOCKET scamper_tcp4_open(const void *addr, int sport);
+#endif
+
 void scamper_tcp4_cleanup(void);
 
 #ifdef __SCAMPER_PROBE_H

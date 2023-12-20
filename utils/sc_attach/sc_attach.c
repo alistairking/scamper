@@ -6,7 +6,7 @@
  *
  * Copyright (C) 2008-2011 The University of Waikato
  * Copyright (C) 2012-2015 Regents of the University of California
- * Copyright (C) 2015-2022 Matthew Luckie
+ * Copyright (C) 2015-2023 Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -21,7 +21,7 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
- * $Id: sc_attach.c,v 1.29 2022/06/14 07:32:40 mjl Exp $
+ * $Id: sc_attach.c,v 1.29.10.2 2023/08/20 08:07:09 mjl Exp $
  *
  */
 
@@ -44,11 +44,20 @@
 #define OPT_VERSION     0x0020
 #define OPT_DEBUG       0x0040
 #define OPT_PRIORITY    0x0080
-#define OPT_DAEMON      0x0100
 #define OPT_COMMAND     0x0200
-#define OPT_REMOTE      0x0400
 #define OPT_OPTIONS     0x0800
+
+#ifdef HAVE_DAEMON
+#define OPT_DAEMON      0x0100
+#endif
+
+#ifdef HAVE_SOCKADDR_UN
+#define OPT_REMOTE      0x0400
 #define OPT_UNIX        0x1000
+#else
+#define OPT_REMOTE      0
+#define OPT_UNIX        0
+#endif
 
 #define FLAG_RANDOM     0x0001
 #define FLAG_IMPATIENT  0x0002
@@ -58,7 +67,9 @@ static uint8_t                flags         = 0;
 static char                  *infile_name   = NULL;
 static char                  *dst_addr      = NULL;
 static int                    dst_port      = 0;
+#ifdef HAVE_SOCKADDR_UN
 static char                  *unix_name     = NULL;
+#endif
 static uint32_t               priority      = 1;
 static int                    scamper_fd    = -1;
 static scamper_writebuf_t    *scamper_wb    = NULL;
@@ -96,10 +107,10 @@ static void cleanup(void)
       outfile_fd = -1;
     }
 
-  if(scamper_fd != -1)
+  if(socket_isvalid(scamper_fd))
     {
-      close(scamper_fd);
-      scamper_fd = -1;
+      socket_close(scamper_fd);
+      scamper_fd = socket_invalid();
     }
 
   if(scamper_wb != NULL)
@@ -131,10 +142,24 @@ static void cleanup(void)
 
 static void usage(uint32_t opt_mask)
 {
+  char buf[80];
+  size_t off;
+
+  off = 0;
+  string_concat(buf, sizeof(buf), &off, "usage: sc_attach [-?d");
+#ifdef HAVE_DAEMON
+  buf[off++] = 'D';
+#endif
+  string_concat(buf, sizeof(buf), &off,
+		"v] [-c command] [-i infile] [-o outfile]\n");
+  fprintf(stderr, "%s", buf);
+
   fprintf(stderr,
-	  "usage: sc_attach [-?dDv] [-c command] [-i infile] [-o outfile]\n"
-	  "                 [-O options] [-p [ip:]port] [-P priority] \n"
+	  "                 [-O options] [-p [ip:]port] [-P priority]\n");
+#ifdef HAVE_SOCKADDR_UN
+  fprintf(stderr,
 	  "                 [-R unix] [-U unix]\n");
+#endif
 
   if(opt_mask == 0) return;
 
@@ -146,8 +171,10 @@ static void usage(uint32_t opt_mask)
   if(opt_mask & OPT_DEBUG)
     fprintf(stderr, "     -d output debugging information to stderr\n");
 
+#ifdef HAVE_DAEMON
   if(opt_mask & OPT_DAEMON)
     fprintf(stderr, "     -D operate as a daemon\n");
+#endif
 
   if(opt_mask & OPT_VERSION)
     fprintf(stderr, "     -v give the version string of sc_attach\n");
@@ -174,21 +201,37 @@ static void usage(uint32_t opt_mask)
   if(opt_mask & OPT_PRIORITY)
     fprintf(stderr, "     -P priority\n");
 
+#ifdef HAVE_SOCKADDR_UN
   if(opt_mask & OPT_REMOTE)
     fprintf(stderr, "     -R unix domain socket for remote scamper\n");
-
   if(opt_mask & OPT_UNIX)
     fprintf(stderr, "     -U unix domain socket for local scamper\n");
+#endif
 
   return;
 }
 
 static int check_options(int argc, char *argv[])
 {
+  char      opts[32];
+  size_t    off = 0;
   int       ch;
   long      lo;
-  char     *opts = "c:dDi:o:O:p:P:R:U:v?";
-  char     *opt_port = NULL, *opt_priority = NULL, *opt_unix = NULL;
+  char     *opt_port = NULL, *opt_priority = NULL;
+
+#ifdef HAVE_SOCKADDR_UN
+  char     *opt_unix = NULL;
+#endif
+
+  string_concat(opts, sizeof(opts), &off, "c:d");
+#ifdef HAVE_DAEMON
+  opts[off++] = 'D';
+#endif
+  string_concat(opts, sizeof(opts), &off, "i:o:O:p:P:");
+#ifdef HAVE_SOCKADDR_UN
+  string_concat(opts, sizeof(opts), &off, "R:U:");
+#endif
+  string_concat(opts, sizeof(opts), &off, "v?");
 
   while((ch = getopt(argc, argv, opts)) != -1)
     {
@@ -202,9 +245,11 @@ static int check_options(int argc, char *argv[])
 	  options |= OPT_DEBUG;
 	  break;
 
+#ifdef HAVE_DAEMON
 	case 'D':
 	  options |= OPT_DAEMON;
 	  break;
+#endif
 
 	case 'i':
 	  if(string_isdash(optarg) != 0)
@@ -245,6 +290,7 @@ static int check_options(int argc, char *argv[])
 	  opt_priority = optarg;
 	  break;
 
+#ifdef HAVE_SOCKADDR_UN
 	case 'R':
 	  options |= OPT_REMOTE;
 	  opt_unix = optarg;
@@ -254,9 +300,10 @@ static int check_options(int argc, char *argv[])
 	  options |= OPT_UNIX;
 	  opt_unix = optarg;
 	  break;
+#endif
 
 	case 'v':
-	  printf("$Id: sc_attach.c,v 1.29 2022/06/14 07:32:40 mjl Exp $\n");
+	  printf("$Id: sc_attach.c,v 1.29.10.2 2023/08/20 08:07:09 mjl Exp $\n");
 	  return -1;
 
 	case '?':
@@ -286,10 +333,12 @@ static int check_options(int argc, char *argv[])
 	  return -1;
 	}
     }
+#ifdef HAVE_SOCKADDR_UN
   else if(options & (OPT_REMOTE|OPT_UNIX))
     {
       unix_name = opt_unix;
     }
+#endif
 
   if((options & OPT_PRIORITY) != 0)
     {
@@ -301,18 +350,22 @@ static int check_options(int argc, char *argv[])
       priority = lo;
     }
 
+#ifdef HAVE_DAEMON
   if((options & OPT_DAEMON) != 0 &&
      ((options & (OPT_STDOUT|OPT_DEBUG)) != 0 || stdin_fd != -1))
     {
       usage(OPT_DAEMON);
       return -1;
     }
+#endif
 
   if(options & OPT_STDOUT)
     {
       stdout_fd = STDOUT_FILENO;
+#ifdef HAVE_FCNTL
       if(fcntl_set(stdout_fd, O_NONBLOCK) == -1)
 	return -1;
+#endif
       if((stdout_wb = scamper_writebuf_alloc()) == NULL)
 	return -1;
       scamper_writebuf_usewrite(stdout_wb);
@@ -351,13 +404,16 @@ static int command_new(char *line, void *param)
  */
 static int do_outfile(void)
 {
-  mode_t mode  = S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH;
   int fd_flags = O_WRONLY | O_CREAT | O_TRUNC;
 
   if(outfile_name == NULL)
     return 0;
 
-  if((outfile_fd = open(outfile_name, fd_flags, mode)) == -1)
+#ifdef _WIN32 /* windows needs O_BINARY */
+  fd_flags |= O_BINARY;
+#endif
+
+  if((outfile_fd = open(outfile_name, fd_flags, MODE_644)) == -1)
     {
       fprintf(stderr, "%s: could not open %s: %s\n",
 	      __func__, outfile_name, strerror(errno));
@@ -515,15 +571,15 @@ static int do_scamperread(void)
   ssize_t rc;
   uint8_t buf[4096];
 
-  if((rc = read(scamper_fd, buf, sizeof(buf))) > 0)
+  if((rc = recv(scamper_fd, buf, sizeof(buf), 0)) > 0)
     {
       scamper_linepoll_handle(scamper_lp, buf, rc);
       return 0;
     }
   else if(rc == 0)
     {
-      close(scamper_fd);
-      scamper_fd = -1;
+      socket_close(scamper_fd);
+      scamper_fd = socket_invalid();
       return 0;
     }
   else if(errno == EINTR || errno == EAGAIN)
@@ -558,7 +614,9 @@ static int do_scamperwrite(void)
  */
 static int do_scamperconnect(void)
 {
+#ifdef HAVE_SOCKADDR_UN
   struct sockaddr_un sun;
+#endif
   struct sockaddr_storage sas;
   struct sockaddr *sa = (struct sockaddr *)&sas;
   struct in_addr in;
@@ -595,7 +653,8 @@ static int do_scamperconnect(void)
 	  return -1;
 	}
     }
-  else
+#ifdef HAVE_SOCKADDR_UN
+  else if(unix_name != NULL)
     {
       if(sockaddr_compose_un((struct sockaddr *)&sun, unix_name) != 0)
 	{
@@ -616,13 +675,21 @@ static int do_scamperconnect(void)
 	  return -1;
 	}
     }
+#endif
+  else
+    {
+      fprintf(stderr, "%s: neither port or unix domain socket set\n",__func__);
+      return -1;
+    }
 
+#ifdef HAVE_FCNTL
   if(fcntl_set(scamper_fd, O_NONBLOCK) == -1)
     {
       fprintf(stderr, "%s: could not set nonblock: %s\n",
 	      __func__, strerror(errno));
       return -1;
     }
+#endif
 
   if((scamper_lp = scamper_linepoll_alloc(do_scamperread_line,NULL)) == NULL ||
      (scamper_wb = scamper_writebuf_alloc()) == NULL)
@@ -706,6 +773,11 @@ int main(int argc, char *argv[])
   fd_set rfds, wfds, *rfdsp, *wfdsp;
   int nfds;
 
+#ifdef _WIN32 /* windows needs WSAStartup */
+  WSADATA wsaData;
+  WSAStartup(MAKEWORD(2, 2), &wsaData);
+#endif
+
 #if defined(DMALLOC)
   free(malloc(1));
 #endif
@@ -774,7 +846,8 @@ int main(int argc, char *argv[])
 	    nfds = stdout_fd;
 	}
 
-      if(nfds == 0)
+      /* make sure there is an FD parameter to select */
+      if(rfdsp == NULL && wfdsp == NULL)
 	break;
 
       if(select(nfds+1, rfdsp, wfdsp, NULL, NULL) < 0)

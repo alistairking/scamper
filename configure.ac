@@ -1,12 +1,13 @@
 # Process this file with autoconf to produce a configure script.
 
-AC_INIT([scamper],[20230614],[mjl@luckie.org.nz])
+AC_INIT([scamper],[20230614d],[mjl@luckie.org.nz])
 
 AC_CONFIG_SRCDIR([scamper/scamper.c])
 AC_CONFIG_HEADERS([config.h])
 AC_CONFIG_MACRO_DIR([m4])
 AC_CANONICAL_TARGET
 AM_INIT_AUTOMAKE([foreign])
+AM_MAINTAINER_MODE([disable])
 
 LT_INIT
 AC_PROG_CC
@@ -18,20 +19,22 @@ AC_LANG(C)
 # Whether all the debugging output should be spewed out
 AC_ARG_ENABLE([debug],
   [AS_HELP_STRING([--enable-debug], [build with debugging symbols])])
-
 if test "x$enable_debug" != "xyes"; then
   AC_DEFINE([NDEBUG],[1],[Define to 1 if we don't want to do any debugging])
 fi
 
-# No privilege separation
+# --disable-privsep
 AC_ARG_ENABLE([privsep],
-  [AS_HELP_STRING([--disable-privsep], [disable privilege separation])])
-
+  [AS_HELP_STRING([--disable-privsep], [disable privilege separation])],
+  [enable_privsep=$enableval],
+  [enable_privsep=yes])
 if test "x$enable_privsep" = xno; then
-  AC_DEFINE([WITHOUT_PRIVSEP], [1], [Define to 1 if we don't want privilege separation])
+  AC_DEFINE([DISABLE_PRIVSEP], [1], [Define to 1 if we don't want privilege separation])
 fi
+AM_CONDITIONAL([ENABLE_PRIVSEP], [test x$enable_privsep = xyes])
 
-# privsep parameters
+# --with-privsep-user --with-privsep-dir
+# --with-privsep-dirowner --with-privsep-dirgroup
 AC_ARG_WITH([privsep_user],
   [AS_HELP_STRING([--with-privsep-user=USER],[sets user name for privsep process])],
   [privsep_user=$withval],
@@ -64,6 +67,110 @@ AC_DEFINE_UNQUOTED(PRIVSEP_DIR_OWNER,
 AC_DEFINE_UNQUOTED(PRIVSEP_DIR_GROUP,
   ["$privsep_dir_group"],
   [chroot directory group id])
+
+# --disable-scamper-trace
+AC_ARG_ENABLE([scamper_trace],
+  [AS_HELP_STRING([--disable-scamper-trace],
+		  [disable trace method in scamper])],
+		  [enable_scamper_trace=$enableval],
+		  [enable_scamper_trace=yes]
+)
+if test "x$enable_scamper_trace" = xno; then
+  AC_DEFINE([DISABLE_SCAMPER_TRACE], [1],
+  	    [Define to 1 to disable trace method in scamper])
+fi
+AM_CONDITIONAL([ENABLE_SCAMPER_TRACE], [test x$enable_scamper_trace = xyes])
+
+# --disable-scamper-ping
+AC_ARG_ENABLE([scamper_ping],
+  [AS_HELP_STRING([--disable-scamper-ping],
+		  [disable ping method in scamper])],
+		  [enable_scamper_ping=$enableval],
+		  [enable_scamper_ping=yes]
+)
+if test "x$enable_scamper_ping" = xno; then
+  AC_DEFINE([DISABLE_SCAMPER_PING], [1],
+  	    [Define to 1 to disable ping method in scamper])
+fi
+AM_CONDITIONAL([ENABLE_SCAMPER_PING], [test x$enable_scamper_ping = xyes])
+
+# --disable-scamper-tracelb
+AC_ARG_ENABLE([scamper_tracelb],
+  [AS_HELP_STRING([--disable-scamper-tracelb],
+		  [disable tracelb method in scamper])],
+		  [enable_scamper_tracelb=$enableval],
+		  [enable_scamper_tracelb=yes]
+)
+if test "x$enable_scamper_tracelb" = xno; then
+  AC_DEFINE([DISABLE_SCAMPER_TRACELB], [1],
+  	    [Define to 1 to disable tracelb method in scamper])
+fi
+AM_CONDITIONAL([ENABLE_SCAMPER_TRACELB], [test x$enable_scamper_tracelb = xyes])
+
+# --disable-scamper-dealias
+AC_ARG_ENABLE([scamper_dealias],
+  [AS_HELP_STRING([--disable-scamper-dealias],
+		  [disable dealias method in scamper])],
+		  [enable_scamper_dealias=$enableval],
+		  [enable_scamper_dealias=yes]
+)
+if test "x$enable_scamper_dealias" = xno; then
+  AC_DEFINE([DISABLE_SCAMPER_DEALIAS], [1],
+  	    [Define to 1 to disable dealias method in scamper])
+fi
+AM_CONDITIONAL([ENABLE_SCAMPER_DEALIAS], [test x$enable_scamper_dealias = xyes])
+
+# --disable-scamper-tbit
+AC_ARG_ENABLE([scamper_tbit],
+  [AS_HELP_STRING([--disable-scamper-tbit],
+		  [disable tbit method in scamper])],
+		  [enable_scamper_tbit=$enableval],
+		  [enable_scamper_tbit=yes]
+)
+if test "x$enable_scamper_tbit" = xno; then
+  AC_DEFINE([DISABLE_SCAMPER_TBIT], [1],
+  	    [Define to 1 to disable tbit method in scamper])
+fi
+AM_CONDITIONAL([ENABLE_SCAMPER_TBIT], [test x$enable_scamper_tbit = xyes])
+
+# --disable-scamper-sting
+AC_ARG_ENABLE([scamper_sting],
+  [AS_HELP_STRING([--disable-scamper-sting],
+		  [disable sting method in scamper])],
+		  [enable_scamper_sting=$enableval],
+		  [enable_scamper_sting=yes]
+)
+if test "x$enable_scamper_sting" = xno; then
+  AC_DEFINE([DISABLE_SCAMPER_STING], [1],
+  	    [Define to 1 to disable sting method in scamper])
+fi
+AM_CONDITIONAL([ENABLE_SCAMPER_STING], [test x$enable_scamper_sting = xyes])
+
+# --disable-scamper-sniff
+AC_ARG_ENABLE([scamper_sniff],
+  [AS_HELP_STRING([--disable-scamper-sniff],
+		  [disable sniff method in scamper])],
+		  [enable_scamper_sniff=$enableval],
+		  [enable_scamper_sniff=yes]
+)
+if test "x$enable_scamper_sniff" = xno; then
+  AC_DEFINE([DISABLE_SCAMPER_SNIFF], [1],
+  	    [Define to 1 to disable sniff method in scamper])
+fi
+AM_CONDITIONAL([ENABLE_SCAMPER_SNIFF], [test x$enable_scamper_sniff = xyes])
+
+# --disable-scamper-host
+AC_ARG_ENABLE([scamper_host],
+  [AS_HELP_STRING([--disable-scamper-host],
+                  [disable host method in scamper])],
+                  [enable_scamper_host=$enableval],
+                  [enable_scamper_host=yes]
+)
+if test "x$enable_scamper_host" = xno; then
+  AC_DEFINE([DISABLE_SCAMPER_HOST], [1],
+            [Define to 1 to disable host method in scamper])
+fi
+AM_CONDITIONAL([ENABLE_SCAMPER_HOST], [test x$enable_scamper_host = xyes])
 
 # Debug file support
 AC_ARG_ENABLE([debug-file],
@@ -120,56 +227,31 @@ AC_SUBST(PCRE_CFLAGS)
 AC_SUBST(PCRE_LIBS)
 
 # sc_hoiho utlity
-AC_ARG_WITH([sc_hoiho],
-  [AS_HELP_STRING([--with-sc_hoiho],
+AC_ARG_ENABLE([sc_hoiho],
+  [AS_HELP_STRING([--enable-sc_hoiho],
      [enable support for sc_hoiho])],
-     [with_sc_hoiho=$withval],
-     [with_sc_hoiho=no]
+     [enable_sc_hoiho=$enableval],
+     [enable_sc_hoiho=no]
 )
-AM_CONDITIONAL([WITH_SC_HOIHO], [test x$with_sc_hoiho = xyes])
+AM_CONDITIONAL([ENABLE_SC_HOIHO], [test x$enable_sc_hoiho = xyes])
 
 # sc_uptime prober support
-AC_ARG_WITH([sc_uptime],
-  [AS_HELP_STRING([--with-sc_uptime],
+AC_ARG_ENABLE([sc_uptime],
+  [AS_HELP_STRING([--enable-sc_uptime],
      [enable support for sc_uptime])],
-     [with_sc_uptime=$withval],
-     [with_sc_uptime=no]
+     [enable_sc_uptime=$enableval],
+     [enable_sc_uptime=no]
 )
-AM_CONDITIONAL([WITH_SC_UPTIME], [test x$with_sc_uptime = xyes])
+AM_CONDITIONAL([ENABLE_SC_UPTIME], [test x$enable_sc_uptime = xyes])
 
 # build tests
-AC_ARG_WITH([tests],
-  [AS_HELP_STRING([--with-tests],
+AC_ARG_ENABLE([tests],
+  [AS_HELP_STRING([--enable-tests],
      [build tests])],
-     [with_tests=$withval],
-     [with_tests=no]
+     [enable_tests=$enableval],
+     [enable_tests=no]
 )
-AM_CONDITIONAL([WITH_TESTS], [test x$with_tests = xyes])
-
-# Checks for libraries.
-AC_CHECK_LIB([iphlpapi], [GetIpNetTable])
-AC_CHECK_LIB([ws2_32], [WSAStartup])
-
-AC_CHECK_LIB([z], [inflateEnd],
-	[
-	AC_DEFINE([HAVE_ZLIB], [1], [Define to 1 if you have zlib])
-	ZLIB_LIBS="-lz"
-	])
-AC_SUBST(ZLIB_LIBS)
-
-AC_CHECK_LIB([bz2], [BZ2_bzDecompressInit],
-	[
-	AC_DEFINE([HAVE_LIBBZ2], [1], [Define to 1 if you have libbz2])
-	LIBBZ2_LIBS="-lbz2"
-	])
-AC_SUBST(LIBBZ2_LIBS)
-
-AC_CHECK_LIB([lzma], [lzma_code],
-	[
-	AC_DEFINE([HAVE_LIBLZMA], [1], [Define to 1 if you have liblzma])
-	LIBLZMA_LIBS="-llzma"
-	])
-AC_SUBST(LIBLZMA_LIBS)
+AM_CONDITIONAL([ENABLE_TESTS], [test x$enable_tests = xyes])
 
 # Checks for header files.
 AC_HEADER_SYS_WAIT
@@ -275,6 +357,8 @@ AC_CHECK_FUNCS(calloc)
 AC_CHECK_FUNCS(daemon)
 AC_CHECK_FUNCS(endpwent)
 AC_CHECK_FUNCS(epoll_wait)
+AC_CHECK_FUNCS(fcntl)
+AC_CHECK_FUNCS(fchown)
 AC_CHECK_FUNCS(ftruncate)
 AC_CHECK_FUNCS(getdtablesize)
 AC_CHECK_FUNCS(gethostname)
@@ -289,9 +373,12 @@ AC_CHECK_FUNCS(mkdir)
 AC_CHECK_FUNCS(poll)
 AC_CHECK_FUNCS(rmdir)
 AC_CHECK_FUNCS(select)
+AC_CHECK_FUNCS(seteuid)
+AC_CHECK_FUNCS(setproctitle)
+AC_CHECK_FUNCS(signal)
+AC_CHECK_FUNCS(sigaction)
 AC_CHECK_FUNCS(socket)
 AC_CHECK_FUNCS(snprintf)
-AC_CHECK_FUNCS(setproctitle)
 AC_CHECK_FUNCS(strcasecmp)
 AC_CHECK_FUNCS(strcasestr)
 AC_CHECK_FUNCS(strdup)
@@ -463,6 +550,239 @@ if test "x$have_openssl" = xyes; then
    LIBS="$save_LIBS"
 fi
 
+# zlib support
+AC_ARG_WITH([zlib],
+  [AS_HELP_STRING([--with-zlib],
+    [support reading and writing gz streams @<:@default=check@:>@])],
+  [],
+  [with_zlib=check])
+AS_IF([test "x$with_zlib" != xno],[
+  save_LIBS="$LIBS"
+  LIBS="$LIBS -lz"
+  AC_MSG_CHECKING([for inflateInit2 in -lz])
+  AC_LINK_IFELSE([AC_LANG_PROGRAM(
+    [[
+      #ifdef HAVE_STRING_H
+      #include <string.h>
+      #endif
+      #include <zlib.h>
+    ]],
+    [[
+      z_stream zs;
+      memset(&zs, 0, sizeof(zs));
+      inflateInit2(&zs, MAX_WBITS + 32);
+    ]]
+  )],
+  [
+    AC_MSG_RESULT([yes])
+    AC_DEFINE([HAVE_ZLIB], [1], [Define to 1 if you have zlib])
+    ZLIB_LIBS="-lz"
+  ],
+  [
+    if test "x$with_zlib" != xcheck; then
+      AC_MSG_FAILURE([--with-zlib was given, but test for zlib failed])
+    fi
+    AC_MSG_RESULT([no])
+  ])
+  LIBS="$save_LIBS"
+])
+AC_SUBST(ZLIB_LIBS)
+
+# bz2 support
+AC_ARG_WITH([bz2],
+  [AS_HELP_STRING([--with-bz2],
+    [support reading and writing bz2 streams @<:@default=check@:>@])],
+  [],
+  [with_bz2=check])
+AS_IF([test "x$with_bz2" != xno],[
+  save_LIBS="$LIBS"
+  LIBS="$LIBS -lbz2"
+  AC_MSG_CHECKING([for BZ2_bzDecompressInit in -lbz2])
+  AC_LINK_IFELSE([AC_LANG_PROGRAM(
+    [[
+      #ifdef HAVE_STRING_H
+      #include <string.h>
+      #endif
+      #include <bzlib.h>
+    ]],
+    [[
+      bz_stream zs;
+      memset(&zs, 0, sizeof(zs));
+      BZ2_bzDecompressInit(&zs, 0, 0);
+    ]]
+  )],
+  [
+    AC_MSG_RESULT([yes])
+    AC_DEFINE([HAVE_LIBBZ2], [1], [Define to 1 if you have libbz2])
+    LIBBZ2_LIBS="-lbz2"
+  ],
+  [
+    if test "x$with_bz2" != xcheck; then
+      AC_MSG_FAILURE([--with-bz2 was given, but test for bz2 failed])
+    fi
+    AC_MSG_RESULT([no])
+  ])
+  LIBS="$save_LIBS"
+])
+AC_SUBST(LIBBZ2_LIBS)
+
+# lzma (xz) support
+AC_ARG_WITH([lzma],
+  [AS_HELP_STRING([--with-lzma],
+    [support reading and writing xz streams @<:@default=check@:>@])],
+  [],
+  [with_lzma=check])
+AS_IF([test "x$with_lzma" != xno],[
+  save_LIBS="$LIBS"
+  LIBS="$LIBS -llzma"
+  AC_MSG_CHECKING([for lzma_stream_decoder in -llzma])
+  AC_LINK_IFELSE([AC_LANG_PROGRAM(
+    [[
+      #ifdef HAVE_STRING_H
+      #include <string.h>
+      #endif
+      #include <lzma.h>
+    ]],
+    [[
+      lzma_stream zs;
+      memset(&zs, 0, sizeof(zs));
+      lzma_stream_decoder(&zs, UINT64_MAX, 0);
+    ]]
+  )],
+  [
+    AC_MSG_RESULT([yes])
+    AC_DEFINE([HAVE_LIBLZMA], [1], [Define to 1 if you have liblzma])
+    LIBLZMA_LIBS="-llzma"
+  ],
+  [
+    if test "x$with_lzma" != xcheck; then
+      AC_MSG_FAILURE([--with-lzma was given, but test for lzma failed])
+    fi
+    AC_MSG_RESULT([no])
+  ])
+  LIBS="$save_LIBS"
+])
+AC_SUBST(LIBLZMA_LIBS)
+
+# check for WSAStartup / ws2_32
+save_LIBS="$LIBS"
+LIBS="$LIBS -lws2_32"
+AC_MSG_CHECKING([for WSAStartup in -lws2_32])
+AC_LINK_IFELSE([AC_LANG_PROGRAM(
+  [[
+    #include <winsock2.h>
+  ]],
+  [[
+    WSADATA wsaData;
+    WSAStartup(MAKEWORD(2,2), &wsaData);
+  ]]
+)],
+[
+ AC_MSG_RESULT([yes])
+ AC_DEFINE([HAVE_WSASTARTUP], [1], [Define to 1 if you have WSAStartup])
+ WINSOCK_LIBS="-lws2_32"
+],
+[
+ AC_MSG_RESULT([no])
+])
+LIBS="$save_LIBS"
+AC_SUBST(WINSOCK_LIBS)
+
+# check for GetIpNetTable / iphlpapi
+save_LIBS="$LIBS"
+LIBS="$LIBS -liphlpapi"
+AC_MSG_CHECKING([for GetIpNetTable in -liphlpapi])
+AC_LINK_IFELSE([AC_LANG_PROGRAM(
+  [[
+    #include <iphlpapi.h>
+  ]],
+  [[
+    MIB_IPNETTABLE table;
+    GetIpNetTable(&table, sizeof(table), TRUE);
+  ]]
+)],
+[
+ AC_MSG_RESULT([yes])
+ AC_DEFINE([HAVE_GETIPNETTABLE], [1], [Define to 1 if you have GetIpNetTable])
+ IPHLPAPI_LIBS="-liphlpapi"
+],
+[
+ AC_MSG_RESULT([no])
+])
+LIBS="$save_LIBS"
+AC_SUBST(IPHLPAPI_LIBS)
+
+# check for timeBeginPeriod
+save_LIBS="$LIBS"
+LIBS="$LIBS -lwinmm"
+AC_MSG_CHECKING([for timeBeginPeriod in -lwinmm])
+AC_LINK_IFELSE([AC_LANG_PROGRAM(
+  [[
+    #include <windows.h>
+  ]],
+  [[
+    timeBeginPeriod(1);
+  ]]
+)],
+[
+ AC_MSG_RESULT([yes])
+ AC_DEFINE([HAVE_TIMEBEGINPERIOD], [1], [Define to 1 if you have timeBeginPeriod])
+ WINMM_LIBS="-lwinmm"
+],
+[
+ AC_MSG_RESULT([no])
+])
+LIBS="$save_LIBS"
+AC_SUBST(WINMM_LIBS)
+
+# check for DIOCGETSTATUSNV / libnv
+save_LIBS="$LIBS"
+LIBS="$LIBS -lnv"
+AC_MSG_CHECKING([for DIOCGETSTATUSNV and -lnv])
+AC_LINK_IFELSE([AC_LANG_PROGRAM(
+  [[
+    #include <sys/types.h>
+    #include <sys/stat.h>
+    #include <sys/ioctl.h>
+    #include <sys/nv.h>
+    #include <net/if.h>
+    #include <net/pfvar.h>
+    #include <stdio.h>
+    #include <stdlib.h>
+    #include <string.h>
+    #include <fcntl.h>
+  ]],
+  [[
+    int pf_fd;
+    nvlist_t *nvl;
+    struct pfioc_nv nv;
+    size_t nvlen;
+    uint8_t buf[4096];
+    void *data;
+    int rc;
+    if((pf_fd = open("/dev/pf", O_RDWR)) == -1)
+      return -1;
+
+    nvl = nvlist_create(0);
+    data = nvlist_pack(nvl, &nvlen);
+    memcpy(buf, data, nvlen);
+    free(data);
+    nv.data = buf;
+    nv.len = nvlen;
+    nv.size = sizeof(buf);
+    rc = ioctl(pf_fd, DIOCGETSTATUSNV, &nv);
+  ]]
+)],
+[
+ AC_MSG_RESULT([yes])
+ LIBNV_LIBS="-lnv"
+],
+[
+ AC_MSG_RESULT([no])
+])
+LIBS="$save_LIBS"
+AC_SUBST(LIBNV_LIBS)
+
 AX_GCC_BUILTIN(__builtin_clz)
 
 # No thread support
@@ -486,11 +806,10 @@ AC_CONFIG_FILES([
 	lib/Makefile
 	lib/libscamperctrl/Makefile])
 
-if test "x$with_tests" != xno; then
-   	AC_CONFIG_FILES([
-   	tests/Makefile
-	])
-fi
+AM_COND_IF([ENABLE_TESTS],
+   	[AC_CONFIG_FILES([
+	tests/Makefile
+	])])
 
 AC_CONFIG_FILES([
 	utils/Makefile
@@ -500,11 +819,10 @@ AC_CONFIG_FILES([
 	utils/sc_bdrmap/Makefile
 	utils/sc_erosprober/Makefile])
 
-if test "x$with_sc_hoiho" != xno; then
-   AC_CONFIG_FILES([
-   utils/sc_hoiho/Makefile
-   ])
-fi
+AM_COND_IF([ENABLE_SC_HOIHO],
+	[AC_CONFIG_FILES([
+	utils/sc_hoiho/Makefile
+	])])
 
 AC_CONFIG_FILES([
 	utils/sc_filterpolicy/Makefile
@@ -521,11 +839,10 @@ AC_CONFIG_FILES([
 	utils/sc_ttlexp/Makefile
 ])
 
-if test "x$with_sc_uptime" != xno; then
-   AC_CONFIG_FILES([
-   utils/sc_uptime/Makefile
-   ])
-fi
+AM_COND_IF([ENABLE_SC_UPTIME],
+	[AC_CONFIG_FILES([
+	utils/sc_uptime/Makefile
+	])])
 
 AC_CONFIG_FILES([
 	utils/sc_warts2csv/Makefile

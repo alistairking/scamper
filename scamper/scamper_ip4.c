@@ -1,7 +1,7 @@
 /*
  * scamper_ip4.c
  *
- * $Id: scamper_ip4.c,v 1.20 2023/05/29 21:22:26 mjl Exp $
+ * $Id: scamper_ip4.c,v 1.20.4.4 2023/08/26 21:26:45 mjl Exp $
  *
  * Copyright (C) 2009-2011 The University of Waikato
  * Copyright (C) 2023      The Regents of the University of California
@@ -40,20 +40,22 @@
 #include "scamper_debug.h"
 #include "utils.h"
 
-void scamper_ip4_close(int fd)
-{
-#ifndef _WIN32
-  close(fd);
-#else
-  closesocket(fd);
-#endif
-  return;
-}
-
+#ifndef _WIN32 /* SOCKET vs int on windows */
 int scamper_ip4_openraw_fd(void)
+#else
+SOCKET scamper_ip4_openraw_fd(void)
+#endif
 {
-  int fd, hdr;
-  if((fd = socket(AF_INET, SOCK_RAW, IPPROTO_RAW)) == -1)
+  int hdr;
+
+#ifndef _WIN32 /* SOCKET vs int on windows */
+  int fd;
+#else
+  SOCKET fd;
+#endif
+
+  fd = socket(AF_INET, SOCK_RAW, IPPROTO_RAW);
+  if(socket_isinvalid(fd))
     {
       printerror(__func__, "could not open socket");
       goto err;
@@ -67,16 +69,25 @@ int scamper_ip4_openraw_fd(void)
   return fd;
 
  err:
-  if(fd != -1) scamper_ip4_close(fd);
-  return -1;
+  if(socket_isvalid(fd))
+    socket_close(fd);
+  return socket_invalid();
 }
 
+#ifndef _WIN32 /* SOCKET vs int on windows */
 int scamper_ip4_openraw(void)
+#else
+SOCKET scamper_ip4_openraw(void)
+#endif
 {
+#ifndef _WIN32 /* SOCKET vs int on windows */
   int fd = -1;
-  
-#if defined(WITHOUT_PRIVSEP)
-#ifndef _WIN32
+#else
+  SOCKET fd = INVALID_SOCKET;
+#endif
+
+#ifdef DISABLE_PRIVSEP
+#ifdef HAVE_SETEUID
   uid_t uid = scamper_getuid();
   uid_t euid = scamper_geteuid();
   if(uid != euid && seteuid(euid) != 0)
@@ -86,7 +97,7 @@ int scamper_ip4_openraw(void)
     }
 #endif
   fd = scamper_ip4_openraw_fd();
-#ifndef _WIN32
+#ifdef HAVE_SETEUID
   if(uid != euid && seteuid(uid) != 0)
     {
       printerror(__func__, "could not return to uid");
@@ -178,7 +189,7 @@ int scamper_ip4_build(scamper_probe_t *pr, uint8_t *buf, size_t *len)
   ip  = (struct ip *)buf;
   off = sizeof(struct ip);
 
-#ifndef _WIN32
+#ifndef _WIN32 /* windows does not separate ip_v and ip_hl */
   ip->ip_v   = 4;
   ip->ip_hl  = (ip4hlen / 4);
 #else

@@ -1,7 +1,7 @@
 /*
  * scamper_source
  *
- * $Id: scamper_sources.c,v 1.71 2023/06/04 07:24:32 mjl Exp $
+ * $Id: scamper_sources.c,v 1.71.4.2 2023/08/26 07:36:27 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -41,24 +41,40 @@
 #include "scamper_sources.h"
 #include "scamper_cyclemon.h"
 
+#ifndef DISABLE_SCAMPER_TRACE
 #include "trace/scamper_trace_cmd.h"
 #include "trace/scamper_trace_do.h"
+#endif
+#ifndef DISABLE_SCAMPER_PING
 #include "ping/scamper_ping_cmd.h"
 #include "ping/scamper_ping_do.h"
+#endif
+#ifndef DISABLE_SCAMPER_TRACELB
 #include "tracelb/scamper_tracelb_cmd.h"
 #include "tracelb/scamper_tracelb_do.h"
+#endif
+#ifndef DISABLE_SCAMPER_DEALIAS
 #include "dealias/scamper_dealias_cmd.h"
 #include "dealias/scamper_dealias_do.h"
-#include "sting/scamper_sting_cmd.h"
-#include "sting/scamper_sting_do.h"
+#endif
 #include "neighbourdisc/scamper_neighbourdisc_cmd.h"
 #include "neighbourdisc/scamper_neighbourdisc_do.h"
+#ifndef DISABLE_SCAMPER_TBIT
 #include "tbit/scamper_tbit_cmd.h"
 #include "tbit/scamper_tbit_do.h"
+#endif
+#ifndef DISABLE_SCAMPER_STING
+#include "sting/scamper_sting_cmd.h"
+#include "sting/scamper_sting_do.h"
+#endif
+#ifndef DISABLE_SCAMPER_SNIFF
 #include "sniff/scamper_sniff_cmd.h"
 #include "sniff/scamper_sniff_do.h"
+#endif
+#ifndef DISABLE_SCAMPER_HOST
 #include "host/scamper_host_cmd.h"
 #include "host/scamper_host_do.h"
+#endif
 
 #include "scamper_debug.h"
 
@@ -161,60 +177,76 @@ typedef struct command_func
 } command_func_t;
 
 static const command_func_t command_funcs[] = {
+#ifndef DISABLE_SCAMPER_TRACE
   {
     "trace", 5,
     scamper_do_trace_alloc,
     scamper_do_trace_alloctask,
     scamper_do_trace_free,
   },
+#endif
+#ifndef DISABLE_SCAMPER_PING
   {
     "ping", 4,
     scamper_do_ping_alloc,
     scamper_do_ping_alloctask,
     scamper_do_ping_free,
   },
+#endif
+#ifndef DISABLE_SCAMPER_TRACELB
   {
     "tracelb", 7,
     scamper_do_tracelb_alloc,
     scamper_do_tracelb_alloctask,
     scamper_do_tracelb_free,
   },
+#endif
+#ifndef DISABLE_SCAMPER_DEALIAS
   {
     "dealias", 7,
     scamper_do_dealias_alloc,
     scamper_do_dealias_alloctask,
     scamper_do_dealias_free,
   },
-  {
-    "sting", 5,
-    scamper_do_sting_alloc,
-    scamper_do_sting_alloctask,
-    scamper_do_sting_free,
-  },
+#endif
   {
     "neighbourdisc", 13,
     scamper_do_neighbourdisc_alloc,
     scamper_do_neighbourdisc_alloctask,
     scamper_do_neighbourdisc_free,
   },
+#ifndef DISABLE_SCAMPER_TBIT
   {
     "tbit", 4,
     scamper_do_tbit_alloc,
     scamper_do_tbit_alloctask,
     scamper_do_tbit_free,
   },
+#endif
+#ifndef DISABLE_SCAMPER_STING
+  {
+    "sting", 5,
+    scamper_do_sting_alloc,
+    scamper_do_sting_alloctask,
+    scamper_do_sting_free,
+  },
+#endif
+#ifndef DISABLE_SCAMPER_SNIFF
   {
     "sniff", 5,
     scamper_do_sniff_alloc,
     scamper_do_sniff_alloctask,
     scamper_do_sniff_free,
   },
+#endif
+#ifndef DISABLE_SCAMPER_HOST
   {
     "host", 4,
     scamper_do_host_alloc,
     scamper_do_host_alloctask,
     scamper_do_host_free,
   },
+#endif
 };
 
 static size_t command_funcc = sizeof(command_funcs) / sizeof(command_func_t);
@@ -1265,7 +1297,6 @@ const char *scamper_source_type_tostr(const scamper_source_t *source)
     case SCAMPER_SOURCE_TYPE_FILE:    return "file";
     case SCAMPER_SOURCE_TYPE_CMDLINE: return "cmdline";
     case SCAMPER_SOURCE_TYPE_CONTROL: return "control";
-    case SCAMPER_SOURCE_TYPE_TSPS:    return "tsps";
     }
 
   return NULL;

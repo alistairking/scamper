@@ -1,12 +1,12 @@
 /*
  * scamper_writebuf.c: use in combination with select to send without blocking
  *
- * $Id: scamper_writebuf.c,v 1.48 2022/12/09 09:37:42 mjl Exp $
+ * $Id: scamper_writebuf.c,v 1.48.10.3 2023/08/20 01:24:40 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2010 The University of Waikato
  * Copyright (C) 2014      The Regents of the University of California
- * Copyright (C) 2014-2022 Matthew Luckie
+ * Copyright (C) 2014-2023 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -104,7 +104,7 @@ static void writebuf_iovfree(scamper_writebuf_t *wb, size_t size)
   return;
 }
 
-#ifndef _WIN32
+#ifndef _WIN32 /* windows does not have msghdr or iovec */
 static int writebuf_tx(scamper_writebuf_t *wb, int fd)
 {
   struct msghdr msg;
@@ -179,8 +179,8 @@ static int writebuf_tx(scamper_writebuf_t *wb, int fd)
 }
 #endif
 
-#ifdef _WIN32
-static int writebuf_tx(scamper_writebuf_t *wb, int fd)
+#ifdef _WIN32 /* windows does not have msghdr or iovec */
+static int writebuf_tx(scamper_writebuf_t *wb, SOCKET fd)
 {
   struct iovec *iov;
   int size;
@@ -220,7 +220,11 @@ static int writebuf_tx(scamper_writebuf_t *wb, int fd)
  *
  * this function is called when the fd is ready to write to.
  */
+#ifndef _WIN32 /* SOCKET vs int on windows */
 int scamper_writebuf_write(int fd, scamper_writebuf_t *wb)
+#else
+int scamper_writebuf_write(SOCKET fd, scamper_writebuf_t *wb)
+#endif
 {
   if(writebuf_tx(wb, fd) != 0)
     {
@@ -288,8 +292,9 @@ size_t scamper_writebuf_len2(const scamper_writebuf_t *wb,char *str,size_t len)
  * register an iovec to send when it can be sent without blocking the
  * rest of scamper.
  */
-int scamper_writebuf_send(scamper_writebuf_t *wb, const void *data, size_t len)
+int scamper_writebuf_send(scamper_writebuf_t *wb, const void *vdata, size_t len)
 {
+  const uint8_t *data = (const uint8_t *)vdata;
   size_t s, x;
 
   /* make sure there is data to send */

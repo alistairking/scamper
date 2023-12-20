@@ -1,7 +1,7 @@
 /*
  * scamper_sting.c
  *
- * $Id: scamper_sting.c,v 1.14 2023/05/31 23:22:18 mjl Exp $
+ * $Id: scamper_sting.c,v 1.14.4.1 2023/08/08 01:01:06 mjl Exp $
  *
  * Copyright (C) 2008-2011 The University of Waikato
  * Copyright (C) 2014      The Regents of the University of California
@@ -104,8 +104,18 @@ int scamper_sting_pkts_alloc(scamper_sting_t *sting, uint32_t pktc)
 
 void scamper_sting_free(scamper_sting_t *sting)
 {
+  uint32_t i;
+
   if(sting == NULL)
     return;
+
+  if(sting->pkts != NULL)
+    {
+      for(i=0; i<sting->pktc; i++)
+	if(sting->pkts[i] != NULL)
+	  scamper_sting_pkt_free(sting->pkts[i]);
+      free(sting->pkts);
+    }
 
   if(sting->src != NULL)   scamper_addr_free(sting->src);
   if(sting->dst != NULL)   scamper_addr_free(sting->dst);

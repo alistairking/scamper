@@ -5,9 +5,9 @@
 .\"
 .\" Copyright (c) 2023 The Regents of the University of California
 .\"
-.\" $Id: sc_prefixprober.1,v 1.7 2023/04/20 09:22:18 mjl Exp $
+.\" $Id: sc_prefixprober.1,v 1.7.4.1 2023/08/07 22:03:29 mjl Exp $
 .\"
-.Dd April 20, 2023
+.Dd June 16, 2023
 .Dt SC_PREFIXPROBER 1
 .Os
 .Sh NAME
@@ -125,7 +125,9 @@ specifies the prefix of the name of the output file to be written.
 The output file will use the
 .Xr warts 5
 format, and can be compressed with gz, bz2, or xz at collection time if
-the specified outfile has the equivalent extension.
+the specified outfile has the equivalent extension, or the output type
+was explicitly specified with
+.Fl O
 .It Fl O Ar options
 allows the behavior of
 .Nm
@@ -141,6 +143,15 @@ probe random address in prefix.
 .It
 .Sy noshuffle:
 do not shuffle probe order.
+.It
+.Sy warts.gz:
+compress warts output using gzip compression.
+.It
+.Sy warts.bz2:
+compress warts output using bzip2 compression.
+.It
+.Sy warts.xz:
+compress warts output using xz compression.
 .El
 .It Fl p Ar port
 specifies the port on the local host where

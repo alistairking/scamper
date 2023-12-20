@@ -1,7 +1,7 @@
 /*
  * sc_wartsdump
  *
- * $Id: sc_wartsdump.c,v 1.259 2023/06/11 23:38:20 mjl Exp $
+ * $Id: sc_wartsdump.c,v 1.259.2.2 2023/08/18 21:25:04 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -2051,6 +2051,7 @@ static void dump_sniff(scamper_sniff_t *sniff)
 	}
     }
 
+  scamper_sniff_free(sniff);
   return;
 }
 
@@ -2201,8 +2202,9 @@ static void dump_host(scamper_host_t *host)
       for(j=0; j<count; j++)
 	dump_host_rr(scamper_host_query_ar_get(query, j), "ar");
     }
-
   printf("\n");
+
+  scamper_host_free(host);
   return;
 }
 
@@ -2271,7 +2273,7 @@ int main(int argc, char *argv[])
   uint16_t  type;
   int       f;
 
-#ifdef _WIN32
+#ifdef _WIN32 /* windows needs WSAStartup */
   WSADATA wsaData;
   WSAStartup(MAKEWORD(2,2), &wsaData);
 #endif

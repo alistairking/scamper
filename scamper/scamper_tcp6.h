@@ -1,10 +1,11 @@
 /*
  * scamper_tcp6.h
  *
- * $Id: scamper_tcp6.h,v 1.12 2012/04/05 18:00:54 mjl Exp $
+ * $Id: scamper_tcp6.h,v 1.12.52.1 2023/08/20 01:24:40 mjl Exp $
  *
  * Copyright (C) 2006 Matthew Luckie
  * Copyright (C) 2006-2009 The University of Waikato
+ * Copyright (C) 2023 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -25,8 +26,11 @@
 #ifndef __SCAMPER_TCP6_H
 #define __SCAMPER_TCP6_H
 
+#ifndef _WIN32 /* SOCKET vs int on windows */
 int scamper_tcp6_open(const void *addr, int sport);
-void scamper_tcp6_close(int fd);
+#else
+SOCKET scamper_tcp6_open(const void *addr, int sport);
+#endif
 
 #ifdef __SCAMPER_PROBE_H
 size_t scamper_tcp6_hlen(scamper_probe_t *probe);

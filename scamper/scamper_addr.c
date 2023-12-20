@@ -1,7 +1,7 @@
 /*
  * scamper_addr.c
  *
- * $Id: scamper_addr.c,v 1.75 2023/05/29 21:22:26 mjl Exp $
+ * $Id: scamper_addr.c,v 1.75.4.1 2023/08/18 21:25:03 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -60,7 +60,7 @@ static const uint32_t uint32_hostmask[] = {
   0x0000000f, 0x00000007, 0x00000003, 0x00000001,
 };
 
-#ifdef _WIN32
+#ifdef _WIN32 /* windows does not have s6_addr32 for in6_addr */
 static const uint16_t uint16_mask[] = {
   0x8000, 0xc000, 0xe000, 0xf000,
   0xf800, 0xfc00, 0xfe00, 0xff00,
@@ -418,7 +418,7 @@ static int ipv6_cmp(const scamper_addr_t *sa, const scamper_addr_t *sb)
   a = (struct in6_addr *)sa->addr;
   b = (struct in6_addr *)sb->addr;
 
-#ifndef _WIN32
+#ifndef _WIN32 /* windows does not have s6_addr32 for in6_addr */
   for(i=0; i<4; i++)
     {
       if(a->s6_addr32[i] < b->s6_addr32[i]) return -1;
@@ -440,7 +440,7 @@ static int ipv6_human_cmp(const scamper_addr_t *sa, const scamper_addr_t *sb)
   struct in6_addr *a, *b;
   int i;
 
-#ifndef _WIN32
+#ifndef _WIN32 /* windows does not have s6_addr32 for in6_addr */
   uint32_t as, bs;
 #else
   uint16_t as, bs;
@@ -452,7 +452,7 @@ static int ipv6_human_cmp(const scamper_addr_t *sa, const scamper_addr_t *sb)
   a = (struct in6_addr *)sa->addr;
   b = (struct in6_addr *)sb->addr;
 
-#ifndef _WIN32
+#ifndef _WIN32 /* windows does not have s6_addr32 for in6_addr */
   for(i=0; i<4; i++)
     {
       as = ntohl(a->s6_addr32[i]);
@@ -487,7 +487,7 @@ static int ipv6_inprefix(const scamper_addr_t *sa, const void *p, int len)
   const struct in6_addr *prefix = p;
   int i;
 
-#ifndef _WIN32
+#ifndef _WIN32 /* windows does not have s6_addr32 for in6_addr */
   uint32_t mask;
 #else
   uint16_t mask;
@@ -499,7 +499,7 @@ static int ipv6_inprefix(const scamper_addr_t *sa, const void *p, int len)
   if(len > 128)
     return -1;
 
-#ifndef _WIN32
+#ifndef _WIN32 /* windows does not have s6_addr32 for in6_addr */
   for(i=0; i<4; i++)
     {
       /*
@@ -547,13 +547,13 @@ static int ipv6_prefix(const scamper_addr_t *sa, const scamper_addr_t *sb)
   const struct in6_addr *b = sb->addr;
   int i, j, x = 0;
 
-#ifndef _WIN32
+#ifndef _WIN32 /* windows does not have s6_addr32 for in6_addr */
   uint32_t ua, ub;
 #else
   uint16_t ua, ub;
 #endif
 
-#ifndef _WIN32
+#ifndef _WIN32 /* windows does not have s6_addr32 for in6_addr */
   for(i=0; i<4; i++)
     {
       ua = a->s6_addr32[i];
@@ -619,7 +619,7 @@ static int ipv6_netaddr(const scamper_addr_t *sa, void *net, int nl)
     return -1;
   memset(&p, 0, sizeof(p));
 
-#ifndef _WIN32
+#ifndef _WIN32 /* windows does not have s6_addr32 for in6_addr */
   for(i=0; i<4; i++)
     {
       if(nl >= 32)
@@ -708,7 +708,7 @@ static int ipv6_bit(const scamper_addr_t *sa, int bit)
 {
   struct in6_addr *a = (struct in6_addr *)sa->addr;
   assert(bit > 0); assert(bit <= 128);
-#ifndef _WIN32
+#ifndef _WIN32 /* windows does not have s6_addr32 for in6_addr */
   return (ntohl(a->s6_addr32[(bit-1)/32]) >> (31 - ((bit-1) % 32))) & 1;
 #else
   return (ntohs(a->u.Word[(bit-1)/16]) >> (15 - ((bit-1) % 16))) & 1;
@@ -726,7 +726,7 @@ static int ipv6_fbd(const scamper_addr_t *sa, const scamper_addr_t *sb)
   a = (const struct in6_addr *)sa->addr;
   b = (const struct in6_addr *)sb->addr;
 
-#ifndef _WIN32
+#ifndef _WIN32 /* windows does not have s6_addr32 for in6_addr */
   for(i=0; i<4; i++)
     {
       if((v = ntohl(a->s6_addr32[i] ^ b->s6_addr32[i])) == 0)
@@ -1052,7 +1052,7 @@ int scamper_addr_is6to4(const scamper_addr_t *sa)
     return 0;
 
   a = sa->addr;
-#ifndef _WIN32
+#ifndef _WIN32 /* windows does not have s6_addr32 for in6_addr */
   if(a->s6_addr[0] == 0x20 && a->s6_addr[1] == 0x02)
     return 1;
 #else

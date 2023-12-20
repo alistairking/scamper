@@ -1,11 +1,11 @@
 /*
  * scamper_writebuf.h: use in combination with select to send without blocking
  *
- * $Id: scamper_writebuf.h,v 1.16 2016/02/13 16:04:48 mjl Exp $
+ * $Id: scamper_writebuf.h,v 1.16.38.1 2023/08/20 01:24:40 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2010 The University of Waikato
- * Copyright (C) 2014-2016 Matthew Luckie
+ * Copyright (C) 2014-2023 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -35,7 +35,11 @@ void scamper_writebuf_free(scamper_writebuf_t *wb);
 int scamper_writebuf_send(scamper_writebuf_t *wb,const void *data,size_t len);
 
 /* write the data currently buffered to the socket */
+#ifndef _WIN32 /* SOCKET vs int on windows */
 int scamper_writebuf_write(int fd, scamper_writebuf_t *wb);
+#else
+int scamper_writebuf_write(SOCKET fd, scamper_writebuf_t *wb);
+#endif
 
 /* return the count of bytes buffered */
 size_t scamper_writebuf_len(const scamper_writebuf_t *wb);
