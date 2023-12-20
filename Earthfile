@@ -3,8 +3,10 @@ VERSION 0.6
 all:
         BUILD +build
 
+# TODO: scamper still depends on glibc, so we should really build
+# release-specific binaries
 base-debian:
-        FROM debian:stable-slim
+        FROM debian:bullseye-slim
         WORKDIR /scamper
 
 base-alpine:
