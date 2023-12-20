@@ -1,7 +1,7 @@
 /*
  * scamper_dl.h
  *
- * $Id: scamper_dl.h,v 1.62.38.1 2023/08/20 01:24:40 mjl Exp $
+ * $Id: scamper_dl.h,v 1.62.38.2 2023/10/09 06:43:36 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -354,7 +354,7 @@ typedef struct scamper_dl_rec
       uint32_t  tsecr;
       uint8_t  *data;
       uint16_t  datalen;
-      uint8_t   fo_cookie[16];
+      uint8_t   fo_cookie[38];
       uint8_t   fo_cookielen;
     } tcp;
 

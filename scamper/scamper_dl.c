@@ -1,7 +1,7 @@
 /*
  * scamper_dl: manage BPF/PF_PACKET datalink instances for scamper
  *
- * $Id: scamper_dl.c,v 1.192.4.4 2023/08/26 21:26:44 mjl Exp $
+ * $Id: scamper_dl.c,v 1.192.4.5 2023/10/09 06:49:21 mjl Exp $
  *
  *          Matthew Luckie
  *          Ben Stasiewicz added fragmentation support.
@@ -288,7 +288,7 @@ static int dl_parse_ip(scamper_dl_rec_t *dl, uint8_t *pktbuf, size_t pktlen)
 	      if(tmp[1] == 0)
 		break;
 
-	      /* make sure the option can be extracted */
+	      /* make sure the option's length is sensible */
 	      if(off + tmp[1] > dl->dl_tcp_hl)
 		break;
 
@@ -323,16 +323,14 @@ static int dl_parse_ip(scamper_dl_rec_t *dl, uint8_t *pktbuf, size_t pktlen)
 		{
 		  dl->dl_tcp_opts |= SCAMPER_DL_TCP_OPT_FO;
 		  dl->dl_tcp_fo_cookielen = tmp[1] - 2;
-		  for(i=0; i<dl->dl_tcp_fo_cookielen; i++)
-		    dl->dl_tcp_fo_cookie[i] = tmp[2+i];
+		  memcpy(dl->dl_tcp_fo_cookie, tmp+2, dl->dl_tcp_fo_cookielen);
 		}
 
 	      if(tmp[0] == 254 && tmp[1] >= 4 && bytes_ntohs(tmp+2) == 0xF989)
 		{
 		  dl->dl_tcp_opts |= SCAMPER_DL_TCP_OPT_FO_EXP;
 		  dl->dl_tcp_fo_cookielen = tmp[1] - 4;
-		  for(i=0; i<dl->dl_tcp_fo_cookielen; i++)
-		    dl->dl_tcp_fo_cookie[i] = tmp[4+i];
+		  memcpy(dl->dl_tcp_fo_cookie, tmp+4, dl->dl_tcp_fo_cookielen);
 		}
 
 	      off += tmp[1];
@@ -933,6 +931,7 @@ static int dl_bpf_read(const int fd, scamper_dl_t *node)
   scamper_dl_rec_t   dl;
   ssize_t            len;
   uint8_t           *buf = readbuf;
+  int                ifindex;
 
   while((len = read(fd, buf, node->readbuf_len)) == -1)
     {
@@ -944,7 +943,7 @@ static int dl_bpf_read(const int fd, scamper_dl_t *node)
     }
 
   /* record the ifindex now, as the cb may need it */
-  if(scamper_fd_ifindex(node->fdn, &dl.dl_ifindex) != 0)
+  if(scamper_fd_ifindex(node->fdn, &ifindex) != 0)
     {
       return -1;
     }
@@ -955,6 +954,7 @@ static int dl_bpf_read(const int fd, scamper_dl_t *node)
 
       /* reset the datalink record */
       memset(&dl, 0, sizeof(dl));
+      dl.dl_ifindex = ifindex;
 
       if(node->dlt_cb(&dl, buf + bpf_hdr->bh_hdrlen, bpf_hdr->bh_caplen))
 	{
