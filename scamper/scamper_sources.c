@@ -179,7 +179,7 @@ typedef struct command_func
 {
   char             *command;
   size_t            len;
-  void           *(*allocdata)(char *);
+  void           *(*allocdata)(char *, uint32_t *);
   scamper_task_t *(*alloctask)(void *, scamper_list_t *, scamper_cycle_t *);
   void            (*freedata)(void *data);
 } command_func_t;
@@ -1399,7 +1399,8 @@ static const command_func_t *command_func_get(const char *command)
  * make a copy of the options, since the next function may modify the
  * contents of it
  */
-static void *command_func_allocdata(const command_func_t *f, const char *cmd)
+static void *command_func_allocdata(const command_func_t *f, const char *cmd,
+                                    uint32_t *id)
 {
   char *opts = NULL;
   void *data;
@@ -1408,7 +1409,7 @@ static void *command_func_allocdata(const command_func_t *f, const char *cmd)
       printerror(__func__, "could not strdup cmd opts");
       return NULL;
     }
-  data = f->allocdata(opts);
+  data = f->allocdata(opts, id);
   free(opts);
   return data;
 }
@@ -1451,7 +1452,7 @@ int scamper_source_halttask(scamper_source_t *source, uint32_t id)
  * which allows the command to be halted.  used by the control socket code.
  */
 int scamper_source_command2(scamper_source_t *s, const char *command,
-			    uint32_t *id)
+			    uint32_t *id, uint32_t *userid)
 {
   const command_func_t *f = NULL;
   scamper_sourcetask_t *st = NULL;
@@ -1473,7 +1474,7 @@ int scamper_source_command2(scamper_source_t *s, const char *command,
       scamper_debug(__func__, "could not determine command type");
       goto err;
     }
-  if((data = command_func_allocdata(f, command)) == NULL)
+  if((data = command_func_allocdata(f, command, userid)) == NULL)
     goto err;
   if((task = f->alloctask(data, s->list, s->cycle)) == NULL)
     goto err;
@@ -1530,12 +1531,13 @@ int scamper_source_command(scamper_source_t *source, const char *command)
   command_t *cmd = NULL;
   char *opts = NULL;
   void *data = NULL;
+  uint32_t userid; /* unused */
 
   sources_assert();
 
   if((func = command_func_get(command)) == NULL)
     goto err;
-  if((data = command_func_allocdata(func, command)) == NULL)
+  if((data = command_func_allocdata(func, command, &userid)) == NULL)
     goto err;
 
   if((cmd = command_alloc(COMMAND_PROBE)) == NULL)

@@ -31,7 +31,7 @@
 #ifndef __SCAMPER_STING_CMD_H
 #define __SCAMPER_STING_CMD_H
 
-void *scamper_do_sting_alloc(char *str);
+void *scamper_do_sting_alloc(char *str, uint32_t *id);
 const char *scamper_do_sting_usage(void);
 int scamper_do_sting_arg_validate(int argc, char *argv[], int *stop);
 

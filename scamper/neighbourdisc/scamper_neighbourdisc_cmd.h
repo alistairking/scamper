@@ -23,7 +23,7 @@
 #ifndef __SCAMPER_NEIGHBOURDISC_CMD_H
 #define __SCAMPER_NEIGHBOURDISC_CMD_H
 
-void *scamper_do_neighbourdisc_alloc(char *str);
+void *scamper_do_neighbourdisc_alloc(char *str, uint32_t *id);
 int scamper_do_neighbourdisc_arg_validate(int argc, char *argv[], int *stop);
 const char *scamper_do_neighbourdisc_usage(void);
 
