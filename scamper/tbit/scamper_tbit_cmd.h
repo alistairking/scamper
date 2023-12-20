@@ -31,7 +31,7 @@
 #ifndef __SCAMPER_TBIT_CMD_H
 #define __SCAMPER_TBIT_CMD_H
 
-void *scamper_do_tbit_alloc(char *str);
+void *scamper_do_tbit_alloc(char *str, uint32_t *id);
 const char *scamper_do_tbit_usage(void);
 int scamper_do_tbit_arg_validate(int argc, char *argv[], int *stop);
 
