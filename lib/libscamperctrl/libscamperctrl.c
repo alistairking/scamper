@@ -1,7 +1,7 @@
 /*
  * libscamperctrl
  *
- * $Id: libscamperctrl.c,v 1.32.4.1 2023/08/07 22:19:53 mjl Exp $
+ * $Id: libscamperctrl.c,v 1.32.4.2 2023/08/10 07:22:31 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -447,6 +447,8 @@ const char *scamper_inst_strerror(const scamper_inst_t *inst)
 
 static void scamper_inst_freedo(scamper_inst_t *inst)
 {
+  if(inst->dn != NULL)
+    dlist_node_pop(inst->list, inst->dn);
   if(inst->fd != -1)
     close(inst->fd);
   if(inst->name != NULL)
@@ -562,11 +564,7 @@ static scamper_inst_t *scamper_inst_alloc_dm(scamper_ctrl_t *ctrl, uint8_t t,
 
  err:
   if(inst != NULL)
-    {
-      if(inst->dn != NULL)
-	dlist_node_pop(ctrl->insts, inst->dn);
-      scamper_inst_freedo(inst);
-    }
+    scamper_inst_freedo(inst);
   return NULL;
 }
 
@@ -1215,7 +1213,10 @@ int scamper_ctrl_wait(scamper_ctrl_t *ctrl, struct timeval *to)
    */
   ctrl->wait = 0;
   while((inst = dlist_head_pop(ctrl->freelist)) != NULL)
-    scamper_inst_freedo(inst);
+    {
+      inst->list = NULL; inst->dn = NULL;
+      scamper_inst_freedo(inst);
+    }
   return rc;
 }
 #else
@@ -1285,7 +1286,10 @@ int scamper_ctrl_wait(scamper_ctrl_t *ctrl, struct timeval *to)
    */
   ctrl->wait = 0;
   while((inst = dlist_head_pop(ctrl->freelist)) != NULL)
-    scamper_inst_freedo(inst);
+    {
+      inst->list = NULL; inst->dn = NULL;
+      scamper_inst_freedo(inst);
+    }
   return rc;
 }
 #endif

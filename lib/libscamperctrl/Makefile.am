@@ -1,4 +1,4 @@
-# $Id: Makefile.am,v 1.4.4.4 2023/08/08 06:17:13 mjl Exp $
+# $Id: Makefile.am,v 1.4.4.5 2023/08/11 20:21:15 mjl Exp $
 
 AUTOMAKE_OPTIONS = subdir-objects
 
@@ -6,7 +6,7 @@ AM_CPPFLAGS = -I$(top_srcdir)
 
 lib_LTLIBRARIES = libscamperctrl.la
 
-libscamperctrl_la_LDFLAGS = -version-info 3:0:1 -no-undefined
+libscamperctrl_la_LDFLAGS = -version-info 3:1:1 -no-undefined
 
 libscamperctrl_la_SOURCES = \
 	libscamperctrl.c ../../mjl_splaytree.c ../../mjl_list.c

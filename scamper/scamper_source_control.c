@@ -1,7 +1,7 @@
 /*
  * scamper_source_control.c
  *
- * $Id: scamper_source_control.c,v 1.15 2020/03/17 07:32:16 mjl Exp $
+ * $Id: scamper_source_control.c,v 1.15.20.1 2023/08/10 07:28:34 mjl Exp $
  *
  * Copyright (C) 2007-2011 The University of Waikato
  * Author: Matthew Luckie
@@ -105,17 +105,19 @@ void scamper_source_control_finish(scamper_source_t *source)
   scamper_source_control_t *ssc;
 
   assert(scamper_source_gettype(source) == SCAMPER_SOURCE_TYPE_CONTROL);
-  ssc = (scamper_source_control_t *)scamper_source_getdata(source);
-  assert(ssc != NULL);
 
+  /*
+   * read() might return zero twice on a unix domain socket -- once
+   * for "sender has no more data" and once for HUP.  so, ssc might
+   * legitimately be null.
+   */
+  if((ssc = (scamper_source_control_t *)scamper_source_getdata(source)) == NULL)
+    return;
   if(ssc->isfinished != 0)
     return;
-
   ssc->isfinished = 1;
   if(scamper_source_isfinished(source) != 0)
-    {
-      scamper_source_finished(source);
-    }
+    scamper_source_finished(source);
 
   return;
 }
