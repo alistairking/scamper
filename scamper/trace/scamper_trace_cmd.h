@@ -25,7 +25,7 @@
 #ifndef __SCAMPER_TRACE_CMD_H
 #define __SCAMPER_TRACE_CMD_H
 
-void *scamper_do_trace_alloc(char *str);
+void *scamper_do_trace_alloc(char *str, uint32_t *id);
 int scamper_do_trace_arg_validate(int argc, char *argv[], int *stop);
 const char *scamper_do_trace_usage(void);
 
