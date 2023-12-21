@@ -2386,6 +2386,15 @@ static void do_trace_handle_icmp(scamper_task_t *task, scamper_icmp_resp_t *ir)
   uint16_t         id;
   uint8_t          proto;
 
+  /*
+   * if state hasn't been created yet, we haven't sent any probes, so drop this
+   * message
+   */
+  if(state == NULL)
+    {
+      return;
+    }
+
   assert(state->mode <= MODE_MAX);
 
   /*
