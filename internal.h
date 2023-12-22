@@ -187,6 +187,7 @@ typedef unsigned short sa_family_t;
 #include <linux/sockios.h>
 #include <linux/errqueue.h>
 #include <limits.h>
+#include <sys/mman.h>
 
 #ifdef HAVE_LINUX_NETLINK_H
 #include <linux/netlink.h>
