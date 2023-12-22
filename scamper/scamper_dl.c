@@ -81,6 +81,10 @@ struct scamper_dl
   u_int          readbuf_len;
 #endif
 
+  long last_stats;
+  unsigned int accepted_pkts;
+  unsigned int dropped_pkts;
+
 };
 
 static uint8_t          *readbuf = NULL;
@@ -1110,6 +1114,36 @@ static int dl_linux_node_init(const scamper_fd_t *fdn, scamper_dl_t *node)
 
  err:
   return -1;
+}
+
+void scamper_dl_stats(scamper_dl_t *node, int force)
+{
+    struct tpacket_stats stats;
+    socklen_t statlen = sizeof(stats);
+    int fd = scamper_fd_fd_get(node->fdn);
+
+    struct timeval now;
+    gettimeofday_wrap(&now);
+    if (!force && node->last_stats+10 > now.tv_sec) {
+      return;
+    }
+    node->last_stats = now.tv_sec;
+
+    if (getsockopt(fd, SOL_PACKET, PACKET_STATISTICS,
+                   &stats, &statlen) == 0) {
+      node->accepted_pkts += stats.tp_packets;
+      node->dropped_pkts += stats.tp_drops;
+        scamper_debug(__func__,
+                    "fd=%d, pkts=%d, pkts_total=%d, "
+                    "drops=%d, drops_total=%d",
+                      fd, stats.tp_packets, node->accepted_pkts,
+                    stats.tp_drops, node->dropped_pkts);
+        fprintf(stderr, "scamper_dl_stats: fd=%d, "
+                        "pkts=%d, pkts_total=%d, "
+                        "drops=%d, drops_total=%d\n",
+                fd, stats.tp_packets, node->accepted_pkts,
+                stats.tp_drops, node->dropped_pkts);
+    }
 }
 
 static int dl_linux_read(const int fd, scamper_dl_t *node)

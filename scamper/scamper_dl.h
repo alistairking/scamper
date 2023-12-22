@@ -568,4 +568,6 @@ void    scamper_dl_rec_icmp_print(const scamper_dl_rec_t *dl);
 #define scamper_dl_rec_icmp_print(dl) ((void)0)
 #endif
 
+void scamper_dl_stats(scamper_dl_t *node, int force);
+
 #endif /* __SCAMPER_DL_H */

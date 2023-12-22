@@ -178,9 +178,9 @@ typedef unsigned short sa_family_t;
 #endif
 
 #if defined(__linux__)
-#include <netpacket/packet.h>
 #include <net/ethernet.h>
 #include <net/if_arp.h>
+#include <linux/if_packet.h>
 #include <linux/types.h>
 #include <linux/filter.h>
 #include <linux/netfilter_ipv4/ip_tables.h>
