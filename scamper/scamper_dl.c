@@ -64,11 +64,11 @@
 
 struct ring
 {
-  struct iovec *rd;
   uint8_t *map;
-  struct tpacket_req3 req;
-  unsigned int block_cur;
-  unsigned int block_nr;
+  struct tpacket_req req;
+  struct iovec *frames;
+  unsigned int frames_cnt; // number of elements (frames) in the iovec (tp_frame_nr)
+  unsigned int cur_frame; // current index into the iovecs
 };
 
 struct scamper_dl
@@ -1027,18 +1027,11 @@ static int dl_linux_open(const int ifindex)
 {
   struct sockaddr_ll sll;
   int fd;
-  int v = TPACKET_V2;
 
   /* open the socket in non cooked mode for now */
   if((fd = socket(PF_PACKET, SOCK_RAW, htons(ETH_P_ALL))) == -1)
     {
       printerror(__func__, "could not open PF_PACKET");
-      return -1;
-    }
-
-  if (setsockopt(fd, SOL_PACKET, PACKET_VERSION, &v, sizeof(v)) == -1)
-    {
-      printerror(__func__, "PACKET_VERSION failed");
       return -1;
     }
 
@@ -1134,65 +1127,73 @@ static int dl_linux_node_init(const scamper_fd_t *fdn, scamper_dl_t *node)
   return -1;
 }
 
-static int dl_linux_read(const int fd, scamper_dl_t *node)
+static void release_frame(struct ring *ring, struct tpacket2_hdr *frame) {
+  frame->tp_status = TP_STATUS_KERNEL;
+  ring->cur_frame = (ring->cur_frame + 1) % ring->frames_cnt;
+//  scamper_debug(__func__, "advanced frame to %d/%d",
+//                ring->cur_frame, ring->frames_cnt);
+}
+
+static int dl_linux_read(scamper_dl_t *node)
 {
-  scamper_dl_rec_t   dl;
+  scamper_dl_rec_t dl;
   uint8_t *buf;
-  ssize_t            len;
+  ssize_t len;
   struct ring *ring = &node->ring;
+  struct tpacket2_hdr *frame;
   int wanted = 0;
 
-  struct tpacket2_hdr *hdr = ring->rd[ring->block_cur].iov_base;
-  if ((hdr->tp_status & TP_STATUS_USER) != TP_STATUS_USER) {
-//    scamper_debug(__func__, "ring entry not read. block_cur=%d",
-//                  ring->block_cur);
+  // Take a peek at the next frame in the ring
+  frame = ring->frames[ring->cur_frame].iov_base;
+  if ((frame->tp_status & TP_STATUS_USER) != TP_STATUS_USER) {
+    scamper_debug(__func__, "frame not ready. cur_frame=%d, status=%d",
+                  ring->cur_frame, frame->tp_status);
     return 0;
   }
-  scamper_debug(__func__, "we have a ring block that we can read! "
-                          "block_cur=%d, sec=%d, nsec=%d, len=%d, snaplen=%d",
-                ring->block_cur, hdr->tp_sec, hdr->tp_nsec, hdr->tp_len,
-                hdr->tp_snaplen);
 
-  /* sanity check the packet length */
-  len = hdr->tp_len;
-  if(hdr->tp_snaplen < len) {
-    len = hdr->tp_snaplen;
+  /* sanity check the packet length, and pick the smaller of len/snaplen */
+  len = frame->tp_len;
+  if(frame->tp_snaplen < len) {
+    len = frame->tp_snaplen;
   }
   assert(len >= 0);
-  buf = (uint8_t *)hdr + hdr->tp_mac;
+  /* grab a pointer to the start of the link layer headers */
+  buf = (uint8_t *)frame + frame->tp_mac;
+
+//  scamper_debug(__func__, "frame is ready. "
+//                          "cur_frame=%d/%d, sec=%d, nsec=%d, len=%d, snaplen=%d",
+//                ring->cur_frame, ring->frames_cnt, frame->tp_sec, frame->tp_nsec,
+//                frame->tp_len, frame->tp_snaplen);
 
   /* reset the datalink record */
   memset(&dl, 0, sizeof(dl));
 
+  /* populate dl timestamp info from the frame header */
   dl.dl_flags |= SCAMPER_DL_REC_FLAG_TIMESTAMP;
-  dl.dl_tv.tv_sec = hdr->tp_sec;
-  dl.dl_tv.tv_usec = hdr->tp_nsec/1000;
+  dl.dl_tv.tv_sec = frame->tp_sec;
+  dl.dl_tv.tv_usec = frame->tp_nsec/1000;
 
   /* record the ifindex now, as the cb routine may need it */
   if(scamper_fd_ifindex(node->fdn, &dl.dl_ifindex) != 0)
     {
-      goto err;
+      release_frame(ring, frame); // probably overkill, but just in case
+      return -1;
     }
 
-  /* if the packet passes the filter, we need to get the time it was rx'd */
+  /* check if we want this packet, and populate the dl record */
   wanted = node->dlt_cb(&dl, buf, len);
 
-  /* either way, we're done with the ring buffer, give it back to the kernel */
-  hdr->tp_status = TP_STATUS_KERNEL;
-  ring->block_cur = (ring->block_cur + 1) % ring->block_nr;
+  /* we either want to process this packet, or not, but either way we're done
+   * with the frame so give it back to the kernel and advance to the next frame
+   */
+  release_frame(ring, frame);
 
   if(wanted)
     {
-      scamper_debug(__func__, "we want this packet!");
       scamper_task_handledl(&dl);
     }
 
   return 0;
-
-err:
-  hdr->tp_status = TP_STATUS_KERNEL;
-  ring->block_cur = (ring->block_cur + 1) % ring->block_nr;
-  return -1;
 }
 
 static int dl_linux_tx(const scamper_dl_t *node,
@@ -1259,20 +1260,43 @@ static int dl_linux_filter(scamper_dl_t *node,
 }
 
 static int dl_linux_ring_init(scamper_dl_t *dl) {
-  unsigned int blocksiz = 1 << 22;
-  unsigned int framesiz = TPACKET_ALIGNMENT << 7;
-  unsigned int blocknum = 64;
+  // TODO: switch to v3
+  // TODO: use TP_STATUS_LOSING to dump stats
+  int pkt_version = TPACKET_V2;
+  // 4 pages per block
+  unsigned int block_size = getpagesize() << 2;
+  // 2K frames (we could perhaps reduce this)
+  unsigned int frame_size = TPACKET_ALIGNMENT << 7;
+  unsigned int block_cnt = 256;
+  // we can fit (block_size/frame_size) frames per block, and then we have
+  // block_cnt blocks total
+  unsigned int frame_cnt = block_size / frame_size * block_cnt;
+
   struct ring *ring = &dl->ring;
   int fd = scamper_fd_fd_get(dl->fdn);
   int i;
 
-  ring->req.tp_block_size = blocksiz;
-  ring->req.tp_frame_size = framesiz;
-  ring->req.tp_block_nr = blocknum;
-  ring->block_cur = 0;
-  ring->block_nr = ring->req.tp_frame_nr = (blocksiz * blocknum) / framesiz;
-  ring->req.tp_retire_blk_tov = 60;
-  ring->req.tp_feature_req_word = TP_FT_REQ_FILL_RXHASH;
+  ring->req.tp_block_size = block_size;
+  ring->req.tp_block_nr = block_cnt;
+  ring->req.tp_frame_size = frame_size;
+  ring->cur_frame = 0;
+  ring->frames_cnt = ring->req.tp_frame_nr = frame_cnt;
+
+  scamper_debug(__func__, "initializing PACKET_RX_RING. "
+                          "block_size=%d, frame_size=%d, block_cnt=%d, "
+                          "frame_cnt=%d, "
+                          "tp_block_size=%d, tp_block_nr=%d,"
+                          "tp_frame_size=%d, tp_frame_nr=%d.",
+                block_size, frame_size, block_cnt, frame_cnt,
+                ring->req.tp_block_size, ring->req.tp_block_nr,
+                ring->req.tp_frame_size, ring->req.tp_frame_nr);
+
+  if (setsockopt(fd, SOL_PACKET, PACKET_VERSION,
+                 &pkt_version, sizeof(pkt_version)) == -1)
+  {
+    printerror(__func__, "PACKET_VERSION failed");
+    return -1;
+  }
 
   if(setsockopt(fd, SOL_PACKET, PACKET_RX_RING,
                  &ring->req, sizeof(ring->req)) == -1) {
@@ -1280,26 +1304,29 @@ static int dl_linux_ring_init(scamper_dl_t *dl) {
     return -1;
   }
 
+  // Allocate our ring. Even though the circular buffer is compound of several
+  // physically discontiguous blocks of memory, they are contiguous to the user
+  // space, hence just one call to mmap is needed.
   if ((ring->map =
-           mmap(NULL, ring->req.tp_block_size * ring->req.tp_block_nr,
+           mmap(NULL, block_size * block_cnt,
                 PROT_READ | PROT_WRITE, MAP_SHARED | MAP_LOCKED,
                 fd, 0)) == NULL) {
     printerror(__func__, "ring mmap failed");
     return -1;
   }
 
-  if ((ring->rd = malloc(ring->req.tp_block_nr * sizeof(*ring->rd))) == NULL) {
+  // Allocate the iovecs that we'll use to find the frames (packets) in the ring
+  if ((ring->frames = malloc(frame_cnt * sizeof(struct iovec))) == NULL) {
     printerror(__func__, "failed to allocate ring iovecs");
     return -1;
   }
-  for (i = 0; i < ring->req.tp_block_nr; ++i) {
-    ring->rd[i].iov_base = ring->map + (i * ring->req.tp_block_size);
-    ring->rd[i].iov_len = ring->req.tp_block_size;
+  // Set up each element of the vector to point to a frame. This way we can just
+  // iterate over the iovec to iterate over the frames.
+  for (i = 0; i < frame_cnt; ++i) {
+    ring->frames[i].iov_base = ring->map + (i * frame_size);
+    ring->frames[i].iov_len = frame_size;
   }
 
-  scamper_debug(__func__, "packet_rx_ring configured. "
-                          "block_size=%d, frame_size=%d, block_nr=%d, frame_nr=%d",
-                blocksiz, framesiz, blocknum, ring->req.tp_frame_nr);
   return 0;
 }
 
@@ -1685,7 +1712,7 @@ void dl_ring_free(scamper_dl_t *dl) {
     return;
   }
   munmap(ring->map, ring->req.tp_block_size * ring->req.tp_block_nr);
-  free(ring->rd);
+  free(ring->frames);
 }
 
 /* dump some socket stats.
@@ -2081,7 +2108,7 @@ void scamper_dl_read_cb(SOCKET fd, void *param)
 #if defined(HAVE_BPF)
   dl_bpf_read(fd, (scamper_dl_t *)param);
 #elif defined(__linux__)
-  dl_linux_read(fd, (scamper_dl_t *)param);
+  dl_linux_read((scamper_dl_t *)param);
 #elif defined(HAVE_DLPI)
   dl_dlpi_read(fd, (scamper_dl_t *)param);
 #endif
