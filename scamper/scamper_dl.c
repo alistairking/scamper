@@ -1267,7 +1267,7 @@ static int dl_linux_ring_init(scamper_dl_t *dl) {
   // TODO: switch to v3
   int pkt_version = TPACKET_V2;
   // 4MB per block
-  unsigned int block_size = 1 << 22;
+  unsigned int block_size = getpagesize() << 2;
   // 2K frames (we could perhaps reduce this)
   unsigned int frame_size = TPACKET_ALIGNMENT << 7;
   unsigned int block_cnt = 256;
