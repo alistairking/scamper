@@ -1798,11 +1798,6 @@ void scamper_fd_free(scamper_fd_t *fdn)
   assert(fdn != NULL);
   assert(fdn->refcnt > 0);
 
-  /* maybe log some stats */
-  if (SCAMPER_FD_TYPE_IS_DL(fdn)) {
-    scamper_dl_stats(fdn->fd_dl_dl, 0);
-  }
-
   if(--fdn->refcnt == 0)
     {
       if(fdn->raw != NULL)

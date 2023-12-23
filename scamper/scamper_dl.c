@@ -1160,6 +1160,10 @@ static int dl_linux_read(scamper_dl_t *node)
   /* grab a pointer to the start of the link layer headers */
   buf = (uint8_t *)frame + frame->tp_mac;
 
+  if ((frame->tp_status & TP_STATUS_LOSING) == TP_STATUS_LOSING) {
+    scamper_dl_stats(node, 1);
+  }
+
 //  scamper_debug(__func__, "frame is ready. "
 //                          "cur_frame=%d/%d, sec=%d, nsec=%d, len=%d, snaplen=%d",
 //                ring->cur_frame, ring->frames_cnt, frame->tp_sec, frame->tp_nsec,
@@ -1261,10 +1265,9 @@ static int dl_linux_filter(scamper_dl_t *node,
 
 static int dl_linux_ring_init(scamper_dl_t *dl) {
   // TODO: switch to v3
-  // TODO: use TP_STATUS_LOSING to dump stats
   int pkt_version = TPACKET_V2;
-  // 4 pages per block
-  unsigned int block_size = getpagesize() << 2;
+  // 4MB per block
+  unsigned int block_size = 1 << 22;
   // 2K frames (we could perhaps reduce this)
   unsigned int frame_size = TPACKET_ALIGNMENT << 7;
   unsigned int block_cnt = 256;
@@ -1282,14 +1285,15 @@ static int dl_linux_ring_init(scamper_dl_t *dl) {
   ring->cur_frame = 0;
   ring->frames_cnt = ring->req.tp_frame_nr = frame_cnt;
 
-  scamper_debug(__func__, "initializing PACKET_RX_RING. "
-                          "block_size=%d, frame_size=%d, block_cnt=%d, "
-                          "frame_cnt=%d, "
-                          "tp_block_size=%d, tp_block_nr=%d,"
-                          "tp_frame_size=%d, tp_frame_nr=%d.",
-                block_size, frame_size, block_cnt, frame_cnt,
-                ring->req.tp_block_size, ring->req.tp_block_nr,
-                ring->req.tp_frame_size, ring->req.tp_frame_nr);
+  fprintf(stderr,
+          "%s: initializing PACKET_RX_RING. "
+          "block_size=%d, frame_size=%d, block_cnt=%d, "
+          "frame_cnt=%d, "
+          "tp_block_size=%d, tp_block_nr=%d, "
+          "tp_frame_size=%d, tp_frame_nr=%d\n",
+          __func__, block_size, frame_size, block_cnt, frame_cnt,
+          ring->req.tp_block_size, ring->req.tp_block_nr,
+          ring->req.tp_frame_size, ring->req.tp_frame_nr);
 
   if (setsockopt(fd, SOL_PACKET, PACKET_VERSION,
                  &pkt_version, sizeof(pkt_version)) == -1)
