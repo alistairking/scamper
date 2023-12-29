@@ -92,7 +92,6 @@ struct scamper_dl
 
   struct ring ring;
 
-  long last_stats;
   unsigned int accepted_pkts;
   unsigned int dropped_pkts;
 
@@ -1127,6 +1126,35 @@ static int dl_linux_node_init(const scamper_fd_t *fdn, scamper_dl_t *node)
   return -1;
 }
 
+/* dump some stats about packet loss  */
+static void dl_linux_stats(scamper_dl_t *node, int force) {
+    struct tpacket_stats stats;
+    socklen_t statlen = sizeof(stats);
+    int fd = scamper_fd_fd_get(node->fdn);
+
+    if (getsockopt(fd, SOL_PACKET, PACKET_STATISTICS,
+                   &stats, &statlen) != 0) {
+        printerror(__func__, "failed to get socket stats");
+        return;
+    }
+    if (!force && stats.tp_drops == 0) {
+        // no drops since the last report, skip this one
+        return;
+    }
+    node->accepted_pkts += stats.tp_packets;
+    node->dropped_pkts += stats.tp_drops;
+    scamper_debug(__func__,
+                  "fd=%d, pkts=%d, pkts_total=%d, "
+                  "drops=%d, drops_total=%d",
+                  fd, stats.tp_packets, node->accepted_pkts,
+                  stats.tp_drops, node->dropped_pkts);
+    fprintf(stderr, "scamper_dl_stats: fd=%d, "
+            "pkts=%d, pkts_total=%d, "
+            "drops=%d, drops_total=%d\n",
+            fd, stats.tp_packets, node->accepted_pkts,
+            stats.tp_drops, node->dropped_pkts);
+}
+
 static void release_frame(struct ring *ring, struct tpacket2_hdr *frame) {
   frame->tp_status = TP_STATUS_KERNEL;
   ring->cur_frame = (ring->cur_frame + 1) % ring->frames_cnt;
@@ -1161,7 +1189,7 @@ static int dl_linux_read(scamper_dl_t *node)
   buf = (uint8_t *)frame + frame->tp_mac;
 
   if ((frame->tp_status & TP_STATUS_LOSING) == TP_STATUS_LOSING) {
-    scamper_dl_stats(node, 1);
+    dl_linux_stats(node, 1);
   }
 
 //  scamper_debug(__func__, "frame is ready. "
@@ -1266,11 +1294,11 @@ static int dl_linux_filter(scamper_dl_t *node,
 static int dl_linux_ring_init(scamper_dl_t *dl) {
   // TODO: switch to v3
   int pkt_version = TPACKET_V2;
-  // 4MB per block
-  unsigned int block_size = getpagesize() << 2;
-  // 2K frames (we could perhaps reduce this)
-  unsigned int frame_size = TPACKET_ALIGNMENT << 7;
-  unsigned int block_cnt = 256;
+  unsigned int max_order = 10;
+  unsigned int block_size = getpagesize() << max_order;
+  // 1K frames (TODO: this should be sufficient?)
+  unsigned int frame_size = TPACKET_ALIGNMENT << 6;
+  unsigned int block_cnt = 256; // TODO: how to pick this?
   // we can fit (block_size/frame_size) frames per block, and then we have
   // block_cnt blocks total
   unsigned int frame_cnt = block_size / frame_size * block_cnt;
@@ -1288,10 +1316,11 @@ static int dl_linux_ring_init(scamper_dl_t *dl) {
   fprintf(stderr,
           "%s: initializing PACKET_RX_RING. "
           "block_size=%d, frame_size=%d, block_cnt=%d, "
-          "frame_cnt=%d, "
+          "frame_cnt=%d, alloc_size=%d, "
           "tp_block_size=%d, tp_block_nr=%d, "
           "tp_frame_size=%d, tp_frame_nr=%d\n",
           __func__, block_size, frame_size, block_cnt, frame_cnt,
+          block_size * block_cnt,
           ring->req.tp_block_size, ring->req.tp_block_nr,
           ring->req.tp_frame_size, ring->req.tp_frame_nr);
 
@@ -1305,6 +1334,7 @@ static int dl_linux_ring_init(scamper_dl_t *dl) {
   if(setsockopt(fd, SOL_PACKET, PACKET_RX_RING,
                  &ring->req, sizeof(ring->req)) == -1) {
     printerror(__func__, "PACKET_RX_RING failed");
+    printerror(__func__, "PACKET_RX_RING failed");
     return -1;
   }
 
@@ -1314,7 +1344,7 @@ static int dl_linux_ring_init(scamper_dl_t *dl) {
   if ((ring->map =
            mmap(NULL, block_size * block_cnt,
                 PROT_READ | PROT_WRITE, MAP_SHARED | MAP_LOCKED,
-                fd, 0)) == NULL) {
+                fd, 0)) == MAP_FAILED) {
     printerror(__func__, "ring mmap failed");
     return -1;
   }
@@ -1717,40 +1747,6 @@ void dl_ring_free(scamper_dl_t *dl) {
   }
   munmap(ring->map, ring->req.tp_block_size * ring->req.tp_block_nr);
   free(ring->frames);
-}
-
-/* dump some socket stats.
- * TODO: figure out how to expose this info better */
-void scamper_dl_stats(scamper_dl_t *node, int force)
-{
-#if defined(__linux__)
-  struct tpacket_stats stats;
-  socklen_t statlen = sizeof(stats);
-  int fd = scamper_fd_fd_get(node->fdn);
-
-  struct timeval now;
-  gettimeofday_wrap(&now);
-  if (!force && node->last_stats+10 > now.tv_sec) {
-    return;
-  }
-  node->last_stats = now.tv_sec;
-
-  if (getsockopt(fd, SOL_PACKET, PACKET_STATISTICS,
-                 &stats, &statlen) == 0) {
-    node->accepted_pkts += stats.tp_packets;
-    node->dropped_pkts += stats.tp_drops;
-    scamper_debug(__func__,
-                  "fd=%d, pkts=%d, pkts_total=%d, "
-                  "drops=%d, drops_total=%d",
-                  fd, stats.tp_packets, node->accepted_pkts,
-                  stats.tp_drops, node->dropped_pkts);
-    fprintf(stderr, "scamper_dl_stats: fd=%d, "
-                    "pkts=%d, pkts_total=%d, "
-                    "drops=%d, drops_total=%d\n",
-            fd, stats.tp_packets, node->accepted_pkts,
-            stats.tp_drops, node->dropped_pkts);
-  }
-#endif
 }
 
 int scamper_dl_rec_src(scamper_dl_rec_t *dl, scamper_addr_t *addr)

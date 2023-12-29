@@ -286,9 +286,6 @@ static char *fd_tostr(scamper_fd_t *fdn)
 
 static void fd_close(scamper_fd_t *fdn)
 {
-  if (SCAMPER_FD_TYPE_IS_DL(fdn)) {
-    scamper_dl_stats(fdn->fd_dl_dl, 1);
-  }
   switch(fdn->type)
     {
     case SCAMPER_FD_TYPE_PRIVATE:
