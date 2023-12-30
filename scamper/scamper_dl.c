@@ -1316,7 +1316,7 @@ static int dl_linux_ring_init(scamper_dl_t *dl) {
   unsigned int block_size = getpagesize() << max_order;
   // 1K frames (TODO: this should be sufficient?)
   unsigned int frame_size = TPACKET_ALIGNMENT << 6;
-  unsigned int block_cnt = 256; // TODO: how to pick this?
+  unsigned int block_cnt = 64; // TODO: how to pick this?
   // we can fit (block_size/frame_size) frames per block, and then we have
   // block_cnt blocks total
   unsigned int frame_cnt = block_size / frame_size * block_cnt;

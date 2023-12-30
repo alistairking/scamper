@@ -405,11 +405,11 @@ static void fd_refcnt_0(scamper_fd_t *fdn)
     }
 
   /*
-   * set this fd to be closed in ten seconds unless something else comes
+   * set this fd to be closed in one minute unless something else comes
    * along and wants to use it.
    */
   gettimeofday_wrap(&fdn->tv);
-  fdn->tv.tv_sec += 10;
+  fdn->tv.tv_sec += 60;
 
   return;
 }
