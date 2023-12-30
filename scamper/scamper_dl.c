@@ -63,6 +63,8 @@
 #endif
 
 #ifdef __linux__
+#define MAX_FRAMES_PER_READ 1000
+
 struct ring
 {
   uint8_t *map;
@@ -1225,17 +1227,20 @@ static int dl_linux_read(scamper_dl_t *node)
 {
   struct ring *ring = &node->ring;
   struct tpacket2_hdr *frame;
+  int handled = 0;
 
   // Process all the available frames before we head back to poll again
   // TODO: consider setting a limit here to avoid starving other fds
   frame = ring->frames[ring->cur_frame].iov_base;
-  while((frame->tp_status & TP_STATUS_USER) == TP_STATUS_USER)
+  while((frame->tp_status & TP_STATUS_USER) == TP_STATUS_USER &&
+    handled < MAX_FRAMES_PER_READ)
     {
       if(handle_frame(node, frame) != 0)
         {
           return -1;
         }
       frame = ring->frames[ring->cur_frame].iov_base;
+      handled++;
     }
 
   return 0;
@@ -1753,15 +1758,6 @@ static int dl_filter(scamper_dl_t *node)
 }
 #endif
 
-static int dl_ring_init(scamper_dl_t *dl)
-{
-#if defined(__linux__)
-  return dl_linux_ring_init(dl);
-#else
-  return 0;
-#endif
-}
-
 int scamper_dl_rec_src(scamper_dl_rec_t *dl, scamper_addr_t *addr)
 {
   if(dl->dl_af == AF_INET)
@@ -2172,10 +2168,12 @@ scamper_dl_t *scamper_dl_state_alloc(scamper_fd_t *fdn)
   dl_filter(dl);
 #endif
 
-  if (dl_ring_init(dl) != 0) {
+#ifdef __linux__
+  if (dl_linux_ring_init(dl) != 0) {
     printerror(__func__, "failed to initialize ring");
     goto err;
   }
+#endif
 
   return dl;
 
