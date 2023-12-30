@@ -62,6 +62,7 @@
 #define HAVE_FIREWIRE
 #endif
 
+#ifdef __linux__
 struct ring
 {
   uint8_t *map;
@@ -70,6 +71,7 @@ struct ring
   unsigned int frames_cnt; // number of elements (frames) in the iovec (tp_frame_nr)
   unsigned int cur_frame; // current index into the iovecs
 };
+#endif
 
 struct scamper_dl
 {
@@ -90,10 +92,11 @@ struct scamper_dl
   u_int          readbuf_len;
 #endif
 
+#if defined(__linux__)
   struct ring ring;
-
   unsigned int accepted_pkts;
   unsigned int dropped_pkts;
+#endif
 
 };
 
@@ -1374,6 +1377,15 @@ static int dl_linux_ring_init(scamper_dl_t *dl) {
   return 0;
 }
 
+static void dl_linux_ring_free(scamper_dl_t *dl) {
+  struct ring *ring = &dl->ring;
+  if (ring->map == NULL) {
+      return;
+  }
+  munmap(ring->map, ring->req.tp_block_size * ring->req.tp_block_nr);
+  free(ring->frames);
+}
+
 #elif defined(HAVE_DLPI)
 
 static int dl_dlpi_open(const int ifindex)
@@ -1750,15 +1762,6 @@ static int dl_ring_init(scamper_dl_t *dl)
 #endif
 }
 
-void dl_ring_free(scamper_dl_t *dl) {
-  struct ring *ring = &dl->ring;
-  if (ring->map == NULL) {
-    return;
-  }
-  munmap(ring->map, ring->req.tp_block_size * ring->req.tp_block_nr);
-  free(ring->frames);
-}
-
 int scamper_dl_rec_src(scamper_dl_rec_t *dl, scamper_addr_t *addr)
 {
   if(dl->dl_af == AF_INET)
@@ -2129,7 +2132,9 @@ void scamper_dl_read_cb(SOCKET fd, void *param)
 void scamper_dl_state_free(scamper_dl_t *dl)
 {
   assert(dl != NULL);
-  dl_ring_free(dl);
+#ifdef __linux__
+  dl_linux_ring_free(dl);
+#endif
   free(dl);
   return;
 }
