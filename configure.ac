@@ -489,6 +489,23 @@ AC_COMPILE_IFELSE([AC_LANG_PROGRAM(
 		AC_MSG_RESULT([no])
 	])
 
+AC_MSG_CHECKING([for struct tpacket_req3])
+AC_COMPILE_IFELSE([AC_LANG_PROGRAM(
+	[[
+		#include <linux/if_packet.h>
+	]],
+	[[
+		struct tpacket_req3 req3;
+	]])],
+	[
+		AC_MSG_RESULT([yes])
+		AC_DEFINE_UNQUOTED([HAVE_STRUCT_TPACKET_REQ3], 1,
+		[Define to 1 if you have the `tpacket_req3' struct.])
+	],
+	[
+		AC_MSG_RESULT([no])
+	])
+
 # These libraries have to be explicitly linked in OpenSolaris
 AC_SEARCH_LIBS(getaddrinfo, socket, [], [], -lnsl)
 AC_SEARCH_LIBS(inet_ntop, nsl, [], [], -lsocket)
