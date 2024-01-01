@@ -61,6 +61,7 @@ int scamper_option_rawtcp(void);
 int scamper_option_icmp_rxerr(void);
 int scamper_option_debugfileappend(void);
 int scamper_option_daemon(void);
+int scamper_option_ring(void);
 
 void scamper_exitwhendone(int on);
 
