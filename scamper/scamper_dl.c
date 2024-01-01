@@ -62,6 +62,20 @@
 #define HAVE_FIREWIRE
 #endif
 
+#ifdef HAVE_STRUCT_TPACKET_REQ3
+#define MAX_FRAMES_PER_READ 1000 // TODO: replace this with check on block boundaries
+struct ring
+{
+  uint8_t *map;
+  struct tpacket_req req; // TODO: switch to tpacket_req3
+  struct iovec *frames;
+  /* number of elements (frames) in the frames iovec (tp_frame_nr) */
+  unsigned int frames_cnt;
+  /* current index into the iovecs */
+  unsigned int cur_frame;
+};
+#endif
+
 struct scamper_dl
 {
   /* the file descriptor that scamper has on the datalink */
@@ -79,6 +93,12 @@ struct scamper_dl
   /* if we're using BPF, then we need to use an appropriately sized buffer */
 #if defined(HAVE_BPF)
   u_int          readbuf_len;
+#endif
+
+#ifdef HAVE_STRUCT_TPACKET_REQ3
+  struct ring ring;
+  unsigned int accepted_pkts;
+  unsigned int dropped_pkts;
 #endif
 
 };
@@ -1112,6 +1132,126 @@ static int dl_linux_node_init(const scamper_fd_t *fdn, scamper_dl_t *node)
   return -1;
 }
 
+#ifdef HAVE_STRUCT_TPACKET_REQ3
+/* Dump some stats about packet loss. This is called every time we get a frame
+ * in the ring with TP_STATUS_LOSING set, but it will only log to stderr if
+ * packets have been dropped since the last call. */
+static void dl_linux_stats(scamper_dl_t *node, int force)
+{
+  scamper_dl_rec_t dl;
+  struct tpacket_stats stats;
+  socklen_t statlen = sizeof(stats);
+  int fd = scamper_fd_fd_get(node->fdn);
+
+  if(getsockopt(fd, SOL_PACKET, PACKET_STATISTICS,
+                &stats, &statlen) != 0)
+    {
+      printerror(__func__, "failed to get socket stats");
+      return;
+    }
+  node->accepted_pkts += stats.tp_packets;
+  node->dropped_pkts += stats.tp_drops;
+
+  if(force || stats.tp_drops > 0)
+    {
+      /* we really did drop some pacekts, log this to stderr */
+      fprintf(stderr, "scamper_dl_stats: fd=%d, "
+              "pkts=%d, pkts_total=%d, "
+              "drops=%d, drops_total=%d\n",
+              fd, stats.tp_packets, node->accepted_pkts,
+              stats.tp_drops, node->dropped_pkts);
+    }
+  /* either way, log this to the debug log */
+  scamper_debug(__func__, "scamper_dl_stats: fd=%d, "
+                "pkts=%d, pkts_total=%d, "
+                "drops=%d, drops_total=%d\n",
+                fd, stats.tp_packets, node->accepted_pkts,
+                stats.tp_drops, node->dropped_pkts);
+}
+
+static void release_frame(struct ring *ring, struct tpacket2_hdr *frame)
+{
+  frame->tp_status = TP_STATUS_KERNEL;
+  ring->cur_frame = (ring->cur_frame + 1) % ring->frames_cnt;
+}
+
+static int handle_frame(scamper_dl_t *node, struct tpacket2_hdr *frame)
+{
+  struct ring *ring = &node->ring;
+  scamper_dl_rec_t dl;
+  uint8_t *buf;
+  ssize_t len;
+  int wanted;
+
+  /* sanity check the packet length, and pick the smaller of len/snaplen */
+  len = frame->tp_len;
+  if(frame->tp_snaplen < len)
+    {
+      len = frame->tp_snaplen;
+    }
+  assert(len >= 0);
+  /* grab a pointer to the start of the link layer headers */
+  buf = (uint8_t *)frame + frame->tp_mac;
+
+  if((frame->tp_status & TP_STATUS_LOSING) == TP_STATUS_LOSING)
+    {
+      dl_linux_stats(node, 0);
+    }
+
+  /* reset the datalink record */
+  memset(&dl, 0, sizeof(dl));
+
+  /* populate dl timestamp info from the frame header */
+  dl.dl_flags |= SCAMPER_DL_REC_FLAG_TIMESTAMP;
+  dl.dl_tv.tv_sec = frame->tp_sec;
+  dl.dl_tv.tv_usec = frame->tp_nsec / 1000;
+
+  /* record the ifindex now, as the cb routine may need it */
+  if(scamper_fd_ifindex(node->fdn, &dl.dl_ifindex) != 0)
+    {
+      release_frame(ring, frame); // probably overkill, but just in case
+      return -1;
+    }
+
+  /* check if we want this packet, and populate the dl record */
+  wanted = node->dlt_cb(&dl, buf, len);
+
+  /* we either want to process this packet or not, but either way we're done
+   * with the frame so give it back to the kernel and advance to the next frame
+   */
+  release_frame(ring, frame);
+
+  if(wanted)
+    {
+      scamper_task_handledl(&dl);
+    }
+
+  return 0;
+}
+
+static int dl_linux_ring_read(scamper_dl_t *node)
+{
+  struct ring *ring = &node->ring;
+  struct tpacket2_hdr *frame;
+  int handled = 0;
+
+  /* Process up to the next block boundary before we head back to poll again */
+  frame = ring->frames[ring->cur_frame].iov_base;
+  while((frame->tp_status & TP_STATUS_USER) == TP_STATUS_USER &&
+    handled < MAX_FRAMES_PER_READ)
+    {
+      if(handle_frame(node, frame) != 0)
+        {
+          return -1;
+        }
+      frame = ring->frames[ring->cur_frame].iov_base;
+      handled++;
+    }
+
+  return 0;
+}
+#endif
+
 static int dl_linux_read(const int fd, scamper_dl_t *node)
 {
   scamper_dl_rec_t   dl;
@@ -1962,7 +2102,13 @@ void scamper_dl_read_cb(SOCKET fd, void *param)
 #if defined(HAVE_BPF)
   dl_bpf_read(fd, (scamper_dl_t *)param);
 #elif defined(__linux__)
-  dl_linux_read(fd, (scamper_dl_t *)param);
+#ifdef HAVE_STRUCT_TPACKET_REQ3
+  if(scamper_option_ring())
+      dl_linux_ring_read((scamper_dl_t *)param);
+  else
+#else
+      dl_linux_read(fd, (scamper_dl_t *)param);
+#endif
 #elif defined(HAVE_DLPI)
   dl_dlpi_read(fd, (scamper_dl_t *)param);
 #endif

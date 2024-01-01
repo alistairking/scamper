@@ -275,6 +275,7 @@ AC_CHECK_HEADERS(sys/socketvar.h)
 AC_CHECK_HEADERS(sys/time.h)
 AC_CHECK_HEADERS(unistd.h)
 AC_CHECK_HEADERS(ifaddrs.h)
+AC_CHECK_HEADERS(linux/if_packet.h)
 
 # sys/sysctl.h requires other headers on at least OpenBSD
 AC_CHECK_HEADERS([sys/sysctl.h], [], [],
