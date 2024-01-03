@@ -1331,7 +1331,7 @@ static int dl_linux_ring_init(scamper_dl_t *dl) {
   }
   // Set up each element of the vector to point to a frame. This way we can just
   // iterate over the iovec to iterate over the frames.
-  for (i = 0; i < frame_cnt; ++i) {
+  for (i = 0; i < block_cnt; ++i) {
     ring->blocks[i].iov_base = ring->map + (i * block_size);
     ring->blocks[i].iov_len = block_size;
   }
