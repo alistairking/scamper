@@ -67,7 +67,8 @@
 struct ring
 {
   uint8_t *map;
-  struct tpacket_req3 req; // TODO: remove from this struct?
+  size_t map_size;
+  struct tpacket_req3 req;
   struct iovec *blocks;
   /* number of elements (frames) in the frames iovec (tp_frame_nr) */
   unsigned int blocks_cnt;
@@ -1267,26 +1268,31 @@ static int dl_linux_ring_read(scamper_dl_t *node)
 }
 
 static int dl_linux_ring_init(scamper_dl_t *dl) {
-  int pkt_version = TPACKET_V3;
-  unsigned int max_order = 10;
-  unsigned int block_size = getpagesize() << max_order;
-  // 1K frames (TODO: this should be sufficient?)
-  unsigned int frame_size = TPACKET_ALIGNMENT << 6;
-  unsigned int block_cnt = 64; // TODO: how to pick this?
-  // we can fit (block_size/frame_size) frames per block, and then we have
-  // block_cnt blocks total
-  unsigned int frame_cnt = block_size / frame_size * block_cnt;
-
   struct ring *ring = &dl->ring;
   int fd = scamper_fd_fd_get(dl->fdn);
   int i;
 
+  int pkt_version = TPACKET_V3;
+  /* TODO: we should retry if we can't allocate blocks this big? */
+  unsigned int max_order = 10;
+  unsigned int block_size = getpagesize() << max_order;
+  /* TODO: 1KB frames, is this enough? */
+  unsigned int frame_size = TPACKET_ALIGNMENT << 6;
+  /* TODO: make configurable? */
+  unsigned int block_cnt = 64;
+  // we can fit (block_size/frame_size) frames per block, and then we have
+  // block_cnt blocks total
+  unsigned int frame_cnt = block_size / frame_size * block_cnt;
+
   ring->req.tp_block_size = block_size;
-  ring->blocks_cnt = ring->req.tp_block_nr = block_cnt;
+  ring->req.tp_block_nr = block_cnt;
   ring->req.tp_frame_size = frame_size;
   ring->req.tp_retire_blk_tov = 10; /* expire unfilled block after 10s */
-  ring->cur_block = 0;
   ring->req.tp_frame_nr = frame_cnt;
+
+  ring->map_size = block_size * block_cnt;
+  ring->blocks_cnt = block_cnt;
+  ring->cur_block = 0;
 
   fprintf(stderr,
           "%s: initializing PACKET_RX_RING. "
@@ -1309,7 +1315,6 @@ static int dl_linux_ring_init(scamper_dl_t *dl) {
   if(setsockopt(fd, SOL_PACKET, PACKET_RX_RING,
                  &ring->req, sizeof(ring->req)) == -1) {
     printerror(__func__, "PACKET_RX_RING failed");
-    printerror(__func__, "PACKET_RX_RING failed");
     return -1;
   }
 
@@ -1317,7 +1322,7 @@ static int dl_linux_ring_init(scamper_dl_t *dl) {
   // physically discontiguous blocks of memory, they are contiguous to the user
   // space, hence just one call to mmap is needed.
   if ((ring->map =
-           mmap(NULL, block_size * block_cnt,
+           mmap(NULL, ring->map_size,
                 PROT_READ | PROT_WRITE, MAP_SHARED | MAP_LOCKED,
                 fd, 0)) == MAP_FAILED) {
     printerror(__func__, "ring mmap failed");
@@ -1344,7 +1349,7 @@ static void dl_linux_ring_free(scamper_dl_t *dl) {
   if (ring->map == NULL) {
       return;
   }
-  munmap(ring->map, ring->req.tp_block_size * ring->req.tp_block_nr);
+  munmap(ring->map, ring->map_size);
   free(ring->blocks);
 }
 #endif
