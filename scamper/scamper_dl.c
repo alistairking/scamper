@@ -1176,12 +1176,6 @@ static void dl_linux_stats(scamper_dl_t *node, int force)
                 stats.tp_drops, node->dropped_pkts);
 }
 
-static void release_block(struct ring *ring, struct block_desc *block)
-{
-  block->h1.block_status = TP_STATUS_KERNEL;
-  ring->cur_block = (ring->cur_block + 1) % ring->blocks_cnt;
-}
-
 static int handle_frame(scamper_dl_t *node, struct tpacket3_hdr *frame)
 {
   scamper_dl_rec_t dl;
@@ -1241,6 +1235,12 @@ static int handle_block(scamper_dl_t *node, struct block_desc *block) {
   }
 
   return 0;
+}
+
+static void release_block(struct ring *ring, struct block_desc *block)
+{
+  block->h1.block_status = TP_STATUS_KERNEL;
+  ring->cur_block = (ring->cur_block + 1) % ring->blocks_cnt;
 }
 
 static int dl_linux_ring_read(scamper_dl_t *node)
