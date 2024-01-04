@@ -1294,16 +1294,16 @@ static int dl_linux_ring_init(scamper_dl_t *dl) {
   ring->blocks_cnt = block_cnt;
   ring->cur_block = 0;
 
-  fprintf(stderr,
-          "%s: initializing PACKET_RX_RING. "
-          "block_size=%d, frame_size=%d, block_cnt=%d, "
-          "frame_cnt=%d, alloc_size=%d, "
-          "tp_block_size=%d, tp_block_nr=%d, "
-          "tp_frame_size=%d, tp_frame_nr=%d\n",
-          __func__, block_size, frame_size, block_cnt, frame_cnt,
-          block_size * block_cnt,
-          ring->req.tp_block_size, ring->req.tp_block_nr,
-          ring->req.tp_frame_size, ring->req.tp_frame_nr);
+  scamper_debug(__func__,
+                "%s: initializing PACKET_RX_RING. "
+                "block_size=%d, frame_size=%d, block_cnt=%d, "
+                "frame_cnt=%d, alloc_size=%d, "
+                "tp_block_size=%d, tp_block_nr=%d, "
+                "tp_frame_size=%d, tp_frame_nr=%d\n",
+                __func__, block_size, frame_size, block_cnt, frame_cnt,
+                block_size * block_cnt,
+                ring->req.tp_block_size, ring->req.tp_block_nr,
+                ring->req.tp_frame_size, ring->req.tp_frame_nr);
 
   if (setsockopt(fd, SOL_PACKET, PACKET_VERSION,
                  &pkt_version, sizeof(pkt_version)) == -1)
