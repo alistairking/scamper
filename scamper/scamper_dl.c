@@ -63,16 +63,23 @@
 #endif
 
 #ifdef HAVE_STRUCT_TPACKET_REQ3
-#define MAX_FRAMES_PER_READ 1000 // TODO: replace this with check on block boundaries
+#define MAX_BLOCKS_PER_READ 1
 struct ring
 {
   uint8_t *map;
-  struct tpacket_req req; // TODO: switch to tpacket_req3
-  struct iovec *frames;
+  size_t map_size;
+  struct tpacket_req3 req;
+  struct iovec *blocks;
   /* number of elements (frames) in the frames iovec (tp_frame_nr) */
-  unsigned int frames_cnt;
+  unsigned int blocks_cnt;
   /* current index into the iovecs */
-  unsigned int cur_frame;
+  unsigned int cur_block;
+};
+
+struct block_desc {
+  uint32_t version;
+  uint32_t offset_to_priv;
+  struct tpacket_hdr_v1 h1;
 };
 #endif
 
@@ -1169,15 +1176,8 @@ static void dl_linux_stats(scamper_dl_t *node, int force)
                 stats.tp_drops, node->dropped_pkts);
 }
 
-static void release_frame(struct ring *ring, struct tpacket2_hdr *frame)
+static int handle_frame(scamper_dl_t *node, struct tpacket3_hdr *frame)
 {
-  frame->tp_status = TP_STATUS_KERNEL;
-  ring->cur_frame = (ring->cur_frame + 1) % ring->frames_cnt;
-}
-
-static int handle_frame(scamper_dl_t *node, struct tpacket2_hdr *frame)
-{
-  struct ring *ring = &node->ring;
   scamper_dl_rec_t dl;
   uint8_t *buf;
   ssize_t len;
@@ -1209,19 +1209,11 @@ static int handle_frame(scamper_dl_t *node, struct tpacket2_hdr *frame)
   /* record the ifindex now, as the cb routine may need it */
   if(scamper_fd_ifindex(node->fdn, &dl.dl_ifindex) != 0)
     {
-      release_frame(ring, frame); // probably overkill, but just in case
       return -1;
     }
 
   /* check if we want this packet, and populate the dl record */
-  wanted = node->dlt_cb(&dl, buf, len);
-
-  /* we either want to process this packet or not, but either way we're done
-   * with the frame so give it back to the kernel and advance to the next frame
-   */
-  release_frame(ring, frame);
-
-  if(wanted)
+  if(node->dlt_cb(&dl, buf, len))
     {
       scamper_task_handledl(&dl);
     }
@@ -1229,22 +1221,46 @@ static int handle_frame(scamper_dl_t *node, struct tpacket2_hdr *frame)
   return 0;
 }
 
+static int handle_block(scamper_dl_t *node, struct block_desc *block) {
+  unsigned int frames_cnt = block->h1.num_pkts;
+  int i;
+  struct tpacket3_hdr *frame =
+      (struct tpacket3_hdr *)((uint8_t *)block + block->h1.offset_to_first_pkt);
+
+  for (i = 0; i < frames_cnt; i++) {
+    if (handle_frame(node, frame) != 0) {
+      return -1;
+    }
+    frame = (struct tpacket3_hdr *)((uint8_t *)frame + frame->tp_next_offset);
+  }
+
+  return 0;
+}
+
+static void release_block(struct ring *ring, struct block_desc *block)
+{
+  block->h1.block_status = TP_STATUS_KERNEL;
+  ring->cur_block = (ring->cur_block + 1) % ring->blocks_cnt;
+}
+
 static int dl_linux_ring_read(scamper_dl_t *node)
 {
   struct ring *ring = &node->ring;
-  struct tpacket2_hdr *frame;
+  struct block_desc *block;
   int handled = 0;
 
-  /* Process up to the next block boundary before we head back to poll again */
-  frame = ring->frames[ring->cur_frame].iov_base;
-  while((frame->tp_status & TP_STATUS_USER) == TP_STATUS_USER &&
-    handled < MAX_FRAMES_PER_READ)
+  /* Process at most MAX_BLOCKS_PER_READ blocks before we yield control */
+  block = ring->blocks[ring->cur_block].iov_base;
+  while((block->h1.block_status & TP_STATUS_USER) == TP_STATUS_USER &&
+    handled < MAX_BLOCKS_PER_READ)
     {
-      if(handle_frame(node, frame) != 0)
+      if(handle_block(node, block) != 0)
         {
+          release_block(ring, block);
           return -1;
         }
-      frame = ring->frames[ring->cur_frame].iov_base;
+      release_block(ring, block);
+      block = ring->blocks[ring->cur_block].iov_base;
       handled++;
     }
 
@@ -1252,26 +1268,31 @@ static int dl_linux_ring_read(scamper_dl_t *node)
 }
 
 static int dl_linux_ring_init(scamper_dl_t *dl) {
-  // TODO: switch to v3
-  int pkt_version = TPACKET_V2;
-  unsigned int max_order = 10;
-  unsigned int block_size = getpagesize() << max_order;
-  // 1K frames (TODO: this should be sufficient?)
-  unsigned int frame_size = TPACKET_ALIGNMENT << 6;
-  unsigned int block_cnt = 64; // TODO: how to pick this?
-  // we can fit (block_size/frame_size) frames per block, and then we have
-  // block_cnt blocks total
-  unsigned int frame_cnt = block_size / frame_size * block_cnt;
-
   struct ring *ring = &dl->ring;
   int fd = scamper_fd_fd_get(dl->fdn);
   int i;
 
+  int pkt_version = TPACKET_V3;
+  /* TODO: we should retry if we can't allocate blocks this big? */
+  unsigned int max_order = 10;
+  unsigned int block_size = getpagesize() << max_order;
+  /* TODO: 1KB frames, is this enough? */
+  unsigned int frame_size = TPACKET_ALIGNMENT << 6;
+  /* TODO: make configurable? */
+  unsigned int block_cnt = 64;
+  // we can fit (block_size/frame_size) frames per block, and then we have
+  // block_cnt blocks total
+  unsigned int frame_cnt = block_size / frame_size * block_cnt;
+
   ring->req.tp_block_size = block_size;
   ring->req.tp_block_nr = block_cnt;
   ring->req.tp_frame_size = frame_size;
-  ring->cur_frame = 0;
-  ring->frames_cnt = ring->req.tp_frame_nr = frame_cnt;
+  ring->req.tp_retire_blk_tov = 10; /* expire unfilled block after 10s */
+  ring->req.tp_frame_nr = frame_cnt;
+
+  ring->map_size = block_size * block_cnt;
+  ring->blocks_cnt = block_cnt;
+  ring->cur_block = 0;
 
   fprintf(stderr,
           "%s: initializing PACKET_RX_RING. "
@@ -1294,7 +1315,6 @@ static int dl_linux_ring_init(scamper_dl_t *dl) {
   if(setsockopt(fd, SOL_PACKET, PACKET_RX_RING,
                  &ring->req, sizeof(ring->req)) == -1) {
     printerror(__func__, "PACKET_RX_RING failed");
-    printerror(__func__, "PACKET_RX_RING failed");
     return -1;
   }
 
@@ -1302,23 +1322,23 @@ static int dl_linux_ring_init(scamper_dl_t *dl) {
   // physically discontiguous blocks of memory, they are contiguous to the user
   // space, hence just one call to mmap is needed.
   if ((ring->map =
-           mmap(NULL, block_size * block_cnt,
+           mmap(NULL, ring->map_size,
                 PROT_READ | PROT_WRITE, MAP_SHARED | MAP_LOCKED,
                 fd, 0)) == MAP_FAILED) {
     printerror(__func__, "ring mmap failed");
     return -1;
   }
 
-  // Allocate the iovecs that we'll use to find the frames (packets) in the ring
-  if ((ring->frames = malloc(frame_cnt * sizeof(struct iovec))) == NULL) {
+  // Allocate the iovecs that we'll use to find the blocks in the ring
+  if ((ring->blocks = malloc(block_cnt * sizeof(struct iovec))) == NULL) {
     printerror(__func__, "failed to allocate ring iovecs");
     return -1;
   }
   // Set up each element of the vector to point to a frame. This way we can just
   // iterate over the iovec to iterate over the frames.
-  for (i = 0; i < frame_cnt; ++i) {
-    ring->frames[i].iov_base = ring->map + (i * frame_size);
-    ring->frames[i].iov_len = frame_size;
+  for (i = 0; i < block_cnt; ++i) {
+    ring->blocks[i].iov_base = ring->map + (i * block_size);
+    ring->blocks[i].iov_len = block_size;
   }
 
   return 0;
@@ -1329,8 +1349,8 @@ static void dl_linux_ring_free(scamper_dl_t *dl) {
   if (ring->map == NULL) {
       return;
   }
-  munmap(ring->map, ring->req.tp_block_size * ring->req.tp_block_nr);
-  free(ring->frames);
+  munmap(ring->map, ring->map_size);
+  free(ring->blocks);
 }
 #endif
 
