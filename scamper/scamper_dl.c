@@ -1143,9 +1143,8 @@ static int dl_linux_node_init(const scamper_fd_t *fdn, scamper_dl_t *node)
 /* Dump some stats about packet loss. This is called every time we get a frame
  * in the ring with TP_STATUS_LOSING set, but it will only log to stderr if
  * packets have been dropped since the last call. */
-static void dl_linux_stats(scamper_dl_t *node, int force)
+static void dl_linux_stats(scamper_dl_t *node)
 {
-  scamper_dl_rec_t dl;
   struct tpacket_stats stats;
   socklen_t statlen = sizeof(stats);
   int fd = scamper_fd_fd_get(node->fdn);
@@ -1159,9 +1158,10 @@ static void dl_linux_stats(scamper_dl_t *node, int force)
   node->accepted_pkts += stats.tp_packets;
   node->dropped_pkts += stats.tp_drops;
 
-  if(force || stats.tp_drops > 0)
+  /* Log this to stderr iff we have newly dropped packets and this isn't the
+   * first time we've logged drops */
+  if(stats.tp_drops > 0 && node->accepted_pkts > stats.tp_packets)
     {
-      /* we really did drop some pacekts, log this to stderr */
       fprintf(stderr, "scamper_dl_stats: fd=%d, "
               "pkts=%d, pkts_total=%d, "
               "drops=%d, drops_total=%d\n",
@@ -1195,7 +1195,7 @@ static int handle_frame(scamper_dl_t *node, struct tpacket3_hdr *frame)
 
   if((frame->tp_status & TP_STATUS_LOSING) == TP_STATUS_LOSING)
     {
-      dl_linux_stats(node, 0);
+      dl_linux_stats(node);
     }
 
   /* reset the datalink record */
