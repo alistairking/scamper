@@ -178,7 +178,12 @@ typedef unsigned short sa_family_t;
 #endif
 
 #if defined(__linux__)
+#ifdef HAVE_LINUX_IF_PACKET_H
+#include <linux/if_packet.h>
+#else
 #include <netpacket/packet.h>
+#endif
+
 #include <net/ethernet.h>
 #include <net/if_arp.h>
 #include <linux/types.h>
@@ -187,6 +192,7 @@ typedef unsigned short sa_family_t;
 #include <linux/sockios.h>
 #include <linux/errqueue.h>
 #include <limits.h>
+#include <sys/mman.h>
 
 #ifdef HAVE_LINUX_NETLINK_H
 #include <linux/netlink.h>
