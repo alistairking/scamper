@@ -290,6 +290,12 @@ on systems where
 .Xr epoll 7
 is available.
 .It
+.Sy ring:
+tell scsamper to use PACKET_RX_RING (see
+.Xr packet 7) to receive
+datalink responses. This significantly improves scamper
+performance and accuracy on systems with other non-scamper traffic.
+.It
 .Sy cmdfile:
 the input file consists of complete commands.
 .It
