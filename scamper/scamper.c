@@ -142,6 +142,7 @@
 #define FLAG_ICMP_RECVERR    0x00000400
 #endif
 #define FLAG_POLL            0x00000800
+#define FLAG_RING            0x00001000
 
 /*
  * parameters configurable by the command line:
@@ -375,6 +376,9 @@ static void usage(uint32_t opt_mask)
 #endif
 #ifndef WITHOUT_DEBUGFILE
       usage_line("debugfileappend: append to debugfile, rather than truncate");
+#endif
+#ifdef HAVE_STRUCT_TPACKET_REQ3
+      usage_line("ring: use TPACKET_V3");
 #endif
     }
 
@@ -746,6 +750,10 @@ static int check_options(int argc, char *argv[])
 	    remote_client_privfile = optarg+16;
 	  else if(strncasecmp(optarg, "client-certfile=", 16) == 0)
 	    remote_client_certfile = optarg+16;
+#endif
+#ifdef HAVE_STRUCT_TPACKET_REQ3
+	  else if(strcasecmp(optarg, "ring") == 0)
+	    flags |= FLAG_RING;
 #endif
 	  else
 	    {
@@ -1245,6 +1253,14 @@ int scamper_option_notls(void)
 int scamper_option_daemon(void)
 {
   if(options & OPT_DAEMON) return 1;
+  return 0;
+}
+
+int scamper_option_ring(void)
+{
+#ifdef HAVE_STRUCT_TPACKET_REQ3
+  if(flags & FLAG_RING) return 1;
+#endif
   return 0;
 }
 
