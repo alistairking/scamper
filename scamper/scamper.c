@@ -235,6 +235,10 @@ static char *remote_client_privfile = NULL;
 static char *remote_client_certfile = NULL;
 #endif
 
+/* runtime config for linux AF_PACKET ring */
+static unsigned int ring_block_size = 1 << 16; /* 65 KiB */
+static unsigned int ring_blocks = 64;
+
 /* Source port to use in our probes */
 static uint16_t default_sport = 0;
 static uint16_t pid_u16 = 0;
@@ -752,8 +756,12 @@ static int check_options(int argc, char *argv[])
 	    remote_client_certfile = optarg+16;
 #endif
 #ifdef HAVE_STRUCT_TPACKET_REQ3
-	  else if(strcasecmp(optarg, "ring") == 0)
-	    flags |= FLAG_RING;
+    else if(strcasecmp(optarg, "ring") == 0)
+      flags |= FLAG_RING;
+    else if(strncasecmp(optarg, "ring-blocks=", 12) == 0)
+      ring_blocks = strtoul(optarg + 12, NULL, 10);
+    else if(strncasecmp(optarg, "ring-block-size=", 16) == 0)
+      ring_block_size = strtoul(optarg + 16, NULL, 10);
 #endif
 	  else
 	    {
@@ -1262,6 +1270,16 @@ int scamper_option_ring(void)
   if(flags & FLAG_RING) return 1;
 #endif
   return 0;
+}
+
+unsigned int scamper_option_ring_blocks()
+{
+  return ring_blocks;
+}
+
+unsigned int scamper_option_ring_block_size()
+{
+  return ring_block_size;
 }
 
 #ifdef HAVE_SETEUID
