@@ -4042,6 +4042,8 @@ static void do_trace_probe(scamper_task_t *task)
   else
     goto err;
 
+  if(trace->flags & SCAMPER_TRACE_FLAG_DL)
+    probe.pr_flags |= SCAMPER_PROBE_FLAG_DL;
   if(trace->flags & SCAMPER_TRACE_FLAG_RXERR)
     probe.pr_flags |= SCAMPER_PROBE_FLAG_RXERR;
 

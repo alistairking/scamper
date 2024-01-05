@@ -831,21 +831,23 @@ int scamper_probe_task(scamper_probe_t *pr, scamper_task_t *task)
   /* get an ICMP socket to listen for responses */
   if(SCAMPER_ADDR_TYPE_IS_IPV4(pr->pr_ip_dst))
     {
-      if((pr->pr_flags & SCAMPER_PROBE_FLAG_SPOOF) == 0 &&
-	 (icmp = scamper_task_fd_icmp4(task, pr->pr_ip_src->addr)) == NULL)
-	{
-	  pr->pr_errno = errno;
-	  goto err;
-	}
+      if(((pr->pr_flags & SCAMPER_PROBE_FLAG_SPOOF) == 0 &&
+          (pr->pr_flags & SCAMPER_PROBE_FLAG_DL) == 0) &&
+         (icmp = scamper_task_fd_icmp4(task, pr->pr_ip_src->addr)) == NULL)
+        {
+          pr->pr_errno = errno;
+          goto err;
+        }
     }
   else if(SCAMPER_ADDR_TYPE_IS_IPV6(pr->pr_ip_dst))
     {
-      if((pr->pr_flags & SCAMPER_PROBE_FLAG_SPOOF) == 0 &&
-	 (icmp = scamper_task_fd_icmp6(task, pr->pr_ip_src->addr)) == NULL)
-	{
-	  pr->pr_errno = errno;
-	  goto err;
-	}
+      if(((pr->pr_flags & SCAMPER_PROBE_FLAG_SPOOF) == 0 &&
+          (pr->pr_flags & SCAMPER_PROBE_FLAG_DL) == 0) &&
+         (icmp = scamper_task_fd_icmp6(task, pr->pr_ip_src->addr)) == NULL)
+        {
+          pr->pr_errno = errno;
+          goto err;
+        }
     }
   else
     {
