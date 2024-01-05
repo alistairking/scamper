@@ -1282,13 +1282,10 @@ static int dl_linux_ring_init(scamper_dl_t *dl) {
   int i;
 
   int pkt_version = TPACKET_V3;
-  /* TODO: we should retry if we can't allocate blocks this big? */
-  unsigned int max_order = 10;
-  unsigned int block_size = getpagesize() << max_order;
+  unsigned int block_size = scamper_option_ring_block_size();
   /* TODO: 1KB frames, is this enough? */
   unsigned int frame_size = TPACKET_ALIGNMENT << 6;
-  /* TODO: make configurable? */
-  unsigned int block_cnt = 64;
+  unsigned int block_cnt = scamper_option_ring_blocks();
   // we can fit (block_size/frame_size) frames per block, and then we have
   // block_cnt blocks total
   unsigned int frame_cnt = block_size / frame_size * block_cnt;
