@@ -62,6 +62,8 @@ int scamper_option_icmp_rxerr(void);
 int scamper_option_debugfileappend(void);
 int scamper_option_daemon(void);
 int scamper_option_ring(void);
+unsigned int scamper_option_ring_blocks(void);
+unsigned int scamper_option_ring_block_size(void);
 
 void scamper_exitwhendone(int on);
 

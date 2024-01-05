@@ -291,10 +291,16 @@ on systems where
 is available.
 .It
 .Sy ring:
-tell scsamper to use PACKET_RX_RING (see
+tell scamper to use PACKET_RX_RING (see
 .Xr packet 7) to receive
 datalink responses. This significantly improves scamper
 performance and accuracy on systems with other non-scamper traffic.
+.It
+.Sy ring-blocks:
+the number of blocks to use in the PACKET_RX_RING. Defaults to 64.
+.It
+.Sy ring-block-size:
+the number of bytes in each block of the PACKET_RX_RING. Defaults to 65k.
 .It
 .Sy cmdfile:
 the input file consists of complete commands.
