@@ -3779,64 +3779,67 @@ static int trace_state_alloc(scamper_task_t *task)
       state->mode = trace_first_mode(trace);
     }
 
-  if(scamper_option_icmp_rxerr() != 0)
+  if (!SCAMPER_TRACE_FLAG_IS_DL(trace))
+  {
+    if (scamper_option_icmp_rxerr() != 0)
     {
       trace->flags |= SCAMPER_TRACE_FLAG_RXERR;
-      if(SCAMPER_TRACE_TYPE_IS_ICMP(trace) &&
-	 SCAMPER_ADDR_TYPE_IS_IPV4(trace->dst))
-	{
-	  state->icmp = scamper_fd_icmp4_err(trace->src->addr);
-	  state->probe = scamper_fd_icmp4_err(trace->src->addr);
-	}
-      else if(SCAMPER_TRACE_TYPE_IS_UDP(trace) &&
-	      SCAMPER_ADDR_TYPE_IS_IPV6(trace->dst))
-	{
-	  state->icmp = scamper_fd_udp6_err(trace->src->addr, trace->sport);
-	  state->probe = scamper_fd_udp6_err(trace->src->addr, trace->sport);
-	}
-      if(state->icmp == NULL || state->probe == NULL)
-	goto err;
+      if (SCAMPER_TRACE_TYPE_IS_ICMP(trace) &&
+        SCAMPER_ADDR_TYPE_IS_IPV4(trace->dst))
+      {
+        state->icmp = scamper_fd_icmp4_err(trace->src->addr);
+        state->probe = scamper_fd_icmp4_err(trace->src->addr);
+      }
+      else if (SCAMPER_TRACE_TYPE_IS_UDP(trace) &&
+        SCAMPER_ADDR_TYPE_IS_IPV6(trace->dst))
+      {
+        state->icmp = scamper_fd_udp6_err(trace->src->addr, trace->sport);
+        state->probe = scamper_fd_udp6_err(trace->src->addr, trace->sport);
+      }
+      if (state->icmp == NULL || state->probe == NULL)
+        goto err;
     }
-  else
+    else
     {
-      if(trace->dst->type == SCAMPER_ADDR_TYPE_IPV4)
-	state->icmp = scamper_fd_icmp4(trace->src->addr);
-      else if(trace->dst->type == SCAMPER_ADDR_TYPE_IPV6)
-	state->icmp = scamper_fd_icmp6(trace->src->addr);
-      if(state->icmp == NULL)
-	goto err;
+      if (trace->dst->type == SCAMPER_ADDR_TYPE_IPV4)
+        state->icmp = scamper_fd_icmp4(trace->src->addr);
+      else if (trace->dst->type == SCAMPER_ADDR_TYPE_IPV6)
+        state->icmp = scamper_fd_icmp6(trace->src->addr);
+      if (state->icmp == NULL)
+        goto err;
 
-      if(SCAMPER_TRACE_TYPE_IS_TCP(trace))
-	{
-	  if(trace->dst->type == SCAMPER_ADDR_TYPE_IPV4)
-	    {
-	      state->probe = scamper_fd_tcp4(NULL, trace->sport);
-	      if(scamper_option_rawtcp() != 0 &&
-		 (state->raw = scamper_fd_ip4()) == NULL)
-		goto err;
-	    }
-	  else
-	    {
-	      state->probe = scamper_fd_tcp6(NULL, trace->sport);
-	    }
-	}
-      else if(SCAMPER_TRACE_TYPE_IS_ICMP(trace))
-	{
-	  if(trace->dst->type == SCAMPER_ADDR_TYPE_IPV4)
-	    state->probe = scamper_fd_icmp4(trace->src->addr);
-	  else
-	    state->probe = scamper_fd_icmp6(trace->src->addr);
-	}
-      else if(SCAMPER_TRACE_TYPE_IS_UDP(trace))
-	{
-	  if(trace->dst->type == SCAMPER_ADDR_TYPE_IPV4)
-	    state->probe = scamper_fd_udp4(trace->src->addr, trace->sport);
-	  else
-	    state->probe = scamper_fd_udp6(trace->src->addr, trace->sport);
-	}
-      if(state->probe == NULL)
-	goto err;
+      if (SCAMPER_TRACE_TYPE_IS_TCP(trace))
+      {
+        if (trace->dst->type == SCAMPER_ADDR_TYPE_IPV4)
+        {
+          state->probe = scamper_fd_tcp4(NULL, trace->sport);
+          if (scamper_option_rawtcp() != 0 &&
+            (state->raw = scamper_fd_ip4()) == NULL)
+            goto err;
+        }
+        else
+        {
+          state->probe = scamper_fd_tcp6(NULL, trace->sport);
+        }
+      }
+      else if (SCAMPER_TRACE_TYPE_IS_ICMP(trace))
+      {
+        if (trace->dst->type == SCAMPER_ADDR_TYPE_IPV4)
+          state->probe = scamper_fd_icmp4(trace->src->addr);
+        else
+          state->probe = scamper_fd_icmp6(trace->src->addr);
+      }
+      else if (SCAMPER_TRACE_TYPE_IS_UDP(trace))
+      {
+        if (trace->dst->type == SCAMPER_ADDR_TYPE_IPV4)
+          state->probe = scamper_fd_udp4(trace->src->addr, trace->sport);
+        else
+          state->probe = scamper_fd_udp6(trace->src->addr, trace->sport);
+      }
+      if (state->probe == NULL)
+        goto err;
     }
+  }
 
   scamper_task_setstate(task, state);
   return 0;
@@ -3966,7 +3969,11 @@ static void do_trace_probe(scamper_task_t *task)
   probe.pr_ip_tos    = trace->tos;
   probe.pr_data      = pktbuf;
   probe.pr_len       = state->payload_size;
-  probe.pr_fd        = scamper_fd_fd_get(state->probe);
+
+  if (!SCAMPER_TRACE_FLAG_IS_DL(trace))
+  {
+    probe.pr_fd        = scamper_fd_fd_get(state->probe);
+  }
 
   if(MODE_IS_PARALLEL(state->mode))
     {
