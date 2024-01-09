@@ -2402,7 +2402,7 @@ static void do_trace_handle_icmp(scamper_task_t *task, scamper_icmp_resp_t *ir)
    * it.  this is to avoid recording duplicate replies if an unbound socket
    * is in use.
    */
-  if(ir->ir_fd != scamper_fd_fd_get(state->icmp))
+  if(state->icmp == NULL || ir->ir_fd != scamper_fd_fd_get(state->icmp))
     {
       return;
     }
