@@ -3220,183 +3220,183 @@ static void do_trace_handle_dl(scamper_task_t *task, scamper_dl_rec_t *dl)
    * try and determine the direction of the packet and the associated probe
    * for this datalink record
    */
-  if(trace->type == SCAMPER_TRACE_TYPE_UDP ||
-     trace->type == SCAMPER_TRACE_TYPE_UDP_PARIS)
+  if (trace->type == SCAMPER_TRACE_TYPE_UDP ||
+    trace->type == SCAMPER_TRACE_TYPE_UDP_PARIS)
+  {
+    if (dl->dl_ip_proto == IPPROTO_UDP)
     {
-      if(dl->dl_ip_proto == IPPROTO_UDP)
-	{
-	  if(dl->dl_udp_sport == trace->sport &&
-	     scamper_addr_raw_cmp(trace->dst, dl->dl_ip_dst) == 0)
-	    {
-	      direction = 1;
-	      if(trace->type == SCAMPER_TRACE_TYPE_UDP)
-		probe_id = dl->dl_udp_dport - trace->dport;
-	      else
-		probe_id = ntohs(dl->dl_udp_sum) - 1;
-	    }
-	  else if(dl->dl_udp_dport == trace->sport &&
-		  scamper_addr_raw_cmp(trace->dst, dl->dl_ip_src) == 0)
-	    {
-	      direction = 0;
-	      if(trace->type == SCAMPER_TRACE_TYPE_UDP)
-		probe_id = dl->dl_udp_sport - trace->dport;
-	      else if((trace->flags & SCAMPER_TRACE_FLAG_CONSTPAYLOAD) == 0)
-		probe_id = ntohs(dl->dl_udp_sum) - 1;
-	      else
-		probe_id = state->id_next - 1;
-	    }
-	  else return;
-	}
-      else if(SCAMPER_DL_IS_ICMP(dl))
-	{
-	  if(SCAMPER_DL_IS_ICMP_TTL_EXP(dl) == 0 &&
-	     SCAMPER_DL_IS_ICMP_UNREACH(dl) == 0 &&
-	     SCAMPER_DL_IS_ICMP_PACKET_TOO_BIG(dl) == 0)
-	    {
-	      return;
-	    }
-	  if(dl->dl_icmp_ip_proto != IPPROTO_UDP)
-	    return;
-	  if(dl->dl_icmp_udp_sport != trace->sport)
-	    return;
-
-	  direction = 0;
-
-	  if(trace->type == SCAMPER_TRACE_TYPE_UDP)
-	    {
-	      probe_id = dl->dl_icmp_udp_dport - trace->dport;
-	    }
-	  else
-	    {
-	      if(dl->dl_icmp_udp_dport != trace->dport)
-		return;
-
-	      if(dl->dl_af == AF_INET)
-		{
-		  if(ntohs(dl->dl_icmp_udp_sum) == dl->dl_icmp_ip_id &&
-		     dl->dl_icmp_udp_sum != 0)
-		    {
-		      probe_id = ntohs(dl->dl_icmp_udp_sum) - 1;
-		    }
-		  else if(trace_ipid_fudge(state,dl->dl_icmp_ip_id,
-					   &probe_id) != 0)
-		    {
-		      return;
-		    }
-		}
-	      else if((trace->flags & SCAMPER_TRACE_FLAG_CONSTPAYLOAD) == 0)
-		{
-		  if(dl->dl_icmp_udp_sum == 0)
-		    return;
-		  probe_id = ntohs(dl->dl_icmp_udp_sum) - 1;
-		}
-	      else
-		{
-		  probe_id = dl->dl_ip_flow - 1;
-		}
-	    }
-	}
+      if (dl->dl_udp_sport == trace->sport &&
+        scamper_addr_raw_cmp(trace->dst, dl->dl_ip_dst) == 0)
+      {
+        direction = 1;
+        if (trace->type == SCAMPER_TRACE_TYPE_UDP)
+          probe_id = dl->dl_udp_dport - trace->dport;
+        else
+          probe_id = ntohs(dl->dl_udp_sum) - 1;
+      }
+      else if (dl->dl_udp_dport == trace->sport &&
+        scamper_addr_raw_cmp(trace->dst, dl->dl_ip_src) == 0)
+      {
+        direction = 0;
+        if (trace->type == SCAMPER_TRACE_TYPE_UDP)
+          probe_id = dl->dl_udp_sport - trace->dport;
+        else if ((trace->flags & SCAMPER_TRACE_FLAG_CONSTPAYLOAD) == 0)
+          probe_id = ntohs(dl->dl_udp_sum) - 1;
+        else
+          probe_id = state->id_next - 1;
+      }
       else return;
     }
-  else if(trace->type == SCAMPER_TRACE_TYPE_ICMP_ECHO ||
-	  trace->type == SCAMPER_TRACE_TYPE_ICMP_ECHO_PARIS)
+    else if (SCAMPER_DL_IS_ICMP(dl))
     {
-      if(SCAMPER_DL_IS_ICMP(dl) == 0)
-	return;
+      if (SCAMPER_DL_IS_ICMP_TTL_EXP(dl) == 0 &&
+        SCAMPER_DL_IS_ICMP_UNREACH(dl) == 0 &&
+        SCAMPER_DL_IS_ICMP_PACKET_TOO_BIG(dl) == 0)
+      {
+        return;
+      }
+      if (dl->dl_icmp_ip_proto != IPPROTO_UDP)
+        return;
+      if (dl->dl_icmp_udp_sport != trace->sport)
+        return;
 
-      if(SCAMPER_DL_IS_ICMP_ECHO_REQUEST(dl))
-	{
-	  if(dl->dl_icmp_id != trace->sport)
-	    return;
+      direction = 0;
 
-	  probe_id = dl->dl_icmp_seq;
-	  direction = 1;
-	}
-      else if(SCAMPER_DL_IS_ICMP_ECHO_REPLY(dl))
-	{
-	  if(dl->dl_icmp_id != trace->sport)
-	    return;
+      if (trace->type == SCAMPER_TRACE_TYPE_UDP)
+      {
+        probe_id = dl->dl_icmp_udp_dport - trace->dport;
+      }
+      else
+      {
+        if (dl->dl_icmp_udp_dport != trace->dport)
+          return;
 
-	  probe_id = dl->dl_icmp_seq;
-	  direction = 0;
-	}
-      else if((SCAMPER_DL_IS_ICMP_TTL_EXP(dl) ||
-	       SCAMPER_DL_IS_ICMP_UNREACH(dl) ||
-	       SCAMPER_DL_IS_ICMP_PACKET_TOO_BIG(dl)) &&
-	      SCAMPER_DL_IS_ICMP_Q_ICMP_ECHO_REQ(dl))
-	{
-	  if(dl->dl_icmp_icmp_id != trace->sport)
-	    return;
+        if (dl->dl_af == AF_INET)
+        {
+          if (ntohs(dl->dl_icmp_udp_sum) == dl->dl_icmp_ip_id &&
+            dl->dl_icmp_udp_sum != 0)
+          {
+            probe_id = ntohs(dl->dl_icmp_udp_sum) - 1;
+          }
+          else if (trace_ipid_fudge(state, dl->dl_icmp_ip_id,
+                                    &probe_id) != 0)
+          {
+            return;
+          }
+        }
+        else if ((trace->flags & SCAMPER_TRACE_FLAG_CONSTPAYLOAD) == 0)
+        {
+          if (dl->dl_icmp_udp_sum == 0)
+            return;
+          probe_id = ntohs(dl->dl_icmp_udp_sum) - 1;
+        }
+        else
+        {
+          probe_id = dl->dl_ip_flow - 1;
+        }
+      }
+    }
+    else return;
+  }
+  else if (trace->type == SCAMPER_TRACE_TYPE_ICMP_ECHO ||
+    trace->type == SCAMPER_TRACE_TYPE_ICMP_ECHO_PARIS)
+  {
+    if (SCAMPER_DL_IS_ICMP(dl) == 0)
+      return;
 
-	  probe_id = dl->dl_icmp_icmp_seq;
-	  direction = 0;
-	}
+    if (SCAMPER_DL_IS_ICMP_ECHO_REQUEST(dl))
+    {
+      if (dl->dl_icmp_id != trace->sport)
+        return;
+
+      probe_id = dl->dl_icmp_seq;
+      direction = 1;
+    }
+    else if (SCAMPER_DL_IS_ICMP_ECHO_REPLY(dl))
+    {
+      if (dl->dl_icmp_id != trace->sport)
+        return;
+
+      probe_id = dl->dl_icmp_seq;
+      direction = 0;
+    }
+    else if ((SCAMPER_DL_IS_ICMP_TTL_EXP(dl) ||
+        SCAMPER_DL_IS_ICMP_UNREACH(dl) ||
+        SCAMPER_DL_IS_ICMP_PACKET_TOO_BIG(dl)) &&
+      SCAMPER_DL_IS_ICMP_Q_ICMP_ECHO_REQ(dl))
+    {
+      if (dl->dl_icmp_icmp_id != trace->sport)
+        return;
+
+      probe_id = dl->dl_icmp_icmp_seq;
+      direction = 0;
+    }
+    else return;
+  }
+  else if (SCAMPER_TRACE_TYPE_IS_TCP(trace))
+  {
+    if (dl->dl_ip_proto == IPPROTO_TCP)
+    {
+      /*
+       * if the syn flag (and only the syn flag is set) and the sport
+       * and dport match what we probe with, then the probe is probably
+       * an outgoing one.
+       */
+      if ((dl->dl_tcp_flags & TH_SYN) == TH_SYN &&
+        (dl->dl_tcp_flags & ~TH_SYN) == 0 &&
+        dl->dl_tcp_sport == trace->sport)
+      {
+        if (dl->dl_af == AF_INET)
+          probe_id = dl->dl_ip_id - 1;
+        else
+          probe_id = dl->dl_ip_flow - 1;
+
+        direction = 1;
+      }
+      else if (dl->dl_tcp_sport == trace->dport &&
+        dl->dl_tcp_dport == trace->sport)
+      {
+        /*
+         * there is no easy way to determine which probe the reply is
+         * for, so assume it was for the last one
+         */
+        probe_id = state->id_next - 1;
+        direction = 0;
+      }
       else return;
     }
-  else if(SCAMPER_TRACE_TYPE_IS_TCP(trace))
+    else if (SCAMPER_DL_IS_ICMP(dl))
     {
-      if(dl->dl_ip_proto == IPPROTO_TCP)
-	{
-	  /*
-	   * if the syn flag (and only the syn flag is set) and the sport
-	   * and dport match what we probe with, then the probe is probably
-	   * an outgoing one.
-	   */
-	  if((dl->dl_tcp_flags & TH_SYN)  == TH_SYN &&
-	     (dl->dl_tcp_flags & ~TH_SYN) == 0 &&
-	     dl->dl_tcp_sport == trace->sport)
-	    {
-	      if(dl->dl_af == AF_INET)
-		probe_id = dl->dl_ip_id - 1;
-	      else
-		probe_id = dl->dl_ip_flow - 1;
+      if (SCAMPER_DL_IS_ICMP_TTL_EXP(dl) == 0 &&
+        SCAMPER_DL_IS_ICMP_UNREACH(dl) == 0 &&
+        SCAMPER_DL_IS_ICMP_PACKET_TOO_BIG(dl) == 0)
+      {
+        return;
+      }
+      if (dl->dl_icmp_ip_proto != IPPROTO_TCP ||
+        dl->dl_icmp_tcp_sport != trace->sport ||
+        dl->dl_icmp_tcp_dport != trace->dport)
+      {
+        return;
+      }
 
-	      direction = 1;
-	    }
-	  else if(dl->dl_tcp_sport == trace->dport &&
-		  dl->dl_tcp_dport == trace->sport)
-	    {
-	      /*
-	       * there is no easy way to determine which probe the reply is
-	       * for, so assume it was for the last one
-	       */
-	      probe_id = state->id_next - 1;
-	      direction = 0;
-	    }
-	  else return;
-	}
-      else if(SCAMPER_DL_IS_ICMP(dl))
-	{
-	  if(SCAMPER_DL_IS_ICMP_TTL_EXP(dl) == 0 &&
-	     SCAMPER_DL_IS_ICMP_UNREACH(dl) == 0 &&
-	     SCAMPER_DL_IS_ICMP_PACKET_TOO_BIG(dl) == 0)
-	    {
-	      return;
-	    }
-	  if(dl->dl_icmp_ip_proto  != IPPROTO_TCP  ||
-	     dl->dl_icmp_tcp_sport != trace->sport ||
-	     dl->dl_icmp_tcp_dport != trace->dport)
-	    {
-	      return;
-	    }
+      /* determine which probe the ICMP response corresponds to */
+      if (dl->dl_af == AF_INET)
+      {
+        if (trace_ipid_fudge(state, dl->dl_icmp_ip_id, &probe_id) != 0)
+          return;
+      }
+      else
+      {
+        if (dl->dl_icmp_ip_flow == 0)
+          return;
+        probe_id = dl->dl_icmp_ip_flow - 1;
+      }
 
-	  /* determine which probe the ICMP response corresponds to */
-	  if(dl->dl_af == AF_INET)
-	    {
-	      if(trace_ipid_fudge(state, dl->dl_icmp_ip_id, &probe_id) != 0)
-		return;
-	    }
-	  else
-	    {
-	      if(dl->dl_icmp_ip_flow == 0)
-		return;
-	      probe_id = dl->dl_icmp_ip_flow - 1;
-	    }
-
-	  direction = 0;
-	}
-      else return;
+      direction = 0;
     }
+    else return;
+  }
   else return;
 
   /* find the probe that corresponds to this datalink record */
@@ -3408,61 +3408,71 @@ static void do_trace_handle_dl(scamper_task_t *task, scamper_dl_rec_t *dl)
   assert(probe->mode <= MODE_MAX);
 
   /* if this is an inbound packet with a timestamp attached */
-  if(direction == 0)
+  if (direction == 0)
+  {
+    /* inbound TCP packets result in a hop record being created */
+    if (dl->dl_ip_proto == IPPROTO_TCP || dl->dl_ip_proto == IPPROTO_UDP ||
+      dl->dl_ip_proto == IPPROTO_ICMP || dl->dl_ip_proto == IPPROTO_ICMPV6)
     {
-      /* inbound TCP packets result in a hop record being created */
-      if(dl->dl_ip_proto == IPPROTO_TCP || dl->dl_ip_proto == IPPROTO_UDP)
-	{
-	  /*
-	   * record the receive timestamp with the probe structure if it hasn't
-	   * been previously recorded
-	   */
-	  if((probe->flags & TRACE_PROBE_FLAG_DL_RX) != 0)
-	    {
-	      timeval_cpy(&probe->rx_tv, &dl->dl_tv);
-	      probe->flags |= TRACE_PROBE_FLAG_DL_RX;
-	    }
+      /*
+       * record the receive timestamp with the probe structure if it hasn't
+       * been previously recorded
+       */
+      if ((probe->flags & TRACE_PROBE_FLAG_DL_RX) != 0)
+      {
+        timeval_cpy(&probe->rx_tv, &dl->dl_tv);
+        probe->flags |= TRACE_PROBE_FLAG_DL_RX;
+      }
 
-	  if(handletp_func[probe->mode] != NULL)
-	    {
-	      if(dl->dl_ip_proto == IPPROTO_TCP)
-		scamper_dl_rec_tcp_print(dl);
-	      else
-		scamper_dl_rec_udp_print(dl);
-	      handletp_func[probe->mode](task, dl, probe);
-	    }
-	}
-      /* other datalink records result in timestamps being adjusted */
-      else if((probe->flags & TRACE_PROBE_FLAG_DL_RX) == 0)
-	{
-	  /* update the receive timestamp stored with the probe */
-	  probe->flags |= TRACE_PROBE_FLAG_DL_RX;
-	  timeval_cpy(&probe->rx_tv, &dl->dl_tv);
-
-	  /* if at least one hop record is present then adjust */
-	  if(probe->rx > 0 && dlin_func[probe->mode] != NULL)
-	    dlin_func[probe->mode](trace, dl, probe);
-	}
+      if (handletp_func[probe->mode] != NULL)
+      {
+        switch (dl->dl_ip_proto)
+        {
+        case IPPROTO_TCP:
+          scamper_dl_rec_tcp_print(dl);
+          break;
+        case IPPROTO_UDP:
+          scamper_dl_rec_udp_print(dl);
+          break;
+        case IPPROTO_ICMP:
+        case IPPROTO_ICMPV6:
+          scamper_dl_rec_icmp_print(dl);
+          break;
+        }
+        handletp_func[probe->mode](task, dl, probe);
+      }
     }
-  else
+    /* other datalink records result in timestamps being adjusted */
+    else if ((probe->flags & TRACE_PROBE_FLAG_DL_RX) == 0)
     {
-      scamper_debug(__func__, "probe %ld.%06d dl %ld.%06d diff %d",
-		    (long)probe->tx_tv.tv_sec, (int)probe->tx_tv.tv_usec,
-		    (long)dl->dl_tv.tv_sec, (int)dl->dl_tv.tv_usec,
-		    timeval_diff_us(&probe->tx_tv, &dl->dl_tv));
+      /* update the receive timestamp stored with the probe */
+      probe->flags |= TRACE_PROBE_FLAG_DL_RX;
+      timeval_cpy(&probe->rx_tv, &dl->dl_tv);
 
       /* if at least one hop record is present then adjust */
-      if(probe->rx > 0 && dlout_func[probe->mode] != NULL &&
-	 timeval_cmp(&probe->tx_tv, &dl->dl_tv) < 0)
-	{
-	  timeval_diff_tv(&diff, &probe->tx_tv, &dl->dl_tv);
-	  dlout_func[probe->mode](trace, probe, &diff);
-	}
-
-      /* update the TX timestamp of the probe */
-      probe->flags |= TRACE_PROBE_FLAG_DL_TX;
-      timeval_cpy(&probe->tx_tv, &dl->dl_tv);
+      if (probe->rx > 0 && dlin_func[probe->mode] != NULL)
+        dlin_func[probe->mode](trace, dl, probe);
     }
+  }
+  else
+  {
+    scamper_debug(__func__, "probe %ld.%06d dl %ld.%06d diff %d",
+                  (long)probe->tx_tv.tv_sec, (int)probe->tx_tv.tv_usec,
+                  (long)dl->dl_tv.tv_sec, (int)dl->dl_tv.tv_usec,
+                  timeval_diff_us(&probe->tx_tv, &dl->dl_tv));
+
+    /* if at least one hop record is present then adjust */
+    if (probe->rx > 0 && dlout_func[probe->mode] != NULL &&
+      timeval_cmp(&probe->tx_tv, &dl->dl_tv) < 0)
+    {
+      timeval_diff_tv(&diff, &probe->tx_tv, &dl->dl_tv);
+      dlout_func[probe->mode](trace, probe, &diff);
+    }
+
+    /* update the TX timestamp of the probe */
+    probe->flags |= TRACE_PROBE_FLAG_DL_TX;
+    timeval_cpy(&probe->tx_tv, &dl->dl_tv);
+  }
 
   return;
 }
@@ -4077,7 +4087,8 @@ static void do_trace_probe(scamper_task_t *task)
       (SCAMPER_TRACE_TYPE_IS_UDP_PARIS(trace) &&
        (trace->flags & SCAMPER_TRACE_FLAG_CONSTPAYLOAD) != 0 &&
        trace->dst->type == SCAMPER_ADDR_TYPE_IPV6) ||
-      (SCAMPER_TRACE_TYPE_IS_TCP(trace) && state->raw == NULL)))
+      (SCAMPER_TRACE_TYPE_IS_TCP(trace) && state->raw == NULL) ||
+      SCAMPER_TRACE_FLAG_IS_DL(trace)))
     {
       probe.pr_dl     = scamper_fd_dl_get(state->dl);
       probe.pr_dl_buf = state->dlhdr->buf;
