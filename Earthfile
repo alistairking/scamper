@@ -38,7 +38,7 @@ build:
              *.[ch] lib scamper tests utils configure.ac Makefile.am m4 \
              ./
         RUN autoreconf -vfi
-        RUN ./configure
+        RUN ./configure --with-openssl=disabled
         RUN make
         ARG TARGETPLATFORM
         SAVE ARTIFACT scamper/scamper ${base}/${TARGETPLATFORM}/scamper \
@@ -157,7 +157,7 @@ docs:
 bootstrap-native:
         LOCALLY
         RUN autoreconf -vfi
-        RUN ./configure
+        RUN ./configure --with-openssl=disabled
 
 build-native:
         LOCALLY
