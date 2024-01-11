@@ -41,7 +41,7 @@ build:
              ./
         RUN ./set-version.sh "$(grep SCAMPER_VERSION scamper/scamper.h | cut -d \" -f 2)-${EARTHLY_GIT_BRANCH}.${EARTHLY_GIT_SHORT_HASH}"
         RUN autoreconf -vfi
-        RUN ./configure
+        RUN ./configure --with-openssl=disabled
         RUN make
         ARG TARGETPLATFORM
         SAVE ARTIFACT scamper/scamper ${base}/${TARGETPLATFORM}/scamper \
@@ -160,7 +160,7 @@ docs:
 bootstrap-native:
         LOCALLY
         RUN autoreconf -vfi
-        RUN ./configure
+        RUN ./configure --with-openssl=disabled
 
 build-native:
         LOCALLY
