@@ -2231,9 +2231,8 @@ void scamper_dl_read_cb(SOCKET fd, void *param)
   if(scamper_option_ring())
       dl_linux_ring_read((scamper_dl_t *)param);
   else
-#else
-      dl_linux_read(fd, (scamper_dl_t *)param);
 #endif
+      dl_linux_read(fd, (scamper_dl_t *)param);
 #elif defined(HAVE_DLPI)
   dl_dlpi_read(fd, (scamper_dl_t *)param);
 #endif
