@@ -73,7 +73,7 @@ jobs:
         # TODO: figure out how to get earthly working in macos
         run: |
           autoreconf -vfi
-          ./configure
+          ./configure --with-openssl=disabled
           make
           mkdir -p ./build/${{env.platform}}
           cp scamper/scamper ./build/${{env.platform}}
