@@ -64,6 +64,7 @@ int scamper_option_daemon(void);
 int scamper_option_ring(void);
 unsigned int scamper_option_ring_blocks(void);
 unsigned int scamper_option_ring_block_size(void);
+int scamper_option_ring_nolocked(void);
 
 void scamper_exitwhendone(int on);
 
