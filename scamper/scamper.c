@@ -227,6 +227,7 @@ static char *remote_client_certfile = NULL;
 /* runtime config for linux AF_PACKET ring */
 static unsigned int ring_block_size = 1 << 16; /* 65 KiB */
 static unsigned int ring_blocks = 64;
+int ring_nolocked = 0; /* don't use MAP_LOCKED if set */
 
 /* Source port to use in our probes */
 static uint16_t default_sport = 0;
@@ -743,6 +744,8 @@ static int check_options(int argc, char *argv[])
       ring_blocks = strtoul(optarg + 12, NULL, 10);
     else if(strncasecmp(optarg, "ring-block-size=", 16) == 0)
       ring_block_size = strtoul(optarg + 16, NULL, 10);
+    else if(strcasecmp(optarg, "ring-nolocked") == 0)
+      ring_nolocked = 1;
 #endif
 	  else
 	    {
@@ -1254,14 +1257,19 @@ int scamper_option_ring(void)
   return 0;
 }
 
-unsigned int scamper_option_ring_blocks()
+unsigned int scamper_option_ring_blocks(void)
 {
   return ring_blocks;
 }
 
-unsigned int scamper_option_ring_block_size()
+unsigned int scamper_option_ring_block_size(void)
 {
   return ring_block_size;
+}
+
+int scamper_option_ring_nolocked(void)
+{
+  return ring_nolocked;
 }
 
 #ifdef HAVE_SETEUID

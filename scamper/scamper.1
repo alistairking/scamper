@@ -304,6 +304,12 @@ Defaults to 64.
 set the number of bytes in each block of the PACKET_RX_RING.
 Defaults to 65k.
 .It
+.Sy ring-nolocked:
+do not use MAP_LOCKED when allocating ring. This will allow the ring
+to be used on systems with low locked memory limits (ulimit -l), but
+at the risk of the ring being swapped. This option should only be
+used if swap is disabled.
+.It
 .Sy cmdfile:
 the input file consists of complete commands.
 .It
