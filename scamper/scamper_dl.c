@@ -1279,7 +1279,7 @@ static int dl_linux_ring_read(scamper_dl_t *node)
 static int dl_linux_ring_init(scamper_dl_t *dl) {
   struct ring *ring = &dl->ring;
   int fd = scamper_fd_fd_get(dl->fdn);
-  int i;
+  int i, flags;
 
   int pkt_version = TPACKET_V3;
   unsigned int block_size = scamper_option_ring_block_size();
@@ -1324,15 +1324,20 @@ static int dl_linux_ring_init(scamper_dl_t *dl) {
     return -1;
   }
 
-  // Allocate our ring. Even though the circular buffer is compound of several
-  // physically discontiguous blocks of memory, they are contiguous to the user
-  // space, hence just one call to mmap is needed.
-  if ((ring->map =
-           mmap(NULL, ring->map_size,
-                PROT_READ | PROT_WRITE, MAP_SHARED | MAP_LOCKED,
-                fd, 0)) == MAP_FAILED) {
-    printerror(__func__, "ring mmap failed");
-    return -1;
+  /* Allocate our ring. Even though the circular buffer is compound of several
+   * physically discontiguous blocks of memory, they are contiguous to the user
+   * space, hence just one call to mmap is needed.
+   */
+  flags = MAP_SHARED | MAP_POPULATE;
+  if (scamper_option_ring_nolocked() == 0)
+  {
+      flags |= MAP_LOCKED;
+  }
+  if ((ring->map = mmap(NULL, ring->map_size, PROT_READ | PROT_WRITE,
+                        flags, fd, 0)) == MAP_FAILED)
+  {
+      printerror(__func__, "ring mmap failed");
+      return -1;
   }
 
   // Allocate the iovecs that we'll use to find the blocks in the ring
