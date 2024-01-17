@@ -7,7 +7,7 @@
  *
  * Author: Matthew Luckie
  *
- * $Id: scamper_sting_int.h,v 1.1 2023/05/15 20:55:06 mjl Exp $
+ * $Id: scamper_sting_int.h,v 1.3 2023/12/24 00:03:21 mjl Exp $
  *
  * This file implements algorithms described in the sting-0.7 source code,
  * as well as the paper:
@@ -34,12 +34,24 @@
 #ifndef __SCAMPER_STING_INT_H
 #define __SCAMPER_STING_INT_H
 
+scamper_sting_t *scamper_sting_alloc(void);
+
+int scamper_sting_data_set(scamper_sting_t *,const uint8_t *,uint16_t);
+int scamper_sting_pkts_alloc(scamper_sting_t *, uint32_t);
+int scamper_sting_pkt_record(scamper_sting_t *, scamper_sting_pkt_t *);
+scamper_sting_pkt_t *scamper_sting_pkt_alloc(uint8_t flags, uint8_t *data,
+					     uint16_t len, struct timeval *tv);
+
 struct scamper_sting_pkt
 {
   struct timeval tv;
   uint8_t        flags;
   uint16_t       len;
   uint8_t       *data;
+
+#ifdef BUILDING_LIBSCAMPERFILE
+  int            refcnt;
+#endif
 };
 
 /*
@@ -64,8 +76,8 @@ struct scamper_sting
   uint16_t               sport;    /* source port */
   uint16_t               dport;    /* destination port */
   uint16_t               count;    /* number of probes to send */
-  uint16_t               mean;     /* mean inter-packet delay, microseconds */
-  uint16_t               inter;    /* inter-phase delay */
+  struct timeval         mean;     /* mean inter-packet delay */
+  struct timeval         inter;    /* inter-phase delay */
   uint8_t                dist;     /* inter-packet delay distribution to tx */
   uint8_t                synretx;  /* number of times to retransmit syn  */
   uint8_t                dataretx; /* number of times to retransmit data */

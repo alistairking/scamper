@@ -21,7 +21,7 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
- * $Id: sc_attach.c,v 1.29.10.2 2023/08/20 08:07:09 mjl Exp $
+ * $Id: sc_attach.c,v 1.40 2023/12/27 03:45:49 mjl Exp $
  *
  */
 
@@ -303,7 +303,7 @@ static int check_options(int argc, char *argv[])
 #endif
 
 	case 'v':
-	  printf("$Id: sc_attach.c,v 1.29.10.2 2023/08/20 08:07:09 mjl Exp $\n");
+	  printf("$Id: sc_attach.c,v 1.40 2023/12/27 03:45:49 mjl Exp $\n");
 	  return -1;
 
 	case '?':
@@ -376,21 +376,31 @@ static int check_options(int argc, char *argv[])
 
 static int command_new(char *line, void *param)
 {
-  char *tmp = NULL, buf[65535];
-  size_t off = 0;
+  char *buf = NULL;
+  size_t off = 0, len;
 
   if(line[0] == '#' || line[0] == '\0')
     return 0;
 
   if(opt_command != NULL)
-    string_concat(buf, sizeof(buf), &off, "%s %s\n", opt_command, line);
+    {
+      len = strlen(opt_command) + strlen(line) + 3;
+      if((buf = malloc(len)) == NULL)
+	return -1;
+      string_concat(buf, len, &off, "%s %s\n", opt_command, line);
+    }
   else
-    string_concat(buf, sizeof(buf), &off, "%s\n", line);
+    {
+      len = strlen(line) + 2;
+      if((buf = malloc(len)) == NULL)
+	return -1;
+      string_concat(buf, len, &off, "%s\n", line);
+    }
 
-  if((tmp=memdup(buf,off+1)) == NULL || slist_tail_push(commands,tmp) == NULL)
+  if(slist_tail_push(commands, buf) == NULL)
     {
       fprintf(stderr, "could not push command onto list\n");
-      if(tmp != NULL) free(tmp);
+      free(buf);
       return -1;
     }
 
@@ -773,7 +783,7 @@ int main(int argc, char *argv[])
   fd_set rfds, wfds, *rfdsp, *wfdsp;
   int nfds;
 
-#ifdef _WIN32 /* windows needs WSAStartup */
+#ifdef HAVE_WSASTARTUP
   WSADATA wsaData;
   WSAStartup(MAKEWORD(2, 2), &wsaData);
 #endif

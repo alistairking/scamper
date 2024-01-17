@@ -1,7 +1,7 @@
 /*
  * sc_speedtrap
  *
- * $Id: sc_speedtrap.c,v 1.84 2023/05/29 07:17:30 mjl Exp $
+ * $Id: sc_speedtrap.c,v 1.85 2023/09/24 22:35:02 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -2105,7 +2105,7 @@ static int addressfile_line(char *addr, void *param)
   if(addr[0] == '#' || addr[0] == '\0')
     return 0;
 
-  if((a = scamper_addr_resolve(AF_INET6, addr)) == NULL)
+  if((a = scamper_addr_fromstr_ipv6(addr)) == NULL)
     {
       fprintf(stderr, "could not resolve '%s'\n", addr);
       return -1;

@@ -12,8 +12,12 @@ sc_remoted_SOURCES = \
 	../../mjl_splaytree.c \
 	../../scamper/scamper_linepoll.c \
 	../../scamper/scamper_writebuf.c
+if HAVE_OPENSSL
+sc_remoted_SOURCES += \
+	../../utils_tls.c
+endif
 
-sc_remoted_LDADD = ../../scamper/libscamperfile.la @OPENSSL_LIBS@
+sc_remoted_LDADD = @OPENSSL_LIBS@
 sc_remoted_LDFLAGS = @OPENSSL_LDFLAGS@
 
 man_MANS = sc_remoted.1

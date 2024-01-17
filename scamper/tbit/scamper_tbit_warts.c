@@ -4,10 +4,10 @@
  * Copyright (C) 2009-2010 Ben Stasiewicz
  * Copyright (C) 2010-2011 The University of Waikato
  * Copyright (C) 2012-2015 The Regents of the University of California
- * Copyright (C) 2016-2022 Matthew Luckie
+ * Copyright (C) 2016-2023 Matthew Luckie
  * Authors: Matthew Luckie, Ben Stasiewicz
  *
- * $Id: scamper_tbit_warts.c,v 1.36 2023/05/21 22:26:28 mjl Exp $
+ * $Id: scamper_tbit_warts.c,v 1.39 2023/10/02 07:54:10 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -71,27 +71,27 @@
 
 static const warts_var_t tbit_vars[] =
 {
-  {WARTS_TBIT_LIST,                  4, -1},
-  {WARTS_TBIT_CYCLE,                 4, -1},
-  {WARTS_TBIT_USERID,                4, -1},
-  {WARTS_TBIT_SRC,                  -1, -1},
-  {WARTS_TBIT_DST,                  -1, -1},
-  {WARTS_TBIT_SPORT,                 2, -1},
-  {WARTS_TBIT_DPORT,                 2, -1},
-  {WARTS_TBIT_START,                 8, -1},
-  {WARTS_TBIT_RESULT,                2, -1},
-  {WARTS_TBIT_TYPE,                  1, -1},
-  {WARTS_TBIT_APPPROTO,              1, -1},
-  {WARTS_TBIT_CMSS,                  2, -1},
-  {WARTS_TBIT_SMSS,                  2, -1},
-  {WARTS_TBIT_SYNRETX,               1, -1},
-  {WARTS_TBIT_DATARETX,              1, -1},
-  {WARTS_TBIT_PKTC16,                2, -1},
-  {WARTS_TBIT_PKTC,                  4, -1},
-  {WARTS_TBIT_COOKIE,               -1, -1},
-  {WARTS_TBIT_WSCALE,                1, -1},
-  {WARTS_TBIT_OPTIONS,               4, -1},
-  {WARTS_TBIT_TTL,                   1, -1},
+  {WARTS_TBIT_LIST,                  4},
+  {WARTS_TBIT_CYCLE,                 4},
+  {WARTS_TBIT_USERID,                4},
+  {WARTS_TBIT_SRC,                  -1},
+  {WARTS_TBIT_DST,                  -1},
+  {WARTS_TBIT_SPORT,                 2},
+  {WARTS_TBIT_DPORT,                 2},
+  {WARTS_TBIT_START,                 8},
+  {WARTS_TBIT_RESULT,                2},
+  {WARTS_TBIT_TYPE,                  1},
+  {WARTS_TBIT_APPPROTO,              1},
+  {WARTS_TBIT_CMSS,                  2},
+  {WARTS_TBIT_SMSS,                  2},
+  {WARTS_TBIT_SYNRETX,               1},
+  {WARTS_TBIT_DATARETX,              1},
+  {WARTS_TBIT_PKTC16,                2},
+  {WARTS_TBIT_PKTC,                  4},
+  {WARTS_TBIT_COOKIE,               -1},
+  {WARTS_TBIT_WSCALE,                1},
+  {WARTS_TBIT_OPTIONS,               4},
+  {WARTS_TBIT_TTL,                   1},
 };
 #define tbit_vars_mfb WARTS_VAR_MFB(tbit_vars)
 
@@ -102,10 +102,10 @@ static const warts_var_t tbit_vars[] =
 
 static const warts_var_t tbit_pkt_vars[] =
 {
-  {WARTS_TBIT_PKT_DIR,             1, -1},
-  {WARTS_TBIT_PKT_TIME,            8, -1},
-  {WARTS_TBIT_PKT_DATALEN,         2, -1},
-  {WARTS_TBIT_PKT_DATA,           -1, -1},
+  {WARTS_TBIT_PKT_DIR,             1},
+  {WARTS_TBIT_PKT_TIME,            8},
+  {WARTS_TBIT_PKT_DATALEN,         2},
+  {WARTS_TBIT_PKT_DATA,           -1},
 };
 #define tbit_pkt_vars_mfb WARTS_VAR_MFB(tbit_pkt_vars)
 
@@ -116,10 +116,10 @@ static const warts_var_t tbit_pkt_vars[] =
 
 static const warts_var_t tbit_pmtud_vars[] =
 {
-  {WARTS_TBIT_PMTUD_MTU,     2, -1},
-  {WARTS_TBIT_PMTUD_PTBRETX, 1, -1},
-  {WARTS_TBIT_PMTUD_OPTIONS, 1, -1},
-  {WARTS_TBIT_PMTUD_PTBSRC, -1, -1},
+  {WARTS_TBIT_PMTUD_MTU,     2},
+  {WARTS_TBIT_PMTUD_PTBRETX, 1},
+  {WARTS_TBIT_PMTUD_OPTIONS, 1},
+  {WARTS_TBIT_PMTUD_PTBSRC, -1},
 };
 #define tbit_pmtud_vars_mfb WARTS_VAR_MFB(tbit_pmtud_vars)
 
@@ -128,8 +128,8 @@ static const warts_var_t tbit_pmtud_vars[] =
 
 static const warts_var_t tbit_null_vars[] =
 {
-  {WARTS_TBIT_NULL_OPTIONS, 2, -1},
-  {WARTS_TBIT_NULL_RESULTS, 2, -1},
+  {WARTS_TBIT_NULL_OPTIONS, 2},
+  {WARTS_TBIT_NULL_RESULTS, 2},
 };
 #define tbit_null_vars_mfb WARTS_VAR_MFB(tbit_null_vars)
 
@@ -137,7 +137,7 @@ static const warts_var_t tbit_null_vars[] =
 
 static const warts_var_t tbit_icw_vars[] =
 {
-  {WARTS_TBIT_ICW_FIRSTSEQ, 4, -1},
+  {WARTS_TBIT_ICW_FIRSTSEQ, 4},
 };
 #define tbit_icw_vars_mfb WARTS_VAR_MFB(tbit_icw_vars)
 
@@ -146,8 +146,8 @@ static const warts_var_t tbit_icw_vars[] =
 
 static const warts_var_t tbit_blind_vars[]  =
 {
-  {WARTS_TBIT_BLIND_OFF,   4, -1},
-  {WARTS_TBIT_BLIND_RETX,  1, -1},
+  {WARTS_TBIT_BLIND_OFF,   4},
+  {WARTS_TBIT_BLIND_RETX,  1},
 };
 #define tbit_blind_vars_mfb WARTS_VAR_MFB(tbit_blind_vars)
 
@@ -157,9 +157,9 @@ static const warts_var_t tbit_blind_vars[]  =
 
 static const warts_var_t tbit_app_http_vars[] =
 {
-  {WARTS_TBIT_APP_HTTP_HOST, -1, -1},
-  {WARTS_TBIT_APP_HTTP_FILE, -1, -1},
-  {WARTS_TBIT_APP_HTTP_TYPE,  1, -1},
+  {WARTS_TBIT_APP_HTTP_HOST, -1},
+  {WARTS_TBIT_APP_HTTP_FILE, -1},
+  {WARTS_TBIT_APP_HTTP_TYPE,  1},
 };
 #define tbit_app_http_vars_mfb WARTS_VAR_MFB(tbit_app_http_vars)
 
@@ -167,7 +167,7 @@ static const warts_var_t tbit_app_http_vars[] =
 
 static const warts_var_t tbit_app_bgp_vars[] =
 {
-  {WARTS_TBIT_APP_BGP_ASN,    4, -1},
+  {WARTS_TBIT_APP_BGP_ASN,    4},
 };
 #define tbit_app_bgp_vars_mfb WARTS_VAR_MFB(tbit_app_bgp_vars)
 
@@ -322,9 +322,9 @@ static void warts_tbit_null_params(const scamper_tbit_t *tbit,
   return;
 }
 
-static void warts_tbit_pmtud_params(const scamper_tbit_t *tbit,
-				    warts_addrtable_t *table,
-				    warts_tbit_pmtud_t *state)
+static int warts_tbit_pmtud_params(const scamper_tbit_t *tbit,
+				   warts_addrtable_t *table,
+				   warts_tbit_pmtud_t *state)
 {
   scamper_tbit_pmtud_t *pmtud = tbit->data;
   const warts_var_t *var;
@@ -351,7 +351,8 @@ static void warts_tbit_pmtud_params(const scamper_tbit_t *tbit,
 
       if(var->id == WARTS_TBIT_PMTUD_PTBSRC)
         {
-	  state->params_len += warts_addr_size(table, pmtud->ptbsrc);
+	  if(warts_addr_size(table, pmtud->ptbsrc, &state->params_len) != 0)
+	    return -1;
 	  continue;
         }
 
@@ -365,7 +366,7 @@ static void warts_tbit_pmtud_params(const scamper_tbit_t *tbit,
   if(state->params_len != 0)
     state->len += 2;
 
-  return;
+  return 0;
 }
 
 static int warts_tbit_null_read(scamper_tbit_t *tbit, const uint8_t *buf,
@@ -505,8 +506,8 @@ static void warts_tbit_blind_write(const scamper_tbit_t *tbit, uint8_t *buf,
   return;
 }
 
-static void warts_tbit_app_http_params(const scamper_tbit_t *tbit,
-				       warts_tbit_app_http_t *state)
+static int warts_tbit_app_http_params(const scamper_tbit_t *tbit,
+				      warts_tbit_app_http_t *state)
 {
   scamper_tbit_app_http_t *http = tbit->app_data;
   const warts_var_t *var;
@@ -532,9 +533,15 @@ static void warts_tbit_app_http_params(const scamper_tbit_t *tbit,
       if(var->size < 0)
 	{
 	  if(var->id == WARTS_TBIT_APP_HTTP_HOST)
-	    state->params_len += warts_str_size(http->host);
+	    {
+	      if(warts_str_size(http->host, &state->params_len) != 0)
+		return -1;
+	    }
 	  else if(var->id == WARTS_TBIT_APP_HTTP_FILE)
-	    state->params_len += warts_str_size(http->file);
+	    {
+	      if(warts_str_size(http->file, &state->params_len) != 0)
+		return -1;
+	    }
 	  continue;
 	}
 
@@ -548,7 +555,7 @@ static void warts_tbit_app_http_params(const scamper_tbit_t *tbit,
   if(state->params_len != 0)
     state->len += 2;
 
-  return;
+  return 0;
 }
 
 static int warts_tbit_app_http_read(scamper_tbit_t *tbit, const uint8_t *buf,
@@ -769,9 +776,9 @@ int extract_cookie(const uint8_t *buf, uint32_t *off,
   return 0;
 }
 
-static void warts_tbit_params(const scamper_tbit_t *tbit,
-			      warts_addrtable_t *table, uint8_t *flags,
-			      uint16_t *flags_len, uint16_t *params_len)
+static int warts_tbit_params(const scamper_tbit_t *tbit,
+			     warts_addrtable_t *table, uint8_t *flags,
+			     uint16_t *flags_len, uint16_t *params_len)
 {
   const warts_var_t *var;
   int max_id = 0;
@@ -792,10 +799,10 @@ static void warts_tbit_params(const scamper_tbit_t *tbit,
 	 (var->id == WARTS_TBIT_USERID && tbit->userid == 0)  ||
 	 (var->id == WARTS_TBIT_SRC && tbit->src == NULL)     ||
 	 (var->id == WARTS_TBIT_DST && tbit->dst == NULL)     ||
-	 (var->id == WARTS_TBIT_COOKIE && tbit->fo_cookielen == 0) ||
-	 (var->id == WARTS_TBIT_WSCALE && tbit->wscale == 0) ||
+	 (var->id == WARTS_TBIT_COOKIE && tbit->client_fo_cookielen == 0) ||
+	 (var->id == WARTS_TBIT_WSCALE && tbit->client_wscale == 0) ||
 	 (var->id == WARTS_TBIT_OPTIONS && tbit->options == 0) ||
-	 (var->id == WARTS_TBIT_TTL && tbit->ttl == 255))
+	 (var->id == WARTS_TBIT_TTL && tbit->client_ipttl == 255))
 	continue;
 
       /* Set the flag for the rest of the variables */
@@ -804,17 +811,19 @@ static void warts_tbit_params(const scamper_tbit_t *tbit,
       /* Variables that don't have a fixed size */
       if(var->id == WARTS_TBIT_SRC)
         {
-	  *params_len += warts_addr_size(table, tbit->src);
+	  if(warts_addr_size(table, tbit->src, params_len) != 0)
+	    return -1;
 	  continue;
         }
       else if(var->id == WARTS_TBIT_DST)
         {
-	  *params_len += warts_addr_size(table, tbit->dst);
+	  if(warts_addr_size(table, tbit->dst, params_len) != 0)
+	    return -1;
 	  continue;
         }
       else if(var->id == WARTS_TBIT_COOKIE)
 	{
-	  *params_len += (1 + tbit->fo_cookielen);
+	  *params_len += (1 + tbit->client_fo_cookielen);
 	  continue;
 	}
 
@@ -823,7 +832,7 @@ static void warts_tbit_params(const scamper_tbit_t *tbit,
     }
 
   *flags_len = fold_flags(flags, max_id);
-  return;
+  return 0;
 }
 
 static int warts_tbit_params_read(scamper_tbit_t *tbit,
@@ -850,14 +859,14 @@ static int warts_tbit_params_read(scamper_tbit_t *tbit,
     {&tbit->app_proto,    (wpr_t)extract_byte,    NULL},
     {&tbit->client_mss,   (wpr_t)extract_uint16,  NULL},
     {&tbit->server_mss,   (wpr_t)extract_uint16,  NULL},
-    {&tbit->syn_retx,     (wpr_t)extract_byte,    NULL},
-    {&tbit->dat_retx,     (wpr_t)extract_byte,    NULL},
+    {&tbit->client_syn_retx, (wpr_t)extract_byte,    NULL},
+    {&tbit->client_dat_retx, (wpr_t)extract_byte,    NULL},
     {&pktc16,             (wpr_t)extract_uint16,  NULL},
     {&pktc32,             (wpr_t)extract_uint32,  NULL},
     {cookie,              (wpr_t)extract_cookie,  NULL},
-    {&tbit->wscale,       (wpr_t)extract_byte,    NULL},
+    {&tbit->client_wscale,(wpr_t)extract_byte,    NULL},
     {&tbit->options,      (wpr_t)extract_uint32,  NULL},
-    {&tbit->ttl,          (wpr_t)extract_byte,    NULL},
+    {&tbit->client_ipttl, (wpr_t)extract_byte,    NULL},
   };
   const int handler_cnt = sizeof(handlers)/sizeof(warts_param_reader_t);
 
@@ -874,11 +883,11 @@ static int warts_tbit_params_read(scamper_tbit_t *tbit,
     tbit->pktc = pktc16;
 
   if(flag_isset(&buf[o], WARTS_TBIT_COOKIE) &&
-     scamper_tbit_fo_setcookie(tbit, cookie+1, cookie[0]) != 0)
+     scamper_tbit_client_fo_cookie_set(tbit, cookie+1, cookie[0]) != 0)
     return -1;
 
   if(flag_isset(&buf[o], WARTS_TBIT_TTL) == 0)
-    tbit->ttl = 255;
+    tbit->client_ipttl = 255;
   
   return 0;
 }
@@ -892,7 +901,7 @@ static int warts_tbit_params_write(const scamper_tbit_t *tbit,
 				   const uint16_t params_len)
 {
   uint32_t list_id, cycle_id;
-  uint8_t cookielen = tbit->fo_cookielen;
+  uint8_t cookielen = tbit->client_fo_cookielen;
 
   /* Specifies how to write each variable to the warts file. */
   warts_param_writer_t handlers[] = {
@@ -909,14 +918,14 @@ static int warts_tbit_params_write(const scamper_tbit_t *tbit,
     {&tbit->app_proto,    (wpw_t)insert_byte,    NULL},
     {&tbit->client_mss,   (wpw_t)insert_uint16,  NULL},
     {&tbit->server_mss,   (wpw_t)insert_uint16,  NULL},
-    {&tbit->syn_retx,     (wpw_t)insert_byte,    NULL},
-    {&tbit->dat_retx,     (wpw_t)insert_byte,    NULL},
+    {&tbit->client_syn_retx, (wpw_t)insert_byte,    NULL},
+    {&tbit->client_dat_retx, (wpw_t)insert_byte,    NULL},
     {NULL,                NULL,                  NULL}, /* PKTC16 */
     {&tbit->pktc,         (wpw_t)insert_uint32,  NULL},
-    {tbit->fo_cookie,     (wpw_t)insert_cookie,  &cookielen},
-    {&tbit->wscale,       (wpw_t)insert_byte,    NULL},
+    {tbit->client_fo_cookie, (wpw_t)insert_cookie,  &cookielen},
+    {&tbit->client_wscale,(wpw_t)insert_byte,    NULL},
     {&tbit->options,      (wpw_t)insert_uint32,  NULL},
-    {&tbit->ttl,          (wpw_t)insert_byte,    NULL},
+    {&tbit->client_ipttl, (wpw_t)insert_byte,    NULL},
   };
   const int handler_cnt = sizeof(handlers)/sizeof(warts_param_writer_t);
 
@@ -1104,7 +1113,8 @@ int scamper_file_warts_tbit_write(const scamper_file_t *sf,
     goto err;
 
   /* Set the tbit data (not including the packets) */
-  warts_tbit_params(tbit, table, flags, &flags_len, &params_len);
+  if(warts_tbit_params(tbit, table, flags, &flags_len, &params_len) != 0)
+    goto err;
   len = 8 + flags_len + params_len + 2;
 
   if(tbit->pktc > 0)
@@ -1123,7 +1133,8 @@ int scamper_file_warts_tbit_write(const scamper_file_t *sf,
       switch(tbit->type)
 	{
 	case SCAMPER_TBIT_TYPE_PMTUD:
-	  warts_tbit_pmtud_params(tbit, table, &pmtud);
+	  if(warts_tbit_pmtud_params(tbit, table, &pmtud) != 0)
+	    goto err;
 	  len += (2 + 4 + pmtud.len);
 	  break;
 
@@ -1154,7 +1165,8 @@ int scamper_file_warts_tbit_write(const scamper_file_t *sf,
     {
       if(tbit->app_proto == SCAMPER_TBIT_APP_HTTP)
 	{
-	  warts_tbit_app_http_params(tbit, &http);
+	  if(warts_tbit_app_http_params(tbit, &http) != 0)
+	    goto err;
 	  len += (2 + 4 + http.len);
 	}
       else if(tbit->app_proto == SCAMPER_TBIT_APP_BGP)

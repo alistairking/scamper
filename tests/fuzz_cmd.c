@@ -1,7 +1,7 @@
 /*
- * fuzz_cmd : simple program to fuzz specific trace command input paths
+ * fuzz_cmd : simple program to fuzz specific command input paths
  *
- * $Id: fuzz_cmd.c,v 1.2 2023/06/04 23:25:15 mjl Exp $
+ * $Id: fuzz_cmd.c,v 1.8 2024/01/16 06:30:28 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -29,6 +29,7 @@
 #include "internal.h"
 
 #include "scamper_addr.h"
+#include "scamper_addr_int.h"
 #include "scamper_list.h"
 
 #ifdef FUZZ_DEALIAS
@@ -39,6 +40,11 @@
 #ifdef FUZZ_HOST
 #include "scamper_host.h"
 #include "scamper_host_cmd.h"
+#endif
+
+#ifdef FUZZ_HTTP
+#include "scamper_http.h"
+#include "scamper_http_cmd.h"
 #endif
 
 #ifdef FUZZ_NEIGHBOURDISC
@@ -76,34 +82,19 @@
 #include "scamper_tracelb_cmd.h"
 #endif
 
+#ifdef FUZZ_UDPPROBE
+#include "scamper_udpprobe.h"
+#include "scamper_udpprobe_cmd.h"
+#endif
+
 #include "utils.h"
 
+#if defined(FUZZ_TRACE) || defined(FUZZ_SNIFF) || defined(FUZZ_DEALIAS) || \
+  defined(FUZZ_NEIGHBOURDISC) || defined(FUZZ_HTTP) || defined(FUZZ_STING) || \
+  defined(FUZZ_TBIT)
+#define HAVE_ADDRCACHE 1
 scamper_addrcache_t *addrcache = NULL;
-
-uint16_t scamper_sport_default(void)
-{
-  return 31337;
-}
-
-uint16_t scamper_pid_u16(void)
-{
-  return 31337;
-}
-
-int scamper_option_notls(void)
-{
-  return 0;
-}
-
-void scamper_debug(const char *func, const char *format, ...)
-{
-  return;
-}
-
-void printerror(const char *func, const char *format, ...)
-{
-  return;
-}
+#endif
 
 static int test(char *in, void *param)
 {
@@ -115,6 +106,10 @@ static int test(char *in, void *param)
   scamper_host_t *host = scamper_do_host_alloc(in);
   if(host != NULL)
     scamper_host_free(host);
+#elif defined(FUZZ_HTTP)
+  scamper_http_t *http = scamper_do_http_alloc(in);
+  if(http != NULL)
+    scamper_http_free(http);
 #elif defined(FUZZ_NEIGHBOURDISC)
   scamper_neighbourdisc_t *nd = scamper_do_neighbourdisc_alloc(in);
   if(nd != NULL)
@@ -143,20 +138,46 @@ static int test(char *in, void *param)
   scamper_tracelb_t *tracelb = scamper_do_tracelb_alloc(in);
   if(tracelb != NULL)
     scamper_tracelb_free(tracelb);
+#elif defined(FUZZ_UDPPROBE)
+  scamper_udpprobe_t *udpprobe = scamper_do_udpprobe_alloc(in);
+  if(udpprobe != NULL)
+    scamper_udpprobe_free(udpprobe);
 #endif
   return 0;
 }
 
 int main(int argc, char *argv[])
 {
+#ifdef DMALLOC
+  unsigned long start_mem, stop_mem;
+  int assert_mem = 1;
+#endif
+
   if(argc < 2)
     {
       fprintf(stderr, "missing parameter\n");
       return -1;
     }
 
+  if(argc > 2)
+    {
+#ifdef DMALLOC
+      if(strcmp(argv[2], "0") == 0)
+	assert_mem = 0;
+#else
+      fprintf(stderr, "not compiled with dmalloc support\n");
+      return -1;
+#endif
+    }
+
+#ifdef DMALLOC
+  dmalloc_get_stats(NULL, NULL, NULL, NULL, &start_mem, NULL, NULL, NULL, NULL);
+#endif
+
+#ifdef HAVE_ADDRCACHE
   if((addrcache = scamper_addrcache_alloc()) == NULL)
     return -1;
+#endif
 
   if(file_lines(argv[1], test, NULL) != 0)
     {
@@ -164,5 +185,15 @@ int main(int argc, char *argv[])
       return -1;
     }
 
-  return 0;    
+#ifdef HAVE_ADDRCACHE
+  scamper_addrcache_free(addrcache);
+#endif
+
+#ifdef DMALLOC
+  dmalloc_get_stats(NULL, NULL, NULL, NULL, &stop_mem, NULL, NULL, NULL, NULL);
+  if(assert_mem != 0)
+    assert(start_mem == stop_mem);
+#endif
+
+  return 0;
 }

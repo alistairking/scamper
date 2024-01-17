@@ -6,7 +6,7 @@
  * Copyright (c) 2022-2023 Matthew Luckie
  * Author: Matthew Luckie
  *
- * $Id: scamper_dealias_json.c,v 1.18 2023/05/29 21:22:26 mjl Exp $
+ * $Id: scamper_dealias_json.c,v 1.24 2024/01/16 06:55:18 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -91,14 +91,15 @@ static char *dealias_header_tostr(const scamper_dealias_t *dealias)
       mc = dealias->data;
       string_concat(buf, sizeof(buf), &off,
 		    ", \"attempts\":%u, \"wait_timeout\":%u",
-		    mc->attempts, mc->wait_timeout);
+		    mc->attempts, (uint32_t)mc->wait_timeout.tv_sec);
     }
   else if(SCAMPER_DEALIAS_METHOD_IS_ALLY(dealias))
     {
       ally = dealias->data;
+      u16 = (ally->wait_probe.tv_sec * 1000)+(ally->wait_probe.tv_usec / 1000);
       string_concat(buf, sizeof(buf), &off,
 		    ", \"wait_probe\":%u, \"wait_timeout\":%u",
-		    ally->wait_probe, ally->wait_timeout);
+		    u16, (uint32_t)ally->wait_timeout.tv_sec);
       string_concat(buf, sizeof(buf), &off, ", \"attempts\":%u, \"fudge\":%u",
 		    ally->attempts, ally->fudge);
       if(ally->flags != 0)
@@ -111,12 +112,14 @@ static char *dealias_header_tostr(const scamper_dealias_t *dealias)
   else if(SCAMPER_DEALIAS_METHOD_IS_RADARGUN(dealias))
     {
       rg = dealias->data;
+      u16 = (rg->wait_probe.tv_sec * 1000) + (rg->wait_probe.tv_usec / 1000);
       string_concat(buf, sizeof(buf), &off,
 		    ", \"attempts\":%u, \"wait_probe\":%u",
-		    rg->attempts, rg->wait_probe);
+		    rg->rounds, u16);
+      u16 = (rg->wait_round.tv_sec * 1000) + (rg->wait_round.tv_usec / 1000);
       string_concat(buf, sizeof(buf), &off,
 		    ", \"wait_round\":%u, \"wait_timeout\":%u",
-		    rg->wait_round, rg->wait_timeout);
+		    u16, (uint32_t)rg->wait_timeout.tv_sec);
       if(rg->flags != 0)
 	string_concat(buf, sizeof(buf), &off, "%s",
 		      dealias_flags_encode(tmp,sizeof(tmp),rg->flags,rg_flags,
@@ -145,9 +148,10 @@ static char *dealias_header_tostr(const scamper_dealias_t *dealias)
       string_concat(buf, sizeof(buf), &off,
 		    ", \"attempts\":%u, \"replyc\":%u, \"fudge\":%u",
 		    pf->attempts, pf->replyc, pf->fudge);
+      u16 = (pf->wait_probe.tv_sec * 1000) + (pf->wait_probe.tv_usec / 1000);
       string_concat(buf, sizeof(buf), &off,
 		    ", \"wait_probe\":%u, \"wait_timeout\":%u",
-		    pf->wait_probe, pf->wait_timeout);
+		    u16, (uint32_t)pf->wait_timeout.tv_sec);
       if(pf->flags != 0)
 	string_concat(buf, sizeof(buf), &off, "%s",
 		      dealias_flags_encode(tmp,sizeof(tmp),pf->flags,pf_flags,
@@ -156,9 +160,10 @@ static char *dealias_header_tostr(const scamper_dealias_t *dealias)
   else if(SCAMPER_DEALIAS_METHOD_IS_BUMP(dealias))
     {
       bump = dealias->data;
+      u16 = (bump->wait_probe.tv_sec * 1000)+(bump->wait_probe.tv_usec / 1000);
       string_concat(buf, sizeof(buf), &off,
 		    ", \"wait_probe\":%u, \"bump_limit\":%u, \"attempts\":%u",
-		    bump->wait_probe, bump->bump_limit, bump->attempts);
+		    u16, bump->bump_limit, bump->attempts);
     }
 
   return strdup(buf);
@@ -194,7 +199,7 @@ static char *dealias_probedef_tostr(const scamper_dealias_probedef_t *def)
 }
 
 static int dealias_probedefs_get(const scamper_dealias_t *dealias,
-				 scamper_dealias_probedef_t **defs, int *defc)
+				 scamper_dealias_probedef_t ***defs, int *defc)
 {
   scamper_dealias_mercator_t *mc;
   scamper_dealias_ally_t *ally;
@@ -245,6 +250,8 @@ static char *dealias_reply_tostr(const scamper_dealias_reply_t *reply)
 		scamper_addr_tostr(reply->src, tmp, sizeof(tmp)),
 		(long)reply->rx.tv_sec, (int)reply->rx.tv_usec,
 		reply->ttl);
+  if(reply->size != 0)
+    string_concat(buf, sizeof(buf), &off, ", \"size\": %u", reply->size);
   if(SCAMPER_ADDR_TYPE_IS_IPV4(reply->src))
     string_concat(buf, sizeof(buf), &off, ", \"ipid\": %u", reply->ipid);
   else if(reply->flags & SCAMPER_DEALIAS_REPLY_FLAG_IPID32)
@@ -260,7 +267,7 @@ static char *dealias_reply_tostr(const scamper_dealias_reply_t *reply)
       if(SCAMPER_DEALIAS_REPLY_IS_ICMP_UNREACH(reply) ||
 	 SCAMPER_DEALIAS_REPLY_IS_ICMP_TTL_EXP(reply))
 	string_concat(buf, sizeof(buf), &off,
-		      ", \"icmp_q_ttl\":%u",reply->icmp_q_ip_ttl);
+		      ", \"icmp_q_ttl\":%u", reply->icmp_q_ttl);
     }
   else if(SCAMPER_DEALIAS_REPLY_IS_TCP(reply))
     {
@@ -352,7 +359,7 @@ int scamper_file_json_dealias_write(const scamper_file_t *sf,
   size_t   *pr_lens     = NULL;
   int       i, rc       = -1;
   uint32_t  j;
-  scamper_dealias_probedef_t *defs = NULL;
+  scamper_dealias_probedef_t **defs = NULL;
   int defc = 0;
 
   /* get the header string */
@@ -370,7 +377,7 @@ int scamper_file_json_dealias_write(const scamper_file_t *sf,
   for(i=0; i<defc; i++)
     {
       if(i > 0) len += 2; /* , */
-      pds[i] = dealias_probedef_tostr(&defs[i]);
+      pds[i] = dealias_probedef_tostr(defs[i]);
       pd_lens[i] = strlen(pds[i]);
       len += pd_lens[i];
     }

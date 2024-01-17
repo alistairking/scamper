@@ -1,7 +1,7 @@
 /*
  * scamper_osinfo.c
  *
- * $Id: scamper_osinfo.c,v 1.6.20.2 2023/08/18 21:25:04 mjl Exp $
+ * $Id: scamper_osinfo.c,v 1.9 2023/08/18 21:24:40 mjl Exp $
  *
  * Copyright (C) 2006 Matthew Luckie
  * Copyright (C) 2014 The Regents of the University of California

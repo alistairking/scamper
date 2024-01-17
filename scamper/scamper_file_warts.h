@@ -3,12 +3,12 @@
  *
  * the warts file format
  *
- * $Id: scamper_file_warts.h,v 1.29 2022/07/02 21:21:56 mjl Exp $
+ * $Id: scamper_file_warts.h,v 1.31 2023/10/02 07:54:10 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2012      The Regents of the University of California
- * Copyright (C) 2016-2022 Matthew Luckie
+ * Copyright (C) 2016-2023 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -42,19 +42,15 @@
  *
  * the id field corresponds to a bit
  * the size field records how large the field is stored on disk; -1 is variable
- * the tlv_id field records the id for a scamper_tlv_t if the data item is
- * stored optionally in the data structure itself.
  */
 typedef struct warts_var
 {
   int     id;
   ssize_t size;
-  int     tlv_id;
 } warts_var_t;
 #define WARTS_VAR_COUNT(array) (sizeof(array)/sizeof(warts_var_t))
 #define WARTS_VAR_MFB(array) ((WARTS_VAR_COUNT(array) / 7) + \
 			      (WARTS_VAR_COUNT(array) % 7 == 0 ? 0 : 1))
-
 
 /*
  * warts_list / warts_cycle
@@ -169,12 +165,12 @@ void flag_set(uint8_t *flags, const int id, int *max_id);
 int flag_isset(const uint8_t *flags, const int id);
 uint16_t fold_flags(uint8_t *flags, const int max_id);
 
-int warts_str_size(const char *str);
+int warts_str_size(const char *str, uint16_t *len);
 
 warts_addrtable_t *warts_addrtable_alloc_byaddr(void);
 warts_addrtable_t *warts_addrtable_alloc_byid(void);
-uint32_t warts_addr_size(warts_addrtable_t *t, scamper_addr_t *addr);
-uint32_t warts_addr_size_static(scamper_addr_t *addr);
+int warts_addr_size(warts_addrtable_t *t, scamper_addr_t *addr, uint16_t *len);
+int warts_addr_size_static(scamper_addr_t *addr, uint16_t *len);
 void warts_addrtable_free(warts_addrtable_t *t);
 
 void insert_addr_static(uint8_t *buf, uint32_t *off, const uint32_t len,
@@ -258,8 +254,8 @@ int warts_addr_read(scamper_file_t *sf, const warts_hdr_t *hdr,
 			   scamper_addr_t **addr_out);
 warts_list_t *warts_list_alloc(scamper_list_t *list, uint32_t id);
 void warts_list_free(warts_list_t *wl);
-void warts_list_params(const scamper_list_t *list, uint8_t *flags,
-			      uint16_t *flags_len, uint16_t *params_len);
+int warts_list_params(const scamper_list_t *list, uint8_t *flags,
+		      uint16_t *flags_len, uint16_t *params_len);
 int warts_list_params_read(scamper_list_t *list,
 			   uint8_t *buf, uint32_t *off, uint32_t len);
 void warts_list_params_write(const scamper_list_t *list,
@@ -276,8 +272,8 @@ int warts_list_getid(const scamper_file_t *sf, scamper_list_t *list,
 			    uint32_t *id);
 warts_cycle_t *warts_cycle_alloc(scamper_cycle_t *cycle, uint32_t id);
 void warts_cycle_free(warts_cycle_t *cycle);
-void warts_cycle_params(const scamper_cycle_t *cycle, uint8_t *flags,
-			       uint16_t *flags_len, uint16_t *params_len);
+int warts_cycle_params(const scamper_cycle_t *cycle, uint8_t *flags,
+		       uint16_t *flags_len, uint16_t *params_len);
 void warts_cycle_params_write(const scamper_cycle_t *cycle,
 				     uint8_t *buf, uint32_t *off,
 				     const uint32_t len,

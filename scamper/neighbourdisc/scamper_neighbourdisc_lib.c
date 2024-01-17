@@ -1,7 +1,7 @@
 /*
  * scamper_neighbourdisc_lib.c
  *
- * $Id: scamper_neighbourdisc_lib.c,v 1.1 2023/05/31 23:22:18 mjl Exp $
+ * $Id: scamper_neighbourdisc_lib.c,v 1.6 2023/12/24 00:19:25 mjl Exp $
  *
  * Copyright (C) 2023 Matthew Luckie
  *
@@ -30,12 +30,14 @@
 #include "scamper_neighbourdisc.h"
 #include "scamper_neighbourdisc_int.h"
 
-scamper_list_t *scamper_neighbourdisc_list_get(const scamper_neighbourdisc_t *nd)
+scamper_list_t *
+scamper_neighbourdisc_list_get(const scamper_neighbourdisc_t *nd)
 {
   return nd->list;
 }
 
-scamper_cycle_t *scamper_neighbourdisc_cycle_get(const scamper_neighbourdisc_t *nd)
+scamper_cycle_t *
+scamper_neighbourdisc_cycle_get(const scamper_neighbourdisc_t *nd)
 {
   return nd->cycle;
 }
@@ -45,7 +47,8 @@ uint32_t scamper_neighbourdisc_userid_get(const scamper_neighbourdisc_t *nd)
   return nd->userid;
 }
 
-const struct timeval *scamper_neighbourdisc_start_get(const scamper_neighbourdisc_t *nd)
+const struct timeval *
+scamper_neighbourdisc_start_get(const scamper_neighbourdisc_t *nd)
 {
   return &nd->start;
 }
@@ -65,9 +68,10 @@ uint8_t scamper_neighbourdisc_flags_get(const scamper_neighbourdisc_t *nd)
   return nd->flags;
 }
 
-uint16_t scamper_neighbourdisc_wait_get(const scamper_neighbourdisc_t *nd)
+const struct timeval *
+scamper_neighbourdisc_wait_timeout_get(const scamper_neighbourdisc_t *nd)
 {
-  return nd->wait;
+  return &nd->wait_timeout;
 }
 
 uint16_t scamper_neighbourdisc_attempts_get(const scamper_neighbourdisc_t *nd)
@@ -80,27 +84,32 @@ uint16_t scamper_neighbourdisc_replyc_get(const scamper_neighbourdisc_t *nd)
   return nd->replyc;
 }
 
-scamper_addr_t *scamper_neighbourdisc_src_ip_get(const scamper_neighbourdisc_t *nd)
+scamper_addr_t *
+scamper_neighbourdisc_src_ip_get(const scamper_neighbourdisc_t *nd)
 {
   return nd->src_ip;
 }
 
-scamper_addr_t *scamper_neighbourdisc_src_mac_get(const scamper_neighbourdisc_t *nd)
+scamper_addr_t *
+scamper_neighbourdisc_src_mac_get(const scamper_neighbourdisc_t *nd)
 {
   return nd->src_mac;
 }
 
-scamper_addr_t *scamper_neighbourdisc_dst_ip_get(const scamper_neighbourdisc_t *nd)
+scamper_addr_t *
+scamper_neighbourdisc_dst_ip_get(const scamper_neighbourdisc_t *nd)
 {
   return nd->dst_ip;
 }
 
-scamper_addr_t *scamper_neighbourdisc_dst_mac_get(const scamper_neighbourdisc_t *nd)
+scamper_addr_t *
+scamper_neighbourdisc_dst_mac_get(const scamper_neighbourdisc_t *nd)
 {
   return nd->dst_mac;
 }
 
-const scamper_neighbourdisc_probe_t *scamper_neighbourdisc_probe_get(const scamper_neighbourdisc_t *nd, uint16_t i)
+scamper_neighbourdisc_probe_t *
+scamper_neighbourdisc_probe_get(const scamper_neighbourdisc_t *nd, uint16_t i)
 {
   if(nd->probec <= i)
     return NULL;
@@ -112,29 +121,51 @@ uint16_t scamper_neighbourdisc_probec_get(const scamper_neighbourdisc_t *nd)
   return nd->probec;
 }
 
-const struct timeval *scamper_neighbourdisc_probe_tx_get(const scamper_neighbourdisc_probe_t *p)
+const struct timeval *
+scamper_neighbourdisc_probe_tx_get(const scamper_neighbourdisc_probe_t *p)
 {
   return &p->tx;
 }
 
-const scamper_neighbourdisc_reply_t *scamper_neighbourdisc_probe_reply_get(const scamper_neighbourdisc_probe_t *p, uint16_t i)
+scamper_neighbourdisc_reply_t *
+scamper_neighbourdisc_probe_reply_get(const scamper_neighbourdisc_probe_t *p,
+				      uint16_t i)
 {
   if(p->rxc <= i)
     return NULL;
   return p->rxs[i];
 }
 
-uint16_t scamper_neighbourdisc_probe_replyc_get(const scamper_neighbourdisc_probe_t *p)
+uint16_t
+scamper_neighbourdisc_probe_replyc_get(const scamper_neighbourdisc_probe_t *p)
 {
   return p->rxc;
 }
 
-const struct timeval *scamper_neighbourdisc_reply_rx_get(const scamper_neighbourdisc_reply_t *r)
+const struct timeval *
+scamper_neighbourdisc_reply_rx_get(const scamper_neighbourdisc_reply_t *r)
 {
   return &r->rx;
 }
 
-scamper_addr_t *scamper_neighbourdisc_reply_mac_get(const scamper_neighbourdisc_reply_t *r)
+scamper_addr_t *
+scamper_neighbourdisc_reply_mac_get(const scamper_neighbourdisc_reply_t *r)
 {
   return r->mac;
 }
+
+#ifdef BUILDING_LIBSCAMPERFILE
+scamper_neighbourdisc_reply_t *
+scamper_neighbourdisc_reply_use(scamper_neighbourdisc_reply_t *r)
+{
+  r->refcnt++;
+  return r;
+}
+
+scamper_neighbourdisc_probe_t *
+scamper_neighbourdisc_probe_use(scamper_neighbourdisc_probe_t *p)
+{
+  p->refcnt++;
+  return p;
+}
+#endif

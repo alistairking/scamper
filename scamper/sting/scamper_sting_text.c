@@ -6,7 +6,7 @@
  *
  * Author: Matthew Luckie
  *
- * $Id: scamper_sting_text.c,v 1.5 2023/05/15 20:55:06 mjl Exp $
+ * $Id: scamper_sting_text.c,v 1.6 2023/12/24 00:03:21 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -43,13 +43,15 @@ int scamper_file_text_sting_write(const scamper_file_t *sf,
   char     buf[192], src[64], dst[64];
   size_t   len;
   uint32_t i, txc = 0;
+  uint16_t mean;
 
+  mean = (sting->mean.tv_sec * 1000) + (sting->mean.tv_usec / 1000);
   snprintf(buf, sizeof(buf),
 	   "sting from %s:%d to %s:%d, %d probes, %dms mean\n"
 	   " data-ack count %d, holec %d\n",
 	   scamper_addr_tostr(sting->src, src, sizeof(src)), sting->sport,
 	   scamper_addr_tostr(sting->dst, dst, sizeof(dst)), sting->dport,
-	   sting->count, sting->mean, sting->dataackc, sting->holec);
+	   sting->count, mean, sting->dataackc, sting->holec);
 
   len = strlen(buf);
   write_wrap(fd, buf, NULL, len);

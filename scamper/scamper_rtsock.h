@@ -1,7 +1,7 @@
 /*
  * scamper_rtsock.h
  *
- * $Id: scamper_rtsock.h,v 1.19.20.1 2023/08/18 21:25:04 mjl Exp $
+ * $Id: scamper_rtsock.h,v 1.20 2023/08/18 21:24:40 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2010 The University of Waikato

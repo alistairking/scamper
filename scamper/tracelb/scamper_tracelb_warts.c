@@ -5,7 +5,7 @@
  * Copyright (C) 2016-2023 Matthew Luckie
  * Author: Matthew Luckie
  *
- * $Id: scamper_tracelb_warts.c,v 1.18 2023/05/29 08:05:37 mjl Exp $
+ * $Id: scamper_tracelb_warts.c,v 1.22 2023/12/21 06:11:32 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -70,31 +70,31 @@
 
 static const warts_var_t tracelb_vars[] =
 {
-  {WARTS_TRACELB_LIST_ID,      4, -1},
-  {WARTS_TRACELB_CYCLE_ID,     4, -1},
-  {WARTS_TRACELB_ADDR_SRC_GID, 4, -1},
-  {WARTS_TRACELB_ADDR_DST_GID, 4, -1},
-  {WARTS_TRACELB_START,        8, -1},
-  {WARTS_TRACELB_SPORT,        2, -1},
-  {WARTS_TRACELB_DPORT,        2, -1},
-  {WARTS_TRACELB_PROBE_SIZE,   2, -1},
-  {WARTS_TRACELB_TYPE,         1, -1},
-  {WARTS_TRACELB_FIRSTHOP,     1, -1},
-  {WARTS_TRACELB_WAIT_TIMEOUT, 1, -1},
-  {WARTS_TRACELB_WAIT_PROBE,   1, -1},
-  {WARTS_TRACELB_ATTEMPTS,     1, -1},
-  {WARTS_TRACELB_CONFIDENCE,   1, -1},
-  {WARTS_TRACELB_TOS,          1, -1},
-  {WARTS_TRACELB_NODEC,        2, -1},
-  {WARTS_TRACELB_LINKC,        2, -1},
-  {WARTS_TRACELB_PROBEC,       4, -1},
-  {WARTS_TRACELB_PROBECMAX,    4, -1},
-  {WARTS_TRACELB_GAPLIMIT,     1, -1},
-  {WARTS_TRACELB_ADDR_SRC,    -1, -1},
-  {WARTS_TRACELB_ADDR_DST,    -1, -1},
-  {WARTS_TRACELB_USERID,       4, -1},
-  {WARTS_TRACELB_FLAGS,        1, -1},
-  {WARTS_TRACELB_ADDR_RTR,    -1, -1},
+  {WARTS_TRACELB_LIST_ID,      4},
+  {WARTS_TRACELB_CYCLE_ID,     4},
+  {WARTS_TRACELB_ADDR_SRC_GID, 4},
+  {WARTS_TRACELB_ADDR_DST_GID, 4},
+  {WARTS_TRACELB_START,        8},
+  {WARTS_TRACELB_SPORT,        2},
+  {WARTS_TRACELB_DPORT,        2},
+  {WARTS_TRACELB_PROBE_SIZE,   2},
+  {WARTS_TRACELB_TYPE,         1},
+  {WARTS_TRACELB_FIRSTHOP,     1},
+  {WARTS_TRACELB_WAIT_TIMEOUT, 1},
+  {WARTS_TRACELB_WAIT_PROBE,   1},
+  {WARTS_TRACELB_ATTEMPTS,     1},
+  {WARTS_TRACELB_CONFIDENCE,   1},
+  {WARTS_TRACELB_TOS,          1},
+  {WARTS_TRACELB_NODEC,        2},
+  {WARTS_TRACELB_LINKC,        2},
+  {WARTS_TRACELB_PROBEC,       4},
+  {WARTS_TRACELB_PROBECMAX,    4},
+  {WARTS_TRACELB_GAPLIMIT,     1},
+  {WARTS_TRACELB_ADDR_SRC,    -1},
+  {WARTS_TRACELB_ADDR_DST,    -1},
+  {WARTS_TRACELB_USERID,       4},
+  {WARTS_TRACELB_FLAGS,        1},
+  {WARTS_TRACELB_ADDR_RTR,    -1},
 };
 #define tracelb_vars_mfb WARTS_VAR_MFB(tracelb_vars)
 
@@ -107,12 +107,12 @@ static const warts_var_t tracelb_vars[] =
 
 static const warts_var_t tracelb_node_vars[] =
 {
-  {WARTS_TRACELB_NODE_ADDR_GID, 4, -1}, /* deprecated */
-  {WARTS_TRACELB_NODE_FLAGS,    1, -1},
-  {WARTS_TRACELB_NODE_LINKC,    2, -1},
-  {WARTS_TRACELB_NODE_QTTL,     1, -1},
-  {WARTS_TRACELB_NODE_ADDR,    -1, -1},
-  {WARTS_TRACELB_NODE_NAME,    -1, -1},
+  {WARTS_TRACELB_NODE_ADDR_GID, 4}, /* deprecated */
+  {WARTS_TRACELB_NODE_FLAGS,    1},
+  {WARTS_TRACELB_NODE_LINKC,    2},
+  {WARTS_TRACELB_NODE_QTTL,     1},
+  {WARTS_TRACELB_NODE_ADDR,    -1},
+  {WARTS_TRACELB_NODE_NAME,    -1},
 };
 #define tracelb_node_vars_mfb WARTS_VAR_MFB(tracelb_node_vars)
 
@@ -122,9 +122,9 @@ static const warts_var_t tracelb_node_vars[] =
 
 static const warts_var_t tracelb_link_vars[] =
 {
-  {WARTS_TRACELB_LINK_FROM,   2, -1},
-  {WARTS_TRACELB_LINK_TO,     2, -1},
-  {WARTS_TRACELB_LINK_HOPC,   1, -1},
+  {WARTS_TRACELB_LINK_FROM,   2},
+  {WARTS_TRACELB_LINK_TO,     2},
+  {WARTS_TRACELB_LINK_HOPC,   1},
 };
 #define tracelb_link_vars_mfb WARTS_VAR_MFB(tracelb_link_vars)
 
@@ -136,11 +136,11 @@ static const warts_var_t tracelb_link_vars[] =
 
 static const warts_var_t tracelb_probe_vars[] =
 {
-  {WARTS_TRACELB_PROBE_TX,      8, -1},
-  {WARTS_TRACELB_PROBE_FLOWID,  2, -1},
-  {WARTS_TRACELB_PROBE_TTL,     1, -1},
-  {WARTS_TRACELB_PROBE_ATTEMPT, 1, -1},
-  {WARTS_TRACELB_PROBE_RXC,     2, -1},
+  {WARTS_TRACELB_PROBE_TX,      8},
+  {WARTS_TRACELB_PROBE_FLOWID,  2},
+  {WARTS_TRACELB_PROBE_TTL,     1},
+  {WARTS_TRACELB_PROBE_ATTEMPT, 1},
+  {WARTS_TRACELB_PROBE_RXC,     2},
 };
 #define tracelb_probe_vars_mfb WARTS_VAR_MFB(tracelb_probe_vars)
 
@@ -158,17 +158,17 @@ static const warts_var_t tracelb_probe_vars[] =
 
 static const warts_var_t tracelb_reply_vars[] =
 {
-  {WARTS_TRACELB_REPLY_RX,         8, -1},
-  {WARTS_TRACELB_REPLY_IPID,       2, -1},
-  {WARTS_TRACELB_REPLY_TTL,        1, -1},
-  {WARTS_TRACELB_REPLY_FLAGS,      1, -1},
-  {WARTS_TRACELB_REPLY_ICMP_TC,    2, -1},
-  {WARTS_TRACELB_REPLY_TCP_FLAGS,  1, -1},
-  {WARTS_TRACELB_REPLY_ICMP_EXT,  -1, -1},
-  {WARTS_TRACELB_REPLY_ICMP_Q_TTL, 1, -1},
-  {WARTS_TRACELB_REPLY_ICMP_Q_TOS, 1, -1},
-  {WARTS_TRACELB_REPLY_FROM_GID,   4, -1},
-  {WARTS_TRACELB_REPLY_FROM,      -1, -1},
+  {WARTS_TRACELB_REPLY_RX,         8},
+  {WARTS_TRACELB_REPLY_IPID,       2},
+  {WARTS_TRACELB_REPLY_TTL,        1},
+  {WARTS_TRACELB_REPLY_FLAGS,      1},
+  {WARTS_TRACELB_REPLY_ICMP_TC,    2},
+  {WARTS_TRACELB_REPLY_TCP_FLAGS,  1},
+  {WARTS_TRACELB_REPLY_ICMP_EXT,  -1},
+  {WARTS_TRACELB_REPLY_ICMP_Q_TTL, 1},
+  {WARTS_TRACELB_REPLY_ICMP_Q_TOS, 1},
+  {WARTS_TRACELB_REPLY_FROM_GID,   4},
+  {WARTS_TRACELB_REPLY_FROM,      -1},
 };
 #define tracelb_reply_vars_mfb WARTS_VAR_MFB(tracelb_reply_vars)
 
@@ -176,7 +176,7 @@ static const warts_var_t tracelb_reply_vars[] =
 
 static const warts_var_t tracelb_probeset_vars[] =
 {
-  {WARTS_TRACELB_PROBESET_PROBEC, 2, -1},
+  {WARTS_TRACELB_PROBESET_PROBEC, 2},
 };
 #define tracelb_probeset_vars_mfb WARTS_VAR_MFB(tracelb_probeset_vars)
 
@@ -223,10 +223,15 @@ typedef struct warts_tracelb_link
   uint8_t                   hopc;
 } warts_tracelb_link_t;
 
+#ifdef BUILDING_LIBSCAMPERFILE
+#define _scamper_tracelb_link_use(link) scamper_tracelb_link_use((link))
+#else
+#define _scamper_tracelb_link_use(link) (link)
+#endif
 
-static void warts_tracelb_params(const scamper_tracelb_t *trace,
-				 warts_addrtable_t *table, uint8_t *flags,
-				 uint16_t *flags_len, uint16_t *params_len)
+static int warts_tracelb_params(const scamper_tracelb_t *trace,
+				warts_addrtable_t *table, uint8_t *flags,
+				uint16_t *flags_len, uint16_t *params_len)
 {
   const warts_var_t *var;
   int max_id = 0;
@@ -254,17 +259,20 @@ static void warts_tracelb_params(const scamper_tracelb_t *trace,
 
       if(var->id == WARTS_TRACELB_ADDR_SRC)
 	{
-	  *params_len += warts_addr_size(table, trace->src);
+	  if(warts_addr_size(table, trace->src, params_len) != 0)
+	    return -1;
 	  continue;
 	}
       else if(var->id == WARTS_TRACELB_ADDR_DST)
 	{
-	  *params_len += warts_addr_size(table, trace->dst);
+	  if(warts_addr_size(table, trace->dst, params_len) != 0)
+	    return -1;
 	  continue;
 	}
       else if(var->id == WARTS_TRACELB_ADDR_RTR)
 	{
-	  *params_len += warts_addr_size_static(trace->rtr);
+	  if(warts_addr_size_static(trace->rtr, params_len) != 0)
+	    return -1;
 	  continue;
 	}
 
@@ -273,7 +281,7 @@ static void warts_tracelb_params(const scamper_tracelb_t *trace,
     }
 
   *flags_len = fold_flags(flags, max_id);
-  return;
+  return 0;
 }
 
 static int warts_tracelb_params_read(scamper_tracelb_t *trace,
@@ -281,6 +289,7 @@ static int warts_tracelb_params_read(scamper_tracelb_t *trace,
 				     warts_addrtable_t *table, uint8_t *buf,
 				     uint32_t *off, uint32_t len)
 {
+  uint8_t wait_probe = 0, wait_timeout = 0;
   warts_param_reader_t handlers[] = {
     {&trace->list,         (wpr_t)extract_list,      state},
     {&trace->cycle,        (wpr_t)extract_cycle,     state},
@@ -292,8 +301,8 @@ static int warts_tracelb_params_read(scamper_tracelb_t *trace,
     {&trace->probe_size,   (wpr_t)extract_uint16,    NULL},
     {&trace->type,         (wpr_t)extract_byte,      NULL},
     {&trace->firsthop,     (wpr_t)extract_byte,      NULL},
-    {&trace->wait_timeout, (wpr_t)extract_byte,      NULL},
-    {&trace->wait_probe,   (wpr_t)extract_byte,      NULL},
+    {&wait_timeout,        (wpr_t)extract_byte,      NULL},
+    {&wait_probe,          (wpr_t)extract_byte,      NULL},
     {&trace->attempts,     (wpr_t)extract_byte,      NULL},
     {&trace->confidence,   (wpr_t)extract_byte,      NULL},
     {&trace->tos,          (wpr_t)extract_byte,      NULL},
@@ -315,6 +324,12 @@ static int warts_tracelb_params_read(scamper_tracelb_t *trace,
     return rc;
   if(trace->dst == NULL)
     return -1;
+
+  trace->wait_timeout.tv_sec = wait_timeout;
+  trace->wait_timeout.tv_usec = 0;
+  trace->wait_probe.tv_sec = wait_probe / 100;
+  trace->wait_probe.tv_usec = (wait_probe % 100) * 10000;
+
   return 0;
 }
 
@@ -328,6 +343,7 @@ static int warts_tracelb_params_write(const scamper_tracelb_t *trace,
 				      const uint16_t params_len)
 {
   uint32_t list_id, cycle_id;
+  uint8_t wait_probe, wait_timeout;
   warts_param_writer_t handlers[] = {
     {&list_id,             (wpw_t)insert_uint32,  NULL},
     {&cycle_id,            (wpw_t)insert_uint32,  NULL},
@@ -339,8 +355,8 @@ static int warts_tracelb_params_write(const scamper_tracelb_t *trace,
     {&trace->probe_size,   (wpw_t)insert_uint16,  NULL},
     {&trace->type,         (wpw_t)insert_byte,    NULL},
     {&trace->firsthop,     (wpw_t)insert_byte,    NULL},
-    {&trace->wait_timeout, (wpw_t)insert_byte,    NULL},
-    {&trace->wait_probe,   (wpw_t)insert_byte,    NULL},
+    {&wait_timeout,        (wpw_t)insert_byte,    NULL},
+    {&wait_probe,          (wpw_t)insert_byte,    NULL},
     {&trace->attempts,     (wpw_t)insert_byte,    NULL},
     {&trace->confidence,   (wpw_t)insert_byte,    NULL},
     {&trace->tos,          (wpw_t)insert_byte,    NULL},
@@ -359,6 +375,10 @@ static int warts_tracelb_params_write(const scamper_tracelb_t *trace,
 
   if(warts_list_getid(sf,  trace->list,  &list_id)  == -1) return -1;
   if(warts_cycle_getid(sf, trace->cycle, &cycle_id) == -1) return -1;
+
+  wait_timeout = trace->wait_timeout.tv_sec;
+  wait_probe =
+    (trace->wait_probe.tv_sec * 100) + (trace->wait_probe.tv_usec / 10000);
 
   warts_params_write(buf, off, len, flags, flags_len, params_len, handlers,
 		     handler_cnt);
@@ -398,7 +418,8 @@ static int warts_tracelb_node_state(const scamper_file_t *sf,
 	  if(node->addr != NULL)
 	    {
 	      flag_set(state->flags, var->id, &max_id);
-	      state->params_len += warts_addr_size(table, node->addr);
+	      if(warts_addr_size(table, node->addr, &state->params_len) != 0)
+		return -1;
 	    }
 	  continue;
 	}
@@ -413,8 +434,11 @@ static int warts_tracelb_node_state(const scamper_file_t *sf,
       if(var->size < 0)
 	{
 	  if(var->id == WARTS_TRACELB_NODE_NAME)
-	    state->params_len += warts_str_size(node->name);
-	  continue;
+	    {
+	      if(warts_str_size(node->name, &state->params_len) != 0)
+		return -1;
+	      continue;
+	    }
 	}
 
       assert(var->size >= 0);
@@ -561,7 +585,8 @@ static int warts_tracelb_reply_state(const scamper_file_t *sf,
 	}
       else if(var->id == WARTS_TRACELB_REPLY_FROM)
 	{
-	  state->params_len += warts_addr_size(table, reply->reply_from);
+	  if(warts_addr_size(table, reply->reply_from, &state->params_len) != 0)
+	    return -1;
 	}
 
       flag_set(state->flags, var->id, &max_id);
@@ -1123,17 +1148,12 @@ int scamper_file_warts_tracelb_read(scamper_file_t *sf, const warts_hdr_t *hdr,
   if(trace->nodec > 0)
     {
       if((nlc = malloc_zero(sizeof(uint16_t) * trace->nodec)) == NULL)
-	{
-	  goto err;
-	}
+	goto err;
       for(i=0; i<trace->linkc; i++)
 	{
 	  for(j=0; j<trace->nodec; j++)
-	    {
-	      if(trace->links[i]->from == trace->nodes[j])
-		break;
-	    }
-
+	    if(trace->links[i]->from == trace->nodes[j])
+	      break;
 	  if(j == trace->nodec)
 	    goto err;
 
@@ -1146,7 +1166,7 @@ int scamper_file_warts_tracelb_read(scamper_file_t *sf, const warts_hdr_t *hdr,
 	  if(nlc[j] == node->linkc)
 	    goto err;
 
-	  node->links[nlc[j]++] = trace->links[i];
+	  node->links[nlc[j]++] = _scamper_tracelb_link_use(trace->links[i]);
 	}
 
       for(i=0; i<trace->nodec; i++)
@@ -1190,8 +1210,9 @@ int scamper_file_warts_tracelb_write(const scamper_file_t *sf,
     goto err;
 
   /* figure out which tracelb data items we'll store in this record */
-  warts_tracelb_params(trace, table, trace_flags, &trace_flags_len,
-		       &trace_params_len);
+  if(warts_tracelb_params(trace, table, trace_flags, &trace_flags_len,
+			  &trace_params_len) != 0)
+    goto err;
 
   /* this represents the length of the trace's flags and parameters */
   len = 8 + trace_flags_len + trace_params_len;

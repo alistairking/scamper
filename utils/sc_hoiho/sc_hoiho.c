@@ -1,7 +1,7 @@
 /*
  * sc_hoiho: Holistic Orthography of Internet Hostname Observations
  *
- * $Id: sc_hoiho.c,v 1.25 2023/05/29 21:48:00 mjl Exp $
+ * $Id: sc_hoiho.c,v 1.27 2023/12/02 09:31:10 mjl Exp $
  *
  *         Matthew Luckie
  *         mjl@luckie.org.nz
@@ -7667,7 +7667,7 @@ static sc_iface_t *sc_iface_alloc(char *ip, char *name)
 {
   sc_iface_t *iface;
   if((iface = malloc_zero(sizeof(sc_iface_t))) == NULL ||
-     (iface->addr = scamper_addr_resolve(AF_UNSPEC, ip)) == NULL ||
+     (iface->addr = scamper_addr_fromstr_unspec(ip)) == NULL ||
      (name[0] != '\0' && (iface->name = strdup(name)) == NULL))
     goto err;
 
@@ -10788,7 +10788,7 @@ static int sc_regex_asn_ifi_score(sc_regex_t *re, slist_t *ifi_list)
       if(ifi->css != NULL)
 	{
 	  if(string_isnumber(ifi->css->css) == 0 ||
-	     string_tollong(ifi->css->css, &ll) != 0 ||
+	     string_tollong(ifi->css->css, &ll, NULL, 10) != 0 ||
 	     ll < 0 || ll > 4294967295)
 	    {
 	      ifi->class = '!';
@@ -13621,7 +13621,7 @@ static int router_file_line(char *line, void *param)
 	  ptr += 8;
 	  while(*ptr == ' ')
 	    ptr++;
-	  if(string_tollong(ptr, &ll) == 0)
+	  if(string_tollong(ptr, &ll, NULL, 10) == 0)
 	    {
 	      rl->asn = ll;
 	      rl->flags |= SC_ROUTER_FLAG_ASN;
@@ -13632,7 +13632,7 @@ static int router_file_line(char *line, void *param)
 	  ptr += 8;
 	  while(*ptr == ' ')
 	    ptr++;
-	  if(string_tollong(ptr, &ll) == 0)
+	  if(string_tollong(ptr, &ll, NULL, 10) == 0)
 	    {
 	      rl->id = ll;
 	      rl->flags |= SC_ROUTER_FLAG_ID;
@@ -13695,7 +13695,7 @@ static int sibling_file_line(char *line, void *param)
       *ptr = '\0'; ptr++;
 
       /* build an as2org node */
-      if(string_tollong(asn, &ll) != 0)
+      if(string_tollong(asn, &ll, NULL, 10) != 0)
 	goto err;
       if((a2o = malloc(sizeof(sc_as2org_t))) == NULL)
 	goto err;
@@ -21905,7 +21905,7 @@ static int asnames_file_line(char *line, void *param)
     }
   name = ptr;
 
-  if(string_isdigit(asn) == 0 || string_tollong(asn, &ll) != 0 ||
+  if(string_isdigit(asn) == 0 || string_tollong(asn, &ll, NULL, 10) != 0 ||
      ll < 0 || ll > 4294967295)
     {
       fprintf(stderr, "%s: invalid asn %s\n", __func__, asn);
@@ -22063,7 +22063,7 @@ static int rtt_file_line(char *line, void *param)
       fprintf(stderr, "%s: no VP on line %d\n", __func__, lineno);
       goto done;
     }
-  if(string_isdigit(id_ptr) == 0 || string_tollong(id_ptr, &id) != 0)
+  if(string_isdigit(id_ptr) == 0 || string_tollong(id_ptr, &id, NULL, 10) != 0)
     {
       fprintf(stderr, "%s: id %s invalid on line %d\n", __func__,
 	      id_ptr, lineno);

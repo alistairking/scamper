@@ -1,7 +1,7 @@
 /*
  * scamper_file.c
  *
- * $Id: scamper_file.c,v 1.116.4.4 2023/09/14 07:12:55 mjl Exp $
+ * $Id: scamper_file.c,v 1.124 2023/11/22 04:10:09 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -82,6 +82,14 @@
 #include "host/scamper_host.h"
 #include "host/scamper_host_warts.h"
 #include "host/scamper_host_json.h"
+#endif
+#if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_HTTP)
+#include "http/scamper_http.h"
+#include "http/scamper_http_warts.h"
+#endif
+#if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_UDPPROBE)
+#include "udpprobe/scamper_udpprobe.h"
+#include "udpprobe/scamper_udpprobe_warts.h"
 #endif
 
 #include "utils.h"
@@ -197,6 +205,13 @@ typedef struct write_handlers
 #if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_HOST)
   int (*host)(const scamper_file_t *sf, const scamper_host_t *host, void *p);
 #endif
+#if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_HTTP)
+  int (*http)(const scamper_file_t *sf, const scamper_http_t *http, void *p);
+#endif
+#if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_UDPPROBE)
+  int (*udpprobe)(const scamper_file_t *sf,
+		  const scamper_udpprobe_t *up, void *p);
+#endif
 } write_handlers_t;
 
 static write_handlers_t warts_write_handlers =
@@ -227,6 +242,12 @@ static write_handlers_t warts_write_handlers =
 #endif
 #if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_HOST)
   scamper_file_warts_host_write,          /* host */
+#endif
+#if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_HTTP)
+  scamper_file_warts_http_write,          /* http */
+#endif
+#if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_UDPPROBE)
+  scamper_file_warts_udpprobe_write,      /* udpprobe */
 #endif
 };
 
@@ -259,6 +280,12 @@ static write_handlers_t json_write_handlers =
 #if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_HOST)
   scamper_file_json_host_write,           /* host */
 #endif
+#if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_HTTP)
+  NULL,                                   /* http */
+#endif
+#if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_UDPPROBE)
+  NULL,                                   /* udpprobe */
+#endif
 };
 
 static write_handlers_t text_write_handlers =
@@ -290,6 +317,12 @@ static write_handlers_t text_write_handlers =
 #if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_HOST)
   NULL,                                   /* host */
 #endif
+#if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_HTTP)
+  NULL,                                   /* http */
+#endif
+#if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_UDPPROBE)
+  NULL,                                   /* udpprobe */
+#endif
 };
 
 static write_handlers_t null_write_handlers =
@@ -320,6 +353,12 @@ static write_handlers_t null_write_handlers =
 #endif
 #if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_HOST)
   NULL,                                   /* host */
+#endif
+#if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_HTTP)
+  NULL,                                   /* http */
+#endif
+#if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_UDPPROBE)
+  NULL,                                   /* udpprobe */
 #endif
 };
 
@@ -605,6 +644,28 @@ int scamper_file_write_host(scamper_file_t *sf,
 }
 #endif
 
+#if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_HTTP)
+int scamper_file_write_http(scamper_file_t *sf,
+			    const scamper_http_t *http, void *p)
+{
+  assert(sf->type < handler_cnt);
+  if(handlers[sf->type].write->http != NULL)
+    return handlers[sf->type].write->http(sf, http, p);
+  return -1;
+}
+#endif
+
+#if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_UDPPROBE)
+int scamper_file_write_udpprobe(scamper_file_t *sf,
+				const scamper_udpprobe_t *up, void *p)
+{
+  assert(sf->type < handler_cnt);
+  if(handlers[sf->type].write->udpprobe != NULL)
+    return handlers[sf->type].write->udpprobe(sf, up, p);
+  return -1;
+}
+#endif
+
 int scamper_file_write_obj(scamper_file_t *sf, uint16_t type, const void *data)
 {
   static int (*const func[])(scamper_file_t *sf, const void *, void *) = {
@@ -643,8 +704,14 @@ int scamper_file_write_obj(scamper_file_t *sf, uint16_t type, const void *data)
 #if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_HOST)
     (write_obj_func_t)scamper_file_write_host,
 #endif
+#if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_HTTP)
+    (write_obj_func_t)scamper_file_write_http,
+#endif
+#if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_UDPPROBE)
+    (write_obj_func_t)scamper_file_write_udpprobe,
+#endif
   };
-  if(type > 14)
+  if(type > SCAMPER_FILE_OBJ_MAX)
     return -1;
   if(func[type] != NULL)
     return func[type](sf, data, NULL);
@@ -680,11 +747,24 @@ int scamper_file_read(scamper_file_t *sf,
 int scamper_file_filter_isset(const scamper_file_filter_t *filter,
 			      uint16_t type)
 {
-  if(filter == NULL || type > filter->max)
+  /* no object with type zero */
+  if(type == 0)
     return 0;
-  if((filter->flags[type/32] & (0x1 << ((type%32)-1))) == 0)
-    return 0;
-  return 1;
+
+  /* if no filter passed, return the object if we know about it */
+  if(filter == NULL)
+    {
+      if(type <= SCAMPER_FILE_OBJ_MAX && type != SCAMPER_FILE_OBJ_ADDR)
+	return 1;
+    }
+  else
+    {
+      if(type <= filter->max &&
+	 (filter->flags[type/32] & (0x1 << ((type%32)-1))) != 0)
+	return 1;
+    }
+
+  return 0;
 }
 
 /*
@@ -999,6 +1079,8 @@ const char *scamper_file_objtype_tostr(uint16_t type)
     "sting",
     "sniff",
     "host",
+    "http",
+    "udpprobe",
   };
   uint16_t typec = sizeof(types)/sizeof(char *);
   if(typec > type)
@@ -1580,13 +1662,13 @@ static scamper_file_t *file_open(int fd, const char *fn, char mode, size_t type)
   return sf;
 }
 
-scamper_file_t *scamper_file_opennull(char mode, const char *format)
+scamper_file_t *scamper_file_opennull(char mode, const char *type)
 {
   uint8_t file_type;
 
-  if(strcasecmp(format, "warts") == 0)
+  if(strcasecmp(type, "warts") == 0)
     file_type = SCAMPER_FILE_TYPE_WARTS;
-  else if(strcasecmp(format, "json") == 0)
+  else if(strcasecmp(type, "json") == 0)
     file_type = SCAMPER_FILE_TYPE_JSON;
   else
     return NULL;

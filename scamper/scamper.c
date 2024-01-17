@@ -1,7 +1,7 @@
 /*
  * scamper
  *
- * $Id: scamper.c,v 1.310.2.11 2023/10/05 06:01:02 mjl Exp $
+ * $Id: scamper.c,v 1.329 2024/01/03 03:57:56 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -36,6 +36,7 @@
 #include "scamper.h"
 #include "scamper_debug.h"
 #include "scamper_addr.h"
+#include "scamper_addr_int.h"
 #include "scamper_list.h"
 #include "scamper_file.h"
 #include "scamper_outfiles.h"
@@ -92,6 +93,14 @@
 #ifndef DISABLE_SCAMPER_HOST
 #include "host/scamper_host_cmd.h"
 #include "host/scamper_host_do.h"
+#endif
+#ifndef DISABLE_SCAMPER_HTTP
+#include "http/scamper_http_cmd.h"
+#include "http/scamper_http_do.h"
+#endif
+#ifndef DISABLE_SCAMPER_UDPPROBE
+#include "udpprobe/scamper_udpprobe_cmd.h"
+#include "udpprobe/scamper_udpprobe_do.h"
 #endif
 
 #include "utils.h"
@@ -203,7 +212,8 @@ static int    wait_between   = 1000000 / SCAMPER_OPTION_PPS_DEF;
 static int    probe_window   = 250000;
 static int    exit_when_done = 1;
 
-#if !defined(DISABLE_PRIVSEP) || defined(HAVE_SIGACTION)
+#if !defined(DISABLE_PRIVSEP) || \
+     defined(HAVE_SIGACTION)
 #define HAVE_EXIT_NOW
 static int    exit_now = 0;
 #endif
@@ -217,8 +227,9 @@ scamper_addrcache_t *addrcache = NULL;
 
 /* central TLS context with CA certificates loaded for remote control */
 #ifdef HAVE_OPENSSL
+static char *cafile = NULL;
+SSL_CTX *default_tls_ctx = NULL;
 SSL_CTX *remote_tls_ctx = NULL;
-static char *remote_cafile = NULL;
 static char *remote_client_privfile = NULL;
 static char *remote_client_certfile = NULL;
 #endif
@@ -346,7 +357,7 @@ static void usage(uint32_t opt_mask)
 #ifdef HAVE_OPENSSL
       usage_line("notls: do not use TLS anywhere in scamper");
       usage_line("notls-remote: do not use TLS on remote control sockets");
-      usage_line("cafile=file: use the CA certs in file for remote auth");
+      usage_line("cafile=file: use the CA certs in file for TLS peer check");
       usage_line("client-certfile=file: use cert in file for remote auth");
       usage_line("client-privfile=file: use privkey in file for remote auth");
 #endif
@@ -548,6 +559,14 @@ static int check_options(int argc, char *argv[])
     {"scamper-host", "host",
      scamper_do_host_arg_validate, scamper_do_host_usage},
 #endif
+#ifndef DISABLE_SCAMPER_HTTP
+    {"scamper-http", "http",
+     scamper_do_http_arg_validate, scamper_do_http_usage},
+#endif
+#ifndef DISABLE_SCAMPER_UDPPROBE
+    {"scamper-udpprobe", "udpprobe",
+     scamper_do_udpprobe_arg_validate, scamper_do_udpprobe_usage},
+#endif
   };
   int   i;
   long  lo_w = window, lo_p = pps;
@@ -722,7 +741,7 @@ static int check_options(int argc, char *argv[])
 #endif
 #ifdef HAVE_OPENSSL
 	  else if(strncasecmp(optarg, "cafile=", 7) == 0)
-	    remote_cafile = optarg+7;
+	    cafile = optarg+7;
 	  else if(strncasecmp(optarg, "client-privfile=", 16) == 0)
 	    remote_client_privfile = optarg+16;
 	  else if(strncasecmp(optarg, "client-certfile=", 16) == 0)
@@ -1045,8 +1064,7 @@ static int check_options(int argc, char *argv[])
   else
     {
       /* TLS things are only valid with remote controller */
-      if(remote_cafile != NULL || remote_client_privfile != NULL ||
-	 remote_client_certfile != NULL)
+      if(remote_client_privfile != NULL || remote_client_certfile != NULL)
 	{
 	  usage(OPT_CTRL_REMOTE);
 	  return -1;
@@ -1324,6 +1342,46 @@ static void scamper_sigaction(int sig)
 }
 #endif
 
+#ifdef HAVE_OPENSSL
+static SSL_CTX *scamper_ssl_ctx(void)
+{
+  SSL_CTX *ctx = NULL;
+
+  if((ctx = SSL_CTX_new(SSLv23_client_method())) == NULL)
+    {
+      printerror_msg(__func__, "could not create ssl_ctx");
+      goto err;
+    }
+  SSL_CTX_set_options(ctx,
+		      SSL_OP_NO_SSLv2 | SSL_OP_NO_SSLv3 | SSL_OP_NO_TLSv1);
+  SSL_CTX_set_verify(ctx, SSL_VERIFY_NONE, NULL);
+
+  if(cafile == NULL)
+    {
+      /* load the default set of certs into the SSL context */
+      if(SSL_CTX_set_default_verify_paths(ctx) != 1)
+	{
+	  printerror_ssl(__func__, "could not load default CA certs");
+	  goto err;
+	}
+    }
+  else
+    {
+      if(SSL_CTX_load_verify_locations(ctx, cafile, NULL) != 1)
+	{
+	  printerror_ssl(__func__, "could not load certs from %s", cafile);
+	  goto err;
+	}
+    }
+
+  return ctx;
+
+ err:
+  if(ctx != NULL) SSL_CTX_free(ctx);
+  return NULL;
+}
+#endif
+
 uint16_t scamper_sport_default(void)
 {
   return default_sport;
@@ -1450,6 +1508,12 @@ static void cleanup(void)
 #ifndef DISABLE_SCAMPER_HOST
   scamper_do_host_cleanup();
 #endif
+#ifndef DISABLE_SCAMPER_HTTP
+  scamper_do_http_cleanup();
+#endif
+#ifndef DISABLE_SCAMPER_UDPPROBE
+  scamper_do_udpprobe_cleanup();
+#endif
 
   scamper_dl_cleanup();
 
@@ -1541,6 +1605,11 @@ static void cleanup(void)
     }
 
 #ifdef HAVE_OPENSSL
+  if(default_tls_ctx != NULL)
+    {
+      SSL_CTX_free(default_tls_ctx);
+      default_tls_ctx = NULL;
+    }
   if(remote_tls_ctx != NULL)
     {
       SSL_CTX_free(remote_tls_ctx);
@@ -1699,51 +1768,50 @@ static int scamper(int argc, char *argv[])
   if((flags & FLAG_NOTLS) == 0)
     {
       SSL_library_init();
-      if((remote_tls_ctx = SSL_CTX_new(SSLv23_client_method())) == NULL)
-	{
-	  printerror_msg(__func__, "could not create ssl_ctx");
-	  goto done;
-	}
-      SSL_CTX_set_options(remote_tls_ctx,
-			  SSL_OP_NO_SSLv2 | SSL_OP_NO_SSLv3 | SSL_OP_NO_TLSv1);
-      SSL_CTX_set_verify(remote_tls_ctx, SSL_VERIFY_PEER, NULL);
 
-      if(remote_cafile == NULL)
+      if((default_tls_ctx = scamper_ssl_ctx()) == NULL)
+	goto done;
+
+      /*
+       * if we need to present a client certificate to a remote
+       * controller, then we need a second context that holds those
+       * certificates.  otherwise, we increment the reference count of
+       * default_tls_ctx and copy the ctx pointer to remote_tls_ctx.
+       */
+      if(remote_client_certfile != NULL)
 	{
-	  /* load the default set of certs into the SSL context */
-	  if(SSL_CTX_set_default_verify_paths(remote_tls_ctx) != 1)
+	  /*
+	   * this is checked in options handling code -- if certfile
+	   * is not NULL, then privfile will not be null
+	   */
+	  assert(remote_client_privfile != NULL);
+	  if((remote_tls_ctx = scamper_ssl_ctx()) == NULL)
+	    goto done;
+
+	  /* load the client key materials */
+	  if(SSL_CTX_use_certificate_chain_file(remote_tls_ctx,
+						remote_client_certfile) != 1)
 	    {
-	      printerror_ssl(__func__, "could not load default CA certs");
+	      printerror_ssl(__func__, "could load client cert from %s",
+			     remote_client_certfile);
+	      goto done;
+	    }
+	  if(SSL_CTX_use_PrivateKey_file(remote_tls_ctx, remote_client_privfile,
+					 SSL_FILETYPE_PEM) != 1)
+	    {
+	      printerror_ssl(__func__, "could not load client privkey from %s",
+			     remote_client_privfile);
 	      goto done;
 	    }
 	}
       else
 	{
-	  if(SSL_CTX_load_verify_locations(remote_tls_ctx,
-					   remote_cafile, NULL) != 1)
+	  if(SSL_CTX_up_ref(default_tls_ctx) != 1)
 	    {
-	      printerror_ssl(__func__, "could not load certs from %s",
-			     remote_cafile);
+	      printerror_ssl(__func__, "could not SSL_CTX_up_ref");
 	      goto done;
 	    }
-	}
-
-      /* load the client key materials */
-      if(remote_client_certfile != NULL &&
-	 SSL_CTX_use_certificate_chain_file(remote_tls_ctx,
-					    remote_client_certfile) != 1)
-	{
-	  printerror_ssl(__func__, "could load client cert from %s",
-			 remote_client_certfile);
-	  goto done;
-	}
-      if(remote_client_privfile != NULL &&
-	 SSL_CTX_use_PrivateKey_file(remote_tls_ctx, remote_client_privfile,
-				     SSL_FILETYPE_PEM) != 1)
-	{
-	  printerror_ssl(__func__, "could not load client privkey from %s",
-			 remote_client_privfile);
-	  goto done;
+	  remote_tls_ctx = default_tls_ctx;
 	}
     }
 #endif
@@ -1859,6 +1927,14 @@ static int scamper(int argc, char *argv[])
 #endif
 #ifndef DISABLE_SCAMPER_HOST
   if(scamper_do_host_init() != 0)
+    goto done;
+#endif
+#ifndef DISABLE_SCAMPER_HTTP
+  if(scamper_do_http_init() != 0)
+    goto done;
+#endif
+#ifndef DISABLE_SCAMPER_UDPPROBE
+  if(scamper_do_udpprobe_init() != 0)
     goto done;
 #endif
 

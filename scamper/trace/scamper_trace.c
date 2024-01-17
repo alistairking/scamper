@@ -1,7 +1,7 @@
 /*
  * scamper_trace.c
  *
- * $Id: scamper_trace.c,v 1.110 2023/06/01 07:42:17 mjl Exp $
+ * $Id: scamper_trace.c,v 1.116 2023/10/01 07:53:17 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2003-2011 The University of Waikato
@@ -40,22 +40,27 @@
 #include "scamper_trace_int.h"
 #include "utils.h"
 
-int scamper_trace_pmtud_alloc(scamper_trace_t *trace)
+scamper_trace_pmtud_t *scamper_trace_pmtud_alloc(void)
 {
-  if((trace->pmtud = malloc_zero(sizeof(scamper_trace_pmtud_t))) == NULL)
-    return -1;
-  return 0;
+  scamper_trace_pmtud_t *pmtud = malloc_zero(sizeof(scamper_trace_pmtud_t));
+#ifdef BUILDING_LIBSCAMPERFILE
+  if(pmtud != NULL)
+    pmtud->refcnt = 1;
+#endif
+  return pmtud;
 }
 
-void scamper_trace_pmtud_free(scamper_trace_t *trace)
+void scamper_trace_pmtud_free(scamper_trace_pmtud_t *pmtud)
 {
   scamper_trace_hop_t *hop, *hop_next;
   uint8_t u8;
 
-  if(trace->pmtud == NULL)
+#ifdef BUILDING_LIBSCAMPERFILE
+  if(--pmtud->refcnt > 0)
     return;
+#endif
 
-  hop = trace->pmtud->hops;
+  hop = pmtud->hops;
   while(hop != NULL)
     {
       hop_next = hop->hop_next;
@@ -63,26 +68,34 @@ void scamper_trace_pmtud_free(scamper_trace_t *trace)
       hop = hop_next;
     }
 
-  if(trace->pmtud->notes != NULL)
+  if(pmtud->notes != NULL)
     {
-      for(u8=0; u8<trace->pmtud->notec; u8++)
-	scamper_trace_pmtud_n_free(trace->pmtud->notes[u8]);
-      free(trace->pmtud->notes);
+      for(u8=0; u8<pmtud->notec; u8++)
+	scamper_trace_pmtud_n_free(pmtud->notes[u8]);
+      free(pmtud->notes);
     }
 
-  free(trace->pmtud);
-  trace->pmtud = NULL;
+  free(pmtud);
 
   return;
 }
 
 scamper_trace_pmtud_n_t *scamper_trace_pmtud_n_alloc(void)
 {
-  return malloc_zero(sizeof(scamper_trace_pmtud_n_t));
+  scamper_trace_pmtud_n_t *n = malloc_zero(sizeof(scamper_trace_pmtud_n_t));
+#ifdef BUILDING_LIBSCAMPERFILE
+  if(n != NULL)
+    n->refcnt = 1;
+#endif
+  return n;
 }
 
 void scamper_trace_pmtud_n_free(scamper_trace_pmtud_n_t *n)
 {
+#ifdef BUILDING_LIBSCAMPERFILE
+  if(--n->refcnt > 0)
+    return;
+#endif
   free(n);
   return;
 }
@@ -106,72 +119,74 @@ int scamper_trace_pmtud_n_add(scamper_trace_pmtud_t *pmtud,
   return 0;
 }
 
-int scamper_trace_dtree_alloc(scamper_trace_t *trace)
+scamper_trace_dtree_t *scamper_trace_dtree_alloc(void)
 {
-  if((trace->dtree = malloc_zero(sizeof(scamper_trace_dtree_t))) != NULL)
-    return 0;
-  return -1;
+  scamper_trace_dtree_t *dt = malloc_zero(sizeof(scamper_trace_dtree_t));
+#ifdef BUILDING_LIBSCAMPERFILE
+  if(dt != NULL)
+    dt->refcnt = 1;
+#endif
+  return dt;
 }
 
-void scamper_trace_dtree_free(scamper_trace_t *trace)
+void scamper_trace_dtree_free(scamper_trace_dtree_t *dtree)
 {
   uint16_t i;
-
-  if(trace->dtree == NULL)
+#ifdef BUILDING_LIBSCAMPERFILE
+  if(--dtree->refcnt > 0)
     return;
+#endif
+  if(dtree->lss_stop != NULL)
+    scamper_addr_free(dtree->lss_stop);
+  if(dtree->gss_stop != NULL)
+    scamper_addr_free(dtree->gss_stop);
+  if(dtree->lss != NULL)
+    free(dtree->lss);
 
-  if(trace->dtree->lss_stop != NULL)
-    scamper_addr_free(trace->dtree->lss_stop);
-  if(trace->dtree->gss_stop != NULL)
-    scamper_addr_free(trace->dtree->gss_stop);
-  if(trace->dtree->lss != NULL)
-    free(trace->dtree->lss);
-
-  if(trace->dtree->gss != NULL)
+  if(dtree->gss != NULL)
     {
-      for(i=0; i<trace->dtree->gssc; i++)
-	if(trace->dtree->gss[i] != NULL)
-	  scamper_addr_free(trace->dtree->gss[i]);
-      free(trace->dtree->gss);
+      for(i=0; i<dtree->gssc; i++)
+	if(dtree->gss[i] != NULL)
+	  scamper_addr_free(dtree->gss[i]);
+      free(dtree->gss);
     }
 
-  free(trace->dtree);
-  trace->dtree = NULL;
+  free(dtree);
   return;
 }
 
-int scamper_trace_dtree_lss_set(scamper_trace_t *trace, const char *name)
+int scamper_trace_dtree_lss_set(scamper_trace_dtree_t *dtree, const char *name)
 {
-  if(trace->dtree == NULL || (trace->dtree->lss = strdup(name)) == NULL)
+  if((dtree->lss = strdup(name)) == NULL)
     return -1;
   return 0;
 }
 
-int scamper_trace_dtree_gss_alloc(scamper_trace_t *trace, uint16_t cnt)
+int scamper_trace_dtree_gss_alloc(scamper_trace_dtree_t *dtree, uint16_t cnt)
 {
-  if(trace->dtree == NULL || trace->dtree->gss != NULL)
+  if(dtree->gss != NULL)
     return -1;
-  if((trace->dtree->gss = malloc_zero(sizeof(scamper_addr_t *) * cnt)) == NULL)
+  if((dtree->gss = malloc_zero(sizeof(scamper_addr_t *) * cnt)) == NULL)
     return -1;
   return 0;
 }
 
-scamper_addr_t *scamper_trace_dtree_gss_find(const scamper_trace_t *trace,
+scamper_addr_t *scamper_trace_dtree_gss_find(const scamper_trace_dtree_t *dtree,
                                              const scamper_addr_t *iface)
 {
-  if(trace->dtree == NULL)
+  if(dtree == NULL)
     return NULL;
-  assert(trace->dtree->gssc >= 0);
-  return array_find((void **)trace->dtree->gss, (size_t)trace->dtree->gssc,
-                    iface, (array_cmp_t)scamper_addr_cmp);
+  assert(dtree->gssc >= 0);
+  return array_find((void **)dtree->gss, (size_t)dtree->gssc, iface,
+		    (array_cmp_t)scamper_addr_cmp);
 }
 
-void scamper_trace_dtree_gss_sort(const scamper_trace_t *trace)
+void scamper_trace_dtree_gss_sort(const scamper_trace_dtree_t *dtree)
 {
-  if(trace->dtree == NULL)
+  if(dtree == NULL)
     return;
-  assert(trace->dtree->gssc >= 0);
-  array_qsort((void **)trace->dtree->gss, (size_t)trace->dtree->gssc,
+  assert(dtree->gssc >= 0);
+  array_qsort((void **)dtree->gss, (size_t)dtree->gssc,
 	      (array_cmp_t)scamper_addr_cmp);
   return;
 }
@@ -197,18 +212,28 @@ void scamper_trace_hop_free(scamper_trace_hop_t *hop)
 {
   if(hop == NULL)
     return;
-
+#ifdef BUILDING_LIBSCAMPERFILE
+  if(--hop->refcnt > 0)
+    return;
+#endif
   if(hop->hop_name != NULL)
     free(hop->hop_name);
-  scamper_icmpext_free(hop->hop_icmpext);
-  scamper_addr_free(hop->hop_addr);
+  if(hop->hop_icmpext != NULL)
+    scamper_icmpext_free(hop->hop_icmpext);
+  if(hop->hop_addr != NULL)
+    scamper_addr_free(hop->hop_addr);
   free(hop);
   return;
 }
 
-scamper_trace_hop_t *scamper_trace_hop_alloc()
+scamper_trace_hop_t *scamper_trace_hop_alloc(void)
 {
-  return malloc_zero(sizeof(struct scamper_trace_hop));
+  scamper_trace_hop_t *hop = malloc_zero(sizeof(scamper_trace_hop_t));
+#ifdef BUILDING_LIBSCAMPERFILE
+  if(hop != NULL)
+    hop->refcnt = 1;
+#endif
+  return hop;
 }
 
 int scamper_trace_hop_addr_cmp(const scamper_trace_hop_t *a,
@@ -219,8 +244,8 @@ int scamper_trace_hop_addr_cmp(const scamper_trace_hop_t *a,
   return scamper_addr_cmp(a->hop_addr, b->hop_addr);
 }
 
-const char *scamper_trace_type_tostr(const scamper_trace_t *trace,
-				     char *buf, size_t len)
+char *scamper_trace_type_tostr(const scamper_trace_t *trace,
+			       char *buf, size_t len)
 {
   static const char *m[] = {
     NULL,
@@ -238,8 +263,8 @@ const char *scamper_trace_type_tostr(const scamper_trace_t *trace,
   return buf;
 }
 
-const char *scamper_trace_stop_tostr(const scamper_trace_t *trace,
-				     char *buf, size_t len)
+char *scamper_trace_stop_tostr(const scamper_trace_t *trace,
+			       char *buf, size_t len)
 {
   static const char *r[] = {
     "NONE",
@@ -260,8 +285,8 @@ const char *scamper_trace_stop_tostr(const scamper_trace_t *trace,
   return buf;
 }
 
-const char *scamper_trace_gapaction_tostr(const scamper_trace_t *trace,
-					  char *buf, size_t len)
+char *scamper_trace_gapaction_tostr(const scamper_trace_t *trace,
+				    char *buf, size_t len)
 {
   static const char *g[] = {
     NULL,
@@ -313,8 +338,8 @@ void scamper_trace_free(scamper_trace_t *trace)
 
   if(trace->payload != NULL) free(trace->payload);
 
-  scamper_trace_pmtud_free(trace);
-  scamper_trace_dtree_free(trace);
+  if(trace->pmtud != NULL) scamper_trace_pmtud_free(trace->pmtud);
+  if(trace->dtree != NULL) scamper_trace_dtree_free(trace->dtree);
 
   if(trace->dst != NULL) scamper_addr_free(trace->dst);
   if(trace->src != NULL) scamper_addr_free(trace->src);
@@ -334,5 +359,5 @@ void scamper_trace_free(scamper_trace_t *trace)
  */
 scamper_trace_t *scamper_trace_alloc()
 {
-  return (struct scamper_trace *)malloc_zero(sizeof(struct scamper_trace));
+  return malloc_zero(sizeof(scamper_trace_t));
 }

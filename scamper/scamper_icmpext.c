@@ -1,7 +1,7 @@
 /*
  * scamper_icmpext.c
  *
- * $Id: scamper_icmpext.c,v 1.12 2023/05/31 23:22:18 mjl Exp $
+ * $Id: scamper_icmpext.c,v 1.15 2023/07/25 20:22:09 mjl Exp $
  *
  * Copyright (C) 2008-2010 The University of Waikato
  * Copyright (C) 2012      Matthew Luckie
@@ -51,12 +51,21 @@ scamper_icmpext_t *scamper_icmpext_alloc(uint8_t cn, uint8_t ct, uint16_t dl,
   ie->ie_ct = ct;
   ie->ie_dl = dl;
 
+#ifdef BUILDING_LIBSCAMPERFILE
+  ie->refcnt = 1;
+#endif
+
   return ie;
 }
 
 void scamper_icmpext_free(scamper_icmpext_t *ie)
 {
   scamper_icmpext_t *next;
+
+#ifdef BUILDING_LIBSCAMPERFILE
+  if(--ie->refcnt > 0)
+    return;
+#endif
 
   while(ie != NULL)
     {

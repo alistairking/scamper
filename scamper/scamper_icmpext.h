@@ -1,7 +1,7 @@
 /*
  * scamper_icmpext.h
  *
- * $Id: scamper_icmpext.h,v 1.4 2023/05/29 08:11:09 mjl Exp $
+ * $Id: scamper_icmpext.h,v 1.9 2023/08/08 06:19:31 mjl Exp $
  *
  * Copyright (C) 2008 The University of Waikato
  * Copyright (C) 2012 Matthew Luckie
@@ -33,16 +33,16 @@ uint8_t scamper_icmpext_ct_get(const scamper_icmpext_t *ie);
 uint16_t scamper_icmpext_dl_get(const scamper_icmpext_t *ie);
 const uint8_t *scamper_icmpext_data_get(const scamper_icmpext_t *ie);
 const scamper_icmpext_t *scamper_icmpext_next_get(const scamper_icmpext_t *ie);
+int scamper_icmpext_cmp(const scamper_icmpext_t *a, const scamper_icmpext_t *b);
 
 int scamper_icmpext_is_mpls(const scamper_icmpext_t *ie);
 uint16_t scamper_icmpext_mpls_count_get(const scamper_icmpext_t *ie);
-uint32_t scamper_icmpext_mpls_label_get(const scamper_icmpext_t *ie, uint16_t i);
+uint32_t scamper_icmpext_mpls_label_get(const scamper_icmpext_t *ie,uint16_t i);
 uint8_t scamper_icmpext_mpls_ttl_get(const scamper_icmpext_t *ie, uint16_t i);
 uint8_t scamper_icmpext_mpls_exp_get(const scamper_icmpext_t *ie, uint16_t i);
 uint8_t scamper_icmpext_mpls_s_get(const scamper_icmpext_t *ie, uint16_t i);
 
-scamper_icmpext_t *scamper_icmpext_alloc(uint8_t cn, uint8_t ct, uint16_t dl,
-					 const void *data);
+scamper_icmpext_t *scamper_icmpext_use(scamper_icmpext_t *ie);
 void scamper_icmpext_free(scamper_icmpext_t *exts);
 
 #endif /* __SCAMPER_ICMPEXT_H */

@@ -9,7 +9,7 @@
  * Copyright (C) 2023 Matthew Luckie
  * Copyright (C) 2023 The Regents of the University of California
  *
- * $Id: sc_uptime.c,v 1.87 2023/05/14 08:10:40 mjl Exp $
+ * $Id: sc_uptime.c,v 1.88 2023/09/24 22:35:02 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -502,7 +502,7 @@ static int check_options(int argc, char *argv[])
 
   if(opt_srcaddr != NULL)
     {
-      if((sa = scamper_addr_resolve(AF_INET6, opt_srcaddr)) == NULL ||
+      if((sa = scamper_addr_fromstr_ipv6(opt_srcaddr)) == NULL ||
 	 scamper_addr_isunicast(sa) != 1)
 	{
 	  usage(OPT_SRCADDR);
@@ -1271,7 +1271,7 @@ static int addrfile_line(char *line, void *param)
   if(line[0] == '\0' || line[0] == '#')
     return 0;
 
-  if((sa = scamper_addr_resolve(AF_INET6, line)) == NULL)
+  if((sa = scamper_addr_fromstr_ipv6(line)) == NULL)
     {
       /* for now, don't abort if the input file has a malformed addr */
       fprintf(stderr, "%s: could not resolve %s\n", __func__, line);
@@ -1529,7 +1529,7 @@ static int do_sqlite_state(void)
 
       id   = sqlite3_column_int64(stmt, 1);
       addr = sqlite3_column_text(stmt, 2);
-      if((sa = scamper_addr_resolve(AF_INET6, (const char *)addr)) == NULL)
+      if((sa = scamper_addr_fromstr_ipv6((const char *)addr)) == NULL)
 	{
 	  fprintf(stderr, "%s: could not resolve %s\n", __func__, addr);
 	  continue;
@@ -1823,7 +1823,7 @@ static int up_addrfile(void)
       addr = sqlite3_column_text(stmt, 1);
 
       /* resolve the address and make sure it is unicast */
-      if((sa = scamper_addr_resolve(AF_INET6, (const char *)addr)) == NULL)
+      if((sa = scamper_addr_fromstr_ipv6((const char *)addr)) == NULL)
 	{
 	  fprintf(stderr, "%s: could not resolve %s\n", __func__, addr);
 	  continue;
@@ -2135,7 +2135,7 @@ static int up_import(void)
       addr = sqlite3_column_text(stmt, 1);
       samples_rowid = sqlite3_column_int64(stmt, 2);
 
-      if((sa = scamper_addr_resolve(AF_INET6, (const char *)addr)) == NULL)
+      if((sa = scamper_addr_fromstr_ipv6((const char *)addr)) == NULL)
 	{
 	  fprintf(stderr, "%s: could not resolve %s\n", __func__, addr);
 	  goto done;
@@ -3076,7 +3076,7 @@ static int up_reboots(void)
 	      fprintf(stderr, "%s: %s not in %s\n", __func__, ptr, dbfile);
 	      goto done;
 	    }
-	  if((sa = scamper_addr_resolve(AF_INET6, ptr)) == NULL)
+	  if((sa = scamper_addr_fromstr_ipv6(ptr)) == NULL)
 	    {
 	      fprintf(stderr, "%s: %s not an ipv6 address\n", __func__, ptr);
 	      goto done;
@@ -3110,7 +3110,7 @@ static int up_reboots(void)
       while(sqlite3_step(st) == SQLITE_ROW)
 	{
 	  addr = sqlite3_column_text(st, 1);
-	  if((sa = scamper_addr_resolve(AF_INET6, (const char *)addr)) == NULL)
+	  if((sa = scamper_addr_fromstr_ipv6((const char *)addr)) == NULL)
 	    {
 	      fprintf(stderr, "%s: %s not an ipv6 address\n", __func__, addr);
 	      goto done;

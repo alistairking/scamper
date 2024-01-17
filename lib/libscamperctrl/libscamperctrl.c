@@ -1,7 +1,7 @@
 /*
  * libscamperctrl
  *
- * $Id: libscamperctrl.c,v 1.32.4.3 2023/08/20 01:51:04 mjl Exp $
+ * $Id: libscamperctrl.c,v 1.56 2023/08/20 01:39:58 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -88,8 +88,8 @@
 
 struct scamper_ctrl
 {
-  dlist_t           *insts;    /* the instances under management */
-  dlist_t           *freelist; /* items queued to be freed */
+  dlist_t           *insts;    /* insts under management */
+  dlist_t           *waitlist; /* insts waiting to be processed after wait() */
   scamper_ctrl_cb_t  cb;       /* callback to call */
   uint8_t            wait;     /* are we currently in scamper_ctrl_wait */
   char               err[128]; /* error string */
@@ -102,8 +102,8 @@ struct scamper_ctrl
 struct scamper_inst
 {
   scamper_ctrl_t    *ctrl;     /* backpointer to overall control structure */
-  dlist_t           *list;     /* ctrl->insts or ctrl->freelist or NULL */
-  dlist_node_t      *dn;       /* dlist node in ctrl->insts or ctrl->freelist */
+  dlist_t           *list;     /* ctrl->insts or ctrl->waitlist or NULL */
+  dlist_node_t      *dn;       /* dlist node in ctrl->insts or ctrl->waitlist */
   char              *name;     /* string representing name of instance */
   void              *param;    /* user-supplied parameter */
   uint8_t            type;     /* types: inet, unix, or remote */
@@ -173,10 +173,11 @@ struct scamper_attp
   char              *l_monitor; /* list monitor */
 };
 
-#define SCAMPER_INST_FLAG_DONE   0x01
+#define SCAMPER_INST_FLAG_DONE   0x01 /* "done" sent for this inst */
 #ifdef HAVE_KQUEUE
-#define SCAMPER_INST_FLAG_WRITE  0x02
+#define SCAMPER_INST_FLAG_WRITE  0x02 /* EVFILT_WRITE set for kqueue */
 #endif
+#define SCAMPER_INST_FLAG_FREE   0x04 /* the inst is in the waitlist to free */
 
 #define SCAMPER_CMD_TYPE_ATTACH  1
 #define SCAMPER_CMD_TYPE_HALT    2
@@ -505,14 +506,15 @@ void scamper_inst_free(scamper_inst_t *inst)
 
   /*
    * if we are in the body of a scamper_inst_wait call, then mark the
-   * instance for garbage collection by placing it in the freelist
+   * instance for garbage collection by placing it in the waitlist
    */
   if(inst->list != NULL && inst->ctrl != NULL && inst->ctrl->wait != 0)
     {
-      if(inst->list != inst->ctrl->freelist)
+      inst->flags |= SCAMPER_INST_FLAG_FREE;
+      if(inst->list != inst->ctrl->waitlist)
 	{
-	  dlist_node_tail_push(inst->ctrl->freelist, inst->dn);
-	  inst->list = inst->ctrl->freelist;
+	  dlist_node_tail_push(inst->ctrl->waitlist, inst->dn);
+	  inst->list = inst->ctrl->waitlist;
 	}
     }
   else
@@ -520,6 +522,17 @@ void scamper_inst_free(scamper_inst_t *inst)
       scamper_inst_freedo(inst);
     }
   return;
+}
+
+static int inst_set_read(scamper_ctrl_t *ctrl, scamper_inst_t *inst)
+{
+#ifdef HAVE_KQUEUE
+  struct kevent kev;
+  EV_SET(&kev, inst->fd, EVFILT_READ, EV_ADD, 0, 0, inst);
+  if(kevent(ctrl->kqfd, &kev, 1, NULL, 0, NULL) != 0)
+    return -1;
+#endif
+  return 0;
 }
 
 #ifndef DMALLOC
@@ -545,10 +558,7 @@ static scamper_inst_t *scamper_inst_alloc_dm(scamper_ctrl_t *ctrl, uint8_t t,
 {
   scamper_inst_t *inst;
   size_t len = sizeof(scamper_inst_t);
-
-#ifdef HAVE_KQUEUE
-  struct kevent kev;
-#endif
+  dlist_t *list;
 
 #ifndef DMALLOC
   inst = (scamper_inst_t *)malloc(len);
@@ -574,10 +584,16 @@ static scamper_inst_t *scamper_inst_alloc_dm(scamper_ctrl_t *ctrl, uint8_t t,
       goto err;
     }
 
+  /* put the instance in the appropriate list */
+  if(ctrl->wait == 0)
+    list = ctrl->insts;
+  else
+    list = ctrl->waitlist;
+
 #ifndef DMALLOC
-  inst->dn = dlist_tail_push(ctrl->insts, inst);
+  inst->dn = dlist_tail_push(list, inst);
 #else
-  inst->dn = dlist_tail_push_dm(ctrl->insts, inst, file, line);
+  inst->dn = dlist_tail_push_dm(list, inst, file, line);
 #endif
   if(inst->dn == NULL)
     {
@@ -585,25 +601,26 @@ static scamper_inst_t *scamper_inst_alloc_dm(scamper_ctrl_t *ctrl, uint8_t t,
       goto err;
     }
 
-  inst->list = ctrl->insts;
+  inst->list = list;
   inst->ctrl = ctrl;
   inst->type = t;
   inst->fd   = fd;
 
-#ifdef HAVE_KQUEUE
-  EV_SET(&kev, fd, EVFILT_READ, EV_ADD, 0, 0, inst);
-  if(kevent(ctrl->kqfd, &kev, 1, NULL, 0, NULL) != 0)
+  if(ctrl->wait == 0 && inst_set_read(ctrl, inst) != 0)
     {
-      snprintf(ctrl->err, sizeof(ctrl->err), "could not kevent inst");
+      snprintf(ctrl->err, sizeof(ctrl->err), "could not set read");
       goto err;
     }
-#endif
 
   return inst;
 
  err:
   if(inst != NULL)
-    scamper_inst_freedo(inst);
+    {
+      /* the caller will call close on the fd they passed in */
+      inst->fd = socket_invalid();
+      scamper_inst_freedo(inst);
+    }
   return NULL;
 }
 
@@ -875,8 +892,10 @@ static int scamper_inst_read(scamper_inst_t *inst)
       inst->fd = socket_invalid();
 
       /*
-       * signal EOF on callback.  the callback might call scamper_inst_free.
-       * if not, then remove it from the monitored list.
+       * signal EOF on callback.  the callback might call scamper_inst_free,
+       * which we can detect because it will not be on ctrl->insts, rather
+       * it will be on ctrl->waitlist.  if it is still on ctrl->insts, then
+       * remove it from the monitored list.
        */
       ctrl->cb(inst, SCAMPER_CTRL_TYPE_EOF, NULL, NULL, 0);
       if(inst->list == ctrl->insts)
@@ -1218,6 +1237,43 @@ scamper_ctrl_t *scamper_inst_getctrl(const scamper_inst_t *inst)
   return inst->ctrl;
 }
 
+static int ctrl_wait_done(scamper_ctrl_t *ctrl, int rc)
+{
+  scamper_inst_t *inst;
+
+  /* no longer going to be in scamper_ctrl_wait() */
+  ctrl->wait = 0;
+
+  /*
+   * the nodes in the waitlist were put in there by the user calling
+   * - scamper_inst_free to free the instance,
+   * - scamper_inst_unix, scamper_inst_remote, scamper_inst_inet to
+   *   add a new instance.
+   * while in scamper_ctrl_wait.  process them now.
+   */
+  while((inst = dlist_head_pop(ctrl->waitlist)) != NULL)
+    {
+      if(inst->flags & SCAMPER_INST_FLAG_FREE)
+	{
+	  inst->list = NULL; inst->dn = NULL;
+	  scamper_inst_freedo(inst);
+	}
+      else
+	{
+	  assert(inst->ctrl == ctrl);
+	  dlist_node_tail_push(ctrl->insts, inst->dn);
+	  inst->list = ctrl->insts;
+	  if(inst_set_read(ctrl, inst) != 0 && rc == 0)
+	    {
+	      snprintf(ctrl->err, sizeof(ctrl->err), "could not set read");
+	      rc = -1;
+	    }
+	}
+    }
+
+  return rc;
+}
+
 #ifdef HAVE_KQUEUE
 int scamper_ctrl_wait(scamper_ctrl_t *ctrl, struct timeval *to)
 {
@@ -1266,17 +1322,7 @@ int scamper_ctrl_wait(scamper_ctrl_t *ctrl, struct timeval *to)
   rc = 0;
 
  done:
-  /*
-   * the nodes in the freelist were put in there by the user calling
-   * scamper_inst_free while in scamper_ctrl_wait.  free them now
-   */
-  ctrl->wait = 0;
-  while((inst = dlist_head_pop(ctrl->freelist)) != NULL)
-    {
-      inst->list = NULL; inst->dn = NULL;
-      scamper_inst_freedo(inst);
-    }
-  return rc;
+  return ctrl_wait_done(ctrl, rc);
 }
 #else
 int scamper_ctrl_wait(scamper_ctrl_t *ctrl, struct timeval *to)
@@ -1348,47 +1394,43 @@ int scamper_ctrl_wait(scamper_ctrl_t *ctrl, struct timeval *to)
   rc = 0;
 
  done:
-  /*
-   * the nodes in the freelist were put in there by the user calling
-   * scamper_inst_free while in scamper_ctrl_wait.  free them now
-   */
-  ctrl->wait = 0;
-  while((inst = dlist_head_pop(ctrl->freelist)) != NULL)
-    {
-      inst->list = NULL; inst->dn = NULL;
-      scamper_inst_freedo(inst);
-    }
-  return rc;
+  return ctrl_wait_done(ctrl, rc);
 }
 #endif
 
+/*
+ * scamper_ctrl_free:
+ *
+ * a user has called scamper_ctrl_free.
+ * detach all inst referenced in the lists from the ctrl, and then free
+ * the ctrl data structure itself.
+ * the user will free the inst themselves.
+ */
 void scamper_ctrl_free(scamper_ctrl_t *ctrl)
 {
   scamper_inst_t *inst;
+  dlist_t *list;
+  int i;
 
-  if(ctrl == NULL)
-    return;
+  assert(ctrl != NULL);
 
-  if(ctrl->insts != NULL)
+  for(i=0; i<2; i++)
     {
-      while((inst = dlist_head_pop(ctrl->insts)) != NULL)
+      switch(i)
 	{
-	  inst->ctrl = NULL;
-	  inst->list = NULL;
-	  inst->dn = NULL;
+	case 0: list = ctrl->insts; break;
+	case 1: list = ctrl->waitlist; break;
 	}
-      dlist_free(ctrl->insts);
-    }
-
-  if(ctrl->freelist != NULL)
-    {
-      while((inst = dlist_head_pop(ctrl->freelist)) != NULL)
+      if(list != NULL)
 	{
-	  inst->ctrl = NULL;
-	  inst->list = NULL;
-	  inst->dn = NULL;
+	  while((inst = dlist_head_pop(list)) != NULL)
+	    {
+	      inst->ctrl = NULL;
+	      inst->list = NULL;
+	      inst->dn = NULL;
+	    }
+	  dlist_free(list);
 	}
-      dlist_free(ctrl->freelist);
     }
 
 #ifdef HAVE_KQUEUE
@@ -1428,13 +1470,13 @@ scamper_ctrl_t *scamper_ctrl_alloc_dm(scamper_ctrl_cb_t cb,
 
 #ifndef DMALLOC
   ctrl->insts = dlist_alloc();
-  ctrl->freelist = dlist_alloc();
+  ctrl->waitlist = dlist_alloc();
 #else
   ctrl->insts = dlist_alloc_dm(file, line);
-  ctrl->freelist = dlist_alloc_dm(file, line);
+  ctrl->waitlist = dlist_alloc_dm(file, line);
 #endif
 
-  if(ctrl->insts == NULL || ctrl->freelist == NULL)
+  if(ctrl->insts == NULL || ctrl->waitlist == NULL)
     goto err;
 
   ctrl->cb = cb;

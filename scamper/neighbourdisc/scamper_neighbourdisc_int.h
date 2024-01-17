@@ -1,7 +1,7 @@
 /*
  * scamper_neighbourdisc
  *
- * $Id: scamper_neighbourdisc_int.h,v 1.1 2023/05/16 06:54:59 mjl Exp $
+ * $Id: scamper_neighbourdisc_int.h,v 1.3 2023/12/24 00:19:25 mjl Exp $
  *
  * Copyright (C) 2009, 2023 Matthew Luckie
  *
@@ -23,10 +23,28 @@
 #ifndef __SCAMPER_NEIGHBOURDISC_INT_H
 #define __SCAMPER_NEIGHBOURDISC_INT_H
 
+scamper_neighbourdisc_t *scamper_neighbourdisc_alloc(void);
+scamper_neighbourdisc_probe_t *scamper_neighbourdisc_probe_alloc(void);
+int scamper_neighbourdisc_probe_add(scamper_neighbourdisc_t *,
+				    scamper_neighbourdisc_probe_t *);
+int scamper_neighbourdisc_probes_alloc(scamper_neighbourdisc_t *, uint16_t);
+
+scamper_neighbourdisc_reply_t *scamper_neighbourdisc_reply_alloc(void);
+int scamper_neighbourdisc_reply_add(scamper_neighbourdisc_probe_t *,
+				    scamper_neighbourdisc_reply_t *);
+int scamper_neighbourdisc_replies_alloc(scamper_neighbourdisc_probe_t *,
+					uint16_t);
+
+int scamper_neighbourdisc_ifname_set(scamper_neighbourdisc_t *, char *);
+
 struct scamper_neighbourdisc_reply
 {
   struct timeval                  rx;       /* time this reply was received */
   scamper_addr_t                 *mac;      /* MAC address sent */
+
+#ifdef BUILDING_LIBSCAMPERFILE
+  int                             refcnt;
+#endif
 };
 
 struct scamper_neighbourdisc_probe
@@ -34,6 +52,10 @@ struct scamper_neighbourdisc_probe
   struct timeval                  tx;       /* time this request was sent */
   scamper_neighbourdisc_reply_t **rxs;      /* replies received */
   uint16_t                        rxc;      /* number of replies received */
+
+#ifdef BUILDING_LIBSCAMPERFILE
+  int                             refcnt;
+#endif
 };
 
 struct scamper_neighbourdisc
@@ -45,7 +67,7 @@ struct scamper_neighbourdisc
   char                           *ifname;   /* interface name */
   uint8_t                         method;   /* method of neighbour disc. */
   uint8_t                         flags;    /* misc. flags */
-  uint16_t                        wait;     /* how long to wait, in ms */
+  struct timeval                  wait_timeout; /* how long to wait */
   uint16_t                        attempts; /* number of attempts to make */
   uint16_t                        replyc;   /* replies requested */
   scamper_addr_t                 *src_ip;   /* source IP address */

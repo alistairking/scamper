@@ -6,7 +6,7 @@
  * Copyright (C) 2016-2023 Matthew Luckie
  * Author: Matthew Luckie
  *
- * $Id: scamper_sniff_warts.c,v 1.13 2023/05/14 21:35:40 mjl Exp $
+ * $Id: scamper_sniff_warts.c,v 1.16 2024/01/02 17:51:46 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -51,17 +51,17 @@
 
 static const warts_var_t sniff_vars[] =
 {
-  {WARTS_SNIFF_LIST,         4, -1},
-  {WARTS_SNIFF_CYCLE,        4, -1},
-  {WARTS_SNIFF_USERID,       4, -1},
-  {WARTS_SNIFF_SRC,         -1, -1},
-  {WARTS_SNIFF_START,        8, -1},
-  {WARTS_SNIFF_FINISH,       8, -1},
-  {WARTS_SNIFF_STOP_REASON,  1, -1},
-  {WARTS_SNIFF_LIMIT_PKTC,   4, -1},
-  {WARTS_SNIFF_LIMIT_TIME,   2, -1},
-  {WARTS_SNIFF_PKTC,         4, -1},
-  {WARTS_SNIFF_ICMPID,       2, -1},
+  {WARTS_SNIFF_LIST,         4},
+  {WARTS_SNIFF_CYCLE,        4},
+  {WARTS_SNIFF_USERID,       4},
+  {WARTS_SNIFF_SRC,         -1},
+  {WARTS_SNIFF_START,        8},
+  {WARTS_SNIFF_FINISH,       8},
+  {WARTS_SNIFF_STOP_REASON,  1},
+  {WARTS_SNIFF_LIMIT_PKTC,   4},
+  {WARTS_SNIFF_LIMIT_TIME,   2},
+  {WARTS_SNIFF_PKTC,         4},
+  {WARTS_SNIFF_ICMPID,       2},
 };
 #define sniff_vars_mfb WARTS_VAR_MFB(sniff_vars)
 
@@ -71,9 +71,9 @@ static const warts_var_t sniff_vars[] =
 
 static const warts_var_t sniff_pkt_vars[] =
 {
-  {WARTS_SNIFF_PKT_TIME,            8, -1},
-  {WARTS_SNIFF_PKT_DATALEN,         2, -1},
-  {WARTS_SNIFF_PKT_DATA,           -1, -1},
+  {WARTS_SNIFF_PKT_TIME,            8},
+  {WARTS_SNIFF_PKT_DATALEN,         2},
+  {WARTS_SNIFF_PKT_DATA,           -1},
 };
 #define sniff_pkt_vars_mfb WARTS_VAR_MFB(sniff_pkt_vars)
 
@@ -167,9 +167,9 @@ static int warts_sniff_pkt_write(const scamper_sniff_pkt_t *pkt,
   return 0;
 }
 
-static void warts_sniff_params(const scamper_sniff_t *sniff,
-			       warts_addrtable_t *table, uint8_t *flags,
-			       uint16_t *flags_len, uint16_t *params_len)
+static int warts_sniff_params(const scamper_sniff_t *sniff,
+			      warts_addrtable_t *table, uint8_t *flags,
+			      uint16_t *flags_len, uint16_t *params_len)
 {
   const warts_var_t *var;
   int max_id = 0;
@@ -199,7 +199,8 @@ static void warts_sniff_params(const scamper_sniff_t *sniff,
       /* Variables that don't have a fixed size */
       if(var->id == WARTS_SNIFF_SRC)
         {
-	  *params_len += warts_addr_size(table, sniff->src);
+	  if(warts_addr_size(table, sniff->src, params_len) != 0)
+	    return -1;
 	  continue;
         }
 
@@ -208,7 +209,7 @@ static void warts_sniff_params(const scamper_sniff_t *sniff,
     }
 
   *flags_len = fold_flags(flags, max_id);
-  return;
+  return 0;
 }
 
 static int warts_sniff_params_read(scamper_sniff_t *sniff,
@@ -216,6 +217,7 @@ static int warts_sniff_params_read(scamper_sniff_t *sniff,
 				   warts_state_t *state,
 				   uint8_t *buf, uint32_t *off, uint32_t len)
 {
+  uint16_t limit_time = 0;
   warts_param_reader_t handlers[] = {
     {&sniff->list,         (wpr_t)extract_list,         state},
     {&sniff->cycle,        (wpr_t)extract_cycle,        state},
@@ -225,7 +227,7 @@ static int warts_sniff_params_read(scamper_sniff_t *sniff,
     {&sniff->finish,       (wpr_t)extract_timeval,      NULL},
     {&sniff->stop_reason,  (wpr_t)extract_byte,         NULL},
     {&sniff->limit_pktc,   (wpr_t)extract_uint32,       NULL},
-    {&sniff->limit_time,   (wpr_t)extract_uint16,       NULL},
+    {&limit_time,          (wpr_t)extract_uint16,       NULL},
     {&sniff->pktc,         (wpr_t)extract_uint32,       NULL},
     {&sniff->icmpid,       (wpr_t)extract_uint16,       NULL},
   };
@@ -235,6 +237,7 @@ static int warts_sniff_params_read(scamper_sniff_t *sniff,
     return rc;
   if(sniff->src == NULL)
     return -1;
+  sniff->limit_time.tv_sec = limit_time;
   return 0;
 }
 
@@ -247,6 +250,7 @@ static int warts_sniff_params_write(const scamper_sniff_t *sniff,
 				    const uint16_t params_len)
 {
   uint32_t list_id, cycle_id;
+  uint16_t limit_time;
 
   /* Specifies how to write each variable to the warts file. */
   warts_param_writer_t handlers[] = {
@@ -258,7 +262,7 @@ static int warts_sniff_params_write(const scamper_sniff_t *sniff,
     {&sniff->finish,       (wpw_t)insert_timeval,      NULL},
     {&sniff->stop_reason,  (wpw_t)insert_byte,         NULL},
     {&sniff->limit_pktc,   (wpw_t)insert_uint32,       NULL},
-    {&sniff->limit_time,   (wpw_t)insert_uint16,       NULL},
+    {&limit_time,          (wpw_t)insert_uint16,       NULL},
     {&sniff->pktc,         (wpw_t)insert_uint32,       NULL},
     {&sniff->icmpid,       (wpw_t)insert_uint16,       NULL},
   };
@@ -266,6 +270,7 @@ static int warts_sniff_params_write(const scamper_sniff_t *sniff,
 
   if(warts_list_getid(sf,  sniff->list,  &list_id)  == -1) return -1;
   if(warts_cycle_getid(sf, sniff->cycle, &cycle_id) == -1) return -1;
+  limit_time = sniff->limit_time.tv_sec;
 
   warts_params_write(buf, off, len, flags, flags_len, params_len,
 		     handlers, handler_cnt);
@@ -361,7 +366,8 @@ int scamper_file_warts_sniff_write(const scamper_file_t *sf,
     goto err;
 
   /* Set the sniff data (not including the packets) */
-  warts_sniff_params(sniff, table, flags, &flags_len, &params_len);
+  if(warts_sniff_params(sniff, table, flags, &flags_len, &params_len) != 0)
+    goto err;
   len = 8 + flags_len + params_len + 2;
 
   if(sniff->pktc > 0)

@@ -1,7 +1,7 @@
 /*
  * scamper_sniff.c
  *
- * $Id: scamper_sniff_lib.c,v 1.1 2023/05/31 23:22:18 mjl Exp $
+ * $Id: scamper_sniff_lib.c,v 1.6 2024/01/02 17:51:46 mjl Exp $
  *
  * Copyright (C) 2023 Matthew Luckie
  * Author: Matthew Luckie
@@ -66,9 +66,9 @@ uint32_t scamper_sniff_limit_pktc_get(const scamper_sniff_t *sniff)
   return sniff->limit_pktc;
 }
 
-uint16_t scamper_sniff_limit_time_get(const scamper_sniff_t *sniff)
+const struct timeval *scamper_sniff_limit_time_get(const scamper_sniff_t *sniff)
 {
-  return sniff->limit_time;
+  return &sniff->limit_time;
 }
 
 scamper_addr_t *scamper_sniff_src_get(const scamper_sniff_t *sniff)
@@ -81,8 +81,8 @@ uint16_t scamper_sniff_icmpid_get(const scamper_sniff_t *sniff)
   return sniff->icmpid;
 }
 
-const scamper_sniff_pkt_t *scamper_sniff_pkt_get(const scamper_sniff_t *sniff,
-						 uint32_t i)
+scamper_sniff_pkt_t *scamper_sniff_pkt_get(const scamper_sniff_t *sniff,
+					   uint32_t i)
 {
   if(sniff->pktc <= i)
     return NULL;
@@ -108,3 +108,11 @@ uint16_t scamper_sniff_pkt_len_get(const scamper_sniff_pkt_t *pkt)
 {
   return pkt->len;
 }
+
+#ifdef BUILDING_LIBSCAMPERFILE
+scamper_sniff_pkt_t *scamper_sniff_pkt_use(scamper_sniff_pkt_t *pkt)
+{
+  pkt->refcnt++;
+  return pkt;
+}
+#endif

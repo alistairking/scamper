@@ -3,7 +3,7 @@
  *
  * the warts file format
  *
- * $Id: scamper_file_warts.c,v 1.271.4.1 2023/08/26 07:36:27 mjl Exp $
+ * $Id: scamper_file_warts.c,v 1.278 2023/11/22 04:10:09 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -59,6 +59,10 @@
 #include "sniff/scamper_sniff_warts.h"
 #include "host/scamper_host.h"
 #include "host/scamper_host_warts.h"
+#include "http/scamper_http.h"
+#include "http/scamper_http_warts.h"
+#include "udpprobe/scamper_udpprobe.h"
+#include "udpprobe/scamper_udpprobe_warts.h"
 
 #include "mjl_splaytree.h"
 #include "utils.h"
@@ -78,8 +82,8 @@
 #define WARTS_LIST_MONITOR    2              /* canonical name of monitor */
 static const warts_var_t list_vars[] =
 {
-  {WARTS_LIST_DESCR,   -1, -1},
-  {WARTS_LIST_MONITOR, -1, -1},
+  {WARTS_LIST_DESCR,   -1},
+  {WARTS_LIST_MONITOR, -1},
 };
 #define list_vars_mfb WARTS_VAR_MFB(list_vars)
 
@@ -90,8 +94,8 @@ static const warts_var_t list_vars[] =
 #define WARTS_CYCLE_HOSTNAME  2              /* hostname at cycle point */
 static const warts_var_t cycle_vars[] =
 {
-  {WARTS_CYCLE_STOP_TIME,  4, -1},
-  {WARTS_CYCLE_HOSTNAME,  -1, -1},
+  {WARTS_CYCLE_STOP_TIME,  4},
+  {WARTS_CYCLE_HOSTNAME,  -1},
 };
 #define cycle_vars_mfb WARTS_VAR_MFB(cycle_vars)
 
@@ -183,9 +187,13 @@ uint16_t fold_flags(uint8_t *flags, const int max_id)
   return j;
 }
 
-int warts_str_size(const char *str)
+int warts_str_size(const char *str, uint16_t *len)
 {
-  return strlen(str) + 1;
+  size_t s = strlen(str) + 1;
+  if(s > UINT16_MAX || uint16_wouldwrap(*len, (uint16_t)s))
+    return -1;
+  *len += (uint16_t)s;
+  return 0;
 }
 
 static int warts_addr_cmp(const warts_addr_t *a, const warts_addr_t *b)
@@ -213,24 +221,38 @@ static void warts_addr_free(warts_addr_t *wa)
   return;
 }
 
-uint32_t warts_addr_size_static(scamper_addr_t *addr)
+int warts_addr_size_static(scamper_addr_t *addr, uint16_t *len)
 {
-  return 1 + 1 + scamper_addr_size(addr);
+  size_t s = 1 + 1 + scamper_addr_len_get(addr);
+  if(s > UINT16_MAX || uint16_wouldwrap(*len, (uint16_t)s))
+    return -1;
+  *len += (uint16_t)s;
+  return 0;
 }
 
-uint32_t warts_addr_size(warts_addrtable_t *t, scamper_addr_t *addr)
+int warts_addr_size(warts_addrtable_t *t, scamper_addr_t *addr, uint16_t *len)
 {
   warts_addr_t fm, *wa;
+  size_t s;
 
   fm.addr = addr;
   if(splaytree_find(t->tree, &fm) != NULL)
-    return 1 + 4;
+    {
+      s = 1 + 4;
+      goto done;
+    }
 
   if((wa = warts_addr_alloc(addr, splaytree_count(t->tree))) != NULL &&
      splaytree_insert(t->tree, wa) == NULL)
     warts_addr_free(wa);
 
-  return 1 + 1 + scamper_addr_size(addr);
+  s = 1 + 1 + scamper_addr_len_get(addr);
+
+ done:
+  if(s > UINT16_MAX || uint16_wouldwrap(*len, (uint16_t)s))
+    return -1;
+  *len += (uint16_t)s;
+  return 0;
 }
 
 warts_addrtable_t *warts_addrtable_alloc_byaddr(void)
@@ -281,7 +303,7 @@ void warts_addrtable_free(warts_addrtable_t *table)
 void insert_addr_static(uint8_t *buf, uint32_t *off, const uint32_t len,
 			const scamper_addr_t *addr, void *param)
 {
-  size_t size = scamper_addr_size(addr);
+  size_t size = scamper_addr_len_get(addr);
   buf[(*off)++] = (uint8_t)size;
   buf[(*off)++] = addr->type;
   memcpy(&buf[*off], addr->addr, size);
@@ -306,7 +328,7 @@ void insert_addr(uint8_t *buf, uint32_t *off, const uint32_t len,
 
   if(wa->ondisk == 0)
     {
-      size = scamper_addr_size(addr);
+      size = scamper_addr_len_get(addr);
       buf[(*off)++] = (uint8_t)size;
       buf[(*off)++] = addr->type;
       memcpy(&buf[*off], addr->addr, size);
@@ -392,10 +414,10 @@ void insert_string(uint8_t *buf, uint32_t *off, const uint32_t len,
   uint8_t c;
   int i = 0;
 
+  assert(in != NULL);
   do
     {
       assert(len - *off > 0);
-      assert(in != NULL);
       buf[(*off)++] = c = in[i++];
     }
   while(c != '\0');
@@ -1181,8 +1203,8 @@ void warts_list_free(warts_list_t *wl)
  * bytes) of the various parameters that will be optionally included in the
  * file.
  */
-void warts_list_params(const scamper_list_t *list, uint8_t *flags,
-		       uint16_t *flags_len, uint16_t *params_len)
+int warts_list_params(const scamper_list_t *list, uint8_t *flags,
+		      uint16_t *flags_len, uint16_t *params_len)
 {
   const warts_var_t *var;
   int max_id = 0;
@@ -1197,18 +1219,20 @@ void warts_list_params(const scamper_list_t *list, uint8_t *flags,
       var = &list_vars[i];
       if(var->id == WARTS_LIST_DESCR && list->descr != NULL)
 	{
+	  if(warts_str_size(list->descr, params_len) != 0)
+	    return -1;
 	  flag_set(flags, WARTS_LIST_DESCR, &max_id);
-	  *params_len += warts_str_size(list->descr);
 	}
       else if(var->id == WARTS_LIST_MONITOR && list->monitor != NULL)
 	{
+	  if(warts_str_size(list->monitor, params_len) != 0)
+	    return -1;
 	  flag_set(flags, WARTS_LIST_MONITOR, &max_id);
-	  *params_len += warts_str_size(list->monitor);
 	}
     }
 
   *flags_len = fold_flags(flags, max_id);
-  return;
+  return 0;
 }
 
 /*
@@ -1378,7 +1402,8 @@ int warts_list_write(const scamper_file_t *sf, scamper_list_t *list,
 
   /* figure out how large the record will be */
   name_len = strlen(list->name) + 1;
-  warts_list_params(list, flags, &flags_len, &params_len);
+  if(warts_list_params(list, flags, &flags_len, &params_len) != 0)
+    goto err;
   len = 8 + 4 + 4 + name_len + flags_len + params_len;
   if(params_len != 0) len += 2;
 
@@ -1488,8 +1513,8 @@ void warts_cycle_free(warts_cycle_t *cycle)
   return;
 }
 
-void warts_cycle_params(const scamper_cycle_t *cycle, uint8_t *flags,
-			       uint16_t *flags_len, uint16_t *params_len)
+int warts_cycle_params(const scamper_cycle_t *cycle, uint8_t *flags,
+		       uint16_t *flags_len, uint16_t *params_len)
 {
   const warts_var_t *var;
   int max_id = 0;
@@ -1504,8 +1529,9 @@ void warts_cycle_params(const scamper_cycle_t *cycle, uint8_t *flags,
       var = &cycle_vars[i];
       if(var->id == WARTS_CYCLE_HOSTNAME && cycle->hostname != NULL)
 	{
+	  if(warts_str_size(cycle->hostname, params_len) != 0)
+	    return -1;
 	  flag_set(flags, WARTS_CYCLE_HOSTNAME, &max_id);
-	  *params_len += warts_str_size(cycle->hostname);
 	}
       else if(var->id == WARTS_CYCLE_STOP_TIME && cycle->stop_time != 0)
 	{
@@ -1515,7 +1541,7 @@ void warts_cycle_params(const scamper_cycle_t *cycle, uint8_t *flags,
     }
 
   *flags_len = fold_flags(flags, max_id);
-  return;
+  return 0;
 }
 
 void warts_cycle_params_write(const scamper_cycle_t *cycle,
@@ -1695,7 +1721,8 @@ int warts_cycle_write(const scamper_file_t *sf, scamper_cycle_t *cycle,
     }
 
   /* figure out the shape the optional parameters will take */
-  warts_cycle_params(cycle, flags, &flags_len, &params_len);
+  if(warts_cycle_params(cycle, flags, &flags_len, &params_len) != 0)
+    goto err;
 
   /* allocate a temporary buf for recording the cycle */
   len = 8 + 4 + 4 + 4 + 4 + flags_len + params_len;
@@ -2024,6 +2051,8 @@ int scamper_file_warts_read(scamper_file_t *sf,
     (warts_obj_read_t)scamper_file_warts_sting_read,
     (warts_obj_read_t)scamper_file_warts_sniff_read,
     (warts_obj_read_t)scamper_file_warts_host_read,
+    (warts_obj_read_t)scamper_file_warts_http_read,
+    (warts_obj_read_t)scamper_file_warts_udpprobe_read,
   };
   warts_state_t   *state = scamper_file_getstate(sf);
   warts_hdr_t      hdr;

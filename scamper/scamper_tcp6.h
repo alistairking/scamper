@@ -1,7 +1,7 @@
 /*
  * scamper_tcp6.h
  *
- * $Id: scamper_tcp6.h,v 1.12.52.1 2023/08/20 01:24:40 mjl Exp $
+ * $Id: scamper_tcp6.h,v 1.13 2023/08/20 01:21:17 mjl Exp $
  *
  * Copyright (C) 2006 Matthew Luckie
  * Copyright (C) 2006-2009 The University of Waikato

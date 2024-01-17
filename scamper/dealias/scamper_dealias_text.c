@@ -5,7 +5,7 @@
  * Copyright (C) 2013-2023 Matthew Luckie
  * Author: Matthew Luckie
  *
- * $Id: scamper_dealias_text.c,v 1.6 2023/05/29 07:17:30 mjl Exp $
+ * $Id: scamper_dealias_text.c,v 1.7 2023/07/12 06:25:21 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -55,8 +55,8 @@ int scamper_file_text_dealias_write(const scamper_file_t *sf,
 	snprintf(c, sizeof(c), "%d", dealias->result);
 
       snprintf(buf, sizeof(buf), "%s %s %s\n",
-	       scamper_addr_tostr(ally->probedefs[0].dst, a, sizeof(a)),
-	       scamper_addr_tostr(ally->probedefs[1].dst, b, sizeof(b)),
+	       scamper_addr_tostr(ally->probedefs[0]->dst, a, sizeof(a)),
+	       scamper_addr_tostr(ally->probedefs[1]->dst, b, sizeof(b)),
 	       c);
 
       write_wrap(fd, buf, NULL, strlen(buf));

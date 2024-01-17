@@ -1,10 +1,10 @@
 /*
  * scamper_tracelb_int.h
  *
- * $Id: scamper_tracelb_int.h,v 1.1 2023/05/29 00:02:24 mjl Exp $
+ * $Id: scamper_tracelb_int.h,v 1.5 2023/12/21 06:11:32 mjl Exp $
  *
  * Copyright (C) 2008-2009 The University of Waikato
- * Copyright (C) 2018-2020 Matthew Luckie
+ * Copyright (C) 2018-2023 Matthew Luckie
  * Author: Matthew Luckie
  *
  * Load-balancer traceroute technique authored by
@@ -28,6 +28,38 @@
 
 #ifndef __SCAMPER_TRACELB_INT_H
 #define __SCAMPER_TRACELB_INT_H
+
+scamper_tracelb_t *scamper_tracelb_alloc(void);
+scamper_tracelb_node_t *scamper_tracelb_node_alloc(scamper_addr_t *addr);
+int scamper_tracelb_node_links_alloc(scamper_tracelb_node_t *node, uint16_t c);
+scamper_tracelb_reply_t *scamper_tracelb_reply_alloc(scamper_addr_t *addr);
+scamper_tracelb_probe_t *scamper_tracelb_probe_alloc(void);
+int scamper_tracelb_probe_replies_alloc(scamper_tracelb_probe_t *p, uint16_t c);
+scamper_tracelb_link_t *scamper_tracelb_link_alloc(void);
+int scamper_tracelb_link_probesets_alloc(scamper_tracelb_link_t *l, uint8_t c);
+scamper_tracelb_probeset_t *scamper_tracelb_probeset_alloc(void);
+int scamper_tracelb_probeset_probes_alloc(scamper_tracelb_probeset_t *set,
+					  uint16_t count);
+int scamper_tracelb_nodes_alloc(scamper_tracelb_t *trace, uint16_t c);
+int scamper_tracelb_links_alloc(scamper_tracelb_t *trace, uint16_t c);
+
+scamper_tracelb_node_t *scamper_tracelb_node_find(scamper_tracelb_t *trace,
+						  scamper_tracelb_node_t *node);
+int scamper_tracelb_node_cmp(const scamper_tracelb_node_t *a,
+			     const scamper_tracelb_node_t *b);
+
+int scamper_tracelb_link_cmp(const scamper_tracelb_link_t *a,
+			     const scamper_tracelb_link_t *b);
+int scamper_tracelb_link_probeset(scamper_tracelb_link_t *link,
+				  scamper_tracelb_probeset_t *set);
+
+int scamper_tracelb_probeset_add(scamper_tracelb_probeset_t *set,
+				 scamper_tracelb_probe_t *probe);
+
+#define SCAMPER_TRACELB_FLAG_PTR              0x01 /* do ptr lookups */
+#define SCAMPER_TRACELB_NODE_FLAG_QTTL        0x01 /* node has q-ttl set */
+#define SCAMPER_TRACELB_REPLY_FLAG_REPLY_TTL  0x01 /* reply ttl included */
+#define SCAMPER_TRACELB_REPLY_FLAG_TCP        0x02 /* reply is TCP */
 
 #define SCAMPER_TRACELB_NODE_QTTL(node) \
  ((node)->flags & SCAMPER_TRACELB_NODE_FLAG_QTTL)
@@ -55,6 +87,9 @@
 
 #define SCAMPER_TRACELB_REPLY_IS_TCP(reply) (				\
  ((reply)->reply_flags & SCAMPER_TRACELB_REPLY_FLAG_TCP) != 0)
+
+#define SCAMPER_TRACELB_REPLY_IS_REPLY_TTL(reply) (			\
+ ((reply)->reply_flags & SCAMPER_TRACELB_REPLY_FLAG_REPLY_TTL) != 0)
 
 #define SCAMPER_TRACELB_TYPE_IS_TCP(trace) (				\
  ((trace)->type == SCAMPER_TRACELB_TYPE_TCP_SPORT ||			\
@@ -100,6 +135,10 @@ struct scamper_tracelb_reply
       uint8_t            reply_tcp_flags;  /* tcp flags of the reply */
     } tcp;
   } reply_un;
+
+#ifdef BUILDING_LIBSCAMPERFILE
+  int                    refcnt;
+#endif
 };
 
 #define reply_icmp_type  reply_un.icmp.reply_icmp_type
@@ -122,6 +161,10 @@ struct scamper_tracelb_probe
   uint8_t                       attempt;
   scamper_tracelb_reply_t     **rxs;
   uint16_t                      rxc;
+
+#ifdef BUILDING_LIBSCAMPERFILE
+  int                           refcnt;
+#endif
 };
 
 /*
@@ -133,13 +176,17 @@ struct scamper_tracelb_probeset
 {
   scamper_tracelb_probe_t     **probes; /* array of probes sent */
   uint16_t                      probec; /* number of probes sent */
+
+#ifdef BUILDING_LIBSCAMPERFILE
+  int                           refcnt;
+#endif
 };
 
 struct scamper_tracelb_probeset_summary
 {
   scamper_addr_t              **addrs;
-  int                           addrc;
-  int                           nullc;
+  uint16_t                      addrc;
+  uint16_t                      nullc;
 };
 
 /*
@@ -155,6 +202,10 @@ struct scamper_tracelb_node
   uint8_t                       q_ttl; /* quoted ttl */
   scamper_tracelb_link_t      **links; /* links */
   uint16_t                      linkc; /* number of links */
+
+#ifdef BUILDING_LIBSCAMPERFILE
+  int                           refcnt;
+#endif
 };
 
 /*
@@ -168,6 +219,10 @@ struct scamper_tracelb_link
   scamper_tracelb_node_t       *to;    /* link to */
   uint8_t                       hopc;  /* distance between the nodes */
   scamper_tracelb_probeset_t  **sets;  /* array of probesets, for each hop */
+
+#ifdef BUILDING_LIBSCAMPERFILE
+  int                           refcnt;
+#endif
 };
 
 /*
@@ -197,14 +252,14 @@ struct scamper_tracelb
   uint16_t                   probe_size;   /* size of probe to send */
   uint8_t                    type;         /* probe type to use */
   uint8_t                    firsthop;     /* where to start probing */
-  uint8_t                    wait_timeout; /* seconds to wait before timeout */
-  uint8_t                    wait_probe;   /* min. inter-probe time per ttl */
   uint8_t                    attempts;     /* number of attempts per probe */
   uint8_t                    confidence;   /* confidence level to attain */
   uint8_t                    tos;          /* type-of-service byte to use */
   uint8_t                    gaplimit;     /* max consecutive unresp. hops */
   uint8_t                    flags;        /* flags */
   uint32_t                   probec_max;   /* max number of probes to send */
+  struct timeval             wait_timeout; /* seconds to wait before timeout */
+  struct timeval             wait_probe;   /* min. inter-probe time per ttl */
 
   /*
    * data collected:

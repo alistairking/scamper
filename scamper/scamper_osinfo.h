@@ -1,7 +1,7 @@
 /*
  * scamper_osinfo.h
  *
- * $Id: scamper_osinfo.h,v 1.1.52.1 2023/08/07 22:38:04 mjl Exp $
+ * $Id: scamper_osinfo.h,v 1.2 2023/07/11 08:32:53 mjl Exp $
  *
  * Copyright (C) 2006 Matthew Luckie
  * Copyright (C) 2023 Matthew Luckie

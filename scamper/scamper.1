@@ -7,14 +7,15 @@
 .\" Copyright (c) 2007-2011 University of Waikato
 .\" Copyright (c) 2012-2015 The Regents of the University of California
 .\" Copyright (c) 2015-2023 Matthew Luckie
+.\" Copyright (c) 2024      The Regents of the University of California
 .\"                         All rights reserved
 .\"
-.\" $Id: scamper.1,v 1.114.4.1 2023/08/08 01:30:03 mjl Exp $
+.\" $Id: scamper.1,v 1.126 2024/01/03 03:54:04 mjl Exp $
 .\"
 .\"  nroff -man scamper.1
 .\"  groff -man -Tascii scamper.1 | man2html -title scamper.1
 .\"
-.Dd August 7, 2023
+.Dd January 3, 2024
 .Dt SCAMPER 1
 .Os
 .\""""""""""""
@@ -114,8 +115,11 @@ to use by default. The current choices for this option are:
 .Bl -dash -offset 2n -compact -width 1n
 .It
 .Sy dealias:
-use Ally, Mercator, or Radargun-style probing to infer which IP addresses
-belong to the same system.
+use Ally, Mercator, MIDAR, or Radargun-style probing to infer which IP
+addresses belong to the same system.
+.It
+.Sy http:
+perform an HTTP request.
 .It
 .Sy host:
 issue simple DNS queries to a domain name server.
@@ -145,6 +149,9 @@ use the sting method to infer one-way packet loss with a TCP receiver.
 .Sy tbit:
 use techniques from the TCP behavior inference tool (TBIT) to infer
 properties of a TCP receiver.
+.It
+.Sy udpprobe:
+sends a single UDP probe and waits for a response.
 .El
 .Nm
 uses trace by default.
@@ -488,7 +495,7 @@ trace to be defined as reaching the destination.
 specifies an unsigned integer to include with the data collected; the meaning
 of the user-id is entirely up to the user and has no effect on the behaviour
 of traceroute.
-.It Fl w Ar wait
+.It Fl w Ar wait-timeout
 specifies how long to wait, in seconds, for a reply.  By default, a value
 of 5 is used.
 .It Fl W Ar wait-probe
@@ -513,6 +520,7 @@ ping
 .Bk -words
 .Op Fl R
 .Op Fl A Ar TCP-ack
+.Op Fl b Ar payload-size
 .Op Fl B Ar payload
 .Op Fl c Ar probecount
 .Op Fl C Ar ICMP-sum
@@ -539,6 +547,12 @@ specifies the number to use in the acknowledgement field of the TCP
 header when using the TCP-ack, tcp-ack-sport, and TCP-synack methods,
 or the number to use in the sequence number field of the TCP header
 when using the TCP-syn, TCP-syn-sport, and TCP-rst methods.
+.It Fl B Ar payload-size
+specifies, in bytes, the size of the payload to include in each probe.
+By default,
+.Nm
+uses 56 bytes for ICMP echo probes, 12 bytes for UDP probes, 44 bytes
+for ICMP time probes, and zero bytes for TCP probes.
 .It Fl B Ar payload
 specifies, in a hexadecimal string, the payload to include in each probe.
 .It Fl c Ar probecount
@@ -611,8 +625,6 @@ specifies that the record route IP option should be used.
 .It Fl s Ar size
 specifies the size of the probes to send.
 The probe size includes the length of the IP and ICMP headers.
-By default, a probe size of 84 bytes is used for IPv4 pings, and 56 bytes for
-IPv6 pings.
 .It Fl S Ar srcaddr
 specifies the source address to use in probes.
 The address can be spoofed if
@@ -639,54 +651,55 @@ byte is set to zero.
 .\""""""""""""
 .Sh DEALIAS OPTIONS
 The dealias command is used to send probes for the purpose of alias resolution.
-It supports the mercator technique, where aliases are inferred if a router
-uses a different address when sending an ICMP response; the ally technique,
-where aliases are inferred if a sequence of probes sent to alternating
-IP addresses yields responses with incrementing, interleaved IP-ID values;
-radargun, where probes are sent to a set of IP addresses in multiple rounds
-and aliases are inferred by post-processing the results; prefixscan, where
-an alias is searched in a prefix for a specified IP address; and bump,
-where two addresses believed to be aliases are probed in an effort to force
-their IP-ID values out of sequence.
+It supports
+mercator, where aliases are inferred if a router uses a different
+address when sending an ICMP response;
+ally, where aliases are inferred if a sequence of probes sent to
+alternating IP addresses yields responses with incrementing,
+interleaved IP-ID values;
+radargun, midarest, and midardisc, where probes are sent to a set of
+IP addresses in multiple rounds and aliases are inferred by
+post-processing the results;
+prefixscan, where an alias is searched in a prefix for a specified IP
+address;
+and bump, where two addresses believed to be aliases are probed in an
+effort to force their IP-ID values out of sequence.
 The following options are available for the
 .Nm
 dealias command:
 .Pp
 dealias
-.\"dealias [-d dport] [-f fudge] [-m method] [-o replyc] [-O option]\n"
+.\"dealias [-@ start-time] [-f fudge] [-m method] [-o replyc] [-O option]\n"
 .\"        [-p '[-c sum] [-d dp] [-F sp] [-i ip] [-M mtu] [-P meth] [-s size] [-t ttl]']\n"
-.\"        [-q attempts] [-r wait-round] [-s sport] [-t ttl]\n"
+.\"        [-q attempts] [-r wait-round] [-S sched]\n"
 .\"        [-U userid] [-w wait-timeout] [-W wait-probe] [-x exclude]\n"
 .Bk -words
-.Op Fl d Ar dport
+.Op Fl @ Ar start-time
 .Op Fl f Ar fudge
 .Op Fl m Ar method
 .Op Fl o Ar replyc
 .Op Fl O Ar option
-.Op Fl p Ar probe-options
+.Op Fl p Ar probedef
 .Op Fl q Ar attempts
 .Op Fl r Ar wait-round
-.Op Fl s Ar sport
-.Op Fl t Ar ttl
+.Op Fl S Ar schedule
 .Op Fl U Ar userid
 .Op Fl w Ar wait-timeout
 .Op Fl W Ar wait-probe
 .Op Fl x Ar exclude
 .Ek
 .Bl -tag -width Ds
-.It Fl d Ar dport
-specifies the destination port to use when sending probes.
-Only valid for the mercator technique; destination ports can be specified
-in probedefs defined with
-.Fl p
-for other alias resolution methods.
+.It Fl @ Ar start-time
+specifies the time, in seconds since the Unix epoch, when the
+measurement should start.  Valid for midardisc.
 .It Fl f Ar fudge
 specifies a fudge factor for alias matching. Defaults to 200. Valid for
 ally, bump, and prefixscan.
 .It Fl m Ar method
 specifies which method to use for alias resolution.
-Valid options are: ally, bump, mercator, prefixscan, and radargun, and
-these options are case insensitive.
+Valid options are: ally, bump, mercator, midardisc, midarest,
+prefixscan, and radargun.
+These options are case insensitive.
 .It Fl o Ar replyc
 specifies how many replies to wait for. Only valid for prefixscan.
 .It Fl O Ar option
@@ -734,18 +747,28 @@ specifies the size of the probes to send.
 specifies the IP time to live of the probe.
 .El
 .Pp
-The ally method accepts up to two probe definitions; the prefixscan
-method expects one probe definition; radargun expects at least one probe
-definition; bump expects two probe definitions.
+The mercator method accepts one probe definition;
+ally accepts up to two probe definitions;
+prefixscan expects one probe definition;
+radargun expects at least one probe definition;
+midardisc and midarest expect at least two probe definitions;
+bump expects two probe definitions.
 .It Fl q Ar attempts
 specifies how many times a probe should be retried if it does not obtain
 a useful response.
 .It Fl r Ar wait-round
 specifies how many milliseconds to wait between probing rounds with radargun.
-.It Fl s Ar sport
-specifies the source port to use when sending probes. Only valid for mercator.
-.It Fl t Ar ttl
-specifies the time-to-live of probes sent. Only valid for mercator.
+.It Fl S Ar schedule
+specifies information for a single round in midardisc.
+A schedule item is colon separated, as follows:
+seconds-since-start:begin-index:end-index.
+The seconds-since-start field can include fractions of a second.
+The begin-index and end-index identify the begin and end probedef
+indexes for the round.
+There must be at least two rounds in midardisc.
+The length of each round is determined by when the next round is due to
+begin; the length of the final round is the same as the length of the
+penultimate round.
 .It Fl U Ar userid
 specifies an unsigned integer to include with the data collected; the meaning
 of the user-id is entirely up to the user and has no effect on the behaviour
@@ -779,8 +802,8 @@ host
 specifies that this query is a non-recursive query.
 The default is to issue a recursive query.
 .It Fl R Ar retry-count
-specifies the number of retries.
-The default is to send one retry.
+specifies the number of retries until giving up.
+The default is to not send any retries.
 .It Fl s Ar server-ip
 specifies the IP address of the name server to query instead of the
 default nameserver.
@@ -1139,6 +1162,100 @@ effect on the behaviour of sniff.
 .Pp
 The sole supported expression is icmp[icmpid] == X, where X is the
 ICMP-ID to select.
+.\""""""""""""
+.Sh HTTP OPTIONS
+The http command is used to conduct an HTTP or HTTPS query.
+It saves the results of an HTTPS query unencrypted.
+The following options are available for the
+.Nm
+http command:
+.Pp
+http
+.\"http [-H header] [-m max-time] [-O option] [-u url] [-U userid]"
+.Bk -words
+.Op Fl H Ar header
+.Op Fl m Ar max-time
+.Op Fl O Ar option
+.Op Fl u Ar url
+.Op Fl U Ar userid
+.Ek
+.Bl -tag -width Ds
+.It Fl H Ar header
+specifies a header to include in the request.
+You can specify multiple headers by including multiple header
+options.
+You cannot override the Host header, which is derived from the
+URL parameter.
+.It Fl m Ar max-time
+specifies the maximum length of time, in seconds, for the http
+measurement to run.  By default, this value is 60 seconds.
+The max-time value cannot be less than 1 second or greater than
+60 seconds.
+.It Fl O Ar option
+specifies optional arguments to use.
+The current choices for this option are:
+.Bl -dash -offset 2n -compact -width 1n
+.It
+.Sy insecure:
+specifies that no validation of a presented TLS certificate should take
+place.
+.El
+.It Fl u Ar url
+specifies the URL for the HTTP request.
+This is a mandatory option for the http command.
+If the url starts with https, the http test begins with a TLS
+handshake.
+The URL can override the default destination port for the scheme.
+Note that the http test will not do a DNS lookup for any name embedded
+in the URL; the http test must include the IP address to connect to as
+a mandatory parameter after specifying other http options.
+.It Fl U Ar userid
+specifies an unsigned integer to include with the data collected; the meaning
+of the user-id is entirely up to the user and has no effect on the behaviour
+of http.
+.El
+.\""""""""""""
+.Sh UDPPROBE OPTIONS
+The udpprobe command is used to send a single UDP packet and wait for
+a response.
+The following options are available for the
+.Nm
+udpprobe command:
+.Pp
+udpprobe
+.\"udpprobe [-d dport] [-O option] [-p payload] [-U userid] [-w wait-timeout]"
+.Bk -words
+.Op Fl d Ar dport
+.Op Fl O Ar option
+.Op Fl p Ar payload
+.Op Fl U Ar userid
+.Op Fl w Ar wait-timeout
+.Ek
+.Bl -tag -width Ds
+.It Fl d Ar dport
+specifies the destination port to send the probe to.
+This is a mandatory parameter.
+.It Fl O Ar option
+specifies optional arguments to use.
+The current choices for this option are:
+.Bl -dash -offset 2n -compact -width 1n
+.It
+.Sy exitfirst:
+specifies that udpprobe should exit when it receives the first response,
+rather than when the wait-timeout period is over.
+.El
+.It Fl p Ar payload
+specifies the payload of the probe to include.
+This is a mandatory parameter.
+The payload is specified in hexadecimal.
+.It Fl U Ar userid
+specifies an unsigned integer to include with the data collected; the meaning
+of the user-id is entirely up to the user and has no effect on the behaviour
+of udpprobe.
+.It Fl w Ar wait-timeout
+specifies how long to wait, in seconds, for responses.
+By default, a value of 2 seconds is used.
+.El
 .\""""""""""""
 .Sh DATA COLLECTION FEATURES
 .Nm

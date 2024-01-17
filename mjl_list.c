@@ -1,7 +1,7 @@
 /*
  * linked list routines
  *
- * $Id: mjl_list.c,v 1.80.4.1 2023/08/18 21:26:35 mjl Exp $
+ * $Id: mjl_list.c,v 1.81 2023/08/18 05:41:23 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz

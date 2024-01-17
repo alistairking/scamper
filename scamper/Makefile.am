@@ -1,4 +1,4 @@
-# $Id: Makefile.am,v 1.56.4.8 2023/10/05 06:59:18 mjl Exp $
+# $Id: Makefile.am,v 1.71 2024/01/07 02:55:48 mjl Exp $
 
 AUTOMAKE_OPTIONS = subdir-objects
 
@@ -8,7 +8,10 @@ bin_PROGRAMS = scamper
 
 lib_LTLIBRARIES = libscamperfile.la
 
-libscamperfile_la_LDFLAGS = -version-info 7:0:1 -no-undefined
+libscamperfile_la_CFLAGS = -DBUILDING_LIBSCAMPERFILE
+
+libscamperfile_la_LDFLAGS = -version-info 8:0:0 \
+	-export-symbols-regex '^scamper_'
 
 libscamperfile_la_LIBADD = @ZLIB_LIBS@ @LIBBZ2_LIBS@ @LIBLZMA_LIBS@ @WINSOCK_LIBS@
 
@@ -61,7 +64,13 @@ libscamperfile_la_SOURCES = \
 	host/scamper_host.c \
 	host/scamper_host_warts.c \
 	host/scamper_host_json.c \
-	host/scamper_host_lib.c
+	host/scamper_host_lib.c \
+	http/scamper_http.c \
+	http/scamper_http_warts.c \
+	http/scamper_http_lib.c \
+	udpprobe/scamper_udpprobe.c \
+	udpprobe/scamper_udpprobe_warts.c \
+	udpprobe/scamper_udpprobe_lib.c
 
 scamper_SOURCES = \
 	../mjl_list.c \
@@ -112,6 +121,10 @@ scamper_SOURCES = \
 if ENABLE_PRIVSEP
 scamper_SOURCES += \
 	scamper_privsep.c
+endif
+if HAVE_OPENSSL
+scamper_SOURCES += \
+	../utils_tls.c
 endif
 if ENABLE_SCAMPER_TRACE
 scamper_SOURCES += \
@@ -186,6 +199,20 @@ scamper_SOURCES += \
 	host/scamper_host_cmd.c \
 	host/scamper_host_do.c
 endif
+if ENABLE_SCAMPER_HTTP
+scamper_SOURCES += \
+	http/scamper_http.c \
+	http/scamper_http_warts.c \
+	http/scamper_http_cmd.c \
+	http/scamper_http_do.c
+endif
+if ENABLE_SCAMPER_UDPPROBE
+scamper_SOURCES += \
+	udpprobe/scamper_udpprobe.c \
+	udpprobe/scamper_udpprobe_warts.c \
+	udpprobe/scamper_udpprobe_cmd.c \
+	udpprobe/scamper_udpprobe_do.c
+endif
 
 scamper_CFLAGS = $(AM_CFLAGS) -DBUILDING_SCAMPER
 
@@ -208,7 +235,9 @@ include_HEADERS = \
 	neighbourdisc/scamper_neighbourdisc.h \
 	tbit/scamper_tbit.h \
 	sniff/scamper_sniff.h \
-	host/scamper_host.h
+	host/scamper_host.h \
+	http/scamper_http.h \
+	udpprobe/scamper_udpprobe.h
 
 man_MANS = \
 	scamper.1 \
@@ -217,4 +246,4 @@ man_MANS = \
 
 CLEANFILES = *~ *.core \
 	trace/*~ ping/*~ tracelb/*~ dealias/*~ sting/*~ \
-	neighbourdisc/*~ tbit/*~ sniff/*~ host/*~
+	neighbourdisc/*~ tbit/*~ sniff/*~ host/*~ http/*~ udpprobe/*~

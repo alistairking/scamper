@@ -1,7 +1,7 @@
 /*
  * scamper_host_cmd
  *
- * $Id: scamper_host_cmd.c,v 1.1 2023/06/04 04:41:53 mjl Exp $
+ * $Id: scamper_host_cmd.c,v 1.6 2023/12/30 19:11:52 mjl Exp $
  *
  * Copyright (C) 2018-2023 Matthew Luckie
  *
@@ -47,11 +47,11 @@ static const scamper_option_in_t opts[] = {
   {'s', NULL, HOST_OPT_SERVER,    SCAMPER_OPTION_TYPE_STR},
   {'t', NULL, HOST_OPT_TYPE,      SCAMPER_OPTION_TYPE_STR},
   {'U', NULL, HOST_OPT_USERID,    SCAMPER_OPTION_TYPE_NUM},
-  {'W', NULL, HOST_OPT_WAIT,      SCAMPER_OPTION_TYPE_NUM},
+  {'W', NULL, HOST_OPT_WAIT,      SCAMPER_OPTION_TYPE_STR},
 };
 static const int opts_cnt = SCAMPER_OPTION_COUNT(opts);
 
-#ifndef FUZZ_HOST
+#ifdef BUILDING_SCAMPER
 extern scamper_addr_t *default_ns;
 void etc_resolv(void);
 #endif
@@ -65,6 +65,7 @@ const char *scamper_do_host_usage(void)
 static int host_arg_param_validate(int optid, char *param, long long *out)
 {
   scamper_addr_t *addr;
+  struct timeval tv;
   long tmp = 0;
 
   switch(optid)
@@ -78,7 +79,7 @@ static int host_arg_param_validate(int optid, char *param, long long *out)
       break;
 
     case HOST_OPT_SERVER:
-      if((addr = scamper_addr_resolve(AF_INET, param)) == NULL)
+      if((addr = scamper_addr_fromstr_ipv4(param)) == NULL)
 	return -1;
       scamper_addr_free(addr);
       break;
@@ -100,9 +101,11 @@ static int host_arg_param_validate(int optid, char *param, long long *out)
       break;
 
     case HOST_OPT_WAIT:
-      if(string_tolong(param, &tmp) != 0 || tmp < 1 || tmp > 5)
+      if(timeval_fromstr(&tv, param, 1000000) != 0 ||
+	 (tv.tv_usec % 1000) != 0 ||
+	 timeval_cmp_lt(&tv, 1, 0) || timeval_cmp_gt(&tv, 5, 0))
 	return -1;
-      tmp *= 1000;
+      tmp = (tv.tv_sec * 1000000) + tv.tv_usec;
       break;
     }
 
@@ -127,11 +130,11 @@ void *scamper_do_host_alloc(char *str)
   char *name = NULL;
   uint8_t retries = 0;
   uint32_t userid = 0;
-  uint16_t wait = 5000;
   uint16_t flags = 0;
   uint16_t qclass = 1;
   uint16_t qtype = 0;
   long long tmp = 0;
+  struct timeval wait_timeout;
 
   /* try and parse the string passed in */
   if(scamper_options_parse(str, opts, opts_cnt, &opts_out, &name) != 0)
@@ -142,6 +145,9 @@ void *scamper_do_host_alloc(char *str)
 
   if(name == NULL)
     goto err;
+
+  wait_timeout.tv_sec = 5;
+  wait_timeout.tv_usec = 0;
 
   for(opt = opts_out; opt != NULL; opt = opt->next)
     {
@@ -165,7 +171,7 @@ void *scamper_do_host_alloc(char *str)
 	case HOST_OPT_SERVER:
 	  if(server != NULL)
 	    goto err;
-	  if((server = scamper_addr_resolve(AF_INET, opt->str)) == NULL)
+	  if((server = scamper_addr_fromstr_ipv4(opt->str)) == NULL)
 	    goto err;
 	  break;
 
@@ -178,7 +184,8 @@ void *scamper_do_host_alloc(char *str)
 	  break;
 
 	case HOST_OPT_WAIT:
-	  wait = (uint16_t)tmp;
+	  wait_timeout.tv_sec  = tmp / 1000000;
+	  wait_timeout.tv_usec = tmp % 1000000;
 	  break;
 
 	default:
@@ -194,7 +201,7 @@ void *scamper_do_host_alloc(char *str)
        * if the user did not specify query type, auto detect name vs
        * IP lookup.
        */
-      if((name_addr = scamper_addr_resolve(AF_UNSPEC, name)) != NULL)
+      if((name_addr = scamper_addr_fromstr_unspec(name)) != NULL)
 	qtype = SCAMPER_HOST_TYPE_PTR;
       else
 	qtype = SCAMPER_HOST_TYPE_A;
@@ -207,16 +214,23 @@ void *scamper_do_host_alloc(char *str)
        * for A, AAAA, MX, NS, SOA, the name to look up MUST NOT be an
        * IP address
        */
-      if((name_addr = scamper_addr_resolve(AF_UNSPEC, name)) != NULL)
+      if((name_addr = scamper_addr_fromstr_unspec(name)) != NULL)
 	goto err;
     }
   else if(qtype == SCAMPER_HOST_TYPE_PTR)
     {
       /* for a PTR the name to look up MUST be an IP address */
-      if((name_addr = scamper_addr_resolve(AF_UNSPEC, name)) == NULL)
+      if((name_addr = scamper_addr_fromstr_unspec(name)) == NULL)
 	goto err;
     }
   else goto err;
+
+  /* don't need the name_addr anymore, if we have one */
+  if(name_addr != NULL)
+    {
+      scamper_addr_free(name_addr);
+      name_addr = NULL;
+    }
 
   if((host = scamper_host_alloc()) == NULL ||
      (host->qname = strdup(name)) == NULL)
@@ -224,17 +238,18 @@ void *scamper_do_host_alloc(char *str)
 
   host->userid  = userid;
   host->flags  |= flags;
-  host->wait    = wait;
   host->retries = retries;
   host->qtype   = qtype;
   host->qclass  = qclass;
+
+  timeval_cpy(&host->wait_timeout, &wait_timeout);
 
   if(server != NULL)
     {
       host->dst = server;
       server = NULL;
     }
-#ifndef FUZZ_HOST
+#ifdef BUILDING_SCAMPER
   else
     {
       if(default_ns == NULL)

@@ -1,7 +1,7 @@
 /*
  * scamper_dl: manage BPF/PF_PACKET datalink instances for scamper
  *
- * $Id: scamper_dl.c,v 1.192.4.5 2023/10/09 06:49:21 mjl Exp $
+ * $Id: scamper_dl.c,v 1.200 2023/11/14 07:01:45 mjl Exp $
  *
  *          Matthew Luckie
  *          Ben Stasiewicz added fragmentation support.
@@ -83,10 +83,12 @@ struct scamper_dl
 
 };
 
+#ifndef TEST_DL_PARSE_IP
 static uint8_t          *readbuf = NULL;
 static size_t            readbuf_len = 0;
+#endif
 
-#if defined(HAVE_BPF)
+#if defined(HAVE_BPF) && !defined(TEST_DL_PARSE_IP)
 static const scamper_osinfo_t *osinfo = NULL;
 #endif
 
@@ -96,7 +98,11 @@ static const scamper_osinfo_t *osinfo = NULL;
  * pkt points to the beginning of an IP header.  given the length of the
  * packet, parse the contents into a datalink record structure.
  */
+#ifdef TEST_DL_PARSE_IP
+int dl_parse_ip(scamper_dl_rec_t *dl, uint8_t *pktbuf, size_t pktlen)
+#else
 static int dl_parse_ip(scamper_dl_rec_t *dl, uint8_t *pktbuf, size_t pktlen)
+#endif
 {
   struct ip        *ip4;
   struct ip6_hdr   *ip6;
@@ -531,6 +537,8 @@ static int dl_parse_ip(scamper_dl_rec_t *dl, uint8_t *pktbuf, size_t pktlen)
 
   return 1;
 }
+
+#ifndef TEST_DL_PARSE_IP
 
 /*
  * dlt_raw_cb
@@ -1082,10 +1090,11 @@ static int dl_linux_node_init(const scamper_fd_t *fdn, scamper_dl_t *node)
 
 #if defined(ARPHRD_SIT)
     case ARPHRD_SIT:
+#endif
+    case ARPHRD_PPP:
       node->dlt_cb = dlt_raw_cb;
       node->tx_type = SCAMPER_DL_TX_RAW;
       break;
-#endif
 
 #if defined(ARPHRD_IEEE1394)
     case ARPHRD_IEEE1394:
@@ -1180,6 +1189,7 @@ static int dl_linux_tx(const scamper_dl_t *node,
   struct sockaddr *sa = (struct sockaddr *)&sll;
   ssize_t wb;
   int fd, ifindex;
+  uint8_t ipv;
 
   if(scamper_fd_ifindex(node->fdn, &ifindex) != 0)
     {
@@ -1190,10 +1200,26 @@ static int dl_linux_tx(const scamper_dl_t *node,
   sll.sll_family = AF_PACKET;
   sll.sll_ifindex = ifindex;
 
-  if(node->type == ARPHRD_SIT)
-    sll.sll_protocol = htons(ETH_P_IPV6);
-  else
-    sll.sll_protocol = htons(ETH_P_ALL);
+  switch(node->tx_type)
+    {
+    case SCAMPER_DL_TX_ETHERNET:
+    case SCAMPER_DL_TX_ETHLOOP:
+      sll.sll_protocol = htons(ETH_P_ALL);
+      break;
+
+    case SCAMPER_DL_TX_RAW:
+      ipv = pkt[0] >> 4;
+      if(ipv == 4)
+	sll.sll_protocol = htons(ETH_P_IP);
+      else if(ipv == 6)
+	sll.sll_protocol = htons(ETH_P_IPV6);
+      else
+	return 0;
+      break;
+
+    default:
+      return 0;
+    }
 
   fd = scamper_fd_fd_get(node->fdn);
 
@@ -2151,3 +2177,5 @@ int scamper_dl_init()
 
   return 0;
 }
+
+#endif /* ifndef TEST_DL_PARSE_IP */

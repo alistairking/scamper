@@ -4,7 +4,7 @@
  * Copyright (C) 2023 Matthew Luckie
  * Author: Matthew Luckie
  *
- * $Id: scamper_ping_lib.c,v 1.1 2023/05/31 23:22:18 mjl Exp $
+ * $Id: scamper_ping_lib.c,v 1.7 2023/11/27 07:56:14 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -145,23 +145,14 @@ uint8_t scamper_ping_probe_tos_get(const scamper_ping_t *ping)
   return ping->probe_tos;
 }
 
-uint8_t scamper_ping_probe_timeout_get(const scamper_ping_t *ping)
+const struct timeval *scamper_ping_wait_probe_get(const scamper_ping_t *ping)
 {
-  return ping->probe_timeout;
+  return &ping->wait_probe;
 }
 
-uint32_t scamper_ping_probe_timeout_us_get(const scamper_ping_t *ping)
+const struct timeval *scamper_ping_wait_timeout_get(const scamper_ping_t *ping)
 {
-  return ping->probe_timeout_us;
-}
-
-uint8_t scamper_ping_probe_wait_get(const scamper_ping_t *ping)
-{
-  return ping->probe_wait;
-}
-uint32_t scamper_ping_probe_wait_us_get(const scamper_ping_t *ping)
-{
-  return ping->probe_wait_us;
+  return &ping->wait_timeout;
 }
 
 uint16_t scamper_ping_probe_sport_get(const scamper_ping_t *ping)
@@ -189,7 +180,7 @@ uint32_t scamper_ping_probe_tcpack_get(const scamper_ping_t *ping)
   return ping->probe_tcpack;
 }
 
-const scamper_ping_v4ts_t *scamper_ping_probe_tsps_get(const scamper_ping_t *ping)
+scamper_ping_v4ts_t *scamper_ping_probe_tsps_get(const scamper_ping_t *ping)
 {
   return ping->probe_tsps;
 }
@@ -214,7 +205,7 @@ uint16_t scamper_ping_sent_get(const scamper_ping_t *ping)
   return ping->ping_sent;
 }
 
-const scamper_ping_reply_t *scamper_ping_reply_get(const scamper_ping_t *ping, uint16_t i)
+scamper_ping_reply_t *scamper_ping_reply_get(const scamper_ping_t *ping, uint16_t i)
 {
   if(i >= ping->ping_sent)
     return NULL;
@@ -343,22 +334,22 @@ const struct timeval *scamper_ping_reply_rtt_get(const scamper_ping_reply_t *rep
   return &reply->rtt;
 }
 
-const scamper_ping_reply_t *scamper_ping_reply_next_get(const scamper_ping_reply_t *reply)
+scamper_ping_reply_t *scamper_ping_reply_next_get(const scamper_ping_reply_t *reply)
 {
   return reply->next;
 }
 
-const scamper_ping_reply_v4rr_t *scamper_ping_reply_v4rr_get(const scamper_ping_reply_t *reply)
+scamper_ping_reply_v4rr_t *scamper_ping_reply_v4rr_get(const scamper_ping_reply_t *reply)
 {
   return reply->v4rr;
 }
 
-const scamper_ping_reply_v4ts_t *scamper_ping_reply_v4ts_get(const scamper_ping_reply_t *reply)
+scamper_ping_reply_v4ts_t *scamper_ping_reply_v4ts_get(const scamper_ping_reply_t *reply)
 {
   return reply->v4ts;
 }
 
-const scamper_ping_reply_tsreply_t *scamper_ping_reply_tsreply_get(const scamper_ping_reply_t *reply)
+scamper_ping_reply_tsreply_t *scamper_ping_reply_tsreply_get(const scamper_ping_reply_t *reply)
 {
   return reply->tsreply;
 }
@@ -450,20 +441,36 @@ uint32_t scamper_ping_stats_nerrs_get(const scamper_ping_stats_t *stats)
 
 const struct timeval *scamper_ping_stats_min_rtt_get(const scamper_ping_stats_t *stats)
 {
-  return &stats->min_rtt;
+  if(stats->nreplies > 0)
+    return &stats->min_rtt;
+  return NULL;
 }
 
 const struct timeval *scamper_ping_stats_max_rtt_get(const scamper_ping_stats_t *stats)
 {
-  return &stats->max_rtt;
+  if(stats->nreplies > 0)
+    return &stats->max_rtt;
+  return NULL;
 }
 
 const struct timeval *scamper_ping_stats_avg_rtt_get(const scamper_ping_stats_t *stats)
 {
-  return &stats->avg_rtt;
+  if(stats->nreplies > 0)
+    return &stats->avg_rtt;
+  return NULL;
 }
 
 const struct timeval *scamper_ping_stats_stddev_rtt_get(const scamper_ping_stats_t *stats)
 {
-  return &stats->stddev_rtt;
+  if(stats->nreplies > 0)
+    return &stats->stddev_rtt;
+  return NULL;
 }
+
+#ifdef BUILDING_LIBSCAMPERFILE
+scamper_ping_reply_t *scamper_ping_reply_use(scamper_ping_reply_t *reply)
+{
+  reply->refcnt++;
+  return reply;
+}
+#endif

@@ -1,7 +1,7 @@
 /*
  * sc_ipiddump
  *
- * $Id: sc_ipiddump.c,v 1.22.4.1 2023/08/18 21:25:04 mjl Exp $
+ * $Id: sc_ipiddump.c,v 1.25 2023/09/24 22:35:02 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -207,7 +207,7 @@ static int check_options(int argc, char *argv[])
 	      goto done;
 	    }
 	  string_nullterm_char(str, ',', &next);
-	  if((addr = scamper_addr_resolve(AF_UNSPEC, str)) == NULL)
+	  if((addr = scamper_addr_fromstr_unspec(str)) == NULL)
 	    {
 	      usage(OPT_IP);
 	      goto done;
@@ -496,7 +496,7 @@ int main(int argc, char *argv[])
 
   atexit(cleanup);
 
-#ifdef _WIN32 /* windows needs WSAStartup */
+#ifdef HAVE_WSASTARTUP
   WSADATA wsaData;
   WSAStartup(MAKEWORD(2,2), &wsaData);
 #endif

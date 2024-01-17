@@ -1,7 +1,7 @@
 /*
  * sc_radargun : scamper driver to do radargun-style probing.
  *
- * $Id: sc_radargun.c,v 1.18.4.1 2023/08/20 08:07:09 mjl Exp $
+ * $Id: sc_radargun.c,v 1.21 2024/01/16 06:55:18 mjl Exp $
  *
  * Copyright (C) 2014      The Regents of the University of California
  * Copyright (C) 2016      The University of Waikato
@@ -1430,7 +1430,7 @@ static int addrfile_resolve(const char *str, splaytree_t *tree)
 {
   scamper_addr_t *addr = NULL;
 
-  if((addr = scamper_addr_resolve(AF_INET, str)) == NULL)
+  if((addr = scamper_addr_fromstr_ipv4(str)) == NULL)
     goto err;
 
   if((flags & FLAG_NORESERVED) != 0 && scamper_addr_isreserved(addr) != 0)
@@ -1682,7 +1682,7 @@ static int points_add(scamper_dealias_t *dealias, sc_ipid_t *points,
   uint32_t f=0, i=0, def_id;
   uint16_t k, rg_attempts;
 
-  rg_attempts = scamper_dealias_radargun_attempts_get(rg);
+  rg_attempts = scamper_dealias_radargun_rounds_get(rg);
   def_id = scamper_dealias_probedef_id_get(def);
 
   for(k=0; k<rg_attempts; k++)
@@ -1832,7 +1832,7 @@ static int process_dealias_1(scamper_dealias_t *dealias)
   if((rg = scamper_dealias_radargun_get(dealias)) == NULL)
     return 0;
 
-  rg_attempts = scamper_dealias_radargun_attempts_get(rg);
+  rg_attempts = scamper_dealias_radargun_rounds_get(rg);
   if((points = malloc(sizeof(sc_ipid_t) * rg_attempts * 2)) == NULL)
     goto err;
 

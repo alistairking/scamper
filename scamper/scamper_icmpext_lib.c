@@ -1,7 +1,7 @@
 /*
  * scamper_icmpext_lib.c
  *
- * $Id: scamper_icmpext_lib.c,v 1.1 2023/05/31 23:22:18 mjl Exp $
+ * $Id: scamper_icmpext_lib.c,v 1.4 2023/07/29 21:22:22 mjl Exp $
  *
  * Copyright (C) 2023 Matthew Luckie
  * Author: Matthew Luckie
@@ -28,6 +28,17 @@
 
 #include "scamper_icmpext.h"
 #include "scamper_icmpext_int.h"
+
+int scamper_icmpext_cmp(const scamper_icmpext_t *a, const scamper_icmpext_t *b)
+{
+  if(a->ie_cn < b->ie_cn) return -1;
+  if(a->ie_cn > b->ie_cn) return  1;
+  if(a->ie_ct < b->ie_ct) return -1;
+  if(a->ie_ct > b->ie_ct) return  1;
+  if(a->ie_dl < b->ie_dl) return -1;
+  if(a->ie_dl > b->ie_dl) return -1;
+  return memcmp(a->ie_data, b->ie_data, a->ie_dl);
+}
 
 uint8_t scamper_icmpext_cn_get(const scamper_icmpext_t *ie)
 {
@@ -82,4 +93,10 @@ uint8_t scamper_icmpext_mpls_exp_get(const scamper_icmpext_t *ie, uint16_t i)
 uint8_t scamper_icmpext_mpls_s_get(const scamper_icmpext_t *ie, uint16_t i)
 {
   return SCAMPER_ICMPEXT_MPLS_S(ie, i);
+}
+
+scamper_icmpext_t *scamper_icmpext_use(scamper_icmpext_t *ie)
+{
+  ie->refcnt++;
+  return ie;
 }

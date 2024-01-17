@@ -7,7 +7,7 @@
  *
  * Author: Matthew Luckie
  *
- * $Id: scamper_sting.h,v 1.7 2023/05/15 20:55:06 mjl Exp $
+ * $Id: scamper_sting.h,v 1.13 2023/12/24 00:03:21 mjl Exp $
  *
  * This file implements algorithms described in the sting-0.7 source code,
  * as well as the paper:
@@ -37,16 +37,7 @@
 typedef struct scamper_sting scamper_sting_t;
 typedef struct scamper_sting_pkt scamper_sting_pkt_t;
 
-scamper_sting_t *scamper_sting_alloc(void);
-void scamper_sting_free(scamper_sting_t *);
-int scamper_sting_data(scamper_sting_t *,const uint8_t *,uint16_t);
-int scamper_sting_pkts_alloc(scamper_sting_t *, uint32_t);
-int scamper_sting_pkt_record(scamper_sting_t *, scamper_sting_pkt_t *);
-
-scamper_sting_pkt_t *scamper_sting_pkt_alloc(uint8_t flags, uint8_t *data,
-					     uint16_t len, struct timeval *tv);
-void scamper_sting_pkt_free(scamper_sting_pkt_t *pkt);
-
+void scamper_sting_free(scamper_sting_t *sting);
 scamper_list_t *scamper_sting_list_get(const scamper_sting_t *sting);
 scamper_cycle_t *scamper_sting_cycle_get(const scamper_sting_t *sting);
 uint32_t scamper_sting_userid_get(const scamper_sting_t *sting);
@@ -55,8 +46,8 @@ scamper_addr_t *scamper_sting_dst_get(const scamper_sting_t *sting);
 uint16_t scamper_sting_sport_get(const scamper_sting_t *sting);
 uint16_t scamper_sting_dport_get(const scamper_sting_t *sting);
 uint16_t scamper_sting_count_get(const scamper_sting_t *sting);
-uint16_t scamper_sting_mean_get(const scamper_sting_t *sting);
-uint16_t scamper_sting_inter_get(const scamper_sting_t *sting);
+const struct timeval *scamper_sting_mean_get(const scamper_sting_t *sting);
+const struct timeval *scamper_sting_inter_get(const scamper_sting_t *sting);
 uint8_t scamper_sting_dist_get(const scamper_sting_t *sting);
 uint8_t scamper_sting_synretx_get(const scamper_sting_t *sting);
 uint8_t scamper_sting_dataretx_get(const scamper_sting_t *sting);
@@ -67,10 +58,13 @@ const struct timeval *scamper_sting_start_get(const scamper_sting_t *sting);
 const struct timeval *scamper_sting_hsrtt_get(const scamper_sting_t *sting);
 uint16_t scamper_sting_dataackc_get(const scamper_sting_t *sting);
 uint16_t scamper_sting_holec_get(const scamper_sting_t *sting);
-const scamper_sting_pkt_t *scamper_sting_pkt_get(const scamper_sting_t *sting, uint32_t i);
+scamper_sting_pkt_t *scamper_sting_pkt_get(const scamper_sting_t *sting,
+					   uint32_t i);
 uint32_t scamper_sting_pktc_get(const scamper_sting_t *sting);
 uint8_t scamper_sting_result_get(const scamper_sting_t *sting);
 
+scamper_sting_pkt_t *scamper_sting_pkt_use(scamper_sting_pkt_t *pkt);
+void scamper_sting_pkt_free(scamper_sting_pkt_t *pkt);
 const struct timeval *scamper_sting_pkt_tv_get(const scamper_sting_pkt_t *pkt);
 uint8_t scamper_sting_pkt_flags_get(const scamper_sting_pkt_t *pkt);
 uint16_t scamper_sting_pkt_len_get(const scamper_sting_pkt_t *pkt);

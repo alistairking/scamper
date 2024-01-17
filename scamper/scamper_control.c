@@ -1,7 +1,7 @@
 /*
  * scamper_control.c
  *
- * $Id: scamper_control.c,v 1.251.4.7 2023/08/26 21:26:44 mjl Exp $
+ * $Id: scamper_control.c,v 1.265 2024/01/03 00:39:00 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -47,6 +47,10 @@
 #include "scamper_privsep.h"
 #include "mjl_list.h"
 #include "utils.h"
+
+#ifdef HAVE_OPENSSL
+#include "utils_tls.h"
+#endif
 
 /* hack to deal with lss clear */
 #ifndef DISABLE_SCAMPER_TRACE
@@ -935,7 +939,8 @@ static int command_attach(client_t *client, char *buf)
 
   if(cycleid_str != NULL)
     {
-      if(string_tollong(cycleid_str, &ll) != 0 || ll < 0 || ll > UINT32_MAX)
+      if(string_tollong(cycleid_str, &ll, NULL, 0) != 0 ||
+	 ll < 0 || ll > UINT32_MAX)
 	{
 	  client_send(client, "ERR invalid cycle_id");
 	  return 0;
@@ -960,7 +965,8 @@ static int command_attach(client_t *client, char *buf)
 
   if(listid_str != NULL)
     {
-      if(string_tollong(listid_str, &ll) != 0 || ll < 0 || ll > UINT32_MAX)
+      if(string_tollong(listid_str, &ll, NULL, 0) != 0 ||
+	 ll < 0 || ll > UINT32_MAX)
 	{
 	  client_send(client, "ERR invalid list_id");
 	  return 0;
@@ -978,7 +984,8 @@ static int command_attach(client_t *client, char *buf)
 
   if(priority_str != NULL)
     {
-      if(string_tollong(priority_str, &ll) != 0 || ll < 1 || ll > 100000)
+      if(string_tollong(priority_str, &ll, NULL, 0) != 0 ||
+	 ll < 1 || ll > 100000)
 	{
 	  client_send(client, "ERR invalid priority");
 	  return 0;
@@ -2396,7 +2403,7 @@ static int client_attached_cb(client_t *client, uint8_t *buf, size_t len)
       str = string_nextword((char *)buf);
       if(string_isnumber(str) == 0)
 	return client_send(client, "ERR usage: halt [id]");
-      if(string_tollong(str, &ll) != 0 || ll <= 0 || ll > 0xffffffffLL)
+      if(string_tollong(str, &ll, NULL, 0) != 0 || ll <= 0 || ll > 0xffffffffLL)
 	return client_send(client, "ERR halt number invalid");
       id = (uint32_t)ll;
       if(scamper_source_halttask(client->source, id) != 0)
@@ -2720,6 +2727,14 @@ static void remote_free(control_remote_t *rm, int mode)
 #endif
 
 #ifdef HAVE_OPENSSL
+  /*
+   * SSL_free() also calls the free()ing procedures for indirectly
+   * affected items, if applicable: the buffering BIO, the read and
+   * write BIOs, cipher lists specially created for this ssl, the
+   * SSL_SESSION. Do not explicitly free these indirectly freed up
+   * items before or after calling SSL_free(), as trying to free
+   * things twice may lead to program failure.
+   */
   if(rm->ssl != NULL)
     {
       SSL_free(rm->ssl);
@@ -2888,6 +2903,10 @@ static int remote_sock_ssl_init(control_remote_t *rm)
 {
   int rc;
 
+  /*
+   * the order is important because once the BIOs are associated with
+   * the ssl structure, SSL_free will clean them up.
+   */
   if((rm->ssl_wbio = BIO_new(BIO_s_mem())) == NULL ||
      (rm->ssl_rbio = BIO_new(BIO_s_mem())) == NULL ||
      (rm->ssl = SSL_new(remote_tls_ctx)) == NULL)
@@ -2906,83 +2925,7 @@ static int remote_sock_ssl_init(control_remote_t *rm)
 
   return 0;
 }
-
-/*
- * remote_sock_is_valid_cert:
- *
- * this code ensures that the peer presented a valid certificate --
- * first that the peer verified and passed a signed certificate, and
- * then that the name provided in the cert corresponds to the name of
- * our peer.
- *
- * it is based on post_connection_check in "Network Security with
- * OpenSSL" by John Viega, Matt Messier, and Pravir Chandra, and
- * notes from https://wiki.openssl.org/index.php/Hostname_validation
- */
-static int remote_sock_is_valid_cert(control_remote_t *rm)
-{
-  X509 *cert = NULL;
-  X509_NAME *name;
-  STACK_OF(GENERAL_NAME) *names = NULL;
-  const GENERAL_NAME *gname;
-  const char *dname;
-  char buf[256];
-  int rc = 0;
-  int i, count, x;
-
-  if(SSL_get_verify_result(rm->ssl) != X509_V_OK)
-    {
-      scamper_debug(__func__, "invalid certificate");
-      return 0;
-    }
-
-  if((cert = SSL_get_peer_certificate(rm->ssl)) == NULL)
-    {
-      scamper_debug(__func__, "no peer certificate");
-      return 0;
-    }
-
-  if((names = X509_get_ext_d2i(cert,NID_subject_alt_name,NULL,NULL)) != NULL)
-    {
-      count = sk_GENERAL_NAME_num(names);
-      for(i=0; i<count; i++)
-	{
-	  gname = sk_GENERAL_NAME_value(names, i);
-	  if(gname == NULL || gname->type != GEN_DNS ||
-	     gname->d.dNSName == NULL ||
-	     (x = ASN1_STRING_length(gname->d.dNSName)) < 1)
-	    continue;
-#ifdef HAVE_ASN1_STRING_GET0_DATA
-	  dname = (const char *)ASN1_STRING_get0_data(gname->d.dNSName);
-#else
-	  dname = (const char *)ASN1_STRING_data(gname->d.dNSName);
-#endif
-	  if(dname == NULL || (size_t)x != strlen(dname))
-	    continue;
-	  if(strcasecmp(dname, rm->server_name) == 0)
-	    {
-	      rc = 1;
-	      goto done;
-	    }
-	}
-    }
-
-  if((name = X509_get_subject_name(cert)) != NULL &&
-     X509_NAME_get_text_by_NID(name, NID_commonName, buf, sizeof(buf)) > 0)
-    {
-      buf[sizeof(buf)-1] = 0;
-      if(strcasecmp(buf, rm->server_name) == 0)
-	{
-	  rc = 1;
-	}
-    }
-
- done:
-  if(names != NULL) sk_GENERAL_NAME_pop_free(names, GENERAL_NAME_free);
-  if(cert != NULL) X509_free(cert);
-  return rc;
-}
-#endif
+#endif /* HAVE_OPENSSL */
 
 /*
  * remote_sock_write
@@ -3696,7 +3639,7 @@ static int remote_read_sock(control_remote_t *rm)
 	{
 	  if(SSL_is_init_finished(rm->ssl) != 0)
 	    {
-	      if(remote_sock_is_valid_cert(rm) == 0)
+	      if(tls_is_valid_cert(rm->ssl, rm->server_name) == 0)
 		return -1;
 	      rm->ssl_mode = SSL_MODE_ESTABLISHED;
 	      return 1;
@@ -3705,7 +3648,7 @@ static int remote_read_sock(control_remote_t *rm)
 	  ERR_clear_error();
 	  if((ret = SSL_do_handshake(rm->ssl)) > 0)
 	    {
-	      if(remote_sock_is_valid_cert(rm) == 0)
+	      if(tls_is_valid_cert(rm->ssl, rm->server_name) == 0)
 		return -1;
 	      rm->ssl_mode = SSL_MODE_ESTABLISHED;
 	      return 1;

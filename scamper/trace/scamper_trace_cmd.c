@@ -1,7 +1,7 @@
 /*
  * scamper_trace_cmd.c
  *
- * $Id: scamper_trace_cmd.c,v 1.3.4.3 2023/08/26 07:36:27 mjl Exp $
+ * $Id: scamper_trace_cmd.c,v 1.11 2024/01/16 06:26:04 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -91,9 +91,9 @@
 #define SCAMPER_DO_TRACE_TOS_DEF 0
 #define SCAMPER_DO_TRACE_TOS_MAX 255
 
-#define SCAMPER_DO_TRACE_WAIT_MIN   1
-#define SCAMPER_DO_TRACE_WAIT_DEF   5
-#define SCAMPER_DO_TRACE_WAIT_MAX   10
+#define SCAMPER_DO_TRACE_WAITTIMEOUT_MIN   1
+#define SCAMPER_DO_TRACE_WAITTIMEOUT_DEF   5
+#define SCAMPER_DO_TRACE_WAITTIMEOUT_MAX   10
 
 #define SCAMPER_DO_TRACE_WAITPROBE_MIN 0
 #define SCAMPER_DO_TRACE_WAITPROBE_DEF 0
@@ -114,7 +114,7 @@
 #define TRACE_OPT_TOS         14
 #define TRACE_OPT_TTLDST      15
 #define TRACE_OPT_USERID      16
-#define TRACE_OPT_WAIT        17
+#define TRACE_OPT_WAITTIMEOUT 17
 #define TRACE_OPT_SRCADDR     18
 #define TRACE_OPT_CONFIDENCE  19
 #define TRACE_OPT_WAITPROBE   20
@@ -147,8 +147,8 @@ static const scamper_option_in_t opts[] = {
   {'t', NULL, TRACE_OPT_TOS,         SCAMPER_OPTION_TYPE_NUM},
   {'T', NULL, TRACE_OPT_TTLDST,      SCAMPER_OPTION_TYPE_NULL},
   {'U', NULL, TRACE_OPT_USERID,      SCAMPER_OPTION_TYPE_NUM},
-  {'w', NULL, TRACE_OPT_WAIT,        SCAMPER_OPTION_TYPE_NUM},
-  {'W', NULL, TRACE_OPT_WAITPROBE,   SCAMPER_OPTION_TYPE_NUM},
+  {'w', NULL, TRACE_OPT_WAITTIMEOUT, SCAMPER_OPTION_TYPE_STR},
+  {'W', NULL, TRACE_OPT_WAITPROBE,   SCAMPER_OPTION_TYPE_STR},
   {'z', NULL, TRACE_OPT_GSSENTRY,    SCAMPER_OPTION_TYPE_STR},
   {'Z', NULL, TRACE_OPT_LSSNAME,     SCAMPER_OPTION_TYPE_STR},
 };
@@ -168,6 +168,7 @@ const char *scamper_do_trace_usage(void)
 
 static int trace_arg_param_validate(int optid, char *param, long long *out)
 {
+  struct timeval tv;
   long tmp = 0;
   int i;
 
@@ -305,13 +306,11 @@ static int trace_arg_param_validate(int optid, char *param, long long *out)
 	}
       break;
 
-    case TRACE_OPT_WAIT:
-      if(string_tolong(param, &tmp) == -1 ||
-	 tmp < SCAMPER_DO_TRACE_WAIT_MIN ||
-	 tmp > SCAMPER_DO_TRACE_WAIT_MAX)
-	{
-	  goto err;
-	}
+    case TRACE_OPT_WAITTIMEOUT:
+      if(timeval_fromstr(&tv, param, 1000000) != 0 || tv.tv_usec != 0 ||
+	 timeval_cmp_lt(&tv, 1, 0) || timeval_cmp_gt(&tv, 10, 0))
+	goto err;
+      tmp = (tv.tv_sec * 1000000) + tv.tv_usec;
       break;
 
     case TRACE_OPT_CONFIDENCE:
@@ -320,12 +319,11 @@ static int trace_arg_param_validate(int optid, char *param, long long *out)
       break;
 
     case TRACE_OPT_WAITPROBE:
-      if(string_tolong(param, &tmp) == -1 ||
-	 tmp < SCAMPER_DO_TRACE_WAITPROBE_MIN ||
-	 tmp > SCAMPER_DO_TRACE_WAITPROBE_MAX)
-	{
-	  goto err;
-	}
+      if(timeval_fromstr(&tv, param, 10000) != 0 ||
+	 (tv.tv_usec % 10000) != 0 ||
+	 timeval_cmp_lt(&tv, 0, 10000) || timeval_cmp_gt(&tv, 2, 0))
+	goto err;
+      tmp = (tv.tv_sec * 1000000) + tv.tv_usec;
       break;
 
     case TRACE_OPT_USERID:
@@ -394,8 +392,6 @@ void *scamper_do_trace_alloc(char *str)
   uint8_t  hoplimit    = SCAMPER_DO_TRACE_HOPLIMIT_DEF;
   uint8_t  squeries    = SCAMPER_DO_TRACE_SQUERIES_DEF;
   uint8_t  tos         = SCAMPER_DO_TRACE_TOS_DEF;
-  uint8_t  wait        = SCAMPER_DO_TRACE_WAIT_DEF;
-  uint8_t  wait_probe  = SCAMPER_DO_TRACE_WAITPROBE_DEF;
   uint8_t  loops       = SCAMPER_DO_TRACE_LOOPS_DEF;
   uint8_t  confidence  = 0;
   uint8_t  dtree_flags = 0;
@@ -407,10 +403,11 @@ void *scamper_do_trace_alloc(char *str)
   uint32_t userid      = 0;
   char    *lss         = NULL;
   slist_t *gss         = NULL;
+  struct timeval wait_timeout, wait_probe;
   scamper_option_out_t *opts_out = NULL, *opt;
   scamper_trace_t *trace = NULL;
   splaytree_t *gss_tree = NULL;
-  scamper_addr_t *sa;
+  scamper_addr_t *sa = NULL;
   char *addr;
   long long i, tmp = 0;
   char *src = NULL, *rtr = NULL;
@@ -537,8 +534,9 @@ void *scamper_do_trace_alloc(char *str)
 	  flags |= SCAMPER_TRACE_FLAG_IGNORETTLDST;
 	  break;
 
-	case TRACE_OPT_WAIT:
-	  wait = (uint8_t)tmp;
+	case TRACE_OPT_WAITTIMEOUT:
+	  wait_timeout.tv_sec  = tmp / 1000000;
+	  wait_timeout.tv_usec = tmp % 1000000;
 	  break;
 
 	case TRACE_OPT_RTRADDR:
@@ -562,7 +560,8 @@ void *scamper_do_trace_alloc(char *str)
 	  break;
 
 	case TRACE_OPT_WAITPROBE:
-	  wait_probe = (uint8_t)tmp;
+	  wait_probe.tv_sec  = tmp / 1000000;
+	  wait_probe.tv_usec = tmp % 1000000;
 	  break;
 
 	case TRACE_OPT_LSSNAME:
@@ -579,6 +578,18 @@ void *scamper_do_trace_alloc(char *str)
 	}
     }
   scamper_options_free(opts_out); opts_out = NULL;
+
+  if((optids & (0x1 << TRACE_OPT_WAITPROBE)) == 0)
+    {
+      wait_probe.tv_sec = SCAMPER_DO_TRACE_WAITPROBE_DEF;
+      wait_probe.tv_usec = 0;
+    }
+
+  if((optids & (0x1 << TRACE_OPT_WAITTIMEOUT)) == 0)
+    {
+      wait_timeout.tv_sec = SCAMPER_DO_TRACE_WAITTIMEOUT_DEF;
+      wait_timeout.tv_usec = 0;
+    }
 
   /* sanity check that we don't begin beyond our probe hoplimit */
   if(firsthop > hoplimit && hoplimit != 0)
@@ -623,16 +634,17 @@ void *scamper_do_trace_alloc(char *str)
   trace->gapaction   = gapaction;
   trace->firsthop    = firsthop;
   trace->tos         = tos;
-  trace->wait        = wait;
   trace->loops       = loops;
   trace->sport       = sport;
   trace->dport       = dport;
   trace->payload     = payload; payload = NULL;
   trace->payload_len = payload_len;
   trace->confidence  = confidence;
-  trace->wait_probe  = wait_probe;
   trace->offset      = offset;
   trace->userid      = userid;
+
+  timeval_cpy(&trace->wait_timeout, &wait_timeout);
+  timeval_cpy(&trace->wait_probe, &wait_probe);
 
   /* to start with, we are this far into the path */
   trace->hop_count = firsthop - 1;
@@ -696,45 +708,51 @@ void *scamper_do_trace_alloc(char *str)
 	trace->dport = scamper_sport_default();
     }
 
-  /* add the nodes to the global stop set for this trace */
+  /* handle doubletree */
   if(gss != NULL || lss != NULL)
     {
-      if(scamper_trace_dtree_alloc(trace) != 0)
+      if((trace->dtree = scamper_trace_dtree_alloc()) == NULL)
 	goto err;
       trace->flags |= SCAMPER_TRACE_FLAG_DOUBLETREE;
       trace->dtree->firsthop = trace->firsthop;
       trace->dtree->flags = dtree_flags;
-    }
 
-  if(lss != NULL && scamper_trace_dtree_lss_set(trace, lss) != 0)
-    goto err;
-
-  if(gss != NULL)
-    {
-      if((gss_tree=splaytree_alloc((splaytree_cmp_t)scamper_addr_cmp)) == NULL)
+      /* the local stop set name, if we're using a local stop set */
+      if(lss != NULL && scamper_trace_dtree_lss_set(trace->dtree, lss) != 0)
 	goto err;
-      while((addr = slist_head_pop(gss)) != NULL)
+
+      /* add the nodes to the global stop set for this trace */
+      if(gss != NULL)
 	{
-	  if((sa = scamper_addrcache_resolve(addrcache, af, addr)) == NULL ||
-	     (splaytree_find(gss_tree, sa) == NULL &&
-	      splaytree_insert(gss_tree, sa) == NULL))
+	  gss_tree = splaytree_alloc((splaytree_cmp_t)scamper_addr_cmp);
+	  if(gss_tree == NULL)
 	    goto err;
-	}
-      slist_free(gss);
-      gss = NULL;
+	  while((addr = slist_head_pop(gss)) != NULL)
+	    {
+	      if((sa = scamper_addrcache_resolve(addrcache,af,addr)) == NULL ||
+		 splaytree_find(gss_tree, sa) != NULL ||
+		 splaytree_insert(gss_tree, sa) == NULL)
+		goto err;
+	      sa = NULL;
+	    }
+	  slist_free(gss);
+	  gss = NULL;
 
-      if((x = splaytree_count(gss_tree)) >= 65535 ||
-	 scamper_trace_dtree_gss_alloc(trace, x) != 0)
-	goto err;
-      splaytree_inorder(gss_tree,(splaytree_inorder_t)trace_gss_add,trace->dtree);
-      splaytree_free(gss_tree, (splaytree_free_t)scamper_addr_free);
-      gss_tree = NULL;
-      scamper_trace_dtree_gss_sort(trace);
+	  if((x = splaytree_count(gss_tree)) >= 65535 ||
+	     scamper_trace_dtree_gss_alloc(trace->dtree, x) != 0)
+	    goto err;
+	  splaytree_inorder(gss_tree, (splaytree_inorder_t)trace_gss_add,
+			    trace->dtree);
+	  splaytree_free(gss_tree, (splaytree_free_t)scamper_addr_free);
+	  gss_tree = NULL;
+	  scamper_trace_dtree_gss_sort(trace->dtree);
+	}
     }
 
   return trace;
 
  err:
+  if(sa != NULL) scamper_addr_free(sa);
   if(payload != NULL) free(payload);
   if(gss != NULL) slist_free(gss);
   if(gss_tree != NULL)

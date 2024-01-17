@@ -1,7 +1,7 @@
 /*
  * scamper_task.c
  *
- * $Id: scamper_task.c,v 1.76.4.4 2023/08/26 07:36:27 mjl Exp $
+ * $Id: scamper_task.c,v 1.84 2023/12/27 21:28:00 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -90,6 +90,14 @@ struct scamper_task_anc
   dlist_node_t *node;
 };
 
+/*
+ * trie_s2t_t
+ *
+ * a mapping from an address being probed to all of the signatures
+ * belonging to the task.  the list contains s2t_t entries.  the code
+ * that uses this structure assumes that tasks the s2t_t entries point
+ * to appear contiguously.
+ */
 typedef struct trie_s2t
 {
   scamper_addr_t     *addr;
@@ -97,6 +105,12 @@ typedef struct trie_s2t
   patricia_node_t    *node;
 } trie_s2t_t;
 
+/*
+ * s2t_t
+ *
+ * a mapping of a signature to a task.  the node is an element in one
+ * of the tries, sniff, or host structures.
+ */
 typedef struct s2t
 {
   scamper_task_sig_t *sig;
@@ -196,6 +210,7 @@ static trie_s2t_t *trie_s2t_alloc(scamper_addr_t *addr)
 static void tx_ip_check(scamper_dl_rec_t *dl)
 {
   scamper_addr_t addr, addr2buf, *addr2 = NULL;
+  scamper_task_t *last_task = NULL;
   patricia_t *pt;
   trie_s2t_t fm, *ts2t;
   dlist_node_t *dn;
@@ -268,6 +283,9 @@ static void tx_ip_check(scamper_dl_rec_t *dl)
 	  for(dn=dlist_head_node(ts2t->list);dn != NULL;dn=dlist_node_next(dn))
 	    {
 	      s2t = dlist_node_item(dn);
+	      if(s2t->task == last_task)
+		continue;
+	      last_task = s2t->task;
 	      if(s2t->task->funcs->handle_dl != NULL)
 		s2t->task->funcs->handle_dl(s2t->task, dl);
 	    }
@@ -688,11 +706,13 @@ int scamper_task_sig_install(scamper_task_t *task)
   s2t_t *s2t;
   slist_node_t *n;
 
+#if 0
   if(slist_count(task->siglist) < 1)
     {
       printerror(__func__, "no signatures for task");
       return -1;
     }
+#endif
 
   for(n=slist_head_node(task->siglist); n != NULL; n = slist_node_next(n))
     {
@@ -853,7 +873,7 @@ scamper_task_t *scamper_task_alloc(void *data, scamper_task_funcs_t *funcs)
   return task;
 
  err:
-  scamper_task_free(task);
+  if(task != NULL) scamper_task_free(task);
   return NULL;
 }
 
@@ -996,6 +1016,7 @@ void scamper_task_halt(scamper_task_t *task)
 
 void scamper_task_handleicmp(scamper_icmp_resp_t *resp)
 {
+  scamper_task_t *last_task = NULL;
   trie_s2t_t *ts2t, fm;
   scamper_addr_t addr;
   dlist_node_t *dn;
@@ -1037,6 +1058,9 @@ void scamper_task_handleicmp(scamper_icmp_resp_t *resp)
   for(dn=dlist_head_node(ts2t->list); dn != NULL; dn=dlist_node_next(dn))
     {
       s2t = dlist_node_item(dn);
+      if(s2t->task == last_task)
+	continue;
+      last_task = s2t->task;
       if(s2t->task->funcs->handle_icmp != NULL)
 	{
 	  if(print == 0)

@@ -1,7 +1,7 @@
 /*
  * scamper_ip4.c
  *
- * $Id: scamper_ip4.c,v 1.20.4.4 2023/08/26 21:26:45 mjl Exp $
+ * $Id: scamper_ip4.c,v 1.24 2023/08/26 21:25:08 mjl Exp $
  *
  * Copyright (C) 2009-2011 The University of Waikato
  * Copyright (C) 2023      The Regents of the University of California

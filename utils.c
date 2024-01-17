@@ -1,7 +1,7 @@
 /*
  * utils.c
  *
- * $Id: utils.c,v 1.216.4.2 2023/09/18 07:07:13 mjl Exp $
+ * $Id: utils.c,v 1.231 2023/12/30 19:11:52 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -54,8 +54,7 @@ int sockaddr_len(const struct sockaddr *sa)
 }
 #endif
 
-int sockaddr_compose(struct sockaddr *sa,
-		     const int af, const void *addr, const int port)
+int sockaddr_compose(struct sockaddr *sa, int af, const void *addr, int port)
 {
   socklen_t len;
   struct sockaddr_in  *sin4;
@@ -102,7 +101,7 @@ int sockaddr_compose_un(struct sockaddr *sa, const char *file)
   sn->sun_family = AF_UNIX;
   snprintf(sn->sun_path, sizeof(sn->sun_path), "%s", file);
 
-#if defined(HAVE_STRUCT_SOCKADDR_SA_LEN)
+#ifdef HAVE_STRUCT_SOCKADDR_SA_LEN
   sn->sun_len    = sizeof(struct sockaddr_un);
 #endif
 
@@ -113,7 +112,7 @@ int sockaddr_compose_un(struct sockaddr *sa, const char *file)
 #endif
 }
 
-int sockaddr_compose_str(struct sockaddr *sa, const char *addr, const int port)
+int sockaddr_compose_str(struct sockaddr *sa, const char *addr, int port)
 {
   struct addrinfo hints, *res, *res0;
   int rc = -1;
@@ -151,8 +150,7 @@ int sockaddr_compose_str(struct sockaddr *sa, const char *addr, const int port)
 }
 
 #if defined(AF_LINK) && !defined(_WIN32)
-static char *link_tostr(const struct sockaddr_dl *sdl,
-			char *buf, const size_t len)
+static char *link_tostr(const struct sockaddr_dl *sdl, char *buf, size_t len)
 {
   static const char hex[] = "01234567890abcdef";
   size_t off = 0;
@@ -209,7 +207,7 @@ static char *link_tostr(const struct sockaddr_dl *sdl,
 }
 #endif
 
-char *sockaddr_tostr(const struct sockaddr *sa, char *buf, const size_t len)
+char *sockaddr_tostr(const struct sockaddr *sa, char *buf, size_t len)
 {
   char addr[128];
 
@@ -400,7 +398,7 @@ void addr6_add(struct in6_addr *out, const struct in6_addr *x,
  * this function is used to provide a sorting order, not for advising the
  * numerical order of the addresses passed in.
  */
-int addr_cmp(const int af, const void *a, const void *b)
+int addr_cmp(int af, const void *a, const void *b)
 {
   if(af == AF_INET)  return addr4_cmp(a, b);
   if(af == AF_INET6) return addr6_cmp(a, b);
@@ -438,7 +436,7 @@ const char *addr_tostr(int af, const void *addr, char *buf, size_t len)
  * duplicate some memory.
  */
 #ifndef DMALLOC
-void *memdup(const void *ptr, const size_t len)
+void *memdup(const void *ptr, size_t len)
 {
   void *d;
   assert(ptr != NULL);
@@ -456,7 +454,7 @@ void *memdup(const void *ptr, const size_t len)
  * allocate some memory, zero it, and return a pointer to it.
  */
 #if !defined(DMALLOC) && !defined(HAVE_CALLOC)
-void *malloc_zero(const size_t size)
+void *malloc_zero(size_t size)
 {
   void *ptr;
   if((ptr = malloc(size)) != NULL)
@@ -468,7 +466,7 @@ void *malloc_zero(const size_t size)
 #endif
 
 #ifdef DMALLOC
-void *malloc_zero_dm(const size_t size, const char *file, const int line)
+void *malloc_zero_dm(size_t size, const char *file, int line)
 {
   void *ptr;
   if((ptr = dmalloc_malloc(file,line,size,DMALLOC_FUNC_MALLOC,0,0)) != NULL)
@@ -512,7 +510,7 @@ int realloc_wrap(void **ptr, size_t len)
 #endif
 
 #ifdef DMALLOC
-int realloc_wrap_dm(void **ptr, size_t len, const char *file, const int line)
+int realloc_wrap_dm(void **ptr, size_t len, const char *file, int line)
 {
   void *tmp;
 
@@ -645,7 +643,7 @@ int array_insert_gb(void ***array, size_t *nmemb, size_t *mmemb, size_t growby,
 
 #ifdef DMALLOC
 int array_insert_dm(void ***array, size_t *nmemb, void *item,
-		    array_cmp_t cmp, const char *file, const int line)
+		    array_cmp_t cmp, const char *file, int line)
 {
   size_t len;
 
@@ -659,7 +657,7 @@ int array_insert_dm(void ***array, size_t *nmemb, void *item,
 
 int array_insert_gb_dm(void ***array, size_t *nmemb, size_t *mmemb,
 		       size_t growby, void *item, array_cmp_t cmp,
-		       const char *file, const int line)
+		       const char *file, int line)
 {
   size_t len;
 
@@ -764,6 +762,20 @@ int timeval_cmp(const struct timeval *a, const struct timeval *b)
   return 0;
 }
 
+int timeval_cmp_lt(const struct timeval *tv, time_t s, uint32_t us)
+{
+  if(tv->tv_sec < s || (tv->tv_sec == s && tv->tv_usec < us))
+    return 1;
+  return 0;
+}
+
+int timeval_cmp_gt(const struct timeval *tv, time_t s, uint32_t us)
+{
+  if(tv->tv_sec > s || (tv->tv_sec == s && tv->tv_usec > us))
+    return 1;
+  return 0;
+}
+
 static void timeval_handlewrap(struct timeval *tv)
 {
   if(tv->tv_usec >= 1000000)
@@ -776,14 +788,6 @@ static void timeval_handlewrap(struct timeval *tv)
       tv->tv_sec--;
       tv->tv_usec += 1000000;
     }
-  return;
-}
-
-void timeval_add_cs(struct timeval *out, const struct timeval *in, int cs)
-{
-  out->tv_sec  = in->tv_sec  + (cs / 100);
-  out->tv_usec = in->tv_usec + ((cs % 100) * 10000);
-  timeval_handlewrap(out);
   return;
 }
 
@@ -837,13 +841,13 @@ void timeval_add_tv(struct timeval *tv, const struct timeval *add)
 }
 
 void timeval_add_tv3(struct timeval *out,
-		     const struct timeval *a, const struct timeval *b)
+		     const struct timeval *in, const struct timeval *add)
 {
-  assert(a->tv_sec >= 0);  assert(a->tv_usec >= 0);
-  assert(b->tv_sec >= 0);  assert(b->tv_usec >= 0);
+  assert(in->tv_sec >= 0); assert(in->tv_usec >= 0);
+  assert(add->tv_sec >= 0); assert(add->tv_usec >= 0);
 
-  out->tv_sec = a->tv_sec + b->tv_sec;
-  out->tv_usec = a->tv_usec + b->tv_usec;
+  out->tv_sec = in->tv_sec + add->tv_sec;
+  out->tv_usec = in->tv_usec + add->tv_usec;
   if(out->tv_usec > 1000000)
     {
       out->tv_sec++;
@@ -853,16 +857,16 @@ void timeval_add_tv3(struct timeval *out,
   return;
 }
 
-void timeval_diff_tv(struct timeval *rtt,
+void timeval_diff_tv(struct timeval *out,
 		     const struct timeval *from, const struct timeval *to)
 {
-  rtt->tv_sec  = to->tv_sec  - from->tv_sec;
-  rtt->tv_usec = to->tv_usec - from->tv_usec;
+  out->tv_sec  = to->tv_sec  - from->tv_sec;
+  out->tv_usec = to->tv_usec - from->tv_usec;
 
-  if(rtt->tv_usec < 0)
+  if(out->tv_usec < 0)
     {
-      rtt->tv_sec--;
-      rtt->tv_usec += 1000000;
+      out->tv_sec--;
+      out->tv_usec += 1000000;
     }
 
   return;
@@ -871,24 +875,22 @@ void timeval_diff_tv(struct timeval *rtt,
 /*
  * timeval_diff_ms
  * return the millisecond difference between the two timevals.
- * a - b
  */
-int timeval_diff_ms(const struct timeval *a, const struct timeval *b)
+int timeval_diff_ms(const struct timeval *from, const struct timeval *to)
 {
   struct timeval tv;
-  timeval_diff_tv(&tv, b, a);
+  timeval_diff_tv(&tv, from, to);
   return ((int)tv.tv_sec * 1000) + ((int)tv.tv_usec / 1000);
 }
 
 /*
  * timeval_diff_us
  * return the microsecond difference between the two timevals.
- * a - b
  */
-int timeval_diff_us(const struct timeval *a, const struct timeval *b)
+int timeval_diff_us(const struct timeval *from, const struct timeval *to)
 {
   struct timeval tv;
-  timeval_diff_tv(&tv, b, a);
+  timeval_diff_tv(&tv, from, to);
   return ((int)tv.tv_sec * 1000000) + tv.tv_usec;
 }
 
@@ -924,8 +926,88 @@ char *timeval_tostr_us(const struct timeval *rtt, char *str, size_t len)
   return str;
 }
 
+int timeval_fromstr(struct timeval *out, const char *in, uint32_t unit)
+{
+  static const int rzm[] = {1, 10, 100, 1000, 10000, 100000};
+  long long l, r = 0;
+  uint64_t v;
+  char *eptr;
+  int x, rz = 0;
+
+  assert(unit == 1 || unit == 10 || unit == 100 || unit == 1000 ||
+	 unit == 10000 || unit == 100000 || unit == 1000000);
+
+  if(string_tollong(in, &l, &eptr, 10) != 0 || l < 0)
+    return -1;
+  if(*eptr == '.')
+    {
+      x = 1;
+      while(eptr[x++] == '0')
+	rz++;
+      if(string_tollong(eptr+1, &r, &eptr, 10) != 0 || r < 0)
+	return -1;
+    }
+
+  if(eptr[0] == 's' && eptr[1] == '\0')
+    unit = 1000000;
+  else if(eptr[0] == 'u' && eptr[1] == 's' && eptr[2] == '\0')
+    unit = 1;
+  else if(eptr[0] == 'm' && eptr[1] == 's' && eptr[2] == '\0')
+    unit = 1000;
+  else if(eptr[0] != '\0')
+    return -1;
+
+  if(r > unit - 1)
+    return -1;
+
+  switch(unit)
+    {
+    case 1000000: rz += 0; break;
+    case 100000:  rz += 1; break;
+    case 10000:   rz += 2; break;
+    case 1000:    rz += 3; break;
+    case 100:     rz += 4; break;
+    case 10:      rz += 5; break;
+    default:
+      if(unit == 1 && r == 0)
+	break;
+      return -1;
+    }
+
+  v = l * unit;
+  if(r > 0)
+    {
+      if(r < 10 && rz < 6)
+	v += (r * (100000 / rzm[rz]));
+      else if(r < 100 && rz < 5)
+	v += (r * (10000 / rzm[rz]));
+      else if(r < 1000 && rz < 4)
+	v += (r * (1000 / rzm[rz]));
+      else if(r < 10000 && rz < 3)
+	v += (r * (100 / rzm[rz]));
+      else if(r < 100000 && rz < 2)
+	v += (r * (10 / rzm[rz]));
+      else if(r < 1000000 && rz < 1)
+	v += r;
+      else
+	return -1;
+    }
+
+  out->tv_sec  = v / 1000000;
+  out->tv_usec = v % 1000000;
+
+  return 0;
+}
+
+int timeval_iszero(const struct timeval *tv)
+{
+  if(tv->tv_sec == 0 && tv->tv_usec == 0)
+    return 1;
+  return 0;
+}
+
 #ifdef HAVE_FCNTL
-int fcntl_unset(const int fd, const int flags)
+int fcntl_unset(int fd, int flags)
 {
   int i;
 
@@ -942,7 +1024,7 @@ int fcntl_unset(const int fd, const int flags)
   return 0;
 }
 
-int fcntl_set(const int fd, const int flags)
+int fcntl_set(int fd, int flags)
 {
   int i;
 
@@ -997,7 +1079,81 @@ char *json_esc(const char *in, char *out, size_t len)
   return out;
 }
 
-int string_isprint(const char *str, const size_t len)
+int url_parse(const char *url, uint16_t *port,
+	      char **scheme_out, char **host_out, char **file_out)
+{
+  const char *ptr, *host;
+  char *endptr;
+  long lo;
+  size_t scheme_len, host_len, file_len;
+
+  *scheme_out = NULL;
+  *host_out = NULL;
+  *file_out = NULL;
+  *port = 0;
+
+  if(strncasecmp(url, "http://", 7) == 0)
+    {
+      scheme_len = 5;
+      host = url+7;
+    }
+  else if(strncasecmp(url, "https://", 8) == 0)
+    {
+      scheme_len = 6;
+      host = url+8;
+    }
+  else goto err;
+
+  /* find the hostname */
+  ptr = host;
+  while(*ptr != '\0')
+    {
+      if(*ptr == '/' || *ptr == ':') break;
+      if(isalnum((int)*ptr) == 0 && *ptr != '-' && *ptr != '.')
+	goto err;
+      ptr++;
+    }
+  if(ptr == host)
+    goto err;
+  host_len = (ptr - host) + 1;
+
+  /* extract the port */
+  if(*ptr == ':')
+    {
+      ptr++;
+      lo = strtol(ptr, &endptr, 10);
+      if(lo < 1 || lo > 65535)
+	goto err;
+      ptr = endptr;
+      *port = (uint16_t)lo;
+    }
+
+  /* extract the file */
+  file_len = strlen(ptr) + 1;
+
+  if((*scheme_out = malloc(scheme_len)) == NULL ||
+     (*host_out = malloc(host_len)) == NULL ||
+     (file_len > 1 && (*file_out = malloc(file_len)) == NULL))
+    goto err;
+
+  memcpy(*scheme_out, url, scheme_len-1); (*scheme_out)[scheme_len-1] = '\0';
+  memcpy(*host_out, host, host_len-1); (*host_out)[host_len-1] = '\0';
+  if(file_len > 1)
+    {
+      memcpy(*file_out, ptr, file_len-1);
+      (*file_out)[file_len-1] = '\0';
+    }
+
+  return 0;
+
+ err:
+  if(*scheme_out != NULL) { free(*scheme_out); *scheme_out = NULL; }
+  if(*host_out != NULL) { free(*host_out); *host_out = NULL; }
+  if(*file_out != NULL) { free(*file_out); *file_out = NULL; }
+  return -1;
+}
+
+int string_isprint(const char *str, size_t len)
 {
   size_t i = 0;
 
@@ -1049,7 +1205,7 @@ int string_tolong(const char *str, long *l)
   *l = strtol(str, &endptr, 0);
   if(*l == 0)
     {
-      if(errno == EINVAL)
+      if(errno == EINVAL || endptr == str)
 	return -1;
     }
   else if(*l == LONG_MIN || *l == LONG_MAX)
@@ -1061,15 +1217,15 @@ int string_tolong(const char *str, long *l)
   return 0;
 }
 
-int string_tollong(const char *str, long long *l)
+int string_tollong(const char *str, long long *l, char **endptr_out, int base)
 {
   char *endptr;
 
   errno = 0;
-  *l = strtoll(str, &endptr, 0);
+  *l = strtoll(str, &endptr, base);
   if(*l == 0)
     {
-      if(errno == EINVAL)
+      if(errno == EINVAL || endptr == str)
 	return -1;
     }
   else if(*l == LLONG_MIN || *l == LLONG_MAX)
@@ -1078,6 +1234,8 @@ int string_tollong(const char *str, long long *l)
 	return -1;
     }
 
+  if(endptr_out != NULL)
+    *endptr_out = endptr;
   return 0;
 }
 
@@ -1306,7 +1464,7 @@ char *string_nullterm(char *buf, const char *delim, char **next)
   return buf;
 }
 
-char *string_nullterm_char(char *buf, const char delim, char **next)
+char *string_nullterm_char(char *buf, char delim, char **next)
 {
   char *tmp;
 
@@ -1340,9 +1498,6 @@ char *string_lastof(char *str, const char *delim)
   const char *d;
   int i;
 
-  if(delim == NULL || *delim == '\0' || str == NULL)
-    return NULL;
-
   for(i=0; str[i] != '\0'; i++)
     {
       for(d = delim; *d != '\0'; d++)
@@ -1358,13 +1513,10 @@ char *string_lastof(char *str, const char *delim)
   return lastof;
 }
 
-char *string_lastof_char(char *str, const char delim)
+char *string_lastof_char(char *str, char delim)
 {
   char *lastof = NULL;
   int i;
-
-  if(str == NULL)
-    return NULL;
 
   for(i=0; str[i] != '\0'; i++)
     {
@@ -1377,13 +1529,10 @@ char *string_lastof_char(char *str, const char delim)
   return lastof;
 }
 
-char *string_firstof_char(char *str, const char delim)
+char *string_firstof_char(char *str, char delim)
 {
   char *firstof = NULL;
   int i;
-
-  if(str == NULL)
-    return NULL;
 
   for(i=0; str[i] != '\0'; i++)
     {
@@ -1564,7 +1713,7 @@ void bytes_htonl(uint8_t *bytes, uint32_t u32)
   return;
 }
 
-int read_wrap(const int fd, void *ptr, size_t *rc_out, const size_t rt)
+int read_wrap(int fd, void *ptr, size_t *rc_out, size_t rt)
 {
   uint8_t *buf;
   int      ret = 0;
@@ -1580,11 +1729,6 @@ int read_wrap(const int fd, void *ptr, size_t *rc_out, const size_t rt)
     {
       if((r = read(fd, buf+rc, rt-rc)) < 0)
 	{
-	  if(errno == EINTR)
-	    {
-	      r = 0;
-	      continue;
-	    }
 	  ret = -1;
 	  break;
 	}
@@ -1596,14 +1740,12 @@ int read_wrap(const int fd, void *ptr, size_t *rc_out, const size_t rt)
     }
 
   if(rc_out != NULL)
-    {
-      *rc_out = rc;
-    }
+    *rc_out = rc;
 
   return ret;
 }
 
-int write_wrap(const int fd, const void *ptr, size_t *wc_out, const size_t wt)
+int write_wrap(int fd, const void *ptr, size_t *wc_out, size_t wt)
 {
   int      ret = 0;
   ssize_t  w;
@@ -1616,87 +1758,15 @@ int write_wrap(const int fd, const void *ptr, size_t *wc_out, const size_t wt)
     {
       if((w = write(fd, ((const uint8_t *)ptr)+wc, wt-wc)) < 0)
 	{
-	  if(errno == EINTR)
-	    {
-	      w = 0;
-	      continue;
-	    }
 	  ret = -1;
 	  break;
 	}
     }
 
   if(wc_out != NULL)
-    {
-      *wc_out = wc;
-    }
+    *wc_out = wc;
 
   return ret;
-}
-
-/*
- * mkdir_wrap
- *
- * iteratively call mkdir until the full path has been created
- */
-#ifndef _WIN32
-int mkdir_wrap(const char *path, mode_t mode)
-#else
-int mkdir_wrap(const char *path)
-#endif
-{
-  char *d = NULL;
-  char *ptr;
-
-  /* ensure there is actually a path to create ... */
-  if(path[0] == '\0' || (path[0] == '/' && path[1] == '\0'))
-    {
-      return 0;
-    }
-
-  /* make a duplicate copy of the path that we are going to create */
-  if((d = strdup(path)) == NULL)
-    {
-      goto err;
-    }
-  ptr = d;
-
-  /* don't need to create the root directory ... */
-  if(ptr[0] == '/') ptr++;
-
-  while(ptr[0] != '\0')
-    {
-      if(ptr[0] == '/')
-	{
-	  /* temporarily replace the path delimeter */
-	  ptr[0] = '\0';
-
-	  if(mkdir(d, mode) != 0 && errno != EEXIST)
-	    {
-	      goto err;
-	    }
-
-	  ptr[0] = '/';
-	}
-
-      ptr++;
-    }
-
-  /* create the last directory in the path */
-  if(ptr[-1] != '/')
-    {
-      if(mkdir(d, mode) != 0 && errno != EEXIST)
-	{
-	  goto err;
-	}
-    }
-
-  free(d);
-  return 0;
-
- err:
-  if(d != NULL) free(d);
-  return -1;
 }
 
 /*
@@ -2295,12 +2365,12 @@ int uuencode(const uint8_t *in, size_t ilen, uint8_t **out, size_t *olen)
   return 0;
 }
 
-uint16_t byteswap16(const uint16_t word)
+uint16_t byteswap16(uint16_t word)
 {
   return ((word >> 8) | (word << 8));
 }
 
-uint32_t byteswap32(const uint32_t word)
+uint32_t byteswap32(uint32_t word)
 {
   return ((word << 24) | (word >> 24) |
 	  ((word & 0xff00) << 8) | ((word >> 8) & 0xff00));

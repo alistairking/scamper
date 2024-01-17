@@ -494,7 +494,7 @@ static int addrfile_line(char *line, void *param)
   if(line[0] == '\0' || line[0] == '#')
     return 0;
 
-  if((sa = scamper_addr_resolve(AF_UNSPEC, line)) == NULL)
+  if((sa = scamper_addr_fromstr_unspec(line)) == NULL)
     {
       /* for now, don't abort if the input file has a malformed addr */
       fprintf(stderr, "%s: could not resolve %s\n", __func__, line);
@@ -682,7 +682,7 @@ static int do_ctrlsock_readline(void *param, uint8_t *buf, size_t len)
       if(*line == '\0')
 	return 0;
 
-      if((sa = scamper_addr_resolve(AF_UNSPEC, line)) == NULL)
+      if((sa = scamper_addr_fromstr_unspec(line)) == NULL)
 	return 0;
       if(scamper_addr_isipv4(sa))
 	pt = probing4;

@@ -1,7 +1,7 @@
 /*
  * scamper_file.c
  *
- * $Id: scamper_file.h,v 1.38 2023/03/14 20:02:41 mjl Exp $
+ * $Id: scamper_file.h,v 1.45 2023/11/22 04:10:09 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -57,11 +57,15 @@ typedef struct scamper_file_readbuf scamper_file_readbuf_t;
 #define SCAMPER_FILE_OBJ_STING         12
 #define SCAMPER_FILE_OBJ_SNIFF         13
 #define SCAMPER_FILE_OBJ_HOST          14
+#define SCAMPER_FILE_OBJ_HTTP          15
+#define SCAMPER_FILE_OBJ_UDPPROBE      16
+
+#define SCAMPER_FILE_OBJ_MAX           16
 
 scamper_file_t *scamper_file_open(const char *fn, char mode, const char *type);
 scamper_file_t *scamper_file_openfd(int fd, const char *fn, char mode,
 				    const char *type);
-scamper_file_t *scamper_file_opennull(char mode, const char *format);
+scamper_file_t *scamper_file_opennull(char mode, const char *type);
 void scamper_file_close(scamper_file_t *sf);
 void scamper_file_free(scamper_file_t *sf);
 
@@ -119,6 +123,14 @@ int scamper_file_write_sniff(scamper_file_t *sf,
 struct scamper_host;
 int scamper_file_write_host(scamper_file_t *sf,
 			    const struct scamper_host *host, void *p);
+
+struct scamper_http;
+int scamper_file_write_http(scamper_file_t *sf,
+			    const struct scamper_http *http, void *p);
+
+struct scamper_udpprobe;
+int scamper_file_write_udpprobe(scamper_file_t *sf,
+				const struct scamper_udpprobe *up, void *p);
 
 char *scamper_file_type_tostr(scamper_file_t *sf, char *buf, size_t len);
 const char *scamper_file_objtype_tostr(uint16_t type);

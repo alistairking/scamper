@@ -1,7 +1,7 @@
 /*
  * scamper_getsrc.c
  *
- * $Id: scamper_getsrc.c,v 1.21.4.3 2023/08/20 02:03:49 mjl Exp $
+ * $Id: scamper_getsrc.c,v 1.24 2023/08/20 02:03:17 mjl Exp $
  *
  * Copyright (C) 2005 Matthew Luckie
  * Copyright (C) 2007-2010 The University of Waikato

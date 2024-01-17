@@ -1,7 +1,7 @@
 /*
  * scamper_sniff.c
  *
- * $Id: scamper_sniff.c,v 1.5 2023/05/31 23:22:18 mjl Exp $
+ * $Id: scamper_sniff.c,v 1.7 2023/07/25 08:46:24 mjl Exp $
  *
  * Copyright (C) 2011 The University of Waikato
  * Author: Matthew Luckie
@@ -40,6 +40,9 @@ scamper_sniff_pkt_t *scamper_sniff_pkt_alloc(uint8_t *data, uint16_t len,
 
   if((pkt = malloc_zero(sizeof(scamper_sniff_pkt_t))) == NULL)
     goto err;
+#ifdef BUILDING_LIBSCAMPERFILE
+  pkt->refcnt = 1;
+#endif
 
   if(len != 0 && data != NULL)
     {
@@ -59,6 +62,10 @@ void scamper_sniff_pkt_free(scamper_sniff_pkt_t *pkt)
 {
   if(pkt == NULL)
     return;
+#ifdef BUILDING_LIBSCAMPERFILE
+  if(--pkt->refcnt > 0)
+    return;
+#endif
   if(pkt->data != NULL)
     free(pkt->data);
   free(pkt);

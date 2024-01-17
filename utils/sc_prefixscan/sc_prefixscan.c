@@ -2,7 +2,7 @@
  * sc_prefixscan : scamper driver to collect evidence of pt2pt links
  *                 using the prefixscan method
  *
- * $Id: sc_prefixscan.c,v 1.22 2023/05/29 07:21:07 mjl Exp $
+ * $Id: sc_prefixscan.c,v 1.24 2023/09/24 22:35:02 mjl Exp $
  *
  * Copyright (C) 2011,2016 The University of Waikato
  * Copyright (C) 2019-2023 Matthew Luckie
@@ -720,8 +720,8 @@ static int infile_line(char *str, void *param)
     }
 
   if((ps = malloc_zero(sizeof(sc_scantest_t))) == NULL ||
-     (ps->a = scamper_addr_resolve(AF_UNSPEC, str)) == NULL ||
-     (ps->b = scamper_addr_resolve(AF_UNSPEC, ptr)) == NULL ||
+     (ps->a = scamper_addr_fromstr_unspec(str)) == NULL ||
+     (ps->b = scamper_addr_fromstr_unspec(ptr)) == NULL ||
      (test = sc_test_alloc(TEST_SCAN, ps)) == NULL ||
      slist_tail_push(virgin, test) == NULL)
     goto err;
@@ -1476,8 +1476,10 @@ int main(int argc, char *argv[])
     return -1;
 
   /* start a daemon if asked to */
+#ifdef HAVE_DAEMON
   if((options & OPT_DAEMON) != 0 && daemon(1, 0) != 0)
     return -1;
+#endif
 
   if((options & OPT_READ) != 0)
     return pf_read();

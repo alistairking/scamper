@@ -1,7 +1,7 @@
 /*
  * scamper_sting.c
  *
- * $Id: scamper_sting.c,v 1.14.4.1 2023/08/08 01:01:06 mjl Exp $
+ * $Id: scamper_sting.c,v 1.16 2023/12/24 00:03:21 mjl Exp $
  *
  * Copyright (C) 2008-2011 The University of Waikato
  * Copyright (C) 2014      The Regents of the University of California
@@ -50,6 +50,10 @@ scamper_sting_pkt_t *scamper_sting_pkt_alloc(uint8_t flags, uint8_t *data,
   if((pkt = malloc_zero(sizeof(scamper_sting_pkt_t))) == NULL)
     goto err;
 
+#ifdef BUILDING_LIBSCAMPERFILE
+  pkt->refcnt = 1;
+#endif
+
   pkt->flags = flags;
   if(len != 0 && data != NULL)
     {
@@ -69,12 +73,17 @@ void scamper_sting_pkt_free(scamper_sting_pkt_t *pkt)
 {
   if(pkt == NULL)
     return;
+#ifdef BUILDING_LIBSCAMPERFILE
+  if(--pkt->refcnt > 0)
+    return;
+#endif
   if(pkt->data != NULL) free(pkt->data);
   free(pkt);
   return;
 }
 
-int scamper_sting_data(scamper_sting_t *sting,const uint8_t *data,uint16_t len)
+int scamper_sting_data_set(scamper_sting_t *sting,
+			   const uint8_t *data, uint16_t len)
 {
   if(len == 0 || (sting->data = memdup(data, len)) == NULL)
     return -1;

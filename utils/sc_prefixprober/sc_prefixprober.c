@@ -2,7 +2,7 @@
  * sc_prefixprober : scamper driver to probe addresses in specified
  *                   prefixes
  *
- * $Id: sc_prefixprober.c,v 1.31.2.1 2023/08/07 22:02:54 mjl Exp $
+ * $Id: sc_prefixprober.c,v 1.36 2024/01/05 04:48:53 mjl Exp $
  *
  * Copyright (C) 2023 The Regents of the University of California
  * Author: Matthew Luckie
@@ -202,6 +202,9 @@ static void usage(uint32_t opt_mask)
  * ensure the filename has one format specifier, and it is for an
  * unsigned integer.  the digits can be zero padded, but its width
  * cannot otherwise be restricted.
+ *
+ * shared with sc_pinger, perhaps this should be in utils.c and more
+ * generic.
  */
 static int check_printf(const char *name)
 {
@@ -470,7 +473,7 @@ static int check_options(int argc, char *argv[])
 	  if(strcasecmp(dup, "id") == 0)
 	    {
 	      if(string_isdigit(param) == 0 ||
-		 string_tollong(param, &ll) != 0 || ll > UINT32_MAX)
+		 string_tollong(param, &ll, NULL, 0) != 0 || ll > UINT32_MAX)
 		{
 		  usage(OPT_LIST);
 		  goto done;
@@ -504,7 +507,7 @@ static int check_options(int argc, char *argv[])
 	  else if(strcasecmp(dup, "cycle-id") == 0)
 	    {
 	      if(string_isdigit(param) == 0 ||
-		 string_tollong(param, &ll) != 0 || ll > UINT32_MAX)
+		 string_tollong(param, &ll, NULL, 0) != 0 || ll > UINT32_MAX)
 		{
 		  usage(OPT_LIST);
 		  goto done;
@@ -1238,6 +1241,7 @@ static int pp_targets(slist_t *list)
   for(sn = slist_head_node(list); sn != NULL; sn = slist_node_next(sn))
     {
       p = slist_node_item(sn);
+      p4 = NULL; p6 = NULL;
 
       if(p->v == 4)
 	{

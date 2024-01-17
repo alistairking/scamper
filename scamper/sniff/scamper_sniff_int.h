@@ -1,7 +1,7 @@
 /*
  * scamper_sniff_int.h
  *
- * $Id: scamper_sniff_int.h,v 1.1 2023/05/14 21:35:40 mjl Exp $
+ * $Id: scamper_sniff_int.h,v 1.5 2024/01/02 17:51:46 mjl Exp $
  *
  * Copyright (C) 2011 The University of Waikato
  * Author: Matthew Luckie
@@ -24,11 +24,20 @@
 #ifndef __SCAMPER_SNIFF_INT_H
 #define __SCAMPER_SNIFF_INT_H
 
+scamper_sniff_t *scamper_sniff_alloc(void);
+scamper_sniff_pkt_t *scamper_sniff_pkt_alloc(uint8_t *data, uint16_t len,
+					     struct timeval *tv);
+int scamper_sniff_pkts_alloc(scamper_sniff_t *sniff, int pktc);
+
 struct scamper_sniff_pkt
 {
   struct timeval        tv;
   uint8_t              *data;
   uint16_t              len;
+
+#ifdef BUILDING_LIBSCAMPERFILE
+  int                   refcnt;
+#endif
 };
 
 struct scamper_sniff
@@ -41,7 +50,7 @@ struct scamper_sniff
   struct timeval        finish;
   uint8_t               stop_reason;
   uint32_t              limit_pktc;
-  uint16_t              limit_time;
+  struct timeval        limit_time;
 
   scamper_addr_t       *src;
   uint16_t              icmpid;

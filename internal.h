@@ -1,7 +1,7 @@
 /*
  * internal.h
  *
- * $Id: internal.h,v 1.56.4.3 2023/08/20 08:07:08 mjl Exp $
+ * $Id: internal.h,v 1.61 2023/08/20 08:05:18 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz

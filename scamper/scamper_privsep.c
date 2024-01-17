@@ -1,7 +1,7 @@
 /*
  * scamper_privsep.c: code that does root-required tasks
  *
- * $Id: scamper_privsep.c,v 1.99.4.1 2023/08/26 21:26:45 mjl Exp $
+ * $Id: scamper_privsep.c,v 1.100 2023/08/26 21:25:08 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato

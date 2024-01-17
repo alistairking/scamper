@@ -1,7 +1,7 @@
 /*
  * scamper_debug.h
  *
- * $Id: scamper_debug.h,v 1.22 2022/12/09 09:37:42 mjl Exp $
+ * $Id: scamper_debug.h,v 1.23 2023/08/24 04:18:44 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2009 The University of Waikato
@@ -46,15 +46,6 @@ void printerror_ssl(const char *func, const char *format, ...)
 #else
 void printerror_ssl(const char *func, const char *format, ...);
 #endif
-#endif
-
-#ifdef NDEBUG
-#define scamper_assert(expr, task) ((void)0)
-#else
-#define scamper_assert(expr, task) ((expr) ? (void)0 : \
-      __scamper_assert(__FILE__,__LINE__,__FUNC__, #expr, task))
-void __scamper_assert(const char *file, int line, const char *func,
-		      const char *expr, void *task);
 #endif
 
 /* only define scamper_debug if scamper is being built in debugging mode */

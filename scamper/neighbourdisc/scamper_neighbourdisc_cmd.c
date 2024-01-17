@@ -1,7 +1,7 @@
 /*
  * scamper_neighbourdisc_cmd
  *
- * $Id: scamper_neighbourdisc_cmd.c,v 1.1 2023/06/04 04:52:48 mjl Exp $
+ * $Id: scamper_neighbourdisc_cmd.c,v 1.3 2023/12/30 19:11:52 mjl Exp $
  *
  * Copyright (C) 2009-2023 Matthew Luckie
  *
@@ -25,7 +25,6 @@
 #endif
 #include "internal.h"
 
-//#include "scamper.h"
 #include "scamper_addr.h"
 #include "scamper_addr_int.h"
 #include "scamper_list.h"
@@ -52,7 +51,7 @@ static const scamper_option_in_t opts[] = {
   {'q', NULL, ND_OPT_ATTEMPTS,      SCAMPER_OPTION_TYPE_NUM},
   {'Q', NULL, ND_OPT_ALLATTEMPTS,   SCAMPER_OPTION_TYPE_NULL},
   {'S', NULL, ND_OPT_SRCADDR,       SCAMPER_OPTION_TYPE_STR},
-  {'w', NULL, ND_OPT_WAIT,          SCAMPER_OPTION_TYPE_NUM},
+  {'w', NULL, ND_OPT_WAIT,          SCAMPER_OPTION_TYPE_STR},
 };
 static const int opts_cnt = SCAMPER_OPTION_COUNT(opts);
 
@@ -63,6 +62,7 @@ const char *scamper_do_neighbourdisc_usage(void)
 
 static int nd_arg_param_validate(int optid, char *param, long long *out)
 {
+  struct timeval tv;
   long tmp;
 
   switch(optid)
@@ -83,8 +83,10 @@ static int nd_arg_param_validate(int optid, char *param, long long *out)
       break;
 
     case ND_OPT_WAIT:
-      if(string_tolong(param, &tmp) != 0 || tmp < 100 || tmp > 65535)
+      if(timeval_fromstr(&tv, param, 1000) != 0 || (tv.tv_usec % 1000) != 0 ||
+	 timeval_cmp_lt(&tv, 0, 100000) || timeval_cmp_gt(&tv, 65, 535000))
 	return -1;
+      tmp = (tv.tv_sec * 1000000) + tv.tv_usec;
       break;
 
     default:
@@ -110,11 +112,13 @@ void *scamper_do_neighbourdisc_alloc(char *str)
   char    *ifname   = NULL;
   uint16_t attempts = 1;
   uint16_t replyc   = 0;
-  uint16_t wait     = 1000;
   uint8_t  flags    = 0;
   char    *dst      = NULL;
   char    *src      = NULL;
   long long tmp     = 0;
+  struct timeval wait;
+
+  wait.tv_sec = 1; wait.tv_usec = 0;
 
   /* try and parse the string passed in */
   if(scamper_options_parse(str, opts, opts_cnt, &opts_out, &dst) != 0)
@@ -158,7 +162,8 @@ void *scamper_do_neighbourdisc_alloc(char *str)
 	  break;
 
 	case ND_OPT_WAIT:
-	  wait = (uint16_t)tmp;
+	  wait.tv_sec = tmp / 1000000;
+	  wait.tv_usec = tmp % 1000000;
 	  break;
 
 	case ND_OPT_SRCADDR:
@@ -229,7 +234,7 @@ void *scamper_do_neighbourdisc_alloc(char *str)
   nd->flags    = flags;
   nd->attempts = attempts;
   nd->replyc   = replyc;
-  nd->wait     = wait;
+  timeval_cpy(&nd->wait_timeout, &wait);
 
   return nd;
 

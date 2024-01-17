@@ -1,7 +1,7 @@
 /*
  * sc_bdrmap: driver to map first hop border routers of networks
  *
- * $Id: sc_bdrmap.c,v 1.46 2023/05/29 21:22:27 mjl Exp $
+ * $Id: sc_bdrmap.c,v 1.49 2023/12/02 20:43:54 mjl Exp $
  *
  *         Matthew Luckie
  *         mjl@caida.org / mjl@wand.net.nz
@@ -449,7 +449,7 @@ typedef struct sc_addr2adj
  */
 typedef struct sc_farrouter
 {
-  sc_router_t      *far;
+  sc_router_t      *farr;
   slist_t          *nears;
 } sc_farrouter_t;
 
@@ -592,6 +592,7 @@ static int                    no_self       = 0;
 static int                    no_merge      = 1;
 static int                    fudge         = 5000;
 static int                    af            = AF_INET;
+static int                    sa_type       = SCAMPER_ADDR_TYPE_IPV4;
 static struct timeval         now;
 static int                    dump_id       = 0;
 static const sc_dump_t        dump_funcs[]  = {
@@ -915,6 +916,7 @@ static int check_options(int argc, char *argv[])
 	  if(check_options_once(ch, OPT_IPV6) != 0)
 	    goto done;
 	  options |= OPT_IPV6;
+	  sa_type = SCAMPER_ADDR_TYPE_IPV6;
 	  af = AF_INET6;
 	  break;
 
@@ -1263,7 +1265,7 @@ static int check_options(int argc, char *argv[])
     }
 
   if(options & OPT_SRCADDR &&
-     (srcaddr = scamper_addr_resolve(af, opt_srcaddr)) == NULL)
+     (srcaddr = scamper_addr_fromstr(sa_type, opt_srcaddr)) == NULL)
     {
       usage(OPT_SRCADDR);
       goto done;
@@ -2044,7 +2046,7 @@ static int sc_prefix_cmp(const sc_prefix_t *a, const sc_prefix_t *b)
 {
   if(a == b)
     return 0;
-  if(af == AF_INET)
+  if(sa_type == SCAMPER_ADDR_TYPE_IPV4)
     return prefix4_cmp(a->pfx.v4, b->pfx.v4);
   return prefix6_cmp(a->pfx.v6, b->pfx.v6);
 }
@@ -2053,7 +2055,7 @@ static void sc_prefix_free(sc_prefix_t *p)
 {
   if(p == NULL)
     return;
-  if(af == AF_INET)
+  if(sa_type == SCAMPER_ADDR_TYPE_IPV4)
     {
       if(p->pfx.v4 != NULL)
 	prefix4_free(p->pfx.v4);
@@ -2073,7 +2075,7 @@ static sc_prefix_t *sc_prefix_alloc(const void *net, int len)
 
   if((p = malloc_zero(sizeof(sc_prefix_t))) == NULL)
     goto err;
-  if(af == AF_INET)
+  if(sa_type == SCAMPER_ADDR_TYPE_IPV4)
     {
       if((p->pfx.v4 = prefix4_alloc((void *)net, len, p)) == NULL)
 	goto err;
@@ -2093,12 +2095,12 @@ static sc_prefix_t *sc_prefix_alloc(const void *net, int len)
 static sc_prefix_t *sc_prefix_find_in(const void *addr)
 {
   prefix4_t *p4; prefix6_t *p6;
-  if(af == AF_INET)
+  if(sa_type == SCAMPER_ADDR_TYPE_IPV4)
     {
       if((p4 = prefixtree_find_ip4(ip2as_pt, addr)) != NULL)
 	return p4->ptr;
     }
-  else if(af == AF_INET6)
+  else if(sa_type == SCAMPER_ADDR_TYPE_IPV6)
     {
       if((p6 = prefixtree_find_ip6(ip2as_pt, addr)) != NULL)
 	return p6->ptr;
@@ -2126,7 +2128,7 @@ static void sc_prefix_nest_free(sc_prefix_nest_t *nest)
     slist_free_cb(nest->list, (slist_free_t)sc_prefix_nest_free);
   if(nest->pt != NULL)
     {
-      if(af == AF_INET)
+      if(sa_type == SCAMPER_ADDR_TYPE_IPV4)
 	prefixtree_free_cb(nest->pt, (prefix_free_t)prefix4_free);
       else
 	prefixtree_free_cb(nest->pt, (prefix_free_t)prefix6_free);
@@ -2152,7 +2154,7 @@ static int sc_prefix_nest_cmp(const sc_prefix_nest_t *a,
 
 static int sc_ixpc_pfx_cmp(const sc_ixpc_t *a, const sc_ixpc_t *b)
 {
-  if(af == AF_INET)
+  if(sa_type == SCAMPER_ADDR_TYPE_IPV4)
     return prefix4_cmp(a->pfx.v4, b->pfx.v4);
   return prefix6_cmp(a->pfx.v6, b->pfx.v6);
 }
@@ -3160,9 +3162,9 @@ static sc_addr2adj_t *sc_addr2adj_get(sc_stree_t *set, scamper_addr_t *addr)
   return a2a;
 }
 
-static int sc_farrouter_addnear(sc_farrouter_t *fr, sc_router_t *near)
+static int sc_farrouter_addnear(sc_farrouter_t *fr, sc_router_t *nearr)
 {
-  if(slist_tail_push(fr->nears, near) == NULL)
+  if(slist_tail_push(fr->nears, nearr) == NULL)
     return -1;
   return 0;
 }
@@ -3177,7 +3179,7 @@ static void sc_farrouter_free(sc_farrouter_t *fr)
   return;
 }
 
-static sc_farrouter_t *sc_farrouter_alloc(sc_router_t *far)
+static sc_farrouter_t *sc_farrouter_alloc(sc_router_t *farr)
 {
   sc_farrouter_t *fr = NULL;
   if((fr = malloc_zero(sizeof(sc_farrouter_t))) == NULL ||
@@ -3186,15 +3188,15 @@ static sc_farrouter_t *sc_farrouter_alloc(sc_router_t *far)
       sc_farrouter_free(fr);
       return NULL;
     }
-  fr->far = far;
+  fr->farr = farr;
   return fr;
 }
 
 static int sc_farrouter_far_cmp(const sc_farrouter_t *a,
 				const sc_farrouter_t *b)
 {
-  if(a->far < b->far) return -1;
-  if(a->far > b->far) return  1;
+  if(a->farr < b->farr) return -1;
+  if(a->farr > b->farr) return  1;
   return 0;
 }
 
@@ -3208,18 +3210,18 @@ static int sc_farrouter_nears_cmp(const sc_farrouter_t *a,
   return 0;
 }
 
-static sc_farrouter_t *sc_farrouter_find(sc_stree_t *set, sc_router_t *far)
+static sc_farrouter_t *sc_farrouter_find(sc_stree_t *set, sc_router_t *farr)
 {
-  sc_farrouter_t fm; fm.far = far;
+  sc_farrouter_t fm; fm.farr = farr;
   return sc_stree_find(set, &fm);
 }
 
-static sc_farrouter_t *sc_farrouter_get(sc_stree_t *set, sc_router_t *far)
+static sc_farrouter_t *sc_farrouter_get(sc_stree_t *set, sc_router_t *farr)
 {
   sc_farrouter_t *fr;
-  if((fr = sc_farrouter_find(set, far)) != NULL)
+  if((fr = sc_farrouter_find(set, farr)) != NULL)
     return fr;
-  if((fr = sc_farrouter_alloc(far)) == NULL)
+  if((fr = sc_farrouter_alloc(farr)) == NULL)
     return NULL;
   if(sc_stree_add(set, fr) != 0)
     {
@@ -3246,7 +3248,7 @@ static int sc_astraces_plus1(sc_astraces_t *traces, const scamper_addr_t *addr)
   uint32_t x;
   uint8_t r;
 
-  if(af == AF_INET)
+  if(sa_type == SCAMPER_ADDR_TYPE_IPV4)
     {
       memcpy(&in, scamper_addr_addr_get(addr), sizeof(in));
       x = ntohl(in.s_addr);
@@ -3576,12 +3578,7 @@ static int sc_astraces_gss_add(sc_astraces_t *traces, scamper_addr_t *addr)
 static int sc_astraces_dst_add(sc_astraces_t *traces, void *addr)
 {
   scamper_addr_t *sa = NULL;
-  int type;
-  if(af == AF_INET)
-    type = SCAMPER_ADDR_TYPE_IPV4;
-  else
-    type = SCAMPER_ADDR_TYPE_IPV6;
-  if((sa = scamper_addr_alloc(type, addr)) == NULL ||
+  if((sa = scamper_addr_alloc(sa_type, addr)) == NULL ||
      slist_tail_push(traces->dsts, sa) == NULL)
     goto err;
   return 0;
@@ -5025,7 +5022,7 @@ static int do_decoderead_trace(scamper_trace_t *trace)
   /* linktest the apparent last hop in the VP network */
   lv_hop = scamper_trace_hop_get(trace, lv); assert(lv_hop != NULL);
   lv_addr = scamper_trace_hop_addr_get(lv_hop);
-  if(af == AF_INET && lv-1 >= fh-1 && no_alias == 0 &&
+  if(sa_type == SCAMPER_ADDR_TYPE_IPV4 && lv-1 >= fh-1 && no_alias == 0 &&
      (x = scamper_trace_hop_get(trace, lv-1)) != NULL &&
      scamper_trace_hop_addr_cmp(x, lv_hop) != 0 &&
      sc_linktest_alloc(scamper_trace_hop_addr_get(x), lv_addr) != 0)
@@ -5049,7 +5046,7 @@ static int do_decoderead_trace(scamper_trace_t *trace)
 	{
 	  /* linktest the apparent first hop in the neighbor network */
 	  x_a = scamper_trace_hop_addr_get(x);
-	  if(af == AF_INET && no_alias == 0 &&
+	  if(sa_type == SCAMPER_ADDR_TYPE_IPV4 && no_alias == 0 &&
 	     sc_linktest_alloc(lv_addr, x_a) != 0)
 	    goto err;
 
@@ -5302,7 +5299,9 @@ static int do_scamperread(void)
 
 static int do_scamperconnect(void)
 {
+#ifdef HAVE_SOCKADDR_UN
   struct sockaddr_un sun;
+#endif
   struct sockaddr_in sin;
   struct in_addr in;
 
@@ -5322,6 +5321,7 @@ static int do_scamperconnect(void)
 	}
       return 0;
     }
+#ifdef HAVE_SOCKADDR_UN
   else if(options & (OPT_UNIX | OPT_REMOTE))
     {
       if(sockaddr_compose_un((struct sockaddr *)&sun, unix_name) != 0)
@@ -5341,6 +5341,7 @@ static int do_scamperconnect(void)
 	}
       return 0;
     }
+#endif
 
   return -1;
 }
@@ -5432,7 +5433,7 @@ static int ip2name_line(char *line, void *param)
   while(isspace(*name) != 0)
     name++;
 
-  if(af == AF_INET)
+  if(sa_type == SCAMPER_ADDR_TYPE_IPV4)
     {
       if(inet_pton(AF_INET, ip, &in) != 1 ||
 	 (sa = scamper_addr_alloc_ipv4(&in)) == NULL)
@@ -5506,7 +5507,7 @@ static int ip2as_line(char *line, void *param)
   while(isspace(*a) != 0)
     a++;
 
-  if(af == AF_INET)
+  if(sa_type == SCAMPER_ADDR_TYPE_IPV4)
     {
       if(lo < IPV4_PREFIX_MIN || lo > IPV4_PREFIX_MAX)
 	return 0;
@@ -5558,8 +5559,10 @@ static int ip2as_line(char *line, void *param)
       return 0;
     }
 
-  if((af == AF_INET  && slist_tail_push(lists[lo-IPV4_PREFIX_MIN],p) == NULL) ||
-     (af == AF_INET6 && slist_tail_push(lists[lo-IPV6_PREFIX_MIN],p) == NULL))
+  if((sa_type == SCAMPER_ADDR_TYPE_IPV4 &&
+      slist_tail_push(lists[lo-IPV4_PREFIX_MIN],p) == NULL) ||
+     (sa_type == SCAMPER_ADDR_TYPE_IPV6 &&
+      slist_tail_push(lists[lo-IPV6_PREFIX_MIN],p) == NULL))
     goto err;
 
   qsort(ases, asc, sizeof(uint32_t), uint32_cmp);
@@ -5601,7 +5604,7 @@ static int ipmap_line(char *line, void *param)
   if(string_isnumber(a) == 0 || string_tolong(a, &lo) != 0)
     goto err;
 
-  if(af == AF_INET)
+  if(sa_type == SCAMPER_ADDR_TYPE_IPV4)
     {
       if(inet_pton(AF_INET, n, &in) != 1 ||
 	 (p = sc_prefix_alloc(&in, 32)) == NULL)
@@ -5618,8 +5621,10 @@ static int ipmap_line(char *line, void *param)
   if((p->asmap = sc_asmap_get(ases, 1)) == NULL)
     goto err;
 
-  if((af == AF_INET  && prefixtree_insert4(ipmap_pt,p->pfx.v4) == NULL) ||
-     (af == AF_INET6 && prefixtree_insert6(ipmap_pt,p->pfx.v6) == NULL))
+  if((sa_type == SCAMPER_ADDR_TYPE_IPV4 &&
+      prefixtree_insert4(ipmap_pt,p->pfx.v4) == NULL) ||
+     (sa_type == SCAMPER_ADDR_TYPE_IPV6 &&
+      prefixtree_insert6(ipmap_pt,p->pfx.v6) == NULL))
     goto err;
 
   return 0;
@@ -5699,7 +5704,7 @@ static int do_targetips(void)
 
   for(i=0; i<opt_argc; i++)
     {
-      if(af == AF_INET)
+      if(sa_type == SCAMPER_ADDR_TYPE_IPV4)
 	{
 	  rc = inet_pton(AF_INET, opt_args[i], &in);
 	  addr = &in;
@@ -5868,7 +5873,7 @@ static int do_targets_rec(slist_t *list, splaytree_t *astraces)
     {
       nest = slist_node_item(sn);
       ptr = NULL;
-      if(af == AF_INET)
+      if(sa_type == SCAMPER_ADDR_TYPE_IPV4)
 	{
 	  if(rec_target_4(nest, &in) == 1)
 	    ptr = &in;
@@ -5940,7 +5945,7 @@ static int do_targets(void)
     {
       pfx = slist_node_item(sn);
 
-      if(af == AF_INET)
+      if(sa_type == SCAMPER_ADDR_TYPE_IPV4)
 	{
 	  /* if there is no enclosing prefix, this is a root prefix */
 	  if((p4 = prefixtree_find_best4(tree, pfx->pfx.v4)) == NULL)
@@ -5979,7 +5984,7 @@ static int do_targets(void)
 		goto err;
 	    }
 
-	  if(af == AF_INET)
+	  if(sa_type == SCAMPER_ADDR_TYPE_IPV4)
 	    {
 	      if((p4 = prefixtree_find_best4(nest->pt, pfx->pfx.v4)) == NULL)
 		break;
@@ -5993,7 +5998,7 @@ static int do_targets(void)
 	    }
 	}
 
-      if(af == AF_INET)
+      if(sa_type == SCAMPER_ADDR_TYPE_IPV4)
 	{
 	  if((p4 = prefix4_dup(pfx->pfx.v4)) == NULL ||
 	     prefixtree_insert4(nest->pt, p4) == NULL ||
@@ -6020,7 +6025,7 @@ static int do_targets(void)
     sc_prefix_nest_free(nest);
   slist_free(root); root = NULL;
 
-  if(af == AF_INET)
+  if(sa_type == SCAMPER_ADDR_TYPE_IPV4)
     prefixtree_free_cb(tree, (prefix_free_t)prefix4_free);
   else
     prefixtree_free_cb(tree, (prefix_free_t)prefix6_free);
@@ -6054,7 +6059,7 @@ static int do_ip2as(void)
   if((asmaptree = splaytree_alloc((splaytree_cmp_t)sc_asmap_cmp)) == NULL)
     goto err;
 
-  if(af == AF_INET)
+  if(sa_type == SCAMPER_ADDR_TYPE_IPV4)
     j = IPV4_PREFIX_MAX - IPV4_PREFIX_MIN + 1;
   else
     j = IPV6_PREFIX_MAX - IPV6_PREFIX_MIN + 1;
@@ -6085,8 +6090,10 @@ static int do_ip2as(void)
   for(sn = slist_head_node(prefixes); sn != NULL; sn = slist_node_next(sn))
     {
       p = slist_node_item(sn);
-      if((af == AF_INET  && prefixtree_insert4(ip2as_pt,p->pfx.v4) == NULL) ||
-	 (af == AF_INET6 && prefixtree_insert6(ip2as_pt,p->pfx.v6) == NULL))
+      if((sa_type == SCAMPER_ADDR_TYPE_IPV4 &&
+	  prefixtree_insert4(ip2as_pt, p->pfx.v4) == NULL) ||
+	 (sa_type == SCAMPER_ADDR_TYPE_IPV6 &&
+	  prefixtree_insert6(ip2as_pt, p->pfx.v6) == NULL))
 	goto err;
     }
 
@@ -6151,7 +6158,7 @@ static int ixp_line(char *line, void *param)
     {
       if(res->ai_family == PF_INET)
 	{
-	  if(af != AF_INET) break;
+	  if(sa_type != SCAMPER_ADDR_TYPE_IPV4) break;
 	  va = &((struct sockaddr_in *)res->ai_addr)->sin_addr;
 	  if(prefixtree_find_exact4(ixp_pt, va, lo) != NULL)
 	    break;
@@ -6164,7 +6171,7 @@ static int ixp_line(char *line, void *param)
 	}
       else if(res->ai_family == PF_INET6)
 	{
-	  if(af != AF_INET6) break;
+	  if(sa_type != SCAMPER_ADDR_TYPE_IPV6) break;
 	  va = &((struct sockaddr_in6 *)res->ai_addr)->sin6_addr;
 	  if(prefixtree_find_exact6(ixp_pt, va, lo) != NULL)
 	    break;
@@ -6201,8 +6208,7 @@ static int bdrmap_data(void)
   int pair[2];
   int nfds, rc = -1;
 
-  gettimeofday_wrap(&tv);
-  srandom(tv.tv_usec);
+  random_seed();
 
   if((targets = splaytree_alloc((splaytree_cmp_t)sc_target_cmp)) == NULL ||
      (links = splaytree_alloc((splaytree_cmp_t)sc_link_cmp)) == NULL ||
@@ -6234,8 +6240,11 @@ static int bdrmap_data(void)
   decode_in = scamper_file_openfd(decode_in_fd, NULL, 'r', "warts");
   if(decode_in == NULL)
     goto done;
+
+#if defined(HAVE_FCNTL) && defined(O_NONBLOCK)
   if(fcntl_set(decode_in_fd, O_NONBLOCK) == -1)
     goto done;
+#endif
 
   if((options & OPT_REMOTE) == 0 &&
      write_wrap(scamper_fd, "attach\n", NULL, 7) != 0)
@@ -6472,7 +6481,7 @@ static int process_1_dealias(scamper_dealias_t *dealias)
        * to build routers with using CSA.
        */
       if((def = scamper_dealias_prefixscan_def_get(pfs, 0)) != NULL &&
-	 scamper_dealias_probedef_proto_is_udp(def))
+	 scamper_dealias_probedef_is_udp(def))
 	{
 	  for(i=0; i<probec; i++)
 	    {
@@ -6662,7 +6671,7 @@ static int process_1_trace_unrouted(scamper_trace_t *trace, int lh)
 		goto done;
 	      if((pfx->asmap = sc_asmap_get(&as, 1)) == NULL)
 		goto done;
-	      if(af == AF_INET)
+	      if(sa_type == SCAMPER_ADDR_TYPE_IPV4)
 		{
 		  if(prefixtree_insert4(ip2as_pt, pfx->pfx.v4) == NULL)
 		    goto done;
@@ -8602,7 +8611,7 @@ static void cleanup(void)
 
   if(ixp_pt != NULL)
     {
-      if(af == AF_INET)
+      if(sa_type == SCAMPER_ADDR_TYPE_IPV4)
 	prefixtree_free_cb(ixp_pt, (prefix_free_t)prefix4_free);
       else
 	prefixtree_free_cb(ixp_pt, (prefix_free_t)prefix6_free);
@@ -8688,8 +8697,10 @@ int main(int argc, char *argv[])
     return 0;
 
   /* start a daemon if asked to */
+#ifdef HAVE_DAEMON
   if((options & OPT_DAEMON) != 0 && daemon(1, 0) != 0)
     return -1;
+#endif
 
   if(bdrmap_init() != 0)
     return -1;

@@ -533,7 +533,7 @@ static int parse_list(char *str, void *param)
       if((target = malloc_zero(sizeof(target_t))) == NULL ||
 	 (target->un.url = strdup(url)) == NULL)
 	return -1;
-      target->addr  = scamper_addr_resolve(AF_UNSPEC, ip);
+      target->addr  = scamper_addr_fromstr_unspec(ip);
       target->sport = 1050;
     }
   else if(tbit_app == SCAMPER_TBIT_APP_BGP)
@@ -554,7 +554,7 @@ static int parse_list(char *str, void *param)
 	return -1;
       if((target = malloc_zero(sizeof(target_t))) == NULL)
 	return -1;
-      target->addr = scamper_addr_resolve(AF_UNSPEC, ip);
+      target->addr = scamper_addr_fromstr_unspec(ip);
       target->sport = 1050;
       target->un.asn = lo;
       target->mode = MODE_BLIND;

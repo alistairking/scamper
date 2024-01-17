@@ -1,7 +1,7 @@
 /*
  * scamper_tracelb.c
  *
- * $Id: scamper_tracelb.c,v 1.75 2023/06/01 21:50:13 mjl Exp $
+ * $Id: scamper_tracelb.c,v 1.79 2023/07/31 07:47:48 mjl Exp $
  *
  * Copyright (C) 2008-2010 The University of Waikato
  * Copyright (C) 2012      The Regents of the University of California
@@ -43,7 +43,7 @@
 void
 scamper_tracelb_probeset_summary_free(scamper_tracelb_probeset_summary_t *sum)
 {
-  int i;
+  uint16_t i;
   if(sum->addrs != NULL)
     {
       for(i=0; i<sum->addrc; i++)
@@ -56,7 +56,7 @@ scamper_tracelb_probeset_summary_free(scamper_tracelb_probeset_summary_t *sum)
 }
 
 scamper_tracelb_probeset_summary_t *
-scamper_tracelb_probeset_summary_alloc(scamper_tracelb_probeset_t *set)
+scamper_tracelb_probeset_summary_alloc(const scamper_tracelb_probeset_t *set)
 {
   scamper_tracelb_probeset_summary_t *sum = NULL;
   scamper_tracelb_probe_t *probe;
@@ -108,7 +108,7 @@ scamper_tracelb_probeset_summary_alloc(scamper_tracelb_probeset_t *set)
 	      if(array_insert((void ***)&sum->addrs, &addrc, addr,
 			      (array_cmp_t)scamper_addr_cmp) != 0)
 		goto err;
-	      sum->addrc = (int)addrc;
+	      sum->addrc = (uint16_t)addrc;
 	      scamper_addr_use(addr);
 	    }
 	  x++;
@@ -192,28 +192,43 @@ int scamper_tracelb_link_cmp(const scamper_tracelb_link_t *a,
 scamper_tracelb_node_t *scamper_tracelb_node_alloc(scamper_addr_t *addr)
 {
   scamper_tracelb_node_t *node;
-  if((node = malloc_zero(sizeof(scamper_tracelb_node_t))) != NULL)
-    {
-      if(addr != NULL)
-	node->addr = scamper_addr_use(addr);
-    }
+  if((node = malloc_zero(sizeof(scamper_tracelb_node_t))) == NULL)
+    return NULL;
+#ifdef BUILDING_LIBSCAMPERFILE
+  node->refcnt = 1;
+#endif
+  if(addr != NULL)
+    node->addr = scamper_addr_use(addr);
   return node;
 }
 
 void scamper_tracelb_node_free(scamper_tracelb_node_t *node)
 {
+#ifdef BUILDING_LIBSCAMPERFILE
+  uint16_t i;
+#endif
+
   if(node == NULL)
     return;
 
-  if(node->links != NULL)
-    free(node->links);
+#ifdef BUILDING_LIBSCAMPERFILE
+  if(--node->refcnt > 0)
+    return;
+#endif
 
+  if(node->links != NULL)
+    {
+#ifdef BUILDING_LIBSCAMPERFILE
+      for(i=0; i<node->linkc; i++)
+	if(node->links[i] != NULL)
+	  scamper_tracelb_link_free(node->links[i]);
+#endif
+      free(node->links);
+    }
   if(node->addr != NULL)
     scamper_addr_free(node->addr);
-
   if(node->name != NULL)
     free(node->name);
-
   free(node);
   return;
 }
@@ -222,12 +237,10 @@ scamper_tracelb_node_t *scamper_tracelb_node_find(scamper_tracelb_t *trace,
 						  scamper_tracelb_node_t *node)
 {
   uint16_t i;
-
   for(i=0; i<trace->nodec; i++)
     {
       if(trace->nodes[i]->addr == NULL)
 	continue;
-
       if(scamper_tracelb_node_cmp(trace->nodes[i], node) == 0)
 	return trace->nodes[i];
     }
@@ -237,13 +250,13 @@ scamper_tracelb_node_t *scamper_tracelb_node_find(scamper_tracelb_t *trace,
 scamper_tracelb_reply_t *scamper_tracelb_reply_alloc(scamper_addr_t *addr)
 {
   scamper_tracelb_reply_t *reply;
-
   if((reply = malloc_zero(sizeof(scamper_tracelb_reply_t))) == NULL)
     return NULL;
-
+#ifdef BUILDING_LIBSCAMPERFILE
+  reply->refcnt = 1;
+#endif
   if(addr != NULL)
     reply->reply_from = scamper_addr_use(addr);
-
   return reply;
 }
 
@@ -251,13 +264,15 @@ void scamper_tracelb_reply_free(scamper_tracelb_reply_t *reply)
 {
   if(reply == NULL)
     return;
-
+#ifdef BUILDING_LIBSCAMPERFILE
+  if(--reply->refcnt > 0)
+    return;
+#endif
   if(reply->reply_from != NULL)
     scamper_addr_free(reply->reply_from);
-
-  if((reply->reply_flags & SCAMPER_TRACELB_REPLY_FLAG_TCP) == 0)
+  if((reply->reply_flags & SCAMPER_TRACELB_REPLY_FLAG_TCP) == 0 &&
+     reply->reply_icmp_ext != NULL)
     scamper_icmpext_free(reply->reply_icmp_ext);
-
   free(reply);
   return;
 }
@@ -265,17 +280,23 @@ void scamper_tracelb_reply_free(scamper_tracelb_reply_t *reply)
 scamper_tracelb_probe_t *scamper_tracelb_probe_alloc(void)
 {
   scamper_tracelb_probe_t *probe;
-  probe = malloc_zero(sizeof(scamper_tracelb_probe_t));
+  if((probe = malloc_zero(sizeof(scamper_tracelb_probe_t))) == NULL)
+    return NULL;
+#ifdef BUILDING_LIBSCAMPERFILE
+  probe->refcnt = 1;
+#endif
   return probe;
 }
 
 void scamper_tracelb_probe_free(scamper_tracelb_probe_t *probe)
 {
   uint16_t i;
-
   if(probe == NULL)
     return;
-
+#ifdef BUILDING_LIBSCAMPERFILE
+  if(--probe->refcnt > 0)
+    return;
+#endif
   if(probe->rxs != NULL)
     {
       for(i=0; i<probe->rxc; i++)
@@ -308,53 +329,62 @@ int scamper_tracelb_probeset_add(scamper_tracelb_probeset_t *probeset,
 scamper_tracelb_probeset_t *scamper_tracelb_probeset_alloc(void)
 {
   scamper_tracelb_probeset_t *set;
-  set = malloc_zero(sizeof(scamper_tracelb_probeset_t));
+  if((set = malloc_zero(sizeof(scamper_tracelb_probeset_t))) == NULL)
+    return NULL;  
+#ifdef BUILDING_LIBSCAMPERFILE
+  set->refcnt = 1;
+#endif
   return set;
 }
 
 void scamper_tracelb_probeset_free(scamper_tracelb_probeset_t *set)
 {
   uint16_t i;
-
   if(set == NULL)
     return;
-
+#ifdef BUILDING_LIBSCAMPERFILE
+  if(--set->refcnt > 0)
+    return;
+#endif
   if(set->probes != NULL)
     {
       for(i=0; i<set->probec; i++)
 	scamper_tracelb_probe_free(set->probes[i]);
       free(set->probes);
     }
-
   free(set);
   return;
 }
 
 scamper_tracelb_link_t *scamper_tracelb_link_alloc(void)
 {
-  return (scamper_tracelb_link_t *)malloc_zero(sizeof(scamper_tracelb_link_t));
+  scamper_tracelb_link_t *link;
+  if((link = malloc_zero(sizeof(scamper_tracelb_link_t))) == NULL)
+    return NULL;
+#ifdef BUILDING_LIBSCAMPERFILE
+  link->refcnt = 1;
+#endif
+  return link;
 }
 
 void scamper_tracelb_link_free(scamper_tracelb_link_t *link)
 {
   uint8_t i;
-
   if(link == NULL)
     return;
-
+#ifdef BUILDING_LIBSCAMPERFILE
+  if(--link->refcnt > 0)
+    return;
+#endif
   if(link->sets != NULL)
     {
       for(i=0; i<link->hopc; i++)
 	scamper_tracelb_probeset_free(link->sets[i]);
-
       free(link->sets);
     }
-
   free(link);
   return;
 }
-
-
 
 int scamper_tracelb_link_probesets_alloc(scamper_tracelb_link_t *link,
 					 uint8_t hopc)

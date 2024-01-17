@@ -7,7 +7,7 @@
  *
  * Author: Matthew Luckie
  *
- * $Id: scamper_sting_warts.c,v 1.14 2023/05/15 20:55:06 mjl Exp $
+ * $Id: scamper_sting_warts.c,v 1.17 2023/12/24 00:03:21 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -64,28 +64,28 @@
 
 static const warts_var_t sting_vars[] =
 {
-  {WARTS_STING_LIST,     4, -1},
-  {WARTS_STING_CYCLE,    4, -1},
-  {WARTS_STING_USERID,   4, -1},
-  {WARTS_STING_SRC,     -1, -1},
-  {WARTS_STING_DST,     -1, -1},
-  {WARTS_STING_SPORT,    2, -1},
-  {WARTS_STING_DPORT,    2, -1},
-  {WARTS_STING_COUNT,    2, -1},
-  {WARTS_STING_MEAN,     2, -1},
-  {WARTS_STING_INTER,    2, -1},
-  {WARTS_STING_DIST,     1, -1},
-  {WARTS_STING_SYNRETX,  1, -1},
-  {WARTS_STING_DATARETX, 1, -1},
-  {WARTS_STING_SEQSKIP,  1, -1},
-  {WARTS_STING_DATALEN,  2, -1},
-  {WARTS_STING_DATA,    -1, -1},
-  {WARTS_STING_START,    8, -1},
-  {WARTS_STING_HSRTT,    8, -1},
-  {WARTS_STING_DATAACKC, 2, -1},
-  {WARTS_STING_HOLEC,    2, -1},
-  {WARTS_STING_PKTC,     4, -1},
-  {WARTS_STING_RESULT,   1, -1},
+  {WARTS_STING_LIST,     4},
+  {WARTS_STING_CYCLE,    4},
+  {WARTS_STING_USERID,   4},
+  {WARTS_STING_SRC,     -1},
+  {WARTS_STING_DST,     -1},
+  {WARTS_STING_SPORT,    2},
+  {WARTS_STING_DPORT,    2},
+  {WARTS_STING_COUNT,    2},
+  {WARTS_STING_MEAN,     2},
+  {WARTS_STING_INTER,    2},
+  {WARTS_STING_DIST,     1},
+  {WARTS_STING_SYNRETX,  1},
+  {WARTS_STING_DATARETX, 1},
+  {WARTS_STING_SEQSKIP,  1},
+  {WARTS_STING_DATALEN,  2},
+  {WARTS_STING_DATA,    -1},
+  {WARTS_STING_START,    8},
+  {WARTS_STING_HSRTT,    8},
+  {WARTS_STING_DATAACKC, 2},
+  {WARTS_STING_HOLEC,    2},
+  {WARTS_STING_PKTC,     4},
+  {WARTS_STING_RESULT,   1},
 };
 #define sting_vars_mfb WARTS_VAR_MFB(sting_vars)
 
@@ -96,10 +96,10 @@ static const warts_var_t sting_vars[] =
 
 static const warts_var_t sting_pkt_vars[] =
 {
-  {WARTS_STING_PKT_FLAGS,           1, -1},
-  {WARTS_STING_PKT_TIME,            8, -1},
-  {WARTS_STING_PKT_DATALEN,         2, -1},
-  {WARTS_STING_PKT_DATA,           -1, -1},
+  {WARTS_STING_PKT_FLAGS,           1},
+  {WARTS_STING_PKT_TIME,            8},
+  {WARTS_STING_PKT_DATALEN,         2},
+  {WARTS_STING_PKT_DATA,           -1},
 };
 #define sting_pkt_vars_mfb WARTS_VAR_MFB(sting_pkt_vars)
 
@@ -195,9 +195,9 @@ static int warts_sting_pkt_write(const scamper_sting_pkt_t *pkt,
   return 0;
 }
 
-static void warts_sting_params(const scamper_sting_t *sting,
-			       warts_addrtable_t *table, uint8_t *flags,
-			       uint16_t *flags_len, uint16_t *params_len)
+static int warts_sting_params(const scamper_sting_t *sting,
+			      warts_addrtable_t *table, uint8_t *flags,
+			      uint16_t *flags_len, uint16_t *params_len)
 {
   const warts_var_t *var;
   int max_id = 0;
@@ -233,12 +233,14 @@ static void warts_sting_params(const scamper_sting_t *sting,
       /* Variables that don't have a fixed size */
       if(var->id == WARTS_STING_SRC)
         {
-	  *params_len += warts_addr_size(table, sting->src);
+	  if(warts_addr_size(table, sting->src, params_len) != 0)
+	    return -1;
 	  continue;
         }
       else if(var->id == WARTS_STING_DST)
         {
-	  *params_len += warts_addr_size(table, sting->dst);
+	  if(warts_addr_size(table, sting->dst, params_len) != 0)
+	    return -1;
 	  continue;
         }
       else if(var->id == WARTS_STING_DATA)
@@ -252,7 +254,7 @@ static void warts_sting_params(const scamper_sting_t *sting,
     }
 
   *flags_len = fold_flags(flags, max_id);
-  return;
+  return 0;
 }
 
 static int warts_sting_params_read(scamper_sting_t *sting,
@@ -260,6 +262,7 @@ static int warts_sting_params_read(scamper_sting_t *sting,
 				   warts_state_t *state,
 				   uint8_t *buf, uint32_t *off, uint32_t len)
 {
+  uint16_t mean, inter;
   warts_param_reader_t handlers[] = {
     {&sting->list,         (wpr_t)extract_list,         state},
     {&sting->cycle,        (wpr_t)extract_cycle,        state},
@@ -269,8 +272,8 @@ static int warts_sting_params_read(scamper_sting_t *sting,
     {&sting->sport,        (wpr_t)extract_uint16,       NULL},
     {&sting->dport,        (wpr_t)extract_uint16,       NULL},
     {&sting->count,        (wpr_t)extract_uint16,       NULL},
-    {&sting->mean,         (wpr_t)extract_uint16,       NULL},
-    {&sting->inter,        (wpr_t)extract_uint16,       NULL},
+    {&mean,                (wpr_t)extract_uint16,       NULL},
+    {&inter,               (wpr_t)extract_uint16,       NULL},
     {&sting->dist,         (wpr_t)extract_byte,         NULL},
     {&sting->synretx,      (wpr_t)extract_byte,         NULL},
     {&sting->dataretx,     (wpr_t)extract_byte,         NULL},
@@ -290,6 +293,10 @@ static int warts_sting_params_read(scamper_sting_t *sting,
     return rc;
   if(sting->src == NULL || sting->dst == NULL)
     return -1;
+  sting->mean.tv_sec = mean / 1000;
+  sting->mean.tv_usec = (mean % 1000) * 1000;
+  sting->inter.tv_sec = inter / 1000;
+  sting->inter.tv_usec = (inter % 1000) * 1000;
   return 0;
 }
 
@@ -302,6 +309,7 @@ static int warts_sting_params_write(const scamper_sting_t *sting,
 				    const uint16_t params_len)
 {
   uint32_t list_id, cycle_id;
+  uint16_t mean, inter;
   uint16_t dl = sting->datalen;
 
   /* Specifies how to write each variable to the warts file. */
@@ -314,8 +322,8 @@ static int warts_sting_params_write(const scamper_sting_t *sting,
     {&sting->sport,        (wpw_t)insert_uint16,       NULL},
     {&sting->dport,        (wpw_t)insert_uint16,       NULL},
     {&sting->count,        (wpw_t)insert_uint16,       NULL},
-    {&sting->mean,         (wpw_t)insert_uint16,       NULL},
-    {&sting->inter,        (wpw_t)insert_uint16,       NULL},
+    {&mean,                (wpw_t)insert_uint16,       NULL},
+    {&inter,               (wpw_t)insert_uint16,       NULL},
     {&sting->dist,         (wpw_t)insert_byte,         NULL},
     {&sting->synretx,      (wpw_t)insert_byte,         NULL},
     {&sting->dataretx,     (wpw_t)insert_byte,         NULL},
@@ -333,6 +341,8 @@ static int warts_sting_params_write(const scamper_sting_t *sting,
 
   if(warts_list_getid(sf,  sting->list,  &list_id)  == -1) return -1;
   if(warts_cycle_getid(sf, sting->cycle, &cycle_id) == -1) return -1;
+  mean = (sting->mean.tv_sec * 1000) + (sting->mean.tv_usec / 1000);
+  inter = (sting->inter.tv_sec * 1000) + (sting->inter.tv_usec / 1000);
 
   warts_params_write(buf, off, len, flags, flags_len, params_len,
 		     handlers, handler_cnt);
@@ -428,7 +438,8 @@ int scamper_file_warts_sting_write(const scamper_file_t *sf,
     goto err;
 
   /* Set the sting data (not including the packets) */
-  warts_sting_params(sting, table, flags, &flags_len, &params_len);
+  if(warts_sting_params(sting, table, flags, &flags_len, &params_len) != 0)
+    goto err;
   len = 8 + flags_len + params_len + 2;
 
   if(sting->pktc > 0)

@@ -1,14 +1,14 @@
 /*
  * scamper_trace_int.h
  *
- * $Id: scamper_trace_int.h,v 1.1 2023/05/13 23:29:58 mjl Exp $
+ * $Id: scamper_trace_int.h,v 1.6 2023/12/19 05:41:54 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2008      Alistair King
  * Copyright (C) 2015      The Regents of the University of California
  * Copyright (C) 2015      The University of Waikato
- * Copyright (C) 2019-2022 Matthew Luckie
+ * Copyright (C) 2019-2023 Matthew Luckie
  * Authors: Matthew Luckie
  *          Doubletree implementation by Alistair King
  *
@@ -29,6 +29,39 @@
 
 #ifndef __SCAMPER_TRACE_INT_H
 #define __SCAMPER_TRACE_INT_H
+
+/*
+ * scamper_trace_alloc:
+ *  allocate a brand new scamper trace object, empty of any data
+ */
+scamper_trace_t *scamper_trace_alloc(void);
+scamper_trace_hop_t *scamper_trace_hop_alloc(void);
+
+/*
+ * scamper_trace_hops_alloc:
+ *  allocate an array of hop records to the trace object
+ */
+int scamper_trace_hops_alloc(scamper_trace_t *trace, uint16_t hops);
+
+/*
+ * scamper_trace_pmtud_alloc:
+ *  allocate a blank pmtud record for the trace structure
+ */
+scamper_trace_pmtud_t *scamper_trace_pmtud_alloc(void);
+
+scamper_trace_pmtud_n_t *scamper_trace_pmtud_n_alloc(void);
+int scamper_trace_pmtud_n_alloc_c(scamper_trace_pmtud_t *pmtud, uint8_t c);
+int scamper_trace_pmtud_n_add(scamper_trace_pmtud_t *pmtud,
+			      scamper_trace_pmtud_n_t *n);
+
+scamper_trace_dtree_t *scamper_trace_dtree_alloc(void);
+
+int scamper_trace_dtree_lss_set(scamper_trace_dtree_t *dtree, const char *lss);
+int scamper_trace_dtree_gss_alloc(scamper_trace_dtree_t *dtree, uint16_t cnt);
+
+void scamper_trace_dtree_gss_sort(const scamper_trace_dtree_t *dtree);
+scamper_addr_t *scamper_trace_dtree_gss_find(const scamper_trace_dtree_t *dtree,
+                                             const scamper_addr_t *iface);
 
 #define SCAMPER_TRACE_HOP_IS_TCP(hop) (			\
  (hop->hop_flags & SCAMPER_TRACE_HOP_FLAG_TCP) != 0)
@@ -179,8 +212,8 @@ struct scamper_trace
   uint8_t                gapaction;
   uint8_t                firsthop;
   uint8_t                tos;
-  uint8_t                wait;
-  uint8_t                wait_probe;
+  struct timeval         wait_timeout;
+  struct timeval         wait_probe;
   uint8_t                loops;
   uint8_t                loopaction;
   uint8_t                confidence;
@@ -261,6 +294,10 @@ struct scamper_trace_hop
   struct scamper_icmpext      *hop_icmpext;
 
   struct scamper_trace_hop    *hop_next;
+
+#ifdef BUILDING_LIBSCAMPERFILE
+  int                          refcnt;
+#endif
 };
 
 #define hop_icmp_type  hop_un.icmp.hop_icmp_type
@@ -284,6 +321,9 @@ struct scamper_trace_pmtud_n
   uint8_t              type;
   uint16_t             nhmtu;
   scamper_trace_hop_t *hop;
+#ifdef BUILDING_LIBSCAMPERFILE
+  int                  refcnt;
+#endif
 };
 
 /*
@@ -305,6 +345,9 @@ struct scamper_trace_pmtud
   scamper_trace_hop_t      *hops;   /* icmp messages */
   scamper_trace_pmtud_n_t **notes;  /* annotations about pmtud */
   uint8_t                   notec;  /* number of annotations */
+#ifdef BUILDING_LIBSCAMPERFILE
+  int                       refcnt;
+#endif
 };
 
 struct scamper_trace_dtree
@@ -316,6 +359,9 @@ struct scamper_trace_dtree
   scamper_addr_t **gss;
   scamper_addr_t  *gss_stop;
   scamper_addr_t  *lss_stop;
+#ifdef BUILDING_LIBSCAMPERFILE
+  int              refcnt;
+#endif
 };
 
 #endif /* __SCAMPER_TRACE_INT_H */

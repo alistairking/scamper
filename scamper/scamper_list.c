@@ -1,7 +1,7 @@
 /*
  * scamper_list.c
  *
- * $Id: scamper_list.c,v 1.25 2023/05/29 21:27:48 mjl Exp $
+ * $Id: scamper_list.c,v 1.26 2023/07/29 08:14:31 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2010 The University of Waikato
@@ -85,7 +85,7 @@ const char *scamper_cycle_hostname_get(const scamper_cycle_t *cycle)
  * compared with the (same) cycle without a stop time, and be rejected
  * incorrectly.
  */
-int scamper_cycle_cmp(scamper_cycle_t *a, scamper_cycle_t *b)
+int scamper_cycle_cmp(const scamper_cycle_t *a, const scamper_cycle_t *b)
 {
   int i;
 

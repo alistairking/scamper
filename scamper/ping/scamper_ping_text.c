@@ -7,7 +7,7 @@
  * Copyright (C) 2022-2023 Matthew Luckie
  * Author: Matthew Luckie
  *
- * $Id: scamper_ping_text.c,v 1.21 2023/05/29 21:22:26 mjl Exp $
+ * $Id: scamper_ping_text.c,v 1.22 2023/07/08 04:57:51 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -146,42 +146,45 @@ static char *ping_reply(const scamper_ping_t *ping,
 
 static char *ping_stats(const scamper_ping_t *ping)
 {
-  scamper_ping_stats_t stats;
+  scamper_ping_stats_t *stats;
   size_t off = 0;
-  char str[64];
+  char str[64], *dup;
   char buf[512];
   int rp = 0;
 
-  if(scamper_ping_stats(ping, &stats) != 0)
+  if((stats = scamper_ping_stats_alloc(ping)) == NULL)
     return NULL;
 
   if(ping->ping_sent != 0)
-    rp = ((ping->ping_sent - stats.nreplies) * 100) / ping->ping_sent;
+    rp = ((ping->ping_sent - stats->nreplies) * 100) / ping->ping_sent;
 
   string_concat(buf, sizeof(buf), &off, "--- %s ping statistics ---\n",
 		scamper_addr_tostr(ping->dst, str, sizeof(str)));
   string_concat(buf, sizeof(buf), &off,
 		"%d packets transmitted, %d packets received, ",
-		ping->ping_sent, stats.nreplies);
-  if(stats.ndups > 0)
-    string_concat(buf, sizeof(buf), &off, "+%d duplicates, ", stats.ndups);
-  if(stats.nerrs > 0)
-    string_concat(buf, sizeof(buf), &off, "+%d errors, ", stats.nerrs);
+		ping->ping_sent, stats->nreplies);
+  if(stats->ndups > 0)
+    string_concat(buf, sizeof(buf), &off, "+%d duplicates, ", stats->ndups);
+  if(stats->nerrs > 0)
+    string_concat(buf, sizeof(buf), &off, "+%d errors, ", stats->nerrs);
   string_concat(buf, sizeof(buf), &off, "%d%% packet loss\n", rp);
-  if(stats.nreplies > 0)
+  if(stats->nreplies > 0)
     {
       string_concat(buf, sizeof(buf), &off, "round-trip min/avg/max/stddev =");
       string_concat(buf, sizeof(buf), &off, " %s",
-		    timeval_tostr_us(&stats.min_rtt, str, sizeof(str)));
+		    timeval_tostr_us(&stats->min_rtt, str, sizeof(str)));
       string_concat(buf, sizeof(buf), &off, "/%s",
-		    timeval_tostr_us(&stats.avg_rtt, str, sizeof(str)));
+		    timeval_tostr_us(&stats->avg_rtt, str, sizeof(str)));
       string_concat(buf, sizeof(buf), &off, "/%s",
-		    timeval_tostr_us(&stats.max_rtt, str, sizeof(str)));
+		    timeval_tostr_us(&stats->max_rtt, str, sizeof(str)));
       string_concat(buf, sizeof(buf), &off, "/%s ms\n",
-      		    timeval_tostr_us(&stats.stddev_rtt, str, sizeof(str)));
+      		    timeval_tostr_us(&stats->stddev_rtt, str, sizeof(str)));
     }
 
-  return strdup(buf);
+  dup = strdup(buf);
+  scamper_ping_stats_free(stats);
+
+  return dup;
 }
 
 int scamper_file_text_ping_write(const scamper_file_t *sf,

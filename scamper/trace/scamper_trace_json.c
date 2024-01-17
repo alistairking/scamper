@@ -10,7 +10,7 @@
  *
  * Authors: Brian Hammond, Matthew Luckie
  *
- * $Id: scamper_trace_json.c,v 1.27 2023/05/29 21:22:27 mjl Exp $
+ * $Id: scamper_trace_json.c,v 1.28 2023/12/19 05:41:54 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -144,6 +144,7 @@ static char *header_tostr(const scamper_trace_t *trace)
   char buf[512], tmp[64];
   size_t off = 0;
   time_t tt = trace->start.tv_sec;
+  uint32_t cs;
 
   string_concat(buf,sizeof(buf),&off,"\"type\":\"trace\",\"version\":\"0.1\"");
   string_concat(buf, sizeof(buf), &off, ", \"userid\":%u", trace->userid);
@@ -173,9 +174,10 @@ static char *header_tostr(const scamper_trace_t *trace)
   string_concat(buf, sizeof(buf), &off,
 		", \"hop_count\":%u, \"attempts\":%u, \"hoplimit\":%u",
 		trace->hop_count, trace->attempts, trace->hoplimit);
+  cs = (trace->wait_probe.tv_sec * 100) + (trace->wait_probe.tv_usec / 10000);
   string_concat(buf, sizeof(buf), &off,
 		", \"firsthop\":%u, \"wait\":%u, \"wait_probe\":%u",
-		trace->firsthop, trace->wait, trace->wait_probe);
+		trace->firsthop, (uint32_t)trace->wait_timeout.tv_sec, cs);
   string_concat(buf, sizeof(buf), &off,
 		", \"tos\":%u, \"probe_size\":%u, \"probe_count\":%u",
 		trace->tos, trace->probe_size, trace->probec);

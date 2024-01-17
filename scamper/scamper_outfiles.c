@@ -1,7 +1,7 @@
 /*
  * scamper_outfiles: hold a collection of output targets together
  *
- * $Id: scamper_outfiles.c,v 1.53.4.3 2023/08/26 21:26:45 mjl Exp $
+ * $Id: scamper_outfiles.c,v 1.58 2023/08/26 21:25:08 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -191,12 +191,6 @@ scamper_outfile_t *scamper_outfile_open(const char *name, const char *file,
   char sf_mode;
   int fd;
 
-  if(name == NULL || file == NULL || mo == NULL)
-    {
-      snprintf(err, errlen, "missing parameter");
-      return NULL;
-    }
-
   /* already an outfile with this name */
   if(scamper_outfiles_get(name) != NULL)
     {
@@ -283,7 +277,7 @@ scamper_outfile_t *scamper_outfile_open(const char *name, const char *file,
   return sof;
 }
 
-static int outfile_opendef(char *filename, char *type)
+static int outfile_opendef(const char *filename, const char *type)
 {
   scamper_file_t *sf;
   int flags;
@@ -336,7 +330,8 @@ static int outfile_opendef(char *filename, char *type)
   return 0;
 }
 
-scamper_outfile_t *scamper_outfile_openfd(char *name, int fd, char *type)
+scamper_outfile_t *scamper_outfile_openfd(const char *name, int fd,
+					  const char *type)
 {
   scamper_outfile_t *sof = NULL;
   scamper_file_t *sf = NULL;
@@ -353,12 +348,13 @@ scamper_outfile_t *scamper_outfile_openfd(char *name, int fd, char *type)
   return sof;
 }
 
-scamper_outfile_t *scamper_outfile_opennull(char *name, char *format)
+scamper_outfile_t *scamper_outfile_opennull(const char *name,
+					    const char *type)
 {
   scamper_outfile_t *sof;
   scamper_file_t *sf;
 
-  if((sf = scamper_file_opennull('w', format)) == NULL)
+  if((sf = scamper_file_opennull('w', type)) == NULL)
     {
       printerror(__func__, "could not opennull");
       return NULL;
@@ -380,7 +376,7 @@ void scamper_outfiles_foreach(void *p,
   return;
 }
 
-int scamper_outfiles_init(char *def_filename, char *def_type)
+int scamper_outfiles_init(const char *def_filename, const char *def_type)
 {
   if((outfiles = splaytree_alloc((splaytree_cmp_t)outfile_cmp)) == NULL)
     {

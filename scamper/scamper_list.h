@@ -1,7 +1,7 @@
 /*
  * scamper_list.h
  *
- * $Id: scamper_list.h,v 1.9 2023/05/29 21:27:48 mjl Exp $
+ * $Id: scamper_list.h,v 1.12 2023/08/08 06:19:31 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2008 The University of Waikato
@@ -61,21 +61,18 @@ time_t scamper_cycle_stop_time_get(const scamper_cycle_t *cycle);
 const char *scamper_cycle_hostname_get(const scamper_cycle_t *cycle);
 
 /*
- * scamper_[list|cycle]_[alloc|use|free]
+ * scamper_[list|cycle]_[use|free]
  *
  * in order to prevent list and cycle objects from being copied many times
  * for use by data objects, we use a reference counter in each structure
  * so that it is allocated just the once.
  */
-scamper_list_t *scamper_list_alloc(const uint32_t id, const char *name,
-				   const char *descr, const char *monitor);
 scamper_list_t *scamper_list_use(scamper_list_t *list);
 void scamper_list_free(scamper_list_t *list);
 int scamper_list_cmp(const scamper_list_t *a, const scamper_list_t *b);
 
-scamper_cycle_t *scamper_cycle_alloc(scamper_list_t *list);
 scamper_cycle_t *scamper_cycle_use(scamper_cycle_t *cycle);
 void scamper_cycle_free(scamper_cycle_t *cycle);
-int scamper_cycle_cmp(scamper_cycle_t *a, scamper_cycle_t *b);
+int scamper_cycle_cmp(const scamper_cycle_t *a, const scamper_cycle_t *b);
 
 #endif /* __SCAMPER_LIST_H */

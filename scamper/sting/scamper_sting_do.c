@@ -1,7 +1,7 @@
 /*
  * scamper_do_sting.c
  *
- * $Id: scamper_sting_do.c,v 1.53.4.1 2023/08/18 21:25:04 mjl Exp $
+ * $Id: scamper_sting_do.c,v 1.56 2023/12/24 01:34:46 mjl Exp $
  *
  * Copyright (C) 2008-2011 The University of Waikato
  * Copyright (C) 2012      The Regents of the University of California
@@ -350,6 +350,9 @@ static void do_sting_handle_dl(scamper_task_t *task, scamper_dl_rec_t *dl)
   sting_state_t *state = sting_getstate(task);
   scamper_sting_pkt_t *pkt;
 
+  if(state == NULL)
+    return;
+
   /* unless the packet is an inbound TCP packet for the flow, ignore it */
   if(SCAMPER_DL_IS_TCP(dl) == 0 ||
      dl->dl_tcp_sport != sting->dport ||
@@ -561,7 +564,7 @@ static void do_sting_probe(scamper_task_t *task)
   scamper_sting_t *sting = sting_getdata(task);
   sting_state_t   *state = sting_getstate(task);
   scamper_probe_t  probe;
-  uint32_t         wait;
+  struct timeval   wait;
   uint8_t          data[3];
 
   if(state == NULL)
@@ -636,7 +639,7 @@ static void do_sting_probe(scamper_task_t *task)
       probe.pr_len       = 0;
 
       /* wait five seconds */
-      wait = 5000;
+      wait.tv_sec = 5; wait.tv_usec = 0;
     }
   else if(state->mode == MODE_ACK)
     {
@@ -647,7 +650,7 @@ static void do_sting_probe(scamper_task_t *task)
       probe.pr_len       = 0;
 
       /* wait for 50 msec until sending the first data probe */
-      wait = 50;
+      wait.tv_sec = 0; wait.tv_usec = 50000;
       state->mode = MODE_DATA;
     }
   else if(state->mode == MODE_DATA)
@@ -663,7 +666,7 @@ static void do_sting_probe(scamper_task_t *task)
 
       state->off++;
 
-      wait = sting->mean;
+      timeval_cpy(&wait, &sting->mean);
     }
   else if(state->mode == MODE_HOLE)
     {
@@ -687,7 +690,7 @@ static void do_sting_probe(scamper_task_t *task)
 	}
 
       /* wait 2 seconds before trying to retransmit */
-      wait = 2000;
+      wait.tv_sec = 2; wait.tv_usec = 0;
     }
   else if(state->mode == MODE_RST)
     {
@@ -698,7 +701,7 @@ static void do_sting_probe(scamper_task_t *task)
       probe.pr_len       = 0;
 
       /* wait a second */
-      wait = 1000;
+      wait.tv_sec = 1; wait.tv_usec = 0;
     }
   else
     {
@@ -729,17 +732,17 @@ static void do_sting_probe(scamper_task_t *task)
       if(state->probec == sting->count)
 	{
 	  /* wait 2 seconds */
-	  wait = sting->inter;
+	  timeval_cpy(&wait, &sting->inter);
 	  state->mode = MODE_INTER;
 	}
       state->probec++;
     }
 
   /* figure out when the next probe may be sent */
-  timeval_add_ms(&state->next_tx, &probe.pr_tx, wait);
+  timeval_add_tv3(&state->next_tx, &probe.pr_tx, &wait);
 
   /* put in the queue for waiting */
-  scamper_task_queue_wait(task, wait);
+  scamper_task_queue_wait_tv(task, &state->next_tx);
 
   state->attempt++;
   return;

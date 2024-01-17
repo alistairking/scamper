@@ -1,7 +1,7 @@
 /*
  * scamper_ping_int.h
  *
- * $Id: scamper_ping_int.h,v 1.1 2023/05/14 08:11:19 mjl Exp $
+ * $Id: scamper_ping_int.h,v 1.6 2023/11/27 07:56:14 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -26,6 +26,19 @@
 
 #ifndef __SCAMPER_PING_INT_H
 #define __SCAMPER_PING_INT_H
+
+scamper_ping_t *scamper_ping_alloc(void);
+scamper_ping_v4ts_t *scamper_ping_v4ts_alloc(uint8_t ipc);
+scamper_ping_reply_t *scamper_ping_reply_alloc(void);
+scamper_ping_reply_v4ts_t *scamper_ping_reply_v4ts_alloc(uint8_t tsc, int ip);
+scamper_ping_reply_v4rr_t *scamper_ping_reply_v4rr_alloc(uint8_t ipc);
+scamper_ping_reply_tsreply_t *scamper_ping_reply_tsreply_alloc(void);
+
+int scamper_ping_replies_alloc(scamper_ping_t *ping, uint16_t count);
+int scamper_ping_reply_append(scamper_ping_t *p, scamper_ping_reply_t *reply);
+
+/* count how many replies were received in total */
+uint32_t scamper_ping_reply_total(const scamper_ping_t *ping);
 
 #define SCAMPER_PING_REPLY_IS_ICMP(reply) (        \
  ((reply)->addr->type == SCAMPER_ADDR_TYPE_IPV4 && \
@@ -216,6 +229,10 @@ struct scamper_ping_reply
 
   /* if a single probe gets more than one response, they get chained */
   struct scamper_ping_reply *next;
+
+#ifdef BUILDING_LIBSCAMPERFILE
+  int                        refcnt;
+#endif
 };
 
 /*
@@ -249,15 +266,13 @@ struct scamper_ping
   uint16_t               probe_datalen;
 
   /* ping options */
+  struct timeval         wait_probe;       /* -i */
+  struct timeval         wait_timeout;     /* -W */
   uint16_t               probe_count;      /* -c */
   uint16_t               probe_size;       /* -s */
   uint8_t                probe_method;     /* -P */
   uint8_t                probe_ttl;        /* -m */
   uint8_t                probe_tos;        /* -z */
-  uint8_t                probe_timeout;    /* -W */
-  uint32_t               probe_timeout_us; /* -W */
-  uint8_t                probe_wait;       /* -i */
-  uint32_t               probe_wait_us;    /* -i */
   uint16_t               probe_sport;      /* -F */
   uint16_t               probe_dport;      /* -d */
   uint16_t               probe_icmpsum;    /* -C */

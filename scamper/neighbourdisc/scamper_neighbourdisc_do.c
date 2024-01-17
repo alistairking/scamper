@@ -1,7 +1,7 @@
 /*
  * scamper_do_neighbourdisc
  *
- * $Id: scamper_neighbourdisc_do.c,v 1.44 2023/06/04 04:52:48 mjl Exp $
+ * $Id: scamper_neighbourdisc_do.c,v 1.45 2023/12/24 00:19:25 mjl Exp $
  *
  * Copyright (C) 2009-2023 Matthew Luckie
  *
@@ -402,6 +402,7 @@ static void do_nd_probe(scamper_task_t *task)
   scamper_neighbourdisc_probe_t *probe = NULL;
   scamper_neighbourdisc_t *nd = nd_getdata(task);
   nd_state_t *state = nd_getstate(task);
+  struct timeval timeout;
   scamper_dl_t *dl;
   size_t len;
   char ip[64], mac[32];
@@ -463,7 +464,8 @@ static void do_nd_probe(scamper_task_t *task)
       goto err;
     }
 
-  scamper_task_queue_wait(task, nd->wait);
+  timeval_add_tv3(&timeout, &probe->tx, &nd->wait_timeout);
+  scamper_task_queue_wait_tv(task, &timeout);
   return;
 
  err:
@@ -642,8 +644,9 @@ scamper_neighbourdisc_do_t *scamper_do_neighbourdisc_do(
   nd->dst_ip    = scamper_addr_use(dst);
   nd->flags    |= SCAMPER_NEIGHBOURDISC_FLAG_FIRSTRESPONSE;
   nd->attempts  = 1;
-  nd->wait      = 500;
   nd->replyc    = 1;
+  nd->wait_timeout.tv_sec = 0;
+  nd->wait_timeout.tv_usec = 500000;
 
   if((task = scamper_do_neighbourdisc_alloctask(nd, NULL, NULL)) == NULL)
     goto err;

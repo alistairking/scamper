@@ -4,7 +4,7 @@
  * Copyright (C) 2023 Matthew Luckie
  * Author: Matthew Luckie
  *
- * $Id: scamper_tbit_lib.c,v 1.1 2023/05/31 23:22:18 mjl Exp $
+ * $Id: scamper_tbit_lib.c,v 1.4 2023/07/29 21:22:22 mjl Exp $
  *
  * This file implements algorithms described in the tbit-1.0 source code,
  * as well as the papers:
@@ -179,28 +179,28 @@ int scamper_tbit_type_is_blind(const scamper_tbit_t *tbit)
   return SCAMPER_TBIT_TYPE_IS_BLIND(tbit);
 }
 
-const scamper_tbit_pmtud_t *scamper_tbit_pmtud_get(const scamper_tbit_t *tbit)
+scamper_tbit_pmtud_t *scamper_tbit_pmtud_get(const scamper_tbit_t *tbit)
 {
   if(tbit->type == SCAMPER_TBIT_TYPE_PMTUD)
     return tbit->data;
   return NULL;
 }
 
-const scamper_tbit_icw_t *scamper_tbit_icw_get(const scamper_tbit_t *tbit)
+scamper_tbit_icw_t *scamper_tbit_icw_get(const scamper_tbit_t *tbit)
 {
   if(tbit->type == SCAMPER_TBIT_TYPE_ICW)
     return tbit->data;
   return NULL;
 }
 
-const scamper_tbit_null_t *scamper_tbit_null_get(const scamper_tbit_t *tbit)
+scamper_tbit_null_t *scamper_tbit_null_get(const scamper_tbit_t *tbit)
 {
   if(tbit->type == SCAMPER_TBIT_TYPE_NULL)
     return tbit->data;
   return NULL;
 }
 
-const scamper_tbit_blind_t *scamper_tbit_blind_get(const scamper_tbit_t *tbit)
+scamper_tbit_blind_t *scamper_tbit_blind_get(const scamper_tbit_t *tbit)
 {
   if(SCAMPER_TBIT_TYPE_IS_BLIND(tbit))
     return tbit->data;
@@ -212,14 +212,14 @@ uint8_t scamper_tbit_app_proto_get(const scamper_tbit_t *tbit)
   return tbit->app_proto;
 }
 
-const scamper_tbit_app_http_t *scamper_tbit_app_http_get(const scamper_tbit_t *tbit)
+scamper_tbit_app_http_t *scamper_tbit_app_http_get(const scamper_tbit_t *tbit)
 {
   if(tbit->app_proto == SCAMPER_TBIT_APP_HTTP)
     return tbit->app_data;
   return NULL;
 }
 
-const scamper_tbit_app_bgp_t *scamper_tbit_app_bgp_get(const scamper_tbit_t *tbit)
+scamper_tbit_app_bgp_t *scamper_tbit_app_bgp_get(const scamper_tbit_t *tbit)
 {
   if(tbit->app_proto == SCAMPER_TBIT_APP_BGP)
     return tbit->app_data;
@@ -241,37 +241,37 @@ uint16_t scamper_tbit_server_mss_get(const scamper_tbit_t *tbit)
   return tbit->server_mss;
 }
 
-const uint8_t *scamper_tbit_fo_cookie_get(const scamper_tbit_t *tbit)
+const uint8_t *scamper_tbit_client_fo_cookie_get(const scamper_tbit_t *tbit)
 {
-  return tbit->fo_cookie;
+  return tbit->client_fo_cookie;
 }
 
-uint8_t scamper_tbit_fo_cookielen_get(const scamper_tbit_t *tbit)
+uint8_t scamper_tbit_client_fo_cookielen_get(const scamper_tbit_t *tbit)
 {
-  return tbit->fo_cookielen;
+  return tbit->client_fo_cookielen;
 }
 
-uint8_t scamper_tbit_wscale_get(const scamper_tbit_t *tbit)
+uint8_t scamper_tbit_client_wscale_get(const scamper_tbit_t *tbit)
 {
-  return tbit->wscale;
+  return tbit->client_wscale;
 }
 
-uint8_t scamper_tbit_ttl_get(const scamper_tbit_t *tbit)
+uint8_t scamper_tbit_client_ipttl_get(const scamper_tbit_t *tbit)
 {
-  return tbit->ttl;
+  return tbit->client_ipttl;
 }
 
-uint8_t scamper_tbit_syn_retx_get(const scamper_tbit_t *tbit)
+uint8_t scamper_tbit_client_syn_retx_get(const scamper_tbit_t *tbit)
 {
-  return tbit->syn_retx;
+  return tbit->client_syn_retx;
 }
 
-uint8_t scamper_tbit_dat_retx_get(const scamper_tbit_t *tbit)
+uint8_t scamper_tbit_client_dat_retx_get(const scamper_tbit_t *tbit)
 {
-  return tbit->dat_retx;
+  return tbit->client_dat_retx;
 }
 
-const scamper_tbit_pkt_t *scamper_tbit_pkt_get(const scamper_tbit_t *tbit, uint32_t i)
+scamper_tbit_pkt_t *scamper_tbit_pkt_get(const scamper_tbit_t *tbit,uint32_t i)
 {
   if(tbit->pktc <= i)
     return NULL;
@@ -322,3 +322,11 @@ const uint8_t *scamper_tbit_tcpqe_data_get(const scamper_tbit_tcpqe_t *tqe)
 {
   return tqe->data;
 }
+
+#ifdef BUILDING_LIBSCAMPERFILE
+scamper_tbit_pkt_t *scamper_tbit_pkt_use(scamper_tbit_pkt_t *pkt)
+{
+  pkt->refcnt++;
+  return pkt;
+}
+#endif
