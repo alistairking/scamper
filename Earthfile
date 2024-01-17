@@ -39,7 +39,7 @@ build:
              ./
         RUN autoreconf -vfi
         RUN ./configure
-        RUN make -j $(nprocs)
+        RUN make
         ARG TARGETPLATFORM
         SAVE ARTIFACT scamper/scamper ${base}/${TARGETPLATFORM}/scamper \
              AS LOCAL ./build/${base}/${TARGETPLATFORM}/scamper
@@ -162,7 +162,7 @@ bootstrap-native:
 build-native:
         LOCALLY
         # BUILD +bootstrap-native # LOCALLY doesn't cache, so do this yourself
-        RUN make -j $(nprocs)
+        RUN make
         ARG native_platform=native
         RUN mkdir -p ./build/${native_platform}
         RUN cp scamper/scamper ./build/${native_platform}/scamper
