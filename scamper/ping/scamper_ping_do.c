@@ -863,6 +863,19 @@ static int ping_state_alloc(scamper_task_t *task)
   return -1;
 }
 
+static void ping_probe_tx_cb(void *param)
+{
+	ping_probe_t *pp = param;
+	struct timeval before;
+	timeval_cpy(&before, &pp->tx);
+	gettimeofday_wrap(&pp->tx);
+	scamper_debug(__func__,
+	              "updating probe tx time from %ld.%ld to %ld.%ld. "
+	              "difference: %dms",
+	              before.tv_sec, before.tv_usec, pp->tx.tv_sec, pp->tx.tv_usec,
+	              timeval_diff_ms(&pp->tx, &before));
+}
+
 /*
  * do_ping_probe
  *
@@ -1050,6 +1063,10 @@ static void do_ping_probe(scamper_task_t *task)
       if((pp = malloc_zero(sizeof(ping_probe_t))) == NULL)
 	goto err;
 
+      /* register a callback so that we can record an accurate transmit time */
+      probe.cb = ping_probe_tx_cb;
+      probe.param = pp;
+
       /* if we're generating a random source port, then try a few times in case the
 	     * port we pick is already used
 	     */
@@ -1085,7 +1102,7 @@ static void do_ping_probe(scamper_task_t *task)
 	}
 
       /* fill out the details of the probe sent */
-      timeval_cpy(&pp->tx, &probe.pr_tx);
+  	timeval_cpy(&pp->tx, &probe.pr_tx);
       pp->ipid = ipid;
       state->probes[state->seq] = pp;
       state->seq++;

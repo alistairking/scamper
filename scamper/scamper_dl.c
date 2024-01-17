@@ -1305,7 +1305,7 @@ static int dl_linux_ring_init(scamper_dl_t *dl) {
                 "block_size=%d, frame_size=%d, block_cnt=%d, "
                 "frame_cnt=%d, alloc_size=%d, "
                 "tp_block_size=%d, tp_block_nr=%d, "
-                "tp_frame_size=%d, tp_frame_nr=%d\n",
+                "tp_frame_size=%d, tp_frame_nr=%d",
                 __func__, block_size, frame_size, block_cnt, frame_cnt,
                 block_size * block_cnt,
                 ring->req.tp_block_size, ring->req.tp_block_nr,

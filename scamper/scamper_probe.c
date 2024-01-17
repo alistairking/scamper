@@ -75,6 +75,8 @@ typedef struct probe_state
   struct timeval      tv;
   int                 mode;
   int                 error;
+  void                (*cb)(void* param);
+  void                *param;
 } probe_state_t;
 
 #define PROBE_MODE_TX_RT 1
@@ -411,6 +413,9 @@ static probe_state_t *probe_state_alloc(scamper_probe_t *pr)
       goto err;
     }
 
+  pt->cb = pr->cb;
+  pt->param = pr->param;
+
   /* if we are sending IPv4 TCP probes using a raw socket, we're done */
   if(pr->pr_ip_proto == IPPROTO_TCP)
     {
@@ -518,6 +523,13 @@ static int probe_dl_tx(probe_state_t *pt)
     }
 
   pt->mode = PROBE_MODE_TX;
+
+  /* Let the sender know that the probe has been sent */
+  if (pt->cb != NULL)
+  {
+      pt->cb(pt->param);
+  }
+
   return 0;
 }
 
@@ -831,21 +843,23 @@ int scamper_probe_task(scamper_probe_t *pr, scamper_task_t *task)
   /* get an ICMP socket to listen for responses */
   if(SCAMPER_ADDR_TYPE_IS_IPV4(pr->pr_ip_dst))
     {
-      if((pr->pr_flags & SCAMPER_PROBE_FLAG_SPOOF) == 0 &&
-	 (icmp = scamper_task_fd_icmp4(task, pr->pr_ip_src->addr)) == NULL)
-	{
-	  pr->pr_errno = errno;
-	  goto err;
-	}
+      if(((pr->pr_flags & SCAMPER_PROBE_FLAG_SPOOF) == 0 &&
+          (pr->pr_flags & SCAMPER_PROBE_FLAG_DL) == 0) &&
+         (icmp = scamper_task_fd_icmp4(task, pr->pr_ip_src->addr)) == NULL)
+      {
+          pr->pr_errno = errno;
+          goto err;
+      }
     }
   else if(SCAMPER_ADDR_TYPE_IS_IPV6(pr->pr_ip_dst))
     {
-      if((pr->pr_flags & SCAMPER_PROBE_FLAG_SPOOF) == 0 &&
-	 (icmp = scamper_task_fd_icmp6(task, pr->pr_ip_src->addr)) == NULL)
-	{
-	  pr->pr_errno = errno;
-	  goto err;
-	}
+      if(((pr->pr_flags & SCAMPER_PROBE_FLAG_SPOOF) == 0 &&
+          (pr->pr_flags & SCAMPER_PROBE_FLAG_DL) == 0) &&
+         (icmp = scamper_task_fd_icmp6(task, pr->pr_ip_src->addr)) == NULL)
+      {
+          pr->pr_errno = errno;
+          goto err;
+      }
     }
   else
     {

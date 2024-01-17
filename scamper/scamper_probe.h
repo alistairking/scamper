@@ -187,6 +187,10 @@ typedef struct scamper_probe
 
   /* if an error occurs in the probe function, the errno is recorded */
   int                    pr_errno;
+
+  /* optional function to be called when probe has been transmitted (DL only) */
+  void          (*cb)(void *param);
+  void           *param;
 } scamper_probe_t;
 
 int scamper_probe(scamper_probe_t *probe);
