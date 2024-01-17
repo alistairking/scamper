@@ -7,7 +7,7 @@
  * Copyright (C) 2020-2023 Matthew Luckie
  * Author: Matthew Luckie
  *
- * $Id: scamper_ping.c,v 1.46 2023/06/01 07:10:45 mjl Exp $
+ * $Id: scamper_ping.c,v 1.52 2023/07/25 08:46:24 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -58,8 +58,15 @@ char *scamper_ping_method_tostr(const scamper_ping_t *ping,char *buf,size_t len)
   return buf;
 }
 
-int scamper_ping_stats(const scamper_ping_t *ping, scamper_ping_stats_t *stats)
+void scamper_ping_stats_free(scamper_ping_stats_t *stats)
 {
+  free(stats);
+  return;
+}
+
+scamper_ping_stats_t *scamper_ping_stats_alloc(const scamper_ping_t *ping)
+{
+  scamper_ping_stats_t *stats = NULL;
   scamper_ping_reply_t *reply;
   uint16_t i;
   uint32_t us;
@@ -68,7 +75,8 @@ int scamper_ping_stats(const scamper_ping_t *ping, scamper_ping_stats_t *stats)
   uint32_t n;
   uint32_t err, rxc;
 
-  memset(stats, 0, sizeof(scamper_ping_stats_t));
+  if((stats = malloc_zero(sizeof(scamper_ping_stats_t))) == NULL)
+    return NULL;
 
   for(i=0; i<ping->ping_sent; i++)
     {
@@ -137,7 +145,7 @@ int scamper_ping_stats(const scamper_ping_t *ping, scamper_ping_stats_t *stats)
       stats->stddev_rtt.tv_usec = us % 1000000;
     }
 
-  return 0;
+  return stats;
 }
 
 scamper_ping_reply_tsreply_t *scamper_ping_reply_tsreply_alloc(void)
@@ -191,7 +199,7 @@ scamper_ping_v4ts_t *scamper_ping_v4ts_alloc(uint8_t ipc)
   return NULL;
 }
 
-scamper_ping_t *scamper_ping_alloc()
+scamper_ping_t *scamper_ping_alloc(void)
 {
   return (scamper_ping_t *)malloc_zero(sizeof(scamper_ping_t));
 }
@@ -374,12 +382,23 @@ scamper_ping_reply_v4rr_t *scamper_ping_reply_v4rr_alloc(uint8_t ipc)
 
 scamper_ping_reply_t *scamper_ping_reply_alloc(void)
 {
-  return (scamper_ping_reply_t *)malloc_zero(sizeof(scamper_ping_reply_t));
+  scamper_ping_reply_t *reply = malloc_zero(sizeof(scamper_ping_reply_t));
+#ifdef BUILDING_LIBSCAMPERFILE
+  if(reply != NULL)
+    reply->refcnt = 1;
+#endif
+  return reply;
 }
 
 void scamper_ping_reply_free(scamper_ping_reply_t *reply)
 {
-  if(reply == NULL) return;
+  if(reply == NULL)
+    return;
+
+#ifdef BUILDING_LIBSCAMPERFILE
+  if(--reply->refcnt > 0)
+    return;
+#endif
 
   if(reply->addr != NULL)
     scamper_addr_free(reply->addr);

@@ -1,7 +1,7 @@
 /*
  * scamper_host_do
  *
- * $Id: scamper_host_do.c,v 1.55.4.5 2023/08/26 21:26:45 mjl Exp $
+ * $Id: scamper_host_do.c,v 1.68 2023/12/29 18:22:49 mjl Exp $
  *
  * Copyright (C) 2018-2023 Matthew Luckie
  *
@@ -43,6 +43,7 @@
 #include "mjl_splaytree.h"
 #include "utils.h"
 
+#ifndef TEST_HOST_RR_LIST
 static scamper_task_funcs_t host_funcs;
 static splaytree_t *queries = NULL;
 static uint8_t *pktbuf = NULL;
@@ -117,7 +118,7 @@ static int etc_resolv_line(char *line, void *param)
   if(strcasecmp(line+x, "fe80::1") == 0)
     return 0;
 
-  if((sa = scamper_addr_resolve(AF_UNSPEC, line+x)) == NULL)
+  if((sa = scamper_addr_fromstr_unspec(line+x)) == NULL)
     {
       scamper_debug(__func__, "could not resolve %s", line+x);
       return 0;
@@ -347,7 +348,7 @@ static host_state_t *host_state_alloc(scamper_task_t *task)
 
   if(host->qtype == SCAMPER_HOST_TYPE_PTR)
     {
-      if((sa = scamper_addr_resolve(AF_UNSPEC, host->qname)) == NULL)
+      if((sa = scamper_addr_fromstr_unspec(host->qname)) == NULL)
 	{
 	  printerror(__func__, "could not resolve %s", host->qname);
 	  goto err;
@@ -408,6 +409,7 @@ static host_state_t *host_state_alloc(scamper_task_t *task)
   if(state != NULL) host_state_free(state);
   return NULL;
 }
+#endif /* TEST_HOST_RR_LIST */
 
 static int extract_name(char *name, size_t namelen,
 			const uint8_t *pbuf, size_t plen, size_t off)
@@ -463,7 +465,7 @@ static int extract_name(char *name, size_t namelen,
 	rc += u8 + 1;
     }
 
-  name[i-1] = '\0';
+  name[i > 0 ? i-1 : 0] = '\0';
   return rc;
 }
 
@@ -525,6 +527,113 @@ static int extract_mx(scamper_host_rr_t *rr,
   return 0;
 }
 
+#ifdef TEST_HOST_RR_LIST
+slist_t *host_rr_list(const uint8_t *buf, size_t off, size_t len)
+#else
+static slist_t *host_rr_list(const uint8_t *buf, size_t off, size_t len)
+#endif
+{
+  slist_t *rr_list = NULL;
+  struct in6_addr in6;
+  struct in_addr in4;
+  scamper_host_rr_t *rr = NULL;
+  uint16_t rdlength, type, class;
+  uint32_t ttl;
+  char name[256], str[256];
+  int i, j, k, x;
+
+  if((rr_list = slist_alloc()) == NULL)
+    {
+      printerror(__func__, "could not alloc rr_list");
+      goto err;
+    }
+
+  for(i=0; i<3; i++)
+    {
+      if(i == 0) x = bytes_ntohs(buf+6);
+      else if(i == 1) x = bytes_ntohs(buf+8);
+      else if(i == 2) x = bytes_ntohs(buf+10);
+
+      for(j=0; j<x; j++)
+	{
+	  if((k = extract_name(name, sizeof(name), buf, len, off)) <= 0)
+	    {
+	      scamper_debug(__func__, "could not extract name");
+	      goto err;
+	    }
+	  off += k;
+
+	  type = bytes_ntohs(buf+off); off += 2;
+	  class = bytes_ntohs(buf+off); off += 2;
+	  ttl = bytes_ntohl(buf+off); off += 4;
+	  rdlength = bytes_ntohs(buf+off); off += 2;
+	  if((rr = scamper_host_rr_alloc(name, class, type, ttl)) == NULL)
+	    {
+	      printerror(__func__, "could not alloc rr");
+	      goto err;
+	    }
+
+	  if(class == 1 &&
+	     (type == SCAMPER_HOST_TYPE_NS ||
+	      type == SCAMPER_HOST_TYPE_CNAME ||
+	      type == SCAMPER_HOST_TYPE_PTR))
+	    {
+	      if(extract_name(str, sizeof(str), buf, len, off) <= 0)
+		goto err;
+	      if((rr->un.str = strdup(str)) == NULL)
+		goto err;
+	    }
+	  else if(class == 1 && type == SCAMPER_HOST_TYPE_A)
+	    {
+	      if(rdlength != 4)
+		goto err;
+	      memcpy(&in4, buf+off, rdlength);
+	      inet_ntop(AF_INET, &in4, str, sizeof(str));
+	      if((rr->un.addr = scamper_addr_alloc_ipv4(&in4)) == NULL)
+		goto err;
+	    }
+	  else if(class == 1 && type == SCAMPER_HOST_TYPE_AAAA)
+	    {
+	      if(rdlength != 16)
+		goto err;
+	      memcpy(&in6, buf+off, rdlength);
+	      inet_ntop(AF_INET6, &in6, str, sizeof(str));
+	      if((rr->un.addr = scamper_addr_alloc_ipv6(&in6)) == NULL)
+		goto err;
+	    }
+	  else if(class == 1 && type == SCAMPER_HOST_TYPE_SOA)
+	    {
+	      if(extract_soa(rr, buf, len, off) != 0)
+		goto err;
+	    }
+	  else if(class == 1 && type == SCAMPER_HOST_TYPE_MX)
+	    {
+	      if(extract_mx(rr, buf, len, off) != 0)
+		goto err;
+	    }
+
+	  if(slist_tail_push(rr_list, rr) == NULL)
+	    {
+	      printerror(__func__, "could not push rr");
+	      goto err;
+	    }
+	  rr = NULL;
+
+	  off += rdlength;
+	}
+    }
+
+  return rr_list;
+
+ err:
+  if(rr_list != NULL)
+    slist_free_cb(rr_list, (slist_free_t)scamper_host_rr_free);
+  if(rr != NULL) scamper_host_rr_free(rr);
+  return NULL;
+}
+
+#ifndef TEST_HOST_RR_LIST
+
 #ifndef _WIN32 /* SOCKET vs int on windows */
 static void do_host_read(int fd, void *param)
 #else
@@ -534,21 +643,16 @@ static void do_host_read(SOCKET fd, void *param)
   scamper_task_t *task = NULL;
   scamper_host_t *host = NULL;
   host_state_t *state;
-  struct in6_addr in6;
-  struct in_addr in4;
   slist_t *rr_list = NULL;
   scamper_host_rr_t **rrs = NULL;
   dlist_node_t *dn;
   host_id_t *hid;
   scamper_host_query_t *q = NULL;
-  scamper_host_rr_t *rr = NULL;
-  uint16_t id, qdcount, ancount, nscount, arcount;
-  uint16_t qtype, qclass, rdlength, type, class;
+  uint16_t id, qdcount, qtype, qclass;
   uint8_t flags[2];
-  uint32_t ttl;
   ssize_t off, len;
-  char name[256], str[256];
-  int i, j, k, x;
+  char name[256];
+  int i, j, x;
 
   if((len = recv(fd, pktbuf, pktbuf_len, 0)) < 0)
     return;
@@ -564,9 +668,6 @@ static void do_host_read(SOCKET fd, void *param)
   if((flags[0] & 0x80) == 0 || qdcount != 1)
     return;
 
-  ancount = bytes_ntohs(pktbuf+6);
-  nscount = bytes_ntohs(pktbuf+8);
-  arcount = bytes_ntohs(pktbuf+10);
   off = 12;
 
   /* get the question out of the packet */
@@ -610,123 +711,50 @@ static void do_host_read(SOCKET fd, void *param)
   q = host->queries[i];
   gettimeofday_wrap(&q->rx);
 
-  if((rr_list = slist_alloc()) == NULL)
-    {
-      printerror(__func__, "could not alloc rr_list");
-      return;
-    }
+  if((rr_list = host_rr_list(pktbuf, off, len)) == NULL)
+    return;
 
-  q->ancount = ancount;
-  q->nscount = nscount;
-  q->arcount = arcount;
+  q->ancount = bytes_ntohs(pktbuf+6);
+  q->nscount = bytes_ntohs(pktbuf+8);
+  q->arcount = bytes_ntohs(pktbuf+10);
   q->rcode   = flags[1] & 0x0f;
   q->flags   = ((flags[0] & 0x0f) << 4) | ((flags[1] & 0xf0) >> 4);
 
   for(i=0; i<3; i++)
     {
-      if(i == 0) x = ancount;
-      else if(i == 1) x = nscount;
-      else if(i == 2) x = arcount;
-
-      for(j=0; j<x; j++)
-	{
-	  if((k = extract_name(name, sizeof(name), pktbuf, len, off)) <= 0)
-	    {
-	      scamper_debug(__func__, "could not extract name");
-	      return;
-	    }
-	  off += k;
-
-	  type = bytes_ntohs(pktbuf+off); off += 2;
-	  class = bytes_ntohs(pktbuf+off); off += 2;
-	  ttl = bytes_ntohl(pktbuf+off); off += 4;
-	  rdlength = bytes_ntohs(pktbuf+off); off += 2;
-	  if((rr = scamper_host_rr_alloc(name, class, type, ttl)) == NULL)
-	    {
-	      printerror(__func__, "could not alloc rr");
-	      goto err;
-	    }
-
-	  if(class == 1 &&
-	     (type == SCAMPER_HOST_TYPE_NS ||
-	      type == SCAMPER_HOST_TYPE_CNAME ||
-	      type == SCAMPER_HOST_TYPE_PTR))
-	    {
-	      if(extract_name(str, sizeof(str), pktbuf, len, off) <= 0)
-		goto err;
-	      if((rr->un.str = strdup(str)) == NULL)
-		goto err;
-	    }
-	  else if(class == 1 && type == SCAMPER_HOST_TYPE_A)
-	    {
-	      if(rdlength != 4)
-		goto err;
-	      memcpy(&in4, pktbuf+off, rdlength);
-	      inet_ntop(AF_INET, &in4, str, sizeof(str));
-	      if((rr->un.addr = scamper_addr_alloc_ipv4(&in4)) == NULL)
-		goto err;
-	    }
-	  else if(class == 1 && type == SCAMPER_HOST_TYPE_AAAA)
-	    {
-	      if(rdlength != 16)
-		goto err;
-	      memcpy(&in6, pktbuf+off, rdlength);
-	      inet_ntop(AF_INET6, &in6, str, sizeof(str));
-	      if((rr->un.addr = scamper_addr_alloc_ipv6(&in6)) == NULL)
-		goto err;
-	    }
-	  else if(class == 1 && type == SCAMPER_HOST_TYPE_SOA)
-	    {
-	      if(extract_soa(rr, pktbuf, len, off) != 0)
-		goto err;
-	    }
-	  else if(class == 1 && type == SCAMPER_HOST_TYPE_MX)
-	    {
-	      if(extract_mx(rr, pktbuf, len, off) != 0)
-		goto err;
-	    }
-
-	  if(slist_tail_push(rr_list, rr) == NULL)
-	    {
-	      printerror(__func__, "could not push rr");
-	      goto err;
-	    }
-
-	  off += rdlength;
-	}
-
-      x = slist_count(rr_list);
       if(i == 0)
 	{
+	  x = q->ancount;
 	  if((q->an = malloc_zero(sizeof(scamper_host_rr_t *) * x)) == NULL)
 	    goto err;
 	  rrs = q->an;
 	}
       else if(i == 1)
 	{
+	  x = q->nscount;
 	  if((q->ns = malloc_zero(sizeof(scamper_host_rr_t *) * x)) == NULL)
 	    goto err;
 	  rrs = q->ns;
 	}
       else if(i == 2)
 	{
+	  x = q->arcount;
 	  if((q->ar = malloc_zero(sizeof(scamper_host_rr_t *) * x)) == NULL)
 	    goto err;
 	  rrs = q->ar;
 	}
 
-      x = 0;
-      while((rr = slist_head_pop(rr_list)) != NULL)
-	rrs[x++] = rr;
+      for(j=0; j<x; j++)
+	rrs[j] = slist_head_pop(rr_list);
     }
 
-  slist_free(rr_list); rr_list = NULL;
-
+  slist_free_cb(rr_list, (slist_free_t)scamper_host_rr_free);
   host_stop(task, SCAMPER_HOST_STOP_DONE);
   return;
 
  err:
-  if(rr_list != NULL) slist_free(rr_list);
+  if(rr_list != NULL)
+    slist_free_cb(rr_list, (slist_free_t)scamper_host_rr_free);
   return;
 }
 
@@ -903,8 +931,10 @@ static void do_host_probe(scamper_task_t *task)
       printerror(__func__, "could not send query");
       goto err;
     }
-  host->queries[host->qcount++] = q; q = NULL;
-  scamper_task_queue_wait(task, host->wait);
+  host->queries[host->qcount++] = q;
+
+  timeval_add_tv3(&tv, &q->tx, &host->wait_timeout);
+  scamper_task_queue_wait_tv(task, &tv);
 
   return;
 
@@ -1023,7 +1053,7 @@ static scamper_host_do_t *scamper_do_host_do_host(const char *qname,
       printerror(__func__, "could not alloc host");
       goto err;
     }
-  host->wait = 5000;
+  host->wait_timeout.tv_sec = 5;
   host->retries = 1;
   host->qclass = 1;
   host->qtype = qtype;
@@ -1338,7 +1368,7 @@ static void do_host_free(scamper_task_t *task)
 int scamper_do_host_setns(const char *nsip)
 {
   scamper_addr_t *sa;
-  if((sa = scamper_addr_resolve(AF_UNSPEC, nsip)) == NULL)
+  if((sa = scamper_addr_fromstr_unspec(nsip)) == NULL)
     {
       printerror(__func__, "could not resolve %s", nsip);
       return -1;
@@ -1380,3 +1410,5 @@ int scamper_do_host_init()
     return -1;
   return 0;
 }
+
+#endif /* TEST_HOST_RR_LIST */

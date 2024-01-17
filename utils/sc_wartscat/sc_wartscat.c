@@ -3,11 +3,11 @@
  *
  * This is a utility program to concatenate warts data files together.
  *
- * $Id: sc_wartscat.c,v 1.45 2023/05/29 20:21:28 mjl Exp $
+ * $Id: sc_wartscat.c,v 1.47 2024/01/02 20:24:52 mjl Exp $
  *
  * Copyright (C) 2007-2011 The University of Waikato
  * Copyright (C) 2022-2023 Matthew Luckie
- * Copyright (C) 2023      The Regents of the University of California
+ * Copyright (C) 2023-2024 The Regents of the University of California
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -41,6 +41,8 @@
 #include "sting/scamper_sting.h"
 #include "sniff/scamper_sniff.h"
 #include "host/scamper_host.h"
+#include "http/scamper_http.h"
+#include "udpprobe/scamper_udpprobe.h"
 #include "scamper_file.h"
 #include "mjl_heap.h"
 #include "utils.h"
@@ -149,7 +151,7 @@ static int check_options(int argc, char *argv[])
     }
 
   /* open the output file, which is a regular file */
-  if(options & OPT_OUTFILE)
+  if(opt_outfile != NULL)
     {
       if(string_endswith(opt_outfile, ".gz") != 0)
 	{
@@ -329,6 +331,18 @@ static int write_obj(uint16_t type, void *data)
       scamper_host_free(data);
       break;
 
+    case SCAMPER_FILE_OBJ_HTTP:
+      if(scamper_file_write_http(outfile, data, NULL) != 0)
+	rc = -1;
+      scamper_http_free(data);
+      break;
+
+    case SCAMPER_FILE_OBJ_UDPPROBE:
+      if(scamper_file_write_udpprobe(outfile, data, NULL) != 0)
+	rc = -1;
+      scamper_udpprobe_free(data);
+      break;
+
     default:
       fprintf(stderr, "unhandled data object 0x%04x\n", type);
       rc = -1;
@@ -469,6 +483,14 @@ static int sort_cat_fill(heap_t *heap, sort_struct_t *s)
 	case SCAMPER_FILE_OBJ_HOST:
 	  timeval_cpy(&s->tv, scamper_host_start_get(s->data));
 	  break;
+
+	case SCAMPER_FILE_OBJ_HTTP:
+	  timeval_cpy(&s->tv, scamper_http_start_get(s->data));
+	  break;
+
+	case SCAMPER_FILE_OBJ_UDPPROBE:
+	  timeval_cpy(&s->tv, scamper_udpprobe_start_get(s->data));
+	  break;
 	}
 
       if(heap_insert(heap, s) == NULL)
@@ -566,6 +588,8 @@ int main(int argc, char *argv[])
     SCAMPER_FILE_OBJ_STING,
     SCAMPER_FILE_OBJ_SNIFF,
     SCAMPER_FILE_OBJ_HOST,
+    SCAMPER_FILE_OBJ_HTTP,
+    SCAMPER_FILE_OBJ_UDPPROBE,
   };
   uint16_t filter_cnt = sizeof(filter_types)/sizeof(uint16_t);
   int rc;

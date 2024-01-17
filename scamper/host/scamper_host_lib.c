@@ -1,7 +1,7 @@
 /*
  * scamper_host_lib.c
  *
- * $Id: scamper_host_lib.c,v 1.1 2023/05/31 23:22:18 mjl Exp $
+ * $Id: scamper_host_lib.c,v 1.8 2023/12/22 18:55:00 mjl Exp $
  *
  * Copyright (C) 2023 Matthew Luckie
  *
@@ -65,9 +65,9 @@ uint16_t scamper_host_flags_get(const scamper_host_t *host)
   return host->flags;
 }
 
-uint16_t scamper_host_wait_get(const scamper_host_t *host)
+const struct timeval *scamper_host_wait_timeout_get(const scamper_host_t *host)
 {
-  return host->wait;
+  return &host->wait_timeout;
 }
 
 uint8_t scamper_host_stop_get(const scamper_host_t *host)
@@ -100,12 +100,20 @@ uint8_t scamper_host_qcount_get(const scamper_host_t *host)
   return host->qcount;
 }
 
-const scamper_host_query_t *scamper_host_query_get(const scamper_host_t *host, uint8_t i)
+scamper_host_query_t *scamper_host_query_get(const scamper_host_t *host, uint8_t i)
 {
   if(host->qcount <= i)
     return NULL;
   return host->queries[i];
 }
+
+#ifdef BUILDING_LIBSCAMPERFILE
+scamper_host_query_t *scamper_host_query_use(scamper_host_query_t *q)
+{
+  q->refcnt++;
+  return q;
+}
+#endif
 
 const struct timeval *scamper_host_query_tx_get(const scamper_host_query_t *q)
 {
@@ -147,26 +155,34 @@ uint16_t scamper_host_query_arcount_get(const scamper_host_query_t *q)
   return q->arcount;
 }
 
-const scamper_host_rr_t *scamper_host_query_an_get(const scamper_host_query_t *q, uint16_t i)
+scamper_host_rr_t *scamper_host_query_an_get(const scamper_host_query_t *q, uint16_t i)
 {
   if(q->ancount <= i)
     return NULL;
   return q->an[i];
 }
 
-const scamper_host_rr_t *scamper_host_query_ns_get(const scamper_host_query_t *q, uint16_t i)
+scamper_host_rr_t *scamper_host_query_ns_get(const scamper_host_query_t *q, uint16_t i)
 {
   if(q->nscount <= i)
     return NULL;
   return q->ns[i];
 }
 
-const scamper_host_rr_t *scamper_host_query_ar_get(const scamper_host_query_t *q, uint16_t i)
+scamper_host_rr_t *scamper_host_query_ar_get(const scamper_host_query_t *q, uint16_t i)
 {
   if(q->arcount <= i)
     return NULL;
   return q->ar[i];
 }
+
+#ifdef BUILDING_LIBSCAMPERFILE
+scamper_host_rr_t *scamper_host_rr_use(scamper_host_rr_t *rr)
+{
+  rr->refcnt++;
+  return rr;
+}
+#endif
 
 uint16_t scamper_host_rr_class_get(const scamper_host_rr_t *rr)
 {
@@ -195,23 +211,43 @@ const void *scamper_host_rr_v_get(const scamper_host_rr_t *rr)
 
 scamper_addr_t *scamper_host_rr_addr_get(const scamper_host_rr_t *rr)
 {
+  if(scamper_host_rr_data_type(rr->class, rr->type) !=
+     SCAMPER_HOST_RR_DATA_TYPE_ADDR)
+    return NULL;
   return rr->un.addr;
 }
 
 const char *scamper_host_rr_str_get(const scamper_host_rr_t *rr)
 {
+  if(scamper_host_rr_data_type(rr->class, rr->type) !=
+     SCAMPER_HOST_RR_DATA_TYPE_STR)
+    return NULL;
   return rr->un.str;
 }
 
-const scamper_host_rr_soa_t *scamper_host_rr_soa_get(const scamper_host_rr_t *rr)
+scamper_host_rr_soa_t *scamper_host_rr_soa_get(const scamper_host_rr_t *rr)
 {
+  if(scamper_host_rr_data_type(rr->class, rr->type) !=
+     SCAMPER_HOST_RR_DATA_TYPE_SOA)
+    return NULL;
   return rr->un.soa;
 }
 
-const scamper_host_rr_mx_t *scamper_host_rr_mx_get(const scamper_host_rr_t *rr)
+scamper_host_rr_mx_t *scamper_host_rr_mx_get(const scamper_host_rr_t *rr)
 {
+  if(scamper_host_rr_data_type(rr->class, rr->type) !=
+     SCAMPER_HOST_RR_DATA_TYPE_MX)
+    return NULL;
   return rr->un.mx;
 }
+
+#ifdef BUILDING_LIBSCAMPERFILE
+scamper_host_rr_mx_t *scamper_host_rr_mx_use(scamper_host_rr_mx_t *mx)
+{
+  mx->refcnt++;
+  return mx;
+}
+#endif
 
 uint16_t scamper_host_rr_mx_preference_get(const scamper_host_rr_mx_t *mx)
 {
@@ -222,6 +258,14 @@ const char *scamper_host_rr_mx_exchange_get(const scamper_host_rr_mx_t *mx)
 {
   return mx->exchange;
 }
+
+#ifdef BUILDING_LIBSCAMPERFILE
+scamper_host_rr_soa_t *scamper_host_rr_soa_use(scamper_host_rr_soa_t *soa)
+{
+  soa->refcnt++;
+  return soa;
+}
+#endif
 
 const char *scamper_host_rr_soa_mname_get(const scamper_host_rr_soa_t *soa)
 {

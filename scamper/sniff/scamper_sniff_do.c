@@ -1,7 +1,7 @@
 /*
  * scamper_sniff_do.c
  *
- * $Id: scamper_sniff_do.c,v 1.21 2023/06/04 06:30:03 mjl Exp $
+ * $Id: scamper_sniff_do.c,v 1.23 2024/01/02 17:51:46 mjl Exp $
  *
  * Copyright (C) 2011      The University of Waikato
  * Copyright (C) 2022-2023 Matthew Luckie
@@ -98,6 +98,9 @@ static void do_sniff_handle_dl(scamper_task_t *task, scamper_dl_rec_t *dl)
   sniff_state_t *state = sniff_getstate(task);
   scamper_sniff_pkt_t *pkt;
   int i = 0;
+
+  if(state == NULL)
+    return;
 
   if(SCAMPER_DL_IS_ICMP(dl))
     {
@@ -214,7 +217,7 @@ static void do_sniff_probe(scamper_task_t *task)
       return;
     }
 
-  timeval_add_s(&tv, &sniff->start, sniff->limit_time);
+  timeval_add_tv3(&tv, &sniff->start, &sniff->limit_time);
   scamper_task_queue_wait_tv(task, &tv);
   return;
 }

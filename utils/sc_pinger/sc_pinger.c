@@ -2,7 +2,7 @@
  * sc_pinger : scamper driver to probe destinations with various ping
  *             methods
  *
- * $Id: sc_pinger.c,v 1.27 2023/05/14 08:10:40 mjl Exp $
+ * $Id: sc_pinger.c,v 1.29 2023/10/20 07:28:37 mjl Exp $
  *
  * Copyright (C) 2020      The University of Waikato
  * Copyright (C) 2022-2023 Matthew Luckie
@@ -46,6 +46,7 @@ static size_t                 addrfile_off  = 0;
 static char                  *outfile_name  = NULL;
 static char                  *outfile_type  = "warts";
 static scamper_file_t        *outfile       = NULL;
+static char                  *movedir_name  = NULL;
 static char                  *logfile_name  = NULL;
 static FILE                  *logfile_fd    = NULL;
 static scamper_file_filter_t *ffilter       = NULL;
@@ -60,6 +61,9 @@ static int                    more          = 0;
 static int                    completed     = 0;
 static int                    probe_count   = 5;
 static int                    reply_count   = 3;
+static uint32_t               limit         = 0;
+static uint32_t               outfile_u     = 0;
+static uint32_t               outfile_c     = 0;
 static slist_t               *virgin        = NULL;
 static slist_t               *waiting       = NULL;
 static char                 **methods       = NULL;
@@ -75,6 +79,8 @@ static int                    error         = 0;
 #define OPT_DAEMON      0x0040
 #define OPT_COUNT       0x0080
 #define OPT_REMOTE      0x0100
+#define OPT_LIMIT       0x0200
+#define OPT_MOVE        0x0400
 
 /*
  * sc_pingtest
@@ -92,7 +98,8 @@ static void usage(uint32_t opt_mask)
   fprintf(stderr,
 	  "usage: sc_pinger [-D?]\n"
 	  "                 [-a infile] [-o outfile] [-p port] [-R unix]\n"
-	  "                 [-U unix] [-c probec] [-m method] [-t logfile]\n");
+	  "                 [-U unix] [-c probec] [-l limit] [-m method]\n"
+	  "                 [-M dir] [-t logfile]\n");
 
   if(opt_mask == 0)
     {
@@ -124,10 +131,70 @@ static void usage(uint32_t opt_mask)
   if(opt_mask & OPT_COUNT)
     fprintf(stderr, "     -c [replyc]/probec\n");
 
+  if(opt_mask & OPT_LIMIT)
+    fprintf(stderr, "     -l limit on object count per output file\n");
+
+  if(opt_mask & OPT_MOVE)
+    fprintf(stderr, "     -m directory to move completed files to\n");
+
   if(opt_mask & OPT_LOG)
     fprintf(stderr, "     -t logfile\n");
 
   return;
+}
+
+/*
+ * check_printf
+ *
+ * ensure the filename has one format specifier, and it is for an
+ * unsigned integer.  the digits can be zero padded, but its width
+ * cannot otherwise be restricted.
+ *
+ * shared with sc_prefixprober, perhaps this should be in utils.c and
+ * more generic.
+ */
+static int check_printf(const char *name)
+{
+  const char *ptr;
+
+  for(ptr=name; *ptr != '\0'; ptr++)
+    {
+      if(isprint(*ptr) == 0)
+	return 0;
+      if(*ptr == '%')
+	break;
+    }
+
+  /* no format specifier */
+  if(*ptr == '\0')
+    return 0;
+
+  ptr++;
+
+  /* check for valid zero padding specification, if %u is zero padded */
+  if(*ptr == '0' && isdigit(ptr[1]) != 0 && ptr[1] != '0')
+    {
+      ptr++;
+      while(isdigit(*ptr) != 0)
+	ptr++;
+    }
+
+  /* ensure %u */
+  if(*ptr != 'u')
+    return 0;
+  ptr++;
+
+  /* ensure no other % */
+  while(*ptr != '\0')
+    {
+      if(isprint(*ptr) == 0)
+	return 0;
+      if(*ptr == '%')
+	return 0;
+      ptr++;
+    }
+
+  return 1;
 }
 
 static int parse_count(const char *opt)
@@ -173,8 +240,9 @@ static int parse_count(const char *opt)
 
 static int check_options(int argc, char *argv[])
 {
-  char *opt_count = NULL, *opt_port = NULL;
-  char *opts = "a:c:Dm:o:p:R:t:U:?", *ptr, *dup = NULL;
+  char *opt_count = NULL, *opt_port = NULL, *opt_limit = NULL;
+  char *opts = "a:c:Dl:m:M:o:p:R:t:U:?", *ptr, *dup = NULL;
+  struct stat sb;
   slist_t *list = NULL;
   long lo;
   int i, ch, rc = -1;
@@ -198,11 +266,21 @@ static int check_options(int argc, char *argv[])
 	  options |= OPT_DAEMON;
 	  break;
 
+	case 'l':
+	  options |= OPT_LIMIT;
+	  opt_limit = optarg;
+	  break;
+
 	case 'm':
 	  if((dup = strdup(optarg)) == NULL ||
 	     slist_tail_push(list, dup) == NULL)
 	    goto done;
 	  dup = NULL;
+	  break;
+
+	case 'M':
+	  options |= OPT_MOVE;
+	  movedir_name = optarg;
 	  break;
 
 	case 'o':
@@ -310,6 +388,49 @@ static int check_options(int argc, char *argv[])
 	goto done;
     }
 
+  /*
+   * if the user specifies a directory to move completed files into,
+   * then make sure the directory exists and is a directory.
+   */
+  if(movedir_name != NULL)
+    {
+      if(stat(movedir_name, &sb) != 0)
+	{
+	  usage(OPT_MOVE);
+	  fprintf(stderr, "cannot stat %s: %s\n", movedir_name,
+		  strerror(errno));
+	  goto done;
+	}
+      if((sb.st_mode & S_IFDIR) == 0)
+	{
+	  usage(OPT_MOVE);
+	  fprintf(stderr, "%s is not a directory\n", movedir_name);
+	  goto done;
+	}
+    }
+
+  /*
+   * if the user specifies a limit to the number of completed objects
+   * per output file, then make sure the output filename includes %u
+   * (and only one % parameter).
+   */
+  if(opt_limit != NULL)
+    {
+      if(string_isdigit(opt_limit) == 0 ||
+	 string_tolong(opt_limit, &lo) != 0 || lo < 1)
+	{
+	  usage(OPT_LIMIT);
+	  goto done;
+	}
+      limit = lo;
+
+      if(check_printf(outfile_name) == 0)
+	{
+	  usage(OPT_LIMIT | OPT_OUTFILE);
+	  goto done;
+	}
+    }
+
   rc = 0;
 
  done:
@@ -348,6 +469,81 @@ static void print(char *format, ...)
   return;
 }
 
+static int movefile(const char *src)
+{
+  const char *filename = src, *ptr;
+  char dst[1024];
+
+  /*
+   * figure out the name of the file, if the user specified a
+   * directory as part of the output file component
+   */
+  for(ptr=filename; *ptr != '\0'; ptr++)
+    if(*ptr == '/')
+      filename = (ptr+1);
+
+  snprintf(dst, sizeof(dst), "%s/%s", movedir_name, filename);
+
+  if(rename(src, dst) != 0)
+    {
+      fprintf(stderr, "could not move the output file: %s\n",
+	      strerror(errno));
+      return -1;
+    }
+
+  return 0;
+}
+
+static int openfile(void)
+{
+  char buf[1024], *fn;
+
+  if(limit != 0)
+    {
+      snprintf(buf, sizeof(buf), outfile_name, outfile_u);
+      fn = buf;
+    }
+  else fn = outfile_name;
+
+  if((outfile = scamper_file_open(fn, 'w', outfile_type)) == NULL)
+    {
+      print("%s: could not open output file", __func__);
+      return -1;
+    }
+
+  return 0;
+}
+
+static int rotatefile(void)
+{
+  char *fn = NULL;
+  int rc = -1;
+
+  if(movedir_name != NULL)
+    {
+      if((fn = strdup(scamper_file_getfilename(outfile))) == NULL)
+	goto done;
+      scamper_file_close(outfile); outfile = NULL;
+      if(movefile(fn) != 0)
+	goto done;
+    }
+  else
+    {
+      scamper_file_close(outfile); outfile = NULL;
+    }
+
+  outfile_c = 0;
+  outfile_u++;
+  if(openfile() != 0)
+    goto done;
+
+  rc = 0;
+
+ done:
+  if(fn != NULL) free(fn);
+  return rc;
+}
+
 static void sc_pinger_free(sc_pinger_t *pinger)
 {
   if(pinger->dst != NULL) scamper_addr_free(pinger->dst);
@@ -366,7 +562,7 @@ static int do_addrfile_line(char *buf)
   if(buf[0] == '\0' || buf[0] == '#')
     return 0;
 
-  if((sa = scamper_addr_resolve(AF_UNSPEC, buf)) == NULL)
+  if((sa = scamper_addr_fromstr_unspec(buf)) == NULL)
     {
       print("could not resolve %s on line %d", buf, line);
       goto err;
@@ -585,6 +781,9 @@ static void ctrlcb(scamper_inst_t *inst, uint8_t type, scamper_task_t *task,
       pinger = scamper_task_getparam(task);
       if(process_pinger(pinger, (scamper_ping_t *)obj_data) != 0)
 	goto err;
+
+      if(limit != 0 && ++outfile_c == limit && rotatefile() != 0)
+	goto err;
     }
   else if(type == SCAMPER_CTRL_TYPE_ERR)
     {
@@ -663,7 +862,8 @@ static int pinger_data(void)
 		      SCAMPER_FILE_OBJ_CYCLE_STOP,
 		      SCAMPER_FILE_OBJ_PING};
   int typec = sizeof(types) / sizeof(uint16_t);
-  int done = 0;
+  int done = 0, rc = -1;
+  char *fn = NULL;
 
 #ifdef HAVE_DAEMON
   /* start a daemon if asked to */
@@ -681,8 +881,7 @@ static int pinger_data(void)
      (addrfile_buf = malloc(addrfile_len)) == NULL ||
      (ffilter = scamper_file_filter_alloc(types, typec)) == NULL ||
      (virgin = slist_alloc()) == NULL || (waiting = slist_alloc()) == NULL ||
-     do_scamperconnect() != 0 ||
-     (outfile = scamper_file_open(outfile_name, 'w', outfile_type)) == NULL ||
+     do_scamperconnect() != 0 || openfile() != 0 ||
      (decode_sf = scamper_file_opennull('r', "warts")) == NULL ||
      (decode_rb = scamper_file_readbuf_alloc()) == NULL)
     {
@@ -713,7 +912,21 @@ static int pinger_data(void)
       scamper_ctrl_wait(scamper_ctrl, NULL);
     }
 
-  return 0;
+  /* close the file and move it to a completed directory */
+  if(movedir_name != NULL && outfile != NULL)
+    {
+      if((fn = strdup(scamper_file_getfilename(outfile))) == NULL)
+	goto done;
+      scamper_file_close(outfile); outfile = NULL;
+      if(movefile(fn) != 0)
+	goto done;
+    }
+
+  rc = 0;
+
+ done:
+  if(fn != NULL) free(fn);
+  return rc;
 }
 
 static void cleanup(void)

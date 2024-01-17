@@ -1,7 +1,7 @@
 /*
  * scamper_file_arts.c
  *
- * $Id: scamper_file_arts.c,v 1.69.4.2 2023/08/19 03:36:28 mjl Exp $
+ * $Id: scamper_file_arts.c,v 1.71 2023/08/19 03:34:53 mjl Exp $
  *
  * code to read the legacy arts data file format into scamper_hop structures.
  *

@@ -2,7 +2,7 @@
  * sc_ally : scamper driver to collect data on candidate aliases using the
  *           Ally method.
  *
- * $Id: sc_ally.c,v 1.59 2023/05/29 07:17:30 mjl Exp $
+ * $Id: sc_ally.c,v 1.60 2023/09/24 22:35:01 mjl Exp $
  *
  * Copyright (C) 2009-2011 The University of Waikato
  * Copyright (C) 2013-2015 The Regents of the University of California
@@ -1128,7 +1128,7 @@ static int addressfile_line(char *buf, void *param)
 	  b++;
 	}
 
-      if((sa = scamper_addr_resolve(AF_INET, a)) == NULL)
+      if((sa = scamper_addr_fromstr_ipv4(a)) == NULL)
 	{
 	  fprintf(stderr, "could not resolve %s on line %d\n", a, line);
 	  goto err;

@@ -1,7 +1,7 @@
 /*
  * scamper_debug.c
  *
- * $Id: scamper_debug.c,v 1.43.4.2 2023/08/20 08:07:08 mjl Exp $
+ * $Id: scamper_debug.c,v 1.46 2023/08/24 04:18:44 mjl Exp $
  *
  * routines to reduce the impact of debugging cruft in scamper's code.
  *
@@ -58,35 +58,6 @@ static char *timestamp_str(char *buf, const size_t len)
 
   return buf;
 }
-
-#ifndef NDEBUG
-void __scamper_assert(const char *file, int line, const char *func,
-		      const char *expr, void *data)
-{
-  char ts[16];
-
-  timestamp_str(ts, sizeof(ts));
-
-  if(isdaemon == 0)
-    {
-      fprintf(stderr, "%s assertion failed: %s:%d %s `%s'\n",
-	      ts, file, line, func, expr);
-      fflush(stderr);
-    }
-
-#ifndef WITHOUT_DEBUGFILE
-  if(debugfile != NULL)
-    {
-      fprintf(debugfile, "%s assertion failed: %s:%d %s `%s'\n",
-	      ts, file, line, func, expr);
-      fflush(debugfile);
-    }
-#endif
-
-  abort();
-  return;
-}
-#endif
 
 /*
  * printerror

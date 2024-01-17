@@ -7,7 +7,7 @@
  *
  * Author: Matthew Luckie
  *
- * $Id: scamper_tbit_json.c,v 1.30 2023/06/01 07:15:35 mjl Exp $
+ * $Id: scamper_tbit_json.c,v 1.31 2023/07/29 05:22:23 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -111,7 +111,7 @@ static char *tbit_header_tostr(const scamper_tbit_t *tbit,
 		(long)tbit->start.tv_sec, (int)tbit->start.tv_usec);
   string_concat(buf, sizeof(buf), &off,
 		", \"client_mss\":%u, \"server_mss\":%u, \"ttl\":%u",
-		tbit->client_mss, tbit->server_mss, tbit->ttl);
+		tbit->client_mss, tbit->server_mss, tbit->client_ipttl);
   string_concat(buf, sizeof(buf), &off, ", \"result\":\"%s\"",
 		scamper_tbit_result_tostr(tbit, tmp, sizeof(tmp)));
   if(tbit->options != 0)
@@ -120,14 +120,15 @@ static char *tbit_header_tostr(const scamper_tbit_t *tbit,
 				   tbit_options,
 				   sizeof(tbit_options) / sizeof(char *)));
 
-  if(tbit->wscale > 0)
-    string_concat(buf, sizeof(buf), &off, ", \"wscale\":%u", tbit->wscale);
+  if(tbit->client_wscale > 0)
+    string_concat(buf, sizeof(buf), &off, ", \"wscale\":%u",
+		  tbit->client_wscale);
 
-  if(tbit->fo_cookielen > 0)
+  if(tbit->client_fo_cookielen > 0)
     {
       string_concat(buf, sizeof(buf), &off, ", \"fo_cookie\":\"");
-      for(u8=0; u8<tbit->fo_cookielen; u8++)
-	string_concat(buf, sizeof(buf), &off, "%02x", tbit->fo_cookie[u8]);
+      for(u8=0; u8<tbit->client_fo_cookielen; u8++)
+	string_concat(buf,sizeof(buf),&off, "%02x", tbit->client_fo_cookie[u8]);
       string_concat(buf, sizeof(buf), &off, "\"");
     }
 
@@ -168,7 +169,7 @@ static char *tbit_header_tostr(const scamper_tbit_t *tbit,
   else if(tbit->type == SCAMPER_TBIT_TYPE_ICW)
     {
       if(tbit->result == SCAMPER_TBIT_RESULT_ICW_SUCCESS &&
-	 scamper_tbit_icw_size(tbit, &u32) == 0)
+	 scamper_tbit_server_icw_size_get(tbit, &u32) == 0)
 	string_concat(buf, sizeof(buf), &off, ", \"icw_bytes\":%u", u32);
     }
   else if(tbit->type == SCAMPER_TBIT_TYPE_BLIND_RST ||

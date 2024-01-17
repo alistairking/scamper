@@ -1,7 +1,7 @@
 /*
  * scamper_do_ping.c
  *
- * $Id: scamper_ping_do.c,v 1.171 2023/06/04 05:36:07 mjl Exp $
+ * $Id: scamper_ping_do.c,v 1.173 2023/12/24 01:34:46 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -151,7 +151,7 @@ static void do_ping_handle_dl(scamper_task_t *task, scamper_dl_rec_t *dl)
   uint16_t              u16;
   int                   seq = -1;
 
-  if(state->seq == 0)
+  if(state == NULL || state->seq == 0)
     return;
 
   if(dl->dl_ip_off != 0)
@@ -425,7 +425,7 @@ static void do_ping_handle_icmp(scamper_task_t *task, scamper_icmp_resp_t *ir)
   scamper_ping_reply_v4ts_t *v4ts;
 
   /* if we haven't sent a probe yet */
-  if(state->seq == 0)
+  if(state == NULL || state->seq == 0)
     return;
 
   if((ping->flags & SCAMPER_PING_FLAG_DL) != 0)
@@ -1087,15 +1087,9 @@ static void do_ping_probe(scamper_task_t *task)
     }
 
   if(ping->ping_sent < ping->probe_count)
-    {
-      timeval_add_s(&wait_tv, &probe.pr_tx, ping->probe_wait);
-      timeval_add_us(&wait_tv, &wait_tv, ping->probe_wait_us);
-    }
+    timeval_add_tv3(&wait_tv, &probe.pr_tx, &ping->wait_probe);
   else
-    {
-      timeval_add_s(&wait_tv, &probe.pr_tx, ping->probe_timeout);
-      timeval_add_us(&wait_tv, &wait_tv, ping->probe_timeout_us);
-    }
+    timeval_add_tv3(&wait_tv, &probe.pr_tx, &ping->wait_timeout);
 
   scamper_task_queue_wait_tv(task, &wait_tv);
   return;

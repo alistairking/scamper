@@ -1,7 +1,7 @@
 /*
  * scamper_addr.c
  *
- * $Id: scamper_addr.c,v 1.75.4.1 2023/08/18 21:25:03 mjl Exp $
+ * $Id: scamper_addr.c,v 1.84 2024/01/09 06:16:19 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -194,10 +194,12 @@ static const struct handler handlers[] = {
   }
 };
 
+#ifdef BUILDING_SCAMPER
 struct scamper_addrcache
 {
   splaytree_t *tree[sizeof(handlers)/sizeof(struct handler)];
 };
+#endif
 
 static int ipv4_cmp(const scamper_addr_t *sa, const scamper_addr_t *sb)
 {
@@ -870,7 +872,7 @@ static int firewire_fbd(const scamper_addr_t *sa, const scamper_addr_t *sb)
   return r;
 }
 
-size_t scamper_addr_size(const scamper_addr_t *sa)
+size_t scamper_addr_len_get(const scamper_addr_t *sa)
 {
   return handlers[sa->type-1].size;
 }
@@ -922,28 +924,44 @@ scamper_addr_t *scamper_addr_alloc_dm(const int type, const void *addr,
 
   sa->type = type;
   sa->refcnt = 1;
+#ifdef BUILDING_SCAMPER
   sa->internal = NULL;
+#endif
   return sa;
 }
 
 /*
- * scamper_addr_resolve:
+ * scamper_addr_fromstr:
  *
  * resolve the address contained in addr to a sockaddr that
  * tells us what family the address belongs to, and has a binary
  * representation of the address
  */
-scamper_addr_t *scamper_addr_resolve(const int af, const char *addr)
+#ifndef DMALLOC
+scamper_addr_t *scamper_addr_fromstr(int type, const char *addr)
+#else
+scamper_addr_t *scamper_addr_fromstr_dm(int type, const char *addr,
+					const char *file, const int line)
+#endif
 {
   struct addrinfo hints, *res, *res0;
   scamper_addr_t *sa = NULL;
-  void *va;
+  void *va = NULL;
+  int at = 0;
 
   memset(&hints, 0, sizeof(struct addrinfo));
   hints.ai_flags    = AI_NUMERICHOST;
   hints.ai_socktype = SOCK_DGRAM;
   hints.ai_protocol = IPPROTO_UDP;
-  hints.ai_family   = af;
+
+  if(type == SCAMPER_ADDR_TYPE_UNSPEC)
+    hints.ai_family = AF_UNSPEC;
+  else if(type == SCAMPER_ADDR_TYPE_IPV4)
+    hints.ai_family = AF_INET;
+  else if(type == SCAMPER_ADDR_TYPE_IPV6)
+    hints.ai_family = AF_INET6;
+  else
+    return NULL;
 
   if(getaddrinfo(addr, NULL, &hints, &res0) != 0 || res0 == NULL)
     {
@@ -955,20 +973,38 @@ scamper_addr_t *scamper_addr_resolve(const int af, const char *addr)
       if(res->ai_family == PF_INET)
 	{
 	  va = &((struct sockaddr_in *)res->ai_addr)->sin_addr;
-	  sa = scamper_addr_alloc(SCAMPER_ADDR_TYPE_IPV4, va);
+	  at = SCAMPER_ADDR_TYPE_IPV4;
 	  break;
 	}
       else if(res->ai_family == PF_INET6)
 	{
 	  va = &((struct sockaddr_in6 *)res->ai_addr)->sin6_addr;
-	  sa = scamper_addr_alloc(SCAMPER_ADDR_TYPE_IPV6, va);
+	  at = SCAMPER_ADDR_TYPE_IPV6;
 	  break;
 	}
     }
 
+  if(va != NULL)
+    {
+#ifndef DMALLOC
+      sa = scamper_addr_alloc(at, va);
+#else
+      sa = scamper_addr_alloc_dm(at, va, file, line);
+#endif
+    }
+
   freeaddrinfo(res0);
+
   return sa;
 }
+
+#ifdef DMALLOC
+#undef scamper_addr_fromstr
+scamper_addr_t *scamper_addr_fromstr(int type, const char *addr)
+{
+  return scamper_addr_fromstr_dm(type, addr, __FILE__, __LINE__);
+}
+#endif
 
 int scamper_addr_inprefix(const scamper_addr_t *addr, const void *p, int len)
 {
@@ -1087,78 +1123,14 @@ int scamper_addr_isipv6(const scamper_addr_t *sa)
   return SCAMPER_ADDR_TYPE_IS_IPV6(sa);
 }
 
-scamper_addr_t *scamper_addrcache_get(scamper_addrcache_t *ac,
-				      const int type, const void *addr)
+int scamper_addr_isethernet(const scamper_addr_t *sa)
 {
-  scamper_addr_t *sa, findme;
-
-  findme.type = type;
-  findme.addr = (void *)addr;
-
-  if((sa = splaytree_find(ac->tree[type-1], &findme)) != NULL)
-    {
-      assert(sa->internal == ac);
-      sa->refcnt++;
-      return sa;
-    }
-
-  if((sa = scamper_addr_alloc(type, addr)) != NULL)
-    {
-      if(splaytree_insert(ac->tree[type-1], sa) == NULL)
-	goto err;
-      sa->internal = ac;
-    }
-
-  return sa;
-
- err:
-  scamper_addr_free(sa);
-  return NULL;
+  return SCAMPER_ADDR_TYPE_IS_ETHERNET(sa);
 }
 
-/*
- * scamper_addr_resolve:
- *
- * resolve the address contained in addr to a sockaddr that
- * tells us what family the address belongs to, and has a binary
- * representation of the address
- */
-scamper_addr_t *scamper_addrcache_resolve(scamper_addrcache_t *addrcache,
-					  const int af, const char *addr)
+int scamper_addr_isfirewire(const scamper_addr_t *sa)
 {
-  struct addrinfo hints, *res, *res0;
-  scamper_addr_t *sa = NULL;
-  void *va;
-
-  memset(&hints, 0, sizeof(struct addrinfo));
-  hints.ai_flags    = AI_NUMERICHOST;
-  hints.ai_socktype = SOCK_DGRAM;
-  hints.ai_protocol = IPPROTO_UDP;
-  hints.ai_family   = af;
-
-  if(getaddrinfo(addr, NULL, &hints, &res0) != 0 || res0 == NULL)
-    {
-      return NULL;
-    }
-
-  for(res = res0; res != NULL; res = res->ai_next)
-    {
-      if(res->ai_family == PF_INET)
-	{
-	  va = &((struct sockaddr_in *)res->ai_addr)->sin_addr;
-	  sa = scamper_addrcache_get(addrcache, SCAMPER_ADDR_TYPE_IPV4, va);
-	  break;
-	}
-      else if(res->ai_family == PF_INET6)
-	{
-	  va = &((struct sockaddr_in6 *)res->ai_addr)->sin6_addr;
-	  sa = scamper_addrcache_get(addrcache, SCAMPER_ADDR_TYPE_IPV6, va);
-	  break;
-	}
-    }
-
-  freeaddrinfo(res0);
-  return sa;
+  return SCAMPER_ADDR_TYPE_IS_FIREWIRE(sa);
 }
 
 scamper_addr_t *scamper_addr_use(scamper_addr_t *sa)
@@ -1170,20 +1142,22 @@ scamper_addr_t *scamper_addr_use(scamper_addr_t *sa)
 
 void scamper_addr_free(scamper_addr_t *sa)
 {
+#ifdef BUILDING_SCAMPER
   scamper_addrcache_t *ac;
+#endif
 
   if(sa == NULL)
-    {
-      return;
-    }
+    return;
 
   assert(sa->refcnt > 0);
 
   if(--sa->refcnt > 0)
     return;
 
+#ifdef BUILDING_SCAMPER
   if((ac = sa->internal) != NULL)
     splaytree_remove_item(ac->tree[sa->type-1], sa);
+#endif
 
   free(sa->addr);
   free(sa);
@@ -1267,6 +1241,7 @@ int scamper_addr_raw_cmp(const scamper_addr_t *a, const void *raw)
   return memcmp(a->addr, raw, handlers[a->type-1].size);
 }
 
+#ifdef BUILDING_SCAMPER
 static void free_cb(void *node)
 {
   ((scamper_addr_t *)node)->internal = NULL;
@@ -1306,3 +1281,118 @@ scamper_addrcache_t *scamper_addrcache_alloc()
   scamper_addrcache_free(ac);
   return NULL;
 }
+
+#ifndef DMALLOC
+scamper_addr_t *scamper_addrcache_get(scamper_addrcache_t *ac,
+				      const int type, const void *addr)
+#else
+scamper_addr_t *scamper_addrcache_get_dm(scamper_addrcache_t *ac,
+					 const int type, const void *addr,
+					 const char *file, const int line)
+#endif
+{
+  scamper_addr_t *sa, findme;
+
+  findme.type = type;
+  findme.addr = (void *)addr;
+
+  if((sa = splaytree_find(ac->tree[type-1], &findme)) != NULL)
+    {
+      assert(sa->internal == ac);
+      sa->refcnt++;
+      return sa;
+    }
+
+#ifndef DMALLOC
+  sa = scamper_addr_alloc(type, addr);
+#else
+  sa = scamper_addr_alloc_dm(type, addr, file, line);
+#endif
+
+  if(sa != NULL)
+    {
+      if(splaytree_insert(ac->tree[type-1], sa) == NULL)
+	goto err;
+      sa->internal = ac;
+    }
+
+  return sa;
+
+ err:
+  scamper_addr_free(sa);
+  return NULL;
+}
+
+/*
+ * scamper_addrcache_resolve:
+ *
+ * resolve the address contained in addr to a sockaddr that
+ * tells us what family the address belongs to, and has a binary
+ * representation of the address
+ */
+#ifndef DMALLOC
+scamper_addr_t *scamper_addrcache_resolve(scamper_addrcache_t *addrcache,
+					  const int af, const char *addr)
+#else
+scamper_addr_t *scamper_addrcache_resolve_dm(scamper_addrcache_t *addrcache,
+					     const int af, const char *addr,
+					     const char *file, const int line)
+#endif
+{
+  struct addrinfo hints, *res, *res0;
+  scamper_addr_t *sa = NULL;
+  void *va = NULL;
+  int at = 0;
+
+  memset(&hints, 0, sizeof(struct addrinfo));
+  hints.ai_flags    = AI_NUMERICHOST;
+  hints.ai_socktype = SOCK_DGRAM;
+  hints.ai_protocol = IPPROTO_UDP;
+  hints.ai_family   = af;
+
+  if(getaddrinfo(addr, NULL, &hints, &res0) != 0 || res0 == NULL)
+    {
+      return NULL;
+    }
+
+  for(res = res0; res != NULL; res = res->ai_next)
+    {
+      if(res->ai_family == PF_INET)
+	{
+	  va = &((struct sockaddr_in *)res->ai_addr)->sin_addr;
+	  at = SCAMPER_ADDR_TYPE_IPV4;
+	  break;
+	}
+      else if(res->ai_family == PF_INET6)
+	{
+	  va = &((struct sockaddr_in6 *)res->ai_addr)->sin6_addr;
+	  at = SCAMPER_ADDR_TYPE_IPV6;
+	  break;
+	}
+    }
+
+  if(va != NULL)
+    {
+#ifndef DMALLOC
+      sa = scamper_addrcache_get(addrcache, at, va);
+#else
+      sa = scamper_addrcache_get_dm(addrcache, at, va, file, line);
+#endif
+    }
+
+  freeaddrinfo(res0);
+
+  return sa;
+}
+
+#if defined(DMALLOC)
+#undef scamper_addrcache_resolve
+scamper_addr_t *scamper_addrcache_resolve(scamper_addrcache_t *addrcache,
+					  const int af, const char *addr)
+{
+  return scamper_addrcache_resolve_dm(addrcache, af, addr, __FILE__, __LINE__);
+}
+#endif
+
+#endif /* BUILDING_SCAMPER */
+

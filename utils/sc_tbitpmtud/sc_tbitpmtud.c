@@ -21,7 +21,7 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
- * $Id: sc_tbitpmtud.c,v 1.34 2023/05/29 21:22:27 mjl Exp $
+ * $Id: sc_tbitpmtud.c,v 1.35 2023/09/24 22:35:02 mjl Exp $
  */
 
 #ifdef HAVE_CONFIG_H
@@ -793,7 +793,7 @@ static int parse_list(char *str, void *param)
   if((i = atoi(pos)) < 0)
      return -1;
 
-  if((tf.addr = scamper_addr_resolve(AF_UNSPEC, ip)) == NULL)
+  if((tf.addr = scamper_addr_fromstr_unspec(ip)) == NULL)
     return -1;
 
   if(scamper_addr_isreserved(tf.addr) != 0 ||

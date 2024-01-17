@@ -1,7 +1,7 @@
 /*
  * scamper_host_int.h
  *
- * $Id: scamper_host_int.h,v 1.1 2023/05/21 22:28:29 mjl Exp $
+ * $Id: scamper_host_int.h,v 1.5 2023/12/22 18:55:00 mjl Exp $
  *
  * Copyright (C) 2018-2023 Matthew Luckie
  *
@@ -23,10 +23,23 @@
 #ifndef __SCAMPER_HOST_INT_H
 #define __SCAMPER_HOST_INT_H
 
+scamper_host_t *scamper_host_alloc(void);
+int scamper_host_queries_alloc(scamper_host_t *host, int n);
+scamper_host_query_t *scamper_host_query_alloc(void);
+int scamper_host_query_rr_alloc(scamper_host_query_t *q);
+scamper_host_rr_t *scamper_host_rr_alloc(const char *,
+					 uint16_t, uint16_t, uint32_t);
+scamper_host_rr_mx_t *scamper_host_rr_mx_alloc(uint16_t, const char *);
+scamper_host_rr_soa_t *scamper_host_rr_soa_alloc(const char *, const char *);
+
 struct scamper_host_rr_mx
 {
   uint16_t                 preference;
   char                    *exchange;
+
+#ifdef BUILDING_LIBSCAMPERFILE
+  int                      refcnt;
+#endif
 };
 
 struct scamper_host_rr_soa
@@ -38,6 +51,10 @@ struct scamper_host_rr_soa
   uint32_t                 retry;
   uint32_t                 expire;
   uint32_t                 minimum;
+
+#ifdef BUILDING_LIBSCAMPERFILE
+  int                      refcnt;
+#endif
 };
 
 struct scamper_host_rr
@@ -54,6 +71,10 @@ struct scamper_host_rr
     scamper_host_rr_soa_t *soa;
     scamper_host_rr_mx_t  *mx;
   } un;
+
+#ifdef BUILDING_LIBSCAMPERFILE
+  int                      refcnt;
+#endif
 };
 
 struct scamper_host_query
@@ -69,6 +90,10 @@ struct scamper_host_query
   scamper_host_rr_t      **an;
   scamper_host_rr_t      **ns;
   scamper_host_rr_t      **ar;
+
+#ifdef BUILDING_LIBSCAMPERFILE
+  int                      refcnt;
+#endif
 };
 
 struct scamper_host
@@ -80,7 +105,7 @@ struct scamper_host
   uint32_t                 userid;   /* user assigned id */
   struct timeval           start;    /* when started */
   uint16_t                 flags;    /* flags controlling */
-  uint16_t                 wait;     /* how long to wait, in ms */
+  struct timeval           wait_timeout; /* how long to wait */
   uint8_t                  stop;     /* reason we stopped */
   uint8_t                  retries;  /* how many retries to make */
   uint16_t                 qtype;    /* query type */

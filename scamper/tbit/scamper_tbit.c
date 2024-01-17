@@ -9,7 +9,7 @@
  *
  * Authors: Ben Stasiewicz, Matthew Luckie
  *
- * $Id: scamper_tbit.c,v 1.59 2023/06/01 07:15:35 mjl Exp $
+ * $Id: scamper_tbit.c,v 1.63 2023/11/24 06:00:03 mjl Exp $
  *
  * This file implements algorithms described in the tbit-1.0 source code,
  * as well as the papers:
@@ -74,15 +74,17 @@ static int tqe_cmp(const tqe_t *a, const tqe_t *b)
   return 0;
 }
 
-int scamper_tbit_fo_setcookie(scamper_tbit_t *tbit,uint8_t *cookie,uint8_t len)
+int scamper_tbit_client_fo_cookie_set(scamper_tbit_t *tbit,
+				      uint8_t *cookie, uint8_t len)
 {
-  if((tbit->fo_cookie = memdup(cookie, len)) == NULL)
+  if((tbit->client_fo_cookie = memdup(cookie, len)) == NULL)
     return -1;
-  tbit->fo_cookielen = len;
+  tbit->client_fo_cookielen = len;
   return 0;
 }
 
-int scamper_tbit_fo_getcookie(scamper_tbit_t *tbit, uint8_t *c, uint8_t *l)
+int scamper_tbit_server_fo_cookie_get(scamper_tbit_t *tbit,
+				      uint8_t *c, uint8_t *l)
 {
   uint8_t u8, v, iphlen, tcphlen, *pktptr;
   scamper_tbit_pkt_t *pkt;
@@ -444,11 +446,11 @@ int scamper_tbit_pkt_iph(const scamper_tbit_pkt_t *pkt,
   return -1;
 }
 
-int scamper_tbit_pkt_tcpdatabytes(const scamper_tbit_pkt_t *pkt, uint16_t *bc)
+int scamper_tbit_pkt_tcpdatabytes_get(const scamper_tbit_pkt_t *pkt,
+				      uint16_t *bc)
 {
   uint8_t iphlen, tcphlen, proto;
   uint16_t iplen;
-
   if(scamper_tbit_pkt_iph(pkt, &proto, &iphlen, &iplen) != 0)
     return -1;
   if(proto != IPPROTO_TCP)
@@ -458,7 +460,7 @@ int scamper_tbit_pkt_tcpdatabytes(const scamper_tbit_pkt_t *pkt, uint16_t *bc)
   return 0;
 }
 
-int scamper_tbit_pkt_tcpack(const scamper_tbit_pkt_t *pkt, uint32_t *ack)
+int scamper_tbit_pkt_tcpack_get(const scamper_tbit_pkt_t *pkt, uint32_t *ack)
 {
   uint8_t iphlen, proto;
   uint16_t iplen;
@@ -470,7 +472,8 @@ int scamper_tbit_pkt_tcpack(const scamper_tbit_pkt_t *pkt, uint32_t *ack)
   return 0;
 }
 
-int scamper_tbit_icw_size(const scamper_tbit_t *tbit, uint32_t *icw_out)
+int scamper_tbit_server_icw_size_get(const scamper_tbit_t *tbit,
+				     uint32_t *icw_out)
 {
   const scamper_tbit_icw_t *icw = tbit->data;
   const scamper_tbit_pkt_t *pkt = NULL;
@@ -540,7 +543,7 @@ int scamper_tbit_icw_size(const scamper_tbit_t *tbit, uint32_t *icw_out)
   return rc;
 }
 
-int scamper_tbit_stats(const scamper_tbit_t *tbit, scamper_tbit_stats_t **stats_out)
+scamper_tbit_stats_t *scamper_tbit_stats_alloc(const scamper_tbit_t *tbit)
 {
   scamper_tbit_stats_t *stats = NULL;
   const scamper_tbit_pkt_t *pkt, *syn;
@@ -552,10 +555,8 @@ int scamper_tbit_stats(const scamper_tbit_t *tbit, scamper_tbit_stats_t **stats_
   uint32_t i;
   int off, seenfin = 0;
 
-  *stats_out = NULL;
-
   if(tbit->pktc < 1)
-    return 0;
+    goto err;
 
   /* to begin with, look for a SYN/ACK */
   syn = tbit->pkts[0];
@@ -569,7 +570,7 @@ int scamper_tbit_stats(const scamper_tbit_t *tbit, scamper_tbit_stats_t **stats_
 	}
     }
   if(pkt == NULL)
-    return 0;
+    goto err;
 
   if(scamper_tbit_pkt_iph(pkt, &proto, &iphlen, &iplen) != 0)
     goto err;
@@ -640,14 +641,19 @@ int scamper_tbit_stats(const scamper_tbit_t *tbit, scamper_tbit_stats_t **stats_
   if(seenfin == 0)
     goto err;
 
-  *stats_out = stats;
   scamper_tbit_tcpq_free(q, NULL);
-  return 0;
+  return stats;
 
  err:
-  if(stats != NULL) free(stats);
+  if(stats != NULL) scamper_tbit_stats_free(stats);
   scamper_tbit_tcpq_free(q, NULL);
-  return -1;
+  return NULL;
+}
+
+void scamper_tbit_stats_free(scamper_tbit_stats_t *stats)
+{
+  free(stats);
+  return;
 }
 
 char *scamper_tbit_type_tostr(const scamper_tbit_t *tbit, char *buf, size_t len)
@@ -777,6 +783,10 @@ scamper_tbit_pkt_t *scamper_tbit_pkt_alloc(uint8_t dir, uint8_t *data,
   if((pkt = malloc_zero(sizeof(scamper_tbit_pkt_t))) == NULL)
     goto err;
 
+#ifdef BUILDING_LIBSCAMPERFILE
+  pkt->refcnt = 1;
+#endif
+
   pkt->dir = dir;
   if(len != 0 && data != NULL)
     {
@@ -796,6 +806,10 @@ void scamper_tbit_pkt_free(scamper_tbit_pkt_t *pkt)
 {
   if(pkt == NULL)
     return;
+#ifdef BUILDING_LIBSCAMPERFILE
+  if(--pkt->refcnt > 0)
+    return;
+#endif
   if(pkt->data != NULL) free(pkt->data);
   free(pkt);
   return;
@@ -929,7 +943,8 @@ void scamper_tbit_free(scamper_tbit_t *tbit)
   if(tbit->list != NULL)  scamper_list_free(tbit->list);
   if(tbit->cycle != NULL) scamper_cycle_free(tbit->cycle);
 
-  if(tbit->fo_cookie != NULL) free(tbit->fo_cookie);
+  if(tbit->client_fo_cookie != NULL)
+    free(tbit->client_fo_cookie);
 
   /* Free the recorded packets */
   if(tbit->pkts != NULL)
@@ -944,6 +959,8 @@ void scamper_tbit_free(scamper_tbit_t *tbit)
     {
       if(tbit->app_proto == SCAMPER_TBIT_APP_HTTP)
 	scamper_tbit_app_http_free(tbit->app_data);
+      else if(tbit->app_proto == SCAMPER_TBIT_APP_BGP)
+	scamper_tbit_app_bgp_free(tbit->app_data);
     }
 
   /* Free test-specific data */

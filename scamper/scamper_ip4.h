@@ -1,7 +1,7 @@
 /*
  * scamper_ip4.h
  *
- * $Id: scamper_ip4.h,v 1.5.38.1 2023/08/20 01:24:40 mjl Exp $
+ * $Id: scamper_ip4.h,v 1.6 2023/08/20 01:21:17 mjl Exp $
  *
  * Copyright (C) 2009-2011 The University of Waikato
  * Copyright (C) 2023      Matthew Luckie

@@ -1,7 +1,7 @@
 /*
  * scamper_source
  *
- * $Id: scamper_sources.c,v 1.71.4.2 2023/08/26 07:36:27 mjl Exp $
+ * $Id: scamper_sources.c,v 1.75 2023/11/22 04:10:09 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -74,6 +74,14 @@
 #ifndef DISABLE_SCAMPER_HOST
 #include "host/scamper_host_cmd.h"
 #include "host/scamper_host_do.h"
+#endif
+#ifndef DISABLE_SCAMPER_HTTP
+#include "http/scamper_http_cmd.h"
+#include "http/scamper_http_do.h"
+#endif
+#ifndef DISABLE_SCAMPER_UDPPROBE
+#include "udpprobe/scamper_udpprobe_cmd.h"
+#include "udpprobe/scamper_udpprobe_do.h"
 #endif
 
 #include "scamper_debug.h"
@@ -245,6 +253,22 @@ static const command_func_t command_funcs[] = {
     scamper_do_host_alloc,
     scamper_do_host_alloctask,
     scamper_do_host_free,
+  },
+#endif
+#ifndef DISABLE_SCAMPER_HTTP
+  {
+    "http", 4,
+    scamper_do_http_alloc,
+    scamper_do_http_alloctask,
+    scamper_do_http_free,
+  },
+#endif
+#ifndef DISABLE_SCAMPER_UDPPROBE
+  {
+    "udpprobe", 8,
+    scamper_do_udpprobe_alloc,
+    scamper_do_udpprobe_alloctask,
+    scamper_do_udpprobe_free,
   },
 #endif
 };

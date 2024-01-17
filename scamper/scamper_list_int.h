@@ -1,7 +1,7 @@
 /*
  * scamper_list.h
  *
- * $Id: scamper_list_int.h,v 1.1 2023/05/29 20:22:13 mjl Exp $
+ * $Id: scamper_list_int.h,v 1.2 2023/07/29 08:14:31 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2008 The University of Waikato
@@ -66,5 +66,9 @@ struct scamper_cycle
   char           *hostname;
   int             refcnt;
 };
+
+scamper_list_t *scamper_list_alloc(const uint32_t id, const char *name,
+				   const char *descr, const char *monitor);
+scamper_cycle_t *scamper_cycle_alloc(scamper_list_t *list);
 
 #endif /* __SCAMPER_LIST_INT_H */

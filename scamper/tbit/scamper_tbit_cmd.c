@@ -1,7 +1,7 @@
 /*
  * scamper_tbit_cmd.c
  *
- * $Id: scamper_tbit_cmd.c,v 1.1 2023/06/04 06:05:34 mjl Exp $
+ * $Id: scamper_tbit_cmd.c,v 1.3 2023/10/01 08:07:37 mjl Exp $
  *
  * Copyright (C) 2009-2010 Ben Stasiewicz
  * Copyright (C) 2009-2010 Stephen Eichler
@@ -143,7 +143,7 @@ const char *scamper_do_tbit_usage(void)
 {
   return
     "tbit [-t type] [-p app] [-d dport] [-s sport] [-b asn] [-f cookie]\n"
-    "     [-m mss] [-M mtu] [-o offset] [-O option]\n"
+    "     [-m mss] [-M mtu] [-o offset] [-O option] [-U userid]\n"
     "     [-P ptbsrc] [-q attempts] [-S srcaddr] [-T ttl] [-u url]";
 }
 
@@ -243,7 +243,7 @@ static int tbit_arg_param_validate(int optid, char *param, long long *out)
       break;
 
     default:
-      return -1;
+      goto err;
     }
 
   /* valid parameter */
@@ -306,7 +306,7 @@ static int tbit_app_http(scamper_tbit_t *tbit, tbit_options_t *o)
 
   if(o->url == NULL)
     {
-      host = NULL; file = "/";
+      host = NULL;
       goto done;
     }
 
@@ -482,7 +482,8 @@ static int tbit_alloc_null(scamper_tbit_t *tbit, tbit_options_t *o)
 
   if(o->fo_cookielen > 0)
     {
-      if(scamper_tbit_fo_setcookie(tbit, o->fo_cookie, o->fo_cookielen) != 0)
+      if(scamper_tbit_client_fo_cookie_set(tbit,
+					   o->fo_cookie, o->fo_cookielen) != 0)
 	return -1;
       if((o->options & (TBIT_OPT_OPTION_FO|TBIT_OPT_OPTION_FO_EXP)) == 0)
 	null->options = SCAMPER_TBIT_NULL_OPTION_FO;
@@ -677,15 +678,15 @@ void *scamper_do_tbit_alloc(char *str)
       printerror(__func__, "could not resolve %s", addr);
       goto err;
     }
-  tbit->type       = type;
-  tbit->userid     = userid;
-  tbit->wscale     = wscale;
-  tbit->ttl        = ttl;
-  tbit->client_mss = o.mss;
-  tbit->dport      = o.dport;
-  tbit->sport      = (o.sport != 0)    ? o.sport    : scamper_sport_default();
-  tbit->syn_retx   = (o.syn_retx != 0) ? o.syn_retx : TBIT_RETX_DEFAULT;
-  tbit->dat_retx   = (o.dat_retx != 0) ? o.dat_retx : TBIT_RETX_DEFAULT;
+  tbit->type            = type;
+  tbit->userid          = userid;
+  tbit->client_wscale   = wscale;
+  tbit->client_ipttl    = ttl;
+  tbit->client_mss      = o.mss;
+  tbit->dport           = o.dport;
+  tbit->sport           = (o.sport != 0) ? o.sport : scamper_sport_default();
+  tbit->client_syn_retx = (o.syn_retx != 0) ? o.syn_retx : TBIT_RETX_DEFAULT;
+  tbit->client_dat_retx = (o.dat_retx != 0) ? o.dat_retx : TBIT_RETX_DEFAULT;
 
   if(o.src != NULL)
     {

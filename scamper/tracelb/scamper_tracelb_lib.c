@@ -1,7 +1,7 @@
 /*
  * scamper_tracelb_lib.c
  *
- * $Id: scamper_tracelb_lib.c,v 1.1 2023/05/31 23:22:18 mjl Exp $
+ * $Id: scamper_tracelb_lib.c,v 1.11 2023/12/21 06:11:32 mjl Exp $
  *
  * Copyright (C) 2023 Matthew Luckie
  * Author: Matthew Luckie
@@ -97,14 +97,14 @@ uint8_t scamper_tracelb_firsthop_get(const scamper_tracelb_t *trace)
   return trace->firsthop;
 }
 
-uint8_t scamper_tracelb_wait_timeout_get(const scamper_tracelb_t *trace)
+const struct timeval *scamper_tracelb_wait_timeout_get(const scamper_tracelb_t *trace)
 {
-  return trace->wait_timeout;
+  return &trace->wait_timeout;
 }
 
-uint8_t scamper_tracelb_wait_probe_get(const scamper_tracelb_t *trace)
+const struct timeval *scamper_tracelb_wait_probe_get(const scamper_tracelb_t *trace)
 {
-  return trace->wait_probe;
+  return &trace->wait_probe;
 }
 
 uint8_t scamper_tracelb_attempts_get(const scamper_tracelb_t *trace)
@@ -137,7 +137,7 @@ uint32_t scamper_tracelb_probec_max_get(const scamper_tracelb_t *trace)
   return trace->probec_max;
 }
 
-const scamper_tracelb_node_t *scamper_tracelb_node_get(const scamper_tracelb_t *trace, uint16_t i)
+scamper_tracelb_node_t *scamper_tracelb_node_get(const scamper_tracelb_t *trace, uint16_t i)
 {
   if(i >= trace->nodec)
     return NULL;
@@ -149,7 +149,7 @@ uint16_t scamper_tracelb_nodec_get(const scamper_tracelb_t *trace)
   return trace->nodec;
 }
 
-const scamper_tracelb_link_t *scamper_tracelb_link_get(const scamper_tracelb_t *trace, uint16_t i)
+scamper_tracelb_link_t *scamper_tracelb_link_get(const scamper_tracelb_t *trace, uint16_t i)
 {
   if(i >= trace->linkc)
     return NULL;
@@ -169,6 +169,26 @@ uint32_t scamper_tracelb_probec_get(const scamper_tracelb_t *trace)
 uint32_t scamper_tracelb_error_get(const scamper_tracelb_t *trace)
 {
   return trace->error;
+}
+
+int scamper_tracelb_type_is_udp(const scamper_tracelb_t *trace)
+{
+  return SCAMPER_TRACELB_TYPE_IS_UDP(trace);
+}
+
+int scamper_tracelb_type_is_tcp(const scamper_tracelb_t *trace)
+{
+  return SCAMPER_TRACELB_TYPE_IS_TCP(trace);
+}
+
+int scamper_tracelb_type_is_icmp(const scamper_tracelb_t *trace)
+{
+  return SCAMPER_TRACELB_TYPE_IS_ICMP(trace);
+}
+
+int scamper_tracelb_type_is_vary_sport(const scamper_tracelb_t *trace)
+{
+  return SCAMPER_TRACELB_TYPE_VARY_SPORT(trace);
 }
 
 scamper_addr_t *scamper_tracelb_node_addr_get(const scamper_tracelb_node_t *node)
@@ -191,14 +211,14 @@ uint8_t scamper_tracelb_node_q_ttl_get(const scamper_tracelb_node_t *node)
   return node->q_ttl;
 }
 
-int scamper_tracelb_node_is_qttl(const scamper_tracelb_node_t *node)
+int scamper_tracelb_node_is_q_ttl(const scamper_tracelb_node_t *node)
 {
   if(node->flags & SCAMPER_TRACELB_NODE_FLAG_QTTL)
     return 1;
   return 0;
 }
 
-const scamper_tracelb_link_t *scamper_tracelb_node_link_get(const scamper_tracelb_node_t *node, uint16_t i)
+scamper_tracelb_link_t *scamper_tracelb_node_link_get(const scamper_tracelb_node_t *node, uint16_t i)
 {
   if(i >= node->linkc)
     return NULL;
@@ -210,12 +230,12 @@ uint16_t scamper_tracelb_node_linkc_get(const scamper_tracelb_node_t *node)
   return node->linkc;
 }
 
-const scamper_tracelb_node_t *scamper_tracelb_link_from_get(const scamper_tracelb_link_t *link)
+scamper_tracelb_node_t *scamper_tracelb_link_from_get(const scamper_tracelb_link_t *link)
 {
   return link->from;
 }
 
-const scamper_tracelb_node_t *scamper_tracelb_link_to_get(const scamper_tracelb_link_t *link)
+scamper_tracelb_node_t *scamper_tracelb_link_to_get(const scamper_tracelb_link_t *link)
 {
   return link->to;
 }
@@ -225,7 +245,7 @@ uint8_t scamper_tracelb_link_hopc_get(const scamper_tracelb_link_t *link)
   return link->hopc;
 }
 
-const scamper_tracelb_probeset_t *scamper_tracelb_link_probeset_get(const scamper_tracelb_link_t *link, uint8_t i)
+scamper_tracelb_probeset_t *scamper_tracelb_link_probeset_get(const scamper_tracelb_link_t *link, uint8_t i)
 {
   if(i >= link->hopc)
     return NULL;
@@ -264,7 +284,7 @@ uint8_t scamper_tracelb_probe_attempt_get(const scamper_tracelb_probe_t *probe)
   return probe->attempt;
 }
 
-const scamper_tracelb_reply_t *scamper_tracelb_probe_rx_get(const scamper_tracelb_probe_t *probe, uint16_t i)
+scamper_tracelb_reply_t *scamper_tracelb_probe_rx_get(const scamper_tracelb_probe_t *probe, uint16_t i)
 {
   if(i >= probe->rxc)
     return NULL;
@@ -321,7 +341,7 @@ uint8_t scamper_tracelb_reply_icmp_q_ttl_get(const scamper_tracelb_reply_t *repl
   return reply->reply_icmp_q_ttl;
 }
 
-const scamper_icmpext_t *scamper_tracelb_reply_icmp_ext_get(const scamper_tracelb_reply_t *reply)
+scamper_icmpext_t *scamper_tracelb_reply_icmp_ext_get(const scamper_tracelb_reply_t *reply)
 {
   return reply->reply_icmp_ext;
 }
@@ -345,3 +365,71 @@ int scamper_tracelb_reply_is_tcp(const scamper_tracelb_reply_t *reply)
 {
   return SCAMPER_TRACELB_REPLY_IS_TCP(reply);
 }
+
+int scamper_tracelb_reply_is_icmp(const scamper_tracelb_reply_t *reply)
+{
+  if(SCAMPER_TRACELB_REPLY_IS_TCP(reply) == 0)
+    return 1;
+  return 0;
+}
+
+int scamper_tracelb_reply_is_icmp_q(const scamper_tracelb_reply_t *reply)
+{
+  return (SCAMPER_TRACELB_REPLY_IS_ICMP_UNREACH(reply) ||
+	  SCAMPER_TRACELB_REPLY_IS_ICMP_TTL_EXP(reply));
+}
+
+int scamper_tracelb_reply_is_reply_ttl(const scamper_tracelb_reply_t *reply)
+{
+  return SCAMPER_TRACELB_REPLY_IS_REPLY_TTL(reply);
+}
+
+uint16_t scamper_tracelb_probeset_summary_addrc_get(const scamper_tracelb_probeset_summary_t *sum)
+{
+  return sum->addrc;
+}
+
+scamper_addr_t *scamper_tracelb_probeset_summary_addr_get(const scamper_tracelb_probeset_summary_t *sum, uint16_t i)
+{
+  if(i >= sum->addrc)
+    return NULL;
+  return sum->addrs[i];
+}
+
+uint16_t scamper_tracelb_probeset_summary_nullc_get(const scamper_tracelb_probeset_summary_t *sum)
+{
+  return sum->nullc;
+}
+
+#ifdef BUILDING_LIBSCAMPERFILE
+scamper_tracelb_node_t *scamper_tracelb_node_use(scamper_tracelb_node_t *node)
+{
+  node->refcnt++;
+  return node;
+}
+
+scamper_tracelb_link_t *scamper_tracelb_link_use(scamper_tracelb_link_t *link)
+{
+  link->refcnt++;
+  return link;
+}
+
+scamper_tracelb_probe_t *scamper_tracelb_probe_use(scamper_tracelb_probe_t *p)
+{
+  p->refcnt++;
+  return p;
+}
+
+scamper_tracelb_reply_t *scamper_tracelb_reply_use(scamper_tracelb_reply_t *r)
+{
+  r->refcnt++;
+  return r;
+}
+
+scamper_tracelb_probeset_t *
+scamper_tracelb_probeset_use(scamper_tracelb_probeset_t *set)
+{
+  set->refcnt++;
+  return set;
+}
+#endif

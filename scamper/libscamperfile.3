@@ -5,9 +5,9 @@
 .\" Copyright (c) 2011 University of Waikato
 .\" Copyright (c) 2022 Matthew Luckie
 .\"
-.\" $Id: libscamperfile.3,v 1.9 2022/02/07 04:53:08 mjl Exp $
+.\" $Id: libscamperfile.3,v 1.10 2024/01/16 00:05:20 mjl Exp $
 .\"
-.Dd Feb 7, 2022
+.Dd January 16, 2024
 .Dt LIBSCAMPERFILE 3
 .Os
 .Sh NAME
@@ -29,6 +29,8 @@ scamper warts file library (libscamperfile -lscamperfile)
 .In scamper_sting.h
 .In scamper_sniff.h
 .In scamper_host.h
+.In scamper_http.h
+.In scamper_udpprobe.h
 .Sh DESCRIPTION
 The
 .Nm
@@ -84,6 +86,10 @@ Valid data type values to specify in the types array are:
 .Sy SCAMPER_FILE_OBJ_SNIFF
 .It
 .Sy SCAMPER_FILE_OBJ_HOST
+.It
+.Sy SCAMPER_FILE_OBJ_HTTP
+.It
+.Sy SCAMPER_FILE_OBJ_UDPPROBE
 .El
 .Pp
 .Ft void

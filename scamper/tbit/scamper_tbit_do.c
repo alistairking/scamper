@@ -1,7 +1,7 @@
 /*
  * scamper_do_tbit.c
  *
- * $Id: scamper_tbit_do.c,v 1.195.4.1 2023/08/18 21:25:04 mjl Exp $
+ * $Id: scamper_tbit_do.c,v 1.200 2023/12/25 22:12:25 mjl Exp $
  *
  * Copyright (C) 2009-2010 Ben Stasiewicz
  * Copyright (C) 2009-2010 Stephen Eichler
@@ -359,7 +359,7 @@ static void tbit_result(scamper_task_t *task, uint8_t result)
       break;
     }
 
-  if(state->flags & TBIT_STATE_FLAG_RST_SEEN)
+  if(state != NULL && state->flags & TBIT_STATE_FLAG_RST_SEEN)
     d = 1;
 
   if(tbit->result == SCAMPER_TBIT_RESULT_NONE)
@@ -375,6 +375,7 @@ static void tbit_result(scamper_task_t *task, uint8_t result)
   if(d == 0)
     {
       /* only set MODE_FIN if we are out of the SYN mode */
+      assert(state != NULL);
       if(state->mode != MODE_SYN)
 	{
 	  state->mode = MODE_FIN;
@@ -383,7 +384,8 @@ static void tbit_result(scamper_task_t *task, uint8_t result)
     }
   else
     {
-      state->mode = MODE_DONE;
+      if(state != NULL)
+	state->mode = MODE_DONE;
       scamper_task_queue_done(task, 0);
     }
 
@@ -1275,7 +1277,7 @@ static void dl_syn(scamper_task_t *task, scamper_dl_rec_t *dl)
 	   (dl->dl_tcp_opts & SCAMPER_DL_TCP_OPT_FO) != 0) ||
 	  ((null->options & SCAMPER_TBIT_NULL_OPTION_FO_EXP) != 0 &&
 	   (dl->dl_tcp_opts & SCAMPER_DL_TCP_OPT_FO_EXP) != 0)) &&
-	 dl->dl_tcp_fo_cookielen > 0 && tbit->fo_cookielen == 0)
+	 dl->dl_tcp_fo_cookielen > 0 && tbit->client_fo_cookielen == 0)
 	{
 	  null->results |= SCAMPER_TBIT_NULL_RESULT_FO;
 	}
@@ -1283,7 +1285,7 @@ static void dl_syn(scamper_task_t *task, scamper_dl_rec_t *dl)
 
   tbit->server_mss = dl->dl_tcp_mss;
 
-  if(tbit->fo_cookie != NULL)
+  if(tbit->client_fo_cookie != NULL)
     {
       rc = 0;
       if(dl->dl_tcp_datalen > 0)
@@ -1372,7 +1374,7 @@ static void timeout_syn(scamper_task_t *task)
 {
   scamper_tbit_t *tbit = tbit_getdata(task);
   tbit_state_t *state = tbit_getstate(task);
-  if(state->attempt >= tbit->syn_retx)
+  if(state->attempt >= tbit->client_syn_retx)
     tbit_result(task, SCAMPER_TBIT_RESULT_TCP_NOCONN);
   return;
 }
@@ -2526,7 +2528,7 @@ static void timeout_data(scamper_task_t *task)
 
   if((seg = slist_head_item(state->segments)) != NULL)
     {
-      if(state->attempt >= tbit->dat_retx)
+      if(state->attempt >= tbit->client_dat_retx)
 	{
 	  func[tbit->type](task);
 	  return;
@@ -3134,6 +3136,9 @@ static void do_tbit_handle_dl(scamper_task_t *task, scamper_dl_rec_t *dl)
   scamper_tbit_pkt_t *pkt = NULL;
   scamper_dl_rec_t *newp = NULL;
 
+  if(state == NULL)
+    return;
+
   /*
    * handle packets that arrive in fragments.  fall through if it is able
    * to be reassembled.
@@ -3411,6 +3416,14 @@ static void tbit_state_free(scamper_task_t *task)
     }
 
 #if defined(HAVE_OPENSSL)
+  /*
+   * SSL_free() also calls the free()ing procedures for indirectly
+   * affected items, if applicable: the buffering BIO, the read and
+   * write BIOs, cipher lists specially created for this ssl, the
+   * SSL_SESSION. Do not explicitly free these indirectly freed up
+   * items before or after calling SSL_free(), as trying to free
+   * things twice may lead to program failure.
+   */
   if(state->ssl != NULL)
     {
       SSL_free(state->ssl);
@@ -3490,7 +3503,7 @@ static int tbit_state_alloc(scamper_task_t *task)
 	}
 
       /* if we are using the fast-open cookie, get the payload to include */
-      if(tbit->fo_cookielen > 0 && tbit_app_rx(task, NULL, 0) <= 0)
+      if(tbit->client_fo_cookielen > 0 && tbit_app_rx(task, NULL, 0) <= 0)
 	{
 	  scamper_debug(__func__, "could not get payload");
 	  goto err;
@@ -3539,13 +3552,13 @@ static int tbit_tx_tcp(scamper_task_t *task, scamper_probe_t *pr,
     {
       pr->pr_tcp_flags = TH_SYN;
       pr->pr_tcp_mss   = tbit->client_mss;
-      pr->pr_tcp_wscale = tbit->wscale;
+      pr->pr_tcp_wscale = tbit->client_wscale;
 
       if(tbit->options & SCAMPER_TBIT_OPTION_TCPTS)
 	{
 	  gettimeofday_wrap(&tv);
 	  pr->pr_tcp_opts |= SCAMPER_PROBE_TCPOPT_TS;
-	  pr->pr_tcp_tsval = timeval_diff_ms(&tv, &tbit->start);
+	  pr->pr_tcp_tsval = timeval_diff_ms(&tbit->start, &tv);
 	}
 
       if(tbit->options & SCAMPER_TBIT_OPTION_SACK)
@@ -3570,10 +3583,10 @@ static int tbit_tx_tcp(scamper_task_t *task, scamper_probe_t *pr,
 		pr->pr_tcp_opts |= SCAMPER_PROBE_TCPOPT_FO;
 	      else
 		pr->pr_tcp_opts |= SCAMPER_PROBE_TCPOPT_FO_EXP;
-	      pr->pr_tcp_fo_cookielen = tbit->fo_cookielen;
-	      if(tbit->fo_cookielen > 0)
+	      pr->pr_tcp_fo_cookielen = tbit->client_fo_cookielen;
+	      if(tbit->client_fo_cookielen > 0)
 		{
-		  pr->pr_tcp_fo_cookie = tbit->fo_cookie;
+		  pr->pr_tcp_fo_cookie = tbit->client_fo_cookie;
 		  if((seg = slist_head_item(state->segments)) != NULL)
 		    {
 		      pr->pr_data = seg->data;
@@ -3649,7 +3662,7 @@ static int tbit_tx_tcp(scamper_task_t *task, scamper_probe_t *pr,
     {
       gettimeofday_wrap(&tv);
       pr->pr_tcp_opts |= SCAMPER_PROBE_TCPOPT_TS;
-      pr->pr_tcp_tsval = timeval_diff_ms(&tv, &tbit->start);
+      pr->pr_tcp_tsval = timeval_diff_ms(&tbit->start, &tv);
       pr->pr_tcp_tsecr = state->ts_recent;
       state->ts_lastack = pr->pr_tcp_ack;
     }
@@ -3762,7 +3775,7 @@ static void do_tbit_probe(scamper_task_t *task)
   probe.pr_dl_len = state->dlhdr->len;
   probe.pr_ip_src = tbit->src;
   probe.pr_ip_dst = tbit->dst;
-  probe.pr_ip_ttl = tbit->ttl;
+  probe.pr_ip_ttl = tbit->client_ipttl;
 
   if(tbit->dst->type == SCAMPER_ADDR_TYPE_IPV4)
     {

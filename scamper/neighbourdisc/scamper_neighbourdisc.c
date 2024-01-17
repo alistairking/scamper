@@ -1,7 +1,7 @@
 /*
  * scamper_neighbourdisc.c
  *
- * $Id: scamper_neighbourdisc.c,v 1.9 2023/05/31 23:22:18 mjl Exp $
+ * $Id: scamper_neighbourdisc.c,v 1.10 2023/07/28 21:08:58 mjl Exp $
  *
  * Copyright (C) 2009-2023 Matthew Luckie
  *
@@ -34,11 +34,21 @@
 
 scamper_neighbourdisc_reply_t *scamper_neighbourdisc_reply_alloc(void)
 {
-  return malloc_zero(sizeof(scamper_neighbourdisc_reply_t));
+  scamper_neighbourdisc_reply_t *r;
+  if((r = malloc_zero(sizeof(scamper_neighbourdisc_reply_t))) == NULL)
+    return NULL;
+#ifdef BUILDING_LIBSCAMPERFILE
+  r->refcnt = 1;
+#endif
+  return r;
 }
 
 void scamper_neighbourdisc_reply_free(scamper_neighbourdisc_reply_t *reply)
 {
+#ifdef BUILDING_LIBSCAMPERFILE
+  if(--reply->refcnt > 0)
+    return;
+#endif
   if(reply->mac != NULL) scamper_addr_free(reply->mac);
   free(reply);
   return;
@@ -65,16 +75,24 @@ int scamper_neighbourdisc_replies_alloc(scamper_neighbourdisc_probe_t *probe,
 
 scamper_neighbourdisc_probe_t *scamper_neighbourdisc_probe_alloc(void)
 {
-  return malloc_zero(sizeof(scamper_neighbourdisc_probe_t));
+  scamper_neighbourdisc_probe_t *probe;
+  if((probe = malloc_zero(sizeof(scamper_neighbourdisc_probe_t))) == NULL)
+    return NULL;
+#ifdef BUILDING_LIBSCAMPERFILE
+  probe->refcnt = 1;
+#endif
+  return probe;
 }
 
 void scamper_neighbourdisc_probe_free(scamper_neighbourdisc_probe_t *probe)
 {
   uint16_t i;
-
   if(probe == NULL)
     return;
-
+#ifdef BUILDING_LIBSCAMPERFILE
+  if(--probe->refcnt > 0)
+    return;
+#endif
   if(probe->rxs != NULL)
     {
       for(i=0; i<probe->rxc; i++)

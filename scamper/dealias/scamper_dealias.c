@@ -1,7 +1,7 @@
 /*
  * scamper_dealias.c
  *
- * $Id: scamper_dealias.c,v 1.58 2023/05/31 23:22:18 mjl Exp $
+ * $Id: scamper_dealias.c,v 1.73 2023/12/29 03:46:11 mjl Exp $
  *
  * Copyright (C) 2008-2010 The University of Waikato
  * Copyright (C) 2012-2013 The Regents of the University of California
@@ -40,138 +40,89 @@
 #include "scamper_dealias_int.h"
 #include "utils.h"
 
-static void dealias_probedef_free(scamper_dealias_probedef_t *probedef)
+static const char *probedef_m[] = {
+  NULL,
+  "icmp-echo",
+  "tcp-ack",
+  "udp",
+  "tcp-ack-sport",
+  "udp-dport",
+  "tcp-syn-sport",
+};
+static size_t probedef_mc = sizeof(probedef_m) / sizeof(char *);
+
+int scamper_dealias_probedef_method_fromstr(const char *str, uint8_t *meth)
 {
-  if(probedef->src != NULL)
+  uint8_t i;
+  assert(probedef_mc == (SCAMPER_DEALIAS_PROBEDEF_METHOD_MAX+1));
+  for(i=1; i<probedef_mc; i++)
     {
-      scamper_addr_free(probedef->src);
-      probedef->src = NULL;
-    }
-  if(probedef->dst != NULL)
-    {
-      scamper_addr_free(probedef->dst);
-      probedef->dst = NULL;
-    }
-  return;
-}
-
-static void dealias_mercator_free(void *data)
-{
-  scamper_dealias_mercator_t *mercator = (scamper_dealias_mercator_t *)data;
-  dealias_probedef_free(&mercator->probedef);
-  free(mercator);
-  return;
-}
-
-static void dealias_ally_free(void *data)
-{
-  scamper_dealias_ally_t *ally = (scamper_dealias_ally_t *)data;
-  dealias_probedef_free(&ally->probedefs[0]);
-  dealias_probedef_free(&ally->probedefs[1]);
-  free(ally);
-  return;
-}
-
-static void dealias_radargun_free(void *data)
-{
-  scamper_dealias_radargun_t *radargun = (scamper_dealias_radargun_t *)data;
-  uint32_t i;
-
-  if(radargun->probedefs != NULL)
-    {
-      for(i=0; i<radargun->probedefc; i++)
+      if(strcasecmp(str, probedef_m[i]) == 0)
 	{
-	  dealias_probedef_free(&radargun->probedefs[i]);
+	  *meth = i;
+	  return 0;
 	}
-      free(radargun->probedefs);
     }
-  free(radargun);
-  return;
+  return -1;
 }
 
-static void dealias_prefixscan_free(void *data)
+char *scamper_dealias_probedef_method_tostr(const scamper_dealias_probedef_t *d,
+					    char *buf, size_t len)
 {
-  scamper_dealias_prefixscan_t *prefixscan = data;
-  uint16_t i;
-
-  if(prefixscan == NULL)
-    return;
-
-  if(prefixscan->a  != NULL) scamper_addr_free(prefixscan->a);
-  if(prefixscan->b  != NULL) scamper_addr_free(prefixscan->b);
-  if(prefixscan->ab != NULL) scamper_addr_free(prefixscan->ab);
-
-  if(prefixscan->xs != NULL)
-    {
-      for(i=0; i<prefixscan->xc; i++)
-	if(prefixscan->xs[i] != NULL)
-	  scamper_addr_free(prefixscan->xs[i]);
-      free(prefixscan->xs);
-    }
-
-  if(prefixscan->probedefs != NULL)
-    {
-      for(i=0; i<prefixscan->probedefc; i++)
-	dealias_probedef_free(&prefixscan->probedefs[i]);
-      free(prefixscan->probedefs);
-    }
-
-  free(prefixscan);
-
-  return;
-}
-
-static void dealias_bump_free(void *data)
-{
-  scamper_dealias_bump_t *bump = (scamper_dealias_bump_t *)data;
-  dealias_probedef_free(&bump->probedefs[0]);
-  dealias_probedef_free(&bump->probedefs[1]);
-  free(bump);
-  return;
-}
-
-const char *scamper_dealias_probedef_method_tostr(const scamper_dealias_probedef_t *d,
-						  char *b, size_t l)
-{
-  static const char *m[] = {
-    NULL,
-    "icmp-echo",
-    "tcp-ack",
-    "udp",
-    "tcp-ack-sport",
-    "udp-dport",
-    "tcp-syn-sport",
-  };
-  if(d->method >= sizeof(m) / sizeof(char *) || m[d->method] == NULL)
-    {
-      snprintf(b, l, "%d", d->method);
-      return b;
-    }
-  return m[d->method];
+  assert(probedef_mc == (SCAMPER_DEALIAS_PROBEDEF_METHOD_MAX+1));
+  if(d->method >= probedef_mc || probedef_m[d->method] == NULL)
+    snprintf(buf, len, "%d", d->method);
+  else
+    snprintf(buf, len, "%s", probedef_m[d->method]);
+  return buf;
 }
 
 scamper_dealias_probedef_t *scamper_dealias_probedef_alloc(void)
 {
-  size_t size = sizeof(scamper_dealias_probedef_t);
-  return (scamper_dealias_probedef_t *)malloc_zero(size);
+  scamper_dealias_probedef_t *pd;
+  pd = malloc_zero(sizeof(scamper_dealias_probedef_t));
+#ifdef BUILDING_LIBSCAMPERFILE
+  if(pd != NULL)
+    pd->refcnt = 1;
+#endif
+  return pd;
 }
 
 void scamper_dealias_probedef_free(scamper_dealias_probedef_t *probedef)
 {
-  dealias_probedef_free(probedef);
+#ifdef BUILDING_LIBSCAMPERFILE
+  if(--probedef->refcnt > 0)
+    return;
+#endif
+  if(probedef->src != NULL)
+    scamper_addr_free(probedef->src);
+  if(probedef->dst != NULL)
+    scamper_addr_free(probedef->dst);
   free(probedef);
   return;
 }
 
 scamper_dealias_probe_t *scamper_dealias_probe_alloc(void)
 {
-  size_t size = sizeof(scamper_dealias_probe_t);
-  return (scamper_dealias_probe_t *)malloc_zero(size);
+  scamper_dealias_probe_t *probe;
+  probe = malloc_zero(sizeof(scamper_dealias_probe_t));
+#ifdef BUILDING_LIBSCAMPERFILE
+  if(probe != NULL)
+    probe->refcnt = 1;
+#endif
+  return probe;
 }
 
 void scamper_dealias_probe_free(scamper_dealias_probe_t *probe)
 {
   uint16_t i;
+
+#ifdef BUILDING_LIBSCAMPERFILE
+  if(--probe->refcnt > 0)
+    return;
+  if(probe->def != NULL)
+    scamper_dealias_probedef_free(probe->def);
+#endif
 
   if(probe->replies != NULL)
     {
@@ -189,12 +140,21 @@ void scamper_dealias_probe_free(scamper_dealias_probe_t *probe)
 
 scamper_dealias_reply_t *scamper_dealias_reply_alloc(void)
 {
-  size_t size = sizeof(scamper_dealias_reply_t);
-  return (scamper_dealias_reply_t *)malloc_zero(size);
+  scamper_dealias_reply_t *reply;
+  reply = malloc_zero(sizeof(scamper_dealias_reply_t));
+#ifdef BUILDING_LIBSCAMPERFILE
+  if(reply != NULL)
+    reply->refcnt = 1;
+#endif
+  return reply;
 }
 
 void scamper_dealias_reply_free(scamper_dealias_reply_t *reply)
 {
+#ifdef BUILDING_LIBSCAMPERFILE
+  if(--reply->refcnt > 0)
+    return;
+#endif
   if(reply->src != NULL)
     scamper_addr_free(reply->src);
   free(reply);
@@ -292,41 +252,246 @@ int scamper_dealias_reply_add(scamper_dealias_probe_t *probe,
   return -1;
 }
 
-int scamper_dealias_ally_alloc(scamper_dealias_t *dealias)
+scamper_dealias_ally_t *scamper_dealias_ally_alloc(void)
 {
-  if((dealias->data = malloc_zero(sizeof(scamper_dealias_ally_t))) != NULL)
-    return 0;
-  return -1;
+  scamper_dealias_ally_t *ally;
+  if((ally = malloc_zero(sizeof(scamper_dealias_ally_t))) == NULL)
+    return NULL;
+#ifdef BUILDING_LIBSCAMPERFILE
+  ally->refcnt = 1;
+#endif
+  if((ally->probedefs[0] = scamper_dealias_probedef_alloc()) == NULL ||
+     (ally->probedefs[1] = scamper_dealias_probedef_alloc()) == NULL)
+    goto err;
+  return ally;
+
+ err:
+  if(ally != NULL) scamper_dealias_ally_free(ally);
+  return NULL;
 }
 
-int scamper_dealias_mercator_alloc(scamper_dealias_t *dealias)
+void scamper_dealias_ally_free(scamper_dealias_ally_t *ally)
 {
-  if((dealias->data = malloc_zero(sizeof(scamper_dealias_mercator_t))) != NULL)
-    return 0;
-  return -1;
+#ifdef BUILDING_LIBSCAMPERFILE
+  if(--ally->refcnt > 0)
+    return;
+#endif
+  if(ally->probedefs[0] != NULL)
+    scamper_dealias_probedef_free(ally->probedefs[0]);
+  if(ally->probedefs[1] != NULL)
+    scamper_dealias_probedef_free(ally->probedefs[1]);
+  free(ally);
+  return;
 }
 
-int scamper_dealias_radargun_alloc(scamper_dealias_t *dealias)
+scamper_dealias_mercator_t *scamper_dealias_mercator_alloc(void)
 {
-  if((dealias->data = malloc_zero(sizeof(scamper_dealias_radargun_t))) != NULL)
-    return 0;
-  return -1;
+  scamper_dealias_mercator_t *mc;
+  mc = malloc_zero(sizeof(scamper_dealias_mercator_t));
+#ifdef BUILDING_LIBSCAMPERFILE
+  if(mc != NULL)
+    mc->refcnt = 1;
+#endif
+  return mc;
 }
 
-int scamper_dealias_prefixscan_alloc(scamper_dealias_t *dealias)
+void scamper_dealias_mercator_free(scamper_dealias_mercator_t *mc)
 {
-  dealias->data = malloc_zero(sizeof(scamper_dealias_prefixscan_t));
-  if(dealias->data != NULL)
-    return 0;
-  return -1;
+#ifdef BUILDING_LIBSCAMPERFILE
+  if(--mc->refcnt > 0)
+    return;
+#endif
+  if(mc->probedef != NULL)
+    scamper_dealias_probedef_free(mc->probedef);
+  free(mc);
+  return;
 }
 
-int scamper_dealias_bump_alloc(scamper_dealias_t *dealias)
+scamper_dealias_radargun_t *scamper_dealias_radargun_alloc(void)
 {
-  if((dealias->data = malloc_zero(sizeof(scamper_dealias_bump_t))) != NULL)
-    return 0;
+  scamper_dealias_radargun_t *rg;
+  rg = malloc_zero(sizeof(scamper_dealias_radargun_t));
+#ifdef BUILDING_LIBSCAMPERFILE
+  if(rg != NULL)
+    rg->refcnt = 1;
+#endif
+  return rg;
+}
 
-  return -1;
+void scamper_dealias_radargun_free(scamper_dealias_radargun_t *radargun)
+{
+  uint32_t i;
+#ifdef BUILDING_LIBSCAMPERFILE
+  if(--radargun->refcnt > 0)
+    return;
+#endif
+  if(radargun->probedefs != NULL)
+    {
+      for(i=0; i<radargun->probedefc; i++)
+	if(radargun->probedefs[i] != NULL)
+	  scamper_dealias_probedef_free(radargun->probedefs[i]);
+      free(radargun->probedefs);
+    }
+  free(radargun);
+  return;
+}
+
+scamper_dealias_prefixscan_t *scamper_dealias_prefixscan_alloc(void)
+{
+  scamper_dealias_prefixscan_t *pf;
+  pf = malloc_zero(sizeof(scamper_dealias_prefixscan_t));
+#ifdef BUILDING_LIBSCAMPERFILE
+  if(pf != NULL)
+    pf->refcnt = 1;
+#endif
+  return pf;
+}
+
+void scamper_dealias_prefixscan_free(scamper_dealias_prefixscan_t *prefixscan)
+{  
+  uint16_t i;
+
+  if(prefixscan == NULL)
+    return;
+
+#ifdef BUILDING_LIBSCAMPERFILE
+  if(--prefixscan->refcnt > 0)
+    return;
+#endif
+
+  if(prefixscan->a  != NULL) scamper_addr_free(prefixscan->a);
+  if(prefixscan->b  != NULL) scamper_addr_free(prefixscan->b);
+  if(prefixscan->ab != NULL) scamper_addr_free(prefixscan->ab);
+
+  if(prefixscan->xs != NULL)
+    {
+      for(i=0; i<prefixscan->xc; i++)
+	if(prefixscan->xs[i] != NULL)
+	  scamper_addr_free(prefixscan->xs[i]);
+      free(prefixscan->xs);
+    }
+
+  if(prefixscan->probedefs != NULL)
+    {
+      for(i=0; i<prefixscan->probedefc; i++)
+	if(prefixscan->probedefs[i] != NULL)
+	  scamper_dealias_probedef_free(prefixscan->probedefs[i]);
+      free(prefixscan->probedefs);
+    }
+
+  free(prefixscan);
+
+  return;
+}
+
+scamper_dealias_bump_t *scamper_dealias_bump_alloc(void)
+{
+  scamper_dealias_bump_t *bump;
+  if((bump = malloc_zero(sizeof(scamper_dealias_bump_t))) == NULL)
+    return NULL;
+#ifdef BUILDING_LIBSCAMPERFILE
+  bump->refcnt = 1;
+#endif
+  if((bump->probedefs[0] = scamper_dealias_probedef_alloc()) == NULL ||
+     (bump->probedefs[1] = scamper_dealias_probedef_alloc()) == NULL)
+    goto err;
+  return bump;
+
+ err:
+  if(bump != NULL) scamper_dealias_bump_free(bump);
+  return NULL;
+}
+
+void scamper_dealias_bump_free(scamper_dealias_bump_t *bump)
+{
+#ifdef BUILDING_LIBSCAMPERFILE
+  if(--bump->refcnt > 0)
+    return;
+#endif
+  if(bump->probedefs[0] != NULL)
+    scamper_dealias_probedef_free(bump->probedefs[0]);
+  if(bump->probedefs[1] != NULL)
+    scamper_dealias_probedef_free(bump->probedefs[1]);
+  free(bump);
+  return;
+}
+
+scamper_dealias_midarest_t *scamper_dealias_midarest_alloc(void)
+{
+  scamper_dealias_midarest_t *me;
+  me = malloc_zero(sizeof(scamper_dealias_midarest_t));
+#ifdef BUILDING_LIBSCAMPERFILE
+  if(me != NULL)
+    me->refcnt = 1;
+#endif
+  return me;
+}
+
+void scamper_dealias_midarest_free(scamper_dealias_midarest_t *me)
+{
+  uint16_t i;
+#ifdef BUILDING_LIBSCAMPERFILE
+  if(--me->refcnt > 0)
+    return;
+#endif
+  if(me->probedefs != NULL)
+    {
+      for(i=0; i<me->probedefc; i++)
+	if(me->probedefs[i] != NULL)
+	  scamper_dealias_probedef_free(me->probedefs[i]);
+      free(me->probedefs);
+    }
+  free(me);
+  return;
+}
+
+scamper_dealias_midardisc_round_t *scamper_dealias_midardisc_round_alloc(void)
+{
+  return malloc_zero(sizeof(scamper_dealias_midardisc_round_t));
+}
+
+void scamper_dealias_midardisc_round_free(scamper_dealias_midardisc_round_t *r)
+{
+  free(r);
+  return;
+}
+
+scamper_dealias_midardisc_t *scamper_dealias_midardisc_alloc(void)
+{
+  scamper_dealias_midardisc_t *md;
+  md = malloc_zero(sizeof(scamper_dealias_midardisc_t));
+#ifdef BUILDING_LIBSCAMPERFILE
+  if(md != NULL)
+    md->refcnt = 1;
+#endif
+  return md;
+}
+
+void scamper_dealias_midardisc_free(scamper_dealias_midardisc_t *md)
+{
+  uint32_t i;
+#ifdef BUILDING_LIBSCAMPERFILE
+  if(--md->refcnt > 0)
+    return;
+#endif
+  if(md->probedefs != NULL)
+    {
+      for(i=0; i<md->probedefc; i++)
+	if(md->probedefs[i] != NULL)
+	  scamper_dealias_probedef_free(md->probedefs[i]);
+      free(md->probedefs);
+    }
+  if(md->sched != NULL)
+    {
+      for(i=0; i<md->schedc; i++)
+	if(md->sched[i] != NULL)
+	  scamper_dealias_midardisc_round_free(md->sched[i]);
+      free(md->sched);
+    }
+  if(md->startat != NULL)
+    free(md->startat);
+  free(md);
+  return;
 }
 
 static uint16_t dealias_ipid16_diff(uint16_t a, uint16_t b)
@@ -633,8 +798,35 @@ int scamper_dealias_replies_alloc(scamper_dealias_probe_t *probe, uint16_t cnt)
 int scamper_dealias_radargun_probedefs_alloc(scamper_dealias_radargun_t *rg,
 					     uint32_t probedefc)
 {
-  size_t len = probedefc * sizeof(scamper_dealias_probedef_t);
+  size_t len = probedefc * sizeof(scamper_dealias_probedef_t *);
   if((rg->probedefs = malloc_zero(len)) == NULL)
+    return -1;
+  return 0;
+}
+
+int scamper_dealias_midarest_probedefs_alloc(scamper_dealias_midarest_t *me,
+					     uint16_t probedefc)
+{
+  size_t len = probedefc * sizeof(scamper_dealias_probedef_t *);
+  if((me->probedefs = malloc_zero(len)) == NULL)
+    return -1;
+  return 0;
+}
+
+int scamper_dealias_midardisc_probedefs_alloc(scamper_dealias_midardisc_t *md,
+					      uint32_t probedefc)
+{
+  size_t len = probedefc * sizeof(scamper_dealias_probedef_t *);
+  if((md->probedefs = malloc_zero(len)) == NULL)
+    return -1;
+  return 0;
+}
+
+int scamper_dealias_midardisc_sched_alloc(scamper_dealias_midardisc_t *md,
+					  uint32_t schedc)
+{
+  size_t len = schedc * sizeof(scamper_dealias_midardisc_round_t *);
+  if((md->sched = malloc_zero(len)) == NULL)
     return -1;
   return 0;
 }
@@ -711,32 +903,38 @@ int scamper_dealias_prefixscan_xs_alloc(scamper_dealias_prefixscan_t *p,
 int scamper_dealias_prefixscan_probedefs_alloc(scamper_dealias_prefixscan_t *p,
 					       uint32_t probedefc)
 {
-  size_t len = probedefc * sizeof(scamper_dealias_probedef_t);
-  if((p->probedefs = malloc_zero(len)) != NULL)
-    return 0;
-  return -1;
+  uint32_t i;
+  size_t len;
+  len = probedefc * sizeof(scamper_dealias_probedef_t *);
+  if((p->probedefs = malloc_zero(len)) == NULL)
+    return -1;
+  for(i=0; i<probedefc; i++)
+    if((p->probedefs[i] = scamper_dealias_probedef_alloc()) == NULL)
+      return -1;
+  return 0;
 }
 
 int scamper_dealias_prefixscan_probedef_add(scamper_dealias_t *dealias,
-					    scamper_dealias_probedef_t *def)
+				    const scamper_dealias_probedef_t *def)
 {
   scamper_dealias_prefixscan_t *prefixscan = dealias->data;
+  scamper_dealias_probedef_t *d;
   size_t size;
 
   /* make the probedef array one bigger */
-  size = sizeof(scamper_dealias_probedef_t) * (prefixscan->probedefc+1);
-  if(realloc_wrap((void **)&prefixscan->probedefs, size) != 0)
+  size = sizeof(scamper_dealias_probedef_t *) * (prefixscan->probedefc+1);
+  if(realloc_wrap((void **)&prefixscan->probedefs, size) != 0 ||
+     (d = scamper_dealias_probedef_alloc()) == NULL)
     return -1;
 
   /* add the probedef to the array */
-  memcpy(&prefixscan->probedefs[prefixscan->probedefc],
-	 def, sizeof(scamper_dealias_probedef_t));
+  prefixscan->probedefs[prefixscan->probedefc] = d;
+  memcpy(d, def, sizeof(scamper_dealias_probedef_t));
 
   /* update the probedef with an id, and get references to the addresses */
-  def = &prefixscan->probedefs[prefixscan->probedefc];
-  def->id = prefixscan->probedefc++;
-  scamper_addr_use(def->src);
-  scamper_addr_use(def->dst);
+  d->id = prefixscan->probedefc++;
+  scamper_addr_use(d->src);
+  scamper_addr_use(d->dst);
 
   return 0;
 }
@@ -853,7 +1051,7 @@ int scamper_dealias_radargun_fudge(scamper_dealias_t *dealias,
   drd = &dr[def->id]; d = 0;
   for(pid=0; pid<rg->probedefc; pid++)
     {
-      if(&rg->probedefs[pid] == def || dr[pid].probec < 3)
+      if(rg->probedefs[pid] == def || dr[pid].probec < 3)
 	continue;
 
       j = 0; k = 0;
@@ -885,7 +1083,7 @@ int scamper_dealias_radargun_fudge(scamper_dealias_t *dealias,
       if(inseq == 0)
 	continue;
 
-      defs[d++] = &rg->probedefs[pid];
+      defs[d++] = rg->probedefs[pid];
       if(d == *cnt)
 	break;
     }
@@ -909,7 +1107,7 @@ int scamper_dealias_radargun_fudge(scamper_dealias_t *dealias,
   return -1;
 }
 
-const char *scamper_dealias_method_tostr(uint8_t method, char *b, size_t l)
+char *scamper_dealias_method_tostr(uint8_t method, char *buf, size_t len)
 {
   static const char *m[] = {
     NULL,
@@ -918,16 +1116,17 @@ const char *scamper_dealias_method_tostr(uint8_t method, char *b, size_t l)
     "radargun",
     "prefixscan",
     "bump",
+    "midarest",
+    "midardisc",
   };
   if(method >= sizeof(m) / sizeof(char *) || m[method] == NULL)
-    {
-      snprintf(b, l, "%d", method);
-      return b;
-    }
-  return m[method];
+    snprintf(buf, len, "%d", method);
+  else
+    snprintf(buf, len, "%s", m[method]);
+  return buf;
 }
 
-const char *scamper_dealias_result_tostr(uint8_t result, char *b, size_t l)
+char *scamper_dealias_result_tostr(uint8_t result, char *buf, size_t len)
 {
   static const char *t[] = {
     "none",
@@ -937,23 +1136,14 @@ const char *scamper_dealias_result_tostr(uint8_t result, char *b, size_t l)
     "ipid-echo",
   };
   if(result >= sizeof(t) / sizeof(char *) || t[result] == NULL)
-    {
-      snprintf(b, l, "%d", result);
-      return b;
-    }
-  return t[result];
+    snprintf(buf, len, "%d", result);
+  else
+    snprintf(buf, len, "%s", t[result]);
+  return buf;
 }
 
 void scamper_dealias_free(scamper_dealias_t *dealias)
 {
-  static void (*const func[])(void *) = {
-    dealias_mercator_free,
-    dealias_ally_free,
-    dealias_radargun_free,
-    dealias_prefixscan_free,
-    dealias_bump_free,
-  };
-
   uint32_t i;
 
   if(dealias == NULL)
@@ -962,10 +1152,8 @@ void scamper_dealias_free(scamper_dealias_t *dealias)
   if(dealias->probes != NULL)
     {
       for(i=0; i<dealias->probec; i++)
-	{
-	  if(dealias->probes[i] != NULL)
-	    scamper_dealias_probe_free(dealias->probes[i]);
-	}
+	if(dealias->probes[i] != NULL)
+	  scamper_dealias_probe_free(dealias->probes[i]);
       free(dealias->probes);
     }
 
@@ -975,8 +1163,21 @@ void scamper_dealias_free(scamper_dealias_t *dealias)
   if(dealias->data != NULL)
     {
       assert(dealias->method != 0);
-      assert(dealias->method <= 5);
-      func[dealias->method-1](dealias->data);
+      assert(dealias->method <= SCAMPER_DEALIAS_METHOD_MAX);
+      if(dealias->method == SCAMPER_DEALIAS_METHOD_MERCATOR)
+	scamper_dealias_mercator_free(dealias->data);
+      else if(dealias->method == SCAMPER_DEALIAS_METHOD_ALLY)
+	scamper_dealias_ally_free(dealias->data);
+      else if(dealias->method == SCAMPER_DEALIAS_METHOD_RADARGUN)
+	scamper_dealias_radargun_free(dealias->data);
+      else if(dealias->method == SCAMPER_DEALIAS_METHOD_PREFIXSCAN)
+	scamper_dealias_prefixscan_free(dealias->data);
+      else if(dealias->method == SCAMPER_DEALIAS_METHOD_BUMP)
+	scamper_dealias_bump_free(dealias->data);
+      else if(dealias->method == SCAMPER_DEALIAS_METHOD_MIDAREST)
+	scamper_dealias_midarest_free(dealias->data);
+      else if(dealias->method == SCAMPER_DEALIAS_METHOD_MIDARDISC)
+	scamper_dealias_midardisc_free(dealias->data);
     }
 
   free(dealias);

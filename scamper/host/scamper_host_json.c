@@ -4,7 +4,7 @@
  * Copyright (c) 2023 Matthew Luckie
  * Author: Matthew Luckie
  *
- * $Id: scamper_host_json.c,v 1.8 2023/05/20 05:10:56 mjl Exp $
+ * $Id: scamper_host_json.c,v 1.9 2023/12/22 18:55:00 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -40,6 +40,7 @@ static char *header_tostr(const scamper_host_t *host)
 {
   char buf[1024], tmp[512];
   size_t off = 0;
+  uint32_t ms;
 
   string_concat(buf, sizeof(buf), &off,
 		"{\"type\":\"host\", \"version\":\"0.1\"");
@@ -57,10 +58,10 @@ static char *header_tostr(const scamper_host_t *host)
   if(host->flags & SCAMPER_HOST_FLAG_NORECURSE)
     string_concat(buf, sizeof(buf), &off, ", \"flags\":[\"norecurse\"]");
 
+  ms = (host->wait_timeout.tv_sec * 1000) + (host->wait_timeout.tv_usec / 1000);
   string_concat(buf, sizeof(buf), &off,
-		", \"wait\":%u, \"retries\":%u, \"stop\":\"%s\"",
-		host->wait, host->retries,
-		scamper_host_stop_tostr(host, tmp, sizeof(tmp)));
+		", \"wait\":%u, \"retries\":%u, \"stop\":\"%s\"", ms,
+		host->retries, scamper_host_stop_tostr(host, tmp, sizeof(tmp)));
   string_concat(buf, sizeof(buf), &off, ", \"qname\":\"%s\"",
 		json_esc(host->qname, tmp, sizeof(tmp)));
   string_concat(buf, sizeof(buf), &off, ", \"qclass\":\"%s\"",

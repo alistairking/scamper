@@ -1,12 +1,12 @@
 /*
  * scamper_addr.h
  *
- * $Id: scamper_addr.h,v 1.30 2023/05/29 21:22:26 mjl Exp $
+ * $Id: scamper_addr.h,v 1.38 2024/01/09 06:16:19 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2013      The Regents of the University of California
- * Copyright (C) 2016-2020 Matthew Luckie
+ * Copyright (C) 2016-2023 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -49,6 +49,7 @@
 #define SCAMPER_ADDR_TYPE_ETHERNET 0x03 /* 48 bit ethernet mac address */
 #define SCAMPER_ADDR_TYPE_FIREWIRE 0x04 /* 64 bit firewire link address */
 
+#define SCAMPER_ADDR_TYPE_UNSPEC   0x00 /* unspecified type */
 #define SCAMPER_ADDR_TYPE_MAX      SCAMPER_ADDR_TYPE_FIREWIRE
 
 /*
@@ -59,6 +60,13 @@ typedef struct scamper_addr scamper_addr_t;
 
 int scamper_addr_type_get(const scamper_addr_t *addr);
 const void *scamper_addr_addr_get(const scamper_addr_t *addr);
+
+/*
+ * scamper_addr_size
+ *  return the size of the underlying address stored in the scamper_addr
+ *  structure.  useful for writing address objects to disk...
+ */
+size_t scamper_addr_len_get(const scamper_addr_t *addr);
 
 /*
  * scamper_addr_alloc:
@@ -73,7 +81,7 @@ const void *scamper_addr_addr_get(const scamper_addr_t *addr);
  *  decrement the reference count held on the address.  when the reference
  *  count becomes zero, the address is freed.
  *
- * scamper_addr_resolve:
+ * scamper_addr_fromstr:
  *  attempt to resolve the string as getaddrinfo would, and return the address
  *
  * scamper_addr_af:
@@ -94,16 +102,21 @@ const void *scamper_addr_addr_get(const scamper_addr_t *addr);
 
 #ifndef DMALLOC
 scamper_addr_t *scamper_addr_alloc(const int type, const void *addr);
+scamper_addr_t *scamper_addr_fromstr(int type, const char *str);
 #else
 scamper_addr_t *scamper_addr_alloc_dm(const int type, const void *addr,
 				      const char *file, const int line);
+scamper_addr_t *scamper_addr_fromstr_dm(int type, const char *str,
+					const char *file, const int line);
 #define scamper_addr_alloc(type, addr) \
   scamper_addr_alloc_dm((type), (addr), __FILE__, __LINE__)
+#define scamper_addr_fromstr(type, addr) \
+  scamper_addr_fromstr_dm((type), (addr), __FILE__, __LINE__)
 #endif
 
 scamper_addr_t *scamper_addr_use(scamper_addr_t *sa);
 void scamper_addr_free(scamper_addr_t *sa);
-scamper_addr_t *scamper_addr_resolve(const int af, const char *str);
+
 int scamper_addr_af(const scamper_addr_t *sa);
 int scamper_addr_inprefix(const scamper_addr_t *sa, const void *p, int len);
 int scamper_addr_prefix(const scamper_addr_t *a, const scamper_addr_t *b);
@@ -131,6 +144,21 @@ int scamper_addr_fbd(const scamper_addr_t *a, const scamper_addr_t *b);
  scamper_addr_alloc(SCAMPER_ADDR_TYPE_FIREWIRE, addr)
 
 /*
+ * scamper_addr_fromstr_[unspec|ipv4|ipv6]
+ *
+ * these macros are provided as a convenience as the type constants can
+ * become unwieldy to use
+ */
+#define scamper_addr_fromstr_unspec(addr) \
+ scamper_addr_fromstr(SCAMPER_ADDR_TYPE_UNSPEC, addr)
+
+#define scamper_addr_fromstr_ipv4(addr) \
+ scamper_addr_fromstr(SCAMPER_ADDR_TYPE_IPV4, addr)
+
+#define scamper_addr_fromstr_ipv6(addr) \
+ scamper_addr_fromstr(SCAMPER_ADDR_TYPE_IPV6, addr)
+
+/*
  * scamper_addr_cmp:
  *  given two addresses, return their sort order.
  */
@@ -147,40 +175,6 @@ const char *scamper_addr_tostr(const scamper_addr_t *sa,
 			       char *dst, const size_t size);
 
 /*
- * scamper_addr_size
- *  return the size of the underlying address stored in the scamper_addr
- *  structure.  useful for writing address objects to disk...
- */
-size_t scamper_addr_size(const scamper_addr_t *sa);
-
-/*
- * scamper_addrcache:
- *  store identical addresses just once in this structure
- *
- * scamper_addrcache_alloc:
- *  allocate an empty address cache and return a pointer to it
- *
- * scamper_addrcache_free:
- *  free the address cache structure.  all addresses have their reference
- *  count decremented; if their reference count is zero, the underlying
- *  address is freed as well.
- */
-typedef struct scamper_addrcache scamper_addrcache_t;
-scamper_addrcache_t *scamper_addrcache_alloc(void);
-void scamper_addrcache_free(scamper_addrcache_t *ac);
-
-/*
- * scamper_addrcache_get:
- *  return a pointer to a scamper_addr_t which corresponds to the address
- *  out of the cache; allocate the address from scratch if necessary
- */
-scamper_addr_t *scamper_addrcache_get(scamper_addrcache_t *ac,
-				      const int type, const void *addr);
-
-scamper_addr_t *scamper_addrcache_resolve(scamper_addrcache_t *ac,
-					  const int af, const char *addr);
-
-/*
  * scamper_addr_islinklocal:
  * determine if the address is a link-local IPv4 or IPv6 address.
  *
@@ -194,23 +188,7 @@ int scamper_addr_is6to4(const scamper_addr_t *a);
 int scamper_addr_isreserved(const scamper_addr_t *a);
 int scamper_addr_isipv4(const scamper_addr_t *a);
 int scamper_addr_isipv6(const scamper_addr_t *a);
-
-/*
- * scamper_addrcache_get_[ipv4|ipv6|ethernet|firewire]
- *
- * these macros are provided as a convenience as the type constants can
- * become unwieldy to use
- */
-#define scamper_addrcache_get_ipv4(addrcache, addr) \
- scamper_addrcache_get(addrcache, SCAMPER_ADDR_TYPE_IPV4, addr)
-
-#define scamper_addrcache_get_ipv6(addrcache, addr) \
- scamper_addrcache_get(addrcache, SCAMPER_ADDR_TYPE_IPV6, addr)
-
-#define scamper_addrcache_get_ethernet(addrcache, addr) \
- scamper_addrcache_get(addrcache, SCAMPER_ADDR_TYPE_ETHERNET, addr)
-
-#define scamper_addrcache_get_firewire(addrcache, addr) \
- scamper_addrcache_get(addrcache, SCAMPER_ADDR_TYPE_FIREWIRE, addr)
+int scamper_addr_isethernet(const scamper_addr_t *a);
+int scamper_addr_isfirewire(const scamper_addr_t *a);
 
 #endif /* __SCAMPER_ADDR_H */

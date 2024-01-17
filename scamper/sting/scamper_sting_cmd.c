@@ -1,7 +1,7 @@
 /*
  * scamper_sting_cmd.c
  *
- * $Id: scamper_sting_cmd.c,v 1.1 2023/06/04 07:09:36 mjl Exp $
+ * $Id: scamper_sting_cmd.c,v 1.4 2023/12/30 19:11:52 mjl Exp $
  *
  * Copyright (C) 2008-2011 The University of Waikato
  * Copyright (C) 2012      The Regents of the University of California
@@ -37,6 +37,7 @@
 
 #include "scamper.h"
 #include "scamper_addr.h"
+#include "scamper_addr_int.h"
 #include "scamper_list.h"
 #include "scamper_sting.h"
 #include "scamper_sting_int.h"
@@ -121,7 +122,7 @@ static const scamper_option_in_t opts[] = {
   {'f', NULL, STING_OPT_DIST,   SCAMPER_OPTION_TYPE_STR},
   {'h', NULL, STING_OPT_REQ,    SCAMPER_OPTION_TYPE_STR},
   {'H', NULL, STING_OPT_HOLE,   SCAMPER_OPTION_TYPE_NUM},
-  {'i', NULL, STING_OPT_INTER,  SCAMPER_OPTION_TYPE_NUM},
+  {'i', NULL, STING_OPT_INTER,  SCAMPER_OPTION_TYPE_STR},
   {'m', NULL, STING_OPT_MEAN,   SCAMPER_OPTION_TYPE_STR},
   {'s', NULL, STING_OPT_SPORT,  SCAMPER_OPTION_TYPE_NUM},
   {'U', NULL, STING_OPT_USERID, SCAMPER_OPTION_TYPE_NUM},
@@ -148,6 +149,7 @@ const char *scamper_do_sting_usage(void)
 
 static int sting_arg_param_validate(int optid, char *param, long long *out)
 {
+  struct timeval tv;
   long tmp;
 
   switch(optid)
@@ -178,10 +180,10 @@ static int sting_arg_param_validate(int optid, char *param, long long *out)
       return -1;
 
     case STING_OPT_MEAN:
-      if(string_tolong(param, &tmp) != 0 ||
-	 tmp < SCAMPER_DO_STING_MEAN_MIN ||
-	 tmp > SCAMPER_DO_STING_MEAN_MAX)
+      if(timeval_fromstr(&tv, param, 1000) != 0 || (tv.tv_usec % 1000) != 0 ||
+	 timeval_cmp_lt(&tv, 0, 1000) || timeval_cmp_gt(&tv, 1, 0))
 	goto err;
+      tmp = (tv.tv_sec * 1000000) + tv.tv_usec;
       break;
 
     case STING_OPT_HOLE:
@@ -192,10 +194,10 @@ static int sting_arg_param_validate(int optid, char *param, long long *out)
       break;
 
     case STING_OPT_INTER:
-      if(string_tolong(param, &tmp) != 0 ||
-	 tmp < SCAMPER_DO_STING_INTER_MIN ||
-	 tmp > SCAMPER_DO_STING_INTER_MAX)
+      if(timeval_fromstr(&tv, param, 1000) != 0 || (tv.tv_usec % 1000) != 0 ||
+	 timeval_cmp_lt(&tv, 0, 1000) || timeval_cmp_gt(&tv, 10, 0))
 	goto err;
+      tmp = (tv.tv_sec * 1000000) + tv.tv_usec;
       break;
 
     case STING_OPT_USERID:
@@ -228,17 +230,21 @@ void *scamper_do_sting_alloc(char *str)
   uint16_t sport    = scamper_sport_default();
   uint16_t dport    = 80;
   uint16_t count    = SCAMPER_DO_STING_COUNT_DEF;
-  uint16_t mean     = SCAMPER_DO_STING_MEAN_DEF;
-  uint16_t inter    = SCAMPER_DO_STING_INTER_DEF;
   uint8_t  seqskip  = SCAMPER_DO_STING_SEQSKIP_DEF;
   uint8_t  dist     = SCAMPER_DO_STING_DIST_DEF;
   uint8_t  synretx  = SCAMPER_DO_STING_SYNRETX_DEF;
   uint8_t  dataretx = SCAMPER_DO_STING_DATARETX_DEF;
   uint32_t userid   = 0;
+  struct timeval mean, inter;
   scamper_option_out_t *opts_out = NULL, *opt;
   scamper_sting_t *sting = NULL;
   char *addr;
   long long tmp = 0;
+
+  mean.tv_sec = 0;
+  mean.tv_usec = 100000;
+  inter.tv_sec = 2;
+  inter.tv_usec = 0;
 
   /* try and parse the string passed in */
   if(scamper_options_parse(str, opts, opts_cnt, &opts_out, &addr) != 0)
@@ -279,7 +285,8 @@ void *scamper_do_sting_alloc(char *str)
 	  break;
 
 	case STING_OPT_MEAN:
-	  mean = (uint16_t)tmp;
+	  mean.tv_sec = tmp / 1000000;
+	  mean.tv_usec = tmp % 1000000;
 	  break;
 
 	case STING_OPT_DIST:
@@ -291,7 +298,8 @@ void *scamper_do_sting_alloc(char *str)
 	  break;
 
 	case STING_OPT_INTER:
-	  inter = (uint16_t)tmp;
+	  inter.tv_sec = tmp / 1000000;
+	  inter.tv_usec = tmp % 1000000;
 	  break;
 
 	case STING_OPT_USERID:
@@ -315,17 +323,17 @@ void *scamper_do_sting_alloc(char *str)
   sting->sport    = sport;
   sting->dport    = dport;
   sting->count    = count;
-  sting->mean     = mean;
-  sting->inter    = inter;
   sting->dist     = dist;
   sting->synretx  = synretx;
   sting->dataretx = dataretx;
   sting->seqskip  = seqskip;
   sting->userid   = userid;
+  timeval_cpy(&sting->mean, &mean);
+  timeval_cpy(&sting->inter, &inter);
 
   /* take a copy of the data to be used in the measurement */
-  if(scamper_sting_data(sting, (const uint8_t *)defaultrequest,
-			seqskip + count) != 0)
+  if(scamper_sting_data_set(sting, (const uint8_t *)defaultrequest,
+			    seqskip + count) != 0)
     {
       goto err;
     }

@@ -2,9 +2,10 @@
  * scamper_host_warts.c
  *
  * Copyright (C) 2019-2023 Matthew Luckie
+ *
  * Author: Matthew Luckie
  *
- * $Id: scamper_host_warts.c,v 1.11.4.1 2023/08/08 00:57:27 mjl Exp $
+ * $Id: scamper_host_warts.c,v 1.17 2023/12/22 18:55:00 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -28,14 +29,11 @@
 
 #include "scamper_addr.h"
 #include "scamper_list.h"
-#include "scamper_icmpext.h"
 #include "scamper_host.h"
 #include "scamper_host_int.h"
 #include "scamper_file.h"
 #include "scamper_file_warts.h"
 #include "scamper_host_warts.h"
-
-#include "mjl_splaytree.h"
 #include "utils.h"
 
 /*
@@ -58,20 +56,20 @@
 
 static const warts_var_t host_vars[] =
 {
-  {WARTS_HOST_LIST,            4, -1},
-  {WARTS_HOST_CYCLE,           4, -1},
-  {WARTS_HOST_USERID,          4, -1},
-  {WARTS_HOST_SRC,            -1, -1},
-  {WARTS_HOST_DST,            -1, -1},
-  {WARTS_HOST_START,           8, -1},
-  {WARTS_HOST_FLAGS,           2, -1},
-  {WARTS_HOST_WAIT,            2, -1},
-  {WARTS_HOST_STOP,            1, -1},
-  {WARTS_HOST_RETRIES,         1, -1},
-  {WARTS_HOST_QTYPE,           2, -1},
-  {WARTS_HOST_QCLASS,          2, -1},
-  {WARTS_HOST_QNAME,          -1, -1},
-  {WARTS_HOST_QCOUNT,          1, -1},
+  {WARTS_HOST_LIST,            4},
+  {WARTS_HOST_CYCLE,           4},
+  {WARTS_HOST_USERID,          4},
+  {WARTS_HOST_SRC,            -1},
+  {WARTS_HOST_DST,            -1},
+  {WARTS_HOST_START,           8},
+  {WARTS_HOST_FLAGS,           2},
+  {WARTS_HOST_WAIT,            2},
+  {WARTS_HOST_STOP,            1},
+  {WARTS_HOST_RETRIES,         1},
+  {WARTS_HOST_QTYPE,           2},
+  {WARTS_HOST_QCLASS,          2},
+  {WARTS_HOST_QNAME,          -1},
+  {WARTS_HOST_QCOUNT,          1},
 };
 #define host_vars_mfb WARTS_VAR_MFB(host_vars)
 
@@ -89,14 +87,14 @@ static const warts_var_t host_vars[] =
 
 static const warts_var_t host_query_vars[] =
 {
- {WARTS_HOST_QUERY_TX,        8, -1},
- {WARTS_HOST_QUERY_RX,        8, -1},
- {WARTS_HOST_QUERY_ID,        2, -1},
- {WARTS_HOST_QUERY_ANCOUNT,   2, -1},
- {WARTS_HOST_QUERY_NSCOUNT,   2, -1},
- {WARTS_HOST_QUERY_ARCOUNT,   2, -1},
- {WARTS_HOST_QUERY_RCODE,     1, -1},
- {WARTS_HOST_QUERY_FLAGS,     1, -1},
+ {WARTS_HOST_QUERY_TX,        8},
+ {WARTS_HOST_QUERY_RX,        8},
+ {WARTS_HOST_QUERY_ID,        2},
+ {WARTS_HOST_QUERY_ANCOUNT,   2},
+ {WARTS_HOST_QUERY_NSCOUNT,   2},
+ {WARTS_HOST_QUERY_ARCOUNT,   2},
+ {WARTS_HOST_QUERY_RCODE,     1},
+ {WARTS_HOST_QUERY_FLAGS,     1},
 };
 #define host_query_vars_mfb WARTS_VAR_MFB(host_query_vars)
 
@@ -111,11 +109,11 @@ static const warts_var_t host_query_vars[] =
 
 static const warts_var_t host_rr_vars[] =
 {
- {WARTS_HOST_RR_CLASS,        2, -1},
- {WARTS_HOST_RR_TYPE,         2, -1},
- {WARTS_HOST_RR_NAME,        -1, -1},
- {WARTS_HOST_RR_TTL,          4, -1},
- {WARTS_HOST_RR_DATA,        -1, -1},
+ {WARTS_HOST_RR_CLASS,        2},
+ {WARTS_HOST_RR_TYPE,         2},
+ {WARTS_HOST_RR_NAME,        -1},
+ {WARTS_HOST_RR_TTL,          4},
+ {WARTS_HOST_RR_DATA,        -1},
 };
 #define host_rr_vars_mfb WARTS_VAR_MFB(host_rr_vars)
 
@@ -127,8 +125,8 @@ static const warts_var_t host_rr_vars[] =
 
 static const warts_var_t host_rr_mx_vars[] =
 {
- {WARTS_HOST_RR_MX_PREFERENCE,  2, -1},
- {WARTS_HOST_RR_MX_EXCHANGE,   -1, -1},
+ {WARTS_HOST_RR_MX_PREFERENCE,  2},
+ {WARTS_HOST_RR_MX_EXCHANGE,   -1},
 };
 #define host_rr_mx_vars_mfb WARTS_VAR_MFB(host_rr_mx_vars)
 
@@ -145,13 +143,13 @@ static const warts_var_t host_rr_mx_vars[] =
 
 static const warts_var_t host_rr_soa_vars[] =
 {
- {WARTS_HOST_RR_SOA_MNAME,   -1, -1},
- {WARTS_HOST_RR_SOA_RNAME,   -1, -1},
- {WARTS_HOST_RR_SOA_SERIAL,   4, -1},
- {WARTS_HOST_RR_SOA_REFRESH,  4, -1},
- {WARTS_HOST_RR_SOA_RETRY,    4, -1},
- {WARTS_HOST_RR_SOA_EXPIRE,   4, -1},
- {WARTS_HOST_RR_SOA_MINIMUM,  4, -1},
+ {WARTS_HOST_RR_SOA_MNAME,   -1},
+ {WARTS_HOST_RR_SOA_RNAME,   -1},
+ {WARTS_HOST_RR_SOA_SERIAL,   4},
+ {WARTS_HOST_RR_SOA_REFRESH,  4},
+ {WARTS_HOST_RR_SOA_RETRY,    4},
+ {WARTS_HOST_RR_SOA_EXPIRE,   4},
+ {WARTS_HOST_RR_SOA_MINIMUM,  4},
 };
 #define host_rr_soa_vars_mfb WARTS_VAR_MFB(host_rr_soa_vars)
 
@@ -168,7 +166,7 @@ typedef struct warts_host_rr_mx
   uint8_t   flags[WARTS_VAR_MFB(host_rr_mx_vars)];
   uint16_t  flags_len;
   uint16_t  params_len;
-  uint32_t  len;
+  uint16_t  len;
 } warts_host_rr_mx_t;
 
 typedef struct warts_host_rr_soa
@@ -176,7 +174,7 @@ typedef struct warts_host_rr_soa
   uint8_t   flags[WARTS_VAR_MFB(host_rr_soa_vars)];
   uint16_t  flags_len;
   uint16_t  params_len;
-  uint32_t  len;
+  uint16_t  len;
 } warts_host_rr_soa_t;
 
 typedef struct warts_host_rr
@@ -281,8 +279,8 @@ static void warts_host_query_write(const scamper_host_query_t *query,
   return;
 }
 
-static void warts_host_rr_mx_params(const scamper_host_rr_mx_t *mx,
-				    warts_host_rr_mx_t *state)
+static int warts_host_rr_mx_params(const scamper_host_rr_mx_t *mx,
+				   warts_host_rr_mx_t *state)
 {
   const warts_var_t *var;
   int max_id = 0;
@@ -301,7 +299,8 @@ static void warts_host_rr_mx_params(const scamper_host_rr_mx_t *mx,
 
       if(var->id == WARTS_HOST_RR_MX_EXCHANGE)
 	{
-	  state->params_len += warts_str_size(mx->exchange);
+	  if(warts_str_size(mx->exchange, &state->params_len) != 0)
+	    return -1;	  
 	  continue;
 	}
       assert(var->size >= 0);
@@ -312,7 +311,7 @@ static void warts_host_rr_mx_params(const scamper_host_rr_mx_t *mx,
   state->len = state->flags_len + state->params_len;
   if(state->params_len != 0)
     state->len += 2;
-  return;
+  return 0;
 }
 
 static int warts_host_rr_mx_read(void **data, const uint8_t *buf,
@@ -355,8 +354,8 @@ static void warts_host_rr_mx_write(scamper_host_rr_mx_t *mx, uint8_t *buf,
   return;
 }
 
-static void warts_host_rr_soa_params(const scamper_host_rr_soa_t *soa,
-				     warts_host_rr_soa_t *state)
+static int warts_host_rr_soa_params(const scamper_host_rr_soa_t *soa,
+				    warts_host_rr_soa_t *state)
 {
   const warts_var_t *var;
   int max_id = 0;
@@ -380,12 +379,14 @@ static void warts_host_rr_soa_params(const scamper_host_rr_soa_t *soa,
       flag_set(state->flags, var->id, &max_id);
       if(var->id == WARTS_HOST_RR_SOA_MNAME)
 	{
-	  state->params_len += warts_str_size(soa->mname);
+	  if(warts_str_size(soa->mname, &state->params_len) != 0)
+	    return -1;
 	  continue;
 	}
       else if(var->id == WARTS_HOST_RR_SOA_RNAME)
 	{
-	  state->params_len += warts_str_size(soa->rname);
+	  if(warts_str_size(soa->rname, &state->params_len) != 0)
+	    return -1;
 	  continue;
 	}
       assert(var->size >= 0);
@@ -396,7 +397,7 @@ static void warts_host_rr_soa_params(const scamper_host_rr_soa_t *soa,
   state->len = state->flags_len + state->params_len;
   if(state->params_len != 0)
     state->len += 2;
-  return;
+  return 0;
 }
 
 static int warts_host_rr_soa_read(void **data,
@@ -522,9 +523,10 @@ static void insert_rrdata(uint8_t *buf, uint32_t *off, const uint32_t len,
 
 static int warts_host_rr_data_len(const scamper_host_rr_t *rr,
 				  warts_host_rr_t *state,
-				  warts_addrtable_t *table)
+				  warts_addrtable_t *table,
+				  uint16_t *params_len)
 {
-  int len = 2;
+  uint16_t len = 2;
   int x;
 
   x = scamper_host_rr_data_type(rr->class, rr->type);
@@ -537,19 +539,21 @@ static int warts_host_rr_data_len(const scamper_host_rr_t *rr,
   state->rr = (scamper_host_rr_t *)rr;
   if(state->data_type == SCAMPER_HOST_RR_DATA_TYPE_ADDR)
     {
-      len += warts_addr_size(table, rr->un.addr);
-      return len;
+      if(warts_addr_size(table, rr->un.addr, &len) != 0)
+	return -1;
     }
   else if(state->data_type == SCAMPER_HOST_RR_DATA_TYPE_STR)
     {
-      len += warts_str_size(rr->un.str);
-      return len;
+      if(warts_str_size(rr->un.str, &len) != 0)
+	return -1;
     }
   else if(state->data_type == SCAMPER_HOST_RR_DATA_TYPE_SOA)
     {
       if((state->data_un.soa=malloc_zero(sizeof(warts_host_rr_soa_t))) == NULL)
 	return -1;
       warts_host_rr_soa_params(rr->un.soa, state->data_un.soa);
+      if(uint16_wouldwrap(len, state->data_un.soa->len))
+	return -1;
       len += state->data_un.soa->len;
     }
   else if(state->data_type == SCAMPER_HOST_RR_DATA_TYPE_MX)
@@ -557,15 +561,21 @@ static int warts_host_rr_data_len(const scamper_host_rr_t *rr,
       if((state->data_un.mx=malloc_zero(sizeof(warts_host_rr_mx_t))) == NULL)
 	return -1;
       warts_host_rr_mx_params(rr->un.mx, state->data_un.mx);
+      if(uint16_wouldwrap(len, state->data_un.mx->len))
+	return -1;
       len += state->data_un.mx->len;
     }
   else return -1;
-  return len;
+
+  if(uint16_wouldwrap(*params_len, len))
+    return -1;
+  *params_len += len;
+  return 0;
 }
 
-static void warts_host_rr_params(const scamper_host_rr_t *rr,
-				 warts_host_rr_t *state,
-				 warts_addrtable_t *table)
+static int warts_host_rr_params(const scamper_host_rr_t *rr,
+				warts_host_rr_t *state,
+				warts_addrtable_t *table)
 {
   const warts_var_t *var;
   int max_id = 0;
@@ -586,18 +596,26 @@ static void warts_host_rr_params(const scamper_host_rr_t *rr,
 
       flag_set(state->flags, var->id, &max_id);
       if(var->id == WARTS_HOST_RR_NAME)
-	state->params_len += warts_str_size(rr->name);
+	{
+	  if(warts_str_size(rr->name, &state->params_len) != 0)
+	    return -1;
+	}
       else if(var->id == WARTS_HOST_RR_DATA)
-	state->params_len += warts_host_rr_data_len(rr, state, table);
+	{
+	  if(warts_host_rr_data_len(rr, state, table, &state->params_len) != 0)
+	    return -1;
+	}
       else
-	state->params_len += var->size;
+	{
+	  state->params_len += var->size;
+	}
     }
 
   state->flags_len += fold_flags(state->flags, max_id);
   state->len = state->flags_len + state->params_len;
   if(state->params_len != 0)
     state->len += 2;
-  return;
+  return 0;
 }
 
 static int warts_host_rr_read(scamper_host_rr_t **rr, int i,
@@ -623,8 +641,11 @@ static int warts_host_rr_read(scamper_host_rr_t **rr, int i,
     goto done;
 
   /* sanity check the stored RR */
-  if(name == NULL || rrdata.data == NULL || rrdata.type == -1 ||
-     rrdata.type != scamper_host_rr_data_type(class, type))
+  if(name == NULL)
+    goto done;
+  if(rrdata.data != NULL &&
+     (rrdata.type == -1 ||
+      rrdata.type != scamper_host_rr_data_type(class, type)))
     goto done;
 
   if((rr[i] = scamper_host_rr_alloc(name, class, type, ttl)) == NULL)
@@ -666,9 +687,9 @@ static void warts_host_rr_write(scamper_host_rr_t *rr, uint8_t *buf,
    return;
 }
 
-static void warts_host_params(const scamper_host_t *host,
-			      warts_addrtable_t *table, uint8_t *flags,
-			      uint16_t *flags_len, uint16_t *params_len)
+static int warts_host_params(const scamper_host_t *host,
+			     warts_addrtable_t *table, uint8_t *flags,
+			     uint16_t *flags_len, uint16_t *params_len)
 {
   const warts_var_t *var;
   int max_id = 0;
@@ -688,7 +709,7 @@ static void warts_host_params(const scamper_host_t *host,
 	 (var->id == WARTS_HOST_SRC     && host->src == NULL) ||
 	 (var->id == WARTS_HOST_DST     && host->dst == NULL) ||
 	 (var->id == WARTS_HOST_FLAGS   && host->flags == 0) ||
-	 (var->id == WARTS_HOST_WAIT    && host->wait == 0) ||
+	 (var->id == WARTS_HOST_WAIT && timeval_iszero(&host->wait_timeout)) ||
 	 (var->id == WARTS_HOST_STOP    && host->stop == 0) ||
 	 (var->id == WARTS_HOST_RETRIES && host->retries == 0) ||
 	 (var->id == WARTS_HOST_QTYPE   && host->qtype == 0) ||
@@ -703,26 +724,28 @@ static void warts_host_params(const scamper_host_t *host,
       /* Variables that don't have a fixed size */
       if(var->id == WARTS_HOST_SRC)
 	{
-	  *params_len += warts_addr_size(table, host->src);
-	  continue;
+	  if(warts_addr_size(table, host->src, params_len) != 0)
+	    return -1;
 	}
       else if(var->id == WARTS_HOST_DST)
 	{
-	  *params_len += warts_addr_size(table, host->dst);
-	  continue;
+	  if(warts_addr_size(table, host->dst, params_len) != 0)
+	    return -1;
 	}
       else if(var->id == WARTS_HOST_QNAME)
 	{
-	  *params_len += warts_str_size(host->qname);
-	  continue;
+	  if(warts_str_size(host->qname, params_len) != 0)
+	    return -1;
 	}
-
-      assert(var->size >= 0);
-      *params_len += var->size;
+      else
+	{
+	  assert(var->size >= 0);
+	  *params_len += var->size;
+	}
     }
 
   *flags_len = fold_flags(flags, max_id);
-  return;
+  return 0;
 }
 
 static int warts_host_params_read(scamper_host_t *host,
@@ -730,6 +753,7 @@ static int warts_host_params_read(scamper_host_t *host,
 				  warts_state_t *state,
 				  uint8_t *buf, uint32_t *off, uint32_t len)
 {
+  uint16_t wait = 0;
   warts_param_reader_t handlers[] = {
     {&host->list,         (wpr_t)extract_list,    state},
     {&host->cycle,        (wpr_t)extract_cycle,   state},
@@ -738,7 +762,7 @@ static int warts_host_params_read(scamper_host_t *host,
     {&host->dst,          (wpr_t)extract_addr,    table},
     {&host->start,        (wpr_t)extract_timeval, NULL},
     {&host->flags,        (wpr_t)extract_uint16,  NULL},
-    {&host->wait,         (wpr_t)extract_uint16,  NULL},
+    {&wait,               (wpr_t)extract_uint16,  NULL},
     {&host->stop,         (wpr_t)extract_byte,    NULL},
     {&host->retries,      (wpr_t)extract_byte,    NULL},
     {&host->qtype,        (wpr_t)extract_uint16,  NULL},
@@ -754,6 +778,9 @@ static int warts_host_params_read(scamper_host_t *host,
   if(host->dst == NULL)
     return -1;
 
+  host->wait_timeout.tv_sec = wait / 1000;
+  host->wait_timeout.tv_usec = ((wait % 1000) * 1000);
+
   return 0;
 }
 
@@ -766,6 +793,7 @@ static int warts_host_params_write(const scamper_host_t *host,
 				   const uint16_t params_len)
 {
   uint32_t list_id, cycle_id;
+  uint16_t wait;
   warts_param_writer_t handlers[] = {
     {&list_id,            (wpw_t)insert_uint32,   NULL},
     {&cycle_id,           (wpw_t)insert_uint32,   NULL},
@@ -774,7 +802,7 @@ static int warts_host_params_write(const scamper_host_t *host,
     {host->dst,           (wpw_t)insert_addr,     table},
     {&host->start,        (wpw_t)insert_timeval,  NULL},
     {&host->flags,        (wpw_t)insert_uint16,   NULL},
-    {&host->wait,         (wpw_t)insert_uint16,   NULL},
+    {&wait,               (wpw_t)insert_uint16,   NULL},
     {&host->stop,         (wpw_t)insert_byte,     NULL},
     {&host->retries,      (wpw_t)insert_byte,     NULL},
     {&host->qtype,        (wpw_t)insert_uint16,   NULL},
@@ -786,6 +814,9 @@ static int warts_host_params_write(const scamper_host_t *host,
 
   if(warts_list_getid(sf,  host->list,  &list_id)  == -1) return -1;
   if(warts_cycle_getid(sf, host->cycle, &cycle_id) == -1) return -1;
+
+  wait =
+    (host->wait_timeout.tv_sec * 1000) + (host->wait_timeout.tv_usec / 1000);
 
   warts_params_write(buf, off, len, flags, flags_len, params_len,
 		     handlers, handler_cnt);
@@ -873,7 +904,8 @@ int scamper_file_warts_host_write(const scamper_file_t *sf,
   if((table = warts_addrtable_alloc_byaddr()) == NULL)
     goto err;
 
-  warts_host_params(host, table, flags, &flags_len, &params_len);
+  if(warts_host_params(host, table, flags, &flags_len, &params_len) != 0)
+    goto err;
   len = 8 + flags_len + params_len + 2;
 
   if(host->qcount > 0)
@@ -903,19 +935,22 @@ int scamper_file_warts_host_write(const scamper_file_t *sf,
 	  len += query_state[i].len;
 	  for(j=0; j<query->ancount; j++)
 	    {
-	      warts_host_rr_params(query->an[j], &rr_state[r], table);
+	      if(warts_host_rr_params(query->an[j], &rr_state[r], table) != 0)
+		goto err;
 	      len += rr_state[r].len;
 	      r++;
 	    }
 	  for(j=0; j<query->nscount; j++)
 	    {
-	      warts_host_rr_params(query->ns[j], &rr_state[r], table);
+	      if(warts_host_rr_params(query->ns[j], &rr_state[r], table) != 0)
+		goto err;
 	      len += rr_state[r].len;
 	      r++;
 	    }
 	  for(j=0; j<query->arcount; j++)
 	    {
-	      warts_host_rr_params(query->ar[j], &rr_state[r], table);
+	      if(warts_host_rr_params(query->ar[j], &rr_state[r], table) != 0)
+		goto err;
 	      len += rr_state[r].len;
 	      r++;
 	    }

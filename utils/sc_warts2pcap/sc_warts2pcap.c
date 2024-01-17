@@ -1,7 +1,7 @@
 /*
  * sc_warts2pcap
  *
- * $Id: sc_warts2pcap.c,v 1.10 2023/05/21 22:26:28 mjl Exp $
+ * $Id: sc_warts2pcap.c,v 1.12 2023/07/30 06:08:32 mjl Exp $
  *
  * Copyright (C) 2010 Stephen Eichler
  * Copyright (C) 2011 University of Waikato
@@ -126,9 +126,6 @@ static int check_options(int argc, char *argv[])
 	  return -1;
 	}
     }
-
-  if(outfile_name == NULL)
-    outfile_name = "-";
 
   files = argv + optind;
   filec = argc - optind;
@@ -334,7 +331,7 @@ int main(int argc, char *argv[])
     }
 
   /* open the output file */
-  if(string_isdash(outfile_name) == 0)
+  if(outfile_name != NULL && string_isdash(outfile_name) == 0)
     {
       if((outfile_fd = fopen(outfile_name, "w")) == NULL)
 	{

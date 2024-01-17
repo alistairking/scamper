@@ -4,6 +4,7 @@
 #include "internal.h"
 
 #include "scamper_addr.h"
+#include "scamper_addr_int.h"
 #include "scamper_list.h"
 #include "scamper_sniff.h"
 #include "scamper_sniff_int.h"
@@ -22,7 +23,7 @@ extern scamper_addrcache_t *addrcache;
 
 static const scamper_option_in_t opts[] = {
   {'c', NULL, SNIFF_OPT_LIMIT_PKTC, SCAMPER_OPTION_TYPE_NUM},
-  {'G', NULL, SNIFF_OPT_LIMIT_TIME, SCAMPER_OPTION_TYPE_NUM},
+  {'G', NULL, SNIFF_OPT_LIMIT_TIME, SCAMPER_OPTION_TYPE_STR},
   {'S', NULL, SNIFF_OPT_SRCADDR,    SCAMPER_OPTION_TYPE_STR},
   {'U', NULL, SNIFF_OPT_USERID,     SCAMPER_OPTION_TYPE_NUM},
 };
@@ -36,6 +37,7 @@ const char *scamper_do_sniff_usage(void)
 
 static int sniff_arg_param_validate(int optid, char *param, long long *out)
 {
+  struct timeval tv;
   long tmp = 0;
 
   switch(optid)
@@ -49,8 +51,10 @@ static int sniff_arg_param_validate(int optid, char *param, long long *out)
       break;
 
     case SNIFF_OPT_LIMIT_TIME:
-      if(string_tolong(param, &tmp) != 0 || tmp < 0 || tmp > 1200)
+      if(timeval_fromstr(&tv, param, 1000000) != 0 || tv.tv_usec != 0 ||
+	 timeval_cmp_lt(&tv, 1, 0) || timeval_cmp_gt(&tv, 1200, 0))
 	goto err;
+      tmp = (tv.tv_sec * 1000000) + tv.tv_usec;
       break;
 
     case SNIFF_OPT_USERID:
@@ -80,9 +84,9 @@ void *scamper_do_sniff_alloc(char *str)
 {
   scamper_option_out_t *opts_out = NULL, *opt;
   scamper_sniff_t *sniff = NULL;
+  struct timeval limit_time;
   uint32_t userid = 0;
   uint32_t limit_pktc = 100;
-  uint16_t limit_time = 60;
   long icmpid = -1;
   char *expr = NULL;
   char *src = NULL;
@@ -103,6 +107,9 @@ void *scamper_do_sniff_alloc(char *str)
       scamper_debug(__func__, "icmp[icmpid] not supplied");
       goto err;
     }
+
+  /* default time limit of 60 seconds */
+  limit_time.tv_sec = 60; limit_time.tv_usec = 0;
 
   /* parse the options, do preliminary sanity checks */
   for(opt = opts_out; opt != NULL; opt = opt->next)
@@ -125,7 +132,8 @@ void *scamper_do_sniff_alloc(char *str)
 	  break;
 
 	case SNIFF_OPT_LIMIT_TIME:
-	  limit_time = (uint16_t)tmp;
+	  limit_time.tv_sec = tmp / 1000000;
+	  limit_time.tv_usec = tmp % 1000000;
 	  break;
 
 	case SNIFF_OPT_LIMIT_PKTC:
@@ -151,9 +159,9 @@ void *scamper_do_sniff_alloc(char *str)
     }
 
   sniff->limit_pktc = limit_pktc;
-  sniff->limit_time = limit_time;
   sniff->userid     = userid;
   sniff->icmpid     = (uint16_t)icmpid;
+  timeval_cpy(&sniff->limit_time, &limit_time);
 
   return sniff;
 

@@ -42,14 +42,19 @@
 #define OPT_INFILE      0x0002
 #define OPT_OUTFILE     0x0004
 #define OPT_PORT        0x0008
-#define OPT_UNIX        0x0010
 #define OPT_LOG         0x0020
-#define OPT_DAEMON      0x0040
 #define OPT_OPTIONS     0x0080
 #define OPT_TYPE        0x0100
 #define OPT_READ        0x0200
 #define OPT_TEST        0x0400
 #define OPT_ALL         0xffff
+
+#ifdef HAVE_DAEMON
+#define OPT_DAEMON      0x0040
+#endif
+#ifdef HAVE_SOCKADDR_UN
+#define OPT_UNIX        0x0010
+#endif
 
 #define FLAG_IMPATIENT   0x0001
 #define FLAG_TRACEROUTE  0x0002
@@ -117,7 +122,9 @@ static uint32_t               n2i_id        = 1;
 static sc_name2ips_t         *n2i_last      = NULL;
 static uint32_t               options       = 0;
 static unsigned int           port          = 0;
+#ifdef HAVE_SOCKADDR_UN
 static char                  *unix_name     = NULL;
+#endif
 static scamper_ctrl_t        *scamper_ctrl  = NULL;
 static scamper_inst_t        *scamper_inst  = NULL;
 static scamper_file_t        *decode_sf     = NULL;
@@ -200,8 +207,18 @@ static void usage(uint32_t opt_mask)
 {
   int i;
 
+  fprintf(stderr, "usage: sc_filterpolicy");
+
+#ifdef HAVE_DAEMON
+  fprintf(stderr, " [-D]");
+#endif
+  fprintf(stderr, " [-a infile] [-o outfile] [-p port]");
+#ifdef HAVE_SOCKADDR_UN
+  fprintf(stderr, " [-U unix]\n");
+#else
+  fprintf(stderr, "\n");
+#endif
   fprintf(stderr,
-    "usage: sc_filterpolicy [-D] [-a infile] [-o outfile] [-p port] [-U unix]\n"
     "                       [-l log] [-O options] [-t type] [-T test]\n"
     "\n"
     "       sc_filterpolicy [-r datafile]\n"
@@ -219,8 +236,10 @@ static void usage(uint32_t opt_mask)
   if(opt_mask & OPT_INFILE)
     fprintf(stderr, "   -a input file\n");
 
+#ifdef HAVE_DAEMON
   if(opt_mask & OPT_DAEMON)
     fprintf(stderr, "   -D run as a daemon\n");
+#endif
 
   if(opt_mask & OPT_OUTFILE)
     fprintf(stderr, "   -o output warts data file\n");
@@ -260,21 +279,37 @@ static void usage(uint32_t opt_mask)
       printf("\n");
     }
 
+#ifdef HAVE_SOCKADDR_UN
   if(opt_mask & OPT_UNIX)
     fprintf(stderr, "   -U unix domain to find scamper on\n");
+#endif
 
   return;
 }
 
 static int check_options(int argc, char *argv[])
 {
-  char *opts = "?a:Dl:o:O:p:r:t:T:U:";
-  char *opt_port = NULL, *opt_unix = NULL, *opt_log = NULL, *opt_type = NULL;
+  char opts[32];
+  size_t off = 0;
+  char *opt_port = NULL, *opt_log = NULL, *opt_type = NULL;
   slist_t *test_list = NULL;
   uint32_t u32;
   char *test;
   int i, ch;
   long lo;
+
+#ifdef HAVE_SOCKADDR_UN
+  char *opt_unix = NULL;
+#endif
+
+  string_concat(opts, sizeof(opts), &off, "?a:");
+#ifdef HAVE_DAEMON
+  opts[off++] = 'D';
+#endif
+  string_concat(opts, sizeof(opts), &off, "l:o:O:p:r:t:T:");
+#ifdef HAVE_SOCKADDR_UN
+  string_concat(opts, sizeof(opts), &off, "U:");
+#endif
 
   while((ch = getopt(argc, argv, opts)) != -1)
     {
@@ -285,9 +320,11 @@ static int check_options(int argc, char *argv[])
 	  infile = optarg;
 	  break;
 
+#ifdef HAVE_DAEMON
 	case 'D':
 	  options |= OPT_DAEMON;
 	  break;
+#endif
 
 	case 'l':
 	  options |= OPT_LOG;
@@ -344,10 +381,12 @@ static int check_options(int argc, char *argv[])
 	    }
 	  break;
 
+#ifdef HAVE_SOCKADDR_UN
 	case 'U':
 	  options |= OPT_UNIX;
 	  opt_unix = optarg;
 	  break;
+#endif
 
 	case '?':
 	default:
@@ -366,6 +405,7 @@ static int check_options(int argc, char *argv[])
 
   if(options & (OPT_INFILE|OPT_OUTFILE))
     {
+#ifdef HAVE_SOCKADDR_UN
       if((options & (OPT_PORT|OPT_UNIX)) == 0 ||
 	 (options & (OPT_PORT|OPT_UNIX)) == (OPT_PORT|OPT_UNIX) ||
 	 argc - optind > 0)
@@ -373,6 +413,13 @@ static int check_options(int argc, char *argv[])
 	  usage(OPT_INFILE|OPT_OUTFILE|OPT_PORT|OPT_UNIX);
 	  goto err;
 	}
+#else
+      if((options & OPT_PORT) == 0 || argc - optind > 0)
+	{
+	  usage(OPT_INFILE|OPT_OUTFILE|OPT_PORT);
+	  goto err;
+	}
+#endif
 
       if(string_endswith(outfile_name, ".gz") != 0)
 	{
@@ -417,10 +464,12 @@ static int check_options(int argc, char *argv[])
 	    }
 	  port = lo;
 	}
+#ifdef HAVE_SOCKADDR_UN
       else if(options & OPT_UNIX)
 	{
 	  unix_name = opt_unix;
 	}
+#endif
 
       /* validate the -t parameter */
       if(opt_type != NULL)
@@ -496,7 +545,14 @@ static int check_options(int argc, char *argv[])
     }
   else
     {
-      if((options & (OPT_PORT|OPT_UNIX|OPT_LOG|OPT_TYPE|OPT_TEST|OPT_DAEMON)) != 0 ||
+      u32 = (OPT_PORT|OPT_LOG|OPT_TYPE|OPT_TEST);
+#ifdef HAVE_DAEMON
+      u32 |= OPT_DAEMON;
+#endif
+#ifdef HAVE_SOCKADDR_UN
+      u32 |= OPT_UNIX;
+#endif
+      if((options & u32) != 0 ||
 	 (flags & (FLAG_TRACEROUTE|FLAG_IMPATIENT|FLAG_TUPLES)) != 0)
 	{
 	  usage(OPT_READ);
@@ -1038,7 +1094,7 @@ static int infile_tuples_line(char *line, void *param)
 
   name = line;
   if((ip = string_nextword(line)) == NULL ||
-     (addr = scamper_addr_resolve(AF_UNSPEC, ip)) == NULL)
+     (addr = scamper_addr_fromstr_unspec(ip)) == NULL)
     {
       fprintf(stderr, "malformed line in input file\n");
       goto err;
@@ -1082,7 +1138,7 @@ static int infile_rows_line(char *line, void *param)
       goto err;
     }
 
-  if((addr = scamper_addr_resolve(AF_UNSPEC, name)) != NULL)
+  if((addr = scamper_addr_fromstr_unspec(name)) != NULL)
     n2i = sc_name2ips_get(name);
   else
     n2i = sc_name2ips_get(NULL);
@@ -1107,7 +1163,7 @@ static int infile_rows_line(char *line, void *param)
 
   for(;;)
     {
-      if((addr = scamper_addr_resolve(AF_UNSPEC, ip)) == NULL)
+      if((addr = scamper_addr_fromstr_unspec(ip)) == NULL)
 	{
 	  fprintf(stderr, "%s is not an IP address\n", ip);
 	  goto err;
@@ -1251,41 +1307,43 @@ static int do_decoderead_ping(scamper_ping_t *ping)
   sc_iditem_t *item;
   int rc, code;
 
-  if((options & OPT_DAEMON) == 0)
+#ifdef HAVE_DAEMON
+  if((options & OPT_DAEMON) != 0)
+    goto done;
+#endif
+
+  if((n2i = sc_name2ips_find(dst)) == NULL)
     {
-      if((n2i = sc_name2ips_find(dst)) == NULL)
-	{
-	  logprint("%s: could not find %s", __func__,
-		   scamper_addr_tostr(dst, buf, sizeof(buf)));
-	  goto err;
-	}
-
-      if(n2i->set == NULL &&
-	 (n2i->set = malloc_zero(sizeof(sc_idset_t))) == NULL)
-	{
-	  logprint("%s: could not malloc idset: %s",
-		   __func__, strerror(errno));
-	  goto err;
-	}
-
-      if((method = ping_to_method(ping)) == NULL)
-	{
-	  logprint("%s: unhandled method", __func__);
-	  goto err;
-	}
-      code = ping_r(method, ping);
-      n2i->set->tests |= (1 << (method->id-1));
-      if((item = sc_iditem_get(n2i->set, dst)) == NULL)
-	{
-	  logprint("%s: could not get item for %s: %s", __func__,
-		   scamper_addr_tostr(dst, buf, sizeof(buf)), strerror(errno));
-	  goto err;
-	}
-      item->tests |= (1 << (method->id-1));
-      if(code == 1)
-	item->results |= (1 << (method->id-1));
+      logprint("%s: could not find %s", __func__,
+	       scamper_addr_tostr(dst, buf, sizeof(buf)));
+      goto err;
     }
 
+  if(n2i->set == NULL &&
+     (n2i->set = malloc_zero(sizeof(sc_idset_t))) == NULL)
+    {
+      logprint("%s: could not malloc idset: %s", __func__, strerror(errno));
+      goto err;
+    }
+
+  if((method = ping_to_method(ping)) == NULL)
+    {
+      logprint("%s: unhandled method", __func__);
+      goto err;
+    }
+  code = ping_r(method, ping);
+  n2i->set->tests |= (1 << (method->id-1));
+  if((item = sc_iditem_get(n2i->set, dst)) == NULL)
+    {
+      logprint("%s: could not get item for %s: %s", __func__,
+	       scamper_addr_tostr(dst, buf, sizeof(buf)), strerror(errno));
+      goto err;
+    }
+  item->tests |= (1 << (method->id-1));
+  if(code == 1)
+    item->results |= (1 << (method->id-1));
+
+ done:
   rc = do_decoderead_addr(dst);
   scamper_ping_free(ping);
   return rc;
@@ -1636,9 +1694,11 @@ int main(int argc, char *argv[])
   if(check_options(argc, argv) != 0)
     return -1;
 
+#ifdef HAVE_DAEMON
   /* start a daemon if asked to */
   if((options & OPT_DAEMON) != 0 && daemon(1, 0) != 0)
     return -1;
+#endif
 
   if(fp_init() != 0)
     return -1;

@@ -1,7 +1,7 @@
 /*
  * scamper_fds: manage events and file descriptors
  *
- * $Id: scamper_fds.c,v 1.105.4.3 2023/08/20 01:24:40 mjl Exp $
+ * $Id: scamper_fds.c,v 1.114 2023/08/20 01:21:17 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato

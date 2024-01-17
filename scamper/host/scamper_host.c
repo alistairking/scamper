@@ -1,7 +1,7 @@
 /*
  * scamper_host
  *
- * $Id: scamper_host.c,v 1.13 2023/05/31 23:22:18 mjl Exp $
+ * $Id: scamper_host.c,v 1.16 2023/11/14 21:42:45 mjl Exp $
  *
  * Copyright (C) 2018-2023 Matthew Luckie
  *
@@ -53,6 +53,10 @@ void scamper_host_rr_soa_free(scamper_host_rr_soa_t *soa)
 {
   if(soa == NULL)
     return;
+#ifdef BUILDING_LIBSCAMPERFILE
+  if(--soa->refcnt > 0)
+    return;
+#endif
   if(soa->mname != NULL) free(soa->mname);
   if(soa->rname != NULL) free(soa->rname);
   free(soa);
@@ -62,8 +66,12 @@ void scamper_host_rr_soa_free(scamper_host_rr_soa_t *soa)
 scamper_host_rr_soa_t *scamper_host_rr_soa_alloc(const char *mn,const char *rn)
 {
   scamper_host_rr_soa_t *soa;
-  if((soa = malloc_zero(sizeof(scamper_host_rr_soa_t))) == NULL ||
-     (soa->mname = strdup(mn)) == NULL ||
+  if((soa = malloc_zero(sizeof(scamper_host_rr_soa_t))) == NULL)
+    return NULL;
+#ifdef BUILDING_LIBSCAMPERFILE
+  soa->refcnt = 1;
+#endif
+  if((soa->mname = strdup(mn)) == NULL ||
      (soa->rname = strdup(rn)) == NULL)
     {
       scamper_host_rr_soa_free(soa);
@@ -76,6 +84,10 @@ void scamper_host_rr_mx_free(scamper_host_rr_mx_t *mx)
 {
   if(mx == NULL)
     return;
+#ifdef BUILDING_LIBSCAMPERFILE
+  if(--mx->refcnt > 0)
+    return;
+#endif
   if(mx->exchange != NULL) free(mx->exchange);
   free(mx);
   return;
@@ -84,8 +96,12 @@ void scamper_host_rr_mx_free(scamper_host_rr_mx_t *mx)
 scamper_host_rr_mx_t *scamper_host_rr_mx_alloc(uint16_t pref, const char *exch)
 {
   scamper_host_rr_mx_t *mx;
-  if((mx = malloc_zero(sizeof(scamper_host_rr_mx_t))) == NULL ||
-     (mx->exchange = strdup(exch)) == NULL)
+  if((mx = malloc_zero(sizeof(scamper_host_rr_mx_t))) == NULL)
+    return NULL;
+#ifdef BUILDING_LIBSCAMPERFILE
+  mx->refcnt = 1;
+#endif
+  if((mx->exchange = strdup(exch)) == NULL)
     {
       scamper_host_rr_mx_free(mx);
       return NULL;
@@ -136,6 +152,11 @@ void scamper_host_rr_free(scamper_host_rr_t *rr)
   if(rr == NULL)
     return;
 
+#ifdef BUILDING_LIBSCAMPERFILE
+  if(--rr->refcnt > 0)
+    return;
+#endif
+
   if(rr->name != NULL)
     free(rr->name);
 
@@ -166,9 +187,12 @@ scamper_host_rr_t *scamper_host_rr_alloc(const char *name, uint16_t class,
 					 uint16_t type, uint32_t ttl)
 {
   scamper_host_rr_t *rr;
-
-  if((rr = malloc_zero(sizeof(scamper_host_rr_t))) == NULL ||
-     (rr->name = strdup(name)) == NULL)
+  if((rr = malloc_zero(sizeof(scamper_host_rr_t))) == NULL)
+    return NULL;
+#ifdef BUILDING_LIBSCAMPERFILE
+  rr->refcnt = 1;
+#endif
+  if((rr->name = strdup(name)) == NULL)
     {
       scamper_host_rr_free(rr);
       return NULL;
@@ -185,6 +209,11 @@ void scamper_host_query_free(scamper_host_query_t *query)
 
   if(query == NULL)
     return;
+
+#ifdef BUILDING_LIBSCAMPERFILE
+  if(--query->refcnt > 0)
+    return;
+#endif
 
   if(query->an != NULL)
     {
@@ -243,7 +272,13 @@ int scamper_host_query_rr_alloc(scamper_host_query_t *query)
 
 scamper_host_query_t *scamper_host_query_alloc(void)
 {
-  return malloc_zero(sizeof(scamper_host_query_t));
+  scamper_host_query_t *q;
+  if((q = malloc_zero(sizeof(scamper_host_query_t))) == NULL)
+    return NULL;
+#ifdef BUILDING_LIBSCAMPERFILE
+  q->refcnt = 1;
+#endif
+  return q;
 }
 
 char *scamper_host_rcode_tostr(uint8_t rcode, char *b, size_t l)
@@ -284,6 +319,7 @@ char *scamper_host_qtype_tostr(uint16_t qtype, char *b, size_t l)
     case SCAMPER_HOST_TYPE_RRSIG: snprintf(b, l, "RRSIG"); break;
     case SCAMPER_HOST_TYPE_NSEC: snprintf(b, l, "NSEC"); break;
     case SCAMPER_HOST_TYPE_DNSKEY: snprintf(b, l, "DNSKEY"); break;
+    case SCAMPER_HOST_TYPE_OPT: snprintf(b, l, "OPT"); break;
     default: snprintf(b, l, "%u", qtype); break;
     }
 

@@ -1,7 +1,7 @@
 /*
  * scamper_icmpext_int.h
  *
- * $Id: scamper_icmpext_int.h,v 1.2 2023/05/29 08:11:09 mjl Exp $
+ * $Id: scamper_icmpext_int.h,v 1.4 2023/07/25 20:22:09 mjl Exp $
  *
  * Copyright (C) 2008 The University of Waikato
  * Copyright (C) 2012 Matthew Luckie
@@ -38,6 +38,10 @@ struct scamper_icmpext
   uint16_t                ie_dl;   /* data length */
   uint8_t                *ie_data; /* data */
   scamper_icmpext_t      *ie_next;
+
+#ifdef BUILDING_LIBSCAMPERFILE
+  int                     refcnt;
+#endif
 };
 
 #define SCAMPER_ICMPEXT_IS_MPLS(ie)				\
@@ -89,5 +93,8 @@ struct scamper_icmpext
  ((ie)->ie_ct & SCAMPER_ICMPEXT_UNNUMBERED_CT_MTU)
 
 int scamper_icmpext_parse(struct scamper_icmpext **ext,void *data,uint16_t len);
+
+scamper_icmpext_t *scamper_icmpext_alloc(uint8_t cn, uint8_t ct, uint16_t dl,
+					 const void *data);
 
 #endif /* __SCAMPER_ICMPEXT_INT_H */

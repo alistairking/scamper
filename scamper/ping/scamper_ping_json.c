@@ -9,7 +9,7 @@
  * Copyright (c) 2019-2023 Matthew Luckie
  * Authors: Brian Hammond, Matthew Luckie
  *
- * $Id: scamper_ping_json.c,v 1.30 2023/06/01 07:10:45 mjl Exp $
+ * $Id: scamper_ping_json.c,v 1.32 2023/11/27 07:56:14 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -84,15 +84,16 @@ static char *ping_header(const scamper_ping_t *ping)
 		", \"ping_sent\":%u, \"probe_size\":%u"
 		", \"userid\":%u, \"ttl\":%u, \"wait\":%u",
 		ping->ping_sent, ping->probe_size,
-		ping->userid, ping->probe_ttl, ping->probe_wait);
-  if(ping->probe_wait_us != 0)
-    string_concat(buf, sizeof(buf), &off,
-		  ", \"wait_us\":%u", ping->probe_wait_us);
-  string_concat(buf, sizeof(buf), &off,
-		", \"timeout\":%u", ping->probe_timeout);
-  if(ping->probe_timeout_us != 0)
-    string_concat(buf, sizeof(buf), &off,
-		  ", \"timeout_us\":%u", ping->probe_timeout_us);
+		ping->userid, ping->probe_ttl,
+		(uint32_t)ping->wait_probe.tv_sec);
+  if(ping->wait_probe.tv_usec != 0)
+    string_concat(buf, sizeof(buf), &off, ", \"wait_us\":%u",
+		  (uint32_t)ping->wait_probe.tv_usec);
+  string_concat(buf, sizeof(buf), &off, ", \"timeout\":%u",
+		(uint32_t)ping->wait_timeout.tv_sec);
+  if(ping->wait_timeout.tv_usec != 0)
+    string_concat(buf, sizeof(buf), &off, ", \"timeout_us\":%u",
+		  (uint32_t)ping->wait_timeout.tv_usec);
 
   if(SCAMPER_PING_METHOD_IS_UDP(ping) || SCAMPER_PING_METHOD_IS_TCP(ping))
     string_concat(buf, sizeof(buf), &off, ", \"sport\":%u, \"dport\":%u",
@@ -299,48 +300,50 @@ static char *ping_reply(const scamper_ping_t *ping,
 
 static char *ping_stats(const scamper_ping_t *ping)
 {
-  scamper_ping_stats_t stats;
-  char buf[512], str[64];
+  scamper_ping_stats_t *stats;
+  char buf[512], str[64], *dup;
   size_t off = 0;
 
-  if(scamper_ping_stats(ping, &stats) != 0)
+  if((stats = scamper_ping_stats_alloc(ping)) == NULL)
     return NULL;
 
   string_concat(buf, sizeof(buf), &off, "\"statistics\":{\"replies\":%d",
-		stats.nreplies);
+		stats->nreplies);
 
   if(ping->ping_sent != 0)
     {
       string_concat(buf, sizeof(buf), &off, ", \"loss\":");
 
-      if(stats.nreplies == 0)
+      if(stats->nreplies == 0)
 	string_concat(buf, sizeof(buf), &off, "1");
-      else if(stats.nreplies == ping->ping_sent)
+      else if(stats->nreplies == ping->ping_sent)
 	string_concat(buf, sizeof(buf), &off, "0");
       else
 	string_concat(buf, sizeof(buf), &off, "%.2f",
-		      (float)(ping->ping_sent - stats.nreplies)
+		      (float)(ping->ping_sent - stats->nreplies)
 		      / ping->ping_sent);
     }
-  if(stats.nreplies > 0)
+  if(stats->nreplies > 0)
     {
       string_concat(buf, sizeof(buf), &off, ", \"min\":%s",
-		    timeval_tostr_us(&stats.min_rtt, str, sizeof(str)));
+		    timeval_tostr_us(&stats->min_rtt, str, sizeof(str)));
       string_concat(buf, sizeof(buf), &off, ", \"max\":%s",
-		    timeval_tostr_us(&stats.max_rtt, str, sizeof(str)));
+		    timeval_tostr_us(&stats->max_rtt, str, sizeof(str)));
       string_concat(buf, sizeof(buf), &off, ", \"avg\":%s",
-		    timeval_tostr_us(&stats.avg_rtt, str, sizeof(str)));
+		    timeval_tostr_us(&stats->avg_rtt, str, sizeof(str)));
       string_concat(buf, sizeof(buf), &off, ", \"stddev\":%s",
-		    timeval_tostr_us(&stats.stddev_rtt, str, sizeof(str)));
+		    timeval_tostr_us(&stats->stddev_rtt, str, sizeof(str)));
     }
-  if(stats.ndups > 0)
-    string_concat(buf, sizeof(buf), &off, ", \"ndups\":%d", stats.ndups);
-  if(stats.nerrs > 0)
-    string_concat(buf, sizeof(buf), &off, ", \"nerrs\":%d", stats.nerrs);
+  if(stats->ndups > 0)
+    string_concat(buf, sizeof(buf), &off, ", \"ndups\":%d", stats->ndups);
+  if(stats->nerrs > 0)
+    string_concat(buf, sizeof(buf), &off, ", \"nerrs\":%d", stats->nerrs);
 
   string_concat(buf, sizeof(buf), &off, "}");
+  dup = strdup(buf);
+  scamper_ping_stats_free(stats);
 
-  return strdup(buf);
+  return dup;
 }
 
 int scamper_file_json_ping_write(const scamper_file_t *sf,

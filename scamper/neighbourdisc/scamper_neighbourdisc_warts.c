@@ -1,7 +1,7 @@
 /*
  * scamper_neighbourdisc_warts.h
  *
- * $Id: scamper_neighbourdisc_warts.c,v 1.13 2023/05/16 06:54:59 mjl Exp $
+ * $Id: scamper_neighbourdisc_warts.c,v 1.16 2023/12/24 00:19:25 mjl Exp $
  *
  * Copyright (C) 2009-2023 Matthew Luckie
  *
@@ -55,21 +55,21 @@
 
 static const warts_var_t neighbourdisc_vars[] =
 {
-  {WARTS_NEIGHBOURDISC_LIST,      4, -1},
-  {WARTS_NEIGHBOURDISC_CYCLE,     4, -1},
-  {WARTS_NEIGHBOURDISC_USERID,    4, -1},
-  {WARTS_NEIGHBOURDISC_IFNAME,   -1, -1},
-  {WARTS_NEIGHBOURDISC_START,     8, -1},
-  {WARTS_NEIGHBOURDISC_METHOD,    1, -1},
-  {WARTS_NEIGHBOURDISC_WAIT,      2, -1},
-  {WARTS_NEIGHBOURDISC_FLAGS,     1, -1},
-  {WARTS_NEIGHBOURDISC_ATTEMPTS,  2, -1},
-  {WARTS_NEIGHBOURDISC_REPLYC,    2, -1},
-  {WARTS_NEIGHBOURDISC_SRC_IP,   -1, -1},
-  {WARTS_NEIGHBOURDISC_SRC_MAC,  -1, -1},
-  {WARTS_NEIGHBOURDISC_DST_IP,   -1, -1},
-  {WARTS_NEIGHBOURDISC_DST_MAC,  -1, -1},
-  {WARTS_NEIGHBOURDISC_PROBEC,    2, -1},
+  {WARTS_NEIGHBOURDISC_LIST,      4},
+  {WARTS_NEIGHBOURDISC_CYCLE,     4},
+  {WARTS_NEIGHBOURDISC_USERID,    4},
+  {WARTS_NEIGHBOURDISC_IFNAME,   -1},
+  {WARTS_NEIGHBOURDISC_START,     8},
+  {WARTS_NEIGHBOURDISC_METHOD,    1},
+  {WARTS_NEIGHBOURDISC_WAIT,      2},
+  {WARTS_NEIGHBOURDISC_FLAGS,     1},
+  {WARTS_NEIGHBOURDISC_ATTEMPTS,  2},
+  {WARTS_NEIGHBOURDISC_REPLYC,    2},
+  {WARTS_NEIGHBOURDISC_SRC_IP,   -1},
+  {WARTS_NEIGHBOURDISC_SRC_MAC,  -1},
+  {WARTS_NEIGHBOURDISC_DST_IP,   -1},
+  {WARTS_NEIGHBOURDISC_DST_MAC,  -1},
+  {WARTS_NEIGHBOURDISC_PROBEC,    2},
 };
 #define neighbourdisc_vars_mfb WARTS_VAR_MFB(neighbourdisc_vars)
 
@@ -77,8 +77,8 @@ static const warts_var_t neighbourdisc_vars[] =
 #define WARTS_NEIGHBOURDISC_PROBE_RXC 2
 static const warts_var_t neighbourdisc_probe_vars[] =
 {
-  {WARTS_NEIGHBOURDISC_PROBE_TX,  8, -1},
-  {WARTS_NEIGHBOURDISC_PROBE_RXC, 2, -1},
+  {WARTS_NEIGHBOURDISC_PROBE_TX,  8},
+  {WARTS_NEIGHBOURDISC_PROBE_RXC, 2},
 };
 #define neighbourdisc_probe_vars_mfb WARTS_VAR_MFB(neighbourdisc_probe_vars)
 
@@ -86,8 +86,8 @@ static const warts_var_t neighbourdisc_probe_vars[] =
 #define WARTS_NEIGHBOURDISC_REPLY_MAC 2
 static const warts_var_t neighbourdisc_reply_vars[] =
 {
-  {WARTS_NEIGHBOURDISC_REPLY_RX,   8, -1},
-  {WARTS_NEIGHBOURDISC_REPLY_MAC, -1, -1},
+  {WARTS_NEIGHBOURDISC_REPLY_RX,   8},
+  {WARTS_NEIGHBOURDISC_REPLY_MAC, -1},
 };
 #define neighbourdisc_reply_vars_mfb WARTS_VAR_MFB(neighbourdisc_reply_vars)
 
@@ -125,7 +125,8 @@ static int warts_neighbourdisc_reply_state(scamper_neighbourdisc_reply_t *reply,
       flag_set(state->flags, var->id, &max_id);
       if(var->id == WARTS_NEIGHBOURDISC_REPLY_MAC)
 	{
-	  state->params_len += warts_addr_size(table, reply->mac);
+	  if(warts_addr_size(table, reply->mac, &state->params_len) != 0)
+	    return -1;
 	  continue;
 	}
       assert(var->size != -1);
@@ -291,10 +292,10 @@ static int warts_neighbourdisc_probe_read(scamper_neighbourdisc_probe_t *pr,
   return 0;
 }
 
-static void warts_neighbourdisc_params(const scamper_neighbourdisc_t *nd,
-				       warts_addrtable_t *table,
-				       uint8_t *flags, uint16_t *flags_len,
-				       uint16_t *params_len)
+static int warts_neighbourdisc_params(const scamper_neighbourdisc_t *nd,
+				      warts_addrtable_t *table,
+				      uint8_t *flags, uint16_t *flags_len,
+				      uint16_t *params_len)
 {
   const warts_var_t *var;
   int max_id = 0;
@@ -321,15 +322,30 @@ static void warts_neighbourdisc_params(const scamper_neighbourdisc_t *nd,
       if(var->size < 0)
 	{
 	  if(var->id == WARTS_NEIGHBOURDISC_SRC_IP)
-	    *params_len += warts_addr_size(table, nd->src_ip);
+	    {
+	      if(warts_addr_size(table, nd->src_ip, params_len) != 0)
+		return -1;
+	    }
 	  else if(var->id == WARTS_NEIGHBOURDISC_SRC_MAC)
-	    *params_len += warts_addr_size(table, nd->src_mac);
+	    {
+	      if(warts_addr_size(table, nd->src_mac, params_len) != 0)
+		return -1;
+	    }
 	  else if(var->id == WARTS_NEIGHBOURDISC_DST_IP)
-	    *params_len += warts_addr_size(table, nd->dst_ip);
+	    {
+	      if(warts_addr_size(table, nd->dst_ip, params_len) != 0)
+		return -1;
+	    }
 	  else if(var->id == WARTS_NEIGHBOURDISC_DST_MAC)
-	    *params_len += warts_addr_size(table, nd->dst_mac);
+	    {
+	      if(warts_addr_size(table, nd->dst_mac, params_len) != 0)
+		return -1;
+	    }
 	  else if(var->id == WARTS_NEIGHBOURDISC_IFNAME)
-	    *params_len += warts_str_size(nd->ifname);
+	    {
+	      if(warts_str_size(nd->ifname, params_len) != 0)
+		return -1;
+	    }
 	  continue;
 	}
 
@@ -338,7 +354,7 @@ static void warts_neighbourdisc_params(const scamper_neighbourdisc_t *nd,
     }
 
   *flags_len = fold_flags(flags, max_id);
-  return;
+  return 0;
 }
 
 static int warts_neighbourdisc_params_write(const scamper_neighbourdisc_t *nd,
@@ -351,6 +367,7 @@ static int warts_neighbourdisc_params_write(const scamper_neighbourdisc_t *nd,
 					    const uint16_t params_len)
 {
   uint32_t list_id, cycle_id;
+  uint16_t wait;
   warts_param_writer_t handlers[] = {
     {&list_id,      (wpw_t)insert_uint32,  NULL},
     {&cycle_id,     (wpw_t)insert_uint32,  NULL},
@@ -358,7 +375,7 @@ static int warts_neighbourdisc_params_write(const scamper_neighbourdisc_t *nd,
     {nd->ifname,    (wpw_t)insert_string,  NULL},
     {&nd->start,    (wpw_t)insert_timeval, NULL},
     {&nd->method,   (wpw_t)insert_byte,    NULL},
-    {&nd->wait,     (wpw_t)insert_uint16,  NULL},
+    {&wait,         (wpw_t)insert_uint16,  NULL},
     {&nd->flags,    (wpw_t)insert_byte,    NULL},
     {&nd->attempts, (wpw_t)insert_uint16,  NULL},
     {&nd->replyc,   (wpw_t)insert_uint16,  NULL},
@@ -372,6 +389,7 @@ static int warts_neighbourdisc_params_write(const scamper_neighbourdisc_t *nd,
 
   if(warts_list_getid(sf,  nd->list,  &list_id)  == -1) return -1;
   if(warts_cycle_getid(sf, nd->cycle, &cycle_id) == -1) return -1;
+  wait = (nd->wait_timeout.tv_sec * 1000) + (nd->wait_timeout.tv_usec / 1000);
 
   warts_params_write(buf, off, len, flags, flags_len, params_len,
 		     handlers, handler_cnt);
@@ -385,6 +403,7 @@ static int warts_neighbourdisc_params_read(scamper_neighbourdisc_t *nd,
 					   uint8_t *buf, uint32_t *off,
 					   uint32_t len)
 {
+  uint16_t wait;
   warts_param_reader_t handlers[] = {
     {&nd->list,     (wpr_t)extract_list,    state},
     {&nd->cycle,    (wpr_t)extract_cycle,   state},
@@ -392,7 +411,7 @@ static int warts_neighbourdisc_params_read(scamper_neighbourdisc_t *nd,
     {&nd->ifname,   (wpr_t)extract_string,  NULL},
     {&nd->start,    (wpr_t)extract_timeval, NULL},
     {&nd->method,   (wpr_t)extract_byte,    NULL},
-    {&nd->wait,     (wpr_t)extract_uint16,  NULL},
+    {&wait,         (wpr_t)extract_uint16,  NULL},
     {&nd->flags,    (wpr_t)extract_byte,    NULL},
     {&nd->attempts, (wpr_t)extract_uint16,  NULL},
     {&nd->replyc,   (wpr_t)extract_uint16,  NULL},
@@ -410,6 +429,8 @@ static int warts_neighbourdisc_params_read(scamper_neighbourdisc_t *nd,
 
   if(nd->src_mac == NULL || nd->dst_ip == NULL)
     return -1;
+  nd->wait_timeout.tv_sec = wait / 1000;
+  nd->wait_timeout.tv_usec = (wait % 1000) * 1000;
 
   return 0;
 }
@@ -449,7 +470,8 @@ int scamper_file_warts_neighbourdisc_write(const scamper_file_t *sf,
     goto err;
 
   /* figure out which neighbourdisc items we'll store in this record */
-  warts_neighbourdisc_params(nd, table, flags, &flags_len, &params_len);
+  if(warts_neighbourdisc_params(nd,table,flags,&flags_len,&params_len) != 0)
+    goto err;
   len = 8 + flags_len + params_len + 2;
 
   if(nd->probec > 0)

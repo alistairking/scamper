@@ -1,7 +1,7 @@
 /*
  * scamper_tracelb_do.c
  *
- * $Id: scamper_tracelb_do.c,v 1.298.4.2 2023/08/26 07:36:27 mjl Exp $
+ * $Id: scamper_tracelb_do.c,v 1.302 2023/12/24 01:34:46 mjl Exp $
  *
  * Copyright (C) 2008-2011 The University of Waikato
  * Copyright (C) 2012      The Regents of the University of California
@@ -2291,7 +2291,7 @@ static int tracelb_process_clump(scamper_task_t *task, tracelb_branch_t *br)
       /* put the branch back in for probing */
       br->mode = MODE_CLUMP;
       tracelb_branch_reset(br);
-      timeval_add_cs(&br->next_tx, &br->last_tx, trace->wait_probe);
+      timeval_add_tv3(&br->next_tx, &br->last_tx, &trace->wait_probe);
       if(tracelb_branch_waiting(state, br) != 0)
 	goto err;
     }
@@ -2314,7 +2314,7 @@ static int tracelb_process_perpacket(scamper_task_t *task,tracelb_branch_t *br)
 
   br->mode = MODE_PERPACKET;
   tracelb_branch_reset(br);
-  timeval_add_cs(&br->next_tx, &br->last_tx, trace->wait_probe);
+  timeval_add_tv3(&br->next_tx, &br->last_tx, &trace->wait_probe);
   if(tracelb_branch_active(state, br) != 0)
     return -1;
 
@@ -2825,7 +2825,7 @@ static void handleicmp_firstaddr(scamper_task_t *task, scamper_icmp_resp_t *ir,
   /* we've got the first address; now probe active branches from here */
   branch->mode = MODE_FIRSTHOP;
   tracelb_branch_reset(branch);
-  timeval_add_cs(&branch->next_tx, &branch->last_tx, trace->wait_probe);
+  timeval_add_tv3(&branch->next_tx, &branch->last_tx, &trace->wait_probe);
   if(tracelb_branch_waiting(state, branch) != 0)
     goto err;
 
@@ -2894,7 +2894,7 @@ static int hopprobe_handlereply(scamper_task_t *task, tracelb_probe_t *pr,
     }
   else
     {
-      timeval_add_cs(&branch->next_tx, &branch->last_tx, trace->wait_probe);
+      timeval_add_tv3(&branch->next_tx, &branch->last_tx, &trace->wait_probe);
       if(tracelb_branch_active(state, branch) != 0)
 	return -1;
 
@@ -2978,7 +2978,7 @@ static void handleicmp_perpacket(scamper_task_t *task, scamper_icmp_resp_t *ir,
   if(process == 0)
     {
       heap_delete(state->active, branch->heapnode);
-      timeval_add_cs(&branch->next_tx, &branch->last_tx, trace->wait_probe);
+      timeval_add_tv3(&branch->next_tx, &branch->last_tx, &trace->wait_probe);
       if(tracelb_branch_active(state, branch) != 0)
 	goto err;
       tracelb_queue(task);
@@ -3126,7 +3126,7 @@ static void handleicmp_bringfwd(scamper_task_t *task, scamper_icmp_resp_t *ir,
   if(branch != NULL)
     {
       heap_delete(state->active, branch->heapnode);
-      timeval_add_cs(&branch->next_tx, &branch->last_tx, trace->wait_probe);
+      timeval_add_tv3(&branch->next_tx, &branch->last_tx, &trace->wait_probe);
       if(tracelb_branch_active(state, branch) != 0)
 	goto err;
     }
@@ -3170,7 +3170,7 @@ static void do_tracelb_handle_icmp(scamper_task_t *task,
    * if the first probe has not been sent yet, then this cannot be a reply
    * for anything we sent.
    */
-  if(state->id_next == 0)
+  if(state == NULL || state->id_next == 0)
     return;
 
   /*
@@ -3350,7 +3350,7 @@ static void handletimeout_firstaddr(scamper_task_t *task, tracelb_branch_t *br)
 
   br->mode = MODE_FIRSTHOP;
   tracelb_branch_reset(br);
-  timeval_add_cs(&br->next_tx, &br->last_tx, trace->wait_probe);
+  timeval_add_tv3(&br->next_tx, &br->last_tx, &trace->wait_probe);
   if(tracelb_branch_waiting(state, br) != 0)
     goto err;
 
@@ -3607,6 +3607,9 @@ static void do_tracelb_handle_dl(scamper_task_t *task, scamper_dl_rec_t *dl)
   tracelb_state_t   *state = tracelb_getstate(task);
   scamper_addr_t    *from;
   tracelb_probe_t   *pr;
+
+  if(state == NULL)
+    return;
 
   if(SCAMPER_DL_IS_TCP(dl) == 0)
     return;
@@ -4168,8 +4171,10 @@ static void do_tracelb_probe(scamper_task_t *task)
 	   * branch and state structs as part of this.
 	   */
 	  gettimeofday_wrap(&branch->last_tx);
-	  timeval_add_cs(&state->next_tx,&branch->last_tx,trace->wait_probe);
-	  timeval_add_s(&branch->next_tx,&branch->last_tx,trace->wait_timeout);
+	  timeval_add_tv3(&state->next_tx, &branch->last_tx,
+			  &trace->wait_probe);
+	  timeval_add_tv3(&branch->next_tx, &branch->last_tx,
+			  &trace->wait_timeout);
 	  if(tracelb_branch_active(state, branch) != 0)
 	    goto err;
 	  tracelb_queue(task);
@@ -4355,15 +4360,14 @@ static void do_tracelb_probe(scamper_task_t *task)
     goto err;
 
   /* figure out when the next probe may be sent */
-  timeval_add_cs(&state->next_tx, &probe.pr_tx, trace->wait_probe);
+  timeval_add_tv3(&state->next_tx, &probe.pr_tx, &trace->wait_probe);
 
   /*
    * put the branch back in the heap structure, but with appropriate
    * timestamps
    */
   timeval_cpy(&branch->last_tx, &probe.pr_tx);
-  branch->next_tx.tv_sec  = probe.pr_tx.tv_sec + trace->wait_timeout;
-  branch->next_tx.tv_usec = probe.pr_tx.tv_usec;
+  timeval_add_tv3(&branch->next_tx, &probe.pr_tx, &trace->wait_timeout);
   if(tracelb_branch_active(state, branch) != 0)
     goto err;
 

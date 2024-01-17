@@ -1,7 +1,7 @@
 /*
  * warts-fix
  *
- * $Id: sc_wartsfix.c,v 1.12 2020/06/09 08:21:31 mjl Exp $
+ * $Id: sc_wartsfix.c,v 1.13 2023/08/11 08:59:41 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -75,8 +75,11 @@ int main(int argc, char *argv[])
       goto err;
     }
   free(fixname); fixname = NULL;
+
+#ifdef HAVE_FCHOWN
   if(fchown(out, sb.st_uid, sb.st_gid) != 0)
     fprintf(stderr, "warning: could not chown: %s\n", strerror(errno));
+#endif
 
   for(;;)
     {

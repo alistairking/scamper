@@ -1,7 +1,7 @@
 /*
  * unit_cmd_trace : unit tests for trace commands
  *
- * $Id: unit_cmd_trace.c,v 1.2 2023/06/04 23:53:35 mjl Exp $
+ * $Id: unit_cmd_trace.c,v 1.9 2024/01/16 06:30:28 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -29,11 +29,13 @@
 #include "internal.h"
 
 #include "scamper_addr.h"
+#include "scamper_addr_int.h"
 #include "scamper_list.h"
 #include "scamper_trace.h"
 #include "scamper_trace_cmd.h"
 
 #include "utils.h"
+#include "common.h"
 
 typedef struct sc_test
 {
@@ -42,21 +44,6 @@ typedef struct sc_test
 } sc_test_t;
 
 scamper_addrcache_t *addrcache = NULL;
-
-uint16_t scamper_sport_default(void)
-{
-  return 31337;
-}
-
-void scamper_debug(const char *func, const char *format, ...)
-{
-  return;
-}
-
-void printerror(const char *func, const char *format, ...)
-{
-  return;
-}
 
 static int isnull(scamper_trace_t *in)
 {
@@ -68,9 +55,26 @@ static int notnull(scamper_trace_t *in)
   return (in != NULL) ? 0 : -1;
 }
 
+static int check_wait_timeout_def(const scamper_trace_t *trace)
+{
+  const struct timeval *tv = scamper_trace_wait_timeout_get(trace);
+  if(tv->tv_sec != 5 || tv->tv_usec != 0)
+    return -1;
+  return 0;
+}
+
+static int check_wait_probe_def(const scamper_trace_t *trace)
+{
+  const struct timeval *tv = scamper_trace_wait_probe_get(trace);
+  if(tv->tv_sec != 0 || tv->tv_usec != 0)
+    return -1;
+  return 0;
+}
+
 static int confidence_95(scamper_trace_t *trace)
 {
   if(trace == NULL ||
+     check_wait_probe_def(trace) != 0 || check_wait_timeout_def(trace) != 0 ||
      scamper_trace_confidence_get(trace) != 95)
     return -1;
   return 0;
@@ -79,6 +83,7 @@ static int confidence_95(scamper_trace_t *trace)
 static int confidence_99(scamper_trace_t *trace)
 {
   if(trace == NULL ||
+     check_wait_probe_def(trace) != 0 || check_wait_timeout_def(trace) != 0 ||
      scamper_trace_confidence_get(trace) != 99)
     return -1;
   return 0;
@@ -87,6 +92,7 @@ static int confidence_99(scamper_trace_t *trace)
 static int dport_443(scamper_trace_t *trace)
 {
   if(trace == NULL ||
+     check_wait_probe_def(trace) != 0 || check_wait_timeout_def(trace) != 0 ||
      scamper_trace_dport_get(trace) != 443)
     return -1;
   return 0;
@@ -95,6 +101,7 @@ static int dport_443(scamper_trace_t *trace)
 static int firsthop_5(scamper_trace_t *trace)
 {
   if(trace == NULL ||
+     check_wait_probe_def(trace) != 0 || check_wait_timeout_def(trace) != 0 ||
      scamper_trace_firsthop_get(trace) != 5)
     return -1;
   return 0;
@@ -103,6 +110,7 @@ static int firsthop_5(scamper_trace_t *trace)
 static int gaplimit_4(scamper_trace_t *trace)
 {
   if(trace == NULL ||
+     check_wait_probe_def(trace) != 0 || check_wait_timeout_def(trace) != 0 ||
      scamper_trace_gaplimit_get(trace) != 4)
     return -1;
   return 0;
@@ -111,6 +119,7 @@ static int gaplimit_4(scamper_trace_t *trace)
 static int gapaction_2(scamper_trace_t *trace)
 {
   if(trace == NULL ||
+     check_wait_probe_def(trace) != 0 || check_wait_timeout_def(trace) != 0 ||
      scamper_trace_gapaction_get(trace) != 2)
     return -1;
   return 0;
@@ -119,6 +128,7 @@ static int gapaction_2(scamper_trace_t *trace)
 static int loops_4(scamper_trace_t *trace)
 {
   if(trace == NULL ||
+     check_wait_probe_def(trace) != 0 || check_wait_timeout_def(trace) != 0 ||
      scamper_trace_loops_get(trace) != 4)
     return -1;
   return 0;
@@ -127,6 +137,7 @@ static int loops_4(scamper_trace_t *trace)
 static int maxttl_69(scamper_trace_t *trace)
 {
   if(trace == NULL ||
+     check_wait_probe_def(trace) != 0 || check_wait_timeout_def(trace) != 0 ||
      scamper_trace_hoplimit_get(trace) != 69)
     return -1;
   return 0;
@@ -135,6 +146,7 @@ static int maxttl_69(scamper_trace_t *trace)
 static int do_pmtud(scamper_trace_t *trace)
 {
   if(trace == NULL ||
+     check_wait_probe_def(trace) != 0 || check_wait_timeout_def(trace) != 0 ||
      (scamper_trace_flags_get(trace) & SCAMPER_TRACE_FLAG_PMTUD) == 0)
     return -1;
   return 0;
@@ -143,6 +155,7 @@ static int do_pmtud(scamper_trace_t *trace)
 static int squeries_4_gaplimit_6(scamper_trace_t *trace)
 {
   if(trace == NULL ||
+     check_wait_probe_def(trace) != 0 || check_wait_timeout_def(trace) != 0 ||
      scamper_trace_squeries_get(trace) != 4 ||
      scamper_trace_gaplimit_get(trace) != 6) 
     return -1;
@@ -152,6 +165,7 @@ static int squeries_4_gaplimit_6(scamper_trace_t *trace)
 static int offset_4(scamper_trace_t *trace)
 {
   if(trace == NULL ||
+     check_wait_probe_def(trace) != 0 || check_wait_timeout_def(trace) != 0 ||
      scamper_trace_offset_get(trace) != 4)
     return -1;
   return 0;
@@ -161,6 +175,7 @@ static int payload_hex(scamper_trace_t *trace)
 {
   const uint8_t *payload;
   if(trace == NULL ||
+     check_wait_probe_def(trace) != 0 || check_wait_timeout_def(trace) != 0 ||
      scamper_trace_payload_len_get(trace) != 8 ||
      (payload = scamper_trace_payload_get(trace)) == NULL ||
      payload[0] != 0x01 || payload[1] != 0x23 || payload[2] != 0x45 ||
@@ -173,6 +188,7 @@ static int payload_hex(scamper_trace_t *trace)
 static int attempts_5_all(scamper_trace_t *trace)
 {
   if(trace == NULL ||
+     check_wait_probe_def(trace) != 0 || check_wait_timeout_def(trace) != 0 ||
      (scamper_trace_flags_get(trace) & SCAMPER_TRACE_FLAG_ALLATTEMPTS) == 0 ||
      scamper_trace_attempts_get(trace) != 5)
     return -1;
@@ -182,6 +198,7 @@ static int attempts_5_all(scamper_trace_t *trace)
 static int attempts_1(scamper_trace_t *trace)
 {
   if(trace == NULL ||
+     check_wait_probe_def(trace) != 0 || check_wait_timeout_def(trace) != 0 ||
      scamper_trace_attempts_get(trace) != 1)
     return -1;
   return 0;
@@ -189,21 +206,17 @@ static int attempts_1(scamper_trace_t *trace)
 
 static int rtraddr(scamper_trace_t *trace)
 {
-  scamper_addr_t *rtr = NULL;
-  int rc = 0;
-
   if(trace == NULL ||
-     (rtr = scamper_addr_alloc_ipv4("192.0.2.69")) == NULL ||
-     scamper_addr_cmp(scamper_trace_rtr_get(trace), rtr) == 0)
-    rc = -1;
-  if(rtr != NULL) scamper_addr_free(rtr);
-
-  return rc;
+     check_wait_probe_def(trace) != 0 || check_wait_timeout_def(trace) != 0 ||
+     check_addr(scamper_trace_rtr_get(trace), "192.0.2.69") != 0)
+    return -1;
+  return 0;
 }
 
 static int sport_40000(scamper_trace_t *trace)
 {
   if(trace == NULL ||
+     check_wait_probe_def(trace) != 0 || check_wait_timeout_def(trace) != 0 ||
      scamper_trace_sport_get(trace) != 40000)
     return -1;
   return 0;
@@ -211,21 +224,17 @@ static int sport_40000(scamper_trace_t *trace)
 
 static int srcaddr(scamper_trace_t *trace)
 {
-  scamper_addr_t *src = NULL;
-  int rc = 0;
-
   if(trace == NULL ||
-     (src = scamper_addr_alloc_ipv4("192.0.2.44")) == NULL ||
-     scamper_addr_cmp(scamper_trace_src_get(trace), src) == 0)
-    rc = -1;
-  if(src != NULL) scamper_addr_free(src);
-
-  return rc;
+     check_wait_probe_def(trace) != 0 || check_wait_timeout_def(trace) != 0 ||
+     check_addr(scamper_trace_src_get(trace), "192.0.2.44") != 0)
+    return -1;
+  return 0;
 }
 
 static int tos_45(scamper_trace_t *trace)
 {
   if(trace == NULL ||
+     check_wait_probe_def(trace) != 0 || check_wait_timeout_def(trace) != 0 ||
      scamper_trace_tos_get(trace) != 45)
     return -1;
   return 0;
@@ -233,9 +242,14 @@ static int tos_45(scamper_trace_t *trace)
 
 static int wait_1_waitprobe_69(scamper_trace_t *trace)
 {
-  if(trace == NULL ||
-     scamper_trace_wait_get(trace) != 1 ||
-     scamper_trace_wait_probe_get(trace) != 69)
+  const struct timeval *wait_timeout;
+  const struct timeval *wait_probe;
+  if(trace == NULL)
+    return -1;
+  wait_timeout = scamper_trace_wait_timeout_get(trace);
+  wait_probe = scamper_trace_wait_probe_get(trace);
+  if(wait_timeout->tv_sec != 1 || wait_timeout->tv_usec != 0 ||
+     wait_probe->tv_sec != 0 || wait_probe->tv_usec != 690000)
     return -1;
   return 0;
 }
@@ -246,6 +260,14 @@ static int check(const char *cmd, int (*func)(scamper_trace_t *in))
   char *dup;
   int rc;
 
+#ifdef DMALLOC
+  unsigned long start_mem, stop_mem;
+  dmalloc_get_stats(NULL, NULL, NULL, NULL, &start_mem, NULL, NULL, NULL, NULL);
+#endif
+
+  if((addrcache = scamper_addrcache_alloc()) == NULL)
+    return -1;
+
   if((dup = strdup(cmd)) == NULL)
     return -1;
   trace = scamper_do_trace_alloc(dup);
@@ -254,6 +276,17 @@ static int check(const char *cmd, int (*func)(scamper_trace_t *in))
     printf("fail: %s\n", cmd);
   if(trace != NULL)
     scamper_trace_free(trace);
+
+  scamper_addrcache_free(addrcache);
+
+#ifdef DMALLOC
+  dmalloc_get_stats(NULL, NULL, NULL, NULL, &stop_mem, NULL, NULL, NULL, NULL);
+  if(start_mem != stop_mem && rc == 0)
+    {
+      printf("memory leak: %s\n", cmd);
+      rc = -1;
+    }
+#endif
 
   return rc;
 }
@@ -291,15 +324,29 @@ int main(int argc, char *argv[])
     {"-z 192.0.2.5 -z 192.0.2.8 192.0.2.1", notnull},
   };
   size_t i, testc = sizeof(tests) / sizeof(sc_test_t);
+  char filename[128];
 
-  if((addrcache = scamper_addrcache_alloc()) == NULL)
-    return -1;
-
-  for(i=0; i<testc; i++)
-    if(check(tests[i].cmd, tests[i].func) != 0)
-      break;
-
-  scamper_addrcache_free(addrcache);
+  if(argc == 3 && strcasecmp(argv[1], "dump") == 0)
+    {
+      for(i=0; i<testc; i++)
+	{
+	  snprintf(filename, sizeof(filename),
+		   "%s/trace-%03x.txt", argv[2], (int)i);
+	  if(dump_cmd(tests[i].cmd, filename) != 0)
+	    break;
+	}
+    }
+  else if(argc == 1)
+    {
+      for(i=0; i<testc; i++)
+	if(check(tests[i].cmd, tests[i].func) != 0)
+	  break;
+    }
+  else
+    {
+      printf("invalid usage\n");
+      return -1;
+    }
 
   if(i != testc)
     return -1;

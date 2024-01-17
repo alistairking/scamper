@@ -5,7 +5,7 @@
  *
  * Authors: Matthew Luckie
  *
- * $Id: scamper_tracelb_json.c,v 1.18 2023/06/01 08:06:04 mjl Exp $
+ * $Id: scamper_tracelb_json.c,v 1.19 2023/12/21 06:11:32 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -49,6 +49,7 @@ static char *header_tostr(const scamper_tracelb_t *trace)
   char buf[512], tmp[128];
   size_t off = 0;
   time_t tt = trace->start.tv_sec;
+  uint32_t cs;
 
   string_concat(buf, sizeof(buf), &off,
 		"\"type\":\"tracelb\", \"version\":\"0.1\"");
@@ -76,9 +77,10 @@ static char *header_tostr(const scamper_tracelb_t *trace)
   string_concat(buf, sizeof(buf), &off,
 		", \"confidence\":%u, \"tos\":%u, \"gaplimit\":%u",
 		trace->confidence, trace->tos, trace->gaplimit);
+  cs = (trace->wait_probe.tv_sec * 100) + (trace->wait_probe.tv_usec / 10000);
   string_concat(buf, sizeof(buf), &off,
 		", \"wait_timeout\":%u, \"wait_probe\":%u",
-		trace->wait_timeout, trace->wait_probe * 10);
+		(uint32_t)trace->wait_timeout.tv_sec, cs);
   string_concat(buf, sizeof(buf), &off,
 		", \"probec\":%u, \"probec_max\":%u",
 		trace->probec, trace->probec_max);

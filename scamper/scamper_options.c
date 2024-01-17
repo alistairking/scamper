@@ -1,10 +1,11 @@
 /*
  * scamper_options.c: code to handle parsing of options
  *
- * $Id: scamper_options.c,v 1.16 2020/03/17 07:32:16 mjl Exp $
+ * $Id: scamper_options.c,v 1.17 2023/12/02 09:20:45 mjl Exp $
  *
  * Copyright (C) 2006-2010 The University of Waikato
  * Copyright (C) 2014-2015 The Regents of the University of California
+ * Copyright (C) 2023      Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -73,6 +74,7 @@ static int opt_add(scamper_option_out_t **head, scamper_option_out_t **tail,
 static int opt_parse_param(int type, char **str, char **next)
 {
   char *tmp = *str;
+  size_t off = 0;
   char delim;
   int c;
 
@@ -101,10 +103,10 @@ static int opt_parse_param(int type, char **str, char **next)
        * if the first character is a quoting character, then the string is
        * terminated by the same quoting character
        */
-      if(tmp[0] == '"' || tmp[0] == '\'')
+      if(*tmp == '"' || *tmp == '\'')
 	{
 	  /* record the type of quoting character, and then advance past it */
-	  delim = tmp[0];
+	  delim = *tmp;
 	  tmp++; *str = tmp;
 
 	  /*
@@ -116,8 +118,23 @@ static int opt_parse_param(int type, char **str, char **next)
 	   * pointed to by tmp will be set to null; this corresponds to the
 	   * character used for quoting.
 	   */
-	  while(tmp[0] != delim && tmp[0] != '\0') tmp++;
-	  if(tmp[0] == '\0') goto err;
+	  while(*tmp != delim && *tmp != '\0')
+	    {
+	      /* handle escape */
+	      if(*tmp == '\\')
+		{
+		  tmp++;
+		  if(*tmp != '\\' && *tmp != delim)
+		    goto err;
+		  off++;
+		  tmp[-off] = *tmp;
+		}
+	      if(off != 0)
+		tmp[-off] = *tmp;
+	      tmp++;
+	    }
+	  if(*tmp == '\0')
+	    goto err;
 	}
       else
 	{
@@ -127,22 +144,25 @@ static int opt_parse_param(int type, char **str, char **next)
     }
 
   /* if we got to the end of the argument list, then nothing else comes next */
-  if(tmp[0] == '\0')
+  if(*tmp == '\0')
     {
       *next = NULL;
       return 0;
     }
 
   /* null terminate the option parameter string */
-  tmp[0] = '\0'; tmp++;
+  tmp[-off] = '\0'; tmp++;
 
   /*
    * skip past whitespace and advance to the next string in the option.
    * if there is nothing else, then *next is set to NULL.
    */
-  while(isspace((int)*tmp) != 0) tmp++;
-  if(tmp[0] != '\0') *next = tmp;
-  else *next = NULL;
+  while(isspace((int)*tmp) != 0)
+    tmp++;
+  if(*tmp != '\0')
+    *next = tmp;
+  else
+    *next = NULL;
 
   return 0;
 

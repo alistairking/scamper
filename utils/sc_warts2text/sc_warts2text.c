@@ -1,7 +1,7 @@
 /*
- * warts2traceroute
+ * sc_warts2text
  *
- * $Id: sc_warts2text.c,v 1.33.4.1 2023/08/08 00:52:26 mjl Exp $
+ * $Id: sc_warts2text.c,v 1.35 2023/09/24 22:35:02 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -123,7 +123,7 @@ static int ip2descr_line(char *line, void *param)
     }
   *tmp = '\0';
 
-  if((addr = scamper_addr_resolve(AF_UNSPEC, ip)) == NULL)
+  if((addr = scamper_addr_fromstr_unspec(ip)) == NULL)
     {
       fprintf(stderr, "invalid address '%s' on line %d\n", ip, line_no);
       goto err;

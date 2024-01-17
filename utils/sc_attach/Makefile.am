@@ -11,6 +11,8 @@ sc_attach_SOURCES = \
 	../../scamper/scamper_writebuf.c \
 	../../scamper/scamper_linepoll.c
 
+sc_attach_LDADD = @WINSOCK_LIBS@
+
 man_MANS = sc_attach.1
 
 CLEANFILES = *~ *.core

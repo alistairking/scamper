@@ -1,6 +1,6 @@
 #!/usr/bin/env perl
 #
-# $Id: bootstrap.pl,v 1.22 2022/12/09 09:37:42 mjl Exp $
+# $Id: bootstrap.pl,v 1.23 2024/01/16 21:41:59 mjl Exp $
 #
 # script to ship scamper with generated configure script ready to build.
 
@@ -27,6 +27,8 @@ $ax{"ax_gcc_func_attribute.m4"} =
     "53f89342aa3f01310b204dac1db33e4c73410814bdeccb1876f0102a024d4b44";
 $ax{"ax_pthread.m4"} =
     "4fa6c352f1fb33147947ead61f9b12537f3d146ce068c003552d3b9582a7a406";
+$ax{"ax_python_devel.m4"} =
+    "e51ef667c88bbcb759ec60cc3fdf9b8d6dfb510e397bdea9da388f501b2402e3";
 
 sub which($)
 {

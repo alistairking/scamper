@@ -1,7 +1,7 @@
 /*
  * sc_remoted
  *
- * $Id: sc_remoted.c,v 1.99.4.4 2023/08/20 20:48:33 mjl Exp $
+ * $Id: sc_remoted.c,v 1.106 2024/01/03 00:39:00 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -176,6 +176,10 @@
 #include "mjl_splaytree.h"
 #include "mjl_list.h"
 #include "utils.h"
+
+#ifdef HAVE_OPENSSL
+#include "utils_tls.h"
+#endif
 
 #define SC_MESSAGE_HDRLEN 10
 
@@ -1111,15 +1115,6 @@ static int sc_master_is_valid_client_cert_0(sc_master_t *ms)
 
 static int sc_master_is_valid_client_cert_1(sc_master_t *ms)
 {
-  X509 *cert;
-  X509_NAME *name;
-  STACK_OF(GENERAL_NAME) *names = NULL;
-  const GENERAL_NAME *gname;
-  const char *dname;
-  char buf[256];
-  int rc = 0;
-  int i, count, x;
-
   /* do not do name verification */
   if(tls_cafile == NULL || (flags & FLAG_SKIP_VERIF) != 0)
     return 1;
@@ -1131,55 +1126,9 @@ static int sc_master_is_valid_client_cert_1(sc_master_t *ms)
       return 0;
     }
 
-  /*
-   * cert should not be null because sc_master_is_valid_client_cert_0
-   * established that there is a cert for this connection.
-   */
-  if((cert = SSL_get_peer_certificate(ms->inet_ssl)) == NULL)
-    return 0;
-
-  if((names = X509_get_ext_d2i(cert,NID_subject_alt_name,NULL,NULL)) != NULL)
-    {
-      count = sk_GENERAL_NAME_num(names);
-      for(i=0; i<count; i++)
-	{
-	  gname = sk_GENERAL_NAME_value(names, i);
-	  if(gname == NULL || gname->type != GEN_DNS ||
-	     gname->d.dNSName == NULL ||
-	     (x = ASN1_STRING_length(gname->d.dNSName)) < 1)
-	    continue;
-#ifdef HAVE_ASN1_STRING_GET0_DATA
-	  dname = (const char *)ASN1_STRING_get0_data(gname->d.dNSName);
-#else
-	  dname = (const char *)ASN1_STRING_data(gname->d.dNSName);
-#endif
-	  if(dname == NULL || (size_t)x != strlen(dname))
-	    continue;
-	  if(strcasecmp(dname, ms->monitorname) == 0)
-	    {
-	      rc = 1;
-	      goto done;
-	    }
-	}
-    }
-
-  if((name = X509_get_subject_name(cert)) != NULL &&
-     X509_NAME_get_text_by_NID(name, NID_commonName, buf, sizeof(buf)) > 0)
-    {
-      buf[sizeof(buf)-1] = 0;
-      if(strcasecmp(buf, ms->monitorname) == 0)
-	rc = 1;
-    }
-
- done:
-  if(rc == 0)
-    remote_debug(__func__, "monitor name %s does not match certificate",
-		 ms->monitorname != NULL ? ms->monitorname : "<null>");
-  if(names != NULL) sk_GENERAL_NAME_pop_free(names, GENERAL_NAME_free);
-  if(cert != NULL) X509_free(cert);
-  return rc;
+  return tls_is_valid_cert(ms->inet_ssl, ms->monitorname);
 }
-#endif
+#endif /* HAVE_OPENSSL */
 
 /*
  * sc_master_unix_create
@@ -2351,7 +2300,7 @@ static int serversocket_init_sa(const struct sockaddr *sa)
     }
 
   opt = 1;
-  if(setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, (char *)&opt, sizeof(opt)) != 0)
+  if(setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, (void *)&opt, sizeof(opt)) != 0)
     {
       remote_debug(__func__, "could not set SO_REUSEADDR on %s socket: %s",
 		   sa->sa_family == AF_INET ? "ipv4" : "ipv6", strerror(errno));
@@ -2363,7 +2312,7 @@ static int serversocket_init_sa(const struct sockaddr *sa)
     {
       opt = 1;
       if(setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY,
-		    (char *)&opt, sizeof(opt)) != 0)
+		    (void *)&opt, sizeof(opt)) != 0)
 	{
 	  remote_debug(__func__, "could not set IPV6_V6ONLY: %s",
 		       strerror(errno));

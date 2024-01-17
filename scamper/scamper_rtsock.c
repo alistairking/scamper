@@ -1,7 +1,7 @@
 /*
  * scamper_rtsock: code to deal with a route socket or equivalent
  *
- * $Id: scamper_rtsock.c,v 1.94.4.3 2023/08/26 21:26:45 mjl Exp $
+ * $Id: scamper_rtsock.c,v 1.97 2023/08/26 21:25:08 mjl Exp $
  *
  *          Matthew Luckie
  *

@@ -1,7 +1,7 @@
 /*
  * libscamperctrl
  *
- * $Id: libscamperctrl.h,v 1.14.4.2 2023/08/07 22:26:36 mjl Exp $
+ * $Id: libscamperctrl.h,v 1.20 2023/08/08 06:19:31 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -22,6 +22,9 @@
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
  */
+
+#ifndef __LIBSCAMPERCTRL_H
+#define __LIBSCAMPERCTRL_H
 
 typedef struct scamper_ctrl scamper_ctrl_t;
 typedef struct scamper_inst scamper_inst_t;
@@ -58,9 +61,6 @@ int scamper_ctrl_isdone(scamper_ctrl_t *ctrl);
 void *scamper_ctrl_getparam(const scamper_ctrl_t *ctrl);
 void scamper_ctrl_setparam(scamper_ctrl_t *ctrl, void *param);
 
-const char *scamper_inst_getname(const scamper_inst_t *inst);
-uint8_t scamper_inst_gettype(const scamper_inst_t *inst);
-
 const char *scamper_ctrl_strerror(const scamper_ctrl_t *ctrl);
 
 scamper_inst_t *scamper_inst_unix(scamper_ctrl_t *ctrl,
@@ -78,6 +78,8 @@ int scamper_inst_done(scamper_inst_t *inst);
 void *scamper_inst_getparam(const scamper_inst_t *inst);
 void scamper_inst_setparam(scamper_inst_t *inst, void *param);
 
+const char *scamper_inst_getname(const scamper_inst_t *inst);
+uint8_t scamper_inst_gettype(const scamper_inst_t *inst);
 const char *scamper_inst_strerror(const scamper_inst_t *inst);
 
 scamper_ctrl_t *scamper_inst_getctrl(const scamper_inst_t *inst);
@@ -102,3 +104,5 @@ int scamper_attp_set_listmonitor(scamper_attp_t *attp, char *list_monitor);
 void scamper_attp_set_cycleid(scamper_attp_t *attp, uint32_t cycle_id);
 void scamper_attp_set_priority(scamper_attp_t *attp, uint32_t priority);
 void scamper_attp_free(scamper_attp_t *attp);
+
+#endif /* __LIBSCAMPERCTRL_H */

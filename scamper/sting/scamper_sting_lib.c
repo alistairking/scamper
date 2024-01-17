@@ -1,7 +1,7 @@
 /*
  * scamper_sting_lib.c
  *
- * $Id: scamper_sting_lib.c,v 1.1 2023/05/31 23:22:18 mjl Exp $
+ * $Id: scamper_sting_lib.c,v 1.5 2023/12/24 00:03:21 mjl Exp $
  *
  * Copyright (C) 2023 Matthew Luckie
  * Author: Matthew Luckie
@@ -78,14 +78,14 @@ uint16_t scamper_sting_count_get(const scamper_sting_t *sting)
   return sting->count;
 }
 
-uint16_t scamper_sting_mean_get(const scamper_sting_t *sting)
+const struct timeval *scamper_sting_mean_get(const scamper_sting_t *sting)
 {
-  return sting->mean;
+  return &sting->mean;
 }
 
-uint16_t scamper_sting_inter_get(const scamper_sting_t *sting)
+const struct timeval *scamper_sting_inter_get(const scamper_sting_t *sting)
 {
-  return sting->inter;
+  return &sting->inter;
 }
 
 uint8_t scamper_sting_dist_get(const scamper_sting_t *sting)
@@ -138,8 +138,8 @@ uint16_t scamper_sting_holec_get(const scamper_sting_t *sting)
   return sting->holec;
 }
 
-const scamper_sting_pkt_t *scamper_sting_pkt_get(const scamper_sting_t *sting,
-						 uint32_t i)
+scamper_sting_pkt_t *scamper_sting_pkt_get(const scamper_sting_t *sting,
+					   uint32_t i)
 {
   if(sting->pktc <= i)
     return NULL;
@@ -175,3 +175,11 @@ const uint8_t *scamper_sting_pkt_data_get(const scamper_sting_pkt_t *pkt)
 {
   return pkt->data;
 }
+
+#ifdef BUILDING_LIBSCAMPERFILE
+scamper_sting_pkt_t *scamper_sting_pkt_use(scamper_sting_pkt_t *pkt)
+{
+  pkt->refcnt++;
+  return pkt;
+}
+#endif
