@@ -516,6 +516,13 @@ static int probe_dl_tx(probe_state_t *pt)
   if(pt->buf == pktbuf)
     gettimeofday_wrap(&pt->tv);
   dl = scamper_fd_dl_get(fd);
+
+  /* Let the sender know the probe is about to be sent */
+  if (pt->cb != NULL)
+  {
+      pt->cb(pt->param);
+  }
+
   if(scamper_dl_tx(dl, pkt, pt->dlhdr->len + pt->len) == -1)
     {
       pt->error = errno;
@@ -523,12 +530,6 @@ static int probe_dl_tx(probe_state_t *pt)
     }
 
   pt->mode = PROBE_MODE_TX;
-
-  /* Let the sender know that the probe has been sent */
-  if (pt->cb != NULL)
-  {
-      pt->cb(pt->param);
-  }
 
   return 0;
 }

@@ -869,11 +869,20 @@ static void ping_probe_tx_cb(void *param)
 	struct timeval before;
 	timeval_cpy(&before, &pp->tx);
 	gettimeofday_wrap(&pp->tx);
+	int diff = timeval_diff_ms(&pp->tx, &before);
 	scamper_debug(__func__,
 	              "updating probe tx time from %ld.%ld to %ld.%ld. "
 	              "difference: %dms",
 	              before.tv_sec, before.tv_usec, pp->tx.tv_sec, pp->tx.tv_usec,
-	              timeval_diff_ms(&pp->tx, &before));
+	              diff);
+	if (diff > 10)
+	{
+		fprintf(stderr, "ping_probe_tx_cb: "
+				  "updating probe tx time from %ld.%ld to %ld.%ld. "
+				  "difference: %dms",
+				  before.tv_sec, before.tv_usec, pp->tx.tv_sec, pp->tx.tv_usec,
+				  diff);
+	}
 }
 
 /*
