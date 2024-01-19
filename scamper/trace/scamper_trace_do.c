@@ -3703,11 +3703,94 @@ static uint16_t trace_probe_headerlen(const scamper_trace_t *trace)
   return len;
 }
 
+static int alloc_sockets(scamper_trace_t *trace, trace_state_t *state)
+{
+  if(scamper_option_icmp_rxerr() != 0)
+  {
+    trace->flags |= SCAMPER_TRACE_FLAG_RXERR;
+    if(SCAMPER_TRACE_TYPE_IS_ICMP(trace) &&
+ SCAMPER_ADDR_TYPE_IS_IPV4(trace->dst))
+    {
+      state->icmp = scamper_fd_icmp4_err(trace->src->addr);
+      state->probe = scamper_fd_icmp4_err(trace->src->addr);
+    }
+    else if(SCAMPER_TRACE_TYPE_IS_UDP(trace) &&
+      SCAMPER_ADDR_TYPE_IS_IPV6(trace->dst))
+    {
+      state->icmp = scamper_fd_udp6_err(trace->src->addr, trace->sport);
+      state->probe = scamper_fd_udp6_err(trace->src->addr, trace->sport);
+    }
+    if(state->icmp == NULL || state->probe == NULL)
+      goto err;
+  }
+  else
+  {
+    if(trace->dst->type == SCAMPER_ADDR_TYPE_IPV4)
+      state->icmp = scamper_fd_icmp4(trace->src->addr);
+    else if(trace->dst->type == SCAMPER_ADDR_TYPE_IPV6)
+      state->icmp = scamper_fd_icmp6(trace->src->addr);
+    if(state->icmp == NULL)
+      goto err;
+
+    if(SCAMPER_TRACE_TYPE_IS_TCP(trace))
+    {
+      if(trace->dst->type == SCAMPER_ADDR_TYPE_IPV4)
+      {
+        state->probe = scamper_fd_tcp4(NULL, trace->sport);
+        if(scamper_option_rawtcp() != 0 &&
+     (state->raw = scamper_fd_ip4()) == NULL)
+          goto err;
+      }
+      else
+      {
+        state->probe = scamper_fd_tcp6(NULL, trace->sport);
+      }
+    }
+    else if(SCAMPER_TRACE_TYPE_IS_ICMP(trace))
+    {
+      if(trace->dst->type == SCAMPER_ADDR_TYPE_IPV4)
+        state->probe = scamper_fd_icmp4(trace->src->addr);
+      else
+        state->probe = scamper_fd_icmp6(trace->src->addr);
+    }
+    else if(SCAMPER_TRACE_TYPE_IS_UDP(trace))
+    {
+      if(trace->dst->type == SCAMPER_ADDR_TYPE_IPV4)
+        state->probe = scamper_fd_udp4(trace->src->addr, trace->sport);
+      else
+        state->probe = scamper_fd_udp6(trace->src->addr, trace->sport);
+    }
+    if(state->probe == NULL)
+      goto err;
+  }
+
+  return 0;
+
+  err:
+  if (state->icmp)
+  {
+    scamper_fd_free(state->icmp);
+    state->icmp = NULL;
+  }
+  if (state->raw)
+  {
+    scamper_fd_free(state->raw);
+    state->raw = NULL;
+  }
+  if (state->probe)
+  {
+    scamper_fd_free(state->probe);
+    state->probe = NULL;
+  }
+  return -1;
+}
+
 static int trace_state_alloc(scamper_task_t *task)
 {
   scamper_trace_t *trace = trace_getdata(task);
   trace_state_t *state;
-  int id_max;
+  int i, id_max;
+  int rc = 0;
 
   assert(trace != NULL);
 
@@ -3798,64 +3881,25 @@ static int trace_state_alloc(scamper_task_t *task)
       state->mode = trace_first_mode(trace);
     }
 
-  if(scamper_option_icmp_rxerr() != 0)
+  /* if we're generating a random source port, then try a few times in case the
+   * port we pick is already used
+   */
+  for (i=0; i < 10; i++)
+  {
+    if ((rc = alloc_sockets(trace, state)) == 0 ||
+      ((trace->flags & SCAMPER_TRACE_FLAG_RANDOM_SPORT) == 0 &&
+      errno != ENOENT))
     {
-      trace->flags |= SCAMPER_TRACE_FLAG_RXERR;
-      if(SCAMPER_TRACE_TYPE_IS_ICMP(trace) &&
-	 SCAMPER_ADDR_TYPE_IS_IPV4(trace->dst))
-	{
-	  state->icmp = scamper_fd_icmp4_err(trace->src->addr);
-	  state->probe = scamper_fd_icmp4_err(trace->src->addr);
-	}
-      else if(SCAMPER_TRACE_TYPE_IS_UDP(trace) &&
-	      SCAMPER_ADDR_TYPE_IS_IPV6(trace->dst))
-	{
-	  state->icmp = scamper_fd_udp6_err(trace->src->addr, trace->sport);
-	  state->probe = scamper_fd_udp6_err(trace->src->addr, trace->sport);
-	}
-      if(state->icmp == NULL || state->probe == NULL)
-	goto err;
+      break;
     }
-  else
-    {
-      if(trace->dst->type == SCAMPER_ADDR_TYPE_IPV4)
-	state->icmp = scamper_fd_icmp4(trace->src->addr);
-      else if(trace->dst->type == SCAMPER_ADDR_TYPE_IPV6)
-	state->icmp = scamper_fd_icmp6(trace->src->addr);
-      if(state->icmp == NULL)
-	goto err;
-
-      if(SCAMPER_TRACE_TYPE_IS_TCP(trace))
-	{
-	  if(trace->dst->type == SCAMPER_ADDR_TYPE_IPV4)
-	    {
-	      state->probe = scamper_fd_tcp4(NULL, trace->sport);
-	      if(scamper_option_rawtcp() != 0 &&
-		 (state->raw = scamper_fd_ip4()) == NULL)
-		goto err;
-	    }
-	  else
-	    {
-	      state->probe = scamper_fd_tcp6(NULL, trace->sport);
-	    }
-	}
-      else if(SCAMPER_TRACE_TYPE_IS_ICMP(trace))
-	{
-	  if(trace->dst->type == SCAMPER_ADDR_TYPE_IPV4)
-	    state->probe = scamper_fd_icmp4(trace->src->addr);
-	  else
-	    state->probe = scamper_fd_icmp6(trace->src->addr);
-	}
-      else if(SCAMPER_TRACE_TYPE_IS_UDP(trace))
-	{
-	  if(trace->dst->type == SCAMPER_ADDR_TYPE_IPV4)
-	    state->probe = scamper_fd_udp4(trace->src->addr, trace->sport);
-	  else
-	    state->probe = scamper_fd_udp6(trace->src->addr, trace->sport);
-	}
-      if(state->probe == NULL)
-	goto err;
-    }
+    random_u16(&trace->sport);
+    trace->sport = trace->sport | 0x8000;
+  }
+  if (rc != 0)
+  {
+    printerror(__func__, "failed to allocate sockets");
+    goto err;
+  }
 
   scamper_task_setstate(task, state);
   return 0;
