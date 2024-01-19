@@ -3886,12 +3886,16 @@ static int trace_state_alloc(scamper_task_t *task)
    */
   for (i=0; i < 10; i++)
   {
-    if ((rc = alloc_sockets(trace, state)) == 0 ||
-      ((trace->flags & SCAMPER_TRACE_FLAG_RANDOM_SPORT) == 0 &&
-      errno != ENOENT))
-    {
-      break;
-    }
+    if((rc = alloc_sockets(trace, state)) == 0)
+      {
+        break;
+      }
+    /* alloc failed, should we retry? */
+    if(errno != ENOENT || (trace->flags & SCAMPER_TRACE_FLAG_RANDOM_SPORT) == 0)
+      {
+        break;
+      }
+    fprintf(stderr, "WARN: failed to allocate sockets, attempt %d", i + 1);
     random_u16(&trace->sport);
     trace->sport = trace->sport | 0x8000;
   }
