@@ -3895,7 +3895,6 @@ static int trace_state_alloc(scamper_task_t *task)
       {
         break;
       }
-    fprintf(stderr, "WARN: failed to allocate sockets, attempt %d", i + 1);
     random_u16(&trace->sport);
     trace->sport = trace->sport | 0x8000;
   }

@@ -1065,7 +1065,6 @@ static void do_ping_probe(scamper_task_t *task)
 			      {
 				      break;
 			      }
-		      fprintf(stderr, "WARN: failed to probe, attempt %d", i + 1);
 		      random_u16(&ping->probe_sport);
 		      ping->probe_sport = ping->probe_sport | 0x8000;
 		      if(SCAMPER_PING_METHOD_IS_TCP(ping))
