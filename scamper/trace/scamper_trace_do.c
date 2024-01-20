@@ -3891,7 +3891,7 @@ static int trace_state_alloc(scamper_task_t *task)
         break;
       }
     /* alloc failed, should we retry? */
-    if(errno != ENOENT || (trace->flags & SCAMPER_TRACE_FLAG_RANDOM_SPORT) == 0)
+    if((trace->flags & SCAMPER_TRACE_FLAG_RANDOM_SPORT) == 0)
       {
         break;
       }

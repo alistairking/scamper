@@ -1061,7 +1061,7 @@ static void do_ping_probe(scamper_task_t *task)
 			      }
 		      /* probing failed, should we retry? */
 		      if((ping->flags & SCAMPER_PING_FLAG_RANDOM_SPORT) == 0 ||
-		         errno != ENOENT || state->seq != 0)
+		         state->seq != 0)
 			      {
 				      break;
 			      }
