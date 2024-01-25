@@ -1,7 +1,7 @@
 /*
  * scamper_trace_cmd.c
  *
- * $Id: scamper_trace_cmd.c,v 1.11 2024/01/16 06:26:04 mjl Exp $
+ * $Id: scamper_trace_cmd.c,v 1.12 2024/01/18 04:03:13 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -320,8 +320,7 @@ static int trace_arg_param_validate(int optid, char *param, long long *out)
 
     case TRACE_OPT_WAITPROBE:
       if(timeval_fromstr(&tv, param, 10000) != 0 ||
-	 (tv.tv_usec % 10000) != 0 ||
-	 timeval_cmp_lt(&tv, 0, 10000) || timeval_cmp_gt(&tv, 2, 0))
+	 (tv.tv_usec % 10000) != 0 || timeval_cmp_gt(&tv, 2, 0))
 	goto err;
       tmp = (tv.tv_sec * 1000000) + tv.tv_usec;
       break;

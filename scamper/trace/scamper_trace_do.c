@@ -1,14 +1,14 @@
 /*
  * scamper_do_trace.c
  *
- * $Id: scamper_trace_do.c,v 1.349 2023/12/25 22:12:25 mjl Exp $
+ * $Id: scamper_trace_do.c,v 1.350 2024/01/21 04:10:30 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2008      Alistair King
  * Copyright (C) 2012-2015 The Regents of the University of California
  * Copyright (C) 2015      The University of Waikato
- * Copyright (C) 2019-2023 Matthew Luckie
+ * Copyright (C) 2019-2024 Matthew Luckie
  *
  * Authors: Matthew Luckie
  *          Doubletree implementation by Alistair King
@@ -3222,23 +3222,40 @@ static void do_trace_handle_dl(scamper_task_t *task, scamper_dl_rec_t *dl)
     {
       if(dl->dl_ip_proto == IPPROTO_UDP)
 	{
+	  /*
+	   * for probe/response matching, the logic is as follows.
+	   * for classic UDP traceroute where the destination port changes
+	   * with each probe, we can use the port as a probe identifier.
+	   * for UDP-paris traceroute, the logic is more complicated.
+	   * for outbound UDP packets, we can use the UDP checksum value
+	   * as long as the const-payload option is not used, or the
+	   * IPv4-ID or IPv6-flow-id.
+	   * for inbound UDP packets, we have to assume that the response
+	   * is for the last sent probe.
+	   */
 	  if(dl->dl_udp_sport == trace->sport &&
 	     scamper_addr_raw_cmp(trace->dst, dl->dl_ip_dst) == 0)
 	    {
+	      /* this is an outbound packet */
 	      direction = 1;
 	      if(trace->type == SCAMPER_TRACE_TYPE_UDP)
 		probe_id = dl->dl_udp_dport - trace->dport;
-	      else
+	      else if((trace->flags & SCAMPER_TRACE_FLAG_CONSTPAYLOAD) == 0)
 		probe_id = ntohs(dl->dl_udp_sum) - 1;
+	      else if(dl->dl_af == AF_INET)
+		probe_id = dl->dl_ip_id - 1;
+	      else if(dl->dl_af == AF_INET6)
+		probe_id = dl->dl_ip_flow - 1;
+	      else
+		return;
 	    }
 	  else if(dl->dl_udp_dport == trace->sport &&
 		  scamper_addr_raw_cmp(trace->dst, dl->dl_ip_src) == 0)
 	    {
+	      /* this is an inbound packet */
 	      direction = 0;
 	      if(trace->type == SCAMPER_TRACE_TYPE_UDP)
 		probe_id = dl->dl_udp_sport - trace->dport;
-	      else if((trace->flags & SCAMPER_TRACE_FLAG_CONSTPAYLOAD) == 0)
-		probe_id = ntohs(dl->dl_udp_sum) - 1;
 	      else
 		probe_id = state->id_next - 1;
 	    }

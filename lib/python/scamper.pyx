@@ -2681,7 +2681,7 @@ cdef class ScamperPing:
         return None
 
     @property
-    def reply_count(self):
+    def stop_count(self):
         """
         get method to obtain the number of replies required at which time
         probing may cease.
@@ -7865,14 +7865,14 @@ cdef class ScamperCtrl:
     def do_ping(self, dst, tcp_ack=None, tcp_seq=None, attempts=None,
                 icmp_id=None, icmp_seq=None, icmp_sum=None, dport=None,
                 sport=None, wait_probe=None, ttl=None, mtu=None,
-                reply_count=None, method=None, payload=None, rtr=None,
+                stop_count=None, method=None, payload=None, rtr=None,
                 recordroute=None, size=None, src=None, wait_timeout=None,
                 tos=None, userid=None, inst=None, sync=False):
         """
         do_ping(dst, tcp_ack=None, tcp_seq=None, attempts=None,\
                 icmp_id=None, icmp_seq=None, icmp_sum=None, dport=None,\
                 sport=None, wait_probe=None, ttl=None, mtu=None,\
-                reply_count=None, method=None, payload=None, rtr=None,\
+                stop_count=None, method=None, payload=None, rtr=None,\
                 recordroute=None, size=None, src=None, wait_timeout=None,\
                 tos=None, userid=None, inst=None, sync=False)
         conduct a ping guided by the assembled parameters.
@@ -7899,7 +7899,7 @@ cdef class ScamperCtrl:
             the destination.
         :param bytes payload: the payload to include in probes.
         :param bool recordroute: Include the IP record-route option in probes
-        :param int reply_count: Stop pinging after receiving this many replies
+        :param int stop_count: Stop pinging after receiving this many replies
         :param int rtr: The first-hop router to send packets through
         :param int size: The size of packets to send.
         :param int sport: The TCP/UDP source port to use in probes.
@@ -7982,8 +7982,8 @@ cdef class ScamperCtrl:
             cmd = cmd + " -m " + str(ttl)
         if mtu is not None:
             cmd = cmd + " -M " + str(mtu)
-        if reply_count is not None:
-            cmd = cmd + " -o " + str(reply_count)
+        if stop_count is not None:
+            cmd = cmd + " -o " + str(stop_count)
         if method is not None:
             cmd = cmd + " -P " + method
         if rtr is not None:
