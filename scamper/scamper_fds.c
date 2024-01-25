@@ -1279,7 +1279,6 @@ static scamper_fd_t *fd_udp(int type, void *addr, uint16_t sport)
   if(socket_isinvalid(fd) || (fdn = fd_alloc(type, fd)) == NULL ||
      (addr != NULL && (fdn->fd_udp_addr = memdup(addr, len)) == NULL))
     {
-      printerror(__func__, "could not open socket");
       goto err;
     }
   fdn->fd_udp_sport = sport;
