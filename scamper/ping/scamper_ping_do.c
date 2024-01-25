@@ -881,6 +881,7 @@ static void do_ping_probe(scamper_task_t *task)
   uint16_t         ipid = 0;
   uint16_t         u16;
   struct timeval   tv;
+  int rc = 0;
 
   if(state == NULL)
     {
@@ -1048,6 +1049,34 @@ static void do_ping_probe(scamper_task_t *task)
        */
       if((pp = malloc_zero(sizeof(ping_probe_t))) == NULL)
 	goto err;
+
+      /* if we're generating a random source port, then try a few times in case the
+	     * port we pick is already used
+	     */
+      for(i = 0; i < 10; i++)
+	      {
+		      if((rc = scamper_probe_task(&probe, task)) == 0)
+			      {
+				      break;
+			      }
+		      /* probing failed, should we retry? */
+		      if((ping->flags & SCAMPER_PING_FLAG_RANDOM_SPORT) == 0 ||
+		         state->seq != 0)
+			      {
+				      break;
+			      }
+		      random_u16(&ping->probe_sport);
+		      ping->probe_sport = ping->probe_sport | 0x8000;
+		      if(SCAMPER_PING_METHOD_IS_TCP(ping))
+			      probe.pr_tcp_sport = ping->probe_sport;
+		      else
+			      probe.pr_udp_sport = ping->probe_sport;
+	      }
+      if(rc != 0)
+	      {
+		      printerror(__func__, "failed to probe task");
+		      goto err;
+	      }
 
       if(scamper_probe_task(&probe, task) != 0)
 	{

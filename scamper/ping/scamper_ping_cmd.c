@@ -806,6 +806,7 @@ void *scamper_do_ping_alloc(char *str, uint32_t *id)
 	{
 	  random_u16(&u16);
 	  probe_sport = u16 | 0x8000;
+	  flags |= SCAMPER_PING_FLAG_RANDOM_SPORT;
 	}
     }
   else if(probe_sport == -1 || probe_sport == 0)
@@ -816,6 +817,7 @@ void *scamper_do_ping_alloc(char *str, uint32_t *id)
 	{
 	  random_u16(&u16);
 	  probe_sport = u16 | 0x8000;
+	  flags |= SCAMPER_PING_FLAG_RANDOM_SPORT;
 	}
 
       /*

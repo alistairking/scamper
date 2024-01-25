@@ -64,6 +64,7 @@ typedef struct scamper_ping_stats scamper_ping_stats_t;
 #define SCAMPER_PING_FLAG_DL              0x40 /* always use datalink socket */
 #define SCAMPER_PING_FLAG_TBT             0x80 /* -O tbt: too big trick */
 #define SCAMPER_PING_FLAG_NOSRC           0x100 /* -O nosrc: do not embed src */
+#define SCAMPER_PING_FLAG_RANDOM_SPORT    0x200 /* -s 0: random src port */
 
 /* basic routines to use and free scamper_ping structures */
 void scamper_ping_free(scamper_ping_t *ping);
