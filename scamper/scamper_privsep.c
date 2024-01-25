@@ -1,7 +1,7 @@
 /*
  * scamper_privsep.c: code that does root-required tasks
  *
- * $Id: scamper_privsep.c,v 1.100 2023/08/26 21:25:08 mjl Exp $
+ * $Id: scamper_privsep.c,v 1.101 2024/01/18 04:10:59 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -874,7 +874,7 @@ static int privsep_do(void)
       /* read the msg header */
       if((ret = read_wrap(root_fd, (uint8_t *)&msg, NULL, sizeof(msg))) != 0)
 	{
-	  if(ret == -1)
+	  if(ret == -1 && errno != EINTR)
 	    printerror(__func__, "could not read msg hdr");
 	  break;
 	}

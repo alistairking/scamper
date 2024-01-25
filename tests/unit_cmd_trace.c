@@ -1,7 +1,7 @@
 /*
  * unit_cmd_trace : unit tests for trace commands
  *
- * $Id: unit_cmd_trace.c,v 1.9 2024/01/16 06:30:28 mjl Exp $
+ * $Id: unit_cmd_trace.c,v 1.10 2024/01/18 04:03:13 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -254,6 +254,37 @@ static int wait_1_waitprobe_69(scamper_trace_t *trace)
   return 0;
 }
 
+static int waitprobe_0(scamper_trace_t *trace)
+{
+  const struct timeval *wait_probe;
+  if(trace == NULL ||
+     (wait_probe = scamper_trace_wait_probe_get(trace)) == NULL ||
+     wait_probe->tv_sec != 0 || wait_probe->tv_usec != 0)
+    return -1;
+  return 0;
+}
+
+static int atf(scamper_trace_t *trace)
+{
+  const struct timeval *tv;
+  if(trace == NULL ||
+     scamper_trace_userid_get(trace) != 686 ||
+     scamper_trace_type_get(trace) != SCAMPER_TRACE_TYPE_TCP ||
+     (tv = scamper_trace_wait_probe_get(trace)) == NULL ||
+     tv->tv_sec != 0 || tv->tv_usec != 0 ||
+     scamper_trace_hoplimit_get(trace) != 30 ||
+     (scamper_trace_flags_get(trace) & SCAMPER_TRACE_FLAG_ALLATTEMPTS) == 0 ||
+     scamper_trace_attempts_get(trace) != 3 ||
+     scamper_trace_dport_get(trace) != 6969 ||
+     scamper_trace_gaplimit_get(trace) != 30 ||
+     (tv = scamper_trace_wait_timeout_get(trace)) == NULL ||
+     tv->tv_sec != 1 || tv->tv_usec != 0 ||
+     scamper_trace_tos_get(trace) != 0 ||
+     check_addr(scamper_trace_dst_get(trace), "192.0.2.1") != 0)
+    return -1;
+  return 0;
+}
+
 static int check(const char *cmd, int (*func)(scamper_trace_t *in))
 {
   scamper_trace_t *trace;
@@ -320,7 +351,9 @@ int main(int argc, char *argv[])
     {"-s 40000 192.0.2.1", sport_40000},
     {"-S 192.0.2.44 192.0.2.1", srcaddr},
     {"-t 45 192.0.2.1", tos_45},
+    {"-U 686 -P tcp -W 0 -m 30 -Q -q 3 -d 6969 -g 30 -w 1 -t 0 -s 0 192.0.2.1", atf},
     {"-w 1 -W 69 192.0.2.1", wait_1_waitprobe_69},
+    {"-W 0 192.0.2.1", waitprobe_0},
     {"-z 192.0.2.5 -z 192.0.2.8 192.0.2.1", notnull},
   };
   size_t i, testc = sizeof(tests) / sizeof(sc_test_t);

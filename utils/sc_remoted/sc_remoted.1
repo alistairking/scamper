@@ -3,12 +3,12 @@
 .\"
 .\" Author: Matthew Luckie <mjl@luckie.org.nz>
 .\"
-.\" Copyright (c) 2014-2020 Matthew Luckie
+.\" Copyright (c) 2014-2024 Matthew Luckie
 .\"               All rights reserved
 .\"
-.\" $Id: sc_remoted.1,v 1.15 2022/06/06 07:58:40 mjl Exp $
+.\" $Id: sc_remoted.1,v 1.17 2024/01/22 06:34:22 mjl Exp $
 .\"
-.Dd March 28, 2020
+.Dd January 21, 2024
 .Dt SC_REMOTED 1
 .Os
 .Sh NAME
@@ -160,6 +160,16 @@ source port 1026, then the unix domain socket's name will be
 .Pp
 .Dl scamper-remote-sockets/2001:db8:1234::1.1026
 .Pp
+If scamper is started with -M monitor-name, then it will pass the
+monitor name sc_remoted, which will use it in the unix domain socket's
+name.  For example, if scamper is started as follows:
+.Pp
+.Dl scamper -R [2001:db8::1]:31337 -M foo.bar
+.Pp
+then the unix domain socket's name will be
+.Pp
+.Dl scamper-remote-sockets/foo.bar-2001:db8:1234::1.1026
+.Pp
 .\""""""""""""
 .Sh USING TRANSPORT LAYER SECURITY
 .Nm
@@ -196,9 +206,25 @@ to enable TLS support:
 .Pp
 .Dl sc_remoted -P 31337 -U scamper-remote-sockets -c remotecert.pem -p remotepriv.pem
 .Pp
-and then passing the -O tls option to scamper:
+and then run scamper as follows:
 .Pp
-.Dl scamper -R example.com:31337 -O tls
+.Dl scamper -R example.com:31337
+.Pp
+.Nm
+can also require that scamper present a certificate during the TLS
+handshake with the -C parameter:
+.Pp
+.Dl sc_remoted -P 31337 -U scamper-remote-sockets -c remotecert.pem -p remotepriv.pem -C remoteca.pem
+.Pp
+In this case,
+.Nm
+requires that the scamper instance passes valid certificate signed by
+remoteca.pem, and that the certificate contains a monitor-name matching
+the monitor-name subsequently provided by scamper to
+.Nm .
+The scamper-side of this process looks like:
+.Pp
+.Dl scamper -R example.com:31337 -O client-certfile=cert.pem -O client-privfile=key.pem -M foo.bar
 .Pp
 .\""""""""""""
 .Sh SIGNAL HANDLERS

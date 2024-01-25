@@ -6,16 +6,16 @@
 .\"
 .\" Copyright (c) 2007-2011 University of Waikato
 .\" Copyright (c) 2012-2015 The Regents of the University of California
-.\" Copyright (c) 2015-2023 Matthew Luckie
+.\" Copyright (c) 2015-2024 Matthew Luckie
 .\" Copyright (c) 2024      The Regents of the University of California
 .\"                         All rights reserved
 .\"
-.\" $Id: scamper.1,v 1.126 2024/01/03 03:54:04 mjl Exp $
+.\" $Id: scamper.1,v 1.128 2024/01/21 04:10:30 mjl Exp $
 .\"
 .\"  nroff -man scamper.1
 .\"  groff -man -Tascii scamper.1 | man2html -title scamper.1
 .\"
-.Dd January 3, 2024
+.Dd January 21, 2024
 .Dt SCAMPER 1
 .Os
 .\""""""""""""
@@ -446,9 +446,17 @@ specifies optional arguments to use.
 The current choices for this option are:
 .Bl -dash -offset 2n -compact -width 1n
 .It
+.Sy const-payload:
+specifies that the payload should not be altered in order to arrive
+at a desired UDP checksum value for probe/response matching.
+.It
 .Sy dl:
 specifies that the datalink socket should be used to timestamp packets,
 and to receive certain packets.
+For apparent UDP responses to UDP-Paris traceroute probes,
+.Nm
+will assume that any UDP response was for the last sent probe, as it
+has no other way of determining which probe the reply might be for.
 .It
 .Sy dtree-noback:
 specifies that the traceroute should not do backwards probing when using
@@ -458,10 +466,10 @@ doubletree.
 lookup hostnames for intermediate traceroute hops.
 .El
 .It Fl p Ar payload
-specifies the payload of the probe to use as a base.
-The payload is specified in hexadecimal.
-Note that the payload supplied is merely a base; the first 2 bytes may be
-modified to accomplish ICMP-Paris and UDP-Paris traceroute.
+specifies the payload, in hexadecimal, to use as a base in probes.
+The first 2 bytes of the payload may be modified to accomplish
+ICMP-Paris and UDP-Paris traceroute, unless the traceroute command
+was specified with the const-payload option.
 .It Fl P Ar method
 specifies the traceroute method to use.
 .Nm

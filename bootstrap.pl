@@ -1,17 +1,28 @@
 #!/usr/bin/env perl
 #
-# $Id: bootstrap.pl,v 1.23 2024/01/16 21:41:59 mjl Exp $
+# $Id: bootstrap.pl,v 1.24 2024/01/20 19:13:37 mjl Exp $
 #
 # script to ship scamper with generated configure script ready to build.
 
 use strict;
 use warnings;
+use File::stat;
+use Getopt::Long;
+
+my $without_cython = '';
+my $rc = GetOptions("without-cython" => \$without_cython);
+if(!$rc || scalar(@ARGV) != 0)
+{
+    print STDERR "usage: bootstrap.pl [--without-cython]\n";
+    exit -1;
+}
 
 my @aclocal = ("aclocal", "aclocal-1.11", "aclocal-1.9");
 my @libtoolize = ("libtoolize", "glibtoolize");
 my @autoheader = ("autoheader", "autoheader-2.68", "autoheader259");
 my @automake = ("automake", "automake-1.11");
 my @autoconf = ("autoconf", "autoconf-2.68");
+my @cython = ("cython3", "cython");
 
 # where to get the AX_* m4 files
 my $ax_url = "http://git.savannah.gnu.org/gitweb/" .
@@ -173,6 +184,38 @@ if(tryexec("", @autoconf) != 0)
 {
     print STDERR "could not autoconf\n";
     exit -1;
+}
+
+sub cythonize()
+{
+    my $c_stat = stat("lib/python/scamper.c");
+    return 1 if(!defined($c_stat));
+
+    my $rc = 0;
+    opendir(DIR, "lib/python") or die "could not read python directory";
+    foreach my $file ("scamper.pyx", readdir(DIR))
+    {
+	next if(!($file =~ /\.pxd$/) && !($file =~ /\.pyx$/));
+	my $stat = stat("lib/python/$file");
+	if($c_stat->mtime < $stat->mtime)
+	{
+	    $rc = 1;
+	    last;
+	}
+    }
+    closedir DIR;
+
+    return $rc;
+}
+
+if(!$without_cython && cythonize())
+{
+    my $c = "-3 -o lib/python/scamper.c lib/python/scamper.pyx";
+    if(tryexec($c, @cython) != 0)
+    {
+	print STDERR "could not cython\n";
+	exit -1;
+    }
 }
 
 exit 0;

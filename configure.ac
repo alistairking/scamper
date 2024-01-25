@@ -1,6 +1,6 @@
 # Process this file with autoconf to produce a configure script.
 
-AC_INIT([scamper],[20240117],[mjl@luckie.org.nz])
+AC_INIT([scamper],[20240122],[mjl@luckie.org.nz])
 
 AC_CONFIG_SRCDIR([scamper/scamper.c])
 AC_CONFIG_AUX_DIR([.])
@@ -248,10 +248,6 @@ AC_SUBST(PCRE_LIBS)
 AC_ARG_WITH([python],
   [AS_HELP_STRING([--with-python], [build python interface to scamper])])
 if test "x$with_python" = xyes; then
-   AC_PATH_PROG([CYTHON], [cython])
-   if test -z "$CYTHON" ; then
-     AC_MSG_ERROR([could not find cython (remove --with-python)])
-   fi
    AX_PYTHON_DEVEL([>='3.0'])
 fi
 AM_CONDITIONAL([ENABLE_PYTHON], [test x$with_python = xyes])
