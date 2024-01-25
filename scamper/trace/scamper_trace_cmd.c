@@ -614,6 +614,7 @@ void *scamper_do_trace_alloc(char *str, uint32_t *id)
     {
       random_u16(&u16);
       sport = u16 | 0x8000;
+  	flags |= SCAMPER_TRACE_FLAG_RANDOM_SPORT;
     }
 
   if((trace = scamper_trace_alloc()) == NULL)

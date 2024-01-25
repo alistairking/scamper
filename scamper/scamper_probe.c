@@ -892,7 +892,6 @@ int scamper_probe_task(scamper_probe_t *pr, scamper_task_t *task)
   return 0;
 
  err:
-  printerror_msg(__func__, "could not probe: %s", strerror(pr->pr_errno));
   return -1;
 }
 

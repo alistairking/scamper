@@ -244,8 +244,6 @@ SOCKET scamper_udp4_opendgram(const void *addr, int sport)
   sockaddr_compose((struct sockaddr *)&sin4, AF_INET, addr, sport);
   if(bind(fd, (struct sockaddr *)&sin4, sizeof(sin4)) == -1)
     {
-      printerror(__func__, "could not bind %s",
-		 sockaddr_tostr((struct sockaddr *)&sin4, tmp, sizeof(tmp)));
       goto err;
     }
 
