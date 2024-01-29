@@ -1078,12 +1078,6 @@ static void do_ping_probe(scamper_task_t *task)
 		      goto err;
 	      }
 
-      if(scamper_probe_task(&probe, task) != 0)
-	{
-	  errno = probe.pr_errno;
-	  goto err;
-	}
-
       /* fill out the details of the probe sent */
       timeval_cpy(&pp->tx, &probe.pr_tx);
       pp->ipid = ipid;
