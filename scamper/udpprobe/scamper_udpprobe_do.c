@@ -204,16 +204,11 @@ static udpprobe_state_t *udpprobe_state_alloc(scamper_task_t *task)
     }
 
   /* get the source port for this probe */
-  sl = sizeof(ss);
-  if(getsockname(fd, (struct sockaddr *)&ss, &sl) != 0)
+  if(socket_sport(fd, &up->sport) != 0)
     {
-      printerror(__func__, "could not getsockname");
+      printerror(__func__, "could not get sport");
       goto err;
     }
-  if(af == AF_INET)
-    up->sport = ((struct sockaddr_in *)&ss)->sin_port;
-  else if(af == AF_INET6)
-    up->sport = ((struct sockaddr_in6 *)&ss)->sin6_port;
 
   if((state->fdn = scamper_fd_private(fd, task, udpprobe_read, NULL)) == NULL)
     {

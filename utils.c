@@ -2376,6 +2376,29 @@ uint32_t byteswap32(uint32_t word)
 	  ((word & 0xff00) << 8) | ((word >> 8) & 0xff00));
 }
 
+#ifndef _WIN32 /* SOCKET vs int on windows */
+int socket_sport(int fd, uint16_t *sport)
+#else
+int socket_sport(SOCKET fd, uint16_t *sport)
+#endif
+{
+  struct sockaddr *sa;
+  struct sockaddr_storage ss;
+  socklen_t sl;
+
+  sl = sizeof(struct sockaddr_storage);
+  if(getsockname(fd, (struct sockaddr *)&ss, &sl) != 0)
+    return -1;
+  sa = (struct sockaddr *)&ss;
+  if(sa->sa_family == AF_INET)
+    *sport = ((struct sockaddr_in *)sa)->sin_port;
+  else if(sa->sa_family == AF_INET6)
+    *sport = ((struct sockaddr_in6 *)sa)->sin6_port;
+  else
+    return -1;
+  return 0;
+}
+
 int fd_lines(int fd, int (*func)(char *, void *), void *param)
 {
   char *readbuf = NULL;

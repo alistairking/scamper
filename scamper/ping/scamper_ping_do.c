@@ -73,6 +73,7 @@ typedef struct ping_state
   uint8_t            mode;
   uint8_t           *quote;
   uint16_t           quote_len;
+  scamper_fd_t      *fd; /* this is only set for -F 0 and TCP/UDP */
 } ping_state_t;
 
 #define PING_MODE_PROBE       0
@@ -804,6 +805,9 @@ static void ping_state_free(ping_state_t *state)
 {
   int i;
 
+  if(state->fd != NULL)
+    scamper_fd_free(state->fd);
+
   if(state->probes != NULL)
     {
       for(i=0; i<state->seq; i++)
@@ -825,7 +829,7 @@ static void ping_state_free(ping_state_t *state)
 static int ping_state_alloc(scamper_task_t *task)
 {
   scamper_ping_t *ping = ping_getdata(task);
-  ping_state_t *state = NULL;
+  ping_state_t *state = ping_getstate(task);
   size_t size;
   int i;
 
@@ -834,13 +838,6 @@ static int ping_state_alloc(scamper_task_t *task)
       printerror(__func__, "could not malloc replies");
       goto err;
     }
-
-  if((state = malloc_zero(sizeof(ping_state_t))) == NULL)
-    {
-      printerror(__func__, "could not malloc state");
-      goto err;
-    }
-  scamper_task_setstate(task, state);
 
   size = ping->probe_count * sizeof(ping_probe_t *);
   if((state->probes = malloc_zero(size)) == NULL)
@@ -881,13 +878,12 @@ static void do_ping_probe(scamper_task_t *task)
   uint16_t         ipid = 0;
   uint16_t         u16;
   struct timeval   tv;
-  int rc = 0;
 
-  if(state == NULL)
+  assert(state != NULL);
+  if(state->probes == NULL)
     {
       if(ping_state_alloc(task) != 0)
 	goto err;
-      state = ping_getstate(task);
 
       /* timestamp the start time of the ping */
       gettimeofday_wrap(&ping->start);
@@ -1050,34 +1046,6 @@ static void do_ping_probe(scamper_task_t *task)
       if((pp = malloc_zero(sizeof(ping_probe_t))) == NULL)
 	goto err;
 
-      /* if we're generating a random source port, then try a few times in case the
-	     * port we pick is already used
-	     */
-      for(i = 0; i < 10; i++)
-	      {
-		      if((rc = scamper_probe_task(&probe, task)) == 0)
-			      {
-				      break;
-			      }
-		      /* probing failed, should we retry? */
-		      if((ping->flags & SCAMPER_PING_FLAG_RANDOM_SPORT) == 0 ||
-		         state->seq != 0)
-			      {
-				      break;
-			      }
-		      random_u16(&ping->probe_sport);
-		      ping->probe_sport = ping->probe_sport | 0x8000;
-		      if(SCAMPER_PING_METHOD_IS_TCP(ping))
-			      probe.pr_tcp_sport = ping->probe_sport;
-		      else
-			      probe.pr_udp_sport = ping->probe_sport;
-	      }
-      if(rc != 0)
-	      {
-		      printerror(__func__, "failed to probe task");
-		      goto err;
-	      }
-
       if(scamper_probe_task(&probe, task) != 0)
 	{
 	  errno = probe.pr_errno;
@@ -1159,12 +1127,20 @@ scamper_task_t *scamper_do_ping_alloctask(void *data, scamper_list_t *list,
 					  scamper_cycle_t *cycle)
 {
   scamper_ping_t *ping = (scamper_ping_t *)data;
+  ping_state_t *state = NULL;
   scamper_task_sig_t *sig = NULL;
   scamper_task_t *task = NULL;
+  int i;
 
   /* allocate a task structure and store the ping with it */
   if((task = scamper_task_alloc(ping, &ping_funcs)) == NULL)
     goto err;
+
+  if((state = malloc_zero(sizeof(ping_state_t))) == NULL)
+    {
+      printerror(__func__, "could not malloc state");
+      goto err;
+    }
 
   /* declare the signature of the task */
   if((sig = scamper_task_sig_alloc(SCAMPER_TASK_SIG_TYPE_TX_IP)) == NULL)
@@ -1174,6 +1150,80 @@ scamper_task_t *scamper_do_ping_alloctask(void *data, scamper_list_t *list,
     goto err;
   if((ping->flags & SCAMPER_PING_FLAG_SPOOF) == 0)
     sig->sig_tx_ip_src = scamper_addr_use(ping->src);
+
+  if(ping->probe_sport == 0)
+    {
+      if(SCAMPER_PING_METHOD_IS_TCP(ping))
+	{
+	  if(SCAMPER_ADDR_TYPE_IS_IPV4(ping->dst))
+	    state->fd = scamper_fd_tcp4_dst(NULL, ping->probe_sport,
+					    ping->dst->addr,
+					    ping->probe_dport);
+	  else
+	    state->fd = scamper_fd_tcp6_dst(NULL, ping->probe_sport,
+					    ping->dst->addr,
+					    ping->probe_dport);
+	  if(state->fd == NULL ||
+	     scamper_fd_sport(state->fd, &ping->probe_sport) != 0)
+	    goto err;
+	}
+      else if(SCAMPER_PING_METHOD_IS_UDP(ping))
+	{
+	  if(SCAMPER_ADDR_TYPE_IS_IPV4(ping->dst))
+	    state->fd = scamper_fd_udp4_dst(NULL, ping->probe_sport,
+					    ping->dst->addr,
+					    ping->probe_dport);
+	  else
+	    state->fd = scamper_fd_udp6_dst(NULL, ping->probe_sport,
+					    ping->dst->addr,
+					    ping->probe_dport);
+	  if(state->fd == NULL ||
+	     scamper_fd_sport(state->fd, &ping->probe_sport) != 0)
+	    goto err;
+	}
+      else if(SCAMPER_PING_METHOD_IS_ICMP(ping))
+	{
+	  ping->probe_sport = scamper_pid_u16();
+	  if(ping->probe_method == SCAMPER_PING_METHOD_ICMP_ECHO)
+	    {
+	      SCAMPER_TASK_SIG_ICMP_ECHO(sig, ping->probe_sport);
+	    }
+	  else if(ping->probe_method == SCAMPER_PING_METHOD_ICMP_TIME)
+	    {
+	      SCAMPER_TASK_SIG_ICMP_TIME(sig, ping->probe_sport);
+	    }
+	  else goto err;
+	  if(scamper_task_find(sig) != NULL)
+	    {
+	      /*
+	       * then try 5 random 16-bit numbers for the ICMP ID
+	       * field.  if they all have current tasks, then this
+	       * ping will block on the task with the last random
+	       * 16-bit ID value.
+	       */
+	      for(i=0; i<5; i++)
+		{
+		  random_u16(&ping->probe_sport);
+		  if(ping->probe_method == SCAMPER_PING_METHOD_ICMP_ECHO)
+		    {
+		      SCAMPER_TASK_SIG_ICMP_ECHO(sig, ping->probe_sport);
+		    }
+		  else
+		    {
+		      SCAMPER_TASK_SIG_ICMP_TIME(sig, ping->probe_sport);
+		    }
+		  if(scamper_task_find(sig) == NULL)
+		    break;
+		}
+	    }
+	}
+      else
+	{
+	  scamper_debug(__func__, "unhandled probe method %d with -F 0",
+			ping->probe_method);
+	  goto err;
+	}
+    }
 
   switch(ping->probe_method)
     {
@@ -1217,6 +1267,8 @@ scamper_task_t *scamper_do_ping_alloctask(void *data, scamper_list_t *list,
     goto err;
   sig = NULL;
 
+  scamper_task_setstate(task, state);
+
   /* associate the list and cycle with the ping */
   ping->list  = scamper_list_use(list);
   ping->cycle = scamper_cycle_use(cycle);
@@ -1225,6 +1277,7 @@ scamper_task_t *scamper_do_ping_alloctask(void *data, scamper_list_t *list,
 
  err:
   if(sig != NULL) scamper_task_sig_free(sig);
+  if(state != NULL) ping_state_free(state);
   if(task != NULL)
     {
       scamper_task_setdatanull(task);
