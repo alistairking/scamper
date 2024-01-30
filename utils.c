@@ -2391,9 +2391,9 @@ int socket_sport(SOCKET fd, uint16_t *sport)
     return -1;
   sa = (struct sockaddr *)&ss;
   if(sa->sa_family == AF_INET)
-    *sport = ((struct sockaddr_in *)sa)->sin_port;
+    *sport = htons(((struct sockaddr_in *)sa)->sin_port);
   else if(sa->sa_family == AF_INET6)
-    *sport = ((struct sockaddr_in6 *)sa)->sin6_port;
+    *sport = htons(((struct sockaddr_in6 *)sa)->sin6_port);
   else
     return -1;
   return 0;
