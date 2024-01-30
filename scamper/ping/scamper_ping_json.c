@@ -200,7 +200,7 @@ static char *ping_reply(const scamper_ping_t *ping,
 	pt = "tcp";
       string_concat(buf, sizeof(buf), &off,
 		    ", \"%s_sport\":%u, \"%s_dport\":%u",
-		    pt, ping->probe_sport + reply->probe_id,
+		    pt, reply->probe_sport,
 		    pt, ping->probe_dport);
     }
   else if(SCAMPER_PING_METHOD_IS_VARY_DPORT(ping))

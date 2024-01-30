@@ -4287,10 +4287,10 @@ scamper_task_t *scamper_do_trace_alloctask(void *data,
       if(SCAMPER_TRACE_TYPE_IS_TCP(trace))
 	{
 	  if(trace->dst->type == SCAMPER_ADDR_TYPE_IPV4)
-	    state->probe = scamper_fd_tcp4_dst(NULL, trace->sport,
+	    state->probe = scamper_fd_tcp4_dst(NULL, trace->sport, NULL, 0,
 					       trace->dst->addr, trace->dport);
 	  else
-	    state->probe = scamper_fd_tcp6_dst(NULL, trace->sport,
+	    state->probe = scamper_fd_tcp6_dst(NULL, trace->sport, NULL, 0,
 					       trace->dst->addr, trace->dport);
 	}
       else if(SCAMPER_TRACE_TYPE_IS_ICMP(trace))

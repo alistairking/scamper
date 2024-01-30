@@ -831,11 +831,6 @@ void *scamper_do_ping_alloc(char *str, uint32_t *id)
 	  goto err;
 	}
     }
-  else if(probe_sport == 0 && SCAMPER_PING_METHOD_IS_VARY_SPORT(ping))
-    {
-      scamper_debug(__func__, "cannot use -F 0 with a vary-sport ping method");
-      goto err;
-    }
 
   if(probe_dport == -1)
     {

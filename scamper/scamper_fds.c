@@ -1176,12 +1176,13 @@ static scamper_fd_t *fd_icmp(int type, void *addr)
 }
 
 static scamper_fd_t *fd_tcp(int type, void *src, uint16_t sport,
+			    uint16_t *sportx, size_t sportxc,
 			    void *dst, uint16_t dport)
 {
   scamper_addr_t sa;
   scamper_fd_t *fdn = NULL, *exist, findme;
   dlist_node_t *dn;
-  size_t len;
+  size_t s, len;
   int rc;
 
 #ifndef _WIN32 /* SOCKET vs int on windows */
@@ -1210,6 +1211,15 @@ static scamper_fd_t *fd_tcp(int type, void *src, uint16_t sport,
 	  exist = dlist_node_item(dn);
 	  if(exist->type != type)
 	    continue;
+	  /* has the caller asked to not provide specific sports? */
+	  if(sportx != NULL)
+	    {
+	      for(s=0; s<sportxc; s++)
+		if(sportx[s] == exist->fd_tcp_sport)
+		  break;
+	      if(s != sportxc)
+		continue;
+	    }
 	  rc = scamper_task_sig_sport_used(&sa, IPPROTO_TCP,
 					   exist->fd_tcp_sport, dport);
 	  if(rc == 0)
@@ -1633,24 +1643,26 @@ scamper_fd_t *scamper_fd_rtsock(void)
 
 scamper_fd_t *scamper_fd_tcp4(void *addr, uint16_t sport)
 {
-  return fd_tcp(SCAMPER_FD_TYPE_TCP4, addr, sport, NULL, 0);
+  return fd_tcp(SCAMPER_FD_TYPE_TCP4, addr, sport, NULL, 0, NULL, 0);
 }
 
 scamper_fd_t *scamper_fd_tcp4_dst(void *src, uint16_t sport,
+				  uint16_t *sportx, size_t sportxc,
 				  void *dst, uint16_t dport)
 {
-  return fd_tcp(SCAMPER_FD_TYPE_TCP4, src, sport, dst, dport);
+  return fd_tcp(SCAMPER_FD_TYPE_TCP4, src, sport, sportx, sportxc, dst, dport);
 }
 
 scamper_fd_t *scamper_fd_tcp6(void *addr, uint16_t sport)
 {
-  return fd_tcp(SCAMPER_FD_TYPE_TCP6, addr, sport, NULL, 0);
+  return fd_tcp(SCAMPER_FD_TYPE_TCP6, addr, sport, NULL, 0, NULL, 0);
 }
 
 scamper_fd_t *scamper_fd_tcp6_dst(void *src, uint16_t sport,
+				  uint16_t *sportx, size_t sportxc,
 				  void *dst, uint16_t dport)
 {
-  return fd_tcp(SCAMPER_FD_TYPE_TCP6, src, sport, dst, dport);
+  return fd_tcp(SCAMPER_FD_TYPE_TCP6, src, sport, sportx, sportxc, dst, dport);
 }
 
 scamper_fd_t *scamper_fd_udp4(void *addr, uint16_t sport)
