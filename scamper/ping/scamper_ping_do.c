@@ -1176,107 +1176,69 @@ scamper_task_t *scamper_do_ping_alloctask(void *data, scamper_list_t *list,
   if((ping->flags & SCAMPER_PING_FLAG_SPOOF) == 0)
     sig->sig_tx_ip_src = scamper_addr_use(ping->src);
 
-  if(ping->probe_sport == 0)
+  /* allocate a file descriptor for each source port needed */
+  if(SCAMPER_PING_METHOD_IS_VARY_SPORT(ping) == 0)
+    state->fdc = 1;
+  else
+    state->fdc = ping->probe_count;
+  if((state->fds = malloc_zero(sizeof(scamper_fd_t *) * state->fdc)) == NULL ||
+     (state->fdc > 1 &&
+      (state->sports = malloc_zero(sizeof(uint16_t) * state->fdc)) == NULL))
+    goto err;
+
+  if(SCAMPER_PING_METHOD_IS_TCP(ping))
     {
-      if(SCAMPER_PING_METHOD_IS_VARY_SPORT(ping) == 0)
-	state->fdc = 1;
+      if(SCAMPER_ADDR_TYPE_IS_IPV4(ping->dst))
+	state->fds[0] = scamper_fd_tcp4_dst(NULL, ping->probe_sport, NULL, 0,
+					    ping->dst->addr, ping->probe_dport);
       else
-	state->fdc = ping->probe_count;
-      if((state->fds = malloc_zero(sizeof(scamper_fd_t *) * state->fdc)) == NULL ||
-	 (state->fdc > 1 &&
-	  (state->sports = malloc_zero(sizeof(uint16_t) * state->fdc)) == NULL))
+	state->fds[0] = scamper_fd_tcp6_dst(NULL, ping->probe_sport, NULL, 0,
+					    ping->dst->addr, ping->probe_dport);
+      if(state->fds[0] == NULL ||
+	 (ping->probe_sport == 0 &&
+	  scamper_fd_sport(state->fds[0], &ping->probe_sport) != 0))
+	goto err;
+      SCAMPER_TASK_SIG_TCP(sig, ping->probe_sport, ping->probe_dport);
+    }
+  else if(SCAMPER_PING_METHOD_IS_UDP(ping))
+    {
+      if(SCAMPER_ADDR_TYPE_IS_IPV4(ping->dst))
+	state->fds[0] = scamper_fd_udp4_dst(ping->src->addr, ping->probe_sport,
+					    ping->dst->addr, ping->probe_dport);
+      else
+	state->fds[0] = scamper_fd_udp6_dst(ping->src->addr, ping->probe_sport,
+					    ping->dst->addr, ping->probe_dport);
+      if(state->fds[0] == NULL ||
+	 (ping->probe_sport == 0 &&
+	  scamper_fd_sport(state->fds[0], &ping->probe_sport) != 0))
 	goto err;
 
-      if(SCAMPER_PING_METHOD_IS_TCP(ping))
+      if(ping->probe_method == SCAMPER_PING_METHOD_UDP)
 	{
-	  if(SCAMPER_ADDR_TYPE_IS_IPV4(ping->dst))
-	    state->fds[0] = scamper_fd_tcp4_dst(NULL, 0, NULL, 0,
-						ping->dst->addr,
-						ping->probe_dport);
-	  else
-	    state->fds[0] = scamper_fd_tcp6_dst(NULL, 0, NULL, 0,
-						ping->dst->addr,
-						ping->probe_dport);
-	  if(state->fds[0] == NULL ||
-	     scamper_fd_sport(state->fds[0], &ping->probe_sport) != 0)
-	    goto err;
-	  SCAMPER_TASK_SIG_TCP(sig, ping->probe_sport, ping->probe_dport);
-	  if(scamper_task_sig_add(task, sig) != 0)
-	    goto err;
-	  sig = NULL;
-
-	  if(state->fdc > 1)
-	    state->sports[0] = ping->probe_sport;
-
-	  for(i=1; i<state->fdc; i++)
-	    {
-	      if((sig = scamper_task_sig_alloc(SCAMPER_TASK_SIG_TYPE_TX_IP)) == NULL)
-		goto err;
-	      sig->sig_tx_ip_dst = scamper_addr_use(ping->dst);
-	      if((ping->flags & SCAMPER_PING_FLAG_SPOOF) == 0)
-		sig->sig_tx_ip_src = scamper_addr_use(ping->src);
-
-	      if(SCAMPER_ADDR_TYPE_IS_IPV4(ping->dst))
-		state->fds[i] = scamper_fd_tcp4_dst(NULL, 0,
-						    state->sports, i,
-						    ping->dst->addr,
-						    ping->probe_dport);
-	      else
-		state->fds[i] = scamper_fd_tcp6_dst(NULL, 0,
-						    state->sports, i,
-						    ping->dst->addr,
-						    ping->probe_dport);
-	      if(state->fds[i] == NULL ||
-		 scamper_fd_sport(state->fds[i], &state->sports[i]) != 0)
-		goto err;
-
-	      SCAMPER_TASK_SIG_TCP(sig, state->sports[i], ping->probe_dport);
-	      if(scamper_task_sig_add(task, sig) != 0)
-		goto err;
-	      sig = NULL;
-	    }
+	  SCAMPER_TASK_SIG_UDP(sig, ping->probe_sport, ping->probe_dport);
 	}
-      else if(SCAMPER_PING_METHOD_IS_UDP(ping))
+      else if(ping->probe_method == SCAMPER_PING_METHOD_UDP_DPORT)
 	{
-	  if(SCAMPER_ADDR_TYPE_IS_IPV4(ping->dst))
-	    state->fds[0] = scamper_fd_udp4_dst(ping->src->addr, 0,
-						ping->dst->addr,
-						ping->probe_dport);
-	  else
-	    state->fds[0] = scamper_fd_udp6_dst(ping->src->addr, 0,
-						ping->dst->addr,
-						ping->probe_dport);
-	  if(state->fds[0] == NULL ||
-	     scamper_fd_sport(state->fds[0], &ping->probe_sport) != 0)
-	    goto err;
-
-	  if(ping->probe_method == SCAMPER_PING_METHOD_UDP)
-	    {
-	      SCAMPER_TASK_SIG_UDP(sig, ping->probe_sport, ping->probe_dport);
-	    }
-	  else if(ping->probe_method == SCAMPER_PING_METHOD_UDP_DPORT)
-	    {
-	      SCAMPER_TASK_SIG_UDP_DPORT(sig, ping->probe_sport, ping->probe_dport,
-					 ping->probe_dport + ping->probe_count - 1);
-	    }
-	  else goto err;
-
-	  if(scamper_task_sig_add(task, sig) != 0)
-	    goto err;
-	  sig = NULL;
+	  SCAMPER_TASK_SIG_UDP_DPORT(sig, ping->probe_sport, ping->probe_dport,
+				     ping->probe_dport + ping->probe_count - 1);
 	}
-      else if(SCAMPER_PING_METHOD_IS_ICMP(ping))
+      else goto err;
+    }
+  else if(SCAMPER_PING_METHOD_IS_ICMP(ping))
+    {
+      if(ping->probe_method == SCAMPER_PING_METHOD_ICMP_ECHO)
+	{
+	  SCAMPER_TASK_SIG_ICMP_ECHO(sig, ping->probe_sport);
+	}
+      else if(ping->probe_method == SCAMPER_PING_METHOD_ICMP_TIME)
+	{
+	  SCAMPER_TASK_SIG_ICMP_TIME(sig, ping->probe_sport);
+	}
+      else goto err;
+
+      if(ping->probe_sport == 0)
 	{
 	  ping->probe_sport = scamper_pid_u16();
-	  if(ping->probe_method == SCAMPER_PING_METHOD_ICMP_ECHO)
-	    {
-	      SCAMPER_TASK_SIG_ICMP_ECHO(sig, ping->probe_sport);
-	    }
-	  else if(ping->probe_method == SCAMPER_PING_METHOD_ICMP_TIME)
-	    {
-	      SCAMPER_TASK_SIG_ICMP_TIME(sig, ping->probe_sport);
-	    }
-	  else goto err;
 	  if(scamper_task_find(sig) != NULL)
 	    {
 	      /*
@@ -1300,17 +1262,44 @@ scamper_task_t *scamper_do_ping_alloctask(void *data, scamper_list_t *list,
 		    break;
 		}
 	    }
+	}
+    }
+  else
+    {
+      scamper_debug(__func__, "unhandled probe method %d with -F 0",
+		    ping->probe_method);
+      goto err;
+    }
 
-	  if(scamper_task_sig_add(task, sig) != 0)
-	    goto err;
-	  sig = NULL;
-	}
+  if(state->sports != NULL)
+    state->sports[0] = ping->probe_sport;
+
+  if(scamper_task_sig_add(task, sig) != 0)
+    goto err;
+  sig = NULL;
+
+  for(i=1; i<state->fdc; i++)
+    {
+      if((sig = scamper_task_sig_alloc(SCAMPER_TASK_SIG_TYPE_TX_IP)) == NULL)
+	goto err;
+      sig->sig_tx_ip_dst = scamper_addr_use(ping->dst);
+      if((ping->flags & SCAMPER_PING_FLAG_SPOOF) == 0)
+	sig->sig_tx_ip_src = scamper_addr_use(ping->src);
+
+      if(SCAMPER_ADDR_TYPE_IS_IPV4(ping->dst))
+	state->fds[i] = scamper_fd_tcp4_dst(NULL, 0, state->sports, i,
+					    ping->dst->addr, ping->probe_dport);
       else
-	{
-	  scamper_debug(__func__, "unhandled probe method %d with -F 0",
-			ping->probe_method);
-	  goto err;
-	}
+	state->fds[i] = scamper_fd_tcp6_dst(NULL, 0, state->sports, i,
+					    ping->dst->addr, ping->probe_dport);
+      if(state->fds[i] == NULL ||
+	 scamper_fd_sport(state->fds[i], &state->sports[i]) != 0)
+	goto err;
+
+      SCAMPER_TASK_SIG_TCP(sig, state->sports[i], ping->probe_dport);
+      if(scamper_task_sig_add(task, sig) != 0)
+	goto err;
+      sig = NULL;
     }
 
   scamper_task_setstate(task, state);
