@@ -293,7 +293,6 @@ static void do_ping_handle_dl(scamper_task_t *task, scamper_dl_rec_t *dl)
 	}
       else
 	{
-	  scamper_debug(__func__, "%u %u", state->seq, dl->dl_tcp_dport);
 	  for(u16=0; u16<state->seq; u16++)
 	    if(state->sports[u16] == dl->dl_tcp_dport)
 	      break;
