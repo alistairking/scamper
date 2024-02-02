@@ -1236,6 +1236,11 @@ scamper_task_t *scamper_do_ping_alloctask(void *data, scamper_list_t *list,
 	}
       else goto err;
 
+      if(ping->dst->type == SCAMPER_ADDR_TYPE_IPV4)
+	state->fds[0] = scamper_fd_icmp4(ping->src->addr);
+      else
+	state->fds[0] = scamper_fd_icmp6(ping->src->addr);
+
       if(ping->probe_sport == 0)
 	{
 	  ping->probe_sport = scamper_pid_u16();
