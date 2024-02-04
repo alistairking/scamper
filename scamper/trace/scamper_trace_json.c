@@ -48,7 +48,7 @@ static char *hop_tostr(const scamper_trace_t *trace, scamper_trace_hop_t *hop)
 {
   char buf[1024], tmp[128];
   scamper_icmpext_t *ie;
-  size_t off = 0;
+  size_t off = 0, off2;
   uint32_t u32;
   int i;
 
@@ -69,6 +69,21 @@ static char *hop_tostr(const scamper_trace_t *trace, scamper_trace_hop_t *hop)
   string_concat(buf, sizeof(buf), &off,
 		", \"reply_ttl\":%u, \"reply_tos\":%u",
 		hop->hop_reply_ttl, hop->hop_reply_tos);
+
+  if(hop->hop_flags != 0)
+    {
+      tmp[0] = '\0'; off2 = 0;
+      if(hop->hop_flags & SCAMPER_TRACE_HOP_FLAG_TS_DL_TX)
+	string_concat(tmp, sizeof(tmp), &off2, "\"dltxts\"");
+      if(hop->hop_flags & SCAMPER_TRACE_HOP_FLAG_TS_DL_RX)
+	string_concat(tmp, sizeof(tmp), &off2, "%s\"dlrxts\"",
+		      off2 != 0 ? ", " : "");
+      if(hop->hop_flags & SCAMPER_TRACE_HOP_FLAG_TS_SOCK_RX)
+	string_concat(tmp, sizeof(tmp), &off2, "%s\"sockrxts\"",
+		      off2 != 0 ? ", " : "");
+      if(off2 != 0)
+	string_concat(buf, sizeof(buf), &off, ", \"flags\":[%s]", tmp);
+    }
 
   if((trace->flags & SCAMPER_TRACE_FLAG_RXERR) == 0)
     {
