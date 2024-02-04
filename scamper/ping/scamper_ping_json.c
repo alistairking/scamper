@@ -185,9 +185,9 @@ static char *ping_reply(const scamper_ping_t *ping,
     {
       tmp[0] = '\0'; off2 = 0;
       if(reply->flags & SCAMPER_PING_REPLY_FLAG_PROBE_DLTX)
-	string_concat(tmp, sizeof(tmp), &off2, "\"dltx\"");
+	string_concat(tmp, sizeof(tmp), &off2, "\"dltxts\"");
       if(reply->flags & SCAMPER_PING_REPLY_FLAG_PROBE_DLRX)
-	string_concat(tmp, sizeof(tmp), &off2, "%s\"dlrx\"",
+	string_concat(tmp, sizeof(tmp), &off2, "%s\"dlrxts\"",
 		      off2 != 0 ? ", " : "");
       if(off2 != 0)
 	string_concat(buf, sizeof(buf), &off, ", \"reply_flags\":[%s]", tmp);
