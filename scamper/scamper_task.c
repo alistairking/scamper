@@ -235,10 +235,9 @@ static void tx_ip_check(scamper_dl_rec_t *dl)
     }
   else if(SCAMPER_DL_IS_TCP(dl))
     {
-      if((dl->dl_tcp_flags & TH_SYN) && (dl->dl_tcp_flags & TH_ACK) == 0)
-	addr.addr = dl->dl_ip_dst;
-      else
-	addr.addr = dl->dl_ip_src;
+      addr.addr = dl->dl_ip_src;
+      addr2buf.type = addr.type;
+      addr2buf.addr = dl->dl_ip_dst; addr2 = &addr2buf;
     }
   else if(SCAMPER_DL_IS_ICMP(dl))
     {

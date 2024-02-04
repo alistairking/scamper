@@ -232,7 +232,8 @@ static int trace_arg_param_validate(int optid, char *param, long long *out)
       if(strcasecmp(param, "dl") != 0 &&
 	 strcasecmp(param, "const-payload") != 0 &&
 	 strcasecmp(param, "dtree-noback") != 0 &&
-	 strcasecmp(param, "ptr") != 0)
+	 strcasecmp(param, "ptr") != 0 &&
+	 strcasecmp(param, "raw") != 0)
 	goto err;
       break;
 
@@ -479,6 +480,8 @@ void *scamper_do_trace_alloc(char *str, uint32_t *id)
 	    flags |= SCAMPER_TRACE_FLAG_CONSTPAYLOAD;
 	  else if(strcasecmp(opt->str, "dtree-noback") == 0)
 	    dtree_flags |= SCAMPER_TRACE_DTREE_FLAG_NOBACK;
+	  else if(strcasecmp(opt->str, "raw") == 0)
+	    flags |= SCAMPER_TRACE_FLAG_RAW;
 	  else if(strcasecmp(opt->str, "ptr") == 0)
 	    {
 #ifndef DISABLE_SCAMPER_HOST
@@ -644,6 +647,14 @@ void *scamper_do_trace_alloc(char *str, uint32_t *id)
   /* don't allow tcptraceroute to have a payload */
   if(SCAMPER_TRACE_TYPE_IS_TCP(trace) && trace->payload_len > 0)
     goto err;
+
+  if((trace->flags & SCAMPER_TRACE_FLAG_RAW) != 0 &&
+     (SCAMPER_ADDR_TYPE_IS_IPV4(trace->dst) == 0 ||
+      SCAMPER_TRACE_TYPE_IS_TCP(trace) == 0))
+    {
+      scamper_debug(__func__, "-O raw only works for IPv4 TCP methods");
+      goto err;
+    }
 
   /* don't allow fragment traceroute with IPv4 for now */
   if(trace->offset != 0 && trace->dst->type == SCAMPER_ADDR_TYPE_IPV4)
