@@ -394,7 +394,7 @@ void *scamper_do_trace_alloc(char *str, uint32_t *id)
   uint8_t  loops       = SCAMPER_DO_TRACE_LOOPS_DEF;
   uint8_t  confidence  = 0;
   uint8_t  dtree_flags = 0;
-  int      sport       = -1;
+  uint16_t sport;
   uint16_t dport       = SCAMPER_DO_TRACE_DPORT_DEF;
   uint16_t offset      = SCAMPER_DO_TRACE_OFFSET_DEF;
   uint8_t *payload     = NULL;
@@ -412,7 +412,6 @@ void *scamper_do_trace_alloc(char *str, uint32_t *id)
   char *src = NULL, *rtr = NULL;
   int af, x;
   uint32_t optids = 0;
-  uint16_t u16;
 
   /* try and parse the string passed in */
   if(scamper_options_parse(str, opts, opts_cnt, &opts_out, &addr) != 0)
@@ -421,6 +420,8 @@ void *scamper_do_trace_alloc(char *str, uint32_t *id)
   /* if there is no IP address after the options string, then stop now */
   if(addr == NULL)
     goto err;
+
+  sport = scamper_sport_default();
 
   /* parse the options, do preliminary sanity checks */
   for(opt = opts_out; opt != NULL; opt = opt->next)
@@ -607,15 +608,6 @@ void *scamper_do_trace_alloc(char *str, uint32_t *id)
   if((flags & SCAMPER_TRACE_FLAG_PMTUD) != 0 &&
      type != SCAMPER_TRACE_TYPE_UDP && type != SCAMPER_TRACE_TYPE_UDP_PARIS)
     goto err;
-
-  if(sport == -1)
-    sport = scamper_sport_default();
-  else if(sport == 0)
-    {
-      random_u16(&u16);
-      sport = u16 | 0x8000;
-  	flags |= SCAMPER_TRACE_FLAG_RANDOM_SPORT;
-    }
 
   if((trace = scamper_trace_alloc()) == NULL)
     {

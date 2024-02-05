@@ -3703,104 +3703,13 @@ static uint16_t trace_probe_headerlen(const scamper_trace_t *trace)
   return len;
 }
 
-static int alloc_sockets(scamper_trace_t *trace, trace_state_t *state)
-{
-  if(scamper_option_icmp_rxerr() != 0)
-  {
-    trace->flags |= SCAMPER_TRACE_FLAG_RXERR;
-    if(SCAMPER_TRACE_TYPE_IS_ICMP(trace) &&
- SCAMPER_ADDR_TYPE_IS_IPV4(trace->dst))
-    {
-      state->icmp = scamper_fd_icmp4_err(trace->src->addr);
-      state->probe = scamper_fd_icmp4_err(trace->src->addr);
-    }
-    else if(SCAMPER_TRACE_TYPE_IS_UDP(trace) &&
-      SCAMPER_ADDR_TYPE_IS_IPV6(trace->dst))
-    {
-      state->icmp = scamper_fd_udp6_err(trace->src->addr, trace->sport);
-      state->probe = scamper_fd_udp6_err(trace->src->addr, trace->sport);
-    }
-    if(state->icmp == NULL || state->probe == NULL)
-      goto err;
-  }
-  else
-  {
-    if(trace->dst->type == SCAMPER_ADDR_TYPE_IPV4)
-      state->icmp = scamper_fd_icmp4(trace->src->addr);
-    else if(trace->dst->type == SCAMPER_ADDR_TYPE_IPV6)
-      state->icmp = scamper_fd_icmp6(trace->src->addr);
-    if(state->icmp == NULL)
-      goto err;
-
-    if(SCAMPER_TRACE_TYPE_IS_TCP(trace))
-    {
-      if(trace->dst->type == SCAMPER_ADDR_TYPE_IPV4)
-      {
-        state->probe = scamper_fd_tcp4(NULL, trace->sport);
-        if(scamper_option_rawtcp() != 0 &&
-     (state->raw = scamper_fd_ip4()) == NULL)
-          goto err;
-      }
-      else
-      {
-        state->probe = scamper_fd_tcp6(NULL, trace->sport);
-      }
-    }
-    else if(SCAMPER_TRACE_TYPE_IS_ICMP(trace))
-    {
-      if(trace->dst->type == SCAMPER_ADDR_TYPE_IPV4)
-        state->probe = scamper_fd_icmp4(trace->src->addr);
-      else
-        state->probe = scamper_fd_icmp6(trace->src->addr);
-    }
-    else if(SCAMPER_TRACE_TYPE_IS_UDP(trace))
-    {
-      if(trace->dst->type == SCAMPER_ADDR_TYPE_IPV4)
-        state->probe = scamper_fd_udp4(trace->src->addr, trace->sport);
-      else
-        state->probe = scamper_fd_udp6(trace->src->addr, trace->sport);
-    }
-    if(state->probe == NULL)
-      goto err;
-  }
-
-  return 0;
-
-  err:
-  if (state->icmp)
-  {
-    scamper_fd_free(state->icmp);
-    state->icmp = NULL;
-  }
-  if (state->raw)
-  {
-    scamper_fd_free(state->raw);
-    state->raw = NULL;
-  }
-  if (state->probe)
-  {
-    scamper_fd_free(state->probe);
-    state->probe = NULL;
-  }
-  return -1;
-}
-
 static int trace_state_alloc(scamper_task_t *task)
 {
   scamper_trace_t *trace = trace_getdata(task);
-  trace_state_t *state;
-  int i, id_max;
-  int rc = 0;
+  trace_state_t *state = trace_getstate(task);
+  int id_max;
 
   assert(trace != NULL);
-
-  /* allocate struct to keep state while processing the trace */
-  if((state = malloc_zero(sizeof(trace_state_t))) == NULL)
-    {
-      printerror(__func__, "could not malloc state");
-      goto err;
-    }
-
   state->n = 2;
   if(trace->confidence == 99)
     state->confidence = 1;
@@ -3881,34 +3790,41 @@ static int trace_state_alloc(scamper_task_t *task)
       state->mode = trace_first_mode(trace);
     }
 
-  /* if we're generating a random source port, then try a few times in case the
-   * port we pick is already used
-   */
-  for (i=0; i < 10; i++)
-  {
-    if((rc = alloc_sockets(trace, state)) == 0)
-      {
-        break;
-      }
-    /* alloc failed, should we retry? */
-    if((trace->flags & SCAMPER_TRACE_FLAG_RANDOM_SPORT) == 0)
-      {
-        break;
-      }
-    random_u16(&trace->sport);
-    trace->sport = trace->sport | 0x8000;
-  }
-  if (rc != 0)
-  {
-    printerror(__func__, "failed to allocate sockets");
-    goto err;
-  }
+  if(scamper_option_icmp_rxerr() != 0)
+    {
+      trace->flags |= SCAMPER_TRACE_FLAG_RXERR;
+      if(SCAMPER_TRACE_TYPE_IS_ICMP(trace) &&
+	 SCAMPER_ADDR_TYPE_IS_IPV4(trace->dst))
+	{
+	  state->icmp = scamper_fd_use(state->probe);
+	}
+      else if(SCAMPER_TRACE_TYPE_IS_UDP(trace) &&
+	      SCAMPER_ADDR_TYPE_IS_IPV6(trace->dst))
+	{
+	  state->icmp = scamper_fd_use(state->probe);
+	}
+      if(state->icmp == NULL)
+	goto err;
+    }
+  else
+    {
+      if(SCAMPER_ADDR_TYPE_IS_IPV4(trace->dst))
+	state->icmp = scamper_fd_icmp4(trace->src->addr);
+      else if(SCAMPER_ADDR_TYPE_IS_IPV6(trace->dst))
+	state->icmp = scamper_fd_icmp6(trace->src->addr);
+      if(state->icmp == NULL)
+	goto err;
 
-  scamper_task_setstate(task, state);
+      if(scamper_option_rawtcp() != 0 &&
+	 SCAMPER_TRACE_TYPE_IS_TCP(trace) &&
+	 SCAMPER_ADDR_TYPE_IS_IPV4(trace->dst) &&
+	 (state->raw = scamper_fd_ip4()) == NULL)
+	goto err;
+    }
+
   return 0;
 
  err:
-  if(state != NULL) trace_state_free(state);
   return -1;
 }
 
@@ -3955,7 +3871,7 @@ static void do_trace_probe(scamper_task_t *task)
   assert(trace->dst->type == SCAMPER_ADDR_TYPE_IPV4 ||
 	 trace->dst->type == SCAMPER_ADDR_TYPE_IPV6);
 
-  if(state != NULL)
+  if(state->icmp != NULL)
     {
       assert(MODE_IS_PARALLEL(state->mode) ||
 	     state->attempt < trace->attempts || trace->confidence != 0);
@@ -4328,12 +4244,21 @@ scamper_task_t *scamper_do_trace_alloctask(void *data,
 					   scamper_cycle_t *cycle)
 {
   scamper_trace_t *trace = (scamper_trace_t *)data;
+  trace_state_t *state = NULL;
   scamper_task_t *task = NULL;
   scamper_task_sig_t *sig = NULL;
+  int i;
 
   /* allocate a task structure and store the trace with it */
   if((task = scamper_task_alloc(trace, &trace_funcs)) == NULL)
     goto err;
+
+  /* allocate state struct to keep state while processing the trace */
+  if((state = malloc_zero(sizeof(trace_state_t))) == NULL)
+    {
+      printerror(__func__, "could not malloc state");
+      goto err;
+    }
 
   /* declare the signature of the task's probes */
   if((sig = scamper_task_sig_alloc(SCAMPER_TASK_SIG_TYPE_TX_IP)) == NULL)
@@ -4342,6 +4267,84 @@ scamper_task_t *scamper_do_trace_alloctask(void *data,
   if(trace->src == NULL && (trace->src = scamper_getsrc(trace->dst,0)) == NULL)
     goto err;
   sig->sig_tx_ip_src = scamper_addr_use(trace->src);
+
+  /*
+   * get the probe socket so that we can get a task signature.  leave
+   * the rest for later
+   */
+  if(scamper_option_icmp_rxerr() != 0)
+    {
+      if(SCAMPER_TRACE_TYPE_IS_ICMP(trace) &&
+	 SCAMPER_ADDR_TYPE_IS_IPV4(trace->dst))
+	state->probe = scamper_fd_icmp4_err(trace->src->addr);
+      else if(SCAMPER_TRACE_TYPE_IS_UDP(trace) &&
+	      SCAMPER_ADDR_TYPE_IS_IPV6(trace->dst))
+	state->probe = scamper_fd_udp6_err_dst(trace->src->addr, trace->sport,
+					       trace->dst->addr, trace->dport);
+    }
+  else
+    {
+      if(SCAMPER_TRACE_TYPE_IS_TCP(trace))
+	{
+	  if(trace->dst->type == SCAMPER_ADDR_TYPE_IPV4)
+	    state->probe = scamper_fd_tcp4_dst(NULL, trace->sport, NULL, 0,
+					       trace->dst->addr, trace->dport);
+	  else
+	    state->probe = scamper_fd_tcp6_dst(NULL, trace->sport, NULL, 0,
+					       trace->dst->addr, trace->dport);
+	}
+      else if(SCAMPER_TRACE_TYPE_IS_ICMP(trace))
+	{
+	  if(trace->dst->type == SCAMPER_ADDR_TYPE_IPV4)
+	    state->probe = scamper_fd_icmp4(trace->src->addr);
+	  else
+	    state->probe = scamper_fd_icmp6(trace->src->addr);
+	}
+      else if(SCAMPER_TRACE_TYPE_IS_UDP(trace))
+	{
+	  if(trace->dst->type == SCAMPER_ADDR_TYPE_IPV4)
+	    state->probe = scamper_fd_udp4_dst(trace->src->addr, trace->sport,
+					       trace->dst->addr, trace->dport);
+	  else
+	    state->probe = scamper_fd_udp6_dst(trace->src->addr, trace->sport,
+					       trace->dst->addr, trace->dport);
+	}
+    }
+
+  if(state->probe == NULL)
+    goto err;
+
+  if(trace->sport == 0)
+    {
+      if(SCAMPER_TRACE_TYPE_IS_UDP(trace) ||
+	 SCAMPER_TRACE_TYPE_IS_TCP(trace))
+	{
+	  if(scamper_fd_sport(state->probe, &trace->sport) != 0)
+	    goto err;
+	}
+      else if(SCAMPER_TRACE_TYPE_IS_ICMP(trace))
+	{
+	  /* try the default ID value to start with */
+	  trace->sport = scamper_sport_default();
+	  SCAMPER_TASK_SIG_ICMP_ECHO(sig, trace->sport);
+	  if(scamper_task_find(sig) != NULL)
+	    {
+	      /*
+	       * then try 5 random 16-bit numbers for the ICMP ID
+	       * field.  if they all have current tasks, then this
+	       * ping will block on the task with the last random
+	       * 16-bit ID value.
+	       */
+	      for(i=0; i<5; i++)
+		{
+		  random_u16(&trace->sport);
+		  SCAMPER_TASK_SIG_ICMP_ECHO(sig, trace->sport);
+		  if(scamper_task_find(sig) == NULL)
+		    break;
+		}
+	    }
+	}
+    }
 
   switch(trace->type)
     {
@@ -4372,6 +4375,8 @@ scamper_task_t *scamper_do_trace_alloctask(void *data,
     goto err;
   sig = NULL;
 
+  scamper_task_setstate(task, state);
+
   /* associate the list and cycle with the trace */
   trace->list = scamper_list_use(list);
   trace->cycle = scamper_cycle_use(cycle);
@@ -4380,6 +4385,7 @@ scamper_task_t *scamper_do_trace_alloctask(void *data,
 
  err:
   if(sig != NULL) scamper_task_sig_free(sig);
+  if(state != NULL) trace_state_free(state);
   if(task != NULL)
     {
       scamper_task_setdatanull(task);

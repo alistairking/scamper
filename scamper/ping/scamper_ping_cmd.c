@@ -438,7 +438,6 @@ void *scamper_do_ping_alloc(char *str, uint32_t *id)
   size_t size;
   long long j, tmp = 0;
   int i, A = 0;
-  uint16_t u16;
   uint32_t optids = 0;
 
   /* try and parse the string passed in */
@@ -798,48 +797,39 @@ void *scamper_do_ping_alloc(char *str, uint32_t *id)
       ping->probe_datalen = payload_len;
     }
 
-  if(SCAMPER_PING_METHOD_IS_ICMP(ping))
+  /* caller is happy with a scamper-chosen source port */
+  if(probe_sport == -1)
     {
-      if(probe_sport == -1)
-	probe_sport = scamper_pid_u16();
-      else if(probe_sport == 0)
+      if(SCAMPER_PING_METHOD_IS_ICMP(ping))
 	{
-	  random_u16(&u16);
-	  probe_sport = u16 | 0x8000;
-	  flags |= SCAMPER_PING_FLAG_RANDOM_SPORT;
+	  probe_sport = scamper_pid_u16();
+	}
+      else
+	{
+	  probe_sport = scamper_sport_default();
+	  /*
+	   * if scamper generates the starting sport value, make sure it
+	   * won't wrap to zero.
+	   */
+	  if(SCAMPER_PING_METHOD_IS_VARY_SPORT(ping) &&
+	     65535 - probe_sport < probe_count-1 && probe_count < 32768)
+	    {
+	      probe_sport -= probe_count;
+	      if(probe_sport < 0x8000)
+		probe_sport = 0x8000;
+	    }
 	}
     }
-  else if(probe_sport == -1 || probe_sport == 0)
+  else if(probe_sport != 0)
     {
-      if(probe_sport == -1)
-	probe_sport = scamper_sport_default();
-      else if(probe_sport == 0)
-	{
-	  random_u16(&u16);
-	  probe_sport = u16 | 0x8000;
-	  flags |= SCAMPER_PING_FLAG_RANDOM_SPORT;
-	}
-
-      /*
-       * if scamper generates the starting sport value, make sure it
-       * won't wrap to zero.
-       */
+      /* make sure probe_sport + probe_count <= 65535 */
       if(SCAMPER_PING_METHOD_IS_VARY_SPORT(ping) &&
-	 65535 - probe_sport < probe_count-1 && probe_count < 32768)
+	 65535 - probe_sport < probe_count - 1)
 	{
-	  probe_sport -= probe_count;
-	  if(probe_sport < 0x8000)
-	    probe_sport = 0x8000;
+	  scamper_debug(__func__, "invalid probe_sport %u given probe_count %u",
+			probe_sport, probe_count);
+	  goto err;
 	}
-    }
-
-  /* make sure probe_sport + probe_count <= 65535 */
-  if(SCAMPER_PING_METHOD_IS_VARY_SPORT(ping) &&
-     65535 - probe_sport < probe_count - 1)
-    {
-      scamper_debug(__func__, "invalid probe_sport %u given probe_count %u",
-		    probe_sport, probe_count);
-      goto err;
     }
 
   if(probe_dport == -1)
