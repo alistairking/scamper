@@ -202,6 +202,7 @@ struct scamper_ping_reply
   /* the TTL / size of the packet that is returned */
   uint16_t                   probe_id;
   uint16_t                   probe_ipid;
+  uint16_t                   probe_sport;
   uint8_t                    reply_proto;
   uint8_t                    reply_ttl;
   uint16_t                   reply_size;

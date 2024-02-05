@@ -630,6 +630,53 @@ static int s2t_tx_ip_overlap(scamper_task_sig_t *a, scamper_task_sig_t *b)
   return 1;
 }
 
+int scamper_task_sig_sport_used(scamper_addr_t *dst, uint8_t proto,
+				uint16_t sport, uint16_t dport)
+{
+  scamper_task_sig_t sig;
+  trie_s2t_t ts2t_fm, *ts2t;
+  dlist_node_t *dn;
+  s2t_t *s2t = NULL;
+
+  sig.sig_tx_ip_dst = dst;
+  if(proto == IPPROTO_TCP)
+    {
+      SCAMPER_TASK_SIG_TCP(&sig, sport, dport);
+    }
+  else if(proto == IPPROTO_UDP)
+    {
+      SCAMPER_TASK_SIG_UDP(&sig, sport, dport);
+    }
+  else if((proto == IPPROTO_ICMP && SCAMPER_ADDR_TYPE_IS_IPV4(dst)) ||
+	  (proto == IPPROTO_ICMPV6 && SCAMPER_ADDR_TYPE_IS_IPV6(dst)))
+    {
+      SCAMPER_TASK_SIG_ICMP_ECHO(&sig, sport);
+    }
+  else return -1;
+
+  /*
+   * if we don't have any measurement to that address, then the port
+   * is clear
+   */
+  ts2t_fm.addr = dst;
+  if(SCAMPER_ADDR_TYPE_IS_IPV4(dst))
+    ts2t = patricia_find(tx_ip4, &ts2t_fm);
+  else
+    ts2t = patricia_find(tx_ip6, &ts2t_fm);
+  if(ts2t == NULL)
+    return 0;
+
+  /* check to see if there's an overlapping signature */
+  for(dn=dlist_head_node(ts2t->list); dn != NULL; dn=dlist_node_next(dn))
+    {
+      s2t = dlist_node_item(dn);
+      if(s2t_tx_ip_overlap(&sig, s2t->sig) != 0)
+	return 1;
+    }
+
+  return 0;
+}
+
 scamper_task_t *scamper_task_find(scamper_task_sig_t *sig)
 {
   trie_s2t_t ts2t_fm, *ts2t;

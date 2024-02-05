@@ -207,6 +207,13 @@ char *sockaddr_tostr(const struct sockaddr *sa, char *buf, size_t len)
 int fcntl_set(int fd, int flags);
 int fcntl_unset(int fd, int flags);
 
+/* get the source port that a socket is bound to */
+#ifndef _WIN32 /* SOCKET vs int on windows */
+int socket_sport(int fd, uint16_t *sport) ATTRIBUTE_NONNULL;
+#else
+int socket_sport(SOCKET fd, uint16_t *sport) ATTRIBUTE_NONNULL;
+#endif
+
 /*
  * Functions for parsing strings
  */
