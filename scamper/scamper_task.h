@@ -210,6 +210,8 @@ int scamper_task_sig_install(scamper_task_t *task);
 void scamper_task_sig_deinstall(scamper_task_t *task);
 scamper_task_t *scamper_task_find(scamper_task_sig_t *sig);
 char *scamper_task_sig_tostr(scamper_task_sig_t *sig, char *buf, size_t len);
+int scamper_task_sig_sport_used(struct scamper_addr *dst, uint8_t proto,
+				uint16_t sport, uint16_t dport);
 
 /* manage ancillary data attached to the task */
 scamper_task_anc_t *scamper_task_anc_add(scamper_task_t *task, void *data,
