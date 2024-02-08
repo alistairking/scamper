@@ -3075,25 +3075,25 @@ static void dlin_trace(scamper_trace_t *trace,
 
   for(hop=trace->hops[probe->ttl-1]; hop != NULL; hop = hop->hop_next)
     {
-      if(probe->attempt > hop->hop_probe_id) continue;
-      if(probe->attempt <= hop->hop_probe_id) break;
-    }
+      if(probe->attempt > hop->hop_probe_id)
+	continue;
+      else if(probe->attempt == hop->hop_probe_id)
+	{
+	  /*
+	   * only adjust the timestamp for the first response, packet
+	   * matching issues for extra responses without further logic
+	   */
+	  scamper_debug(__func__,
+			"hop %ld.%06d dl_rec %ld.%06d diff %d",
+			(long)hop->hop_rtt.tv_sec, (int)hop->hop_rtt.tv_usec,
+			(long)new_rtt.tv_sec, (int)new_rtt.tv_usec,
+			timeval_diff_us(&new_rtt, &hop->hop_rtt));
 
-  /*
-   * only adjust the timestamp for the first response, packet matching
-   * issues for extra responses without further logic
-   */
-  if(probe->attempt == hop->probe_id)
-    {
-      scamper_debug(__func__,
-		    "hop %ld.%06d dl_rec %ld.%06d diff %d",
-		    (long)hop->hop_rtt.tv_sec, (int)hop->hop_rtt.tv_usec,
-		    (long)new_rtt.tv_sec, (int)new_rtt.tv_usec,
-		    timeval_diff_us(&new_rtt, &hop->hop_rtt));
-
-      hop->hop_flags &= ~(SCAMPER_TRACE_HOP_FLAG_TS_SOCK_RX);
-      hop->hop_flags |= SCAMPER_TRACE_HOP_FLAG_TS_DL_RX;
-      timeval_cpy(&hop->hop_rtt, &new_rtt);
+	  hop->hop_flags &= ~(SCAMPER_TRACE_HOP_FLAG_TS_SOCK_RX);
+	  hop->hop_flags |= SCAMPER_TRACE_HOP_FLAG_TS_DL_RX;
+	  timeval_cpy(&hop->hop_rtt, &new_rtt);
+	}
+      break;
     }
 
   return;
