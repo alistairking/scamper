@@ -308,8 +308,8 @@ static int trace_arg_param_validate(int optid, char *param, long long *out)
       break;
 
     case TRACE_OPT_WAITTIMEOUT:
-      if(timeval_fromstr(&tv, param, 1000000) != 0 || tv.tv_usec != 0 ||
-	 timeval_cmp_lt(&tv, 1, 0) || timeval_cmp_gt(&tv, 10, 0))
+      if(timeval_fromstr(&tv, param, 1000000) != 0 ||
+	 timeval_cmp_lt(&tv, 0, 200000) || timeval_cmp_gt(&tv, 10, 0))
 	goto err;
       tmp = (tv.tv_sec * 1000000) + tv.tv_usec;
       break;
