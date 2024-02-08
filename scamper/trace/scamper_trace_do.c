@@ -3075,9 +3075,16 @@ static void dlin_trace(scamper_trace_t *trace,
 
   for(hop=trace->hops[probe->ttl-1]; hop != NULL; hop = hop->hop_next)
     {
-      if(probe->attempt < hop->hop_probe_id) continue;
-      if(probe->attempt > hop->hop_probe_id) break;
+      if(probe->attempt > hop->hop_probe_id) continue;
+      if(probe->attempt <= hop->hop_probe_id) break;
+    }
 
+  /*
+   * only adjust the timestamp for the first response, packet matching
+   * issues for extra responses without further logic
+   */
+  if(probe->attempt == hop->probe_id)
+    {
       scamper_debug(__func__,
 		    "hop %ld.%06d dl_rec %ld.%06d diff %d",
 		    (long)hop->hop_rtt.tv_sec, (int)hop->hop_rtt.tv_usec,
