@@ -3095,18 +3095,18 @@ static void dlin_trace(scamper_trace_t *trace,
 static void dlout_apply(scamper_trace_hop_t *hop,
 			trace_probe_t *probe, struct timeval *diff)
 {
+  int us = (diff->tv_sec * 1000000) + diff->tv_usec;
   while(hop != NULL)
     {
-      if(probe->attempt > hop->hop_probe_id)
-	break;
-
       if(probe->attempt == hop->hop_probe_id)
 	{
 	  hop->hop_flags |= SCAMPER_TRACE_HOP_FLAG_TS_DL_TX;
 	  timeval_add_tv(&hop->hop_tx, diff);
-	  timeval_add_tv(&hop->hop_rtt, diff);
+	  if(timeval_cmp(&hop->hop_rtt, diff) >= 0)
+	    timeval_sub_us(&hop->hop_rtt, &hop->hop_rtt, us);
 	}
-
+      else if(probe->attempt < hop->hop_probe_id)
+	break;
       hop = hop->hop_next;
     }
 
