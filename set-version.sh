@@ -10,7 +10,7 @@ if [ "$#" -ne 1 ]; then
 fi
 
 VERSION=${1?}
-CHANGELOG=`mktemp --tmpdir set-version.XXX`
+CHANGELOG=`mktemp`
 
 sed -i "s/^AC_INIT(\[scamper\],\[.*\],\[mjl@luckie.org.nz\])$/AC_INIT(\[scamper\],\[${VERSION}\],\[mjl@luckie.org.nz\])/w ${CHANGELOG}" configure.ac
 if [ ! -s "${CHANGELOG}" ]; then
