@@ -171,7 +171,7 @@
 #define SCAMPER_DL_IS_ICMP_TIME_REPLY(dl) (		\
  (dl)->dl_net_type == SCAMPER_DL_REC_NET_TYPE_IP &&	\
  (dl)->dl_af == AF_INET && (dl)->dl_ip_proto == 1 &&	\
- (dl)->dl_icmp_icmp_type == 14)
+ (dl)->dl_icmp_type == 14)
 
 #define SCAMPER_DL_IS_ICMP_TTL_EXP(dl) ( \
  (dl)->dl_net_type == SCAMPER_DL_REC_NET_TYPE_IP && \
