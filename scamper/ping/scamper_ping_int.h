@@ -122,7 +122,8 @@ uint32_t scamper_ping_reply_total(const scamper_ping_t *ping);
  (SCAMPER_PING_METHOD_IS_TCP(ping) &&                 \
   SCAMPER_PING_REPLY_IS_TCP(reply)) ||                \
  (SCAMPER_PING_METHOD_IS_UDP(ping) &&                 \
-  SCAMPER_PING_REPLY_IS_ICMP_UNREACH_PORT(reply)))
+  (SCAMPER_PING_REPLY_IS_ICMP_UNREACH_PORT(reply) ||  \
+   SCAMPER_PING_REPLY_IS_UDP(reply))))
 
 struct scamper_ping_stats
 {
