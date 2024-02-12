@@ -1576,7 +1576,7 @@ scamper_task_t *scamper_do_ping_alloctask(void *data, scamper_list_t *list,
   else
     state->fdc = ping->probe_count;
   if((state->fds = malloc_zero(sizeof(scamper_fd_t *) * state->fdc)) == NULL ||
-     (state->fdc > 1 &&
+     (SCAMPER_PING_METHOD_IS_VARY_SPORT(ping) &&
       (state->sports = malloc_zero(sizeof(uint16_t) * state->fdc)) == NULL))
     goto err;
 
