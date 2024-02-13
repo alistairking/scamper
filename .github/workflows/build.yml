@@ -68,17 +68,20 @@ jobs:
       # NATIVE-COMPILATION (wish we could use earthly here)
       - name: macOS dependencies
         run: |
-          brew install autoconf automake libtool
+          brew install autoconf automake libtool gsed
       - name: Build macOS binary
         # TODO: figure out how to get earthly working in macos
         run: |
+          export PATH="/usr/local/opt/gnu-sed/libexec/gnubin:$PATH"
           git_hash=$(git rev-parse --short "$GITHUB_SHA")
-          ./set-version.sh "$(grep SCAMPER_VERSION scamper/scamper.h | cut -d \" -f 2)-${GITHUB_REF_NAME}.${git_hash}"
+          version="$(grep SCAMPER_VERSION scamper/scamper.h | cut -d \" -f 2)-${GITHUB_REF_NAME}.${git_hash}"
+          ./set-version.sh ${version}
           autoreconf -vfi
           ./configure
           make
           mkdir -p ./build/${{env.platform}}
           cp scamper/scamper ./build/${{env.platform}}
+          echo "Successfully built scamper version: $(./scamper/scamper -v)"
 
       # STORE BINARIES
       - name: Archive compiled binaries
