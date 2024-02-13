@@ -68,7 +68,7 @@ jobs:
       # NATIVE-COMPILATION (wish we could use earthly here)
       - name: macOS dependencies
         run: |
-          brew install autoconf automake libtool
+          brew install autoconf automake libtool gsed
       - name: Build macOS binary
         # TODO: figure out how to get earthly working in macos
         run: |
