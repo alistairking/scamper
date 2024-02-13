@@ -72,10 +72,10 @@ jobs:
       - name: Build macOS binary
         # TODO: figure out how to get earthly working in macos
         run: |
+          export PATH="/usr/local/opt/gnu-sed/libexec/gnubin:$PATH"
           git_hash=$(git rev-parse --short "$GITHUB_SHA")
           version="$(grep SCAMPER_VERSION scamper/scamper.h | cut -d \" -f 2)-${GITHUB_REF_NAME}.${git_hash}"
-          gsed -i "s/^AC_INIT(\[scamper\],\[.*\],\[mjl@luckie.org.nz\])$/AC_INIT(\[scamper\],\[${version}\],\[mjl@luckie.org.nz\])/" configure.ac
-          gsed -i "s/^#define SCAMPER_VERSION .*/#define SCAMPER_VERSION \"${version}\"/" scamper/scamper.h
+          ./set-version.sh ${version}
           autoreconf -vfi
           ./configure
           make
