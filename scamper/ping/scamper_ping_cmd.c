@@ -260,7 +260,8 @@ static int ping_arg_param_validate(int optid, char *param, long long *out)
 
     case PING_OPT_OPTION:
       if(strcasecmp(param, "spoof") != 0 && strcasecmp(param, "dl") != 0 &&
-	 strcasecmp(param, "tbt") != 0 && strcasecmp(param, "nosrc") != 0)
+	 strcasecmp(param, "tbt") != 0 && strcasecmp(param, "nosrc") != 0 &&
+	 strcasecmp(param, "raw") != 0)
 	goto err;
       break;
 
@@ -544,6 +545,8 @@ void *scamper_do_ping_alloc(char *str, uint32_t *id)
 	    flags |= SCAMPER_PING_FLAG_TBT;
 	  else if(strcasecmp(opt->str, "nosrc") == 0)
 	    flags |= SCAMPER_PING_FLAG_NOSRC;
+	  else if(strcasecmp(opt->str, "raw") == 0)
+	    flags |= SCAMPER_PING_FLAG_RAW;
 	  else
 	    {
 	      scamper_debug(__func__, "unknown option %s", opt->str);
@@ -863,6 +866,14 @@ void *scamper_do_ping_alloc(char *str, uint32_t *id)
   ping->reply_pmtu       = reply_pmtu;
   ping->userid           = *id = userid;
   ping->flags            = flags;
+
+  if((flags & SCAMPER_PING_FLAG_RAW) != 0 &&
+     (SCAMPER_ADDR_TYPE_IS_IPV4(ping->dst) == 0 ||
+      SCAMPER_PING_METHOD_IS_TCP(ping) == 0))
+    {
+      scamper_debug(__func__, "-O raw only works for IPv4 TCP methods");
+      goto err;
+    }
 
   if(SCAMPER_PING_METHOD_IS_TCP(ping))
     {
