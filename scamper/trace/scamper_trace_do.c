@@ -3075,18 +3075,25 @@ static void dlin_trace(scamper_trace_t *trace,
 
   for(hop=trace->hops[probe->ttl-1]; hop != NULL; hop = hop->hop_next)
     {
-      if(probe->attempt < hop->hop_probe_id) continue;
-      if(probe->attempt > hop->hop_probe_id) break;
+      if(probe->attempt > hop->hop_probe_id)
+	continue;
+      else if(probe->attempt == hop->hop_probe_id)
+	{
+	  /*
+	   * only adjust the timestamp for the first response, packet
+	   * matching issues for extra responses without further logic
+	   */
+	  scamper_debug(__func__,
+			"hop %ld.%06d dl_rec %ld.%06d diff %d",
+			(long)hop->hop_rtt.tv_sec, (int)hop->hop_rtt.tv_usec,
+			(long)new_rtt.tv_sec, (int)new_rtt.tv_usec,
+			timeval_diff_us(&new_rtt, &hop->hop_rtt));
 
-      scamper_debug(__func__,
-		    "hop %ld.%06d dl_rec %ld.%06d diff %d",
-		    (long)hop->hop_rtt.tv_sec, (int)hop->hop_rtt.tv_usec,
-		    (long)new_rtt.tv_sec, (int)new_rtt.tv_usec,
-		    timeval_diff_us(&new_rtt, &hop->hop_rtt));
-
-      hop->hop_flags &= ~(SCAMPER_TRACE_HOP_FLAG_TS_SOCK_RX);
-      hop->hop_flags |= SCAMPER_TRACE_HOP_FLAG_TS_DL_RX;
-      timeval_cpy(&hop->hop_rtt, &new_rtt);
+	  hop->hop_flags &= ~(SCAMPER_TRACE_HOP_FLAG_TS_SOCK_RX);
+	  hop->hop_flags |= SCAMPER_TRACE_HOP_FLAG_TS_DL_RX;
+	  timeval_cpy(&hop->hop_rtt, &new_rtt);
+	}
+      break;
     }
 
   return;
@@ -3095,18 +3102,18 @@ static void dlin_trace(scamper_trace_t *trace,
 static void dlout_apply(scamper_trace_hop_t *hop,
 			trace_probe_t *probe, struct timeval *diff)
 {
+  int us = (diff->tv_sec * 1000000) + diff->tv_usec;
   while(hop != NULL)
     {
-      if(probe->attempt > hop->hop_probe_id)
-	break;
-
       if(probe->attempt == hop->hop_probe_id)
 	{
 	  hop->hop_flags |= SCAMPER_TRACE_HOP_FLAG_TS_DL_TX;
 	  timeval_add_tv(&hop->hop_tx, diff);
-	  timeval_add_tv(&hop->hop_rtt, diff);
+	  if(timeval_cmp(&hop->hop_rtt, diff) >= 0)
+	    timeval_sub_us(&hop->hop_rtt, &hop->hop_rtt, us);
 	}
-
+      else if(probe->attempt < hop->hop_probe_id)
+	break;
       hop = hop->hop_next;
     }
 
@@ -3234,7 +3241,8 @@ static void do_trace_handle_dl(scamper_task_t *task, scamper_dl_rec_t *dl)
 	   * is for the last sent probe.
 	   */
 	  if(dl->dl_udp_sport == trace->sport &&
-	     scamper_addr_raw_cmp(trace->dst, dl->dl_ip_dst) == 0)
+	     scamper_addr_raw_cmp(trace->dst, dl->dl_ip_dst) == 0 &&
+	     scamper_addr_raw_cmp(trace->src, dl->dl_ip_src) == 0)
 	    {
 	      /* this is an outbound packet */
 	      direction = 1;
@@ -3250,7 +3258,8 @@ static void do_trace_handle_dl(scamper_task_t *task, scamper_dl_rec_t *dl)
 		return;
 	    }
 	  else if(dl->dl_udp_dport == trace->sport &&
-		  scamper_addr_raw_cmp(trace->dst, dl->dl_ip_src) == 0)
+		  scamper_addr_raw_cmp(trace->dst, dl->dl_ip_src) == 0 &&
+		  scamper_addr_raw_cmp(trace->src, dl->dl_ip_dst) == 0)
 	    {
 	      /* this is an inbound packet */
 	      direction = 0;
@@ -3274,6 +3283,7 @@ static void do_trace_handle_dl(scamper_task_t *task, scamper_dl_rec_t *dl)
 	  if(dl->dl_icmp_udp_sport != trace->sport)
 	    return;
 
+	  /* this is an inbound packet */
 	  direction = 0;
 
 	  if(trace->type == SCAMPER_TRACE_TYPE_UDP)
@@ -3320,17 +3330,17 @@ static void do_trace_handle_dl(scamper_task_t *task, scamper_dl_rec_t *dl)
 
       if(SCAMPER_DL_IS_ICMP_ECHO_REQUEST(dl))
 	{
+	  /* this is an outbound packet */
 	  if(dl->dl_icmp_id != trace->sport)
 	    return;
-
 	  probe_id = dl->dl_icmp_seq;
 	  direction = 1;
 	}
       else if(SCAMPER_DL_IS_ICMP_ECHO_REPLY(dl))
 	{
+	  /* this is an inbound packet */
 	  if(dl->dl_icmp_id != trace->sport)
 	    return;
-
 	  probe_id = dl->dl_icmp_seq;
 	  direction = 0;
 	}
@@ -3339,9 +3349,9 @@ static void do_trace_handle_dl(scamper_task_t *task, scamper_dl_rec_t *dl)
 	       SCAMPER_DL_IS_ICMP_PACKET_TOO_BIG(dl)) &&
 	      SCAMPER_DL_IS_ICMP_Q_ICMP_ECHO_REQ(dl))
 	{
+	  /* this is an inbound packet */
 	  if(dl->dl_icmp_icmp_id != trace->sport)
 	    return;
-
 	  probe_id = dl->dl_icmp_icmp_seq;
 	  direction = 0;
 	}
@@ -3352,30 +3362,38 @@ static void do_trace_handle_dl(scamper_task_t *task, scamper_dl_rec_t *dl)
       if(dl->dl_ip_proto == IPPROTO_TCP)
 	{
 	  /*
-	   * if the syn flag (and only the syn flag is set) and the sport
-	   * and dport match what we probe with, then the probe is probably
-	   * an outgoing one.
+	   * if the sport and dport match what we probe with, then the
+	   * probe is probably an outgoing one.  also check flags field
+	   * is consistent with the probe method
 	   */
-	  if((dl->dl_tcp_flags & TH_SYN)  == TH_SYN &&
-	     (dl->dl_tcp_flags & ~TH_SYN) == 0 &&
-	     dl->dl_tcp_sport == trace->sport)
+	  if(dl->dl_tcp_sport == trace->sport &&
+	     dl->dl_tcp_dport == trace->dport &&
+	     scamper_addr_raw_cmp(trace->dst, dl->dl_ip_dst) == 0 &&
+	     scamper_addr_raw_cmp(trace->src, dl->dl_ip_src) == 0 &&
+	     ((trace->type == SCAMPER_TRACE_TYPE_TCP &&
+	       dl->dl_tcp_flags == TH_SYN) ||
+	      (trace->type == SCAMPER_TRACE_TYPE_TCP_ACK &&
+	       dl->dl_tcp_flags == TH_ACK)))
 	    {
+	      /* this is an outbound packet */
+	      direction = 1;
 	      if(dl->dl_af == AF_INET)
 		probe_id = dl->dl_ip_id - 1;
 	      else
 		probe_id = dl->dl_ip_flow - 1;
-
-	      direction = 1;
 	    }
 	  else if(dl->dl_tcp_sport == trace->dport &&
-		  dl->dl_tcp_dport == trace->sport)
+		  dl->dl_tcp_dport == trace->sport &&
+		  scamper_addr_raw_cmp(trace->dst, dl->dl_ip_src) == 0 &&
+		  scamper_addr_raw_cmp(trace->src, dl->dl_ip_dst) == 0)
 	    {
 	      /*
+	       * this is an inbound packet.
 	       * there is no easy way to determine which probe the reply is
 	       * for, so assume it was for the last one
 	       */
-	      probe_id = state->id_next - 1;
 	      direction = 0;
+	      probe_id = state->id_next - 1;
 	    }
 	  else return;
 	}
@@ -3407,6 +3425,7 @@ static void do_trace_handle_dl(scamper_task_t *task, scamper_dl_rec_t *dl)
 	      probe_id = dl->dl_icmp_ip_flow - 1;
 	    }
 
+	  /* this is an inbound packet */
 	  direction = 0;
 	}
       else return;
@@ -3815,9 +3834,9 @@ static int trace_state_alloc(scamper_task_t *task)
       if(state->icmp == NULL)
 	goto err;
 
-      if(scamper_option_rawtcp() != 0 &&
-	 SCAMPER_TRACE_TYPE_IS_TCP(trace) &&
+      if(SCAMPER_TRACE_TYPE_IS_TCP(trace) &&
 	 SCAMPER_ADDR_TYPE_IS_IPV4(trace->dst) &&
+	 (trace->flags & SCAMPER_TRACE_FLAG_RAW) != 0 &&
 	 (state->raw = scamper_fd_ip4()) == NULL)
 	goto err;
     }

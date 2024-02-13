@@ -59,7 +59,7 @@ static char *ping_header(const scamper_ping_t *ping)
 {
   static const char *flags[] = {
     "v4rr", "spoof", "payload", "tsonly", "tsandaddr", "icmpsum", "dl", "tbt",
-    "nosrc"
+    "nosrc", "raw"
   };
   char buf[1024], tmp[512];
   size_t off = 0;
@@ -117,7 +117,7 @@ static char *ping_header(const scamper_ping_t *ping)
     {
       c = 0;
       string_concat(buf, sizeof(buf), &off, ", \"flags\":[");
-      for(u8=0; u8<9; u8++)
+      for(u8=0; u8<10; u8++)
 	{
 	  if((ping->flags & (0x1 << u8)) == 0)
 	    continue;
@@ -171,7 +171,7 @@ static char *ping_reply(const scamper_ping_t *ping,
   struct timeval tv;
   char buf[512], tmp[64], *pt = "bug";
   uint8_t i;
-  size_t off = 0;
+  size_t off = 0, off2;
 
   string_concat(buf, sizeof(buf), &off,	"{\"from\":\"%s\", \"seq\":%u",
 		scamper_addr_tostr(reply->addr, tmp, sizeof(tmp)),
@@ -180,6 +180,18 @@ static char *ping_reply(const scamper_ping_t *ping,
 		reply->reply_size, reply->reply_ttl);
   string_concat(buf, sizeof(buf), &off, ", \"reply_proto\":%s",
 		ping_reply_proto(reply, tmp, sizeof(tmp)));
+
+  if(reply->flags != 0)
+    {
+      tmp[0] = '\0'; off2 = 0;
+      if(reply->flags & SCAMPER_PING_REPLY_FLAG_PROBE_DLTX)
+	string_concat(tmp, sizeof(tmp), &off2, "\"dltxts\"");
+      if(reply->flags & SCAMPER_PING_REPLY_FLAG_PROBE_DLRX)
+	string_concat(tmp, sizeof(tmp), &off2, "%s\"dlrxts\"",
+		      off2 != 0 ? ", " : "");
+      if(off2 != 0)
+	string_concat(buf, sizeof(buf), &off, ", \"reply_flags\":[%s]", tmp);
+    }
 
   if(reply->tx.tv_sec != 0)
     {
@@ -200,7 +212,7 @@ static char *ping_reply(const scamper_ping_t *ping,
 	pt = "tcp";
       string_concat(buf, sizeof(buf), &off,
 		    ", \"%s_sport\":%u, \"%s_dport\":%u",
-		    pt, reply->probe_sport,
+		    pt, ping->probe_sport + reply->probe_id,
 		    pt, ping->probe_dport);
     }
   else if(SCAMPER_PING_METHOD_IS_VARY_DPORT(ping))

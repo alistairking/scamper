@@ -153,7 +153,7 @@ scamper_icmpext_t *scamper_trace_hop_icmpext_get(const scamper_trace_hop_t *hop)
 #define SCAMPER_TRACE_FLAG_CONSTPAYLOAD 0x40 /* do not hack payload for csum */
 #define SCAMPER_TRACE_FLAG_RXERR        0x80 /* used rxerr socket */
 #define SCAMPER_TRACE_FLAG_PTR          0x100 /* do ptr lookups */
-#define SCAMPER_TRACE_FLAG_RANDOM_SPORT 0x200 /* use a random source port */
+#define SCAMPER_TRACE_FLAG_RAW          0x200 /* use raw socket */
 
 #define SCAMPER_TRACE_TYPE_ICMP_ECHO       0x01 /* ICMP echo requests */
 #define SCAMPER_TRACE_TYPE_UDP             0x02 /* UDP to unused ports */
