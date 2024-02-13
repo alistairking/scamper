@@ -77,8 +77,8 @@ docker:
         ENTRYPOINT ["/usr/local/bin/scamper"]
         ARG EARTHLY_TARGET_TAG_DOCKER
         ARG EARTHLY_GIT_SHORT_HASH
-        ARG org="alistairking"
-        ARG img="${org}/scamper"
+        ARG EARTHLY_GIT_PROJECT_NAME
+        ARG img=${EARTHLY_GIT_PROJECT_NAME}
         IF [ "${EARTHLY_TARGET_TAG_DOCKER}" = "master" ]
            ARG latest="${img}:latest"
            IF [ "${base}" != "debian" ]
