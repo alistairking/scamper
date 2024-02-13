@@ -43,6 +43,7 @@ build:
         RUN autoreconf -vfi
         RUN ./configure
         RUN make
+        RUN echo "Successfully built scamper version: $(./scamper/scamper -v)"
         ARG TARGETPLATFORM
         SAVE ARTIFACT scamper/scamper ${base}/${TARGETPLATFORM}/scamper \
              AS LOCAL ./build/${base}/${TARGETPLATFORM}/scamper

@@ -81,6 +81,7 @@ jobs:
           make
           mkdir -p ./build/${{env.platform}}
           cp scamper/scamper ./build/${{env.platform}}
+          echo "Successfully built scamper version: $(./scamper/scamper -v)"
 
       # STORE BINARIES
       - name: Archive compiled binaries
