@@ -33,13 +33,13 @@ deps-alpine:
 # TODO: figure out how to get this to cache properly
 build:
         ARG base=debian
-        ARG EARTHLY_GIT_BRANCH
+        ARG EARTHLY_TARGET_TAG
         ARG EARTHLY_GIT_SHORT_HASH
         FROM +deps-${base}
         COPY --dir --keep-ts \
              *.[ch] lib scamper tests utils configure.ac Makefile.am m4 set-version.sh \
              ./
-        RUN ./set-version.sh "$(grep SCAMPER_VERSION scamper/scamper.h | cut -d \" -f 2)-${EARTHLY_GIT_BRANCH}.${EARTHLY_GIT_SHORT_HASH}"
+        RUN ./set-version.sh "$(grep SCAMPER_VERSION scamper/scamper.h | cut -d \" -f 2)-${EARTHLY_TARGET_TAG}.${EARTHLY_GIT_SHORT_HASH}"
         RUN autoreconf -vfi
         RUN ./configure
         RUN make
