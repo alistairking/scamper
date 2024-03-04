@@ -1,7 +1,7 @@
 /*
  * internal.h
  *
- * $Id: internal.h,v 1.61 2023/08/20 08:05:18 mjl Exp $
+ * $Id: internal.h,v 1.62 2024/02/28 02:11:53 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -178,7 +178,12 @@ typedef unsigned short sa_family_t;
 #endif
 
 #if defined(__linux__)
+#ifdef HAVE_LINUX_IF_PACKET_H
+#include <linux/if_packet.h>
+#include <sys/mman.h>
+#else
 #include <netpacket/packet.h>
+#endif
 #include <net/ethernet.h>
 #include <net/if_arp.h>
 #include <linux/types.h>

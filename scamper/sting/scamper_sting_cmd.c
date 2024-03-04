@@ -1,11 +1,12 @@
 /*
  * scamper_sting_cmd.c
  *
- * $Id: scamper_sting_cmd.c,v 1.4 2023/12/30 19:11:52 mjl Exp $
+ * $Id: scamper_sting_cmd.c,v 1.6 2024/02/15 00:59:09 mjl Exp $
  *
  * Copyright (C) 2008-2011 The University of Waikato
  * Copyright (C) 2012      The Regents of the University of California
  * Copyright (C) 2022-2023 Matthew Luckie
+ * Copyright (C) 2024      The Regents of the University of California
  * Author: Matthew Luckie
  *
  * This file implements algorithms described in the sting-0.7 source code,
@@ -41,8 +42,8 @@
 #include "scamper_list.h"
 #include "scamper_sting.h"
 #include "scamper_sting_int.h"
+#include "scamper_sting_cmd.h"
 #include "scamper_options.h"
-#include "scamper_debug.h"
 #include "utils.h"
 
 /*
@@ -51,57 +52,43 @@
  *   note that this value is different to the hard-coded sting-0.7 default
  *   of 100.
  */
-#define SCAMPER_DO_STING_COUNT_MIN 2
 #define SCAMPER_DO_STING_COUNT_DEF 48
-#define SCAMPER_DO_STING_COUNT_MAX 65535
 
 /*
  * mean rate at which to send packets in data phase:
  *   100ms is the hard-coded number in sting-0.7
  */
-#define SCAMPER_DO_STING_MEAN_MIN  1
 #define SCAMPER_DO_STING_MEAN_DEF  100
-#define SCAMPER_DO_STING_MEAN_MAX  1000
 
 /*
  * inter-phase delay between data seeding and hole filling.
  *   2000ms is the hard-coded number in sting-0.7
  */
-#define SCAMPER_DO_STING_INTER_MIN  1
 #define SCAMPER_DO_STING_INTER_DEF  2000
-#define SCAMPER_DO_STING_INTER_MAX  10000
 
 /*
  * distribution to apply when determining when to send the next packet
  *  3 corresponds to uniform distribution
  */
-#define SCAMPER_DO_STING_DIST_MIN  1
 #define SCAMPER_DO_STING_DIST_DEF  3
-#define SCAMPER_DO_STING_DIST_MAX  3
 
 /*
  * how many times to retransmit a syn packet before deciding the host is down
  *  3 is the hard-coded number in sting-0.7
  */
-#define SCAMPER_DO_STING_SYNRETX_MIN 0
 #define SCAMPER_DO_STING_SYNRETX_DEF 3
-#define SCAMPER_DO_STING_SYNRETX_MAX 5
 
 /*
  * number of times to retransmit data packets
  *  5 is the default number in sting-0.7
  */
-#define SCAMPER_DO_STING_DATARETX_MIN 0
 #define SCAMPER_DO_STING_DATARETX_DEF 5
-#define SCAMPER_DO_STING_DATARETX_MAX 10
 
 /*
  * size of the first hole in the sequence number space
  *  3 is the default number in sting-0.7
  */
-#define SCAMPER_DO_STING_SEQSKIP_MIN 1
 #define SCAMPER_DO_STING_SEQSKIP_DEF 3
-#define SCAMPER_DO_STING_SEQSKIP_MAX 255
 
 /* address cache used to avoid reallocating the same address multiple times */
 extern scamper_addrcache_t *addrcache;
@@ -129,6 +116,26 @@ static const scamper_option_in_t opts[] = {
 };
 static const int opts_cnt = SCAMPER_OPTION_COUNT(opts);
 
+typedef struct opt_limit
+{
+  char      *name;
+  long long  min;
+  long long  max;
+} opt_limit_t;
+
+static const opt_limit_t limits[] = {
+  {NULL, 0, 0}, /* zero unused */
+  {"count", 2, 65535},
+  {"dport", 1, 65535},
+  {"dist", 1, 3},
+  {NULL, 0, 0}, /* -h req */
+  {"hole", 1, 255},
+  {"inter-phase-delay", 1, 10000},
+  {"mean", 1, 1000},
+  {"sport", 1, 65535},
+  {"userid", 0, UINT32_MAX},
+};
+
 /*
  * this is the default request used when none is specified.  it is the same
  * default request found in sting-0.7, except it uses <CR><LF> not
@@ -147,74 +154,87 @@ const char *scamper_do_sting_usage(void)
          "      [-H hole] [-i inter] [-m mean] [-s sport] [-U userid]";
 }
 
-static int sting_arg_param_validate(int optid, char *param, long long *out)
+static int sting_arg_param_validate(int optid, char *param, long long *out,
+				    char *errbuf, size_t errlen)
 {
   struct timeval tv;
-  long tmp;
+  long long tmp = 0;
+
+#ifndef NDEBUG
+  errbuf[0] = '\0';
+#endif
 
   switch(optid)
     {
     case STING_OPT_COUNT:
-      if(string_tolong(param, &tmp) != 0 ||
-	 tmp < SCAMPER_DO_STING_COUNT_MIN ||
-	 tmp > SCAMPER_DO_STING_COUNT_MAX)
+    case STING_OPT_SPORT:
+    case STING_OPT_DPORT:
+    case STING_OPT_DIST:
+    case STING_OPT_HOLE:
+    case STING_OPT_USERID:
+      if(string_tollong(param, &tmp, NULL, 0) != 0 ||
+	 tmp < limits[optid].min || tmp > limits[optid].max)
 	{
+	  snprintf(errbuf, errlen, "%s must be within %lld - %lld",
+		   limits[optid].name, limits[optid].min, limits[optid].max);
 	  goto err;
 	}
       break;
 
-    case STING_OPT_SPORT:
-    case STING_OPT_DPORT:
-      if(string_tolong(param, &tmp) != 0 || tmp < 0 || tmp > 65535)
-	goto err;
-      break;
-
-    case STING_OPT_DIST:
-      if(string_tolong(param, &tmp) != 0 ||
-	 tmp < SCAMPER_DO_STING_DIST_MIN ||
-	 tmp > SCAMPER_DO_STING_DIST_MAX)
-	goto err;
-      break;
-
     case STING_OPT_REQ:
-      return -1;
+      snprintf(errbuf, errlen, "request not implemented");
+      goto err;
 
     case STING_OPT_MEAN:
-      if(timeval_fromstr(&tv, param, 1000) != 0 || (tv.tv_usec % 1000) != 0 ||
-	 timeval_cmp_lt(&tv, 0, 1000) || timeval_cmp_gt(&tv, 1, 0))
-	goto err;
+      if(timeval_fromstr(&tv, param, 1000) != 0)
+	{
+	  snprintf(errbuf, errlen, "malformed mean delay");
+	  goto err;
+	}
+      if((tv.tv_usec % 1000) != 0)
+	{
+	  snprintf(errbuf, errlen, "mean delay granularity limited to 1ms");
+	  goto err;
+	}
+      if(timeval_cmp_lt(&tv, 0, 1000) || timeval_cmp_gt(&tv, 1, 0))
+	{
+	  snprintf(errbuf, errlen, "mean delay must be within 1ms - 1s");
+	  goto err;
+	}
       tmp = (tv.tv_sec * 1000000) + tv.tv_usec;
-      break;
-
-    case STING_OPT_HOLE:
-      if(string_tolong(param, &tmp) != 0 ||
-	 tmp < SCAMPER_DO_STING_SEQSKIP_MIN ||
-	 tmp > SCAMPER_DO_STING_SEQSKIP_MAX)
-	goto err;
       break;
 
     case STING_OPT_INTER:
-      if(timeval_fromstr(&tv, param, 1000) != 0 || (tv.tv_usec % 1000) != 0 ||
-	 timeval_cmp_lt(&tv, 0, 1000) || timeval_cmp_gt(&tv, 10, 0))
-	goto err;
+      if(timeval_fromstr(&tv, param, 1000) != 0)
+	{
+	  snprintf(errbuf, errlen, "malformed inter-phase delay");
+	  goto err;
+	}
+      if((tv.tv_usec % 1000) != 0)
+	{
+	  snprintf(errbuf, errlen, "inter-phase delay granularity limited to 1ms");
+	  goto err;
+	}
+      if(timeval_cmp_lt(&tv, 0, 1000) || timeval_cmp_gt(&tv, 10, 0))
+	{
+	  snprintf(errbuf, errlen, "inter-phase delay must be within 1ms - 10s");
+	  goto err;
+	}
       tmp = (tv.tv_sec * 1000000) + tv.tv_usec;
       break;
 
-    case STING_OPT_USERID:
-      if(string_tolong(param, &tmp) != 0 || tmp < 0)
-	goto err;
-      break;
-
     default:
-      return -1;
+      goto err;
     }
 
   /* valid parameter */
+  assert(errbuf[0] == '\0');
   if(out != NULL)
-    *out = (long long)tmp;
+    *out = tmp;
   return 0;
 
  err:
+  assert(errbuf[0] != '\0');
   return -1;
 }
 
@@ -225,7 +245,7 @@ static int sting_arg_param_validate(int optid, char *param, long long *out)
  * assemble a sting.  return the sting structure so that it is all ready to
  * go.
  */
-void *scamper_do_sting_alloc(char *str)
+void *scamper_do_sting_alloc(char *str, char *errbuf, size_t errlen)
 {
   uint16_t sport    = scamper_sport_default();
   uint16_t dport    = 80;
@@ -240,6 +260,11 @@ void *scamper_do_sting_alloc(char *str)
   scamper_sting_t *sting = NULL;
   char *addr;
   long long tmp = 0;
+  char buf[256];
+
+#ifndef NDEBUG
+  errbuf[0] = '\0';
+#endif
 
   mean.tv_sec = 0;
   mean.tv_usec = 100000;
@@ -249,14 +274,14 @@ void *scamper_do_sting_alloc(char *str)
   /* try and parse the string passed in */
   if(scamper_options_parse(str, opts, opts_cnt, &opts_out, &addr) != 0)
     {
-      scamper_debug(__func__, "could not parse options");
+      snprintf(errbuf, errlen, "could not parse sting command");
       goto err;
     }
 
   /* if there is no IP address after the options string, then stop now */
   if(addr == NULL)
     {
-      scamper_debug(__func__, "no address parameter");
+      snprintf(errbuf, errlen, "expected address to sting");
       goto err;
     }
 
@@ -264,9 +289,12 @@ void *scamper_do_sting_alloc(char *str)
   for(opt = opts_out; opt != NULL; opt = opt->next)
     {
       if(opt->type != SCAMPER_OPTION_TYPE_NULL &&
-	 sting_arg_param_validate(opt->id, opt->str, &tmp) != 0)
+	 sting_arg_param_validate(opt->id, opt->str, &tmp,
+				  buf, sizeof(buf)) != 0)
 	{
-	  scamper_debug(__func__, "validation of optid %d failed", opt->id);
+	  snprintf(errbuf, errlen, "-%c %s failed: %s",
+		   scamper_options_id2c(opts, opts_cnt, opt->id),
+		   opt->str, buf);
 	  goto err;
 	}
 
@@ -305,18 +333,21 @@ void *scamper_do_sting_alloc(char *str)
 	case STING_OPT_USERID:
 	  userid = (uint32_t)tmp;
 	  break;
+
+	default:
+	  goto err;
 	}
     }
   scamper_options_free(opts_out); opts_out = NULL;
 
   if((sting = scamper_sting_alloc()) == NULL)
     {
-      printerror(__func__, "could not alloc sting");
+      snprintf(errbuf, errlen, "could not alloc sting");
       goto err;
     }
   if((sting->dst=scamper_addrcache_resolve(addrcache,AF_UNSPEC,addr)) == NULL)
     {
-      printerror(__func__, "could not resolve %s", addr);
+      snprintf(errbuf, errlen, "invalid destination address");
       goto err;
     }
 
@@ -335,12 +366,15 @@ void *scamper_do_sting_alloc(char *str)
   if(scamper_sting_data_set(sting, (const uint8_t *)defaultrequest,
 			    seqskip + count) != 0)
     {
+      snprintf(errbuf, errlen, "could not set default request");
       goto err;
     }
 
+  assert(errbuf[0] == '\0');
   return sting;
 
  err:
+  assert(errbuf[0] != '\0');
   if(sting != NULL) scamper_sting_free(sting);
   if(opts_out != NULL) scamper_options_free(opts_out);
   return NULL;
@@ -351,8 +385,9 @@ void *scamper_do_sting_alloc(char *str)
  *
  *
  */
-int scamper_do_sting_arg_validate(int argc, char *argv[], int *stop)
+int scamper_do_sting_arg_validate(int argc, char *argv[], int *stop,
+				  char *errbuf, size_t errlen)
 {
   return scamper_options_validate(opts, opts_cnt, argc, argv, stop,
-				  sting_arg_param_validate);
+				  errbuf, errlen, sting_arg_param_validate);
 }

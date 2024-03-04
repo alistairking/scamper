@@ -1,7 +1,7 @@
 /*
  * utils.h
  *
- * $Id: utils.h,v 1.151 2023/12/30 19:11:52 mjl Exp $
+ * $Id: utils.h,v 1.155 2024/02/20 21:02:50 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -88,6 +88,8 @@ void timeval_add_tv3(struct timeval *out, const struct timeval *in,
 		     const struct timeval *add)
   ATTRIBUTE_NONNULL;
 void timeval_add_s(struct timeval *out, const struct timeval *in, int s)
+  ATTRIBUTE_NONNULL;
+void timeval_sub_tv(struct timeval *out, const struct timeval *sub)
   ATTRIBUTE_NONNULL;
 void timeval_sub_us(struct timeval *out, const struct timeval *in, int us)
   ATTRIBUTE_NONNULL;
@@ -207,6 +209,21 @@ char *sockaddr_tostr(const struct sockaddr *sa, char *buf, size_t len)
 int fcntl_set(int fd, int flags);
 int fcntl_unset(int fd, int flags);
 
+/* get the source port that a socket is bound to */
+#ifndef _WIN32 /* SOCKET vs int on windows */
+int socket_sport(int fd, uint16_t *sport) ATTRIBUTE_NONNULL;
+#else
+int socket_sport(SOCKET fd, uint16_t *sport) ATTRIBUTE_NONNULL;
+#endif
+
+/* format a string with strerror appended */
+#ifdef HAVE_FUNC_ATTRIBUTE_FORMAT
+char *strerror_wrap(char *errbuf, size_t errlen, const char *format, ...)
+  __attribute__((format(printf, 3, 4)));
+#else
+char *strerror_wrap(char *errbuf, size_t errlen, const char *format, ...);
+#endif
+
 /*
  * Functions for parsing strings
  */
@@ -219,6 +236,7 @@ int   string_isnumber(const char *str) ATTRIBUTE_NONNULL_PURE;
 int   string_isdigit(const char *str) ATTRIBUTE_NONNULL_PURE;
 int   string_isalnum(const char *str) ATTRIBUTE_NONNULL_PURE;
 int   string_isfloat(const char *str) ATTRIBUTE_NONNULL_PURE;
+int   string_ishex(const char *str) ATTRIBUTE_NONNULL_PURE;
 char *string_toupper(char *buf, size_t len, const char *in) ATTRIBUTE_NONNULL;
 char *string_tolower(char *buf, size_t len, const char *in) ATTRIBUTE_NONNULL;
 int   string_tolong(const char *str, long *l) ATTRIBUTE_NONNULL;

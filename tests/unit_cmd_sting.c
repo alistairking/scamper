@@ -1,7 +1,7 @@
 /*
  * unit_cmd_sting : unit tests for sting commands
  *
- * $Id: unit_cmd_sting.c,v 1.3 2024/01/16 06:30:28 mjl Exp $
+ * $Id: unit_cmd_sting.c,v 1.4 2024/02/13 04:59:48 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -89,7 +89,7 @@ static int defaults(const scamper_sting_t *in)
 static int check(const char *cmd, int (*func)(const scamper_sting_t *in))
 {
   scamper_sting_t *sting;
-  char *dup;
+  char *dup, errbuf[256];
   int rc;
 
 #ifdef DMALLOC
@@ -102,7 +102,7 @@ static int check(const char *cmd, int (*func)(const scamper_sting_t *in))
 
   if((dup = strdup(cmd)) == NULL)
     return -1;
-  sting = scamper_do_sting_alloc(dup);
+  sting = scamper_do_sting_alloc(dup, errbuf, sizeof(errbuf));
   free(dup);
   if((rc = func(sting)) != 0)
     printf("fail: %s\n", cmd);

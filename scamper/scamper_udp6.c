@@ -1,11 +1,12 @@
 /*
  * scamper_udp6.c
  *
- * $Id: scamper_udp6.c,v 1.71 2023/08/20 02:03:17 mjl Exp $
+ * $Id: scamper_udp6.c,v 1.73 2024/02/21 04:58:05 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2010 The University of Waikato
  * Copyright (C) 2020-2023 Matthew Luckie
+ * Copyright (C) 2024      The Regents of the University of California
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -36,6 +37,7 @@
 #include "scamper_ip6.h"
 #include "scamper_udp6.h"
 #include "scamper_icmp_resp.h"
+#include "scamper_udp_resp.h"
 #include "scamper_fds.h"
 
 #include "scamper_debug.h"
@@ -209,6 +211,65 @@ int scamper_udp6_probe(scamper_probe_t *probe)
   return -1;
 }
 
+#ifndef _WIN32 /* SOCKET vs int on windows */
+void scamper_udp6_read_cb(int fd, void *param)
+#else
+void scamper_udp6_read_cb(SOCKET fd, void *param)
+#endif
+{
+  scamper_udp_resp_t ur;
+  struct sockaddr_in6 from;
+  uint8_t buf[8192], ctrlbuf[256];
+  struct msghdr msg;
+  struct cmsghdr *cmsg;
+  struct iovec iov;
+  ssize_t rrc;
+
+  memset(&iov, 0, sizeof(iov));
+  iov.iov_base = (caddr_t)buf;
+  iov.iov_len  = sizeof(buf);
+
+  msg.msg_name       = (caddr_t)&from;
+  msg.msg_namelen    = sizeof(from);
+  msg.msg_iov        = &iov;
+  msg.msg_iovlen     = 1;
+  msg.msg_control    = (caddr_t)ctrlbuf;
+  msg.msg_controllen = sizeof(ctrlbuf);
+
+  if((rrc = recvmsg(fd, &msg, 0)) <= 0)
+    return;
+
+  memset(&ur, 0, sizeof(ur));
+  ur.ttl = -1;
+
+  if(msg.msg_controllen >= sizeof(struct cmsghdr))
+    {
+      cmsg = (struct cmsghdr *)CMSG_FIRSTHDR(&msg);
+      while(cmsg != NULL)
+	{
+	  if(cmsg->cmsg_level == SOL_SOCKET && cmsg->cmsg_type == SCM_TIMESTAMP)
+	    timeval_cpy(&ur.rx, (struct timeval *)CMSG_DATA(cmsg));
+#if defined(IPV6_HOPLIMIT)
+	  else if(cmsg->cmsg_level == IPPROTO_IPV6 &&
+		  cmsg->cmsg_type == IPV6_HOPLIMIT)
+	    ur.ttl = *((uint8_t *)CMSG_DATA(cmsg));
+#endif
+	  cmsg = (struct cmsghdr *)CMSG_NXTHDR(&msg, cmsg);
+	}
+    }
+
+  ur.af = AF_INET6;
+  ur.addr = &from.sin6_addr;
+  ur.sport = ntohs(from.sin6_port);
+  ur.data = buf;
+  ur.datalen = rrc;
+  ur.fd = fd;
+
+  scamper_task_handleudp(&ur);
+
+  return;
+}
+
 #if defined(IPV6_RECVERR) && !defined(_WIN32)
 static int scamper_udp6_read_err(int fd, scamper_icmp_resp_t *resp)
 {
@@ -323,6 +384,8 @@ SOCKET scamper_udp6_open(const void *addr, int sport)
   struct sockaddr_in6 sin6;
   char buf[128];
   int opt;
+  void *optr = (void *)&opt;
+  size_t olen = sizeof(opt);
 
 #ifndef _WIN32 /* SOCKET vs int on windows */
   int fd = -1;
@@ -339,7 +402,7 @@ SOCKET scamper_udp6_open(const void *addr, int sport)
 
 #ifdef IPV6_V6ONLY
   opt = 1;
-  if(setsockopt(fd,IPPROTO_IPV6,IPV6_V6ONLY, (void *)&opt,sizeof(opt)) == -1)
+  if(setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY, optr, olen) == -1)
     {
       printerror(__func__, "could not set IPV6_V6ONLY");
       goto err;
@@ -365,12 +428,27 @@ SOCKET scamper_udp6_open(const void *addr, int sport)
 
 #if defined(IPV6_DONTFRAG)
   opt = 1;
-  if(setsockopt(fd, IPPROTO_IPV6, IPV6_DONTFRAG,
-		(void *)&opt, sizeof(opt)) == -1)
+  if(setsockopt(fd, IPPROTO_IPV6, IPV6_DONTFRAG, optr, olen) == -1)
     {
       printerror(__func__, "could not set IPV6_DONTFRAG");
       goto err;
     }
+#endif
+
+#if defined(IPV6_RECVHOPLIMIT)
+  opt = 1;
+  if(setsockopt(fd, IPPROTO_IPV6, IPV6_RECVHOPLIMIT, optr, olen) != 0)
+    printerror(__func__, "could not set IPV6_RECVHOPLIMIT");
+#elif defined(IPV6_HOPLIMIT)
+  opt = 1;
+  if(setsockopt(fd, IPPROTO_IPV6, IPV6_HOPLIMIT, optr, olen) != 0)
+    printerror(__func__, "could not set IPV6_HOPLIMIT");
+#endif
+
+#if defined(SO_TIMESTAMP)
+  opt = 1;
+  if(setsockopt(fd, SOL_SOCKET, SO_TIMESTAMP, optr, olen) != 0)
+    printerror(__func__, "could not set SO_TIMESTAMP");
 #endif
 
   return fd;
@@ -389,6 +467,8 @@ SOCKET scamper_udp6_open_err(const void *addr, int sport)
 {
 #ifdef IPV6_RECVERR
   int opt;
+  void *optr = (void *)&opt;
+  size_t olen = sizeof(opt);
 
 #ifndef _WIN32 /* SOCKET vs int on windows */
   int fd;
@@ -401,35 +481,18 @@ SOCKET scamper_udp6_open_err(const void *addr, int sport)
     return socket_invalid();
 
   opt = 65535 + 128;
-  if(setsockopt(fd, SOL_SOCKET, SO_RCVBUF, (void *)&opt, sizeof(opt)) != 0)
+  if(setsockopt(fd, SOL_SOCKET, SO_RCVBUF, optr, olen) != 0)
     {
       printerror(__func__, "could not set SO_RCVBUF");
       goto err;
     }
 
   opt = 1;
-  if(setsockopt(fd, IPPROTO_IPV6, IPV6_RECVERR, (void *)&opt, sizeof(opt)) != 0)
+  if(setsockopt(fd, IPPROTO_IPV6, IPV6_RECVERR, optr, olen) != 0)
     {
       printerror(__func__, "could not set IPV6_RECVERR");
       goto err;
     }
-
-#if defined(IPV6_HOPLIMIT)
-  opt = 1;
-  if(setsockopt(fd,IPPROTO_IPV6,IPV6_HOPLIMIT,(void *)&opt,sizeof(opt)) != 0)
-    {
-      printerror(__func__, "could not set IPV6_HOPLIMIT");
-    }
-#endif
-
-#if defined(SO_TIMESTAMP)
-  opt = 1;
-  if(setsockopt(fd, SOL_SOCKET, SO_TIMESTAMP, (void *)&opt, sizeof(opt)) != 0)
-    {
-      printerror(__func__, "could not set SO_TIMESTAMP");
-      goto err;
-    }
-#endif
 
   return fd;
 

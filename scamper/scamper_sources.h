@@ -1,7 +1,7 @@
 /*
  * scamper_source
  *
- * $Id: scamper_sources.h,v 1.17 2023/08/07 08:42:43 mjl Exp $
+ * $Id: scamper_sources.h,v 1.18 2024/02/12 20:35:36 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -109,7 +109,7 @@ int scamper_source_isfinished(scamper_source_t *source);
 /* functions for adding stuff to the source's command queue */
 int scamper_source_command(scamper_source_t *source, const char *command);
 int scamper_source_command2(scamper_source_t *source, const char *command,
-			    uint32_t *id);
+			    uint32_t *id, char *errbuf, size_t errlen);
 int scamper_source_cycle(scamper_source_t *source);
 int scamper_source_task(scamper_source_t *source, struct scamper_task *task);
 int scamper_source_halttask(scamper_source_t *source, uint32_t id);

@@ -1,4 +1,4 @@
-# $Id: Makefile.am,v 1.13 2024/01/16 22:15:08 mjl Exp $
+# $Id: Makefile.am,v 1.14 2024/02/29 01:33:13 mjl Exp $
 
 AUTOMAKE_OPTIONS = subdir-objects
 
@@ -6,7 +6,7 @@ AM_CPPFLAGS = -I$(top_srcdir)
 
 lib_LTLIBRARIES = libscamperctrl.la
 
-libscamperctrl_la_LDFLAGS = -version-info 3:2:1 \
+libscamperctrl_la_LDFLAGS = -version-info 3:3:1 \
 	-export-symbols-regex '^scamper_(attp|ctrl|inst|task)_'
 
 libscamperctrl_la_LIBADD = @WINSOCK_LIBS@

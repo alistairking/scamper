@@ -1,7 +1,7 @@
 /*
  * scamper_osinfo.h
  *
- * $Id: scamper_osinfo.h,v 1.2 2023/07/11 08:32:53 mjl Exp $
+ * $Id: scamper_osinfo.h,v 1.3 2024/02/28 20:30:43 mjl Exp $
  *
  * Copyright (C) 2006 Matthew Luckie
  * Copyright (C) 2023 Matthew Luckie
@@ -48,6 +48,8 @@ typedef struct scamper_osinfo
 int scamper_osinfo_init(void);
 void scamper_osinfo_cleanup(void);
 const scamper_osinfo_t *scamper_osinfo_get(void);
+
+int scamper_osinfo_is_sunos(void);
 
 scamper_osinfo_t *scamper_osinfo_alloc(const char *sysname, char *release);
 void scamper_osinfo_free(scamper_osinfo_t *os);

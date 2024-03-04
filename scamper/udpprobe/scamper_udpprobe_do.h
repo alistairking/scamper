@@ -1,7 +1,7 @@
 /*
  * scamper_udpprobe_do.h
  *
- * $Id: scamper_udpprobe_do.h,v 1.1 2023/11/22 04:10:09 mjl Exp $
+ * $Id: scamper_udpprobe_do.h,v 1.3 2024/02/27 03:34:02 mjl Exp $
  *
  * Copyright (C) 2023 The Regents of the University of California
  *
@@ -27,9 +27,12 @@
 
 scamper_task_t *scamper_do_udpprobe_alloctask(void *data,
 					      scamper_list_t *list,
-					      scamper_cycle_t *cycle);
+					      scamper_cycle_t *cycle,
+					      char *errbuf, size_t errlen);
 
 void scamper_do_udpprobe_free(void *data);
+
+uint32_t scamper_do_udpprobe_userid(void *data);
 
 void scamper_do_udpprobe_cleanup(void);
 int scamper_do_udpprobe_init(void);

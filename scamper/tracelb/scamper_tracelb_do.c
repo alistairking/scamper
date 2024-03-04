@@ -1,11 +1,12 @@
 /*
  * scamper_tracelb_do.c
  *
- * $Id: scamper_tracelb_do.c,v 1.302 2023/12/24 01:34:46 mjl Exp $
+ * $Id: scamper_tracelb_do.c,v 1.308 2024/02/28 04:25:07 mjl Exp $
  *
  * Copyright (C) 2008-2011 The University of Waikato
  * Copyright (C) 2012      The Regents of the University of California
  * Copyright (C) 2016-2023 Matthew Luckie
+ * Copyright (C) 2024      The Regents of the University of California
  * Author: Matthew Luckie
  *
  * MDA traceroute technique authored by
@@ -217,6 +218,7 @@ typedef struct tracelb_state
   uint8_t                  confidence;   /* index into k[] */
   scamper_fd_t            *icmp;         /* fd to listen to icmp packets */
   scamper_fd_t            *probe;        /* fd to probe with */
+  scamper_fd_t            *dg;           /* datagram fd to hold port */
   scamper_fd_t            *dl;           /* datalink fd to tx on */
   splaytree_t             *addrs;        /* set of addresses */
 
@@ -3883,25 +3885,13 @@ static void tracelb_state_free(scamper_tracelb_t *trace,tracelb_state_t *state)
 
   if(state->icmp != NULL)     scamper_fd_free(state->icmp);
   if(state->dl != NULL)       scamper_fd_free(state->dl);
+  if(state->dg != NULL)       scamper_fd_free(state->dg);
 #ifndef _WIN32 /* windows does not have a routing socket */
   if(state->rtsock != NULL)   scamper_fd_free(state->rtsock);
 #endif
   if(state->dlhdr != NULL)    scamper_dlhdr_free(state->dlhdr);
   if(state->route != NULL)    scamper_route_free(state->route);
-
-  switch(trace->type)
-    {
-    case SCAMPER_TRACELB_TYPE_UDP_DPORT:
-    case SCAMPER_TRACELB_TYPE_ICMP_ECHO:
-      if(state->probe != NULL)
-	scamper_fd_free(state->probe);
-      break;
-
-    case SCAMPER_TRACELB_TYPE_UDP_SPORT:
-    case SCAMPER_TRACELB_TYPE_TCP_SPORT:
-    case SCAMPER_TRACELB_TYPE_TCP_ACK_SPORT:
-      break;
-    }
+  if(state->probe != NULL)    scamper_fd_free(state->probe);
 
   free(state);
   return;
@@ -4024,7 +4014,8 @@ static int tracelb_state_alloc(scamper_task_t *task)
     {
       if(trace->type == SCAMPER_TRACELB_TYPE_UDP_DPORT)
 	{
-	  if((state->probe = scamper_fd_udp4(addr, trace->sport)) == NULL)
+	  if((state->dg = scamper_fd_udp4dg(addr, trace->sport)) == NULL ||
+	     (state->probe = scamper_fd_udp4raw(addr)) == NULL)
 	    goto err;
 	}
       else if(trace->type == SCAMPER_TRACELB_TYPE_ICMP_ECHO)
@@ -4256,9 +4247,12 @@ static void do_tracelb_probe(scamper_task_t *task)
   probe.pr_ip_src    = trace->src;
   probe.pr_ip_dst    = trace->dst;
   probe.pr_ip_tos    = trace->tos;
-  probe.pr_data      = pktbuf;
-  probe.pr_len       = state->payload_size;
   probe.pr_ip_ttl    = tp->probe->ttl;
+  if(state->payload_size > 0)
+    {
+      probe.pr_len   = state->payload_size;
+      probe.pr_data  = pktbuf;
+    }
 
   if(trace->dst->type == SCAMPER_ADDR_TYPE_IPV4)
     probe.pr_ip_off  = IP_DF;
@@ -4382,7 +4376,8 @@ static void do_tracelb_probe(scamper_task_t *task)
 
 scamper_task_t *scamper_do_tracelb_alloctask(void *data,
 					     scamper_list_t *list,
-					     scamper_cycle_t *cycle)
+					     scamper_cycle_t *cycle,
+					     char *errbuf, size_t errlen)
 {
   scamper_tracelb_t *trace = (scamper_tracelb_t *)data;
   scamper_task_sig_t *sig = NULL;
@@ -4390,13 +4385,20 @@ scamper_task_t *scamper_do_tracelb_alloctask(void *data,
 
   /* allocate a task structure and store the trace with it */
   if((task = scamper_task_alloc(trace, &funcs)) == NULL)
-    goto err;
+    {
+      snprintf(errbuf, errlen, "%s: could not malloc state", __func__);
+      goto err;
+    }
 
   /* declare the signature of the task */
   if((sig = scamper_task_sig_alloc(SCAMPER_TASK_SIG_TYPE_TX_IP)) == NULL)
-    goto err;
+    {
+      snprintf(errbuf, errlen, "%s: could not alloc task signature", __func__);
+      goto err;
+    }
   sig->sig_tx_ip_dst = scamper_addr_use(trace->dst);
-  if(trace->src == NULL && (trace->src = scamper_getsrc(trace->dst,0)) == NULL)
+  if(trace->src == NULL &&
+     (trace->src = scamper_getsrc(trace->dst, 0, errbuf, errlen)) == NULL)
     goto err;
   sig->sig_tx_ip_src = scamper_addr_use(trace->src);
 
@@ -4420,12 +4422,15 @@ scamper_task_t *scamper_do_tracelb_alloctask(void *data,
       break;
 
     default:
-      scamper_debug(__func__, "unhandled type %d", trace->type);
+      snprintf(errbuf, errlen, "%s: unhandled type %d", __func__, trace->type);
       goto err;
     }
   
   if(scamper_task_sig_add(task, sig) != 0)
-    goto err;
+    {
+      snprintf(errbuf, errlen, "%s: could not add signature to task", __func__);
+      goto err;
+    }
   sig = NULL;
 
   /* associate the list and cycle with the trace */
@@ -4448,6 +4453,11 @@ void scamper_do_tracelb_free(void *data)
 {
   scamper_tracelb_free((scamper_tracelb_t *)data);
   return;
+}
+
+uint32_t scamper_do_tracelb_userid(void *data)
+{
+  return ((scamper_tracelb_t *)data)->userid;
 }
 
 void scamper_do_tracelb_cleanup(void)

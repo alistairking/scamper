@@ -1,7 +1,7 @@
 /*
  * scamper_ping_int.h
  *
- * $Id: scamper_ping_int.h,v 1.6 2023/11/27 07:56:14 mjl Exp $
+ * $Id: scamper_ping_int.h,v 1.8 2024/02/27 01:07:22 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -122,7 +122,8 @@ uint32_t scamper_ping_reply_total(const scamper_ping_t *ping);
  (SCAMPER_PING_METHOD_IS_TCP(ping) &&                 \
   SCAMPER_PING_REPLY_IS_TCP(reply)) ||                \
  (SCAMPER_PING_METHOD_IS_UDP(ping) &&                 \
-  SCAMPER_PING_REPLY_IS_ICMP_UNREACH_PORT(reply)))
+  (SCAMPER_PING_REPLY_IS_ICMP_UNREACH_PORT(reply) ||  \
+   SCAMPER_PING_REPLY_IS_UDP(reply))))
 
 struct scamper_ping_stats
 {
@@ -202,6 +203,7 @@ struct scamper_ping_reply
   /* the TTL / size of the packet that is returned */
   uint16_t                   probe_id;
   uint16_t                   probe_ipid;
+  uint16_t                   probe_sport;
   uint8_t                    reply_proto;
   uint8_t                    reply_ttl;
   uint16_t                   reply_size;

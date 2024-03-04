@@ -22,7 +22,8 @@ scamper_la_CFLAGS = \
 
 scamper_la_LDFLAGS = \
 	-module \
-	-avoid-version
+	-avoid-version \
+	$(PYTHON_LIBS)
 
 scamper_la_LIBADD = \
 	../../scamper/libscamperfile.la \

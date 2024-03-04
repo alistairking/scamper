@@ -1,7 +1,7 @@
 /*
  * sc_wartsdump
  *
- * $Id: sc_wartsdump.c,v 1.289 2024/01/16 06:55:18 mjl Exp $
+ * $Id: sc_wartsdump.c,v 1.290 2024/02/28 23:35:23 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -775,7 +775,7 @@ static void dump_ping_reply(const scamper_ping_t *ping,
   const struct timeval *start, *tx, *rtt;
   scamper_addr_t *addr;
   uint32_t flags, tso, tsr, tst, tsc;
-  uint16_t probe_id;
+  uint16_t probe_id, sport;
   uint8_t i, ipc;
   char buf[256];
   struct timeval txoff;
@@ -798,6 +798,8 @@ static void dump_ping_reply(const scamper_ping_t *ping,
   flags = scamper_ping_reply_flags_get(reply);
   if(flags & SCAMPER_PING_REPLY_FLAG_REPLY_TTL)
     printf(", ttl: %d", scamper_ping_reply_ttl_get(reply));
+  if((sport = scamper_ping_reply_probe_sport_get(reply)) != 0)
+    printf(", probe-sport: %u", sport);
   if(flags & SCAMPER_PING_REPLY_FLAG_PROBE_IPID)
     printf(", probe-ipid: 0x%04x", scamper_ping_reply_probe_ipid_get(reply));
   if(flags & SCAMPER_PING_REPLY_FLAG_REPLY_IPID)
@@ -807,6 +809,10 @@ static void dump_ping_reply(const scamper_ping_t *ping,
       else
 	printf(", reply-ipid32: 0x%08x", scamper_ping_reply_ipid32_get(reply));
     }
+  if(flags & SCAMPER_PING_REPLY_FLAG_DLTX)
+    printf(", dltx");
+  if(flags & SCAMPER_PING_REPLY_FLAG_DLRX)
+    printf(", dlrx");
   printf("\n");
 
   if(scamper_ping_reply_is_icmp(reply))

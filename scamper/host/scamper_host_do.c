@@ -1,7 +1,7 @@
 /*
  * scamper_host_do
  *
- * $Id: scamper_host_do.c,v 1.68 2023/12/29 18:22:49 mjl Exp $
+ * $Id: scamper_host_do.c,v 1.71 2024/02/27 03:34:02 mjl Exp $
  *
  * Copyright (C) 2018-2023 Matthew Luckie
  *
@@ -953,7 +953,8 @@ static void do_host_handle_timeout(scamper_task_t *task)
 }
 
 scamper_task_t *scamper_do_host_alloctask(void *data, scamper_list_t *list,
-					  scamper_cycle_t *cycle)
+					  scamper_cycle_t *cycle,
+					  char *errbuf, size_t errlen)
 {
   scamper_host_t *host = (scamper_host_t *)data;
   scamper_task_sig_t *sig = NULL;
@@ -961,17 +962,26 @@ scamper_task_t *scamper_do_host_alloctask(void *data, scamper_list_t *list,
 
   /* allocate a task structure and store the host query with it */
   if((task = scamper_task_alloc(host, &host_funcs)) == NULL)
-    goto err;
+    {
+      snprintf(errbuf, errlen, "%s: could not malloc state", __func__);
+      goto err;
+    }
 
   if((sig = scamper_task_sig_alloc(SCAMPER_TASK_SIG_TYPE_HOST)) == NULL)
-    goto err;
+    {
+      snprintf(errbuf, errlen, "%s: could not alloc task signature", __func__);
+      goto err;
+    }
   sig->sig_host_type = host->qtype;
   sig->sig_host_name = strdup(host->qname);
   sig->sig_host_dst  = scamper_addr_use(host->dst);
-  if((host->src = scamper_getsrc(host->dst, 0)) == NULL)
+  if((host->src = scamper_getsrc(host->dst, 0, errbuf, errlen)) == NULL)
     goto err;
   if(scamper_task_sig_add(task, sig) != 0)
-    goto err;
+    {
+      snprintf(errbuf, errlen, "%s: could not add signature to task", __func__);
+      goto err;
+    }
   sig = NULL;
 
   host->list = scamper_list_use(list);
@@ -1046,6 +1056,7 @@ static scamper_host_do_t *scamper_do_host_do_host(const char *qname,
   scamper_host_do_t *hostdo = NULL;
   scamper_host_t *host = NULL;
   scamper_task_t *task = NULL;
+  char errbuf[256];
 
   if((host = scamper_host_alloc()) == NULL ||
      (host->qname = strdup(qname)) == NULL)
@@ -1059,7 +1070,8 @@ static scamper_host_do_t *scamper_do_host_do_host(const char *qname,
   host->qtype = qtype;
   host->dst = scamper_addr_use(default_ns);
 
-  if((task = scamper_do_host_alloctask(host, NULL, NULL)) == NULL)
+  if((task = scamper_do_host_alloctask(host, NULL, NULL, errbuf,
+				       sizeof(errbuf))) == NULL)
     {
       printerror(__func__, "could not alloc task");
       goto err;
@@ -1190,6 +1202,11 @@ void scamper_do_host_free(void *data)
 {
   scamper_host_free((scamper_host_t *)data);
   return;
+}
+
+uint32_t scamper_do_host_userid(void *data)
+{
+  return ((scamper_host_t *)data)->userid;
 }
 
 void scamper_do_host_cleanup()

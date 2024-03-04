@@ -1,7 +1,7 @@
 /*
  * scamper_do_neighbourdisc.h
  *
- * $Id: scamper_neighbourdisc_do.h,v 1.6 2023/06/04 04:52:48 mjl Exp $
+ * $Id: scamper_neighbourdisc_do.h,v 1.8 2024/02/27 03:34:02 mjl Exp $
  *
  * Copyright (C) 2009-2010 Matthew Luckie
  *
@@ -27,7 +27,8 @@ typedef struct scamper_neighbourdisc_do scamper_neighbourdisc_do_t;
 
 scamper_task_t *scamper_do_neighbourdisc_alloctask(void *data,
 						   scamper_list_t *list,
-						   scamper_cycle_t *cycle);
+						   scamper_cycle_t *cycle,
+						   char *errbuf, size_t errlen);
 
 void scamper_do_neighbourdisc_free(void *);
 
@@ -36,6 +37,8 @@ scamper_neighbourdisc_do_t *scamper_do_neighbourdisc_do(
   int ifindex, scamper_addr_t *dst,
   void *param, void (*cb)(void *, scamper_addr_t *ip, scamper_addr_t *mac));
 void scamper_neighbourdisc_do_free(scamper_neighbourdisc_do_t *nddo);
+
+uint32_t scamper_do_neighbourdisc_userid(void *data);
 
 void scamper_do_neighbourdisc_cleanup(void);
 int scamper_do_neighbourdisc_init(void);

@@ -1,7 +1,7 @@
 /*
  * scamper_sting_cmd.h
  *
- * $Id: scamper_sting_cmd.h,v 1.1 2023/06/04 07:09:36 mjl Exp $
+ * $Id: scamper_sting_cmd.h,v 1.2 2024/02/12 20:35:36 mjl Exp $
  *
  * Copyright (C) 2008-2010 The University of Waikato
  * Author: Matthew Luckie
@@ -31,8 +31,9 @@
 #ifndef __SCAMPER_STING_CMD_H
 #define __SCAMPER_STING_CMD_H
 
-void *scamper_do_sting_alloc(char *str);
+void *scamper_do_sting_alloc(char *str, char *errbuf, size_t errlen);
 const char *scamper_do_sting_usage(void);
-int scamper_do_sting_arg_validate(int argc, char *argv[], int *stop);
+int scamper_do_sting_arg_validate(int argc, char *argv[], int *stop,
+				  char *errbuf, size_t errlen);
 
 #endif /* __SCAMPER_STING_CMD_H */

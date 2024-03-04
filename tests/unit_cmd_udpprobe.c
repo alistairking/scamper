@@ -1,7 +1,7 @@
 /*
  * unit_cmd_udpprobe : unit tests for udpprobe commands
  *
- * $Id: unit_cmd_udpprobe.c,v 1.6 2024/01/16 06:30:28 mjl Exp $
+ * $Id: unit_cmd_udpprobe.c,v 1.7 2024/02/13 04:59:48 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -102,7 +102,7 @@ static int exitfirst(const scamper_udpprobe_t *in)
 static int check(const char *cmd, int (*func)(const scamper_udpprobe_t *in))
 {
   scamper_udpprobe_t *up;
-  char *dup;
+  char *dup, errbuf[256];
   int rc;
 
 #ifdef DMALLOC
@@ -112,7 +112,7 @@ static int check(const char *cmd, int (*func)(const scamper_udpprobe_t *in))
 
   if((dup = strdup(cmd)) == NULL)
     return -1;
-  up = scamper_do_udpprobe_alloc(dup);
+  up = scamper_do_udpprobe_alloc(dup, errbuf, sizeof(errbuf));
   free(dup);
   if((rc = func(up)) != 0)
     printf("fail: %s\n", cmd);

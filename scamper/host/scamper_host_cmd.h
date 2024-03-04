@@ -1,7 +1,7 @@
 /*
  * scamper_do_host.h
  *
- * $Id: scamper_host_cmd.h,v 1.1 2023/06/04 04:41:53 mjl Exp $
+ * $Id: scamper_host_cmd.h,v 1.2 2024/02/12 20:35:36 mjl Exp $
  *
  * Copyright (C) 2018-2020 Matthew Luckie
  * Author: Matthew Luckie
@@ -24,8 +24,9 @@
 #ifndef __SCAMPER_HOST_CMD_H
 #define __SCAMPER_HOST_CMD_H
 
-void *scamper_do_host_alloc(char *str);
-int scamper_do_host_arg_validate(int argc, char *argv[], int *stop);
+void *scamper_do_host_alloc(char *str, char *errbuf, size_t errlen);
+int scamper_do_host_arg_validate(int argc, char *argv[], int *stop,
+				 char *errbuf, size_t errlen);
 const char *scamper_do_host_usage(void);
 
 #endif /* __SCAMPER_HOST_CMD_H */

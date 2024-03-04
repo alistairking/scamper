@@ -1,7 +1,7 @@
 /*
  * scamper_udpprobe_cmd.c
  *
- * $Id: scamper_udpprobe_cmd.c,v 1.7 2024/01/16 06:26:56 mjl Exp $
+ * $Id: scamper_udpprobe_cmd.c,v 1.10 2024/02/21 04:58:05 mjl Exp $
  *
  * Copyright (C) 2023-2024 The Regents of the University of California
  *
@@ -33,8 +33,8 @@
 #include "scamper_list.h"
 #include "scamper_udpprobe.h"
 #include "scamper_udpprobe_int.h"
+#include "scamper_udpprobe_cmd.h"
 #include "scamper_options.h"
-#include "scamper_debug.h"
 #include "utils.h"
 
 /* options that udpprobe supports */
@@ -59,43 +59,78 @@ const char *scamper_do_udpprobe_usage(void)
     "udpprobe [-d dport] [-O option] [-p payload] [-U userid] [-w wait-timeout]";
 }
 
-static int udpprobe_arg_param_validate(int optid, char *param, long long *out)
+static int udpprobe_arg_param_validate(int optid, char *param, long long *out,
+				       char *errbuf, size_t errlen)
 {
   struct timeval tv;
-  long tmp;
+  long long tmp = 0;
   int i;
+
+#ifndef NDEBUG
+  errbuf[0] = '\0';
+#endif
 
   switch(optid)
     {
     case UDPPROBE_OPT_DPORT:
-      if(string_tolong(param, &tmp) == -1 || tmp < 1 || tmp > 65535)
-	 goto err;
+      if(string_tollong(param, &tmp, NULL, 0) == -1 || tmp < 1 || tmp > 65535)
+	{
+	  snprintf(errbuf, errlen, "dport must be within 1 - 65535");
+	  goto err;
+	}
       break;
 
     case UDPPROBE_OPT_OPTION:
-      if(strcasecmp(param, "exitfirst") != 0)
-	goto err;
-      tmp = 0;
+      if(strcasecmp(param, "exitfirst") == 0)
+	tmp = SCAMPER_UDPPROBE_FLAG_EXITFIRST;
+      else
+	{
+	  snprintf(errbuf, errlen, "-O %s unknown", param);
+	  goto err;
+	}
       break;
 
     case UDPPROBE_OPT_PAYLOAD:
-      for(i=0; param[i] != '\0'; i++)
-	if(ishex(param[i]) == 0)
+      if((i = string_ishex(param)) == 0)
+	{
+	  snprintf(errbuf, errlen, "payload must be specified in hex");
 	  goto err;
-      if(i == 0 || (i % 2) != 0 || i/2 > 1000)
-	goto err;
+	}
+      if((i % 2) != 0)
+	{
+	  snprintf(errbuf, errlen, "expected even number of hex characters");
+	  goto err;
+	}
+      if(i/2 > 1000)
+	{
+	  snprintf(errbuf, errlen, "payload limit is 1000 bytes");
+	  goto err;
+	}
+      assert(i > 0);
       tmp = i;
       break;
 
     case UDPPROBE_OPT_USERID:
-      if(string_tolong(param, &tmp) != 0 || tmp < 0)
-	goto err;
+      if(string_tollong(param, &tmp, NULL, 0) != 0 ||
+	 tmp < 0 || tmp > UINT32_MAX)
+	{
+	  snprintf(errbuf, errlen, "userid must be within %u - %u", 0,
+		   UINT32_MAX);
+	  goto err;
+	}
       break;
 
     case UDPPROBE_OPT_TIMEOUT:
-      if(timeval_fromstr(&tv, param, 1000000) != 0 ||
-	 timeval_cmp_lt(&tv, 0, 500000) || timeval_cmp_gt(&tv, 5, 0))
-	goto err;
+      if(timeval_fromstr(&tv, param, 1000000) != 0)
+	{
+	  snprintf(errbuf, errlen, "malformed timeout");
+	  goto err;
+	}
+      if(timeval_cmp_lt(&tv, 0, 500000) || timeval_cmp_gt(&tv, 5, 0))
+	{
+	  snprintf(errbuf, errlen, "timeout must be within 0.5s - 5s");
+	  goto err;
+	}
       tmp = (tv.tv_sec * 1000000) + tv.tv_usec;
       break;
 
@@ -104,21 +139,24 @@ static int udpprobe_arg_param_validate(int optid, char *param, long long *out)
     }
 
   /* valid parameter */
+  assert(errbuf[0] == '\0');
   if(out != NULL)
-    *out = (long long)tmp;
+    *out = tmp;
   return 0;
 
  err:
+  assert(errbuf[0] != '\0');
   return -1;
 }
 
-int scamper_do_udpprobe_arg_validate(int argc, char *argv[], int *stop)
+int scamper_do_udpprobe_arg_validate(int argc, char *argv[], int *stop,
+				     char *errbuf, size_t errlen)
 {
   return scamper_options_validate(opts, opts_cnt, argc, argv, stop,
-				  udpprobe_arg_param_validate);
+				  errbuf, errlen, udpprobe_arg_param_validate);
 }
 
-void *scamper_do_udpprobe_alloc(char *str)
+void *scamper_do_udpprobe_alloc(char *str, char *errbuf, size_t errlen)
 {
   scamper_option_out_t *opts_out = NULL, *opt;
   scamper_udpprobe_t *up = NULL;
@@ -130,18 +168,23 @@ void *scamper_do_udpprobe_alloc(char *str)
   uint16_t dport = 0, payload_len = 0;
   uint8_t flags = 0;
   uint32_t optids = 0;
+  char buf[256];
+
+#ifndef NDEBUG
+  errbuf[0] = '\0';
+#endif
 
   /* Parse the options */
   if(scamper_options_parse(str, opts, opts_cnt, &opts_out, &addr) != 0)
     {
-      scamper_debug(__func__, "could not parse options");
+      snprintf(errbuf, errlen, "could not parse udpprobe command");
       goto err;
     }
 
   /* If there is no IP address after the options string, then stop now */
   if(addr == NULL)
     {
-      scamper_debug(__func__, "no address parameter");
+      snprintf(errbuf, errlen, "expected address to probe");
       goto err;
     }
 
@@ -152,15 +195,19 @@ void *scamper_do_udpprobe_alloc(char *str)
   for(opt = opts_out; opt != NULL; opt = opt->next)
     {
       if(opt->type != SCAMPER_OPTION_TYPE_NULL &&
-	 udpprobe_arg_param_validate(opt->id, opt->str, &tmp) != 0)
+	 udpprobe_arg_param_validate(opt->id, opt->str, &tmp,
+				     buf, sizeof(buf)) != 0)
 	{
-	  scamper_debug(__func__, "validation of optid %d failed", opt->id);
+	  snprintf(errbuf, errlen, "-%c %s failed: %s",
+		   scamper_options_id2c(opts, opts_cnt, opt->id),
+		   opt->str, buf);
 	  goto err;
 	}
 
       if((optids & (0x1 << opt->id)) != 0 && opt->id != UDPPROBE_OPT_OPTION)
 	{
-	  scamper_debug(__func__, "repeated optid %d", opt->id);
+	  snprintf(errbuf, errlen, "repeated option -%c",
+		   scamper_options_id2c(opts, opts_cnt, opt->id));
 	  goto err;
 	}
       optids |= (0x1 << opt->id);
@@ -172,20 +219,14 @@ void *scamper_do_udpprobe_alloc(char *str)
 	  break;
 
 	case UDPPROBE_OPT_OPTION:
-	  if(strcasecmp(opt->str, "exitfirst") == 0)
-	    flags |= SCAMPER_UDPPROBE_FLAG_EXITFIRST;
-	  else
-	    {
-	      scamper_debug(__func__, "unknown option %s", opt->str);
-	      goto err;
-	    }
+	  flags |= (uint8_t)tmp;
 	  break;
 
 	case UDPPROBE_OPT_PAYLOAD:
 	  assert(payload == NULL);
 	  if((payload = malloc(tmp/2)) == NULL)
 	    {
-	      printerror(__func__, "could not malloc payload");
+	      snprintf(errbuf, errlen, "could not malloc payload");
 	      goto err;
 	    }
 	  payload_len = 0;
@@ -205,20 +246,26 @@ void *scamper_do_udpprobe_alloc(char *str)
     }
   scamper_options_free(opts_out); opts_out = NULL;
 
-  if(payload == NULL || payload_len == 0 || dport == 0)
+  if(payload_len == 0)
     {
+      snprintf(errbuf, errlen, "missing payload parameter");
+      goto err;
+    }
+  if(dport == 0)
+    {
+      snprintf(errbuf, errlen, "missing destination port parameter");
       goto err;
     }
 
   if((up = scamper_udpprobe_alloc()) == NULL)
     {
-      printerror(__func__, "could not alloc udpprobe");
+      snprintf(errbuf, errlen, "could not alloc udpprobe");
       goto err;
     }
 
   if((up->dst = scamper_addr_fromstr_unspec(addr)) == NULL)
     {
-      printerror(__func__, "could not resolve %s", addr);
+      snprintf(errbuf, errlen, "invalid destination address");
       goto err;
     }
 
@@ -227,11 +274,14 @@ void *scamper_do_udpprobe_alloc(char *str)
   up->data = payload; payload = NULL;
   up->len = payload_len;
   up->flags = flags;
+  up->sport = scamper_sport_default();
   timeval_cpy(&up->wait_timeout, &timeout);
 
+  assert(errbuf[0] == '\0');
   return up;
 
  err:
+  assert(errbuf[0] != '\0');
   if(payload != NULL) free(payload);
   if(opts_out != NULL) scamper_options_free(opts_out);
   if(up != NULL) scamper_udpprobe_free(up);

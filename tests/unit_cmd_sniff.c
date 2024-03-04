@@ -1,7 +1,7 @@
 /*
  * unit_cmd_sniff : unit tests for sniff commands
  *
- * $Id: unit_cmd_sniff.c,v 1.2 2024/01/16 09:01:30 mjl Exp $
+ * $Id: unit_cmd_sniff.c,v 1.3 2024/02/13 04:59:48 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -75,7 +75,7 @@ static int count_69(const scamper_sniff_t *in)
 static int check(const char *cmd, int (*func)(const scamper_sniff_t *in))
 {
   scamper_sniff_t *sniff;
-  char *dup;
+  char *dup, errbuf[256];
   int rc;
 
 #ifdef DMALLOC
@@ -88,7 +88,7 @@ static int check(const char *cmd, int (*func)(const scamper_sniff_t *in))
 
   if((dup = strdup(cmd)) == NULL)
     return -1;
-  sniff = scamper_do_sniff_alloc(dup);
+  sniff = scamper_do_sniff_alloc(dup, errbuf, sizeof(errbuf));
   free(dup);
   if((rc = func(sniff)) != 0)
     printf("fail: %s\n", cmd);

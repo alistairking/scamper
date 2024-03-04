@@ -1,7 +1,7 @@
 /*
  * scamper_udp4.h
  *
- * $Id: scamper_udp4.h,v 1.24 2023/08/20 01:21:17 mjl Exp $
+ * $Id: scamper_udp4.h,v 1.25 2024/02/21 04:58:05 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2010 The University of Waikato
@@ -30,10 +30,12 @@
 int scamper_udp4_openraw(const void *addr);
 int scamper_udp4_openraw_fd(const void *addr);
 int scamper_udp4_opendgram(const void *addr, int sport);
+void scamper_udp4_read_cb(int fd, void *param);
 #else
 SOCKET scamper_udp4_openraw(const void *addr);
 SOCKET scamper_udp4_openraw_fd(const void *addr);
 SOCKET scamper_udp4_opendgram(const void *addr, int sport);
+void scamper_udp4_read_cb(SOCKET fd, void *param);
 #endif
 
 void scamper_udp4_cleanup(void);

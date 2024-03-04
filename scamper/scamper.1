@@ -10,12 +10,12 @@
 .\" Copyright (c) 2024      The Regents of the University of California
 .\"                         All rights reserved
 .\"
-.\" $Id: scamper.1,v 1.128 2024/01/21 04:10:30 mjl Exp $
+.\" $Id: scamper.1,v 1.131 2024/02/29 01:48:36 mjl Exp $
 .\"
 .\"  nroff -man scamper.1
 .\"  groff -man -Tascii scamper.1 | man2html -title scamper.1
 .\"
-.Dd January 21, 2024
+.Dd February 29, 2024
 .Dt SCAMPER 1
 .Os
 .\""""""""""""
@@ -297,6 +297,13 @@ on systems where
 .Xr epoll 7
 is available.
 .It
+.Sy ring:
+tell scamper to create a memory-mapped ring buffer to receive datalink
+responses. This significantly improves scamper performance and
+accuracy on Linux systems with other non-scamper traffic. See
+.Xr packet 7
+for further details.
+.It
 .Sy cmdfile:
 the input file consists of complete commands.
 .It
@@ -391,7 +398,7 @@ trace
 .Op Fl S Ar srcaddr
 .Op Fl t Ar tos
 .Op Fl U Ar userid
-.Op Fl w Ar wait
+.Op Fl w Ar wait-timeout
 .Op Fl W Ar wait-probe
 .Op Fl z Ar gss-entry
 .Op Fl Z Ar lss-name
@@ -451,8 +458,8 @@ specifies that the payload should not be altered in order to arrive
 at a desired UDP checksum value for probe/response matching.
 .It
 .Sy dl:
-specifies that the datalink socket should be used to timestamp packets,
-and to receive certain packets.
+specifies that the datalink socket should be used to timestamp sent
+and received packets.
 For apparent UDP responses to UDP-Paris traceroute probes,
 .Nm
 will assume that any UDP response was for the last sent probe, as it
@@ -464,6 +471,9 @@ doubletree.
 .It
 .Sy ptr:
 lookup hostnames for intermediate traceroute hops.
+.It
+.Sy raw:
+send IPv4 TCP probes using a raw socket, rather than a datalink interface.
 .El
 .It Fl p Ar payload
 specifies the payload, in hexadecimal, to use as a base in probes.
@@ -488,8 +498,8 @@ specifies the IP address of the router to use.
 specifies the source port value to use.  For ICMP-based methods, this option
 specifies the ICMP identifier to use.  By default,
 .Nm
-uses a value it derives from the process ID, but can be told to generate
-a random value between 32768 and 65535 by specifying zero.
+uses a value it derives from the process ID, but can be told to obtain
+a port from the operating system by specifying zero.
 .It Fl S Ar srcaddr
 specifies the source address to use in probes.
 The address cannot be spoofed.
@@ -534,7 +544,7 @@ ping
 .Op Fl C Ar ICMP-sum
 .Op Fl d Ar dport
 .Op Fl F Ar sport
-.Op Fl i Ar wait
+.Op Fl i Ar wait-probe
 .Op Fl m Ar ttl
 .Op Fl M Ar MTU
 .Op Fl o Ar replycount
@@ -546,7 +556,7 @@ ping
 .Op Fl S Ar srcaddr
 .Op Fl T Ar timestamp
 .Op Fl U Ar userid
-.Op Fl W Ar timeout
+.Op Fl W Ar wait-timeout
 .Op Fl z Ar tos
 .Ek
 .Bl -tag -width Ds
@@ -577,9 +587,9 @@ specifies the source port to use in each TCP/UDP probe, and the ICMP ID to
 use in ICMP probes.
 By default,
 .Nm
-uses a value it derives from the process ID, but can be told to generate
-a random value between 32768 and 65535 by specifying zero.
-.It Fl i Ar wait
+uses a value it derives from the process ID, but can be told to obtain
+a port from the operating system by specifying zero.
+.It Fl i Ar wait-probe
 specifies the length of time to wait, in seconds, between probes.  By default,
 a value of 1 is used.
 .It Fl m Ar ttl
@@ -596,11 +606,15 @@ The current choices for this option are:
 .Bl -dash -offset 2n -compact -width 1n
 .It
 .Sy dl:
-specifies that the ping should use datalink sockets, rather than raw sockets.
+specifies that the datalink socket should be used to timestamp sent
+and received packets.
 .It
 .Sy nosrc:
 specifies that the real address of the host should not be embedded in
 the payload of the packet when the spoof option is used.
+.It
+.Sy raw:
+send IPv4 TCP probes using a raw socket, rather than a datalink interface.
 .It
 .Sy spoof:
 specifies that the source address is to be spoofed according to the address
@@ -649,7 +663,7 @@ See the examples section for more information.
 specifies an unsigned integer to include with the data collected; the meaning
 of the user-id is entirely up to the user and has no effect on the behaviour
 of ping.
-.It Fl W Ar timeout
+.It Fl W Ar wait-timeout
 specifies how long to wait for responses after the last ping is sent.  By
 default this is one second.
 .It Fl z Ar tos

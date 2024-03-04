@@ -1,7 +1,7 @@
 /*
  * scamper_sniff_do.c
  *
- * $Id: scamper_sniff_do.c,v 1.23 2024/01/02 17:51:46 mjl Exp $
+ * $Id: scamper_sniff_do.c,v 1.26 2024/02/27 03:34:02 mjl Exp $
  *
  * Copyright (C) 2011      The University of Waikato
  * Copyright (C) 2022-2023 Matthew Luckie
@@ -249,7 +249,8 @@ static void do_sniff_free(scamper_task_t *task)
 }
 
 scamper_task_t *scamper_do_sniff_alloctask(void *data, scamper_list_t *list,
-					  scamper_cycle_t *cycle)
+					   scamper_cycle_t *cycle,
+					   char *errbuf, size_t errlen)
 {
   scamper_sniff_t *sniff = (scamper_sniff_t *)data;
   scamper_task_t *task = NULL;
@@ -257,15 +258,24 @@ scamper_task_t *scamper_do_sniff_alloctask(void *data, scamper_list_t *list,
 
   /* allocate a task structure and store the sniff with it */
   if((task = scamper_task_alloc(sniff, &sniff_funcs)) == NULL)
-    goto err;
+    {
+      snprintf(errbuf, errlen, "%s: could not malloc state", __func__);
+      goto err;
+    }
 
   /* task signature */
   if((sig = scamper_task_sig_alloc(SCAMPER_TASK_SIG_TYPE_SNIFF)) == NULL)
-    goto err;
+    {
+      snprintf(errbuf, errlen, "%s: could not alloc task signature", __func__);
+      goto err;
+    }
   sig->sig_sniff_src = scamper_addr_use(sniff->src);
   sig->sig_sniff_icmp_id = sniff->icmpid;
   if(scamper_task_sig_add(task, sig) != 0)
-    goto err;
+    {
+      snprintf(errbuf, errlen, "%s: could not add signature to task", __func__);
+      goto err;
+    }
   sig = NULL;
 
   /* associate the list and cycle with the sniff */
@@ -288,6 +298,11 @@ void scamper_do_sniff_free(void *data)
 {
   scamper_sniff_free((scamper_sniff_t *)data);
   return;
+}
+
+uint32_t scamper_do_sniff_userid(void *data)
+{
+  return ((scamper_sniff_t *)data)->userid;
 }
 
 void scamper_do_sniff_cleanup()

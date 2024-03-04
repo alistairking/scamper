@@ -1,7 +1,7 @@
 /*
  * scamper_do_sting.c
  *
- * $Id: scamper_sting_do.c,v 1.56 2023/12/24 01:34:46 mjl Exp $
+ * $Id: scamper_sting_do.c,v 1.59 2024/02/27 03:34:02 mjl Exp $
  *
  * Copyright (C) 2008-2011 The University of Waikato
  * Copyright (C) 2012      The Regents of the University of California
@@ -765,7 +765,8 @@ void scamper_do_sting_free(void *data)
  */
 scamper_task_t *scamper_do_sting_alloctask(void *data,
 					   scamper_list_t *list,
-					   scamper_cycle_t *cycle)
+					   scamper_cycle_t *cycle,
+					   char *errbuf, size_t errlen)
 {
   scamper_sting_t *sting = (scamper_sting_t *)data;
   scamper_task_sig_t *sig = NULL;
@@ -773,18 +774,28 @@ scamper_task_t *scamper_do_sting_alloctask(void *data,
 
   /* allocate a task structure and store the sting with it */
   if((task = scamper_task_alloc(sting, &sting_funcs)) == NULL)
-    goto err;
+    {
+      snprintf(errbuf, errlen, "%s: could not malloc state", __func__);
+      goto err;
+    }
 
   /* declare the signature of the sting task */
   if((sig = scamper_task_sig_alloc(SCAMPER_TASK_SIG_TYPE_TX_IP)) == NULL)
-    goto err;
+    {
+      snprintf(errbuf, errlen, "%s: could not alloc task signature", __func__);
+      goto err;
+    }
   sig->sig_tx_ip_dst = scamper_addr_use(sting->dst);
-  if(sting->src == NULL && (sting->src = scamper_getsrc(sting->dst,0)) == NULL)
+  if(sting->src == NULL &&
+     (sting->src = scamper_getsrc(sting->dst, 0, errbuf, errlen)) == NULL)
     goto err;
   sig->sig_tx_ip_src = scamper_addr_use(sting->src);
   SCAMPER_TASK_SIG_TCP(sig, sting->sport, sting->dport);
   if(scamper_task_sig_add(task, sig) != 0)
-    goto err;
+    {
+      snprintf(errbuf, errlen, "%s: could not add signature to task", __func__);
+      goto err;
+    }
   sig = NULL;
 
   /* associate the list and cycle with the sting */
@@ -801,6 +812,11 @@ scamper_task_t *scamper_do_sting_alloctask(void *data,
       scamper_task_free(task);
     }
   return NULL;
+}
+
+uint32_t scamper_do_sting_userid(void *data)
+{
+  return ((scamper_sting_t *)data)->userid;
 }
 
 void scamper_do_sting_cleanup(void)

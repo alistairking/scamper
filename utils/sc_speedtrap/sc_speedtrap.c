@@ -1,7 +1,7 @@
 /*
  * sc_speedtrap
  *
- * $Id: sc_speedtrap.c,v 1.85 2023/09/24 22:35:02 mjl Exp $
+ * $Id: sc_speedtrap.c,v 1.86 2024/02/29 00:56:45 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -9,7 +9,7 @@
  * Copyright (C) 2013-2015 The Regents of the University of California
  * Copyright (C) 2016,2020 The University of Waikato
  * Copyright (C) 2022-2023 Matthew Luckie
- * Copyright (C) 2023      The Regents of the University of California
+ * Copyright (C) 2023-2024 The Regents of the University of California
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -1290,7 +1290,7 @@ static int test_ping6(sc_target_t *target, char *cmd, size_t len)
   size_t off = 0;
   char buf[64];
   string_concat(cmd, len, &off,
-		"ping -O dl -U %d -c 6 -s 1300 -M 1280 %s",
+		"ping -U %d -c 6 -s 1300 -M 1280 %s",
 		mode, scamper_addr_tostr(target->addr, buf, sizeof(buf)));
   return off;
 }
@@ -1300,7 +1300,7 @@ static int test_ping1(sc_target_t *target, char *cmd, size_t len)
   size_t off = 0;
   char buf[64];
   string_concat(cmd, len, &off,
-		"ping -O dl -O tbt -U %d -c 2 -o 1 -s 1300 -M 1280 %s",
+		"ping -O tbt -U %d -c 2 -o 1 -s 1300 -M 1280 %s",
 		mode, scamper_addr_tostr(target->addr, buf, sizeof(buf)));
   return off;
 }

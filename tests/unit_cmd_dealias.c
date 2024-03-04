@@ -1,12 +1,12 @@
 /*
  * unit_cmd_dealias : unit tests for dealias commands
  *
- * $Id: unit_cmd_dealias.c,v 1.25 2024/01/16 06:55:18 mjl Exp $
+ * $Id: unit_cmd_dealias.c,v 1.28 2024/02/14 08:09:25 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
  *
- * Copyright (C) 2023 Matthew Luckie
+ * Copyright (C) 2023-2024 Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -42,6 +42,8 @@ typedef struct sc_test
   const char *cmd;
   int (*func)(const scamper_dealias_t *dealias);
 } sc_test_t;
+
+static int verbose = 0;
 
 scamper_addrcache_t *addrcache = NULL;
 
@@ -289,6 +291,44 @@ static int radargun_1def_3dst(const scamper_dealias_t *in)
      scamper_dealias_probedef_id_get(def) != 2 ||
      scamper_dealias_probedef_tcp_get(def) == NULL ||
      check_addr(scamper_dealias_probedef_dst_get(def), "192.0.2.3") != 0 ||
+     scamper_dealias_probedef_ttl_get(def) != 255)
+    return -1;
+
+  return 0;
+}
+
+static int radargun_1def_3dst_v6(const scamper_dealias_t *in)
+{
+  const scamper_dealias_radargun_t *rg;
+  const scamper_dealias_probedef_t *def;
+  const struct timeval *tv;
+
+  if(in == NULL ||
+     (rg = scamper_dealias_radargun_get(in)) == NULL ||
+     (tv = scamper_dealias_radargun_wait_probe_get(rg)) == NULL ||
+     tv->tv_sec != 0 || tv->tv_usec != 20000 ||
+     (tv = scamper_dealias_radargun_wait_timeout_get(rg)) == NULL ||
+     tv->tv_sec != 1 || tv->tv_usec != 0 ||
+     (tv = scamper_dealias_radargun_wait_round_get(rg)) == NULL ||
+     tv->tv_sec != 0 || tv->tv_usec != 60000 ||
+     scamper_dealias_radargun_rounds_get(rg) != 2 ||
+     (def = scamper_dealias_radargun_def_get(rg, 0)) == NULL ||
+     scamper_dealias_probedef_size_get(def) != 40 + 8 + 2 ||
+     scamper_dealias_probedef_id_get(def) != 0 ||
+     scamper_dealias_probedef_icmp_get(def) == NULL ||
+     check_addr(scamper_dealias_probedef_dst_get(def), "2001:DB8::1") != 0 ||
+     scamper_dealias_probedef_ttl_get(def) != 255 ||
+     (def = scamper_dealias_radargun_def_get(rg, 1)) == NULL ||
+     scamper_dealias_probedef_size_get(def) != 40 + 8 + 2 ||
+     scamper_dealias_probedef_id_get(def) != 1 ||
+     scamper_dealias_probedef_icmp_get(def) == NULL ||
+     check_addr(scamper_dealias_probedef_dst_get(def), "2001:DB8::2") != 0 ||
+     scamper_dealias_probedef_ttl_get(def) != 255 ||
+     (def = scamper_dealias_radargun_def_get(rg, 2)) == NULL ||
+     scamper_dealias_probedef_size_get(def) != 40 + 8 + 2 ||
+     scamper_dealias_probedef_id_get(def) != 2 ||
+     scamper_dealias_probedef_icmp_get(def) == NULL ||
+     check_addr(scamper_dealias_probedef_dst_get(def), "2001:DB8::3") != 0 ||
      scamper_dealias_probedef_ttl_get(def) != 255)
     return -1;
 
@@ -575,7 +615,7 @@ static int midardisc_4def_3sch(const scamper_dealias_t *in)
 static int check(const char *cmd, int (*func)(const scamper_dealias_t *in))
 {
   scamper_dealias_t *dealias;
-  char *dup;
+  char *dup, errbuf[256];
   int rc;
 
 #ifdef DMALLOC
@@ -588,7 +628,7 @@ static int check(const char *cmd, int (*func)(const scamper_dealias_t *in))
 
   if((dup = strdup(cmd)) == NULL)
     return -1;
-  dealias = scamper_do_dealias_alloc(dup);
+  dealias = scamper_do_dealias_alloc(dup, errbuf, sizeof(errbuf));
   free(dup);
   if((rc = func(dealias)) != 0)
     printf("fail: %s\n", cmd);
@@ -605,6 +645,9 @@ static int check(const char *cmd, int (*func)(const scamper_dealias_t *in))
       rc = -1;
     }
 #endif
+
+  if(func == isnull && verbose)
+    printf("%s: %s\n", cmd, errbuf);
 
   return rc;
 }
@@ -671,6 +714,9 @@ int main(int argc, char *argv[])
      radargun_1def_3dst},
     {"-m radargun -p '-P tcp-ack' -p '-P udp' 192.0.2.1 192.0.2.2 192.0.2.3",
      radargun_2def_3dst},
+    {"-m radargun -q 2 -W 20ms -w 1s"
+     " -p '-P icmp-echo' 2001:DB8::1 2001:DB8::2 2001:DB8::3",
+     radargun_1def_3dst_v6},
     /* speedtrap */
     {"-m ally -U 45 -f 65535 -w 2 -W 1000"
      " -p '-P icmp-echo -s 1300 -M 1280' 2001:DB8::1 2001:DB8::2", speedtrap},

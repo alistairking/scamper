@@ -1,9 +1,9 @@
 /*
  * scamper_host_cmd
  *
- * $Id: scamper_host_cmd.c,v 1.6 2023/12/30 19:11:52 mjl Exp $
+ * $Id: scamper_host_cmd.c,v 1.9 2024/02/15 20:34:26 mjl Exp $
  *
- * Copyright (C) 2018-2023 Matthew Luckie
+ * Copyright (C) 2018-2024 Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -30,8 +30,8 @@
 #include "scamper_list.h"
 #include "scamper_host.h"
 #include "scamper_host_int.h"
+#include "scamper_host_cmd.h"
 #include "scamper_options.h"
-#include "scamper_debug.h"
 #include "utils.h"
 
 #define HOST_OPT_NORECURSE 1
@@ -62,11 +62,16 @@ const char *scamper_do_host_usage(void)
     "host [-r] [-R number] [-s server] [-t type] [-U userid] [-W wait] name\n";
 }
 
-static int host_arg_param_validate(int optid, char *param, long long *out)
+static int host_arg_param_validate(int optid, char *param, long long *out,
+				   char *errbuf, size_t errlen)
 {
   scamper_addr_t *addr;
   struct timeval tv;
-  long tmp = 0;
+  long long tmp = 0;
+
+#ifndef NDEBUG
+  errbuf[0] = '\0';
+#endif
 
   switch(optid)
     {
@@ -74,13 +79,19 @@ static int host_arg_param_validate(int optid, char *param, long long *out)
       return 0;
 
     case HOST_OPT_RETRIES:
-      if(string_tolong(param, &tmp) != 0 || tmp < 0 || tmp > 3)
-	return -1;
+      if(string_tollong(param, &tmp, NULL, 10) != 0 || tmp < 0 || tmp > 3)
+	{
+	  snprintf(errbuf, errlen, "retries must be within 0 - 3");
+	  goto err;
+	}
       break;
 
     case HOST_OPT_SERVER:
       if((addr = scamper_addr_fromstr_ipv4(param)) == NULL)
-	return -1;
+	{
+	  snprintf(errbuf, errlen, "server must be an IPv4 address");
+	  goto err;
+	}
       scamper_addr_free(addr);
       break;
 
@@ -97,31 +108,65 @@ static int host_arg_param_validate(int optid, char *param, long long *out)
 	tmp = SCAMPER_HOST_TYPE_NS;
       else if(strcasecmp(param, "SOA") == 0)
 	tmp = SCAMPER_HOST_TYPE_SOA;
-      else return -1;
+      else
+	{
+	  snprintf(errbuf, errlen, "unsupported query type %s", param);
+	  goto err;
+	}
       break;
 
     case HOST_OPT_WAIT:
-      if(timeval_fromstr(&tv, param, 1000000) != 0 ||
-	 (tv.tv_usec % 1000) != 0 ||
-	 timeval_cmp_lt(&tv, 1, 0) || timeval_cmp_gt(&tv, 5, 0))
-	return -1;
+      if(timeval_fromstr(&tv, param, 1000000) != 0)
+	{
+	  snprintf(errbuf, errlen, "malformed timeout");
+	  goto err;
+	}
+      if((tv.tv_usec % 1000) != 0)
+	{
+	  snprintf(errbuf, errlen, "timeout granularity limited to 1ms");
+	  goto err;
+	}
+      if(timeval_cmp_lt(&tv, 1, 0) || timeval_cmp_gt(&tv, 5, 0))
+	{
+	  snprintf(errbuf, errlen, "timeout must be within 1s - 5s");
+	  goto err;
+	}
       tmp = (tv.tv_sec * 1000000) + tv.tv_usec;
       break;
+
+    case HOST_OPT_USERID:
+      if(string_tollong(param, &tmp, NULL, 0) != 0 ||
+	 tmp < 0 || tmp > UINT32_MAX)
+	{
+	  snprintf(errbuf, errlen, "userid must be within %u - %u", 0,
+		   UINT32_MAX);
+	  goto err;
+	}
+      break;
+
+    default:
+      goto err;
     }
 
+  /* valid parameter */
+  assert(errbuf[0] == '\0');
   if(out != NULL)
-    *out = (long long)tmp;
-
+    *out = tmp;
   return 0;
+
+ err:
+  assert(errbuf[0] != '\0');
+  return -1;
 }
 
-int scamper_do_host_arg_validate(int argc, char *argv[], int *stop)
+int scamper_do_host_arg_validate(int argc, char *argv[], int *stop,
+				 char *errbuf, size_t errlen)
 {
   return scamper_options_validate(opts, opts_cnt, argc, argv, stop,
-				  host_arg_param_validate);
+				  errbuf, errlen, host_arg_param_validate);
 }
 
-void *scamper_do_host_alloc(char *str)
+void *scamper_do_host_alloc(char *str, char *errbuf, size_t errlen)
 {
   scamper_host_t *host = NULL;
   scamper_option_out_t *opts_out = NULL, *opt;
@@ -135,16 +180,25 @@ void *scamper_do_host_alloc(char *str)
   uint16_t qtype = 0;
   long long tmp = 0;
   struct timeval wait_timeout;
+  uint32_t optids = 0;
+  char buf[256];
+
+#ifndef NDEBUG
+  errbuf[0] = '\0';
+#endif
 
   /* try and parse the string passed in */
   if(scamper_options_parse(str, opts, opts_cnt, &opts_out, &name) != 0)
     {
-      scamper_debug(__func__, "could not parse command");
+      snprintf(errbuf, errlen, "could not parse host command");
       goto err;
     }
 
   if(name == NULL)
-    goto err;
+    {
+      snprintf(errbuf, errlen, "expected name to query");
+      goto err;
+    }
 
   wait_timeout.tv_sec = 5;
   wait_timeout.tv_usec = 0;
@@ -152,11 +206,22 @@ void *scamper_do_host_alloc(char *str)
   for(opt = opts_out; opt != NULL; opt = opt->next)
     {
       if(opt->type != SCAMPER_OPTION_TYPE_NULL &&
-	 host_arg_param_validate(opt->id, opt->str, &tmp) != 0)
+	 host_arg_param_validate(opt->id, opt->str, &tmp,
+				 buf, sizeof(buf)) != 0)
 	{
-	  scamper_debug(__func__, "validation of optid %d failed", opt->id);
+	  snprintf(errbuf, errlen, "-%c %s failed: %s",
+		   scamper_options_id2c(opts, opts_cnt, opt->id),
+		   opt->str, buf);
 	  goto err;
 	}
+
+      if((optids & (0x1 << opt->id)) != 0)
+	{
+	  snprintf(errbuf, errlen, "repeated option -%c",
+		   scamper_options_id2c(opts, opts_cnt, opt->id));
+	  goto err;
+	}
+      optids |= (0x1 << opt->id);
 
       switch(opt->id)
 	{
@@ -169,10 +234,11 @@ void *scamper_do_host_alloc(char *str)
 	  break;
 
 	case HOST_OPT_SERVER:
-	  if(server != NULL)
-	    goto err;
 	  if((server = scamper_addr_fromstr_ipv4(opt->str)) == NULL)
-	    goto err;
+	    {
+	      snprintf(errbuf, errlen, "server must be an IPv4 address");
+	      goto err;
+	    }
 	  break;
 
 	case HOST_OPT_TYPE:
@@ -189,7 +255,7 @@ void *scamper_do_host_alloc(char *str)
 	  break;
 
 	default:
-	  scamper_debug(__func__, "unhandled option %d", opt->id);
+	  snprintf(errbuf, errlen, "unhandled option %d", opt->id);
 	  goto err;
 	}
     }
@@ -215,15 +281,25 @@ void *scamper_do_host_alloc(char *str)
        * IP address
        */
       if((name_addr = scamper_addr_fromstr_unspec(name)) != NULL)
-	goto err;
+	{
+	  snprintf(errbuf, errlen, "query cannot be for an IP address");
+	  goto err;
+	}
     }
   else if(qtype == SCAMPER_HOST_TYPE_PTR)
     {
       /* for a PTR the name to look up MUST be an IP address */
       if((name_addr = scamper_addr_fromstr_unspec(name)) == NULL)
-	goto err;
+	{
+	  snprintf(errbuf, errlen, "query must be for an IP address");
+	  goto err;
+	}
     }
-  else goto err;
+  else
+    {
+      snprintf(errbuf, errlen, "unhandled qtype %d", qtype);
+      goto err;
+    }
 
   /* don't need the name_addr anymore, if we have one */
   if(name_addr != NULL)
@@ -234,7 +310,10 @@ void *scamper_do_host_alloc(char *str)
 
   if((host = scamper_host_alloc()) == NULL ||
      (host->qname = strdup(name)) == NULL)
-    goto err;
+    {
+      snprintf(errbuf, errlen, "could not alloc host");
+      goto err;
+    }
 
   host->userid  = userid;
   host->flags  |= flags;
@@ -256,7 +335,10 @@ void *scamper_do_host_alloc(char *str)
 	{
 	  etc_resolv();
 	  if(default_ns == NULL)
-	    goto err;
+	    {
+	      snprintf(errbuf, errlen, "no nameserver to query");
+	      goto err;
+	    }
 	}
       host->dst = scamper_addr_use(default_ns);
     }
@@ -265,6 +347,7 @@ void *scamper_do_host_alloc(char *str)
   return host;
 
  err:
+  assert(errbuf[0] != '\0');
   if(host != NULL) scamper_host_free(host);
   if(name_addr != NULL) scamper_addr_free(name_addr);
   if(server != NULL) scamper_addr_free(server);

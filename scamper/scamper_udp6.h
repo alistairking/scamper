@@ -1,7 +1,7 @@
 /*
  * scamper_udp6.h
  *
- * $Id: scamper_udp6.h,v 1.22 2023/08/20 01:21:17 mjl Exp $
+ * $Id: scamper_udp6.h,v 1.23 2024/02/21 04:58:05 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2009 The University of Waikato
@@ -29,10 +29,12 @@
 #ifndef _WIN32 /* SOCKET vs int on windows */
 int scamper_udp6_open(const void *addr, int sport);
 int scamper_udp6_open_err(const void *addr, int sport);
+void scamper_udp6_read_cb(int fd, void *param);
 void scamper_udp6_read_err_cb(int fd, void *param);
 #else
 SOCKET scamper_udp6_open(const void *addr, int sport);
 SOCKET scamper_udp6_open_err(const void *addr, int sport);
+void scamper_udp6_read_cb(SOCKET fd, void *param);
 void scamper_udp6_read_err_cb(SOCKET fd, void *param);
 #endif
 

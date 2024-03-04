@@ -1,7 +1,7 @@
 /*
  * scamper_fds: manage events for file descriptors
  *
- * $Id: scamper_fds.h,v 1.29 2023/08/20 01:21:17 mjl Exp $
+ * $Id: scamper_fds.h,v 1.32 2024/02/27 01:01:44 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -37,15 +37,31 @@ typedef void (*scamper_fd_cb_t)(SOCKET fd, void *param);
 
 /* these functions allocate reference to a socket shared throughout scamper */
 scamper_fd_t *scamper_fd_icmp4(void *addr);
-scamper_fd_t *scamper_fd_icmp4_err(void *addr);
+scamper_fd_t *scamper_fd_icmp4err(void *addr);
 scamper_fd_t *scamper_fd_icmp6(void *addr);
-scamper_fd_t *scamper_fd_udp4(void *addr, uint16_t sport);
+scamper_fd_t *scamper_fd_udp4dg(void *addr, uint16_t sport);
+scamper_fd_t *scamper_fd_udp4raw(void *addr);
 scamper_fd_t *scamper_fd_udp6(void *addr, uint16_t sport);
-scamper_fd_t *scamper_fd_udp6_err(void *addr, uint16_t sport);
+scamper_fd_t *scamper_fd_udp6err(void *addr, uint16_t sport);
 scamper_fd_t *scamper_fd_tcp4(void *addr, uint16_t sport);
 scamper_fd_t *scamper_fd_tcp6(void *addr, uint16_t sport);
 scamper_fd_t *scamper_fd_dl(int ifindex);
 scamper_fd_t *scamper_fd_ip4(void);
+
+scamper_fd_t *scamper_fd_udp4dg_dst(void *src, uint16_t sport,
+				    void *dst, uint16_t dport);
+scamper_fd_t *scamper_fd_udp6_dst(void *src, uint16_t sport,
+				  void *dst, uint16_t dport);
+scamper_fd_t *scamper_fd_udp6err_dst(void *src, uint16_t sport,
+				     void *dst, uint16_t dport);
+scamper_fd_t *scamper_fd_tcp4_dst(void *src, uint16_t sport,
+				  uint16_t *sportx, size_t sportxc,
+				  void *dst, uint16_t dport);
+scamper_fd_t *scamper_fd_tcp6_dst(void *src, uint16_t sport,
+				  uint16_t *sportx, size_t sportxc,
+				  void *dst, uint16_t dport);
+
+scamper_fd_t *scamper_fd_use(scamper_fd_t *fdn);
 
 #ifndef _WIN32 /* windows does not have a routing socket */
 scamper_fd_t *scamper_fd_rtsock(void);

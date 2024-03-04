@@ -1,7 +1,7 @@
 /*
  * scamper_do_tbit.c
  *
- * $Id: scamper_tbit_do.c,v 1.200 2023/12/25 22:12:25 mjl Exp $
+ * $Id: scamper_tbit_do.c,v 1.204 2024/02/27 03:34:02 mjl Exp $
  *
  * Copyright (C) 2009-2010 Ben Stasiewicz
  * Copyright (C) 2009-2010 Stephen Eichler
@@ -3842,7 +3842,8 @@ void scamper_do_tbit_free(void *data)
 }
 
 scamper_task_t *scamper_do_tbit_alloctask(void *data, scamper_list_t *list,
-					  scamper_cycle_t *cycle)
+					  scamper_cycle_t *cycle,
+					  char *errbuf, size_t errlen)
 {
   scamper_tbit_t *tbit = (scamper_tbit_t *)data;
   scamper_task_sig_t *sig = NULL;
@@ -3850,18 +3851,28 @@ scamper_task_t *scamper_do_tbit_alloctask(void *data, scamper_list_t *list,
 
   /* allocate a task structure and store the tbit with it */
   if((task = scamper_task_alloc(data, &tbit_funcs)) == NULL)
-    goto err;
+    {
+      snprintf(errbuf, errlen, "%s: could not malloc state", __func__);
+      goto err;
+    }
 
   /* declare the signature of the tbit task */
   if((sig = scamper_task_sig_alloc(SCAMPER_TASK_SIG_TYPE_TX_IP)) == NULL)
-    goto err;
+    {
+      snprintf(errbuf, errlen, "%s: could not alloc task signature", __func__);
+      goto err;
+    }
   sig->sig_tx_ip_dst = scamper_addr_use(tbit->dst);
-  if(tbit->src == NULL && (tbit->src = scamper_getsrc(tbit->dst,0)) == NULL)
+  if(tbit->src == NULL &&
+     (tbit->src = scamper_getsrc(tbit->dst, 0, errbuf, errlen)) == NULL)
     goto err;
   sig->sig_tx_ip_src = scamper_addr_use(tbit->src);
   SCAMPER_TASK_SIG_TCP(sig, tbit->sport, tbit->dport);
   if(scamper_task_sig_add(task, sig) != 0)
-    goto err;
+    {
+      snprintf(errbuf, errlen, "%s: could not add signature to task", __func__);
+      goto err;
+    }
   sig = NULL;
 
   /* associate the list and cycle with the tbit */
@@ -3878,6 +3889,11 @@ scamper_task_t *scamper_do_tbit_alloctask(void *data, scamper_list_t *list,
       scamper_task_free(task);
     }
   return NULL;
+}
+
+uint32_t scamper_do_tbit_userid(void *data)
+{
+  return ((scamper_tbit_t *)data)->userid;
 }
 
 void scamper_do_tbit_cleanup(void)

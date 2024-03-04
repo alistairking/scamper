@@ -1,7 +1,7 @@
 /*
  * utils.c
  *
- * $Id: utils.c,v 1.231 2023/12/30 19:11:52 mjl Exp $
+ * $Id: utils.c,v 1.235 2024/02/20 21:02:50 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -819,6 +819,26 @@ void timeval_sub_us(struct timeval *out, const struct timeval *in, int us)
   out->tv_sec  = in->tv_sec  - (us / 1000000);
   out->tv_usec = in->tv_usec - (us % 1000000);
   timeval_handlewrap(out);
+  return;
+}
+
+void timeval_sub_tv(struct timeval *tv, const struct timeval *sub)
+{
+  assert(sub->tv_sec >= 0);
+  assert(sub->tv_usec >= 0); assert(sub->tv_usec < 1000000);
+  assert(timeval_cmp(tv, sub) >= 0);
+
+  tv->tv_sec -= sub->tv_sec;
+  if(tv->tv_usec < sub->tv_usec)
+    {
+      tv->tv_sec--;
+      tv->tv_usec += (1000000 - sub->tv_usec);
+    }
+  else
+    {
+      tv->tv_usec -= sub->tv_usec;
+    }
+  
   return;
 }
 
@@ -1659,6 +1679,21 @@ int ishex(char c)
   return 0;
 }
 
+/*
+ * string_ishex
+ *
+ * scan the string to establish if it is made up entirely of hexadecimal
+ * characters.  if it is, return the number of characters.
+ */
+int string_ishex(const char *str)
+{
+  int i;
+  for(i=0; str[i] != '\0'; i++)
+    if(ishex(str[i]) == 0)
+      return 0;
+  return i;
+}
+
 uint8_t hex2byte(char a, char b)
 {
   uint8_t out;
@@ -2374,6 +2409,43 @@ uint32_t byteswap32(uint32_t word)
 {
   return ((word << 24) | (word >> 24) |
 	  ((word & 0xff00) << 8) | ((word >> 8) & 0xff00));
+}
+
+#ifndef _WIN32 /* SOCKET vs int on windows */
+int socket_sport(int fd, uint16_t *sport)
+#else
+int socket_sport(SOCKET fd, uint16_t *sport)
+#endif
+{
+  struct sockaddr *sa;
+  struct sockaddr_storage ss;
+  socklen_t sl;
+
+  sl = sizeof(struct sockaddr_storage);
+  if(getsockname(fd, (struct sockaddr *)&ss, &sl) != 0)
+    return -1;
+  sa = (struct sockaddr *)&ss;
+  if(sa->sa_family == AF_INET)
+    *sport = ntohs(((struct sockaddr_in *)sa)->sin_port);
+  else if(sa->sa_family == AF_INET6)
+    *sport = ntohs(((struct sockaddr_in6 *)sa)->sin6_port);
+  else
+    return -1;
+  return 0;
+}
+
+char *strerror_wrap(char *errbuf, size_t errlen, const char *format, ...)
+{
+  char message[512];
+  int ecode = errno;
+  va_list ap;
+
+  va_start(ap, format);
+  vsnprintf(message, sizeof(message), format, ap);
+  va_end(ap);
+  snprintf(errbuf, errlen, "%s: %s\n", message, strerror(ecode));
+
+  return errbuf;
 }
 
 int fd_lines(int fd, int (*func)(char *, void *), void *param)

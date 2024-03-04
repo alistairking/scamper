@@ -1,7 +1,7 @@
 /*
  * scamper_ping.h
  *
- * $Id: scamper_ping.h,v 1.70 2023/11/27 07:56:14 mjl Exp $
+ * $Id: scamper_ping.h,v 1.72 2024/02/28 23:35:23 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -43,6 +43,8 @@ typedef struct scamper_ping_stats scamper_ping_stats_t;
 #define SCAMPER_PING_REPLY_FLAG_REPLY_TTL  0x01 /* reply ttl included */
 #define SCAMPER_PING_REPLY_FLAG_REPLY_IPID 0x02 /* reply ipid included */
 #define SCAMPER_PING_REPLY_FLAG_PROBE_IPID 0x04 /* probe ipid included */
+#define SCAMPER_PING_REPLY_FLAG_DLTX       0x08 /* datalink tx timestamp */
+#define SCAMPER_PING_REPLY_FLAG_DLRX       0x10 /* datalink rx timestamp */
 
 #define SCAMPER_PING_METHOD_ICMP_ECHO     0x00
 #define SCAMPER_PING_METHOD_TCP_ACK       0x01
@@ -61,9 +63,10 @@ typedef struct scamper_ping_stats scamper_ping_stats_t;
 #define SCAMPER_PING_FLAG_TSONLY          0x08 /* -T tsonly */
 #define SCAMPER_PING_FLAG_TSANDADDR       0x10 /* -T tsandaddr */
 #define SCAMPER_PING_FLAG_ICMPSUM         0x20 /* -C csum */
-#define SCAMPER_PING_FLAG_DL              0x40 /* always use datalink socket */
+#define SCAMPER_PING_FLAG_DL              0x40 /* -O dl: timestamp from dl */
 #define SCAMPER_PING_FLAG_TBT             0x80 /* -O tbt: too big trick */
 #define SCAMPER_PING_FLAG_NOSRC           0x100 /* -O nosrc: do not embed src */
+#define SCAMPER_PING_FLAG_RAW             0x200 /* -O raw: tx with raw IPv4 */
 
 /* basic routines to use and free scamper_ping structures */
 void scamper_ping_free(scamper_ping_t *ping);
@@ -118,6 +121,7 @@ int scamper_ping_reply_is_from_target(const scamper_ping_t *ping,
 scamper_addr_t *scamper_ping_reply_addr_get(const scamper_ping_reply_t *reply);
 uint16_t scamper_ping_reply_probe_id_get(const scamper_ping_reply_t *reply);
 uint16_t scamper_ping_reply_probe_ipid_get(const scamper_ping_reply_t *reply);
+uint16_t scamper_ping_reply_probe_sport_get(const scamper_ping_reply_t *reply);
 uint8_t scamper_ping_reply_proto_get(const scamper_ping_reply_t *reply);
 uint8_t scamper_ping_reply_ttl_get(const scamper_ping_reply_t *reply);
 uint16_t scamper_ping_reply_size_get(const scamper_ping_reply_t *reply);

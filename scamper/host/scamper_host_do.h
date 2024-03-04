@@ -1,7 +1,7 @@
 /*
  * scamper_do_host.h
  *
- * $Id: scamper_host_do.h,v 1.5 2023/06/04 04:41:53 mjl Exp $
+ * $Id: scamper_host_do.h,v 1.7 2024/02/27 03:34:02 mjl Exp $
  *
  * Copyright (C) 2018-2020 Matthew Luckie
  * Author: Matthew Luckie
@@ -28,7 +28,8 @@ typedef struct scamper_host_do scamper_host_do_t;
 
 scamper_task_t *scamper_do_host_alloctask(void *data,
 					  scamper_list_t *list,
-					  scamper_cycle_t *cycle);
+					  scamper_cycle_t *cycle,
+					  char *errbuf, size_t errlen);
 
 void scamper_do_host_free(void *data);
 
@@ -47,6 +48,8 @@ void scamper_host_do_free(scamper_host_do_t *hostdo);
 /* code to get or set the nameserver that scamper should use by default */
 const scamper_addr_t *scamper_do_host_getns(void);
 int scamper_do_host_setns(const char *nsip);
+
+uint32_t scamper_do_host_userid(void *data);
 
 void scamper_do_host_cleanup(void);
 int scamper_do_host_init(void);

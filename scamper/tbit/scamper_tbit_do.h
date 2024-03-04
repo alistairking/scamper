@@ -1,7 +1,7 @@
 /*
  * scamper_do_tbit.h
  *
- * $Id: scamper_tbit_do.h,v 1.3 2023/06/04 06:05:34 mjl Exp $
+ * $Id: scamper_tbit_do.h,v 1.5 2024/02/27 03:34:02 mjl Exp $
  *
  * Copyright (C) 2009-2010 Ben Stasiewicz
  *
@@ -35,7 +35,10 @@ void scamper_do_tbit_free(void *data);
 
 scamper_task_t *scamper_do_tbit_alloctask(void *data,
 					  scamper_list_t *list,
-					  scamper_cycle_t *cycle);
+					  scamper_cycle_t *cycle,
+					  char *errbuf, size_t errlen);
+
+uint32_t scamper_do_tbit_userid(void *data);
 
 void scamper_do_tbit_cleanup(void);
 int scamper_do_tbit_init(void);

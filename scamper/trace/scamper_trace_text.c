@@ -7,7 +7,7 @@
  * Copyright (C) 2020-2023 Matthew Luckie
  * Author: Matthew Luckie
  *
- * $Id: scamper_trace_text.c,v 1.30.8.1 2024/01/22 20:48:56 mjl Exp $
+ * $Id: scamper_trace_text.c,v 1.32 2024/01/22 23:20:01 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -87,8 +87,7 @@ static char *icmp_tostr(const scamper_trace_hop_t *hop,
 	}
     }
   else if(SCAMPER_TRACE_HOP_IS_ICMP_TTL_EXP(hop) ||
-	  SCAMPER_TRACE_HOP_IS_ICMP_ECHO_REPLY(hop) ||
-	  SCAMPER_TRACE_HOP_IS_UDP(hop))
+	  SCAMPER_TRACE_HOP_IS_ICMP_ECHO_REPLY(hop))
     {
       str[0] = '\0';
     }
@@ -177,6 +176,10 @@ static char *icmp_tostr(const scamper_trace_hop_t *hop,
 	{
 	  snprintf(str,len," !<%d,%d>",hop->hop_icmp_type,hop->hop_icmp_code);
 	}
+    }
+  else
+    {
+      str[0] = '\0';
     }
 
   return str;
