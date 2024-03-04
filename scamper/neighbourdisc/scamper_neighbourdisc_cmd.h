@@ -1,7 +1,7 @@
 /*
  * scamper_neighbourdisc_cmd.h
  *
- * $Id: scamper_neighbourdisc_cmd.h,v 1.1 2023/06/04 04:52:48 mjl Exp $
+ * $Id: scamper_neighbourdisc_cmd.h,v 1.2 2024/02/12 20:35:36 mjl Exp $
  *
  * Copyright (C) 2009-2010 Matthew Luckie
  *
@@ -23,8 +23,9 @@
 #ifndef __SCAMPER_NEIGHBOURDISC_CMD_H
 #define __SCAMPER_NEIGHBOURDISC_CMD_H
 
-void *scamper_do_neighbourdisc_alloc(char *str);
-int scamper_do_neighbourdisc_arg_validate(int argc, char *argv[], int *stop);
+void *scamper_do_neighbourdisc_alloc(char *str, char *errbuf, size_t errlen);
+int scamper_do_neighbourdisc_arg_validate(int argc, char *argv[], int *stop,
+					  char *errbuf, size_t errlen);
 const char *scamper_do_neighbourdisc_usage(void);
 
 #endif /* __SCAMPER_NEIGHBOURDISC_CMD_H */

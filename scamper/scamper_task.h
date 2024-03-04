@@ -1,7 +1,7 @@
 /*
  * scamper_task.h
  *
- * $Id: scamper_task.h,v 1.49 2023/08/26 07:33:35 mjl Exp $
+ * $Id: scamper_task.h,v 1.52 2024/02/27 01:01:44 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -32,6 +32,7 @@ struct scamper_queue;
 struct scamper_task;
 struct scamper_dl_rec;
 struct scamper_icmp_resp;
+struct scamper_udp_resp;
 struct scamper_cyclemon;
 struct scamper_file;
 struct scamper_sourcetask;
@@ -132,6 +133,9 @@ typedef struct scamper_task_funcs
   void (*handle_icmp)(struct scamper_task *task,
 		      struct scamper_icmp_resp *icmp);
 
+  void (*handle_udp)(struct scamper_task *task,
+		     struct scamper_udp_resp *udp);
+
   /* handle some information from the datalink */
   void (*handle_dl)(struct scamper_task *task, struct scamper_dl_rec *dl_rec);
 
@@ -173,8 +177,11 @@ void scamper_task_halt(scamper_task_t *task);
 /* pass the datalink record to all appropriate tasks */
 void scamper_task_handledl(struct scamper_dl_rec *dl);
 
-/* pass the ICMP respons eto all appropriate tasks */
+/* pass the ICMP response to all appropriate tasks */
 void scamper_task_handleicmp(struct scamper_icmp_resp *r);
+
+/* pass the UDP response to all appropriate tasks */
+void scamper_task_handleudp(struct scamper_udp_resp *r);
 
 /* access the queue structre the task holds */
 int scamper_task_queue_probe(scamper_task_t *task);
@@ -210,6 +217,8 @@ int scamper_task_sig_install(scamper_task_t *task);
 void scamper_task_sig_deinstall(scamper_task_t *task);
 scamper_task_t *scamper_task_find(scamper_task_sig_t *sig);
 char *scamper_task_sig_tostr(scamper_task_sig_t *sig, char *buf, size_t len);
+int scamper_task_sig_sport_used(struct scamper_addr *dst, uint8_t proto,
+				uint16_t sport, uint16_t dport);
 
 /* manage ancillary data attached to the task */
 scamper_task_anc_t *scamper_task_anc_add(scamper_task_t *task, void *data,
@@ -254,7 +263,7 @@ void scamper_task_cleanup(void);
 	(sig)->sig_tx_ip_icmp_type = ICMP6_ECHO_REQUEST;		\
       }									\
     (sig)->sig_tx_ip_icmp_id = (id);					\
-  } while(0);
+  } while(0)
 
 #define SCAMPER_TASK_SIG_ICMP_TIME(sig, id) do {			\
     assert((sig)->sig_tx_ip_dst != NULL);				\
@@ -262,7 +271,7 @@ void scamper_task_cleanup(void);
     (sig)->sig_tx_ip_proto = IPPROTO_ICMP;				\
     (sig)->sig_tx_ip_icmp_type = ICMP_TSTAMP;				\
     (sig)->sig_tx_ip_icmp_id = (id);					\
-  } while(0);
+  } while(0)
 
 #define SCAMPER_TASK_SIG_TCP(sig, sport, dport) do {			\
     (sig)->sig_tx_ip_proto = IPPROTO_TCP;				\
@@ -270,7 +279,7 @@ void scamper_task_cleanup(void);
     (sig)->sig_tx_ip_tcp_sport_y = (sport);				\
     (sig)->sig_tx_ip_tcp_dport_x = (dport);				\
     (sig)->sig_tx_ip_tcp_dport_y = (dport);				\
-  } while(0);
+  } while(0)
 
 #define SCAMPER_TASK_SIG_TCP_SPORT(sig, sport_x, sport_y, dport) do {	\
     assert((sport_x) <= (sport_y));					\
@@ -279,7 +288,7 @@ void scamper_task_cleanup(void);
     (sig)->sig_tx_ip_tcp_sport_y = (sport_y);				\
     (sig)->sig_tx_ip_tcp_dport_x = (dport);				\
     (sig)->sig_tx_ip_tcp_dport_y = (dport);				\
-  } while(0);
+  } while(0)
 
 #define SCAMPER_TASK_SIG_UDP(sig, sport, dport) do {			\
     (sig)->sig_tx_ip_proto = IPPROTO_UDP;				\
@@ -287,24 +296,24 @@ void scamper_task_cleanup(void);
     (sig)->sig_tx_ip_udp_sport_y = (sport);				\
     (sig)->sig_tx_ip_udp_dport_x = (dport);				\
     (sig)->sig_tx_ip_udp_dport_y = (dport);				\
-  } while(0);
+  } while(0)
 
-#define SCAMPER_TASK_SIG_UDP_SPORT(sig, sport_x, sport_y, dport) do{	\
+#define SCAMPER_TASK_SIG_UDP_SPORT(sig, sport_x, sport_y, dport) do {	\
     assert((sport_x) <= (sport_y));					\
     (sig)->sig_tx_ip_proto = IPPROTO_UDP;				\
     (sig)->sig_tx_ip_udp_sport_x = (sport_x);				\
     (sig)->sig_tx_ip_udp_sport_y = (sport_y);				\
     (sig)->sig_tx_ip_udp_dport_x = (dport);				\
     (sig)->sig_tx_ip_udp_dport_y = (dport);				\
-  } while(0);
+  } while(0)
 
-#define SCAMPER_TASK_SIG_UDP_DPORT(sig, sport, dport_x, dport_y) do{	\
+#define SCAMPER_TASK_SIG_UDP_DPORT(sig, sport, dport_x, dport_y) do {	\
     assert((dport_x) <= (dport_y));					\
     (sig)->sig_tx_ip_proto = IPPROTO_UDP;				\
     (sig)->sig_tx_ip_udp_sport_x = (sport);				\
     (sig)->sig_tx_ip_udp_sport_y = (sport);				\
     (sig)->sig_tx_ip_udp_dport_x = (dport_x);				\
     (sig)->sig_tx_ip_udp_dport_y = (dport_y);				\
-  } while(0);
+  } while(0)
 
 #endif /* __SCAMPER_TASK_H */

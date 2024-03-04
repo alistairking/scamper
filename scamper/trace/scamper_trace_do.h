@@ -1,7 +1,7 @@
 /*
  * scamper_do_trace.h
  *
- * $Id: scamper_trace_do.h,v 1.17 2023/06/04 05:45:33 mjl Exp $
+ * $Id: scamper_trace_do.h,v 1.19 2024/02/27 03:34:02 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2010 The University of Waikato
@@ -27,11 +27,14 @@
 
 scamper_task_t *scamper_do_trace_alloctask(void *data,
 					   scamper_list_t *list,
-					   scamper_cycle_t *cycle);
+					   scamper_cycle_t *cycle,
+					   char *errbuf, size_t errlen);
 
 void scamper_do_trace_free(void *data);
 
 int scamper_do_trace_dtree_lss_clear(char *name);
+
+uint32_t scamper_do_trace_userid(void *data);
 
 void scamper_do_trace_cleanup(void);
 int scamper_do_trace_init(void);

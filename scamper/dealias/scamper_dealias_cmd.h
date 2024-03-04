@@ -1,9 +1,10 @@
 /*
  * scamper_dealias_cmd.h
  *
- * $Id: scamper_dealias_cmd.h,v 1.1 2023/06/04 05:55:33 mjl Exp $
+ * $Id: scamper_dealias_cmd.h,v 1.2 2024/02/12 20:35:36 mjl Exp $
  *
  * Copyright (C) 2008-2010 The University of Waikato
+ * Copyright (C) 2024      The Regents of the University of California
  * Author: Matthew Luckie
  *
  * This code implements alias resolution techniques published by others
@@ -28,8 +29,9 @@
 #ifndef __SCAMPER_DEALIAS_CMD_H
 #define __SCAMPER_DEALIAS_CMD_H
 
-void *scamper_do_dealias_alloc(char *str);
-int scamper_do_dealias_arg_validate(int argc, char *argv[], int *stop);
+void *scamper_do_dealias_alloc(char *str, char *errbuf, size_t errlen);
+int scamper_do_dealias_arg_validate(int argc, char *argv[], int *stop,
+				    char *errbuf, size_t errlen);
 const char *scamper_do_dealias_usage(void);
 
 #endif /* __SCAMPER_DEALIAS_CMD_H */

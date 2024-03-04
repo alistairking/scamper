@@ -1,4 +1,4 @@
-# $Id: Makefile.am,v 1.24 2024/01/16 08:59:29 mjl Exp $
+# $Id: Makefile.am,v 1.26 2024/02/20 21:05:14 mjl Exp $
 
 AUTOMAKE_OPTIONS = subdir-objects
 
@@ -34,7 +34,8 @@ noinst_PROGRAMS = \
 	unit_http_lib \
 	unit_host_rr_list \
 	unit_options \
-	unit_timeval_fromstr
+	unit_timeval \
+	unit_fds
 
 noinst_LIBRARIES = libcmdtest.a libosinfotest.a
 
@@ -234,7 +235,16 @@ unit_options_SOURCES = unit_options.c \
 	../scamper/scamper_options.c \
 	../utils.c
 
-unit_timeval_fromstr_SOURCES = unit_timeval_fromstr.c \
+unit_timeval_SOURCES = unit_timeval.c \
 	../utils.c
+
+unit_fds_CFLAGS = -DTEST_FDS
+unit_fds_SOURCES = unit_fds.c \
+	../scamper/scamper_fds.c \
+	../scamper/scamper_addr.c \
+	../utils.c \
+	../mjl_list.c \
+	../mjl_splaytree.c \
+	common.c
 
 CLEANFILES = *~ *.core

@@ -21,7 +21,7 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
- * $Id: sc_attach.c,v 1.40 2023/12/27 03:45:49 mjl Exp $
+ * $Id: sc_attach.c,v 1.41 2024/02/28 04:31:52 mjl Exp $
  *
  */
 
@@ -303,7 +303,7 @@ static int check_options(int argc, char *argv[])
 #endif
 
 	case 'v':
-	  printf("$Id: sc_attach.c,v 1.40 2023/12/27 03:45:49 mjl Exp $\n");
+	  printf("$Id: sc_attach.c,v 1.41 2024/02/28 04:31:52 mjl Exp $\n");
 	  return -1;
 
 	case '?':
@@ -560,7 +560,10 @@ static int do_scamperread_line(void *param, uint8_t *buf, size_t linelen)
   /* feedback letting us know that the command was not accepted */
   if(linelen >= 3 && strncasecmp(head, "ERR", 3) == 0)
     {
-      fprintf(stderr, "%s: command not accepted\n", __func__);
+      if(linelen >= 5)
+	fprintf(stderr, "%s: %s\n", __func__, head+4);
+      else
+	fprintf(stderr, "%s: command not accepted\n", __func__);
       error = 1;
       return -1;
     }

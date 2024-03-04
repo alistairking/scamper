@@ -1,7 +1,7 @@
 /*
  * scamper_tbit_cmd.c
  *
- * $Id: scamper_tbit_cmd.c,v 1.3 2023/10/01 08:07:37 mjl Exp $
+ * $Id: scamper_tbit_cmd.c,v 1.5 2024/02/15 06:51:18 mjl Exp $
  *
  * Copyright (C) 2009-2010 Ben Stasiewicz
  * Copyright (C) 2009-2010 Stephen Eichler
@@ -10,6 +10,7 @@
  * Copyright (C) 2012-2015 The Regents of the University of California
  * Copyright (C) 2017      University of Waikato
  * Copyright (C) 2022-2023 Matthew Luckie
+ * Copyright (C) 2024      The Regents of the University of California
  *
  * Authors: Matthew Luckie, Ben Stasiewicz, Stephen Eichler, Tiange Wu,
  *          Robert Beverly
@@ -49,18 +50,13 @@
 #include "scamper_tbit.h"
 #include "scamper_options.h"
 #include "scamper_tbit_int.h"
-#include "scamper_debug.h"
+#include "scamper_tbit_cmd.h"
 #include "utils.h"
-
-/* Default test parameters */
-#define TBIT_RETX_DEFAULT         3
 
 typedef struct tbit_options
 {
   uint8_t   app;
   uint8_t   type;
-  uint8_t   syn_retx;
-  uint8_t   dat_retx;
   uint8_t   attempts;
   uint8_t   fo_cookielen;
   uint8_t   fo_cookie[16];
@@ -92,11 +88,39 @@ extern scamper_addrcache_t *addrcache;
 #define TBIT_OPT_USERID      10
 #define TBIT_OPT_SRCADDR     11
 #define TBIT_OPT_FO          12
-#define TBIT_OPT_WSCALE      17
-#define TBIT_OPT_ATTEMPTS    18
-#define TBIT_OPT_OFFSET      19
-#define TBIT_OPT_ASN         20
-#define TBIT_OPT_TTL         21
+#define TBIT_OPT_WSCALE      13
+#define TBIT_OPT_ATTEMPTS    14
+#define TBIT_OPT_OFFSET      15
+#define TBIT_OPT_ASN         16
+#define TBIT_OPT_TTL         17
+
+typedef struct opt_limit
+{
+  char      *name;
+  long long  min;
+  long long  max;
+} opt_limit_t;
+
+static const opt_limit_t limits[] = {
+  {NULL, 0, 0}, /* zero unused */
+  {"dport", 1, 65535},
+  {"mss", 0, 65535},
+  {"mtu", 0, 65535},
+  {NULL, 0, 0}, /* -O option */
+  {NULL, 0, 0}, /* -p application */
+  {NULL, 0, 0}, /* -P ptb-src */
+  {"sport", 1, 65535},
+  {NULL, 0, 0}, /* -t type */
+  {NULL, 0, 0}, /* -u URL */
+  {"userid", 0, UINT32_MAX},
+  {NULL, 0, 0}, /* -S src-addr */
+  {NULL, 0, 0}, /* fo-cookie */
+  {"wscale", 0, 14},
+  {"attempts", 1, 4},
+  {"offset", -2147483647, 2147483647},
+  {"asn", 0, 65535},
+  {"ttl", 1, 255},
+};
 
 /* bits for the tbit_option.options field */
 #define TBIT_OPT_OPTION_BLACKHOLE  0x0001
@@ -147,10 +171,15 @@ const char *scamper_do_tbit_usage(void)
     "     [-P ptbsrc] [-q attempts] [-S srcaddr] [-T ttl] [-u url]";
 }
 
-static int tbit_arg_param_validate(int optid, char *param, long long *out)
+static int tbit_arg_param_validate(int optid, char *param, long long *out,
+				   char *errbuf, size_t errlen)
 {
-  long tmp;
+  long long tmp = 0;
   int i;
+
+#ifndef NDEBUG
+  errbuf[0] = '\0';
+#endif
 
   switch(optid)
     {
@@ -174,7 +203,10 @@ static int tbit_arg_param_validate(int optid, char *param, long long *out)
       else if(strcasecmp(param, "blind-fin") == 0)
 	tmp = SCAMPER_TBIT_TYPE_BLIND_FIN;
       else
-	goto err;
+	{
+	  snprintf(errbuf, errlen, "unknown tbit type %s", param);
+	  goto err;
+	}
       break;
 
     case TBIT_OPT_APP:
@@ -183,7 +215,10 @@ static int tbit_arg_param_validate(int optid, char *param, long long *out)
       else if(strcasecmp(param, "bgp") == 0)
 	tmp = SCAMPER_TBIT_APP_BGP;
       else
-	goto err;
+	{
+	  snprintf(errbuf, errlen, "unknown tbit application %s", param);
+	  goto err;
+	}
       break;
 
     case TBIT_OPT_SPORT:
@@ -191,55 +226,66 @@ static int tbit_arg_param_validate(int optid, char *param, long long *out)
     case TBIT_OPT_MSS:
     case TBIT_OPT_MTU:
     case TBIT_OPT_ASN:
-      if(string_tolong(param, &tmp) != 0 || tmp < 0 || tmp > 65535)
-	goto err;
-      break;
-
     case TBIT_OPT_USERID:
-      if(string_tolong(param, &tmp) != 0 || tmp < 0)
-	goto err;
+    case TBIT_OPT_WSCALE:
+    case TBIT_OPT_ATTEMPTS:
+    case TBIT_OPT_OFFSET:
+    case TBIT_OPT_TTL:
+      if(string_tollong(param, &tmp, NULL, 0) != 0 ||
+	 tmp < limits[optid].min || tmp > limits[optid].max)
+	{
+	  snprintf(errbuf, errlen, "%s must be within %lld - %lld",
+		   limits[optid].name, limits[optid].min, limits[optid].max);
+	  goto err;
+	}
       break;
 
     case TBIT_OPT_FO:
-      for(i=0; param[i] != '\0'; i++)
-	if(ishex(param[i]) == 0)
+      if((i = string_ishex(param)) == 0)
+	{
+	  snprintf(errbuf, errlen, "fo-cookie must be specified in hex");
 	  goto err;
-      if(i == 0 || (i % 8) != 0)
-	goto err;
+	}
+      if((i % (4*2)) != 0)
+	{
+	  snprintf(errbuf, errlen, "fo-cookie must be a multiple of 4 bytes");
+	  goto err;
+	}
       if(i < (4*2) || i > (16*2))
-	goto err;
+	{
+	  snprintf(errbuf, errlen, "fo-cookie must be 4 - 16 bytes");
+	  goto err;
+	}
       tmp = i;
       break;
 
-    case TBIT_OPT_WSCALE:
-      if(string_tolong(param, &tmp) != 0 || tmp > 14 || tmp < 0)
-	goto err;
-      break;
-
-    case TBIT_OPT_ATTEMPTS:
-      if(string_tolong(param, &tmp) != 0 || tmp < 1 || tmp > 4)
-	goto err;
-      break;
-
-    case TBIT_OPT_OFFSET:
-      if(string_tolong(param, &tmp) != 0)
-	goto err;
-#if SIZEOF_LONG > 4
-      if(tmp > 2147483647 || tmp < -2147483647)
-	goto err;
-#endif
-      break;
-
-    case TBIT_OPT_TTL:
-      if(string_tolong(param, &tmp) != 0 || tmp < 1 || tmp > 255)
-	goto err;
+    case TBIT_OPT_OPTION:
+      if(strcasecmp(param, "blackhole") == 0)
+	tmp = TBIT_OPT_OPTION_BLACKHOLE;
+      else if(strcasecmp(param, "tcpts") == 0)
+	tmp = TBIT_OPT_OPTION_TCPTS;
+      else if(strcasecmp(param, "ipts-syn") == 0)
+	tmp = TBIT_OPT_OPTION_IPTS_SYN;
+      else if(strcasecmp(param, "iprr-syn") == 0)
+	tmp = TBIT_OPT_OPTION_IPRR_SYN;
+      else if(strcasecmp(param, "ipqs-syn") == 0)
+	tmp = TBIT_OPT_OPTION_IPQS_SYN;
+      else if(strcasecmp(param, "sack") == 0)
+	tmp = TBIT_OPT_OPTION_SACK;
+      else if(strcasecmp(param, "fo") == 0)
+	tmp = TBIT_OPT_OPTION_FO;
+      else if(strcasecmp(param, "fo-exp") == 0)
+	tmp = TBIT_OPT_OPTION_FO_EXP;
+      else
+	{
+	  snprintf(errbuf, errlen, "-O %s unknown", param);
+	  goto err;
+	}
       break;
 
     case TBIT_OPT_PTBSRC:
-    case TBIT_OPT_OPTION:
     case TBIT_OPT_URL:
     case TBIT_OPT_SRCADDR:
-      tmp = 0;
       break;
 
     default:
@@ -247,144 +293,146 @@ static int tbit_arg_param_validate(int optid, char *param, long long *out)
     }
 
   /* valid parameter */
+  assert(errbuf[0] == '\0');
   if(out != NULL)
-    *out = (long long)tmp;
+    *out = tmp;
   return 0;
 
  err:
+  assert(errbuf[0] != '\0');
   return -1;
 }
 
-int scamper_do_tbit_arg_validate(int argc, char *argv[], int *stop)
+int scamper_do_tbit_arg_validate(int argc, char *argv[], int *stop,
+				 char *errbuf, size_t errlen)
 {
   return scamper_options_validate(opts, opts_cnt, argc, argv, stop,
-				  tbit_arg_param_validate);
+				  errbuf, errlen, tbit_arg_param_validate);
 }
 
-static int tbit_app_smtp(scamper_tbit_t *tbit, tbit_options_t *o)
+static int tbit_app_smtp(scamper_tbit_t *tbit, tbit_options_t *o,
+			 char *errbuf, size_t errlen)
 {
   if(tbit->dport == 0)
     tbit->dport = 25;
   return 0;
 }
 
-static int tbit_app_dns(scamper_tbit_t *tbit, tbit_options_t *o)
+static int tbit_app_dns(scamper_tbit_t *tbit, tbit_options_t *o,
+			char *errbuf, size_t errlen)
 {
   if(tbit->dport == 0)
     tbit->dport = 53;
   return 0;
 }
 
-static int tbit_app_ftp(scamper_tbit_t *tbit, tbit_options_t *o)
+static int tbit_app_ftp(scamper_tbit_t *tbit, tbit_options_t *o,
+			char *errbuf, size_t errlen)
 {
   if(tbit->dport == 0)
     tbit->dport = 21;
   return 0;
 }
 
-static int tbit_app_bgp(scamper_tbit_t *tbit, tbit_options_t *o)
+static int tbit_app_bgp(scamper_tbit_t *tbit, tbit_options_t *o,
+			char *errbuf, size_t errlen)
 {
   scamper_tbit_app_bgp_t *bgp;
-  if(tbit->dport == 0)
-    tbit->dport = 179;
   if((bgp = scamper_tbit_app_bgp_alloc()) == NULL)
-    return -1;
+    {
+      snprintf(errbuf, errlen, "could not alloc bgp");
+      return -1;
+    }
   if(o->asn == 0)
     bgp->asn = 1;
   else
     bgp->asn = o->asn;
   tbit->app_data = bgp;
+  if(tbit->dport == 0)
+    tbit->dport = 179;
   return 0;
 }
 
-static int tbit_app_http(scamper_tbit_t *tbit, tbit_options_t *o)
+static int tbit_app_http(scamper_tbit_t *tbit, tbit_options_t *o,
+			 char *errbuf, size_t errlen)
 {
   uint8_t type = SCAMPER_TBIT_APP_HTTP_TYPE_HTTP;
-  char *file = NULL, *host, *port, *ptr;
-  uint16_t dport = 80;
-  long lo;
+  char *file = NULL, *host = NULL, *scheme = NULL;
+  uint16_t dport = 0;
+  int rc = -1;
 
-  if(o->url == NULL)
+  /* parse a URL if provided */
+  if(o->url != NULL)
     {
-      host = NULL;
-      goto done;
-    }
-
-  if(strncasecmp(o->url, "http://", 7) == 0)
-    {
-      host = o->url+7;
-    }
-#if defined(HAVE_OPENSSL)
-  else if(strncasecmp(o->url, "https://", 8) == 0)
-    {
-      if(scamper_option_notls() != 0)
-	return -1;
-      dport = 443;
-      host = o->url+8;
-      type = SCAMPER_TBIT_APP_HTTP_TYPE_HTTPS;
-    }
-#endif
-  else
-    {
-      return -1;
-    }
-
-  /* extract the domain */
-  ptr = host;
-  while(*ptr != '\0')
-    {
-      if(*ptr == '/' || *ptr == ':') break;
-      if(isalnum((int)*ptr) == 0 && *ptr != '-' && *ptr != '.') return -1;
-      ptr++;
-    }
-  if(ptr == host)
-    return -1;
-
-  if(*ptr == '\0')
-    goto done;
-
-  if(*ptr == ':')
-    {
-      *ptr = '\0';
-      ptr++; port = ptr;
-      while(*ptr != '\0')
+      if(url_parse(o->url, &dport, &scheme, &host, &file) != 0)
 	{
-	  if(*ptr == '/') break;
-	  ptr++;
+	  snprintf(errbuf, errlen, "could not parse url");
+	  goto done;
 	}
 
-      if(*ptr == '\0')
-	goto done;
-      *ptr = '\0';
+      if(tbit->dport != 0 && dport != 0 && tbit->dport != dport)
+	{
+	  snprintf(errbuf, errlen, "dport specified inconsistently");
+	  goto done;
+	}
 
-      if(string_tolong(port, &lo) != 0 || lo < 1 || lo > 65535)
-	return -1;
-      dport = (uint16_t)lo;
-      *ptr = '/';
+      if(strcasecmp(scheme, "https") == 0)
+	{
+#ifdef BUILDING_SCAMPER
+#ifndef HAVE_OPENSSL
+	  snprintf(errbuf, errlen, "scamper not built with openssl");
+	  goto done;
+#else
+	  if(scamper_option_notls() != 0)
+	    {
+	      snprintf(errbuf, errlen, "scamper run with -O notls");
+	      goto done;
+	    }
+#endif /* HAVE_OPENSSL */
+#endif /* BUILDING_SCAMPER */
+	  type = SCAMPER_TBIT_APP_HTTP_TYPE_HTTPS;
+	}
     }
 
-  memmove(host-1, host, ptr-host);
-  host--;
-  *(ptr-1) = '\0';
-  file = ptr;
+  if(tbit->dport == 0)
+    {
+      if(dport == 0)
+	{
+	  if(type == SCAMPER_TBIT_APP_HTTP_TYPE_HTTP)
+	    dport = 80;
+	  else
+	    dport = 443;
+	}
+      tbit->dport = dport;
+    }
+
+  tbit->app_data = scamper_tbit_app_http_alloc(type, host,
+					       file != NULL ? file : "/");
+  if(tbit->app_data == NULL)
+    {
+      snprintf(errbuf, errlen, "could not alloc http");
+      goto done;
+    }
+  rc = 0;
 
  done:
-  if(file == NULL)
-    file = "/";
-  if(tbit->dport == 0)
-    tbit->dport = dport;
-  if((tbit->app_data = scamper_tbit_app_http_alloc(type, host, file)) == NULL)
-    return -1;
-  return 0;
+  if(scheme != NULL) free(scheme);
+  if(host != NULL) free(host);
+  if(file != NULL) free(file);
+  return rc;
 }
 
-static int tbit_alloc_pmtud(scamper_tbit_t *tbit, tbit_options_t *o)
+static int tbit_alloc_pmtud(scamper_tbit_t *tbit, tbit_options_t *o,
+			    char *errbuf, size_t errlen)
 {
   scamper_tbit_pmtud_t *pmtud;
   int af;
 
   if((pmtud = scamper_tbit_pmtud_alloc()) == NULL)
-    return -1;
+    {
+      snprintf(errbuf, errlen, "could not alloc pmtud");
+      return -1;
+    }
   tbit->data = pmtud;
 
   if(o->mtu == 0)
@@ -395,11 +443,14 @@ static int tbit_alloc_pmtud(scamper_tbit_t *tbit, tbit_options_t *o)
   if(o->ptbsrc != NULL)
     {
       af = scamper_addr_af(tbit->dst);
-      if(af != AF_INET && af != AF_INET6)
-	return -1;
+      assert(af == AF_INET || af == AF_INET6);
       pmtud->ptbsrc = scamper_addrcache_resolve(addrcache, af, o->ptbsrc);
-      if(pmtud->ptbsrc == NULL || pmtud->ptbsrc->type != tbit->dst->type)
-	return -1;
+      if(pmtud->ptbsrc == NULL)
+	{
+	  snprintf(errbuf, errlen, "invalid ptbsrc");
+	  return -1;
+	}
+      assert(pmtud->ptbsrc->type == tbit->dst->type);
     }
 
   /* if we're in blackhole mode, we don't send PTB messages */
@@ -413,10 +464,14 @@ static int tbit_alloc_pmtud(scamper_tbit_t *tbit, tbit_options_t *o)
   return 0;
 }
 
-static int tbit_alloc_icw(scamper_tbit_t *tbit, tbit_options_t *o)
+static int tbit_alloc_icw(scamper_tbit_t *tbit, tbit_options_t *o,
+			  char *errbuf, size_t errlen)
 {
   if((tbit->data = scamper_tbit_icw_alloc()) == NULL)
-    return -1;
+    {
+      snprintf(errbuf, errlen, "could not alloc icw");
+      return -1;
+    }
   if(o->options & TBIT_OPT_OPTION_TCPTS)
     tbit->options |= SCAMPER_TBIT_OPTION_TCPTS;
   if(o->options & TBIT_OPT_OPTION_SACK)
@@ -424,12 +479,16 @@ static int tbit_alloc_icw(scamper_tbit_t *tbit, tbit_options_t *o)
   return 0;
 }
 
-static int tbit_alloc_blind(scamper_tbit_t *tbit, tbit_options_t *o)
+static int tbit_alloc_blind(scamper_tbit_t *tbit, tbit_options_t *o,
+			    char *errbuf, size_t errlen)
 {
   scamper_tbit_blind_t *blind;
 
   if((blind = scamper_tbit_blind_alloc()) == NULL)
-    return -1;
+    {
+      snprintf(errbuf, errlen, "could not alloc blind");
+      return -1;
+    }
   tbit->data = blind;
 
   if(o->attempts == 0)
@@ -446,7 +505,10 @@ static int tbit_alloc_blind(scamper_tbit_t *tbit, tbit_options_t *o)
 	      tbit->type == SCAMPER_TBIT_TYPE_BLIND_FIN)
 	blind->off = -70000;
       else
-	return -1;
+	{
+	  snprintf(errbuf, errlen, "unhandled blind test type");
+	  return -1;
+	}
     }
   else
     blind->off = o->offset;
@@ -454,7 +516,8 @@ static int tbit_alloc_blind(scamper_tbit_t *tbit, tbit_options_t *o)
   return 0;
 }
 
-static int tbit_alloc_null(scamper_tbit_t *tbit, tbit_options_t *o)
+static int tbit_alloc_null(scamper_tbit_t *tbit, tbit_options_t *o,
+			   char *errbuf, size_t errlen)
 {
   scamper_tbit_null_t *null;
   uint16_t u;
@@ -462,10 +525,16 @@ static int tbit_alloc_null(scamper_tbit_t *tbit, tbit_options_t *o)
   /* ensure that only one IP option is set on the SYN packet */
   u = (o->options & TBIT_OPT_OPTION_IPOPT_SYN_MASK);
   if(u != 0 && countbits32(u) != 1)
-    return -1;
+    {
+      snprintf(errbuf, errlen, "more than one IP option provided");
+      return -1;
+    }
 
   if((null = scamper_tbit_null_alloc()) == NULL)
-    return -1;
+    {
+      snprintf(errbuf, errlen, "could not alloc null");
+      return -1;
+    }
   tbit->data = null;
 
   if(o->options & TBIT_OPT_OPTION_TCPTS)
@@ -484,7 +553,10 @@ static int tbit_alloc_null(scamper_tbit_t *tbit, tbit_options_t *o)
     {
       if(scamper_tbit_client_fo_cookie_set(tbit,
 					   o->fo_cookie, o->fo_cookielen) != 0)
-	return -1;
+	{
+	  snprintf(errbuf, errlen, "could not set TCP fo-cookie");
+	  return -1;
+	}
       if((o->options & (TBIT_OPT_OPTION_FO|TBIT_OPT_OPTION_FO_EXP)) == 0)
 	null->options = SCAMPER_TBIT_NULL_OPTION_FO;
     }
@@ -492,7 +564,10 @@ static int tbit_alloc_null(scamper_tbit_t *tbit, tbit_options_t *o)
   if(o->options & (TBIT_OPT_OPTION_IPTS_SYN | TBIT_OPT_OPTION_IPRR_SYN))
     {
       if(SCAMPER_ADDR_TYPE_IS_IPV4(tbit->dst) == 0)
-	return -1;
+	{
+	  snprintf(errbuf, errlen, "IP options only valid for IPv4 destination");
+	  return -1;
+	}
 
       if(o->options & TBIT_OPT_OPTION_IPTS_SYN)
 	null->options |= SCAMPER_TBIT_NULL_OPTION_IPTS_SYN;
@@ -509,9 +584,10 @@ static int tbit_alloc_null(scamper_tbit_t *tbit, tbit_options_t *o)
  * Given a string representing a tbit task, parse the parameters and assemble
  * a tbit. Return the tbit structure so that it is all ready to go.
  */
-void *scamper_do_tbit_alloc(char *str)
+void *scamper_do_tbit_alloc(char *str, char *errbuf, size_t errlen)
 {
-  static int (* const type_func[])(scamper_tbit_t *, tbit_options_t *) = {
+  static int (* const type_func[])(scamper_tbit_t *, tbit_options_t *,
+				   char *, size_t) = {
     NULL,
     tbit_alloc_pmtud, /* pmtud */
     NULL,             /* ecn */
@@ -524,7 +600,8 @@ void *scamper_do_tbit_alloc(char *str)
     tbit_alloc_blind, /* blind-syn */
     tbit_alloc_blind, /* blind-fin */
   };
-  static int (* const app_func[])(scamper_tbit_t *, tbit_options_t *) = {
+  static int (* const app_func[])(scamper_tbit_t *, tbit_options_t *,
+				  char *, size_t) = {
     NULL,
     tbit_app_http,
     tbit_app_smtp,
@@ -541,20 +618,26 @@ void *scamper_do_tbit_alloc(char *str)
   uint32_t userid = 0;
   char *addr;
   long long i, tmp = 0;
+  char buf[256];
+  int af;
+
+#ifndef NDEBUG
+  errbuf[0] = '\0';
+#endif
 
   memset(&o, 0, sizeof(o));
 
   /* Parse the options */
   if(scamper_options_parse(str, opts, opts_cnt, &opts_out, &addr) != 0)
     {
-      scamper_debug(__func__, "could not parse options");
+      snprintf(errbuf, errlen, "could not parse tbit command");
       goto err;
     }
 
   /* If there is no IP address after the options string, then stop now */
   if(addr == NULL)
     {
-      scamper_debug(__func__, "no address parameter");
+      snprintf(errbuf, errlen, "expected address to tbit");
       goto err;
     }
 
@@ -562,9 +645,12 @@ void *scamper_do_tbit_alloc(char *str)
   for(opt = opts_out; opt != NULL; opt = opt->next)
     {
       if(opt->type != SCAMPER_OPTION_TYPE_NULL &&
-	 tbit_arg_param_validate(opt->id, opt->str, &tmp) != 0)
+	 tbit_arg_param_validate(opt->id, opt->str, &tmp,
+				 buf, sizeof(buf)) != 0)
 	{
-	  scamper_debug(__func__, "validation of optid %d failed", opt->id);
+	  snprintf(errbuf, errlen, "-%c %s failed: %s",
+		   scamper_options_id2c(opts, opts_cnt, opt->id),
+		   opt->str, buf);
 	  goto err;
 	}
 
@@ -637,47 +723,29 @@ void *scamper_do_tbit_alloc(char *str)
 	  break;
 
 	case TBIT_OPT_OPTION:
-	  if(strcasecmp(opt->str, "blackhole") == 0)
-	    o.options |= TBIT_OPT_OPTION_BLACKHOLE;
-	  else if(strcasecmp(opt->str, "tcpts") == 0)
-	    o.options |= TBIT_OPT_OPTION_TCPTS;
-	  else if(strcasecmp(opt->str, "ipts-syn") == 0)
-	    o.options |= TBIT_OPT_OPTION_IPTS_SYN;
-	  else if(strcasecmp(opt->str, "iprr-syn") == 0)
-	    o.options |= TBIT_OPT_OPTION_IPRR_SYN;
-	  else if(strcasecmp(opt->str, "ipqs-syn") == 0)
-	    o.options |= TBIT_OPT_OPTION_IPQS_SYN;
-	  else if(strcasecmp(opt->str, "sack") == 0)
-	    o.options |= TBIT_OPT_OPTION_SACK;
-	  else if(strcasecmp(opt->str, "fo") == 0)
-	    o.options |= TBIT_OPT_OPTION_FO;
-	  else if(strcasecmp(opt->str, "fo-exp") == 0)
-	    o.options |= TBIT_OPT_OPTION_FO_EXP;
-	  else
-	    goto err;
+	  o.options |= (uint16_t)tmp;
 	  break;
         }
     }
   scamper_options_free(opts_out); opts_out = NULL;
 
-  if(type == SCAMPER_TBIT_TYPE_SACK_RCVR)
-    {
-      if(o.dat_retx != 0 && o.dat_retx != 1)
-	goto err;
-      if(o.dat_retx == 0)
-	o.dat_retx = 1;
-    }
-
   if((tbit = scamper_tbit_alloc()) == NULL)
     {
-      printerror(__func__, "could not alloc tbit");
+      snprintf(errbuf, errlen, "could not alloc tbit");
       goto err;
     }
   if((tbit->dst = scamper_addrcache_resolve(addrcache,AF_UNSPEC,addr)) == NULL)
     {
-      printerror(__func__, "could not resolve %s", addr);
+      snprintf(errbuf, errlen, "invalid destination address");
       goto err;
     }
+  af = scamper_addr_af(tbit->dst);
+  if(af != AF_INET && af != AF_INET6)
+    {
+      snprintf(errbuf, errlen, "invalid destination address");
+      goto err;
+    }
+  
   tbit->type            = type;
   tbit->userid          = userid;
   tbit->client_wscale   = wscale;
@@ -685,29 +753,32 @@ void *scamper_do_tbit_alloc(char *str)
   tbit->client_mss      = o.mss;
   tbit->dport           = o.dport;
   tbit->sport           = (o.sport != 0) ? o.sport : scamper_sport_default();
-  tbit->client_syn_retx = (o.syn_retx != 0) ? o.syn_retx : TBIT_RETX_DEFAULT;
-  tbit->client_dat_retx = (o.dat_retx != 0) ? o.dat_retx : TBIT_RETX_DEFAULT;
+  tbit->client_syn_retx = 3;
+  if(type == SCAMPER_TBIT_TYPE_SACK_RCVR)
+    tbit->client_dat_retx = 1;
+  else
+    tbit->client_dat_retx = 3;
 
-  if(o.src != NULL)
+  if(o.src != NULL &&
+     (tbit->src = scamper_addrcache_resolve(addrcache, af, o.src)) == NULL)
     {
-      i = scamper_addr_af(tbit->dst);
-      if(i != AF_INET && i != AF_INET6)
-	goto err;
-      if((tbit->src = scamper_addrcache_resolve(addrcache, i, o.src)) == NULL)
-	goto err;
+      snprintf(errbuf, errlen, "invalid source address");
+      goto err;
     }
 
   if(o.app == 0) o.app = SCAMPER_TBIT_APP_HTTP;
   tbit->app_proto = o.app;
-  if(app_func[o.app] != NULL && app_func[o.app](tbit, &o) != 0)
+  if(app_func[o.app] != NULL && app_func[o.app](tbit, &o, errbuf, errlen) != 0)
     goto err;
 
-  if(type_func[type] != NULL && type_func[type](tbit, &o) != 0)
+  if(type_func[type] != NULL && type_func[type](tbit, &o, errbuf, errlen) != 0)
     goto err;
 
+  assert(errbuf[0] == '\0');
   return tbit;
 
-err:
+ err:
+  assert(errbuf[0] != '\0');
   if(tbit != NULL) scamper_tbit_free(tbit);
   if(opts_out != NULL) scamper_options_free(opts_out);
   return NULL;

@@ -1,7 +1,7 @@
 /*
  * scamper_do_sting.h
  *
- * $Id: scamper_sting_do.h,v 1.5 2023/06/04 07:09:36 mjl Exp $
+ * $Id: scamper_sting_do.h,v 1.7 2024/02/27 03:34:02 mjl Exp $
  *
  * Copyright (C) 2008-2010 The University of Waikato
  * Author: Matthew Luckie
@@ -33,8 +33,10 @@
 
 scamper_task_t *scamper_do_sting_alloctask(void *data,
 					   scamper_list_t *list,
-					   scamper_cycle_t *cycle);
-void scamper_do_sting_free(void *);
+					   scamper_cycle_t *cycle,
+					   char *errbuf, size_t errlen);
+void scamper_do_sting_free(void *data);
+uint32_t scamper_do_sting_userid(void *data);
 void scamper_do_sting_cleanup(void);
 int scamper_do_sting_init(void);
 

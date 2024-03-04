@@ -1,7 +1,7 @@
 /*
  * scamper_options.c: code to handle parsing of options
  *
- * $Id: scamper_options.c,v 1.17 2023/12/02 09:20:45 mjl Exp $
+ * $Id: scamper_options.c,v 1.18 2024/02/12 20:35:36 mjl Exp $
  *
  * Copyright (C) 2006-2010 The University of Waikato
  * Copyright (C) 2014-2015 The Regents of the University of California
@@ -171,15 +171,22 @@ static int opt_parse_param(int type, char **str, char **next)
   return -1;
 }
 
-int scamper_options_c2id(const scamper_option_in_t *opts,const int cnt,char c)
+int scamper_options_c2id(const scamper_option_in_t *opts, size_t cnt, char c)
 {
-  int i;
+  size_t i;
   for(i=0; i<cnt; i++)
-    {
-      if(c == opts[i].c)
-	return opts[i].id;
-    }
+    if(c == opts[i].c)
+      return opts[i].id;
   return -1;
+}
+
+char scamper_options_id2c(const scamper_option_in_t *opts, size_t cnt, int id)
+{
+  size_t i;
+  for(i=0; i<cnt; i++)
+    if(id == opts[i].id)
+      return opts[i].c;
+  return '\0';
 }
 
 /*
@@ -191,13 +198,13 @@ int scamper_options_c2id(const scamper_option_in_t *opts,const int cnt,char c)
  * this code is a horrible mess of goto statements.
  */
 int scamper_options_parse(char *str,
-			  const scamper_option_in_t *opts, const int cnt,
+			  const scamper_option_in_t *opts, size_t cnt,
 			  scamper_option_out_t **opts_out, char **stop)
 {
   scamper_option_out_t *head = NULL;
   scamper_option_out_t *tail = NULL;
   char *next;
-  int i;
+  size_t i;
 
   /* to begin with, get to the first non-whitespace character */
   while(*str != '\0' && isspace((int)*str) != 0)
@@ -376,13 +383,16 @@ int scamper_options_parse(char *str,
   return -1;
 }
 
-int scamper_options_validate(const scamper_option_in_t *opts, const int cnt,
+int scamper_options_validate(const scamper_option_in_t *opts, size_t cnt,
 			     int argc, char *argv[], int *stop,
+			     char *errbuf, size_t errlen,
 			     int validate(int optid, char *param,
-					  long long *out))
+					  long long *out,
+					  char *errbuf, size_t errlen))
 {
-  int i, j, k, needp;
+  int i, j, needp;
   int optid = -1;
+  size_t k;
 
   for(i=1; i<argc; i++)
     {
@@ -423,7 +433,7 @@ int scamper_options_validate(const scamper_option_in_t *opts, const int cnt,
 	  if(++i == argc)
 	    goto err;
 
-	  if(validate(optid, argv[i], NULL) != 0)
+	  if(validate(optid, argv[i], NULL, errbuf, errlen) != 0)
 	    goto err;
 	}
     }

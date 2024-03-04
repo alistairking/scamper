@@ -1,7 +1,7 @@
 /*
  * scamper_icmp4.h
  *
- * $Id: scamper_icmp4.h,v 1.23 2023/08/20 01:21:17 mjl Exp $
+ * $Id: scamper_icmp4.h,v 1.24 2024/02/21 04:41:18 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2009 The University of Waikato
@@ -55,10 +55,8 @@ uint16_t scamper_icmp4_cksum(scamper_probe_t *probe);
 #ifdef __SCAMPER_ICMP_RESP_H
 #ifndef _WIN32 /* SOCKET vs int on windows */
 int scamper_icmp4_recv(int fd, scamper_icmp_resp_t *resp);
-int scamper_icmp4_recv_user(int fd, scamper_icmp_resp_t *resp);
 #else
 int scamper_icmp4_recv(SOCKET fd, scamper_icmp_resp_t *resp);
-int scamper_icmp4_recv_user(SOCKET fd, scamper_icmp_resp_t *resp);
 #endif
 #endif
 

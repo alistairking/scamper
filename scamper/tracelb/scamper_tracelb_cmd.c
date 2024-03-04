@@ -1,11 +1,12 @@
 /*
  * scamper_tracelb_cmd.c
  *
- * $Id: scamper_tracelb_cmd.c,v 1.5 2023/12/30 19:11:52 mjl Exp $
+ * $Id: scamper_tracelb_cmd.c,v 1.7 2024/02/15 01:55:34 mjl Exp $
  *
  * Copyright (C) 2008-2011 The University of Waikato
  * Copyright (C) 2012      The Regents of the University of California
  * Copyright (C) 2016-2023 Matthew Luckie
+ * Copyright (C) 2024      The Regents of the University of California
  * Author: Matthew Luckie
  *
  * MDA traceroute technique authored by
@@ -42,41 +43,7 @@
 #include "scamper_tracelb_int.h"
 #include "scamper_tracelb_cmd.h"
 #include "scamper_options.h"
-#include "scamper_debug.h"
 #include "utils.h"
-
-#define SCAMPER_DO_TRACELB_ATTEMPTS_MIN    1
-#define SCAMPER_DO_TRACELB_ATTEMPTS_DEF    2
-#define SCAMPER_DO_TRACELB_ATTEMPTS_MAX    5
-
-#define SCAMPER_DO_TRACELB_PORT_MIN        1
-#define SCAMPER_DO_TRACELB_PORT_MAX        65535
-
-#define SCAMPER_DO_TRACELB_DPORT_DEF       (32768+666+1)
-
-#define SCAMPER_DO_TRACELB_FIRSTHOP_MIN    1
-#define SCAMPER_DO_TRACELB_FIRSTHOP_DEF    1
-#define SCAMPER_DO_TRACELB_FIRSTHOP_MAX    254
-
-#define SCAMPER_DO_TRACELB_GAPLIMIT_MIN    1
-#define SCAMPER_DO_TRACELB_GAPLIMIT_DEF    3
-#define SCAMPER_DO_TRACELB_GAPLIMIT_MAX    5
-
-#define SCAMPER_DO_TRACELB_PROBECMAX_MIN   50
-#define SCAMPER_DO_TRACELB_PROBECMAX_DEF   3000
-#define SCAMPER_DO_TRACELB_PROBECMAX_MAX   65535
-
-#define SCAMPER_DO_TRACELB_TOS_MIN         0
-#define SCAMPER_DO_TRACELB_TOS_DEF         0
-#define SCAMPER_DO_TRACELB_TOS_MAX         255
-
-#define SCAMPER_DO_TRACELB_WAITPROBE_MIN   15
-#define SCAMPER_DO_TRACELB_WAITPROBE_DEF   25
-#define SCAMPER_DO_TRACELB_WAITPROBE_MAX   200
-
-#define SCAMPER_DO_TRACELB_WAITTIMEOUT_MIN 1
-#define SCAMPER_DO_TRACELB_WAITTIMEOUT_DEF 5
-#define SCAMPER_DO_TRACELB_WAITTIMEOUT_MAX 10
 
 #define TRACE_OPT_CONFIDENCE   1
 #define TRACE_OPT_DPORT        2
@@ -111,6 +78,31 @@ static const scamper_option_in_t opts[] = {
 };
 static const int opts_cnt = SCAMPER_OPTION_COUNT(opts);
 
+typedef struct opt_limit
+{
+  char      *name;
+  long long  min;
+  long long  max;
+} opt_limit_t;
+
+static const opt_limit_t limits[] = {
+  {NULL, 0, 0}, /* zero unused */
+  {NULL, 0, 0}, /* -c confidence */
+  {"dport", 1, 65535},
+  {"firsthop", 1, 254},
+  {"gaplimit", 1, 5},
+  {NULL, 0, 0}, /* -O options */
+  {NULL, 0, 0}, /* -P method */
+  {"attempts", 1, 5},
+  {"max-probec", 50, 65535},
+  {NULL, 0, 0}, /* -r rtr */
+  {"sport", 1, 65535},
+  {"tos", 0, 255},
+  {"userid", 0, UINT32_MAX},
+  {NULL, 0, 0}, /* -w wait-timeout */
+  {NULL, 0, 0}, /* -W wait-probe */
+};
+
 const char *scamper_do_tracelb_usage(void)
 {
   return "tracelb [-c confidence] [-d dport] [-f firsthop] [-g gaplimit]\n"
@@ -119,51 +111,58 @@ const char *scamper_do_tracelb_usage(void)
          "        [-w wait-timeout] [-W wait-probe]";
 }
 
-static int tracelb_arg_param_validate(int optid, char *param, long long *out)
+static int tracelb_arg_param_validate(int optid, char *param, long long *out,
+				      char *errbuf, size_t errlen)
 {
   struct timeval tv;
-  long tmp = 0;
+  long long tmp = 0;
+
+#ifndef NDEBUG
+  errbuf[0] = '\0';
+#endif
 
   switch(optid)
     {
-    case TRACE_OPT_CONFIDENCE:
-      if(string_tolong(param, &tmp) != 0 || (tmp != 95 && tmp != 99))
-	{
-	  goto err;
-	}
-      break;
-
     case TRACE_OPT_SPORT:
     case TRACE_OPT_DPORT:
-      if(string_tolong(param, &tmp) != 0 ||
-	 tmp < SCAMPER_DO_TRACELB_PORT_MIN ||
-	 tmp > SCAMPER_DO_TRACELB_PORT_MAX)
-	{
-	  goto err;
-	}
-      break;
-
     case TRACE_OPT_FIRSTHOP:
-      if(string_tolong(param, &tmp) != 0 ||
-	 tmp < SCAMPER_DO_TRACELB_FIRSTHOP_MIN ||
-	 tmp > SCAMPER_DO_TRACELB_FIRSTHOP_MAX)
+    case TRACE_OPT_GAPLIMIT:
+    case TRACE_OPT_TOS:
+    case TRACE_OPT_ATTEMPTS:
+    case TRACE_OPT_PROBECMAX:
+    case TRACE_OPT_USERID:
+      if(string_tollong(param, &tmp, NULL, 0) != 0 ||
+	 tmp < limits[optid].min || tmp > limits[optid].max)
 	{
+	  snprintf(errbuf, errlen, "%s must be within %lld - %lld",
+		   limits[optid].name, limits[optid].min, limits[optid].max);
 	  goto err;
 	}
       break;
 
-    case TRACE_OPT_GAPLIMIT:
-      if(string_tolong(param, &tmp) != 0 ||
-	 tmp < SCAMPER_DO_TRACELB_GAPLIMIT_MIN ||
-	 tmp > SCAMPER_DO_TRACELB_GAPLIMIT_MAX)
+    case TRACE_OPT_CONFIDENCE:
+      if(string_tollong(param, &tmp, NULL, 10) != 0 || (tmp != 95 && tmp != 99))
 	{
+	  snprintf(errbuf, errlen, "confidence must be 95 or 99");
 	  goto err;
 	}
       break;
 
     case TRACE_OPT_OPTION:
-      if(strcasecmp(param, "ptr") != 0)
-	goto err;
+      if(strcasecmp(param, "ptr") == 0)
+	{
+#ifndef DISABLE_SCAMPER_HOST
+	  tmp = SCAMPER_TRACELB_FLAG_PTR;
+#else
+	  snprintf(errbuf, errlen, "scamper not built with host support");
+	  goto err;
+#endif
+	}
+      else
+	{
+	  snprintf(errbuf, errlen, "-O %s unknown", param);
+	  goto err;
+	}
       break;
 
     case TRACE_OPT_PROTOCOL:
@@ -178,54 +177,47 @@ static int tracelb_arg_param_validate(int optid, char *param, long long *out)
       else if(strcasecmp(param, "tcp-ack-sport") == 0)
 	tmp = SCAMPER_TRACELB_TYPE_TCP_ACK_SPORT;
       else
-	goto err;
-      break;
-
-    case TRACE_OPT_TOS:
-      if(string_tolong(param, &tmp) != 0 ||
-	 tmp < SCAMPER_DO_TRACELB_TOS_MIN || tmp > SCAMPER_DO_TRACELB_TOS_MAX)
 	{
-	  goto err;
-	}
-      break;
-
-    case TRACE_OPT_ATTEMPTS:
-      if(string_tolong(param, &tmp) != 0 ||
-	 tmp < SCAMPER_DO_TRACELB_ATTEMPTS_MIN ||
-	 tmp > SCAMPER_DO_TRACELB_ATTEMPTS_MAX)
-	{
-	  goto err;
-	}
-      break;
-
-    case TRACE_OPT_PROBECMAX:
-      if(string_tolong(param, &tmp) != 0 ||
-	 tmp < SCAMPER_DO_TRACELB_PROBECMAX_MIN ||
-	 tmp > SCAMPER_DO_TRACELB_PROBECMAX_MAX)
-	{
-	  goto err;
-	}
-      break;
-
-    case TRACE_OPT_USERID:
-      if(string_tolong(param, &tmp) != 0 || tmp < 0)
-	{
+	  snprintf(errbuf, errlen, "invalid tracelb method");
 	  goto err;
 	}
       break;
 
     case TRACE_OPT_WAITPROBE:
-      if(timeval_fromstr(&tv, param, 10000) != 0 ||
-	 (tv.tv_usec % 10000) != 0 ||
-	 timeval_cmp_lt(&tv, 0, 150000) || timeval_cmp_gt(&tv, 20, 0))
-	goto err;
+      if(timeval_fromstr(&tv, param, 10000) != 0)
+	{
+	  snprintf(errbuf, errlen, "malformed inter-probe delay");
+	  goto err;
+	}
+      if((tv.tv_usec % 10000) != 0)
+	{
+	  snprintf(errbuf, errlen, "inter-probe granularity limited to 10ms");
+	  goto err;
+	}
+      if(timeval_cmp_lt(&tv, 0, 150000) || timeval_cmp_gt(&tv, 2, 0))
+	{
+	  snprintf(errbuf, errlen, "inter-probe delay must be within 0.15s - 2s");
+	  goto err;
+	}
       tmp = (tv.tv_sec * 1000000) + tv.tv_usec;
       break;
 
     case TRACE_OPT_WAITTIMEOUT:
-      if(timeval_fromstr(&tv, param, 1000000) != 0 || tv.tv_usec != 0 ||
-	 timeval_cmp_lt(&tv, 1, 0) || timeval_cmp_gt(&tv, 10, 0))
-	goto err;
+      if(timeval_fromstr(&tv, param, 1000000) != 0)
+	{
+	  snprintf(errbuf, errlen, "malformed timeout");
+	  goto err;
+	}
+      if(tv.tv_usec != 0)
+	{
+	  snprintf(errbuf, errlen, "timeout cannot have fractions of second");
+	  goto err;
+	}
+      if(timeval_cmp_lt(&tv, 1, 0) || timeval_cmp_gt(&tv, 10, 0))
+	{
+	  snprintf(errbuf, errlen, "timeout must be within 1s - 10s");
+	  goto err;
+	}
       tmp = (tv.tv_sec * 1000000) + tv.tv_usec;
       break;
 
@@ -234,15 +226,17 @@ static int tracelb_arg_param_validate(int optid, char *param, long long *out)
       break;
 
     default:
-      return -1;
+      goto err;
     }
 
   /* valid parameter */
+  assert(errbuf[0] == '\0');
   if(out != NULL)
-    *out = (long long)tmp;
+    *out = tmp;
   return 0;
 
  err:
+  assert(errbuf[0] != '\0');
   return -1;
 }
 
@@ -253,7 +247,7 @@ static int tracelb_arg_param_validate(int optid, char *param, long long *out)
  * assemble a trace.  return the trace structure so that it is all ready to
  * go.
  */
-void *scamper_do_tracelb_alloc(char *str)
+void *scamper_do_tracelb_alloc(char *str, char *errbuf, size_t errlen)
 {
   struct timeval wait_timeout, wait_probe;
   scamper_option_out_t *opts_out = NULL, *opt;
@@ -261,39 +255,56 @@ void *scamper_do_tracelb_alloc(char *str)
   uint8_t  type         = SCAMPER_TRACELB_TYPE_UDP_DPORT;
   uint16_t sport        = scamper_sport_default();
   uint8_t  confidence   = 95;
-  uint16_t dport        = SCAMPER_DO_TRACELB_DPORT_DEF;
-  uint8_t  attempts     = SCAMPER_DO_TRACELB_ATTEMPTS_DEF;
-  uint8_t  firsthop     = SCAMPER_DO_TRACELB_FIRSTHOP_DEF;
-  uint8_t  tos          = SCAMPER_DO_TRACELB_TOS_DEF;
-  uint32_t probec_max   = SCAMPER_DO_TRACELB_PROBECMAX_DEF;
-  uint8_t  gaplimit     = SCAMPER_DO_TRACELB_GAPLIMIT_DEF;
+  uint16_t dport        = (32768+666+1);
+  uint8_t  attempts     = 2;
+  uint8_t  firsthop     = 1;
+  uint8_t  tos          = 0;
+  uint32_t probec_max   = 3000;
+  uint8_t  gaplimit     = 3;
   uint32_t userid       = 0;
   uint8_t  flags        = 0;
   char *rtr = NULL, *addr;
   long long tmp = 0;
   uint32_t optids = 0;
+  char buf[256];
+
+#ifndef NDEBUG
+  errbuf[0] = '\0';
+#endif
 
   /* try and parse the string passed in */
   if(scamper_options_parse(str, opts, opts_cnt, &opts_out, &addr) != 0)
     {
+      snprintf(errbuf, errlen, "could not parse tracelb command");
       goto err;
     }
 
   /* if there is no IP address after the options string, then stop now */
   if(addr == NULL)
     {
+      snprintf(errbuf, errlen, "expected address to trace");
       goto err;
     }
 
   for(opt = opts_out; opt != NULL; opt = opt->next)
     {
       if(opt->type != SCAMPER_OPTION_TYPE_NULL &&
-	 tracelb_arg_param_validate(opt->id, opt->str, &tmp) != 0)
+	 tracelb_arg_param_validate(opt->id, opt->str, &tmp,
+				    buf, sizeof(buf)) != 0)
 	{
-	  scamper_debug(__func__, "validation of optid %d failed", opt->id);
+	  snprintf(errbuf, errlen, "-%c %s failed: %s",
+		   scamper_options_id2c(opts, opts_cnt, opt->id),
+		   opt->str, buf);
 	  goto err;
 	}
 
+      if((optids & (0x1 << opt->id)) != 0 &&
+	 opt->id != TRACE_OPT_OPTION)
+	{
+	  snprintf(errbuf, errlen, "repeated option -%c",
+		   scamper_options_id2c(opts, opts_cnt, opt->id));
+	  goto err;
+	}
       optids |= (0x1 << opt->id);
 
       switch(opt->id)
@@ -315,20 +326,7 @@ void *scamper_do_tracelb_alloc(char *str)
 	  break;
 
 	case TRACE_OPT_OPTION:
-	  if(strcasecmp(opt->str, "ptr") == 0)
-	    {
-#ifndef DISABLE_SCAMPER_HOST
-	      flags |= SCAMPER_TRACELB_FLAG_PTR;
-#else
-	      printerror_msg(__func__, "scamper not built with host support");
-	      goto err;
-#endif
-	    }
-	  else
-	    {
-	      scamper_debug(__func__, "unknown option %s", opt->str);
-	      goto err;
-	    }
+	  flags |= (uint8_t)tmp;
 	  break;
 
 	case TRACE_OPT_PROTOCOL:
@@ -362,8 +360,6 @@ void *scamper_do_tracelb_alloc(char *str)
 	  break;
 
 	case TRACE_OPT_RTRADDR:
-	  if(rtr != NULL)
-	    goto err;
 	  rtr = opt->str;
 	  break;
 	}
@@ -374,34 +370,40 @@ void *scamper_do_tracelb_alloc(char *str)
   if((optids & (0x1 << TRACE_OPT_WAITPROBE)) == 0)
     {
       wait_probe.tv_sec = 0;
-      wait_probe.tv_usec = SCAMPER_DO_TRACELB_WAITPROBE_DEF * 10000;
+      wait_probe.tv_usec = 250000;
     }
 
   if((optids & (0x1 << TRACE_OPT_WAITTIMEOUT)) == 0)
     {
-      wait_timeout.tv_sec = SCAMPER_DO_TRACELB_WAITTIMEOUT_DEF;
+      wait_timeout.tv_sec = 5;
       wait_timeout.tv_usec = 0;
     }
 
   if((trace = scamper_tracelb_alloc()) == NULL)
     {
+      snprintf(errbuf, errlen, "could not alloc tracelb");
       goto err;
     }
 
   if((trace->dst = scamper_addr_fromstr_unspec(addr)) == NULL)
     {
+      snprintf(errbuf, errlen, "invalid destination address");
       goto err;
     }
 
   if(SCAMPER_ADDR_TYPE_IS_IPV6(trace->dst) &&
      SCAMPER_TRACELB_TYPE_IS_TCP(trace))
     {
+      snprintf(errbuf, errlen, "cannot do IPv6 TCP MDA traceroutes");
       goto err;
     }
 
   if(rtr != NULL &&
      (trace->rtr = scamper_addr_fromstr(trace->dst->type, rtr)) == NULL)
-    goto err;
+    {
+      snprintf(errbuf, errlen, "invalid router address");
+      goto err;
+    }
 
   trace->sport        = sport;
   trace->dport        = dport;
@@ -432,12 +434,15 @@ void *scamper_do_tracelb_alloc(char *str)
       break;
 
     default:
+      snprintf(errbuf, errlen, "invalid destination address type");
       goto err;
     }
 
+  assert(errbuf[0] == '\0');
   return trace;
 
  err:
+  assert(errbuf[0] != '\0');
   if(trace != NULL) scamper_tracelb_free(trace);
   if(opts_out != NULL) scamper_options_free(opts_out);
   return NULL;
@@ -448,8 +453,9 @@ void *scamper_do_tracelb_alloc(char *str)
  *
  *
  */
-int scamper_do_tracelb_arg_validate(int argc, char *argv[], int *stop)
+int scamper_do_tracelb_arg_validate(int argc, char *argv[], int *stop,
+				    char *errbuf, size_t errlen)
 {
   return scamper_options_validate(opts, opts_cnt, argc, argv, stop,
-				  tracelb_arg_param_validate);
+				  errbuf, errlen, tracelb_arg_param_validate);
 }

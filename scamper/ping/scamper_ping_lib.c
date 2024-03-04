@@ -4,7 +4,7 @@
  * Copyright (C) 2023 Matthew Luckie
  * Author: Matthew Luckie
  *
- * $Id: scamper_ping_lib.c,v 1.7 2023/11/27 07:56:14 mjl Exp $
+ * $Id: scamper_ping_lib.c,v 1.8 2024/02/28 23:35:23 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -230,6 +230,11 @@ uint16_t scamper_ping_reply_probe_id_get(const scamper_ping_reply_t *reply)
 uint16_t scamper_ping_reply_probe_ipid_get(const scamper_ping_reply_t *reply)
 {
   return reply->probe_ipid;
+}
+
+uint16_t scamper_ping_reply_probe_sport_get(const scamper_ping_reply_t *reply)
+{
+  return reply->probe_sport;
 }
 
 uint8_t scamper_ping_reply_proto_get(const scamper_ping_reply_t *reply)

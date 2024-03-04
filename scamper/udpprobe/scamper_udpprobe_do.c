@@ -1,9 +1,9 @@
 /*
  * scamper_udpprobe_do.c
  *
- * $Id: scamper_udpprobe_do.c,v 1.3 2023/11/23 00:55:46 mjl Exp $
+ * $Id: scamper_udpprobe_do.c,v 1.9 2024/02/27 03:34:02 mjl Exp $
  *
- * Copyright (C) 2023 The Regents of the University of California
+ * Copyright (C) 2023-2024 The Regents of the University of California
  *
  * Authors: Matthew Luckie
  *
@@ -40,6 +40,7 @@
 #include "scamper_udpprobe.h"
 #include "scamper_udpprobe_int.h"
 #include "scamper_udpprobe_do.h"
+#include "scamper_udp_resp.h"
 #include "utils.h"
 #include "mjl_list.h"
 
@@ -87,63 +88,43 @@ static void udpprobe_stop(scamper_task_t *task, uint8_t reason)
 
 static void udpprobe_state_free(udpprobe_state_t *state)
 {
-#ifndef _WIN32 /* SOCKET vs int on windows */
-  int fd;
-#else
-  SOCKET fd;
-#endif
-
   if(state->urs != NULL)
     slist_free_cb(state->urs, (slist_free_t)scamper_udpprobe_reply_free);
   if(state->fdn != NULL)
-    {
-      fd = scamper_fd_fd_get(state->fdn);
-      if(socket_isvalid(fd))
-	socket_close(fd);
-      scamper_fd_free(state->fdn);
-    }
+    scamper_fd_free(state->fdn);
   free(state);
   return;
 }
 
-#ifndef _WIN32 /* SOCKET vs int on windows */
-static void udpprobe_read(int fd, void *param)
-#else
-static void udpprobe_read(SOCKET fd, void *param)
-#endif
+static void do_udpprobe_handle_udp(scamper_task_t *task, scamper_udp_resp_t *ur)
 {
-  scamper_task_t *task = param;
   scamper_udpprobe_t *up = udpprobe_getdata(task);
   udpprobe_state_t *state = udpprobe_getstate(task);
-  scamper_udpprobe_reply_t *ur;
-  struct sockaddr_storage ss;
-  socklen_t sl = sizeof(ss);
-  uint8_t buf[8192];
-  struct timeval tv;
-  ssize_t rrc;
-  void *addr;
+  scamper_udpprobe_reply_t *upr;
 
-  if((rrc=recvfrom(fd, buf, sizeof(buf), 0, (struct sockaddr *)&ss, &sl)) <= 0)
+  if(state == NULL)
     return;
 
-  if(SCAMPER_ADDR_TYPE_IS_IPV4(up->dst))
-    addr = &((struct sockaddr_in *)&ss)->sin_addr;
-  else if(SCAMPER_ADDR_TYPE_IS_IPV6(up->dst))
-    addr = &((struct sockaddr_in6 *)&ss)->sin6_addr;
-  else
+  /*
+   * ignore the response if it was received on a different socket than
+   * we probed with.  this is to avoid recording duplicate replies
+   */
+  if(ur->fd != scamper_fd_fd_get(state->fdn))
     return;
 
-  if(scamper_addr_raw_cmp(up->dst, addr) != 0)
+  if(ur->sport != up->dport)
     return;
 
-  gettimeofday_wrap(&tv);
-  if((ur = scamper_udpprobe_reply_alloc()) == NULL ||
-     (ur->data = memdup(buf, rrc)) == NULL)
+  if((upr = scamper_udpprobe_reply_alloc()) == NULL ||
+     (upr->data = memdup(ur->data, ur->datalen)) == NULL)
     goto err;
-  timeval_cpy(&ur->tv, &tv);
-  ur->len = rrc;
+  if(timeval_iszero(&ur->rx) == 0)
+    timeval_cpy(&upr->tv, &ur->rx);
+  else
+    gettimeofday_wrap(&upr->tv);
+  upr->len = ur->datalen;
 
-  if(slist_tail_push(state->urs, ur) == NULL)
+  if(slist_tail_push(state->urs, upr) == NULL)
     goto err;
 
   if(SCAMPER_UDPPROBE_FLAG_IS_EXITFIRST(up))
@@ -152,7 +133,7 @@ static void udpprobe_read(SOCKET fd, void *param)
   return;
 
  err:
-  if(ur != NULL) scamper_udpprobe_reply_free(ur);
+  if(upr != NULL) scamper_udpprobe_reply_free(upr);
   return;
 }
 
@@ -160,15 +141,6 @@ static udpprobe_state_t *udpprobe_state_alloc(scamper_task_t *task)
 {
   scamper_udpprobe_t *up = udpprobe_getdata(task);
   udpprobe_state_t *state = NULL;
-  struct sockaddr_storage ss;
-  socklen_t sl;
-  int af;
-
-#ifndef _WIN32 /* SOCKET vs int on windows */
-  int fd = -1;
-#else
-  SOCKET fd = INVALID_SOCKET;
-#endif
 
   if((state = malloc_zero(sizeof(udpprobe_state_t))) == NULL ||
      (state->urs = slist_alloc()) == NULL)
@@ -177,56 +149,17 @@ static udpprobe_state_t *udpprobe_state_alloc(scamper_task_t *task)
       goto err;
     }
 
-  af = scamper_addr_af(up->dst);
-  fd = socket(af, SOCK_DGRAM, IPPROTO_UDP);
-  if(socket_isinvalid(fd))
-    {
-      printerror(__func__, "could not allocate socket");
-      goto err;
-    }
-
-  /* bind to get a port assigned */
-  if(af == AF_INET)
-    {
-      sockaddr_compose((struct sockaddr *)&ss, AF_INET, NULL, 0);
-      sl = sizeof(struct sockaddr_in);
-    }
-  else if(af == AF_INET6)
-    {
-      sockaddr_compose((struct sockaddr *)&ss, AF_INET6, NULL, 0);
-      sl = sizeof(struct sockaddr_in6);
-    }
-  else goto err;
-  if(bind(fd, (struct sockaddr *)&ss, sl) != 0)
-    {
-      printerror(__func__, "could not bind socket");
-      goto err;
-    }
-
-  /* get the source port for this probe */
-  sl = sizeof(ss);
-  if(getsockname(fd, (struct sockaddr *)&ss, &sl) != 0)
-    {
-      printerror(__func__, "could not getsockname");
-      goto err;
-    }
-  if(af == AF_INET)
-    up->sport = ((struct sockaddr_in *)&ss)->sin_port;
-  else if(af == AF_INET6)
-    up->sport = ((struct sockaddr_in6 *)&ss)->sin6_port;
-
-  if((state->fdn = scamper_fd_private(fd, task, udpprobe_read, NULL)) == NULL)
-    {
-      scamper_debug(__func__, "could not register fd");
-      goto err;
-    }
+  if(SCAMPER_ADDR_TYPE_IS_IPV4(up->dst))
+    state->fdn = scamper_fd_udp4dg(up->src->addr, up->sport);
+  else if(SCAMPER_ADDR_TYPE_IS_IPV6(up->dst))
+    state->fdn = scamper_fd_udp6(up->src->addr, up->sport);
+  if(state->fdn == NULL)
+    goto err;
 
   scamper_task_setstate(task, state);
   return state;
 
  err:
-  if(socket_isvalid(fd))
-    socket_close(fd);
   if(state != NULL) udpprobe_state_free(state);
   return NULL;
 }
@@ -240,9 +173,15 @@ static void do_udpprobe_probe(scamper_task_t *task)
   struct sockaddr *sa;
   struct timeval finish;
   socklen_t sl;
-  int fd;
+  int fd, ttl = 255;
+  void *ttl_p = (void *)&ttl;
+  size_t ttl_l = sizeof(ttl);
 
   assert(state == NULL);
+
+  if((state = udpprobe_state_alloc(task)) == NULL)
+    goto err;
+  fd = scamper_fd_fd_get(state->fdn);
 
   if(SCAMPER_ADDR_TYPE_IS_IPV4(up->dst))
     {
@@ -252,15 +191,16 @@ static void do_udpprobe_probe(scamper_task_t *task)
     }
   else if(SCAMPER_ADDR_TYPE_IS_IPV6(up->dst))
     {
+      if(setsockopt(fd, IPPROTO_IPV6, IPV6_UNICAST_HOPS, ttl_p, ttl_l) == -1)
+	{
+	  printerror(__func__, "could not set hlim to %d", ttl);
+	  goto err;
+	}
       sa = (struct sockaddr *)&sin6;
       sockaddr_compose(sa, AF_INET6, up->dst->addr, up->dport);
       sl = sizeof(sin6);
     }
   else goto err;
-
-  if((state = udpprobe_state_alloc(task)) == NULL)
-    goto err;
-  fd = scamper_fd_fd_get(state->fdn);
 
   gettimeofday_wrap(&up->start);
   if(sendto(fd, up->data, up->len, 0, sa, sl) != up->len)
@@ -316,17 +256,39 @@ void scamper_do_udpprobe_free(void *data)
 
 scamper_task_t *scamper_do_udpprobe_alloctask(void *data,
 					      scamper_list_t *list,
-					      scamper_cycle_t *cycle)
+					      scamper_cycle_t *cycle,
+					      char *errbuf, size_t errlen)
 {
   scamper_udpprobe_t *up = (scamper_udpprobe_t *)data;
   scamper_task_t *task = NULL;
+  scamper_task_sig_t *sig = NULL;
 
-  /* allocate a task structure and store the trace with it */
+  /* allocate a task structure and store the udpprobe with it */
   if((task = scamper_task_alloc(up, &udpprobe_funcs)) == NULL)
+    {
+      snprintf(errbuf, errlen, "%s: could not malloc state", __func__);
+      goto err;
+    }
+
+  if(up->src == NULL &&
+     (up->src = scamper_getsrc(up->dst, 0, errbuf, errlen)) == NULL)
     goto err;
 
-  if(up->src == NULL && (up->src = scamper_getsrc(up->dst, 0)) == NULL)
-    goto err;
+  /* declare the signature of the task's probes */
+  if((sig = scamper_task_sig_alloc(SCAMPER_TASK_SIG_TYPE_TX_IP)) == NULL)
+    {
+      snprintf(errbuf, errlen, "%s: could not alloc task signature", __func__);
+      goto err;
+    }
+  sig->sig_tx_ip_dst = scamper_addr_use(up->dst);
+  sig->sig_tx_ip_src = scamper_addr_use(up->src);
+  SCAMPER_TASK_SIG_UDP(sig, up->sport, up->dport);
+  if(scamper_task_sig_add(task, sig) != 0)
+    {
+      snprintf(errbuf, errlen, "%s: could not add signature to task", __func__);
+      goto err;
+    }
+  sig = NULL;
 
   /* associate the list and cycle with the http structure */
   up->list = scamper_list_use(list);
@@ -335,12 +297,18 @@ scamper_task_t *scamper_do_udpprobe_alloctask(void *data,
   return task;
 
  err:
+  if(sig != NULL) scamper_task_sig_free(sig);
   if(task != NULL)
     {
       scamper_task_setdatanull(task);
       scamper_task_free(task);
     }
   return NULL;
+}
+
+uint32_t scamper_do_udpprobe_userid(void *data)
+{
+  return ((scamper_udpprobe_t *)data)->userid;
 }
 
 void scamper_do_udpprobe_cleanup(void)
@@ -351,6 +319,7 @@ void scamper_do_udpprobe_cleanup(void)
 int scamper_do_udpprobe_init(void)
 {
   udpprobe_funcs.probe          = do_udpprobe_probe;
+  udpprobe_funcs.handle_udp     = do_udpprobe_handle_udp;
   udpprobe_funcs.handle_timeout = do_udpprobe_handle_timeout;
   udpprobe_funcs.write          = do_udpprobe_write;
   udpprobe_funcs.task_free      = do_udpprobe_free;

@@ -1,7 +1,7 @@
 /*
  * scamper_options.h: code to handle parsing of options
  *
- * $Id: scamper_options.h,v 1.8 2019/07/12 23:37:57 mjl Exp $
+ * $Id: scamper_options.h,v 1.9 2024/02/12 20:35:36 mjl Exp $
  *
  * Copyright (C) 2006-2008 The University of Waikato
  * Author: Matthew Luckie
@@ -92,22 +92,22 @@ typedef struct scamper_option_out
  * duplicate portions of the input string.
  */
 int scamper_options_parse(char *opt_str,
-			  const scamper_option_in_t *opts_in, const int cnt_in,
+			  const scamper_option_in_t *opts_in, size_t cnt_in,
 			  scamper_option_out_t **opts_out, char **stop);
 
-int scamper_options_validate(const scamper_option_in_t *opts, const int cnt,
+int scamper_options_validate(const scamper_option_in_t *opts, size_t cnt,
 			     int argc, char *argv[], int *stop,
+			     char *errbuf, size_t errlen,
 			     int validate(int optid, char *param,
-					  long long *out));
+					  long long *out,
+					  char *errbuf, size_t len));
 
-/*
- * scamper_options_count
- *
- * return a count of the number of opt_out structures in the list
- */
+/* return a count of the number of opt_out structures in the list */
 int scamper_options_count(scamper_option_out_t *opts);
 
-int scamper_options_c2id(const scamper_option_in_t *opts,const int cnt,char c);
+/* map option chars to id values, and id values to option chars */
+int scamper_options_c2id(const scamper_option_in_t *opts, size_t cnt, char c);
+char scamper_options_id2c(const scamper_option_in_t *opts, size_t cnt, int id);
 
 /*
  * scamper_options_free

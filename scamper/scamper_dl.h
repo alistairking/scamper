@@ -1,7 +1,7 @@
 /*
  * scamper_dl.h
  *
- * $Id: scamper_dl.h,v 1.64 2023/10/07 21:44:02 mjl Exp $
+ * $Id: scamper_dl.h,v 1.65 2024/02/10 06:16:02 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -171,7 +171,7 @@
 #define SCAMPER_DL_IS_ICMP_TIME_REPLY(dl) (		\
  (dl)->dl_net_type == SCAMPER_DL_REC_NET_TYPE_IP &&	\
  (dl)->dl_af == AF_INET && (dl)->dl_ip_proto == 1 &&	\
- (dl)->dl_icmp_icmp_type == 14)
+ (dl)->dl_icmp_type == 14)
 
 #define SCAMPER_DL_IS_ICMP_TTL_EXP(dl) ( \
  (dl)->dl_net_type == SCAMPER_DL_REC_NET_TYPE_IP && \

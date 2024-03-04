@@ -482,10 +482,7 @@ cdef class ScamperAddr:
         cdef size_t pl = cscamper_addr.scamper_addr_len_get(self._c)
         if p == NULL or pl == 0:
             return None
-        out = bytearray(pl)
-        for i in range(pl):
-            out[i] = p[i]
-        return bytes(out)
+        return p[:pl]
 
     def is_linklocal(self):
         """
@@ -1788,16 +1785,14 @@ cdef class ScamperTrace:
         get method to obtain the payload used.
 
         :returns: payload
-        :rtype: bytearray
+        :rtype: bytes
         """
+        cdef const uint8_t *data
         data = cscamper_trace.scamper_trace_payload_get(self._c)
-        if data == NULL:
-            return None
         length = cscamper_trace.scamper_trace_payload_len_get(self._c)
-        output = bytearray(length)
-        for i in range(length):
-            output[i] = data[i]
-        return bytes(output)
+        if data == NULL or length == 0:
+            return None
+        return data[:length]
 
     @property
     def probe_sport(self):
@@ -2494,14 +2489,12 @@ cdef class ScamperPing:
         :returns: payload
         :rtype: bytes
         """
+        cdef const uint8_t *data
         data = cscamper_ping.scamper_ping_probe_data_get(self._c)
-        if data == NULL:
-            return None
         length = cscamper_ping.scamper_ping_probe_datalen_get(self._c)
-        output = bytearray(length)
-        for i in range(length):
-            output[i] = data[i]
-        return bytes(output)
+        if data == NULL or length == 0:
+            return None
+        return data[:length]
 
     def is_icmp(self):
         """
@@ -5092,14 +5085,12 @@ cdef class ScamperSniffPkt:
         :returns: contents of the packet including IP header
         :rtype: bytes
         """
+        cdef const uint8_t *data
         data = cscamper_sniff.scamper_sniff_pkt_data_get(self._c)
-        if data == NULL:
-            return None
         length = cscamper_sniff.scamper_sniff_pkt_len_get(self._c)
-        output = bytearray(length)
-        for i in range(length):
-            output[i] = data[i]
-        return bytes(output)
+        if data == NULL or length == 0:
+            return None
+        return data[:length]
 
 cdef class ScamperSniff:
     """
@@ -6220,10 +6211,7 @@ cdef class ScamperHttpBuf:
         ptr = cscamper_http.scamper_http_buf_data_get(self._c)
         if s == 0 or ptr == NULL:
             return None
-        output = bytearray(s)
-        for i in range(s):
-            output[i] = ptr[i]
-        return bytes(output)
+        return ptr[:s]
 
 cdef class ScamperHttp:
     """
@@ -6410,20 +6398,18 @@ cdef class ScamperHttp:
         cdef size_t s
         cdef uint8_t *buf
         x = cscamper_http.scamper_http_rx_data_len_get(self._c, &s)
-        if x != 0:
+        if x != 0 or s == 0:
             return None
-        output = bytearray(s)
         buf = <uint8_t *>PyMem_Malloc(s)
         if not buf:
             raise MemoryError()
         x = cscamper_http.scamper_http_rx_data_get(self._c, buf, s)
         if x == 0:
-            for i in range(s):
-                output[i] = buf[i]
+            output = buf[:s]
         else:
             output = None
         PyMem_Free(buf)
-        return bytes(output) if output is not None else None
+        return output
 
     @property
     def response_hdr(self):
@@ -6630,10 +6616,7 @@ cdef class ScamperUdpprobeReply:
         buf = cscamper_udpprobe.scamper_udpprobe_reply_data_get(self._c)
         if s == 0 or buf == NULL:
             return None
-        output = bytearray(s)
-        for i in range(s):
-            output[i] = buf[i]
-        return bytes(output)
+        return buf[:s]
 
 cdef class ScamperUdpprobe:
     """
@@ -6798,10 +6781,7 @@ cdef class ScamperUdpprobe:
         buf = cscamper_udpprobe.scamper_udpprobe_data_get(self._c)
         if s == 0 or buf == NULL:
             return None
-        output = bytearray(s)
-        for i in range(s):
-            output[i] = buf[i]
-        return bytes(output)
+        return buf[:s]
 
     @property
     def replyc(self):
@@ -7120,6 +7100,11 @@ cdef class ScamperFile:
     def is_read(self):
         return self._mode == ord('r')
 
+class ScamperInstError(Exception):
+    def __init__(self, message, inst):
+        super().__init__(message)
+        self.inst = inst
+
 cdef void _ctrl_cb(clibscamperctrl.scamper_inst_t *c_inst,
                    uint8_t cb_type, clibscamperctrl.scamper_task_t *c_task,
                    const void *data, size_t datalen):
@@ -7129,6 +7114,7 @@ cdef void _ctrl_cb(clibscamperctrl.scamper_inst_t *c_inst,
     cdef clibscamperctrl.scamper_ctrl_t *c_ctrl
     cdef cscamper_list.scamper_list_t *c_list
     cdef cscamper_list.scamper_cycle_t *c_cycle
+    cdef const char *errstr
 
     inst = <ScamperInst> clibscamperctrl.scamper_inst_getparam(c_inst)
     c_ctrl = clibscamperctrl.scamper_inst_getctrl(c_inst)
@@ -7214,7 +7200,12 @@ cdef void _ctrl_cb(clibscamperctrl.scamper_inst_t *c_inst,
                 ctrl._exceptions.append(e)
 
     elif cb_type == SCAMPER_CTRL_TYPE_ERR:
-        ctrl._exceptions.append(RuntimeError("got err"))
+        if data != NULL:
+            errstr = <const char *>data
+            ctrl._exceptions.append(ScamperInstError(
+                errstr.decode('UTF-8', 'strict'), inst))
+        else:
+            ctrl._exceptions.append(ScamperInstError("got err", inst))
 
     elif cb_type == SCAMPER_CTRL_TYPE_FATAL:
         ctrl._exceptions.append(RuntimeError("got fatal"))
@@ -7691,8 +7682,8 @@ cdef class ScamperCtrl:
         :param string src: The source IP address to use in probes
         :param int tos: The byte to use in the field formally known as IP TOS
         :param int userid: The userid value to tag with this measurement
-        :param int wait_probe: The minimum length of time between probes
-        :param int wait_timeout: The length of time to wait for a response
+        :param timedelta wait_probe: The minimum length of time between probes
+        :param timedelta wait_timeout: The length of time to wait for a response
              for a probe
         :param bool sync: operate the measurement synchronously
             (the method returns when the measurement completes).
@@ -7757,9 +7748,13 @@ cdef class ScamperCtrl:
         if userid is not None:
             cmd = cmd + " -U " + str(userid)
         if wait_timeout is not None:
-            cmd = cmd + " -w " + str(wait_timeout)
+            if not isinstance(wait_timeout, datetime.timedelta):
+                wait_timeout = datetime.timedelta(seconds=wait_timeout)
+            cmd += f" -w {wait_timeout.total_seconds()}s"
         if wait_probe is not None:
-            cmd = cmd + " -W " + str(wait_probe)
+            if not isinstance(wait_probe, datetime.timedelta):
+                wait_probe = datetime.timedelta(seconds=wait_probe)
+            cmd += f" -W {wait_probe.total_seconds()}s"
         cmd = cmd + " " + str(dst)
 
         c = clibscamperctrl.scamper_inst_do((<ScamperInst>inst)._c,
@@ -7803,8 +7798,8 @@ cdef class ScamperCtrl:
         :param int sport: The TCP/UDP source port to use in probes
         :param int tos: The byte to use in the field formally known as IP TOS
         :param int userid: The userid value to tag with this measurement
-        :param int wait_probe: The minimum length of time between probes
-        :param int wait_timeout: The length of time to wait for a response
+        :param timedelta wait_probe: The minimum length of time between probes
+        :param timedelta wait_timeout: The length of time to wait for a response
              for a probe
         :param bool sync: operate the measurement synchronously
             (the method returns when the measurement completes).
@@ -7849,9 +7844,13 @@ cdef class ScamperCtrl:
         if userid is not None:
             cmd = cmd + " -U " + str(userid)
         if wait_timeout is not None:
-            cmd = cmd + " -w " + str(wait_timeout)
+            if not isinstance(wait_timeout, datetime.timedelta):
+                wait_timeout = datetime.timedelta(seconds=wait_timeout)
+            cmd += f" -w {wait_timeout.total_seconds()}s"
         if wait_probe is not None:
-            cmd = cmd + " -W " + str(wait_probe)
+            if not isinstance(wait_probe, datetime.timedelta):
+                wait_probe = datetime.timedelta(seconds=wait_probe)
+            cmd += f" -W {wait_probe.total_seconds()}s"
         cmd = cmd + " " + str(dst)
 
         c = clibscamperctrl.scamper_inst_do((<ScamperInst>inst)._c,
@@ -7910,8 +7909,8 @@ cdef class ScamperCtrl:
             for tcp-syn, tcp-syn-sport, and tcp-rst methods.
         :param int tos: The byte to use in the field formally known as IP TOS
         :param int userid: The userid value to tag with the traceroute
-        :param int wait_probe: The minimum length of time between probes
-        :param int wait_timeout: The length of time to wait for response
+        :param timedelta wait_probe: The minimum length of time between probes
+        :param timedelta wait_timeout: The length of time to wait for response
             for a probe
         :param bool sync: operate the measurement synchronously
             (the method returns when the measurement completes).
@@ -7977,7 +7976,9 @@ cdef class ScamperCtrl:
         if icmp_id is not None:
             cmd = cmd + " -F " + str(icmp_id)
         if wait_probe is not None:
-            cmd = cmd + " -i " + str(wait_probe)
+            if not isinstance(wait_probe, datetime.timedelta):
+                wait_probe = datetime.timedelta(seconds=wait_probe)
+            cmd += f" -i {wait_probe.total_seconds()}s"
         if ttl is not None:
             cmd = cmd + " -m " + str(ttl)
         if mtu is not None:
@@ -7997,7 +7998,9 @@ cdef class ScamperCtrl:
         if userid is not None:
             cmd = cmd + " -U " + str(userid)
         if wait_timeout is not None:
-            cmd = cmd + " -W " + str(wait_timeout)
+            if not isinstance(wait_timeout, datetime.timedelta):
+                wait_timeout = datetime.timedelta(seconds=wait_timeout)
+            cmd += f" -W {wait_timeout.total_seconds()}s"
         if tos is not None:
             cmd = cmd + " -z " + str(tos)
         cmd = cmd + " " + str(dst)
@@ -8026,7 +8029,7 @@ cdef class ScamperCtrl:
         :param string server: The DNS server to use
         :param string qtype: The query type to use
         :param int attempts: The number of queries to make before giving up
-        :param int wait_timeout: The length of time to wait for a response
+        :param timedelta wait_timeout: The length of time to wait for a response
         :param int userid: The userid value to tag with the DNS measurement
         :param bool rd: The recursion desired value to use
         :param bool sync: operate the measurement synchronously
@@ -8048,7 +8051,9 @@ cdef class ScamperCtrl:
         if attempts is not None:
             cmd = cmd + " -R " + str(attempts)
         if wait_timeout is not None:
-            cmd = cmd + " -W " + str(wait_timeout)
+            if not isinstance(wait_timeout, datetime.timedelta):
+                wait_timeout = datetime.timedelta(seconds=wait_timeout)
+            cmd += f" -W {wait_timeout.total_seconds()}s"
         if userid is not None:
             cmd = cmd + " -U " + str(userid)
         if rd is not None and not rd:
@@ -8093,8 +8098,8 @@ cdef class ScamperCtrl:
             and icmp-echo.
         :param int sport: The TCP/UDP source port to use in probes
         :param int userid: The userid value to tag with this measurement
-        :param int wait_probe: The minimum length of time between probes
-        :param int wait_timeout: The length of time to wait for a response
+        :param timedelta wait_probe: The minimum length of time between probes
+        :param timedelta wait_timeout: The length of time to wait for a response
             for a probe
         :param bool sync: operate the measurement synchronously
             (the method returns when the measurement completes).
@@ -8146,9 +8151,13 @@ cdef class ScamperCtrl:
         if userid is not None:
             cmd = cmd + " -U " + str(userid)
         if wait_probe is not None:
-            cmd = cmd + " -W " + str(wait_probe)
+            if not isinstance(wait_probe, datetime.timedelta):
+                wait_probe = datetime.timedelta(seconds=wait_probe)
+            cmd += f" -W {wait_probe.total_seconds()}s"
         if wait_timeout is not None:
-            cmd = cmd + " -w " + str(wait_timeout)
+            if not isinstance(wait_timeout, datetime.timedelta):
+                wait_timeout = datetime.timedelta(seconds=wait_timeout)
+            cmd += f" -w {wait_timeout.total_seconds()}s"
         cmd = cmd + " " + str(dst1) + " " + str(dst2)
 
         c = clibscamperctrl.scamper_inst_do((<ScamperInst>inst)._c,
@@ -8228,21 +8237,21 @@ cdef class ScamperCtrl:
             cmd += f" -U {userid}"
         if wait_probe is not None:
             if not isinstance(wait_probe, datetime.timedelta):
-                raise ValueError("wait_probe not a timedelta")
+                wait_probe = datetime.timedelta(seconds=wait_probe)
             ms = int(wait_probe.seconds * 1000) + int(wait_probe.microseconds / 1000)
             if ms <= 0:
                 raise ValueError("wait_probe must be at least 1ms")
             cmd += f" -W {ms}"
         if wait_timeout is not None:
             if not isinstance(wait_timeout, datetime.timedelta):
-                raise ValueError("wait_timeout not a timedelta")
+                wait_timeout = datetime.timedelta(seconds=wait_timeout)
             s = int(wait_timeout.seconds)
             if s <= 0:
                 raise ValueError("wait_timeout must be at least 1s")
             cmd += f" -w {s}"
         if wait_round is not None:
             if not isinstance(wait_round, datetime.timedelta):
-                raise ValueError("wait_round not a timedelta")
+                wait_round = datetime.timedelta(seconds=wait_round)
             ms = int(wait_round.seconds * 1000) + int(wait_round.microseconds / 1000)
             if ms <= 0:
                 raise ValueError("wait_round must be at least 1ms")
@@ -8299,7 +8308,7 @@ cdef class ScamperCtrl:
             cmd += f" -U {userid}"
         if wait_timeout is not None:
             if not isinstance(wait_timeout, datetime.timedelta):
-                raise ValueError("wait_timeout not a timedelta")
+                wait_timeout = datetime.timedelta(seconds=wait_timeout)
             s = int(wait_timeout.seconds)
             if s <= 0:
                 raise ValueError("wait_timeout must be at least 1s")
@@ -8375,40 +8384,25 @@ cdef class ScamperCtrl:
             cmd += f" -U {userid}"
 
         if wait_probe is not None:
-            if isinstance(wait_probe, datetime.timedelta):
-                if wait_probe <= datetime.timedelta(seconds=0):
-                    raise ValueError("wait_probe must be greater than zero")
-                cmd += f" -W {wait_probe.total_seconds()}s"
-            elif isinstance(wait_probe, int):
-                if wait_probe <= 0:
-                    raise ValueError("wait_probe must be greater than zero")
-                cmd += f" -W {wait_probe}"
-            else:
-                raise ValueError("wait_probe not a timedelta")
+            if not isinstance(wait_probe, datetime.timedelta):
+                wait_probe = datetime.timedelta(seconds=wait_probe)
+            if wait_probe <= datetime.timedelta(seconds=0):
+                raise ValueError("wait_probe must be greater than zero")
+            cmd += f" -W {wait_probe.total_seconds()}s"
 
         if wait_round is not None:
-            if isinstance(wait_round, datetime.timedelta):
-                if wait_round <= datetime.timedelta(seconds=0):
-                    raise ValueError("wait_round must be greater than zero")
-                cmd += f" -r {wait_round.total_seconds()}s"
-            elif isinstance(wait_round, int):
-                if wait_probe <= 0:
-                    raise ValueError("wait_round must be greater than zero")
-                cmd += f" -r {wait_round}"
-            else:
-                raise ValueError("wait_round not a timedelta")
+            if not isinstance(wait_round, datetime.timedelta):
+                wait_round = datetime.timedelta(seconds=wait_round)
+            if wait_round <= datetime.timedelta(seconds=0):
+                raise ValueError("wait_round must be greater than zero")
+            cmd += f" -r {wait_round.total_seconds()}s"
 
         if wait_timeout is not None:
-            if isinstance(wait_timeout, datetime.timedelta):
-                if not wait_timeout >= datetime.timedelta(seconds=1):
-                    raise ValueError("wait_timeout must be at least 1s")
-                cmd += f" -w {wait_timeout.total_seconds()}s"
-            elif isinstance(wait_timeout, int):
-                if wait_timeout < 1:
-                    raise ValueError("wait_timeout must be at least 1s")
-                cmd += f" -w {wait_timeout}"
-            else:
-                raise ValueError("wait_timeout not a timedelta")
+            if not isinstance(wait_timeout, datetime.timedelta):
+                wait_timeout = datetime.timedelta(seconds=wait_timeout)
+            if not wait_timeout >= datetime.timedelta(seconds=1):
+                raise ValueError("wait_timeout must be at least 1s")
+            cmd += f" -w {wait_timeout.total_seconds()}s"
 
         for pd in probedefs:
             if not isinstance(pd, ScamperDealiasProbedef):
@@ -8463,8 +8457,8 @@ cdef class ScamperCtrl:
             and icmp-echo.
         :param int sport: The TCP/UDP source port to use in probes
         :param int userid: The userid value to tag with this measurement
-        :param int wait_probe: The minimum length of time between probes
-        :param int wait_timeout: The length of time to wait for a response
+        :param timedelta wait_probe: The minimum length of time between probes
+        :param timedelta wait_timeout: The length of time to wait for a response
             for a probe
         :param bool sync: operate the measurement synchronously
             (the method returns when the measurement completes).
@@ -8524,9 +8518,13 @@ cdef class ScamperCtrl:
         if userid is not None:
             cmd = cmd + " -U " + str(userid)
         if wait_probe is not None:
-            cmd = cmd + " -W " + str(wait_probe)
+            if not isinstance(wait_probe, datetime.timedelta):
+                wait_probe = datetime.timedelta(seconds=wait_probe)
+            cmd += f" -W {wait_probe.total_seconds()}s"
         if wait_timeout is not None:
-            cmd = cmd + " -w " + str(wait_timeout)
+            if not isinstance(wait_timeout, datetime.timedelta):
+                wait_timeout = datetime.timedelta(seconds=wait_timeout)
+            cmd += f" -w {wait_timeout.total_seconds()}s"
 
         cmd = cmd + " " + str(near) + " " + str(far) + "/" + str(prefixlen)
 
@@ -8569,7 +8567,9 @@ cdef class ScamperCtrl:
         if limit_pkt_count is not None:
             cmd = cmd + " -c " + str(limit_pkt_count)
         if limit_time is not None:
-            cmd = cmd + " -G " + str(limit_time)
+            if not isinstance(limit_time, datetime.timedelta):
+                limit_time = datetime.timedelta(seconds=limit_time)
+            cmd += f" -G {limit_time.total_seconds()}s"
         if userid is not None:
             cmd = cmd + " -U " + str(userid)
 
@@ -8594,7 +8594,7 @@ cdef class ScamperCtrl:
         :param string url: the URL to use for this HTTP request
         :param dict headers: a dictionary of headers to include in the request
         :param bool insecure: do not do TLS validation on certificate
-        :param int limit_time: the maximum time for this measurement to run
+        :param timedelta limit_time: the maximum time for this measurement to run
         :param int userid: the userid value to tag with this measurement
         :param ScamperInst inst: The specific instance to issue command over
         :param bool sync: operate the measurement synchronously
@@ -8615,7 +8615,9 @@ cdef class ScamperCtrl:
             cmd = cmd + " -O insecure"
 
         if limit_time is not None:
-            cmd = cmd + f" -m {limit_time}"
+            if not isinstance(limit_time, datetime.timedelta):
+                limit_time = datetime.timedelta(seconds=limit_time)
+            cmd = cmd + f" -m {limit_time.total_seconds()}s"
 
         if headers is not None:
             if not isinstance(headers, dict):
@@ -8743,6 +8745,12 @@ cdef class ScamperInst:
 
     def __hash__(self):
         return hash((<Py_ssize_t>self._c))
+
+    def __str__(self):
+        c_name = clibscamperctrl.scamper_inst_getname(self._c)
+        if c_name == NULL:
+            return None
+        return c_name.decode('UTF-8', 'strict')
 
     @staticmethod
     cdef ScamperInst from_ptr(clibscamperctrl.scamper_inst_t *ptr):

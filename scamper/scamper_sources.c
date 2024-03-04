@@ -1,7 +1,7 @@
 /*
  * scamper_source
  *
- * $Id: scamper_sources.c,v 1.75 2023/11/22 04:10:09 mjl Exp $
+ * $Id: scamper_sources.c,v 1.79 2024/02/27 03:34:02 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -179,9 +179,12 @@ typedef struct command_func
 {
   char             *command;
   size_t            len;
-  void           *(*allocdata)(char *);
-  scamper_task_t *(*alloctask)(void *, scamper_list_t *, scamper_cycle_t *);
+  void           *(*allocdata)(char *cmd, char *errbuf, size_t errlen);
+  scamper_task_t *(*alloctask)(void *data,
+			       scamper_list_t *list, scamper_cycle_t *cycle,
+			       char *errbuf, size_t errlen);
   void            (*freedata)(void *data);
+  uint32_t        (*userid)(void *data);
 } command_func_t;
 
 static const command_func_t command_funcs[] = {
@@ -191,6 +194,7 @@ static const command_func_t command_funcs[] = {
     scamper_do_trace_alloc,
     scamper_do_trace_alloctask,
     scamper_do_trace_free,
+    scamper_do_trace_userid,
   },
 #endif
 #ifndef DISABLE_SCAMPER_PING
@@ -199,6 +203,7 @@ static const command_func_t command_funcs[] = {
     scamper_do_ping_alloc,
     scamper_do_ping_alloctask,
     scamper_do_ping_free,
+    scamper_do_ping_userid,
   },
 #endif
 #ifndef DISABLE_SCAMPER_TRACELB
@@ -207,6 +212,7 @@ static const command_func_t command_funcs[] = {
     scamper_do_tracelb_alloc,
     scamper_do_tracelb_alloctask,
     scamper_do_tracelb_free,
+    scamper_do_tracelb_userid,
   },
 #endif
 #ifndef DISABLE_SCAMPER_DEALIAS
@@ -215,6 +221,7 @@ static const command_func_t command_funcs[] = {
     scamper_do_dealias_alloc,
     scamper_do_dealias_alloctask,
     scamper_do_dealias_free,
+    scamper_do_dealias_userid,
   },
 #endif
   {
@@ -222,6 +229,7 @@ static const command_func_t command_funcs[] = {
     scamper_do_neighbourdisc_alloc,
     scamper_do_neighbourdisc_alloctask,
     scamper_do_neighbourdisc_free,
+    scamper_do_neighbourdisc_userid,
   },
 #ifndef DISABLE_SCAMPER_TBIT
   {
@@ -229,6 +237,7 @@ static const command_func_t command_funcs[] = {
     scamper_do_tbit_alloc,
     scamper_do_tbit_alloctask,
     scamper_do_tbit_free,
+    scamper_do_tbit_userid,
   },
 #endif
 #ifndef DISABLE_SCAMPER_STING
@@ -237,6 +246,7 @@ static const command_func_t command_funcs[] = {
     scamper_do_sting_alloc,
     scamper_do_sting_alloctask,
     scamper_do_sting_free,
+    scamper_do_sting_userid,
   },
 #endif
 #ifndef DISABLE_SCAMPER_SNIFF
@@ -245,6 +255,7 @@ static const command_func_t command_funcs[] = {
     scamper_do_sniff_alloc,
     scamper_do_sniff_alloctask,
     scamper_do_sniff_free,
+    scamper_do_sniff_userid,
   },
 #endif
 #ifndef DISABLE_SCAMPER_HOST
@@ -253,6 +264,7 @@ static const command_func_t command_funcs[] = {
     scamper_do_host_alloc,
     scamper_do_host_alloctask,
     scamper_do_host_free,
+    scamper_do_host_userid,
   },
 #endif
 #ifndef DISABLE_SCAMPER_HTTP
@@ -261,6 +273,7 @@ static const command_func_t command_funcs[] = {
     scamper_do_http_alloc,
     scamper_do_http_alloctask,
     scamper_do_http_free,
+    scamper_do_http_userid,
   },
 #endif
 #ifndef DISABLE_SCAMPER_UDPPROBE
@@ -269,6 +282,7 @@ static const command_func_t command_funcs[] = {
     scamper_do_udpprobe_alloc,
     scamper_do_udpprobe_alloctask,
     scamper_do_udpprobe_free,
+    scamper_do_udpprobe_userid,
   },
 #endif
 };
@@ -840,6 +854,7 @@ static int command_probe_handle(scamper_source_t *source, command_t *command,
   scamper_sourcetask_t *st = NULL;
   scamper_cycle_t *cycle;
   scamper_task_t *task = NULL;
+  char errbuf[256];
 
   sources_assert();
 
@@ -847,8 +862,15 @@ static int command_probe_handle(scamper_source_t *source, command_t *command,
   cycle = scamper_cyclemon_cycle(command->un.pr.cyclemon);
 
   /* allocate the task structure to keep everything together */
-  if((task = funcs->alloctask(command->un.pr.data,source->list,cycle)) == NULL)
-    goto err;
+  if((task = funcs->alloctask(command->un.pr.data, source->list, cycle,
+			      errbuf, sizeof(errbuf))) == NULL)
+    {
+      if(errbuf[0] != '\0')
+	printerror_msg(__func__, "%s", errbuf);
+      else
+	printerror_msg(__func__, "alloctask failed");
+      goto err;
+    }
   scamper_task_setcyclemon(task, command->un.pr.cyclemon);
   command->un.pr.data = NULL;
   command_free(command);
@@ -1399,7 +1421,8 @@ static const command_func_t *command_func_get(const char *command)
  * make a copy of the options, since the next function may modify the
  * contents of it
  */
-static void *command_func_allocdata(const command_func_t *f, const char *cmd)
+static void *command_func_allocdata(const command_func_t *f, const char *cmd,
+				    char *errbuf, size_t errlen)
 {
   char *opts = NULL;
   void *data;
@@ -1408,7 +1431,7 @@ static void *command_func_allocdata(const command_func_t *f, const char *cmd)
       printerror(__func__, "could not strdup cmd opts");
       return NULL;
     }
-  data = f->allocdata(opts);
+  data = f->allocdata(opts, errbuf, errlen);
   free(opts);
   return data;
 }
@@ -1451,7 +1474,7 @@ int scamper_source_halttask(scamper_source_t *source, uint32_t id)
  * which allows the command to be halted.  used by the control socket code.
  */
 int scamper_source_command2(scamper_source_t *s, const char *command,
-			    uint32_t *id)
+			    uint32_t *id, char *errbuf, size_t errlen)
 {
   const command_func_t *f = NULL;
   scamper_sourcetask_t *st = NULL;
@@ -1459,23 +1482,25 @@ int scamper_source_command2(scamper_source_t *s, const char *command,
   command_t *cmd = NULL;
   void *data = NULL;
 
+  errbuf[0] = '\0';
+
   sources_assert();
 
   if(s->idtree == NULL &&
      (s->idtree = splaytree_alloc((splaytree_cmp_t)idtree_cmp)) == NULL)
     {
-      printerror(__func__, "could not alloc idtree");
+      snprintf(errbuf, errlen, "could not alloc idtree");
       goto err;
     }
 
   if((f = command_func_get(command)) == NULL)
     {
-      scamper_debug(__func__, "could not determine command type");
+      snprintf(errbuf, errlen, "could not determine command type");
       goto err;
     }
-  if((data = command_func_allocdata(f, command)) == NULL)
+  if((data = command_func_allocdata(f, command, errbuf, errlen)) == NULL)
     goto err;
-  if((task = f->alloctask(data, s->list, s->cycle)) == NULL)
+  if((task = f->alloctask(data, s->list, s->cycle, errbuf, errlen)) == NULL)
     goto err;
   data = NULL;
 
@@ -1484,7 +1509,10 @@ int scamper_source_command2(scamper_source_t *s, const char *command,
    * pass the cyclemon structure to the task
    */
   if((st = sourcetask_alloc(s, task)) == NULL)
-    goto err;
+    {
+      snprintf(errbuf, errlen, "could not sourcetask_alloc");
+      goto err;
+    }
   scamper_task_setsourcetask(task, st);
   scamper_task_setcyclemon(task, s->cyclemon);
   task = NULL;
@@ -1494,17 +1522,20 @@ int scamper_source_command2(scamper_source_t *s, const char *command,
   if(++s->id == 0) s->id = 1;
   if((st->idnode = splaytree_insert(s->idtree, st)) == NULL)
     {
-      printerror(__func__, "could not add to idtree");
+      snprintf(errbuf, errlen, "could not add to idtree"); 
       goto err;
     }
 
   if((cmd = command_alloc(COMMAND_TASK)) == NULL)
-    goto err;
+    {
+      snprintf(errbuf, errlen, "could not command_alloc");
+      goto err;
+    }
   cmd->un.sourcetask = st;
 
   if(dlist_tail_push(s->commands, cmd) == NULL)
     {
-      printerror(__func__, "could not add to commands list");
+      snprintf(errbuf, errlen, "could not add to commands list");
       goto err;
     }
 
@@ -1530,13 +1561,22 @@ int scamper_source_command(scamper_source_t *source, const char *command)
   command_t *cmd = NULL;
   char *opts = NULL;
   void *data = NULL;
+  char errbuf[256];
 
   sources_assert();
 
   if((func = command_func_get(command)) == NULL)
     goto err;
-  if((data = command_func_allocdata(func, command)) == NULL)
-    goto err;
+  errbuf[0] = '\0';
+  if((data = command_func_allocdata(func, command,
+				    errbuf, sizeof(errbuf))) == NULL)
+    {
+      if(errbuf[0] != '\0')
+	printerror_msg(__func__, "%s", errbuf);
+      else
+	printerror_msg(__func__, "could not parse command");
+      goto err;
+    }
 
   if((cmd = command_alloc(COMMAND_PROBE)) == NULL)
     goto err;

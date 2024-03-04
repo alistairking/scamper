@@ -1,7 +1,7 @@
 /*
  * libscamperctrl
  *
- * $Id: libscamperctrl.c,v 1.56 2023/08/20 01:39:58 mjl Exp $
+ * $Id: libscamperctrl.c,v 1.57 2024/02/18 19:06:41 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -988,7 +988,18 @@ static int scamper_inst_read(scamper_inst_t *inst)
 	    {
 	      cmd = slist_head_pop(inst->waitok);
 	      assert(cmd->type == SCAMPER_CMD_TYPE_TASK);
-	      ctrl->cb(inst, SCAMPER_CTRL_TYPE_ERR, cmd->task, NULL, 0);
+	      ptr = NULL; size = 0;
+	      if(start[3] == ' ' && start[4] != '\0')
+		{
+		  ptr = start + 4; i = 0;
+		  while(isprint(ptr[i]))
+		    i++;
+		  if(ptr[i] == '\0')
+		    size = i;
+		  else
+		    ptr = NULL;
+		}
+	      ctrl->cb(inst, SCAMPER_CTRL_TYPE_ERR, cmd->task, ptr, size);
 	      scamper_task_free(cmd->task); cmd->task = NULL;
 	      ctrl->cb(inst, SCAMPER_CTRL_TYPE_MORE, NULL, NULL, 0);
 	      scamper_cmd_free(cmd);

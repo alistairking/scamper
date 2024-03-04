@@ -1,7 +1,7 @@
 /*
  * fuzz_cmd : simple program to fuzz specific command input paths
  *
- * $Id: fuzz_cmd.c,v 1.8 2024/01/16 06:30:28 mjl Exp $
+ * $Id: fuzz_cmd.c,v 1.9 2024/02/13 04:59:48 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -98,48 +98,51 @@ scamper_addrcache_t *addrcache = NULL;
 
 static int test(char *in, void *param)
 {
+  char errbuf[256];
+  size_t errlen = sizeof(errbuf);
 #if defined(FUZZ_DEALIAS)
-  scamper_dealias_t *dealias = scamper_do_dealias_alloc(in);
+  scamper_dealias_t *dealias = scamper_do_dealias_alloc(in, errbuf, errlen);
   if(dealias != NULL)
     scamper_dealias_free(dealias);
 #elif defined(FUZZ_HOST)
-  scamper_host_t *host = scamper_do_host_alloc(in);
+  scamper_host_t *host = scamper_do_host_alloc(in, errbuf, errlen);
   if(host != NULL)
     scamper_host_free(host);
 #elif defined(FUZZ_HTTP)
-  scamper_http_t *http = scamper_do_http_alloc(in);
+  scamper_http_t *http = scamper_do_http_alloc(in, errbuf, errlen);
   if(http != NULL)
     scamper_http_free(http);
 #elif defined(FUZZ_NEIGHBOURDISC)
-  scamper_neighbourdisc_t *nd = scamper_do_neighbourdisc_alloc(in);
+  scamper_neighbourdisc_t *nd =
+    scamper_do_neighbourdisc_alloc(in, errbuf, errlen);
   if(nd != NULL)
     scamper_neighbourdisc_free(nd);
 #elif defined(FUZZ_PING)
-  scamper_ping_t *ping = scamper_do_ping_alloc(in);
+  scamper_ping_t *ping = scamper_do_ping_alloc(in, errbuf, errlen);
   if(ping != NULL)
     scamper_ping_free(ping);
 #elif defined(FUZZ_SNIFF)
-  scamper_sniff_t *sniff = scamper_do_sniff_alloc(in);
+  scamper_sniff_t *sniff = scamper_do_sniff_alloc(in, errbuf, errlen);
   if(sniff != NULL)
     scamper_sniff_free(sniff);
 #elif defined(FUZZ_STING)
-  scamper_sting_t *sting = scamper_do_sting_alloc(in);
+  scamper_sting_t *sting = scamper_do_sting_alloc(in, errbuf, errlen);
   if(sting != NULL)
     scamper_sting_free(sting);
 #elif defined(FUZZ_TBIT)
-  scamper_tbit_t *tbit = scamper_do_tbit_alloc(in);
+  scamper_tbit_t *tbit = scamper_do_tbit_alloc(in, errbuf, errlen);
   if(tbit != NULL)
     scamper_tbit_free(tbit);
 #elif defined(FUZZ_TRACE)
-  scamper_trace_t *trace = scamper_do_trace_alloc(in);
+  scamper_trace_t *trace = scamper_do_trace_alloc(in, errbuf, errlen);
   if(trace != NULL)
     scamper_trace_free(trace);
 #elif defined(FUZZ_TRACELB)
-  scamper_tracelb_t *tracelb = scamper_do_tracelb_alloc(in);
+  scamper_tracelb_t *tracelb = scamper_do_tracelb_alloc(in, errbuf, errlen);
   if(tracelb != NULL)
     scamper_tracelb_free(tracelb);
 #elif defined(FUZZ_UDPPROBE)
-  scamper_udpprobe_t *udpprobe = scamper_do_udpprobe_alloc(in);
+  scamper_udpprobe_t *udpprobe = scamper_do_udpprobe_alloc(in, errbuf, errlen);
   if(udpprobe != NULL)
     scamper_udpprobe_free(udpprobe);
 #endif

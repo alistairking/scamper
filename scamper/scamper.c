@@ -1,7 +1,7 @@
 /*
  * scamper
  *
- * $Id: scamper.c,v 1.329 2024/01/03 03:57:56 mjl Exp $
+ * $Id: scamper.c,v 1.331 2024/02/28 02:11:53 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -142,6 +142,7 @@
 #define FLAG_ICMP_RECVERR    0x00000400
 #endif
 #define FLAG_POLL            0x00000800
+#define FLAG_RING            0x00001000
 
 /*
  * parameters configurable by the command line:
@@ -234,6 +235,13 @@ static char *remote_client_privfile = NULL;
 static char *remote_client_certfile = NULL;
 #endif
 
+#ifdef HAVE_STRUCT_TPACKET_REQ3
+/* runtime config for linux AF_PACKET ring */
+static unsigned int ring_block_size = 1 << 16; /* 65 KiB */
+static unsigned int ring_blocks     = 64;
+static int          ring_nolocked   = 0;       /* don't use MAP_LOCKED if set */
+#endif
+
 /* Source port to use in our probes */
 static uint16_t default_sport = 0;
 static uint16_t pid_u16 = 0;
@@ -242,7 +250,8 @@ typedef struct scamper_multicall
 {
   char         *argv0;
   char         *cmd;
-  int         (*validate)(int, char **, int *);
+  int         (*validate)(int argc, char **argv, int *stop,
+			  char *errbuf, size_t errlen);
   const char *(*usage)(void);
 } scamper_multicall_t;
 
@@ -376,6 +385,9 @@ static void usage(uint32_t opt_mask)
 #ifndef WITHOUT_DEBUGFILE
       usage_line("debugfileappend: append to debugfile, rather than truncate");
 #endif
+#ifdef HAVE_STRUCT_TPACKET_REQ3
+      usage_line("ring: use PACKET_RX_RING to receive datalink packets");
+#endif
     }
 
   if((opt_mask & OPT_PPS) != 0)
@@ -419,16 +431,20 @@ static int set_opt(uint32_t opt, char *str, int (*setfunc)(int))
 
 static int multicall_do(const scamper_multicall_t *mc, int argc, char *argv[])
 {
+  char errbuf[256];
   char *str;
   size_t off, len, tmp;
   int i, stop;
 
-  if(argc == 1 || mc->validate(argc, argv, &stop) != 0 || stop == argc)
+  errbuf[0] = '\0';
+  if(argc == 1 ||
+     mc->validate(argc, argv, &stop, errbuf, sizeof(errbuf)) != 0 ||
+     stop == argc)
     {
       if(mc->usage != NULL)
-	{
-	  printf("usage: scamper-%s <ip list>\n", mc->usage());
-	}
+	printf("usage: scamper-%s <ip list>\n", mc->usage());
+      if(errbuf[0] != '\0')
+	printf("%s\n", errbuf);
       return -1;
     }
 
@@ -576,6 +592,11 @@ static int check_options(int argc, char *argv[])
   char *opt_pps = NULL, *opt_command = NULL, *opt_window = NULL;
   char *opt_firewall = NULL, *opt_pidfile = NULL, *opt_ctrl_remote = NULL;
   char *opt_nameserver = NULL;
+
+#ifdef HAVE_STRUCT_TPACKET_REQ3
+  char *opt_ring_blocks = NULL, *opt_ring_block_size = NULL;
+  long  lo;
+#endif
 
 #ifndef WITHOUT_DEBUGFILE
   char *opt_debugfile = NULL;
@@ -747,6 +768,19 @@ static int check_options(int argc, char *argv[])
 	  else if(strncasecmp(optarg, "client-certfile=", 16) == 0)
 	    remote_client_certfile = optarg+16;
 #endif
+#ifdef HAVE_STRUCT_TPACKET_REQ3
+	  else if(strcasecmp(optarg, "ring") == 0)
+	    flags |= FLAG_RING;
+	  else if(strncasecmp(optarg, "ring-blocks=", 12) == 0)
+	    opt_ring_blocks = optarg + 12;
+	  else if(strncasecmp(optarg, "ring-block-size=", 16) == 0)
+	    opt_ring_block_size = optarg + 16;
+	  else if(strcasecmp(optarg, "ring-nolocked") == 0)
+	    {
+	      flags |= FLAG_RING;
+	      ring_nolocked = 1;
+	    }
+#endif
 	  else
 	    {
 	      usage(OPT_OPTION);
@@ -885,6 +919,30 @@ static int check_options(int argc, char *argv[])
       printerror(__func__, "could not strdup pidfile");
       return -1;
     }
+
+#ifdef HAVE_STRUCT_TPACKET_REQ3
+  if(opt_ring_blocks != NULL)
+    {
+      if(string_tolong(opt_ring_blocks, &lo) != 0 || lo < 1)
+	{
+	  usage(OPT_OPTION);
+	  fprintf(stderr, "invalid -O ring-blocks\n");
+	  return -1;
+	}
+      ring_blocks = (unsigned int)lo;
+    }
+
+  if(opt_ring_block_size != NULL)
+    {
+      if(string_tolong(opt_ring_block_size, &lo) != 0 || lo < 1)
+	{
+	  usage(OPT_OPTION);
+	  fprintf(stderr, "invalid -O ring-block-size\n");
+	  return -1;
+	}
+      ring_block_size = (unsigned int)lo;
+    }
+#endif
 
   if(outtype == NULL)
     {
@@ -1247,6 +1305,30 @@ int scamper_option_daemon(void)
   if(options & OPT_DAEMON) return 1;
   return 0;
 }
+
+#ifdef HAVE_STRUCT_TPACKET_REQ3
+int scamper_option_ring(void)
+{
+  if(flags & FLAG_RING)
+    return 1;
+  return 0;
+}
+
+unsigned int scamper_option_ring_blocks(void)
+{
+  return ring_blocks;
+}
+
+unsigned int scamper_option_ring_block_size(void)
+{
+  return ring_block_size;
+}
+
+int scamper_option_ring_nolocked(void)
+{
+  return ring_nolocked;
+}
+#endif
 
 #ifdef HAVE_SETEUID
 uid_t scamper_getuid(void)

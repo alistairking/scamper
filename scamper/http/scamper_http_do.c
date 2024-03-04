@@ -1,7 +1,7 @@
 /*
  * scamper_http_do.c
  *
- * $Id: scamper_http_do.c,v 1.10 2024/01/03 03:51:42 mjl Exp $
+ * $Id: scamper_http_do.c,v 1.14 2024/02/27 03:34:02 mjl Exp $
  *
  * Copyright (C) 2023-2024 The Regents of the University of California
  *
@@ -780,26 +780,21 @@ static void do_http_probe(scamper_task_t *task)
 
   if(state->mode == STATE_MODE_CONNECTED)
     {
+#ifdef HAVE_OPENSSL
       if(http->type == SCAMPER_HTTP_TYPE_HTTPS)
 	{
-#ifdef HAVE_OPENSSL
 	  if(tls_handshake(task) != 0)
 	    goto err;
-#else
-	  goto err;
+	  goto done;
+	}
 #endif
-	}
-      else
-	{
-	  if(http_req(task) != 0)
-	    goto err;
-	}
+      if(http_req(task) != 0)
+	goto err;
     }
 
-  if(scamper_writebuf_gtzero(state->wb))
-    scamper_fd_write_unpause(state->fdn);
-
  done:
+  if(state != NULL && scamper_writebuf_gtzero(state->wb))
+    scamper_fd_write_unpause(state->fdn);
   http_queue(task);
   return;
 
@@ -849,14 +844,18 @@ void scamper_do_http_free(void *data)
 
 scamper_task_t *scamper_do_http_alloctask(void *data,
 					  scamper_list_t *list,
-					  scamper_cycle_t *cycle)
+					  scamper_cycle_t *cycle,
+					  char *errbuf, size_t errlen)
 {
   scamper_http_t *http = (scamper_http_t *)data;
   scamper_task_t *task = NULL;
 
   /* allocate a task structure and store the trace with it */
   if((task = scamper_task_alloc(http, &http_funcs)) == NULL)
-    goto err;
+    {
+      snprintf(errbuf, errlen, "%s: could not malloc state", __func__);
+      goto err;
+    }
 
   /* associate the list and cycle with the http structure */
   http->list = scamper_list_use(list);
@@ -871,6 +870,11 @@ scamper_task_t *scamper_do_http_alloctask(void *data,
       scamper_task_free(task);
     }
   return NULL;
+}
+
+uint32_t scamper_do_http_userid(void *data)
+{
+  return ((scamper_http_t *)data)->userid;
 }
 
 void scamper_do_http_cleanup(void)

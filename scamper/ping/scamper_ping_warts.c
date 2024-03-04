@@ -7,7 +7,7 @@
  * Copyright (C) 2016-2023 Matthew Luckie
  * Author: Matthew Luckie
  *
- * $Id: scamper_ping_warts.c,v 1.29 2023/11/27 07:56:14 mjl Exp $
+ * $Id: scamper_ping_warts.c,v 1.30 2024/02/28 23:35:23 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -134,6 +134,7 @@ static const warts_var_t ping_vars[] =
 #define WARTS_PING_REPLY_REPLY_IPID32    15
 #define WARTS_PING_REPLY_TX              16
 #define WARTS_PING_REPLY_TSREPLY         17
+#define WARTS_PING_REPLY_PROBE_SPORT     18
 
 static const warts_var_t ping_reply_vars[] =
 {
@@ -154,6 +155,7 @@ static const warts_var_t ping_reply_vars[] =
   {WARTS_PING_REPLY_REPLY_IPID32,    4},
   {WARTS_PING_REPLY_TX,              8},
   {WARTS_PING_REPLY_TSREPLY,        12},
+  {WARTS_PING_REPLY_PROBE_SPORT,     2},
 };
 #define ping_reply_vars_mfb WARTS_VAR_MFB(ping_reply_vars)
 
@@ -341,7 +343,8 @@ static int warts_ping_reply_params(const scamper_ping_t *ping,
 	 (var->id == WARTS_PING_REPLY_V4RR && reply->v4rr == NULL) ||
 	 (var->id == WARTS_PING_REPLY_V4TS && reply->v4ts == NULL) ||
 	 (var->id == WARTS_PING_REPLY_TX && reply->tx.tv_sec == 0) ||
-	 (var->id == WARTS_PING_REPLY_TSREPLY && reply->tsreply == NULL))
+	 (var->id == WARTS_PING_REPLY_TSREPLY && reply->tsreply == NULL) ||
+	 (var->id == WARTS_PING_REPLY_PROBE_SPORT && reply->probe_sport == 0))
 	{
 	  continue;
 	}
@@ -449,6 +452,7 @@ static int warts_ping_reply_read(const scamper_ping_t *ping,
     {&reply->reply_ipid32,    (wpr_t)extract_uint32,               NULL},
     {&reply->tx,              (wpr_t)extract_timeval,              NULL},
     {&reply->tsreply,         (wpr_t)extract_ping_reply_tsreply,   NULL},
+    {&reply->probe_sport,     (wpr_t)extract_uint16,               NULL},
   };
   const int handler_cnt = sizeof(handlers) / sizeof(warts_param_reader_t);
   uint32_t o = *off;
@@ -499,6 +503,7 @@ static void warts_ping_reply_write(const warts_ping_reply_t *state,
     {&reply->reply_ipid32,    (wpw_t)insert_uint32,                 NULL},
     {&reply->tx,              (wpw_t)insert_timeval,                NULL},
     {reply->tsreply,          (wpw_t)insert_ping_reply_tsreply,     NULL},
+    {&reply->probe_sport,     (wpw_t)insert_uint16,                 NULL},
   };
   const int handler_cnt = sizeof(handlers) / sizeof(warts_param_writer_t);
 

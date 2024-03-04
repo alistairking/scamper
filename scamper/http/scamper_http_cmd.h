@@ -1,7 +1,7 @@
 /*
  * scamper_http_cmd.h
  *
- * $Id: scamper_http_cmd.h,v 1.1 2023/10/14 19:48:32 mjl Exp $
+ * $Id: scamper_http_cmd.h,v 1.2 2024/02/12 20:35:36 mjl Exp $
  *
  * Copyright (C) 2023 The Regents of the University of California
  *
@@ -25,8 +25,9 @@
 #ifndef __SCAMPER_HTTP_CMD_H
 #define __SCAMPER_HTTP_CMD_H
 
-void *scamper_do_http_alloc(char *str);
+void *scamper_do_http_alloc(char *str, char *errbuf, size_t errlen);
 const char *scamper_do_http_usage(void);
-int scamper_do_http_arg_validate(int argc, char *argv[], int *stop);
+int scamper_do_http_arg_validate(int argc, char *argv[], int *stop,
+				 char *errbuf, size_t errlen);
 
 #endif /*__SCAMPER_HTTP_CMD_H */

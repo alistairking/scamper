@@ -1,7 +1,7 @@
 /*
  * scamper_probe.c
  *
- * $Id: scamper_probe.c,v 1.82 2023/08/18 21:24:40 mjl Exp $
+ * $Id: scamper_probe.c,v 1.83 2024/02/28 20:33:41 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -92,7 +92,6 @@ typedef struct probe_state
 
 static uint8_t *pktbuf = NULL;
 static size_t   pktbuf_len = 0;
-static int      ipid_dl = 0;
 static int      rawtcp = 0;
 
 #ifdef HAVE_SCAMPER_DEBUG
@@ -862,7 +861,7 @@ int scamper_probe_task(scamper_probe_t *pr, scamper_task_t *task)
    */
   if(pr->pr_ip_proto == IPPROTO_TCP ||
      pr->pr_rtr != NULL ||
-     (ipid_dl != 0 && SCAMPER_PROBE_IS_IPID(pr)) ||
+     (SCAMPER_PROBE_IS_IPID(pr) && scamper_osinfo_is_sunos()) ||
      (pr->pr_flags & SCAMPER_PROBE_FLAG_NOFRAG) != 0 ||
      (pr->pr_flags & SCAMPER_PROBE_FLAG_SPOOF) != 0 ||
      (pr->pr_flags & SCAMPER_PROBE_FLAG_DL) != 0)
@@ -1036,9 +1035,6 @@ int scamper_probe(scamper_probe_t *probe)
 
 int scamper_probe_init(void)
 {
-  const scamper_osinfo_t *osinfo = scamper_osinfo_get();
-  if(SCAMPER_OSINFO_IS_SUNOS(osinfo))
-    ipid_dl = 1;
   if(scamper_option_planetlab() || scamper_option_rawtcp())
     rawtcp = 1;
   return 0;

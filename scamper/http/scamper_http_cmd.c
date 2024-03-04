@@ -1,7 +1,7 @@
 /*
  * scamper_http_cmd.c
  *
- * $Id: scamper_http_cmd.c,v 1.3 2024/01/03 03:51:42 mjl Exp $
+ * $Id: scamper_http_cmd.c,v 1.6 2024/02/15 07:43:23 mjl Exp $
  *
  * Copyright (C) 2023-2024 The Regents of the University of California
  *
@@ -33,8 +33,8 @@
 #include "scamper_list.h"
 #include "scamper_http.h"
 #include "scamper_http_int.h"
+#include "scamper_http_cmd.h"
 #include "scamper_options.h"
-#include "scamper_debug.h"
 #include "mjl_list.h"
 #include "utils.h"
 
@@ -96,36 +96,61 @@ static int http_header_validate(const char *header)
   return 0;
 }
 
-static int http_arg_param_validate(int optid, char *param, long long *out)
+static int http_arg_param_validate(int optid, char *param, long long *out,
+				   char *errbuf, size_t errlen)
 {
   struct timeval tv;
-  long tmp = 0;
+  long long tmp = 0;
+
+#ifndef NDEBUG
+  errbuf[0] = '\0';
+#endif
 
   switch(optid)
     {
     case HTTP_OPT_HEADER:
       if(http_header_validate(param) != 0)
-	goto err;
+	{
+	  snprintf(errbuf, errlen, "invalid HTTP header");
+	  goto err;
+	}
       break;
 
     case HTTP_OPT_MAXTIME:
-      if(timeval_fromstr(&tv, param, 1000000) != 0 ||
-	 timeval_cmp_lt(&tv, 1, 0) || timeval_cmp_gt(&tv, 60, 0))
-	goto err;
+      if(timeval_fromstr(&tv, param, 1000000) != 0)
+	{
+	  snprintf(errbuf, errlen, "malformed maximum runtime");
+	  goto err;
+	}
+      if(timeval_cmp_lt(&tv, 1, 0) || timeval_cmp_gt(&tv, 60, 0))
+	{
+	  snprintf(errbuf, errlen, "maximum runtime must be within 1s - 60s");
+	  goto err;
+	}
       tmp = (tv.tv_sec * 1000000) + tv.tv_usec;
       break;
 
     case HTTP_OPT_OPTION:
-      if(strcasecmp(param, "insecure") != 0)
-	goto err;
+      if(strcasecmp(param, "insecure") == 0)
+	tmp = SCAMPER_HTTP_FLAG_INSECURE;
+      else
+	{
+	  snprintf(errbuf, errlen, "-O %s unknown", param);
+	  goto err;
+	}
       break;
 
     case HTTP_OPT_URL:
       break;
 
     case HTTP_OPT_USERID:
-      if(string_tolong(param, &tmp) != 0 || tmp < 0)
-	goto err;
+      if(string_tollong(param, &tmp, NULL, 0) != 0 ||
+	 tmp < 0 || tmp > UINT32_MAX)
+	{
+	  snprintf(errbuf, errlen, "userid must be within %u - %u", 0,
+		   UINT32_MAX);
+	  goto err;
+	}
       break;
 
     default:
@@ -134,20 +159,22 @@ static int http_arg_param_validate(int optid, char *param, long long *out)
 
   /* valid parameter */
   if(out != NULL)
-    *out = (long long)tmp;
+    *out = tmp;
   return 0;
 
  err:
+  assert(errbuf[0] != '\0');
   return -1;
 }
 
-int scamper_do_http_arg_validate(int argc, char *argv[], int *stop)
+int scamper_do_http_arg_validate(int argc, char *argv[], int *stop,
+				 char *errbuf, size_t errlen)
 {
   return scamper_options_validate(opts, opts_cnt, argc, argv, stop,
-				  http_arg_param_validate);
+				  errbuf, errlen, http_arg_param_validate);
 }
 
-void *scamper_do_http_alloc(char *str)
+void *scamper_do_http_alloc(char *str, char *errbuf, size_t errlen)
 {
   scamper_option_out_t *opts_out = NULL, *opt;
   scamper_http_t *http = NULL;
@@ -161,18 +188,23 @@ void *scamper_do_http_alloc(char *str)
   char *scheme = NULL, *host = NULL, *file = NULL;
   uint32_t flags = 0;
   struct timeval maxtime;
+  char buf[256];
+
+#ifndef NDEBUG
+  errbuf[0] = '\0';
+#endif
 
   /* Parse the options */
   if(scamper_options_parse(str, opts, opts_cnt, &opts_out, &addr) != 0)
     {
-      scamper_debug(__func__, "could not parse options");
+      snprintf(errbuf, errlen, "could not parse http command");
       goto err;
     }
 
   /* If there is no IP address after the options string, then stop now */
   if(addr == NULL)
     {
-      scamper_debug(__func__, "no address parameter");
+      snprintf(errbuf, errlen, "expected address to connect to");
       goto err;
     }
 
@@ -183,9 +215,12 @@ void *scamper_do_http_alloc(char *str)
   for(opt = opts_out; opt != NULL; opt = opt->next)
     {
       if(opt->type != SCAMPER_OPTION_TYPE_NULL &&
-	 http_arg_param_validate(opt->id, opt->str, &tmp) != 0)
+	 http_arg_param_validate(opt->id, opt->str, &tmp,
+				 buf, sizeof(buf)) != 0)
 	{
-	  scamper_debug(__func__, "validation of optid %d failed", opt->id);
+	  snprintf(errbuf, errlen, "-%c %s failed: %s",
+		   scamper_options_id2c(opts, opts_cnt, opt->id),
+		   opt->str, buf);
 	  goto err;
 	}
 
@@ -195,7 +230,7 @@ void *scamper_do_http_alloc(char *str)
 	  if((headers == NULL && (headers = slist_alloc()) == NULL) ||
 	     slist_tail_push(headers, opt->str) == NULL)
 	    {
-	      printerror(__func__, "could not store header");
+	      snprintf(errbuf, errlen, "could not store header");
 	      goto err;
 	    }
 	  break;
@@ -206,13 +241,7 @@ void *scamper_do_http_alloc(char *str)
 	  break;
 
 	case HTTP_OPT_OPTION:
-	  if(strcasecmp(opt->str, "insecure") == 0)
-	    flags |= SCAMPER_HTTP_FLAG_INSECURE;
-	  else
-	    {
-	      scamper_debug(__func__, "unknown option %s", opt->str);
-	      goto err;
-	    }
+	  flags |= (uint32_t)tmp;
 	  break;
 
 	case HTTP_OPT_URL:
@@ -226,21 +255,26 @@ void *scamper_do_http_alloc(char *str)
     }
   scamper_options_free(opts_out); opts_out = NULL;
 
-  if(url == NULL || url_parse(url, &dport, &scheme, &host, &file) != 0)
+  if(url == NULL)
     {
-      printerror(__func__, "could not parse URL");
+      snprintf(errbuf, errlen, "missing URL parameter");
+      goto err;
+    }
+  if(url_parse(url, &dport, &scheme, &host, &file) != 0)
+    {
+      snprintf(errbuf, errlen, "could not parse URL");
       goto err;
     }
 
   if((http = scamper_http_alloc()) == NULL)
     {
-      printerror(__func__, "could not alloc http");
+      snprintf(errbuf, errlen, "could not alloc http");
       goto err;
     }
 
   if((http->dst = scamper_addrcache_resolve(addrcache,AF_UNSPEC,addr)) == NULL)
     {
-      printerror(__func__, "could not resolve %s", addr);
+      snprintf(errbuf, errlen, "invalid destination address");
       goto err;
     }
 
@@ -251,23 +285,40 @@ void *scamper_do_http_alloc(char *str)
     }
   else if(strcasecmp(scheme, "https") == 0)
     {
+#ifdef BUILDING_SCAMPER
+#ifndef HAVE_OPENSSL
+      snprintf(errbuf, errlen, "scamper not built with openssl");
+      goto err;
+#else
+      if(scamper_option_notls() != 0)
+	{
+	  snprintf(errbuf, errlen, "scamper run with -O notls");
+	  goto err;
+	}
+#endif /* HAVE_OPENSSL */
+#endif /* BUILDING_SCAMPER */
       http->type = SCAMPER_HTTP_TYPE_HTTPS;
       http->dport = (dport == 0 ? 443 : dport);
     }
-  else goto err;
+  else
+    {
+      snprintf(errbuf, errlen, "unhandled HTTP scheme");
+      goto err;
+    }
   free(scheme); scheme = NULL;
 
   if(headers != NULL)
     {
-      if(slist_count(headers) > 255 || slist_count(headers) < 1)
+      assert(slist_count(headers) > 0);
+      if(slist_count(headers) > 255)
 	{
-	  scamper_debug(__func__, "unexpected number of headers");
+	  snprintf(errbuf, errlen, "cannot provide more than 255 headers");
 	  goto err;
 	}
       http->headerc = slist_count(headers);
       if((http->headers = malloc_zero(http->headerc * sizeof(char *)))==NULL)
 	{
-	  printerror(__func__, "could not alloc headers");
+	  snprintf(errbuf, errlen, "could not alloc headers");
 	  goto err;
 	}
       h = 0;
@@ -275,7 +326,7 @@ void *scamper_do_http_alloc(char *str)
 	{
 	  if((http->headers[h] = strdup(header)) == NULL)
 	    {
-	      printerror(__func__, "could not duplicate header %d", h);
+	      snprintf(errbuf, errlen, "could not duplicate header %d", h);
 	      goto err;
 	    }
 	  h++;
@@ -293,11 +344,15 @@ void *scamper_do_http_alloc(char *str)
       file = NULL;
     }
   else if((http->file = strdup("/")) == NULL)
-    goto err;
+    {
+      snprintf(errbuf, errlen, "could not set default file to fetch");
+      goto err;
+    }
 
   return http;
 
  err:
+  assert(errbuf[0] != '\0');
   if(headers != NULL) slist_free(headers);
   if(http != NULL) scamper_http_free(http);
   if(opts_out != NULL) scamper_options_free(opts_out);

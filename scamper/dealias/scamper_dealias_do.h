@@ -1,7 +1,7 @@
 /*
  * scamper_do_dealias.h
  *
- * $Id: scamper_dealias_do.h,v 1.5 2023/06/04 05:55:34 mjl Exp $
+ * $Id: scamper_dealias_do.h,v 1.7 2024/02/27 03:34:02 mjl Exp $
  *
  * Copyright (C) 2008-2010 The University of Waikato
  * Author: Matthew Luckie
@@ -30,9 +30,12 @@
 
 scamper_task_t *scamper_do_dealias_alloctask(void *data,
 					     scamper_list_t *list,
-					     scamper_cycle_t *cycle);
+					     scamper_cycle_t *cycle,
+					     char *errbuf, size_t errlen);
 
-void scamper_do_dealias_free(void *);
+void scamper_do_dealias_free(void *data);
+
+uint32_t scamper_do_dealias_userid(void *data);
 
 void scamper_do_dealias_cleanup(void);
 int scamper_do_dealias_init(void);

@@ -1,7 +1,7 @@
 /*
  * scamper_do_neighbourdisc
  *
- * $Id: scamper_neighbourdisc_do.c,v 1.45 2023/12/24 00:19:25 mjl Exp $
+ * $Id: scamper_neighbourdisc_do.c,v 1.48 2024/02/27 03:34:02 mjl Exp $
  *
  * Copyright (C) 2009-2023 Matthew Luckie
  *
@@ -100,6 +100,7 @@ static int nd_state_alloc(scamper_task_t *task)
   scamper_dl_t *dl;
   nd_state_t *state;
   uint8_t src[6];
+  char errbuf[256];
   int i;
 
   assert(nd != NULL);
@@ -119,9 +120,10 @@ static int nd_state_alloc(scamper_task_t *task)
     }
 
   if(nd->src_ip == NULL &&
-     (nd->src_ip = scamper_getsrc(nd->dst_ip, state->ifindex)) == NULL)
+     (nd->src_ip = scamper_getsrc(nd->dst_ip, state->ifindex,
+				  errbuf, sizeof(errbuf))) == NULL)
     {
-      printerror(__func__, "could not get src ip");
+      printerror_msg(__func__, "%s", errbuf);
       goto err;
     }
 
@@ -522,7 +524,8 @@ static void do_nd_free(scamper_task_t *task)
 
 scamper_task_t *scamper_do_neighbourdisc_alloctask(void *data,
 						   scamper_list_t *list,
-						   scamper_cycle_t *cycle)
+						   scamper_cycle_t *cycle,
+						   char *errbuf, size_t errlen)
 {
   scamper_neighbourdisc_t *nd = (scamper_neighbourdisc_t *)data;
   scamper_task_sig_t *sig = NULL;
@@ -612,6 +615,7 @@ scamper_neighbourdisc_do_t *scamper_do_neighbourdisc_do(
   scamper_task_t *task = NULL;
   uint8_t method;
   char ifname[64];
+  char errbuf[256];
 
   if(dst->type == SCAMPER_ADDR_TYPE_IPV4)
     method = SCAMPER_NEIGHBOURDISC_METHOD_ARP;
@@ -648,7 +652,8 @@ scamper_neighbourdisc_do_t *scamper_do_neighbourdisc_do(
   nd->wait_timeout.tv_sec = 0;
   nd->wait_timeout.tv_usec = 500000;
 
-  if((task = scamper_do_neighbourdisc_alloctask(nd, NULL, NULL)) == NULL)
+  if((task = scamper_do_neighbourdisc_alloctask(nd, NULL, NULL, errbuf,
+						sizeof(errbuf))) == NULL)
     goto err;
   nd = NULL;
   if(scamper_task_sig_install(task) != 0)
@@ -669,6 +674,11 @@ void scamper_do_neighbourdisc_free(void *data)
 {
   scamper_neighbourdisc_free((scamper_neighbourdisc_t *)data);
   return;
+}
+
+uint32_t scamper_do_neighbourdisc_userid(void *data)
+{
+  return ((scamper_neighbourdisc_t *)data)->userid;
 }
 
 void scamper_do_neighbourdisc_cleanup()

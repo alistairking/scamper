@@ -1,12 +1,12 @@
 /*
  * unit_cmd_host : unit tests for host commands
  *
- * $Id: unit_cmd_host.c,v 1.2 2024/01/16 06:30:28 mjl Exp $
+ * $Id: unit_cmd_host.c,v 1.4 2024/02/14 08:05:55 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
  *
- * Copyright (C) 2023 Matthew Luckie
+ * Copyright (C) 2023-2024 Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -41,6 +41,8 @@ typedef struct sc_test
   const char *cmd;
   int (*func)(const scamper_host_t *host);
 } sc_test_t;
+
+static int verbose = 0;
 
 scamper_addrcache_t *addrcache = NULL;
 
@@ -105,7 +107,7 @@ static int ns_example_com_ns_R_1(const scamper_host_t *in)
 static int check(const char *cmd, int (*func)(const scamper_host_t *in))
 {
   scamper_host_t *host;
-  char *dup;
+  char *dup, errbuf[256];
   int rc;
 
 #ifdef DMALLOC
@@ -118,7 +120,7 @@ static int check(const char *cmd, int (*func)(const scamper_host_t *in))
 
   if((dup = strdup(cmd)) == NULL)
     return -1;
-  host = scamper_do_host_alloc(dup);
+  host = scamper_do_host_alloc(dup, errbuf, sizeof(errbuf));
   free(dup);
   if((rc = func(host)) != 0)
     printf("fail: %s\n", cmd);
@@ -135,6 +137,9 @@ static int check(const char *cmd, int (*func)(const scamper_host_t *in))
       rc = -1;
     }
 #endif
+
+  if(func == isnull && verbose)
+    printf("%s: %s\n", cmd, errbuf);
 
   return rc;
 }

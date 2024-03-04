@@ -1,7 +1,7 @@
 /*
  * scamper_osinfo.c
  *
- * $Id: scamper_osinfo.c,v 1.9 2023/08/18 21:24:40 mjl Exp $
+ * $Id: scamper_osinfo.c,v 1.10 2024/02/28 20:30:43 mjl Exp $
  *
  * Copyright (C) 2006 Matthew Luckie
  * Copyright (C) 2014 The Regents of the University of California
@@ -34,6 +34,11 @@
 #include "utils.h"
 
 static scamper_osinfo_t *osinfo = NULL;
+
+int scamper_osinfo_is_sunos(void)
+{
+  return SCAMPER_OSINFO_IS_SUNOS(osinfo);
+}
 
 const scamper_osinfo_t *scamper_osinfo_get(void)
 {

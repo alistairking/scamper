@@ -17,11 +17,12 @@ my @tests = (
     "unit_cmd_trace",
     "unit_cmd_udpprobe",
     "unit_dl_parse_ip",
+    "unit_fds",
     "unit_host_rr_list",
     "unit_http_lib",
     "unit_options",
     "unit_osinfo",
-    "unit_timeval_fromstr",
+    "unit_timeval",
     );
 foreach my $test (@tests)
 {

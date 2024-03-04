@@ -1,7 +1,7 @@
 /*
  * scamper_trace_int.h
  *
- * $Id: scamper_trace_int.h,v 1.6 2023/12/19 05:41:54 mjl Exp $
+ * $Id: scamper_trace_int.h,v 1.7 2024/02/12 20:35:36 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -214,6 +214,7 @@ struct scamper_trace
   uint8_t                tos;
   struct timeval         wait_timeout;
   struct timeval         wait_probe;
+  struct timeval         wait_probe_hop;
   uint8_t                loops;
   uint8_t                loopaction;
   uint8_t                confidence;

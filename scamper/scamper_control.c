@@ -1,7 +1,7 @@
 /*
  * scamper_control.c
  *
- * $Id: scamper_control.c,v 1.265 2024/01/03 00:39:00 mjl Exp $
+ * $Id: scamper_control.c,v 1.266 2024/02/12 20:35:36 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -2384,6 +2384,7 @@ static int client_isdone(client_t *client)
  */
 static int client_attached_cb(client_t *client, uint8_t *buf, size_t len)
 {
+  char errbuf[256];
   char *str;
   long long ll;
   uint32_t id;
@@ -2412,8 +2413,13 @@ static int client_attached_cb(client_t *client, uint8_t *buf, size_t len)
     }
 
   /* try the command to see if it is valid and acceptable */
-  if(scamper_source_command2(client->source, (char *)buf, &id) != 0)
-    return client_send(client, "ERR command not accepted");
+  if(scamper_source_command2(client->source, (char *)buf, &id,
+			     errbuf, sizeof(errbuf)) != 0)
+    {
+      if(errbuf[0] != '\0')
+	return client_send(client, "ERR command not accepted: %s", errbuf);
+      return client_send(client, "ERR command not accepted");
+    }
 
   return client_send(client, "OK id-%d", id);
 }

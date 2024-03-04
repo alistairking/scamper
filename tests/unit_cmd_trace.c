@@ -1,7 +1,7 @@
 /*
  * unit_cmd_trace : unit tests for trace commands
  *
- * $Id: unit_cmd_trace.c,v 1.10 2024/01/18 04:03:13 mjl Exp $
+ * $Id: unit_cmd_trace.c,v 1.12 2024/02/14 07:36:37 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -42,6 +42,8 @@ typedef struct sc_test
   const char *cmd;
   int (*func)(scamper_trace_t *trace);
 } sc_test_t;
+
+static int verbose = 0;
 
 scamper_addrcache_t *addrcache = NULL;
 
@@ -288,7 +290,7 @@ static int atf(scamper_trace_t *trace)
 static int check(const char *cmd, int (*func)(scamper_trace_t *in))
 {
   scamper_trace_t *trace;
-  char *dup;
+  char *dup, errbuf[256];
   int rc;
 
 #ifdef DMALLOC
@@ -301,7 +303,7 @@ static int check(const char *cmd, int (*func)(scamper_trace_t *in))
 
   if((dup = strdup(cmd)) == NULL)
     return -1;
-  trace = scamper_do_trace_alloc(dup);
+  trace = scamper_do_trace_alloc(dup, errbuf, sizeof(errbuf));
   free(dup);
   if((rc = func(trace)) != 0)
     printf("fail: %s\n", cmd);
@@ -318,6 +320,9 @@ static int check(const char *cmd, int (*func)(scamper_trace_t *in))
       rc = -1;
     }
 #endif
+
+  if(func == isnull && verbose)
+    printf("%s: %s\n", cmd, errbuf);
 
   return rc;
 }

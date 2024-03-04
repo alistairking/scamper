@@ -1,7 +1,7 @@
 /*
  * unit_cmd_ping : unit tests for ping commands
  *
- * $Id: unit_cmd_ping.c,v 1.11 2024/01/16 06:30:28 mjl Exp $
+ * $Id: unit_cmd_ping.c,v 1.14 2024/02/19 07:33:40 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -41,6 +41,8 @@ typedef struct sc_test
   const char *cmd;
   int (*func)(const scamper_ping_t *ping);
 } sc_test_t;
+
+static int verbose = 0;
 
 static int isnull(const scamper_ping_t *ping)
 {
@@ -88,6 +90,22 @@ static int payload_hex(const scamper_ping_t *ping)
      payload[0] != 0x01 || payload[1] != 0x23 || payload[2] != 0x45 ||
      payload[3] != 0x67 || payload[4] != 0x89 || payload[5] != 0xab ||
      payload[6] != 0xcd || payload[7] != 0xef)
+    return -1;
+  return 0;
+}
+
+static int atf(const scamper_ping_t *ping)
+{
+  const struct timeval *tv;
+  if(ping == NULL ||
+     scamper_ping_probe_dport_get(ping) != 0 ||
+     scamper_ping_probe_method_get(ping) != SCAMPER_PING_METHOD_ICMP_ECHO ||
+     (tv = scamper_ping_wait_probe_get(ping)) == NULL ||
+     tv->tv_sec != 1 || tv->tv_usec != 0 ||
+     scamper_ping_probe_tos_get(ping) != 0 ||
+     scamper_ping_probe_count_get(ping) != 5 ||
+     (scamper_ping_flags_get(ping) & SCAMPER_PING_FLAG_DL) == 0 ||
+     check_addr(scamper_ping_dst_get(ping), "2001:db8::1") != 0)
     return -1;
   return 0;
 }
@@ -269,7 +287,7 @@ static int wait_probe_0_25_timeout_0_5(const scamper_ping_t *ping)
 static int check(const char *cmd, int (*func)(const scamper_ping_t *in))
 {
   scamper_ping_t *ping;
-  char *dup;
+  char *dup, errbuf[256];
   int rc;
 
 #ifdef DMALLOC
@@ -279,7 +297,7 @@ static int check(const char *cmd, int (*func)(const scamper_ping_t *in))
 
   if((dup = strdup(cmd)) == NULL)
     return -1;
-  ping = scamper_do_ping_alloc(dup);
+  ping = scamper_do_ping_alloc(dup, errbuf, sizeof(errbuf));
   free(dup);
   if((rc = func(ping)) != 0)
     printf("fail: %s\n", cmd);
@@ -295,6 +313,9 @@ static int check(const char *cmd, int (*func)(const scamper_ping_t *in))
     }
 #endif
 
+  if(func == isnull && verbose)
+    printf("%s: %s\n", cmd, errbuf);
+
   return rc;
 }
 
@@ -307,6 +328,7 @@ int main(int argc, char *argv[])
     {"-A 2323 -P tcp-syn 192.0.2.1", tcpsyn_2323},
     {"-B 0123456789abcdef -s 36 192.0.2.1", payload_hex},
     {"-B 0123 -B 456789abcdef 192.0.2.1", isnull},
+    {"-d 0 -P icmp-echo -i 1 -z 0 -c 5 -F 0 -O dl 2001:db8::1", atf},
     {"-i 3 192.0.2.1", wait_probe_3_0},
     {"-i 3s 192.0.2.1", wait_probe_3_0},
     {"-i 3.69 192.0.2.1", wait_probe_3_69},

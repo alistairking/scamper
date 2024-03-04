@@ -1,12 +1,12 @@
 /*
  * scamper_udp4.c
  *
- * $Id: scamper_udp4.c,v 1.83 2023/08/26 21:25:08 mjl Exp $
+ * $Id: scamper_udp4.c,v 1.85 2024/02/21 05:06:43 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2010 The University of Waikato
  * Copyright (C) 2022-2023 Matthew Luckie
- * Copyright (C) 2023      The Regents of the University of California
+ * Copyright (C) 2023-2024 The Regents of the University of California
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -37,6 +37,8 @@
 #include "scamper_ip4.h"
 #include "scamper_udp4.h"
 #include "scamper_privsep.h"
+#include "scamper_task.h"
+#include "scamper_udp_resp.h"
 #include "scamper_debug.h"
 #include "utils.h"
 
@@ -200,6 +202,62 @@ int scamper_udp4_probe(scamper_probe_t *probe)
   return 0;
 }
 
+#ifndef _WIN32 /* SOCKET vs int on windows */
+void scamper_udp4_read_cb(int fd, void *param)
+#else
+void scamper_udp4_read_cb(SOCKET fd, void *param)
+#endif
+{
+  scamper_udp_resp_t ur;
+  struct sockaddr_in from;
+  uint8_t buf[8192], ctrlbuf[256];
+  struct msghdr msg;
+  struct cmsghdr *cmsg;
+  struct iovec iov;
+  ssize_t rrc;
+
+  memset(&iov, 0, sizeof(iov));
+  iov.iov_base = (caddr_t)buf;
+  iov.iov_len  = sizeof(buf);
+
+  msg.msg_name       = (caddr_t)&from;
+  msg.msg_namelen    = sizeof(from);
+  msg.msg_iov        = &iov;
+  msg.msg_iovlen     = 1;
+  msg.msg_control    = (caddr_t)ctrlbuf;
+  msg.msg_controllen = sizeof(ctrlbuf);
+
+  if((rrc = recvmsg(fd, &msg, 0)) <= 0)
+    return;
+
+  memset(&ur, 0, sizeof(ur));
+  ur.ttl = -1;
+
+  if(msg.msg_controllen >= sizeof(struct cmsghdr))
+    {
+      cmsg = (struct cmsghdr *)CMSG_FIRSTHDR(&msg);
+      while(cmsg != NULL)
+	{
+	  if(cmsg->cmsg_level == SOL_SOCKET && cmsg->cmsg_type == SCM_TIMESTAMP)
+	    timeval_cpy(&ur.rx, (struct timeval *)CMSG_DATA(cmsg));
+	  else if(cmsg->cmsg_level == IPPROTO_IP && cmsg->cmsg_type == IP_TTL)
+	    ur.ttl = *((int *)CMSG_DATA(cmsg));
+	  cmsg = (struct cmsghdr *)CMSG_NXTHDR(&msg, cmsg);
+	}
+    }
+
+  ur.af = AF_INET;
+  ur.addr = &from.sin_addr;
+  ur.sport = ntohs(from.sin_port);
+  ur.data = buf;
+  ur.datalen = rrc;
+  ur.fd = fd;
+
+  scamper_task_handleudp(&ur);
+
+  return;
+}
+
 void scamper_udp4_cleanup()
 {
   if(pktbuf != NULL)
@@ -240,6 +298,16 @@ SOCKET scamper_udp4_opendgram(const void *addr, int sport)
       printerror(__func__, "could not set SO_REUSEADDR");
       goto err;
     }
+
+#if defined(SO_TIMESTAMP)
+  opt = 1;
+  if(setsockopt(fd, SOL_SOCKET, SO_TIMESTAMP, (void *)&opt, sizeof(opt)) != 0)
+    printerror(__func__, "could not set SO_TIMESTAMP");
+#endif
+
+  opt = 1;
+  if(setsockopt(fd, IPPROTO_IP, IP_RECVTTL, (void *)&opt, sizeof(opt)) == -1)
+    printerror(__func__, "could not set IP_RECVTTL");
 
   sockaddr_compose((struct sockaddr *)&sin4, AF_INET, addr, sport);
   if(bind(fd, (struct sockaddr *)&sin4, sizeof(sin4)) == -1)

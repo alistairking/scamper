@@ -1,7 +1,7 @@
 /*
  * unit_cmd_tbit : unit tests for tbit commands
  *
- * $Id: unit_cmd_tbit.c,v 1.1 2024/01/16 08:59:29 mjl Exp $
+ * $Id: unit_cmd_tbit.c,v 1.2 2024/02/13 04:59:48 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -55,7 +55,7 @@ static int notnull(const scamper_tbit_t *in)
 static int check(const char *cmd, int (*func)(const scamper_tbit_t *in))
 {
   scamper_tbit_t *tbit;
-  char *dup;
+  char *dup, errbuf[256];
   int rc;
 
 #ifdef DMALLOC
@@ -68,7 +68,7 @@ static int check(const char *cmd, int (*func)(const scamper_tbit_t *in))
 
   if((dup = strdup(cmd)) == NULL)
     return -1;
-  tbit = scamper_do_tbit_alloc(dup);
+  tbit = scamper_do_tbit_alloc(dup, errbuf, sizeof(errbuf));
   free(dup);
   if((rc = func(tbit)) != 0)
     printf("fail: %s\n", cmd);

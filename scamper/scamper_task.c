@@ -1,12 +1,13 @@
 /*
  * scamper_task.c
  *
- * $Id: scamper_task.c,v 1.84 2023/12/27 21:28:00 mjl Exp $
+ * $Id: scamper_task.c,v 1.87 2024/02/27 01:01:44 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2012-2015 The Regents of the University of California
  * Copyright (C) 2016-2023 Matthew Luckie
+ * Copyright (C) 2024      The Regents of the University of California
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -33,6 +34,7 @@
 #include "scamper_addr.h"
 #include "scamper_addr_int.h"
 #include "scamper_icmp_resp.h"
+#include "scamper_udp_resp.h"
 #include "scamper_fds.h"
 #include "scamper_task.h"
 #include "scamper_queue.h"
@@ -630,6 +632,48 @@ static int s2t_tx_ip_overlap(scamper_task_sig_t *a, scamper_task_sig_t *b)
   return 1;
 }
 
+int scamper_task_sig_sport_used(scamper_addr_t *dst, uint8_t proto,
+				uint16_t sport, uint16_t dport)
+{
+  scamper_task_sig_t sig;
+  trie_s2t_t ts2t_fm, *ts2t;
+  dlist_node_t *dn;
+  s2t_t *s2t = NULL;
+
+  sig.sig_tx_ip_dst = dst;
+  if(proto == IPPROTO_TCP)
+    SCAMPER_TASK_SIG_TCP(&sig, sport, dport);
+  else if(proto == IPPROTO_UDP)
+    SCAMPER_TASK_SIG_UDP(&sig, sport, dport);
+  else if((proto == IPPROTO_ICMP && SCAMPER_ADDR_TYPE_IS_IPV4(dst)) ||
+	  (proto == IPPROTO_ICMPV6 && SCAMPER_ADDR_TYPE_IS_IPV6(dst)))
+    SCAMPER_TASK_SIG_ICMP_ECHO(&sig, sport);
+  else
+    return -1;
+
+  /*
+   * if we don't have any measurement to that address, then the port
+   * is clear
+   */
+  ts2t_fm.addr = dst;
+  if(SCAMPER_ADDR_TYPE_IS_IPV4(dst))
+    ts2t = patricia_find(tx_ip4, &ts2t_fm);
+  else
+    ts2t = patricia_find(tx_ip6, &ts2t_fm);
+  if(ts2t == NULL)
+    return 0;
+
+  /* check to see if there's an overlapping signature */
+  for(dn=dlist_head_node(ts2t->list); dn != NULL; dn=dlist_node_next(dn))
+    {
+      s2t = dlist_node_item(dn);
+      if(s2t_tx_ip_overlap(&sig, s2t->sig) != 0)
+	return 1;
+    }
+
+  return 0;
+}
+
 scamper_task_t *scamper_task_find(scamper_task_sig_t *sig)
 {
   trie_s2t_t ts2t_fm, *ts2t;
@@ -1084,6 +1128,44 @@ void scamper_task_handledl(scamper_dl_rec_t *dl)
   return;
 }
 
+void scamper_task_handleudp(scamper_udp_resp_t *ur)
+{
+  scamper_task_t *last_task = NULL;
+  trie_s2t_t *ts2t, fm;
+  scamper_addr_t addr;
+  dlist_node_t *dn;
+  patricia_t *pt;
+  s2t_t *s2t;
+
+  fm.addr = &addr;
+  addr.addr = ur->addr;
+  if(ur->af == AF_INET)
+    {
+      addr.type = SCAMPER_ADDR_TYPE_IPV4;
+      pt = tx_ip4;
+    }
+  else
+    {
+      addr.type = SCAMPER_ADDR_TYPE_IPV6;
+      pt = tx_ip6;
+    }
+  if((ts2t = patricia_find(pt, &fm)) == NULL)
+    return;
+
+  for(dn=dlist_head_node(ts2t->list); dn != NULL; dn=dlist_node_next(dn))
+    {
+      s2t = dlist_node_item(dn);
+      if(s2t->task == last_task)
+	continue;
+      last_task = s2t->task;
+      if(s2t->task->funcs->handle_udp != NULL)
+	{
+	  s2t->task->funcs->handle_udp(s2t->task, ur);
+	}
+    }
+  return;
+}
+
 void scamper_task_handletimeout(scamper_task_t *task)
 {
   if(task->funcs->handle_timeout != NULL)
@@ -1174,8 +1256,9 @@ scamper_fd_t *scamper_task_fd_icmp6(scamper_task_t *task, void *addr)
 
 scamper_fd_t *scamper_task_fd_udp4(scamper_task_t *task, void *a, uint16_t sp)
 {
-  scamper_fd_t *fd = scamper_fd_udp4(a, sp);
-  return task_fd(task, fd);
+  if(task_fd(task, scamper_fd_udp4dg(a, sp)) == NULL)
+    return NULL;
+  return task_fd(task, scamper_fd_udp4raw(a));
 }
 
 scamper_fd_t *scamper_task_fd_udp6(scamper_task_t *task, void *a, uint16_t sp)

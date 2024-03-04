@@ -1,11 +1,12 @@
 /*
  * scamper_dl: manage BPF/PF_PACKET datalink instances for scamper
  *
- * $Id: scamper_dl.c,v 1.200 2023/11/14 07:01:45 mjl Exp $
+ * $Id: scamper_dl.c,v 1.201 2024/02/28 02:11:53 mjl Exp $
  *
  *          Matthew Luckie
  *          Ben Stasiewicz added fragmentation support.
  *          Stephen Eichler added SACK support.
+ *          Alistair King added PACKET_RX_RING support.
  *
  *          Supported by:
  *           The University of Waikato
@@ -62,6 +63,29 @@
 #define HAVE_FIREWIRE
 #endif
 
+#ifdef HAVE_STRUCT_TPACKET_REQ3
+#define MAX_BLOCKS_PER_READ 1
+struct ring
+{
+  uint8_t              *map;
+  size_t                map_size;
+  struct tpacket_req3   req;
+  struct iovec         *blocks;
+  /* number of elements (frames) in the frames iovec (tp_frame_nr) */
+  unsigned int          blocks_cnt;
+  /* current index into the iovecs */
+  unsigned int          cur_block;
+  unsigned int          accepted_pkts;
+  unsigned int          dropped_pkts;
+};
+
+struct block_desc {
+  uint32_t              version;
+  uint32_t              offset_to_priv;
+  struct tpacket_hdr_v1 h1;
+};
+#endif
+
 struct scamper_dl
 {
   /* the file descriptor that scamper has on the datalink */
@@ -79,6 +103,10 @@ struct scamper_dl
   /* if we're using BPF, then we need to use an appropriately sized buffer */
 #if defined(HAVE_BPF)
   u_int          readbuf_len;
+#endif
+
+#ifdef HAVE_STRUCT_TPACKET_REQ3
+  struct ring   *ring;
 #endif
 
 };
@@ -1016,6 +1044,231 @@ static int dl_bpf_filter(scamper_dl_t *node, struct bpf_insn *insns, int len)
 
 #elif defined(__linux__)
 
+#ifdef HAVE_STRUCT_TPACKET_REQ3
+/*
+ * ring_stats
+ *
+ * Dump some stats about packet loss. This is called every time we get
+ * a frame in the ring with TP_STATUS_LOSING set, but it will only log
+ * to stderr if packets have been dropped since the last call.
+ */
+static void ring_stats(scamper_dl_t *node)
+{
+  struct tpacket_stats stats;
+  socklen_t statlen = sizeof(stats);
+  struct ring *ring = node->ring;
+  int fd = scamper_fd_fd_get(node->fdn);
+  char buf[256];
+
+  if(getsockopt(fd, SOL_PACKET, PACKET_STATISTICS, &stats, &statlen) != 0)
+    {
+      printerror(__func__, "failed to get socket stats");
+      return;
+    }
+  ring->accepted_pkts += stats.tp_packets;
+  ring->dropped_pkts += stats.tp_drops;
+
+  snprintf(buf, sizeof(buf),
+	   "fd=%d, pkts=%u, pkts_total=%u, drops=%u, drops_total=%u",
+	   fd, stats.tp_packets, ring->accepted_pkts,
+	   stats.tp_drops, ring->dropped_pkts);
+
+  scamper_debug(__func__, "%s", buf);
+  return;
+}
+
+static int ring_handle_frame(scamper_dl_t *node, struct tpacket3_hdr *frame)
+{
+  scamper_dl_rec_t dl;
+  uint8_t *buf;
+  ssize_t len;
+
+  /* sanity check the packet length, and pick the smaller of len/snaplen */
+  len = frame->tp_len;
+  if(frame->tp_snaplen < len)
+    len = frame->tp_snaplen;
+  assert(len >= 0);
+
+  /* grab a pointer to the start of the link layer headers */
+  buf = (uint8_t *)frame + frame->tp_mac;
+
+  if((frame->tp_status & TP_STATUS_LOSING) == TP_STATUS_LOSING)
+    ring_stats(node);
+
+  /* reset the datalink record */
+  memset(&dl, 0, sizeof(dl));
+
+  /* populate dl timestamp info from the frame header */
+  dl.dl_flags |= SCAMPER_DL_REC_FLAG_TIMESTAMP;
+  dl.dl_tv.tv_sec = frame->tp_sec;
+  dl.dl_tv.tv_usec = frame->tp_nsec / 1000;
+
+  /* record the ifindex now, as the cb routine may need it */
+  if(scamper_fd_ifindex(node->fdn, &dl.dl_ifindex) != 0)
+    return -1;
+
+  /* check if we want this packet, and populate the dl record */
+  if(node->dlt_cb(&dl, buf, len))
+    scamper_task_handledl(&dl);
+
+  return 0;
+}
+
+static int ring_handle_block(scamper_dl_t *node, struct block_desc *block)
+{
+  uint32_t frames_cnt = block->h1.num_pkts;
+  uint32_t off = block->h1.offset_to_first_pkt;
+  uint32_t i;
+  struct tpacket3_hdr *frame = (struct tpacket3_hdr *)((uint8_t *)block + off);
+
+  for(i=0; i<frames_cnt; i++)
+    {
+      if(ring_handle_frame(node, frame) != 0)
+	return -1;
+      off = frame->tp_next_offset;
+      frame = (struct tpacket3_hdr *)((uint8_t *)frame + off);
+    }
+
+  return 0;
+}
+
+static void ring_release_block(struct ring *ring, struct block_desc *block)
+{
+  block->h1.block_status = TP_STATUS_KERNEL;
+  ring->cur_block = (ring->cur_block + 1) % ring->blocks_cnt;
+  return;
+}
+
+static int ring_read(scamper_dl_t *node)
+{
+  struct ring *ring = node->ring;
+  struct block_desc *block;
+  int handled = 0;
+  int rc;
+
+  /* Process at most MAX_BLOCKS_PER_READ blocks before we yield control */
+  block = ring->blocks[ring->cur_block].iov_base;
+  while((block->h1.block_status & TP_STATUS_USER) == TP_STATUS_USER &&
+	handled < MAX_BLOCKS_PER_READ)
+    {
+      rc = ring_handle_block(node, block);
+      ring_release_block(ring, block);
+      if(rc != 0)
+	return -1;
+
+      block = ring->blocks[ring->cur_block].iov_base;
+      handled++;
+    }
+
+  return 0;
+}
+
+static void ring_free(struct ring *ring)
+{
+  if(ring->map != NULL && ring->map != MAP_FAILED)
+    munmap(ring->map, ring->map_size);
+  if(ring->blocks != NULL)
+    free(ring->blocks);
+  free(ring);
+  return;
+}
+
+static int ring_init(scamper_dl_t *dl)
+{
+  struct ring *ring = NULL;
+  unsigned int block_size = scamper_option_ring_block_size();
+  unsigned int frame_size = TPACKET_ALIGNMENT << 6; /* 1KB frames enough? */
+  unsigned int block_cnt = scamper_option_ring_blocks();
+  unsigned int frame_cnt = (block_size / frame_size) * block_cnt;
+  unsigned int i;
+  int pkt_version = TPACKET_V3;
+  int fd = scamper_fd_fd_get(dl->fdn);
+  int flags;
+  size_t len;
+
+  if((ring = malloc_zero(sizeof(struct ring))) == NULL)
+    {
+      printerror(__func__, "malloc failed");
+      goto err;
+    }
+
+  ring->req.tp_block_size = block_size;
+  ring->req.tp_block_nr = block_cnt;
+  ring->req.tp_frame_size = frame_size;
+  ring->req.tp_retire_blk_tov = 10; /* expire unfilled block after 10s */
+  ring->req.tp_frame_nr = frame_cnt;
+  ring->map_size = block_size * block_cnt;
+  ring->blocks_cnt = block_cnt;
+  ring->cur_block = 0;
+
+  scamper_debug(__func__,
+                "%s: initializing PACKET_RX_RING. "
+                "block_size=%d, frame_size=%d, block_cnt=%d, "
+                "frame_cnt=%d, alloc_size=%d, "
+                "tp_block_size=%d, tp_block_nr=%d, "
+                "tp_frame_size=%d, tp_frame_nr=%d",
+                __func__, block_size, frame_size, block_cnt, frame_cnt,
+                block_size * block_cnt,
+                ring->req.tp_block_size, ring->req.tp_block_nr,
+                ring->req.tp_frame_size, ring->req.tp_frame_nr);
+
+  len = sizeof(pkt_version);
+  if(setsockopt(fd, SOL_PACKET, PACKET_VERSION, &pkt_version, len) != 0)
+    {
+      printerror(__func__, "PACKET_VERSION failed");
+      goto err;
+    }
+
+  len = sizeof(ring->req);
+  if(setsockopt(fd, SOL_PACKET, PACKET_RX_RING, &ring->req, len) != 0)
+    {
+      printerror(__func__, "PACKET_RX_RING failed");
+      goto err;
+    }
+
+  /*
+   * Allocate our ring. Even though the circular buffer is compound of
+   * several physically discontiguous blocks of memory, they are
+   * contiguous to the user space, hence just one call to mmap is
+   * needed.
+   */
+  flags = MAP_SHARED | MAP_POPULATE;
+  if(scamper_option_ring_nolocked() == 0)
+    flags |= MAP_LOCKED;
+
+  ring->map = mmap(NULL, ring->map_size, PROT_READ | PROT_WRITE, flags, fd, 0);
+  if(ring->map == MAP_FAILED)
+    {
+      printerror(__func__, "ring mmap failed");
+      goto err;
+    }
+
+  /* Allocate the iovecs that we'll use to find the blocks in the ring */
+  if((ring->blocks = malloc_zero(block_cnt * sizeof(struct iovec))) == NULL)
+    {
+      printerror(__func__, "failed to allocate ring iovecs");
+      goto err;
+    }
+
+  /*
+   * Set up each element of the vector to point to a frame. This way
+   * we can just iterate over the iovec to iterate over the frames.
+   */
+  for(i=0; i<block_cnt; i++)
+    {
+      ring->blocks[i].iov_base = ring->map + (i * block_size);
+      ring->blocks[i].iov_len = block_size;
+    }
+
+  dl->ring = ring;
+  return 0;
+
+ err:
+  if(ring != NULL) ring_free(ring);
+  return -1;
+}
+#endif /* HAVE_STRUCT_TPACKET_REQ3 */
+
 static int dl_linux_open(const int ifindex)
 {
   struct sockaddr_ll sll;
@@ -1115,13 +1368,21 @@ static int dl_linux_node_init(const scamper_fd_t *fdn, scamper_dl_t *node)
       goto err;
     }
 
+#ifdef HAVE_STRUCT_TPACKET_REQ3
+  if(scamper_option_ring() && ring_init(node) != 0)
+    {
+      printerror(__func__, "failed to initialize ring");
+      goto err;
+    }
+#endif
+
   return 0;
 
  err:
   return -1;
 }
 
-static int dl_linux_read(const int fd, scamper_dl_t *node)
+static int linux_read(const int fd, scamper_dl_t *node)
 {
   scamper_dl_rec_t   dl;
   ssize_t            len;
@@ -1180,6 +1441,15 @@ static int dl_linux_read(const int fd, scamper_dl_t *node)
     }
 
   return 0;
+}
+
+static int dl_linux_read(const int fd, scamper_dl_t *node)
+{
+#ifdef HAVE_STRUCT_TPACKET_REQ3
+  if(scamper_option_ring())
+    return ring_read(node);
+#endif
+  return linux_read(fd, node);
 }
 
 static int dl_linux_tx(const scamper_dl_t *node,
@@ -1999,6 +2269,10 @@ void scamper_dl_read_cb(SOCKET fd, void *param)
 void scamper_dl_state_free(scamper_dl_t *dl)
 {
   assert(dl != NULL);
+#ifdef HAVE_STRUCT_TPACKET_REQ3
+  if(dl->ring != NULL)
+    ring_free(dl->ring);
+#endif
   free(dl);
   return;
 }

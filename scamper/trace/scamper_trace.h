@@ -1,7 +1,7 @@
 /*
  * scamper_trace.h
  *
- * $Id: scamper_trace.h,v 1.159 2023/12/19 05:41:54 mjl Exp $
+ * $Id: scamper_trace.h,v 1.160 2024/02/27 02:57:58 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -153,6 +153,7 @@ scamper_icmpext_t *scamper_trace_hop_icmpext_get(const scamper_trace_hop_t *hop)
 #define SCAMPER_TRACE_FLAG_CONSTPAYLOAD 0x40 /* do not hack payload for csum */
 #define SCAMPER_TRACE_FLAG_RXERR        0x80 /* used rxerr socket */
 #define SCAMPER_TRACE_FLAG_PTR          0x100 /* do ptr lookups */
+#define SCAMPER_TRACE_FLAG_RAW          0x200 /* use raw socket */
 
 #define SCAMPER_TRACE_TYPE_ICMP_ECHO       0x01 /* ICMP echo requests */
 #define SCAMPER_TRACE_TYPE_UDP             0x02 /* UDP to unused ports */
