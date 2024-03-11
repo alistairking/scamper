@@ -1073,6 +1073,13 @@ static void ring_stats(scamper_dl_t *node)
 	   fd, stats.tp_packets, ring->accepted_pkts,
 	   stats.tp_drops, ring->dropped_pkts);
 
+  /*
+   * Log this to stderr iff we have newly dropped packets and this isn't the
+   * first time we've logged drops
+   */
+  if(stats.tp_drops > 0 && ring->accepted_pkts > stats.tp_packets)
+    fprintf(stderr, "scamper_dl_stats: %s\n", buf);
+
   scamper_debug(__func__, "%s", buf);
   return;
 }
