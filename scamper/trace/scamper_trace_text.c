@@ -7,7 +7,7 @@
  * Copyright (C) 2020-2023 Matthew Luckie
  * Author: Matthew Luckie
  *
- * $Id: scamper_trace_text.c,v 1.32 2024/01/22 23:20:01 mjl Exp $
+ * $Id: scamper_trace_text.c,v 1.34 2024/03/04 19:36:41 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -257,7 +257,7 @@ static char *hop_tostr(const scamper_trace_t *trace, const int h)
 	}
       return str;
     }
-  
+
   if(replyc == 1)
     {
       hop = trace->hops[h];
@@ -649,7 +649,7 @@ int scamper_file_text_trace_write(const scamper_file_t *sf,
   int rc = -1;
 
   /* variables for creating the string representing the trace */
-  int      i;
+  uint16_t i, hop_count;
   size_t   off, len;
   char    *str      = NULL;
   char    *header   = NULL;
@@ -713,7 +713,11 @@ int scamper_file_text_trace_write(const scamper_file_t *sf,
 
   if(hops != NULL)
     {
-      for(i=0; i < trace->hop_count; i++)
+      if(trace->stop_hop == 0)
+	hop_count = trace->hop_count;
+      else
+	hop_count = trace->stop_hop;
+      for(i=0; i < hop_count; i++)
 	{
 	  string_concat(str, len, &off, "%s", hops[i]);
 	  if(mtus != NULL && mtus[i] != NULL)
