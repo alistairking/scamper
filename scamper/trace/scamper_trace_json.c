@@ -10,7 +10,7 @@
  *
  * Authors: Brian Hammond, Matthew Luckie
  *
- * $Id: scamper_trace_json.c,v 1.29 2024/02/27 02:57:58 mjl Exp $
+ * $Id: scamper_trace_json.c,v 1.31 2024/03/04 19:36:41 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -188,7 +188,8 @@ static char *header_tostr(const scamper_trace_t *trace)
 		(long)trace->start.tv_sec, (int)trace->start.tv_usec, tmp);
   string_concat(buf, sizeof(buf), &off,
 		", \"hop_count\":%u, \"attempts\":%u, \"hoplimit\":%u",
-		trace->hop_count, trace->attempts, trace->hoplimit);
+		trace->stop_hop == 0 ? trace->hop_count : trace->stop_hop,
+		trace->attempts, trace->hoplimit);
   cs = (trace->wait_probe.tv_sec * 100) + (trace->wait_probe.tv_usec / 10000);
   string_concat(buf, sizeof(buf), &off,
 		", \"firsthop\":%u, \"wait\":%u, \"wait_probe\":%u",
@@ -206,25 +207,46 @@ int scamper_file_json_trace_write(const scamper_file_t *sf,
   scamper_trace_hop_t *hop;
   size_t len, off = 0;
   char *str = NULL, *header = NULL, **hops = NULL;
-  int i, j, hopc = 0, rc = -1;
+  size_t j, hopc = 0, hops_hopc = 0, extra_hopc = 0;
+  uint16_t i, hop_count;
+  int rc = -1;
 
   if((header = header_tostr(trace)) == NULL)
     goto cleanup;
   len = strlen(header);
 
-  for(i=trace->firsthop-1; i<trace->hop_count; i++)
+  /* how many responses do we include in the hops array */
+  if(trace->stop_hop == 0)
+    hop_count = trace->hop_count;
+  else
+    hop_count = trace->stop_hop;
+  for(i=trace->firsthop-1; i<hop_count; i++)
     for(hop = trace->hops[i]; hop != NULL; hop = hop->hop_next)
-      hopc++;
+      hops_hopc++;
+
+  /* how many responses do we include in the extra_hops array */
+  if(trace->stop_hop != 0)
+    {
+      while(i < trace->hop_count)
+	{
+	  for(hop = trace->hops[i]; hop != NULL; hop = hop->hop_next)
+	    extra_hopc++;
+	  i++;
+	}
+    }
+
+  hopc = hops_hopc + extra_hopc;
   if(hopc > 0)
     {
       len += 11; /* , "hops":[] */
+      if(extra_hopc > 0)
+	len += 17; /* , "extra_hops":[] */
       if((hops = malloc_zero(sizeof(char *) * hopc)) == NULL)
 	goto cleanup;
       for(i=trace->firsthop-1, j=0; i<trace->hop_count; i++)
 	{
 	  for(hop = trace->hops[i]; hop != NULL; hop = hop->hop_next)
 	    {
-	      if(j > 0) len++; /* , */
 	      if((hops[j] = hop_tostr(trace, hop)) == NULL)
 		goto cleanup;
 	      len += strlen(hops[j]);
@@ -232,6 +254,13 @@ int scamper_file_json_trace_write(const scamper_file_t *sf,
 	    }
 	}
     }
+
+  /* comma separators for the two hops arrays */
+  if(hops_hopc > 1)
+    len += (hops_hopc - 1); /* , */
+  if(extra_hopc > 1)
+    len += (extra_hopc - 1); /* , */
+
   len += 4; /* {}\n\0 */
 
   if((str = malloc_zero(len)) == NULL)
@@ -241,13 +270,25 @@ int scamper_file_json_trace_write(const scamper_file_t *sf,
   if(hopc > 0)
     {
       string_concat(str, len, &off, ", \"hops\":[");
-      for(j=0; j<hopc; j++)
+      for(j=0; j<hops_hopc; j++)
 	{
 	  if(j > 0) string_concat(str, len, &off, ",");
 	  string_concat(str, len, &off, "%s", hops[j]);
 	}
       string_concat(str, len, &off, "]");
     }
+
+  if(extra_hopc > 0)
+    {
+      string_concat(str, len, &off, ", \"extra_hops\":[");
+      for(j=0; j<extra_hopc; j++)
+	{
+	  if(j > 0) string_concat(str, len, &off, ",");
+	  string_concat(str, len, &off, "%s", hops[hops_hopc + j]);
+	}
+      string_concat(str, len, &off, "]");
+    }
+
   string_concat(str, len, &off, "}\n");
   assert(off+1 == len);
 
@@ -256,9 +297,9 @@ int scamper_file_json_trace_write(const scamper_file_t *sf,
  cleanup:
   if(hops != NULL)
     {
-      for(i=0; i<hopc; i++)
-	if(hops[i] != NULL)
-	  free(hops[i]);
+      for(j=0; j<hopc; j++)
+	if(hops[j] != NULL)
+	  free(hops[j]);
       free(hops);
     }
   if(header != NULL) free(header);

@@ -1,7 +1,7 @@
 /*
  * scamper_trace_int.h
  *
- * $Id: scamper_trace_int.h,v 1.7 2024/02/12 20:35:36 mjl Exp $
+ * $Id: scamper_trace_int.h,v 1.8 2024/03/04 05:10:28 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -202,6 +202,9 @@ struct scamper_trace
   /* why the trace finished */
   uint8_t                stop_reason;
   uint8_t                stop_data;
+
+  /* if we did a parallel traceroute */
+  uint8_t                stop_hop;
 
   /* trace parameters */
   uint8_t                type;
