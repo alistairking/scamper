@@ -239,7 +239,7 @@ static char *remote_client_certfile = NULL;
 /* runtime config for linux AF_PACKET ring */
 static unsigned int ring_block_size = 1 << 16; /* 65 KiB */
 static unsigned int ring_blocks     = 64;
-static int          ring_nolocked   = 0;       /* don't use MAP_LOCKED if set */
+static int          ring_locked     = 0;       /* use MAP_LOCKED if set */
 #endif
 
 /* Source port to use in our probes */
@@ -782,7 +782,12 @@ static int check_options(int argc, char *argv[])
 	  else if(strcasecmp(optarg, "ring-nolocked") == 0)
 	    {
 	      flags |= FLAG_RING;
-	      ring_nolocked = 1;
+	      ring_locked = 0;
+	    }
+	  else if(strcasecmp(optarg, "ring-locked") == 0)
+	    {
+	      flags |= FLAG_RING;
+	      ring_locked = 1;
 	    }
 #endif
 	  else
@@ -1328,9 +1333,9 @@ unsigned int scamper_option_ring_block_size(void)
   return ring_block_size;
 }
 
-int scamper_option_ring_nolocked(void)
+int scamper_option_ring_locked(void)
 {
-  return ring_nolocked;
+  return ring_locked;
 }
 #endif
 
