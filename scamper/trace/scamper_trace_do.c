@@ -660,8 +660,7 @@ static int trace_queue_serial(scamper_task_t *task, const struct timeval *now)
       return scamper_task_queue_wait_tv(task, &next_tx);
     }
 
-  scamper_task_queue_done(task, 0);
-  return 0;
+  return trace_queue_probe(task, now);
 }
 
 /*
