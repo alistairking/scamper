@@ -85,18 +85,17 @@ dist:
 docker:
         ARG TARGETPLATFORM
         ARG base=debian
+        ARG release=bullseye
         FROM +base-${base}
-        COPY +build/${base}/${TARGETPLATFORM}/scamper /usr/local/bin/scamper
+        COPY +build/${base}/${release}/${TARGETPLATFORM}/scamper /usr/local/bin/scamper
         ENTRYPOINT ["/usr/local/bin/scamper"]
         ARG EARTHLY_TARGET_TAG_DOCKER
         ARG EARTHLY_GIT_SHORT_HASH
         ARG EARTHLY_GIT_PROJECT_NAME
         ARG img=${EARTHLY_GIT_PROJECT_NAME}
-        IF [ "${EARTHLY_TARGET_TAG_DOCKER}" = "master" ]
-           ARG latest="${img}:latest"
-           IF [ "${base}" != "debian" ]
-              ARG latest="${base}-${latest}"
-           END
+        LET latest="${base}-${release}-${latest}"
+        IF [ "${base}" = "debian" && "${release}" == "bookworm" && "${EARTHLY_TARGET_TAG_DOCKER}" = "master" ]
+           LET latest="${img}:latest"
         END
         SAVE IMAGE --push \
              ${img}:${base}-${EARTHLY_TARGET_TAG_DOCKER} \
@@ -109,7 +108,13 @@ docker-multiarch:
               --platform=linux/arm/v6 \
               --platform=linux/arm64 \
               --platform=linux/amd64 \
-              +docker --base=debian
+              +docker --base=debian --release=bullseye
+        BUILD \
+              --platform=linux/arm/v7 \
+              --platform=linux/arm/v6 \
+              --platform=linux/arm64 \
+              --platform=linux/amd64 \
+              +docker --base=debian --release=bookworm
         BUILD \
               --platform=linux/arm/v7 \
               --platform=linux/arm/v6 \
@@ -124,6 +129,8 @@ pkg-fix:
         SAVE ARTIFACT /pkg kentik-pkg
 
 pkg:
+        ARG base=debian
+        ARG release=bullseye
         FROM +base-debian
         COPY +pkg-fix/kentik-pkg /usr/bin/pkg
         ARG EARTHLY_TARGET_TAG
@@ -133,7 +140,7 @@ pkg:
         ARG type=deb
         ARG version="${EARTHLY_TARGET_TAG}"
         ARG pkg_arch="${TARGETARCH}${TARGETVARIANT}"
-        COPY +build/debian/${TARGETPLATFORM}/scamper ./
+        COPY +build/${base}/${release}/${TARGETPLATFORM}/scamper ./
         COPY package.yml ./
         RUN rm -f *.${type}
         RUN /usr/bin/pkg \
