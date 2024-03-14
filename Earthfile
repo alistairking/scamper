@@ -87,19 +87,30 @@ docker:
         ARG base=debian
         ARG release=bullseye
         FROM +base-${base}
-        COPY +build/${base}/${release}/${TARGETPLATFORM}/scamper /usr/local/bin/scamper
+        LET baserelease="${base}"
+        IF [ "${base}" = "debian" ]
+           SET baserelease="${base}-${release}"
+        END
+        COPY +build/${baserelease}/${TARGETPLATFORM}/scamper /usr/local/bin/scamper
         ENTRYPOINT ["/usr/local/bin/scamper"]
         ARG EARTHLY_TARGET_TAG_DOCKER
         ARG EARTHLY_GIT_SHORT_HASH
         ARG EARTHLY_GIT_PROJECT_NAME
         ARG img=${EARTHLY_GIT_PROJECT_NAME}
-        LET latest="${base}-${release}-${latest}"
-        IF [ "${base}" = "debian" && "${release}" == "bookworm" && "${EARTHLY_TARGET_TAG_DOCKER}" = "master" ]
-           LET latest="${img}:latest"
+        LET base_latest=""
+        LET latest=""
+        IF [ "${EARTHLY_TARGET_TAG_DOCKER}" = "master" ]
+           # if the base is debian/bookworm, then make it the default
+           IF [ "${base}" = "debian" && "${release}" == "bookworm" ]
+              SET latest="${img}:latest"
+           END
+           # tag this as the latest image for this base
+           SET base_latest="${img}:${baserelease}-latest"
         END
         SAVE IMAGE --push \
-             ${img}:${base}-${EARTHLY_TARGET_TAG_DOCKER} \
-             ${img}:${base}-${EARTHLY_GIT_SHORT_HASH} \
+             ${img}:${baserelease}-${EARTHLY_TARGET_TAG_DOCKER} \
+             ${img}:${baserelease}-${EARTHLY_GIT_SHORT_HASH} \
+             ${base_latest} \
              ${latest}
 
 docker-multiarch:
