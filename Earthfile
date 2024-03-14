@@ -88,10 +88,12 @@ docker:
         ARG release=bullseye
         FROM +base-${base}
         LET baserelease="${base}"
+        LET relpath="${base}"
         IF [ "${base}" = "debian" ]
            SET baserelease="${base}-${release}"
+           SET relpath="${base}/${release}"
         END
-        COPY +build/${baserelease}/${TARGETPLATFORM}/scamper /usr/local/bin/scamper
+        COPY +build/${relpath}/${TARGETPLATFORM}/scamper /usr/local/bin/scamper
         ENTRYPOINT ["/usr/local/bin/scamper"]
         ARG EARTHLY_TARGET_TAG_DOCKER
         ARG EARTHLY_GIT_SHORT_HASH
