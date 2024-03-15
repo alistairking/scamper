@@ -1,12 +1,11 @@
-VERSION 0.6
+VERSION 0.8
 
 all:
         BUILD +build
 
-# TODO: scamper still depends on glibc, so we should really build
-# release-specific binaries
 base-debian:
-        FROM debian:bullseye-slim
+        ARG release=bullseye
+        FROM debian:${release}-slim
         WORKDIR /scamper
 
 base-alpine:
@@ -14,7 +13,8 @@ base-alpine:
         WORKDIR /scamper
 
 deps-debian:
-        FROM +base-debian
+        ARG release
+        FROM +base-debian --release=${release}
         RUN apt-get update && \
             apt-get install -y \
                     build-essential \
@@ -22,6 +22,7 @@ deps-debian:
                     libtool
 
 deps-alpine:
+        ARG release
         FROM +base-alpine
         RUN apk add --update \
              alpine-sdk \
@@ -33,9 +34,10 @@ deps-alpine:
 # TODO: figure out how to get this to cache properly
 build:
         ARG base=debian
+        ARG release=bullseye
         ARG EARTHLY_TARGET_TAG
         ARG EARTHLY_GIT_SHORT_HASH
-        FROM +deps-${base}
+        FROM +deps-${base} --release=${release}
         COPY --dir --keep-ts \
              *.[ch] lib scamper tests utils configure.ac Makefile.am m4 set-version.sh \
              ./
@@ -44,9 +46,13 @@ build:
         RUN ./configure
         RUN make
         RUN echo "Successfully built scamper version: $(./scamper/scamper -v)"
+        LET baserelease="${base}"
+        IF [ "${base}" = "debian" ]
+           SET baserelease="${base}/${release}"
+        END
         ARG TARGETPLATFORM
-        SAVE ARTIFACT scamper/scamper ${base}/${TARGETPLATFORM}/scamper \
-             AS LOCAL ./build/${base}/${TARGETPLATFORM}/scamper
+        SAVE ARTIFACT scamper/scamper ${baserelease}/${TARGETPLATFORM}/scamper \
+             AS LOCAL ./build/${baserelease}/${TARGETPLATFORM}/scamper
 
 build-multiarch:
         BUILD \
@@ -54,7 +60,13 @@ build-multiarch:
               --platform=linux/arm/v6 \
               --platform=linux/arm64 \
               --platform=linux/amd64 \
-              +build --base=debian
+              +build --base=debian --release=bullseye
+        BUILD \
+              --platform=linux/arm/v7 \
+              --platform=linux/arm/v6 \
+              --platform=linux/arm64 \
+              --platform=linux/amd64 \
+              +build --base=debian --release=bookworm
         BUILD \
               --platform=linux/arm/v7 \
               --platform=linux/arm/v6 \
@@ -73,22 +85,34 @@ dist:
 docker:
         ARG TARGETPLATFORM
         ARG base=debian
+        ARG release=bullseye
         FROM +base-${base}
-        COPY +build/${base}/${TARGETPLATFORM}/scamper /usr/local/bin/scamper
+        LET baserelease="${base}"
+        LET relpath="${base}"
+        IF [ "${base}" = "debian" ]
+           SET baserelease="${base}-${release}"
+           SET relpath="${base}/${release}"
+        END
+        COPY +build/${relpath}/${TARGETPLATFORM}/scamper /usr/local/bin/scamper
         ENTRYPOINT ["/usr/local/bin/scamper"]
         ARG EARTHLY_TARGET_TAG_DOCKER
         ARG EARTHLY_GIT_SHORT_HASH
         ARG EARTHLY_GIT_PROJECT_NAME
         ARG img=${EARTHLY_GIT_PROJECT_NAME}
+        LET base_latest=""
+        LET latest=""
         IF [ "${EARTHLY_TARGET_TAG_DOCKER}" = "master" ]
-           ARG latest="${img}:latest"
-           IF [ "${base}" != "debian" ]
-              ARG latest="${base}-${latest}"
+           # if the base is debian/bookworm, then make it the default
+           IF [ "${base}" = "debian" && "${release}" == "bookworm" ]
+              SET latest="${img}:latest"
            END
+           # tag this as the latest image for this base
+           SET base_latest="${img}:${baserelease}-latest"
         END
         SAVE IMAGE --push \
-             ${img}:${base}-${EARTHLY_TARGET_TAG_DOCKER} \
-             ${img}:${base}-${EARTHLY_GIT_SHORT_HASH} \
+             ${img}:${baserelease}-${EARTHLY_TARGET_TAG_DOCKER} \
+             ${img}:${baserelease}-${EARTHLY_GIT_SHORT_HASH} \
+             ${base_latest} \
              ${latest}
 
 docker-multiarch:
@@ -97,7 +121,13 @@ docker-multiarch:
               --platform=linux/arm/v6 \
               --platform=linux/arm64 \
               --platform=linux/amd64 \
-              +docker --base=debian
+              +docker --base=debian --release=bullseye
+        BUILD \
+              --platform=linux/arm/v7 \
+              --platform=linux/arm/v6 \
+              --platform=linux/arm64 \
+              --platform=linux/amd64 \
+              +docker --base=debian --release=bookworm
         BUILD \
               --platform=linux/arm/v7 \
               --platform=linux/arm/v6 \
@@ -112,6 +142,8 @@ pkg-fix:
         SAVE ARTIFACT /pkg kentik-pkg
 
 pkg:
+        ARG base=debian
+        ARG release=bullseye
         FROM +base-debian
         COPY +pkg-fix/kentik-pkg /usr/bin/pkg
         ARG EARTHLY_TARGET_TAG
@@ -121,7 +153,7 @@ pkg:
         ARG type=deb
         ARG version="${EARTHLY_TARGET_TAG}"
         ARG pkg_arch="${TARGETARCH}${TARGETVARIANT}"
-        COPY +build/debian/${TARGETPLATFORM}/scamper ./
+        COPY +build/${base}/${release}/${TARGETPLATFORM}/scamper ./
         COPY package.yml ./
         RUN rm -f *.${type}
         RUN /usr/bin/pkg \
@@ -137,6 +169,7 @@ pkg-deb-rpm:
         BUILD +pkg --type=deb
         BUILD +pkg --type=rpm
 
+# TODO: support bookworm/bullseye packages
 pkg-multiarch:
         BUILD \
               --platform=linux/arm/v7 \
