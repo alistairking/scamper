@@ -1,7 +1,7 @@
 /*
  * scamper_trace_cmd.c
  *
- * $Id: scamper_trace_cmd.c,v 1.21 2024/02/29 01:44:52 mjl Exp $
+ * $Id: scamper_trace_cmd.c,v 1.22 2024/03/04 23:40:02 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -74,6 +74,7 @@
 #define TRACE_OPT_OPTION      24
 #define TRACE_OPT_RTRADDR     25
 #define TRACE_OPT_SQUERIES    26
+#define TRACE_OPT_WAITPROBE_HOP 27
 
 static const scamper_option_in_t opts[] = {
   {'c', NULL, TRACE_OPT_CONFIDENCE,  SCAMPER_OPTION_TYPE_NUM},
@@ -81,6 +82,7 @@ static const scamper_option_in_t opts[] = {
   {'f', NULL, TRACE_OPT_FIRSTHOP,    SCAMPER_OPTION_TYPE_NUM},
   {'g', NULL, TRACE_OPT_GAPLIMIT,    SCAMPER_OPTION_TYPE_NUM},
   {'G', NULL, TRACE_OPT_GAPACTION,   SCAMPER_OPTION_TYPE_NUM},
+  {'H', NULL, TRACE_OPT_WAITPROBE_HOP, SCAMPER_OPTION_TYPE_STR},
   {'l', NULL, TRACE_OPT_LOOPS,       SCAMPER_OPTION_TYPE_NUM},
   {'m', NULL, TRACE_OPT_HOPLIMIT,    SCAMPER_OPTION_TYPE_NUM},
   {'M', NULL, TRACE_OPT_PMTUD,       SCAMPER_OPTION_TYPE_NULL},
@@ -139,6 +141,7 @@ static const opt_limit_t limits[] = {
   {NULL, 0, 0}, /* -O options */
   {NULL, 0, 0}, /* rtr-addr */
   {NULL, 1, 255}, /* squeries */
+  {NULL, 0, 0}, /* wait-probe-hop */
 };
 
 extern scamper_addrcache_t *addrcache;
@@ -147,10 +150,11 @@ const char *scamper_do_trace_usage(void)
 {
   return
     "trace [-MQT] [-c confidence] [-d dport] [-f firsthop]\n"
-    "      [-g gaplimit] [-G gapaction] [-l loops] [-m maxttl] [-N squeries]\n"
-    "      [-o offset] [-O options] [-p payload] [-P method] [-q attempts]\n"
-    "      [-r rtraddr] [-s sport] [-S srcaddr] [-t tos] [-U userid]\n"
-    "      [-w wait-timeout] [-W wait-probe] [-z gss-entry] [-Z lss-name]";
+    "      [-g gaplimit] [-G gapaction] [-H wait-probe-hop] [-l loops]\n"
+    "      [-m maxttl] [-N squeries] [-o offset] [-O options] [-p payload]\n"
+    "      [-P method] [-q attempts] [-r rtraddr] [-s sport] [-S srcaddr]\n"
+    "      [-t tos] [-U userid] [-w wait-timeout] [-W wait-probe]\n"
+    "      [-z gss-entry] [-Z lss-name]";
 }
 
 static int trace_arg_param_validate(int optid, char *param, long long *out,
@@ -284,6 +288,20 @@ static int trace_arg_param_validate(int optid, char *param, long long *out,
       tmp = (tv.tv_sec * 1000000) + tv.tv_usec;
       break;
 
+    case TRACE_OPT_WAITPROBE_HOP:
+      if(timeval_fromstr(&tv, param, 1000000) != 0)
+	{
+	  snprintf(errbuf, errlen, "malformed wait-probe-hop delay");
+	  goto err;
+	}
+      if(timeval_cmp_gt(&tv, 2, 0))
+	{
+	  snprintf(errbuf, errlen, "wait-probe-hop delay cannot be > 2s");
+	  goto err;
+	}
+      tmp = (tv.tv_sec * 1000000) + tv.tv_usec;
+      break;
+
     case TRACE_OPT_CONFIDENCE:
       if(string_tolong(param, &tmp) != 0 || (tmp != 95 && tmp != 99))
 	{
@@ -366,7 +384,7 @@ void *scamper_do_trace_alloc(char *str, char *errbuf, size_t errlen)
   uint32_t userid      = 0;
   char    *lss         = NULL;
   slist_t *gss         = NULL;
-  struct timeval wait_timeout, wait_probe;
+  struct timeval wait_timeout, wait_probe, wait_probe_hop;
   scamper_option_out_t *opts_out = NULL, *opt;
   scamper_trace_t *trace = NULL;
   splaytree_t *gss_tree = NULL;
@@ -526,6 +544,11 @@ void *scamper_do_trace_alloc(char *str, char *errbuf, size_t errlen)
 	  wait_probe.tv_usec = tmp % 1000000;
 	  break;
 
+	case TRACE_OPT_WAITPROBE_HOP:
+	  wait_probe_hop.tv_sec  = tmp / 1000000;
+	  wait_probe_hop.tv_usec = tmp % 1000000;
+	  break;
+
 	case TRACE_OPT_LSSNAME:
 	  lss = opt->str;
 	  break;
@@ -546,6 +569,12 @@ void *scamper_do_trace_alloc(char *str, char *errbuf, size_t errlen)
     {
       wait_probe.tv_sec = 0;
       wait_probe.tv_usec = 0;
+    }
+
+  if((optids & (0x1 << TRACE_OPT_WAITPROBE_HOP)) == 0)
+    {
+      wait_probe_hop.tv_sec = 0;
+      wait_probe_hop.tv_usec = 0;
     }
 
   if((optids & (0x1 << TRACE_OPT_WAITTIMEOUT)) == 0)
@@ -625,6 +654,7 @@ void *scamper_do_trace_alloc(char *str, char *errbuf, size_t errlen)
 
   timeval_cpy(&trace->wait_timeout, &wait_timeout);
   timeval_cpy(&trace->wait_probe, &wait_probe);
+  timeval_cpy(&trace->wait_probe_hop, &wait_probe_hop);
 
   /* to start with, we are this far into the path */
   trace->hop_count = firsthop - 1;
