@@ -43,7 +43,7 @@ build:
              ./
         RUN ./set-version.sh "$(grep SCAMPER_VERSION scamper/scamper.h | cut -d \" -f 2)-${EARTHLY_TARGET_TAG}.${EARTHLY_GIT_SHORT_HASH}"
         RUN autoreconf -vfi
-        RUN ./configure --with-openssl=disabled
+        RUN ./configure --with-openssl=disabled --enable-scamper-ring
         RUN make
         RUN echo "Successfully built scamper version: $(./scamper/scamper -v)"
         LET baserelease="${base}"
@@ -194,7 +194,7 @@ docs:
 bootstrap-native:
         LOCALLY
         RUN autoreconf -vfi
-        RUN ./configure --with-openssl=disabled
+        RUN ./configure --with-openssl=disabled --enable-scamper-ring
 
 build-native:
         LOCALLY
