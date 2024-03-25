@@ -280,6 +280,7 @@ static int scamper_udp6_read_err(int fd, scamper_icmp_resp_t *resp)
   struct iovec iov;
   ssize_t pbuflen;
   uint8_t ctrlbuf[2048];
+  int v;
 
   memset(&iov, 0, sizeof(iov));
   iov.iov_base = (caddr_t)rxbuf;
@@ -328,7 +329,16 @@ static int scamper_udp6_read_err(int fd, scamper_icmp_resp_t *resp)
 #if defined(IPV6_HOPLIMIT)
       else if(cm->cmsg_level == IPPROTO_IPV6 && cm->cmsg_type == IPV6_HOPLIMIT)
 	{
-	  resp->ir_ip_ttl = *((uint8_t *)CMSG_DATA(cm));
+	  v = ((int *)CMSG_DATA(cm));
+	  resp->ir_ip_ttl = (uint8_t)v;
+	}
+#endif
+#if defined(IPV6_TCLASS)
+      else if(cm->cmsg_level == IPPROTO_IPV6 && cm->cmsg_type == IPV6_TCLASS)
+	{
+	  v = *((int *)CMSG_DATA(cm));
+	  resp->ir_ip_tos = (uint8_t)v;
+	  resp->ir_flags |= SCAMPER_ICMP_RESP_FLAG_TCLASS;
 	}
 #endif
       cm = (struct cmsghdr *)CMSG_NXTHDR(&msg, cm);

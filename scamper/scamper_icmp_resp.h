@@ -32,6 +32,7 @@
 #define SCAMPER_ICMP_RESP_FLAG_IPOPT_TS        0x04
 #define SCAMPER_ICMP_RESP_FLAG_INNER_IPOPT_TS  0x08
 #define SCAMPER_ICMP_RESP_FLAG_RXERR           0x10
+#define SCAMPER_ICMP_RESP_FLAG_TCLASS          0x20
 
 #define SCAMPER_ICMP_RESP_IS_ECHO_REPLY(ir) ( \
  (ir->ir_af == AF_INET  && ir->ir_icmp_type == 0) || \
@@ -136,7 +137,7 @@ typedef struct scamper_icmp_resp
 
   uint16_t          ir_ip_size;
   uint16_t          ir_ip_id;
-  uint8_t           ir_ip_tos;
+  uint8_t           ir_ip_tos;  /* tclass in IPv6 */
   int16_t           ir_ip_ttl;  /* ir_ip_hlim; -1 if unavailable */
 
   /*

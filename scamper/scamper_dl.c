@@ -205,8 +205,10 @@ static int dl_parse_ip(scamper_dl_rec_t *dl, uint8_t *pktbuf, size_t pktlen)
       dl->dl_ip_proto = ip6->ip6_nxt;
       dl->dl_ip_size  = ntohs(ip6->ip6_plen) + sizeof(struct ip6_hdr);
       dl->dl_ip_hlim  = ip6->ip6_hlim;
+      dl->dl_ip_tos   = (((pkt[0] & 0x0f) << 4) | (pkt[1] & 0xf0) >> 4);
       dl->dl_ip_src   = (uint8_t *)&ip6->ip6_src;
       dl->dl_ip_dst   = (uint8_t *)&ip6->ip6_dst;
+
       dl->dl_flags   |= SCAMPER_DL_REC_FLAG_NET;
       dl->dl_net_type = SCAMPER_DL_REC_NET_TYPE_IP;
 
@@ -507,14 +509,16 @@ static int dl_parse_ip(scamper_dl_rec_t *dl, uint8_t *pktbuf, size_t pktlen)
 	    }
 
 	  ip6 = (struct ip6_hdr *)pkt;
-	  pkt += sizeof(struct ip6_hdr);
 
 	  dl->dl_icmp_ip_proto = ip6->ip6_nxt;
 	  dl->dl_icmp_ip_size  = ntohs(ip6->ip6_plen) + sizeof(struct ip6_hdr);
 	  dl->dl_icmp_ip_hlim  = ip6->ip6_hlim;
 	  dl->dl_icmp_ip_flow  = ntohl(ip6->ip6_flow) & 0xfffff;
+	  dl->dl_icmp_ip_tos = ((pkt[0] & 0xf) << 4) | ((pkt[1] & 0xf0) >> 4);
 	  dl->dl_icmp_ip_src = (uint8_t *)&ip6->ip6_src;
 	  dl->dl_icmp_ip_dst = (uint8_t *)&ip6->ip6_dst;
+
+	  pkt += sizeof(struct ip6_hdr);
 
 	  if(dl->dl_icmp_ip_proto == IPPROTO_UDP)
 	    {

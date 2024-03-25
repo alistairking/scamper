@@ -269,6 +269,7 @@ static void icmp6_recv_ip_outer(SOCKET fd,
 				struct sockaddr_in6 *from, size_t size)
 {
   int16_t hlim = -1;
+  int v;
 
 #if (defined(IPV6_HOPLIMIT) || defined(SO_TIMESTAMP)) && !defined(_WIN32)
   /* get the HLIM field of the ICMP6 packet returned */
@@ -285,7 +286,19 @@ static void icmp6_recv_ip_outer(SOCKET fd,
 	{
 #if defined(IPV6_HOPLIMIT)
 	  if(cm->cmsg_level == IPPROTO_IPV6 && cm->cmsg_type == IPV6_HOPLIMIT)
-	    hlim = *((uint8_t *)CMSG_DATA(cm));
+	    {
+	      v = *((int *)CMSG_DATA(cm));
+	      hlim = (uint8_t)v;
+	    }
+#endif
+
+#if defined(IPV6_TCLASS)
+	  if(cm->cmsg_level == IPPROTO_IPV6 && cm->cmsg_type == IPV6_TCLASS)
+	    {
+	      v = *((int *)CMSG_DATA(cm));
+	      resp->ir_ip_tos = (uint8_t)v;
+	      resp->ir_flags |= SCAMPER_ICMP_RESP_FLAG_TCLASS;
+	    }
 #endif
 
 #if defined(SO_TIMESTAMP)
@@ -489,6 +502,7 @@ int scamper_icmp6_recv(SOCKET fd, scamper_icmp_resp_t *resp)
       resp->ir_inner_ip_hlim  = ip->ip6_hlim;
       resp->ir_inner_ip_size  = ntohs(ip->ip6_plen) + sizeof(struct ip6_hdr);
       resp->ir_inner_ip_flow  = ntohl(ip->ip6_flow) & 0xfffff;
+      resp->ir_inner_ip_tos   = ((ntohl(ip->ip6_flow) & 0x0ff00000) >> 20);
 
       if(type == ICMP6_PACKET_TOO_BIG)
 	resp->ir_icmp_nhmtu = (ntohl(icmp->icmp6_mtu) % 0xffff);
@@ -643,6 +657,15 @@ SOCKET scamper_icmp6_open(const void *addr)
     {
       printerror(__func__, "could not set IPV6_DONTFRAG");
       goto err;
+    }
+#endif
+
+#if defined(IPV6_RECVTCLASS)
+  opt = 1;
+  if(setsockopt(fd, IPPROTO_IPV6, IPV6_RECVTCLASS,
+		(void *)&opt, sizeof(opt)) == -1)
+    {
+      printerror(__func__, "could not set IPV6_RECVTCLASS");
     }
 #endif
 

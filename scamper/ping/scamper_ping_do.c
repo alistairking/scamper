@@ -552,6 +552,9 @@ static void do_ping_handle_dl(scamper_task_t *task, scamper_dl_rec_t *dl)
 	  reply->flags |= SCAMPER_PING_REPLY_FLAG_REPLY_IPID;
 	}
 
+      reply->reply_tos = dl->dl_ip_tos;
+      reply->flags |= SCAMPER_PING_REPLY_FLAG_REPLY_TOS;
+
       if(ping->ping_replies[seq] == NULL)
 	{
 	  if((ping->flags & SCAMPER_PING_FLAG_TBT) == 0)
@@ -834,6 +837,9 @@ static void do_ping_handle_icmp(scamper_task_t *task, scamper_icmp_resp_t *ir)
       reply->probe_ipid = probe->ipid;
       reply->flags |= SCAMPER_PING_REPLY_FLAG_PROBE_IPID;
 
+      reply->reply_tos = ir->ir_ip_tos;
+      reply->flags |= SCAMPER_PING_REPLY_FLAG_REPLY_TOS;
+
       reply->reply_proto = IPPROTO_ICMP;
 
       if(ips != NULL && ipc > 0)
@@ -871,6 +877,11 @@ static void do_ping_handle_icmp(scamper_task_t *task, scamper_icmp_resp_t *ir)
   else if(ir->ir_af == AF_INET6)
     {
       reply->reply_proto = IPPROTO_ICMPV6;
+      if(ir->ir_flags & SCAMPER_ICMP_RESP_FLAG_TCLASS)
+	{
+	  reply->reply_tos = ir->ir_ip_tos;
+	  reply->flags |= SCAMPER_PING_REPLY_FLAG_REPLY_TOS;
+	}
     }
 
   if(ir->ir_ip_ttl != -1)

@@ -1459,6 +1459,7 @@ static scamper_trace_hop_t *trace_icmp_hop(const scamper_task_t *task,
   hop->hop_reply_size = ir->ir_ip_size;
   hop->hop_icmp_type  = ir->ir_icmp_type;
   hop->hop_icmp_code  = ir->ir_icmp_code;
+  hop->hop_reply_tos  = ir->ir_ip_tos;
 
   /*
    * we cannot depend on the TTL field of the IP packet being made available,
@@ -1493,22 +1494,13 @@ static scamper_trace_hop_t *trace_icmp_hop(const scamper_task_t *task,
     hop->hop_icmp_nhmtu = ir->ir_icmp_nhmtu;
 
   if(ir->ir_af == AF_INET)
-    {
-      hop->hop_reply_ipid = ir->ir_ip_id;
-      hop->hop_reply_tos  = ir->ir_ip_tos;
-    }
+    hop->hop_reply_ipid = ir->ir_ip_id;
 
   if(SCAMPER_ICMP_RESP_INNER_IS_SET(ir))
     {
       hop->hop_icmp_q_ttl = ir->ir_inner_ip_ttl;
       hop->hop_icmp_q_ipl = ir->ir_inner_ip_size;
-
-      /*
-       * IPv4: record ToS byte
-       * IPv6: might pay to record traffic class byte here.
-       */
-      if(ir->ir_af == AF_INET)
-	hop->hop_icmp_q_tos = ir->ir_inner_ip_tos;
+      hop->hop_icmp_q_tos = ir->ir_inner_ip_tos;
     }
 
   /* if ICMP extensions are included, then parse and include them. */
@@ -1541,16 +1533,14 @@ static scamper_trace_hop_t *trace_dl_hop(scamper_task_t *task,
   /* fill out the basic bits of the hop structure */
   hop->hop_reply_size = dl->dl_ip_size;
   hop->hop_reply_ttl = dl->dl_ip_ttl;
+  hop->hop_reply_tos = dl->dl_ip_tos;
   hop->hop_flags |= (SCAMPER_TRACE_HOP_FLAG_REPLY_TTL |
 		     SCAMPER_TRACE_HOP_FLAG_TS_DL_RX);
   timeval_cpy(&hop->hop_tx, &pr->tx_tv);
   timeval_diff_tv(&hop->hop_rtt, &pr->tx_tv, &dl->dl_tv);
 
   if(dl->dl_af == AF_INET)
-    {
-      hop->hop_reply_ipid = dl->dl_ip_id;
-      hop->hop_reply_tos  = dl->dl_ip_tos;
-    }
+    hop->hop_reply_ipid = dl->dl_ip_id;
 
   if(dl->dl_ip_proto == IPPROTO_TCP)
     {

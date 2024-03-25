@@ -251,6 +251,10 @@ static char *ping_reply(const scamper_ping_t *ping,
 		    ", \"reply_ipid\":%u", reply->reply_ipid32);
     }
 
+  if(reply->flags & SCAMPER_PING_REPLY_FLAG_REPLY_TOS)
+    string_concat(buf, sizeof(buf), &off,
+		  ", \"reply_tos\":%u", reply->reply_tos);
+
   if(SCAMPER_PING_REPLY_IS_ICMP(reply))
     {
       string_concat(buf, sizeof(buf), &off,
