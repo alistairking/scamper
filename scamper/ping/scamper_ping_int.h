@@ -206,6 +206,7 @@ struct scamper_ping_reply
   uint16_t                   probe_sport;
   uint8_t                    reply_proto;
   uint8_t                    reply_ttl;
+  uint8_t                    reply_tos;
   uint16_t                   reply_size;
   uint16_t                   reply_ipid;
   uint32_t                   reply_ipid32;

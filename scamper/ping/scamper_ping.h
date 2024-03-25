@@ -45,6 +45,7 @@ typedef struct scamper_ping_stats scamper_ping_stats_t;
 #define SCAMPER_PING_REPLY_FLAG_PROBE_IPID 0x04 /* probe ipid included */
 #define SCAMPER_PING_REPLY_FLAG_DLTX       0x08 /* datalink tx timestamp */
 #define SCAMPER_PING_REPLY_FLAG_DLRX       0x10 /* datalink rx timestamp */
+#define SCAMPER_PING_REPLY_FLAG_REPLY_TOS  0x20 /* reply tos included */
 
 #define SCAMPER_PING_METHOD_ICMP_ECHO     0x00
 #define SCAMPER_PING_METHOD_TCP_ACK       0x01
