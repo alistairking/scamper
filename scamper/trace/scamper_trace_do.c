@@ -4306,6 +4306,7 @@ scamper_task_t *scamper_do_trace_alloctask(void *data,
       else if(SCAMPER_TRACE_TYPE_IS_UDP(trace) &&
 	      SCAMPER_ADDR_TYPE_IS_IPV6(trace->dst))
 	state->probe = scamper_fd_udp6err_dst(trace->src->addr, trace->sport,
+					      NULL, 0,
 					      trace->dst->addr, trace->dport);
     }
   else
@@ -4331,10 +4332,12 @@ scamper_task_t *scamper_do_trace_alloctask(void *data,
 	  if(trace->dst->type == SCAMPER_ADDR_TYPE_IPV4)
 	    state->probe = scamper_fd_udp4dg_dst(trace->src->addr,
 						 trace->sport,
+						 NULL, 0,
 						 trace->dst->addr,
 						 trace->dport);
 	  else
 	    state->probe = scamper_fd_udp6_dst(trace->src->addr, trace->sport,
+					       NULL, 0,
 					       trace->dst->addr, trace->dport);
 	}
     }

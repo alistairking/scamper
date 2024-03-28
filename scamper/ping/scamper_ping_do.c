@@ -1649,10 +1649,12 @@ scamper_task_t *scamper_do_ping_alloctask(void *data, scamper_list_t *list,
       if(SCAMPER_ADDR_TYPE_IS_IPV4(ping->dst))
 	state->fds[0] = scamper_fd_udp4dg_dst(ping->src->addr,
 					      ping->probe_sport,
+					      NULL, 0,
 					      ping->dst->addr,
 					      ping->probe_dport);
       else
 	state->fds[0] = scamper_fd_udp6_dst(ping->src->addr, ping->probe_sport,
+					    NULL, 0,
 					    ping->dst->addr, ping->probe_dport);
       if(state->fds[0] == NULL)
 	{

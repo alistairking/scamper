@@ -49,10 +49,13 @@ scamper_fd_t *scamper_fd_dl(int ifindex);
 scamper_fd_t *scamper_fd_ip4(void);
 
 scamper_fd_t *scamper_fd_udp4dg_dst(void *src, uint16_t sport,
+				    uint16_t *sportx, size_t sportxc,
 				    void *dst, uint16_t dport);
 scamper_fd_t *scamper_fd_udp6_dst(void *src, uint16_t sport,
+				  uint16_t *sportx, size_t sportxc,
 				  void *dst, uint16_t dport);
 scamper_fd_t *scamper_fd_udp6err_dst(void *src, uint16_t sport,
+				     uint16_t *sportx, size_t sportxc,
 				     void *dst, uint16_t dport);
 scamper_fd_t *scamper_fd_tcp4_dst(void *src, uint16_t sport,
 				  uint16_t *sportx, size_t sportxc,
