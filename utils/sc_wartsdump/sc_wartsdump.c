@@ -2364,13 +2364,14 @@ static void dump_http(scamper_http_t *http)
 
 static void dump_udpprobe(scamper_udpprobe_t *up)
 {
-  const scamper_udpprobe_reply_t *ur;
+  const scamper_udpprobe_probe_t *probe;
+  const scamper_udpprobe_reply_t *reply;
   const struct timeval *start, *ts;
   const scamper_addr_t *addr;
   const uint8_t *data;
   struct timeval tv;
   uint16_t data_len, u16;
-  uint8_t replyc, u8;
+  uint8_t sentc, replyc, i, j;
   char buf[256];
 
   printf("udpprobe");
@@ -2383,9 +2384,9 @@ static void dump_udpprobe(scamper_udpprobe_t *up)
   printf(" user-id: %d\n", scamper_udpprobe_userid_get(up));
   start = scamper_udpprobe_start_get(up);
   dump_timeval("start", start);
-  ts = scamper_udpprobe_wait_timeout_get(up);
-  printf(" wait-timeout: %d.%d,", (int)ts->tv_sec, (int)ts->tv_usec);
-  printf(" sport: %d, dport: %d\n", scamper_udpprobe_sport_get(up),
+  dump_wait(" wait-timeout", scamper_udpprobe_wait_timeout_get(up));
+  dump_wait(", wait-probe", scamper_udpprobe_wait_probe_get(up));
+  printf(", sport: %d, dport: %d\n", scamper_udpprobe_sport_get(up),
 	 scamper_udpprobe_dport_get(up));
   if((data = scamper_udpprobe_data_get(up)) != NULL &&
      (data_len = scamper_udpprobe_len_get(up)) != 0)
@@ -2397,24 +2398,35 @@ static void dump_udpprobe(scamper_udpprobe_t *up)
 	printf(" + %d bytes", data_len - 20);
       printf("\n");
     }
+  sentc = scamper_udpprobe_probe_sent_get(up);
+  printf(" probe-count: %d, probe-sent: %d\n",
+	 scamper_udpprobe_probe_count_get(up), sentc);
 
-  replyc = scamper_udpprobe_replyc_get(up);
-  printf(" replies: %d\n", replyc);
-  for(u8=0; u8<replyc; u8++)
+  for(i=0; i<sentc; i++)
     {
-      if((ur = scamper_udpprobe_reply_get(up, u8)) == NULL ||
-	 (ts = scamper_udpprobe_reply_tv_get(ur)) == NULL ||
-	 (data_len = scamper_udpprobe_reply_len_get(ur)) == 0 ||
-	 (data = scamper_udpprobe_reply_data_get(ur)) == NULL)
+      if((probe = scamper_udpprobe_probe_get(up, i)) == NULL)
 	continue;
-
-      timeval_diff_tv(&tv, start, ts);
-      printf("  %d.%06d (%d) ", (int)tv.tv_sec, (int)tv.tv_usec, data_len);
-      for(u16=0; u16 < (data_len >= 20 ? 20 : data_len); u16++)
-	printf("%02x", data[u16]);
-      if(data_len > 20)
-	printf(" + %d bytes", data_len - 20);
-      printf("\n");
+      timeval_diff_tv(&tv, start, scamper_udpprobe_probe_tx_get(probe));
+      replyc = scamper_udpprobe_probe_replyc_get(probe);
+      printf("  %d.%06d probe: %d, sport: %d, replyc: %d\n",
+	     (int)tv.tv_sec, (int)tv.tv_usec, i,
+	     scamper_udpprobe_probe_sport_get(probe), replyc);
+      for(j=0; j<replyc; j++)
+	{
+	  if((reply = scamper_udpprobe_probe_reply_get(probe, j)) == NULL ||
+	     (ts = scamper_udpprobe_reply_rx_get(reply)) == NULL ||
+	     (data_len = scamper_udpprobe_reply_len_get(reply)) == 0 ||
+	     (data = scamper_udpprobe_reply_data_get(reply)) == NULL)
+	    continue;
+	  timeval_diff_tv(&tv, start, ts);
+	  printf("  %d.%06d reply: %d, len: %d ",
+		 (int)tv.tv_sec, (int)tv.tv_usec, j, data_len);
+	  for(u16=0; u16 < (data_len >= 20 ? 20 : data_len); u16++)
+	    printf("%02x", data[u16]);
+	  if(data_len > 20)
+	    printf(" + %d bytes", data_len - 20);
+	  printf("\n");
+	}
     }
 
   scamper_udpprobe_free(up);
