@@ -1474,7 +1474,8 @@ int scamper_source_halttask(scamper_source_t *source, uint32_t id)
  * which allows the command to be halted.  used by the control socket code.
  */
 int scamper_source_command2(scamper_source_t *s, const char *command,
-			    uint32_t *id, char *errbuf, size_t errlen)
+			    uint32_t *id, uint32_t *userid,
+			    char *errbuf, size_t errlen)
 {
   const command_func_t *f = NULL;
   scamper_sourcetask_t *st = NULL;
@@ -1500,6 +1501,8 @@ int scamper_source_command2(scamper_source_t *s, const char *command,
     }
   if((data = command_func_allocdata(f, command, errbuf, errlen)) == NULL)
     goto err;
+  if(userid != NULL)
+    *userid = f->userid(data);
   if((task = f->alloctask(data, s->list, s->cycle, errbuf, errlen)) == NULL)
     goto err;
   data = NULL;

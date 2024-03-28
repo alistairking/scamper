@@ -607,6 +607,10 @@ static int check_options(int argc, char *argv[])
   size_t off;
   uint32_t o;
 
+#if defined(ENABLE_SCAMPER_RING) && defined(HAVE_STRUCT_TPACKET_REQ3)
+  flags |= FLAG_RING;
+#endif
+
   for(m=0; m<sizeof(multicall)/sizeof(scamper_multicall_t); m++)
     {
       len = strlen(multicall[m].argv0);
