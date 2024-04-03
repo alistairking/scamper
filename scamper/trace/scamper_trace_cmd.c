@@ -666,6 +666,13 @@ void *scamper_do_trace_alloc(char *str, char *errbuf, size_t errlen)
       goto err;
     }
 
+  /* don't allow tcptraceroute to use squeries > 1 because packet matching */
+  if(SCAMPER_TRACE_TYPE_IS_TCP(trace) && trace->squeries > 1)
+    {
+      snprintf(errbuf, errlen, "cannot send parallel probes with TCP methods");
+      goto err;
+    }
+
   if((trace->flags & SCAMPER_TRACE_FLAG_RAW) != 0 &&
      (SCAMPER_ADDR_TYPE_IS_IPV4(trace->dst) == 0 ||
       SCAMPER_TRACE_TYPE_IS_TCP(trace) == 0))
