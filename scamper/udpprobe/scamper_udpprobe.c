@@ -55,21 +55,52 @@ scamper_udpprobe_reply_t *scamper_udpprobe_reply_alloc(void)
   return ur;
 }
 
+void scamper_udpprobe_probe_free(scamper_udpprobe_probe_t *probe)
+{
+  uint8_t i;
+#ifdef BUILDING_LIBSCAMPERFILE
+  if(--probe->refcnt > 0)
+    return;
+#endif
+  if(probe->replies != NULL)
+    {
+      for(i=0; i<probe->replyc; i++)
+	if(probe->replies[i] != NULL)
+	  scamper_udpprobe_reply_free(probe->replies[i]);
+      free(probe->replies);
+    }
+  free(probe);
+  return;
+}
+
+scamper_udpprobe_probe_t *scamper_udpprobe_probe_alloc(void)
+{
+  scamper_udpprobe_probe_t *pr;
+  if((pr = malloc_zero(sizeof(scamper_udpprobe_probe_t))) == NULL)
+    return NULL;
+#ifdef BUILDING_LIBSCAMPERFILE
+  pr->refcnt = 1;
+#endif
+  return pr;
+}
+
 void scamper_udpprobe_free(scamper_udpprobe_t *up)
 {
   uint8_t i;
+
   if(up->list != NULL) scamper_list_free(up->list);
   if(up->cycle != NULL) scamper_cycle_free(up->cycle);
   if(up->src != NULL) scamper_addr_free(up->src);
   if(up->dst != NULL) scamper_addr_free(up->dst);
   if(up->data != NULL) free(up->data);
-  if(up->replies != NULL)
+  if(up->probes != NULL)
     {
-      for(i=0; i<up->replyc; i++)
-	if(up->replies[i] != NULL)
-	  scamper_udpprobe_reply_free(up->replies[i]);
-      free(up->replies);
+      for(i=0; i<up->probe_sent; i++)
+	if(up->probes[i] != NULL)
+	  scamper_udpprobe_probe_free(up->probes[i]);
+      free(up->probes);
     }
+
   free(up);
   return;
 }

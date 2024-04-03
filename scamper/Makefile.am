@@ -70,6 +70,7 @@ libscamperfile_la_SOURCES = \
 	http/scamper_http_lib.c \
 	udpprobe/scamper_udpprobe.c \
 	udpprobe/scamper_udpprobe_warts.c \
+	udpprobe/scamper_udpprobe_json.c \
 	udpprobe/scamper_udpprobe_lib.c
 
 scamper_SOURCES = \
@@ -210,6 +211,7 @@ if ENABLE_SCAMPER_UDPPROBE
 scamper_SOURCES += \
 	udpprobe/scamper_udpprobe.c \
 	udpprobe/scamper_udpprobe_warts.c \
+	udpprobe/scamper_udpprobe_json.c \
 	udpprobe/scamper_udpprobe_cmd.c \
 	udpprobe/scamper_udpprobe_do.c
 endif

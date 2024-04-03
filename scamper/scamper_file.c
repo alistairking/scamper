@@ -90,6 +90,7 @@
 #if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_UDPPROBE)
 #include "udpprobe/scamper_udpprobe.h"
 #include "udpprobe/scamper_udpprobe_warts.h"
+#include "udpprobe/scamper_udpprobe_json.h"
 #endif
 
 #include "utils.h"
@@ -284,7 +285,7 @@ static write_handlers_t json_write_handlers =
   NULL,                                   /* http */
 #endif
 #if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_UDPPROBE)
-  NULL,                                   /* udpprobe */
+ scamper_file_json_udpprobe_write,        /* udpprobe */
 #endif
 };
 

@@ -38,25 +38,32 @@
 #include "utils.h"
 
 /* options that udpprobe supports */
-#define UDPPROBE_OPT_USERID  1
-#define UDPPROBE_OPT_PAYLOAD 2
-#define UDPPROBE_OPT_DPORT   3
-#define UDPPROBE_OPT_TIMEOUT 4
-#define UDPPROBE_OPT_OPTION  5
+#define UDPPROBE_OPT_USERID       1
+#define UDPPROBE_OPT_PAYLOAD      2
+#define UDPPROBE_OPT_DPORT        3
+#define UDPPROBE_OPT_WAIT_TIMEOUT 4
+#define UDPPROBE_OPT_OPTION       5
+#define UDPPROBE_OPT_PROBE_COUNT  6
+#define UDPPROBE_OPT_STOP_COUNT   7
+#define UDPPROBE_OPT_WAIT_PROBE   8
 
 static const scamper_option_in_t opts[] = {
-  {'d', NULL, UDPPROBE_OPT_DPORT, SCAMPER_OPTION_TYPE_NUM},
-  {'O', NULL, UDPPROBE_OPT_OPTION, SCAMPER_OPTION_TYPE_STR},
-  {'p', NULL, UDPPROBE_OPT_PAYLOAD, SCAMPER_OPTION_TYPE_STR},
-  {'U', NULL, UDPPROBE_OPT_USERID, SCAMPER_OPTION_TYPE_NUM},
-  {'w', NULL, UDPPROBE_OPT_TIMEOUT, SCAMPER_OPTION_TYPE_STR},
+  {'c', NULL, UDPPROBE_OPT_PROBE_COUNT,  SCAMPER_OPTION_TYPE_NUM},
+  {'d', NULL, UDPPROBE_OPT_DPORT,        SCAMPER_OPTION_TYPE_NUM},
+  {'o', NULL, UDPPROBE_OPT_STOP_COUNT,   SCAMPER_OPTION_TYPE_NUM},
+  {'O', NULL, UDPPROBE_OPT_OPTION,       SCAMPER_OPTION_TYPE_STR},
+  {'p', NULL, UDPPROBE_OPT_PAYLOAD,      SCAMPER_OPTION_TYPE_STR},
+  {'U', NULL, UDPPROBE_OPT_USERID,       SCAMPER_OPTION_TYPE_NUM},
+  {'w', NULL, UDPPROBE_OPT_WAIT_TIMEOUT, SCAMPER_OPTION_TYPE_STR},
+  {'W', NULL, UDPPROBE_OPT_WAIT_PROBE,   SCAMPER_OPTION_TYPE_STR},
 };
 static const int opts_cnt = SCAMPER_OPTION_COUNT(opts);
 
 const char *scamper_do_udpprobe_usage(void)
 {
   return
-    "udpprobe [-d dport] [-O option] [-p payload] [-U userid] [-w wait-timeout]";
+    "udpprobe [-c probe-count] [-d dport] [-o stop-count] [-O option]\n"
+    "         [-p payload] [-U userid] [-w wait-timeout] [-W wait-probe]\n";
 }
 
 static int udpprobe_arg_param_validate(int optid, char *param, long long *out,
@@ -72,10 +79,26 @@ static int udpprobe_arg_param_validate(int optid, char *param, long long *out,
 
   switch(optid)
     {
+    case UDPPROBE_OPT_PROBE_COUNT:
+      if(string_tollong(param, &tmp, NULL, 0) == -1 || tmp < 1 || tmp > 20)
+	{
+	  snprintf(errbuf, errlen, "probe-count must be within 1 - 20");
+	  goto err;
+	}
+      break;
+
     case UDPPROBE_OPT_DPORT:
       if(string_tollong(param, &tmp, NULL, 0) == -1 || tmp < 1 || tmp > 65535)
 	{
 	  snprintf(errbuf, errlen, "dport must be within 1 - 65535");
+	  goto err;
+	}
+      break;
+
+    case UDPPROBE_OPT_STOP_COUNT:
+      if(string_tollong(param, &tmp, NULL, 0) == -1 || tmp < 1 || tmp > 20)
+	{
+	  snprintf(errbuf, errlen, "stop-count must be within 1 - 20");
 	  goto err;
 	}
       break;
@@ -120,15 +143,18 @@ static int udpprobe_arg_param_validate(int optid, char *param, long long *out,
 	}
       break;
 
-    case UDPPROBE_OPT_TIMEOUT:
+    case UDPPROBE_OPT_WAIT_TIMEOUT:
+    case UDPPROBE_OPT_WAIT_PROBE:
       if(timeval_fromstr(&tv, param, 1000000) != 0)
 	{
-	  snprintf(errbuf, errlen, "malformed timeout");
+	  snprintf(errbuf, errlen, "malformed %s",
+		   optid == UDPPROBE_OPT_WAIT_TIMEOUT ? "wait-timeout" : "wait-probe");
 	  goto err;
 	}
       if(timeval_cmp_lt(&tv, 0, 500000) || timeval_cmp_gt(&tv, 5, 0))
 	{
-	  snprintf(errbuf, errlen, "timeout must be within 0.5s - 5s");
+	  snprintf(errbuf, errlen, "%s must be within 0.5s - 5s",
+		   optid == UDPPROBE_OPT_WAIT_TIMEOUT ? "wait-timeout" : "wait-probe");
 	  goto err;
 	}
       tmp = (tv.tv_sec * 1000000) + tv.tv_usec;
@@ -160,12 +186,13 @@ void *scamper_do_udpprobe_alloc(char *str, char *errbuf, size_t errlen)
 {
   scamper_option_out_t *opts_out = NULL, *opt;
   scamper_udpprobe_t *up = NULL;
-  struct timeval timeout;
+  struct timeval wait_timeout, wait_probe;
   uint8_t *payload = NULL;
   uint32_t userid = 0;
   char *addr = NULL;
   long long j, tmp = 0;
   uint16_t dport = 0, payload_len = 0;
+  uint8_t probe_count = 1, stop_count = 1;
   uint8_t flags = 0;
   uint32_t optids = 0;
   char buf[256];
@@ -188,8 +215,10 @@ void *scamper_do_udpprobe_alloc(char *str, char *errbuf, size_t errlen)
       goto err;
     }
 
-  timeout.tv_sec = 2;
-  timeout.tv_usec = 0;
+  wait_timeout.tv_sec = 2;
+  wait_timeout.tv_usec = 0;
+  wait_probe.tv_sec = 1;
+  wait_probe.tv_usec = 0;
 
   /* Parse the options, do preliminary sanity checks */
   for(opt = opts_out; opt != NULL; opt = opt->next)
@@ -214,8 +243,16 @@ void *scamper_do_udpprobe_alloc(char *str, char *errbuf, size_t errlen)
 
       switch(opt->id)
 	{
+	case UDPPROBE_OPT_PROBE_COUNT:
+	  probe_count = (uint8_t)tmp;
+	  break;
+
 	case UDPPROBE_OPT_DPORT:
 	  dport = (uint16_t)tmp;
+	  break;
+
+	case UDPPROBE_OPT_STOP_COUNT:
+	  stop_count = (uint8_t)tmp;
 	  break;
 
 	case UDPPROBE_OPT_OPTION:
@@ -238,9 +275,14 @@ void *scamper_do_udpprobe_alloc(char *str, char *errbuf, size_t errlen)
 	  userid = (uint32_t)tmp;
 	  break;
 
-	case UDPPROBE_OPT_TIMEOUT:
-	  timeout.tv_sec = tmp / 1000000;
-	  timeout.tv_usec = tmp % 1000000;
+	case UDPPROBE_OPT_WAIT_TIMEOUT:
+	  wait_timeout.tv_sec = tmp / 1000000;
+	  wait_timeout.tv_usec = tmp % 1000000;
+	  break;
+
+	case UDPPROBE_OPT_WAIT_PROBE:
+	  wait_probe.tv_sec = tmp / 1000000;
+	  wait_probe.tv_usec = tmp % 1000000;
 	  break;
 	}
     }
@@ -254,6 +296,12 @@ void *scamper_do_udpprobe_alloc(char *str, char *errbuf, size_t errlen)
   if(dport == 0)
     {
       snprintf(errbuf, errlen, "missing destination port parameter");
+      goto err;
+    }
+
+  if(stop_count > probe_count)
+    {
+      snprintf(errbuf, errlen, "stop-count cannot be larger than probe-count");
       goto err;
     }
 
@@ -274,8 +322,14 @@ void *scamper_do_udpprobe_alloc(char *str, char *errbuf, size_t errlen)
   up->data = payload; payload = NULL;
   up->len = payload_len;
   up->flags = flags;
-  up->sport = scamper_sport_default();
-  timeval_cpy(&up->wait_timeout, &timeout);
+  up->probe_count = probe_count;
+  up->stop_count = stop_count;
+  if(up->probe_count > 1)
+    up->sport = 0;
+  else
+    up->sport = scamper_sport_default();
+  timeval_cpy(&up->wait_timeout, &wait_timeout);
+  timeval_cpy(&up->wait_probe, &wait_probe);
 
   assert(errbuf[0] == '\0');
   return up;
