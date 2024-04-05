@@ -1240,7 +1240,7 @@ static int ring_init(scamper_dl_t *dl)
    * needed.
    */
   flags = MAP_SHARED | MAP_POPULATE;
-  if(scamper_option_ring_nolocked() == 0)
+  if(scamper_option_ring_locked())
     flags |= MAP_LOCKED;
 
   ring->map = mmap(NULL, ring->map_size, PROT_READ | PROT_WRITE, flags, fd, 0);
