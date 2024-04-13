@@ -82,9 +82,9 @@ static char *ping_header(const scamper_ping_t *ping)
 		(long)ping->start.tv_sec, (int)ping->start.tv_usec);
   string_concat(buf, sizeof(buf), &off,
 		", \"ping_sent\":%u, \"probe_size\":%u"
-		", \"userid\":%u, \"ttl\":%u, \"wait\":%u",
+		", \"userid\":%u, \"ttl\":%u, \"tos\":%u, \"wait\":%u",
 		ping->ping_sent, ping->probe_size,
-		ping->userid, ping->probe_ttl,
+		ping->userid, ping->probe_ttl, ping->probe_tos,
 		(uint32_t)ping->wait_probe.tv_sec);
   if(ping->wait_probe.tv_usec != 0)
     string_concat(buf, sizeof(buf), &off, ", \"wait_us\":%u",

@@ -154,11 +154,21 @@ int scamper_udp6_probe(scamper_probe_t *probe)
 
   i = probe->pr_ip_ttl;
   if(setsockopt(probe->pr_fd,
-		IPPROTO_IPV6, IPV6_UNICAST_HOPS, (void *)&i, sizeof(i)) == -1)
+		IPPROTO_IPV6, IPV6_UNICAST_HOPS, (void *)&i, sizeof(i)) != 0)
     {
       printerror(__func__, "could not set hlim to %d", i);
       return -1;
     }
+
+#ifdef IPV6_TCLASS
+  i = probe->pr_ip_tos;
+  if(setsockopt(probe->pr_fd,
+		IPPROTO_IPV6, IPV6_TCLASS, (void *)&i, sizeof(i)) != 0)
+    {
+      printerror(__func__, "could not set tclass to %d", i);
+      return -1;
+    }
+#endif /* IPV6_TCLASS */
 
   sockaddr_compose((struct sockaddr *)&sin6, AF_INET6,
 		   probe->pr_ip_dst->addr, probe->pr_udp_dport);

@@ -209,9 +209,9 @@ static void do_udpprobe_probe(scamper_task_t *task)
   struct sockaddr *sa;
   struct timeval wait_tv;
   socklen_t sl;
-  int fd, ttl = 255;
-  void *ttl_p = (void *)&ttl;
-  size_t ttl_l = sizeof(ttl);
+  int fd, i;
+  void *i_p = (void *)&i;
+  size_t i_l = sizeof(i);
 
   if(state->probec == 0 && udpprobe_state_alloc(task) != 0)
     goto err;
@@ -226,11 +226,20 @@ static void do_udpprobe_probe(scamper_task_t *task)
     }
   else if(SCAMPER_ADDR_TYPE_IS_IPV6(up->dst))
     {
-      if(setsockopt(fd, IPPROTO_IPV6, IPV6_UNICAST_HOPS, ttl_p, ttl_l) == -1)
+      i = 255;
+      if(setsockopt(fd, IPPROTO_IPV6, IPV6_UNICAST_HOPS, i_p, i_l) != 0)
 	{
-	  printerror(__func__, "could not set hlim to %d", ttl);
+	  printerror(__func__, "could not set hlim to %d", i);
 	  goto err;
 	}
+#ifdef IPV6_TCLASS
+      i = 0;
+      if(setsockopt(fd, IPPROTO_IPV6, IPV6_TCLASS, i_p, i_l) != 0)
+	{
+	  printerror(__func__, "could not set tclass to %d", i);
+	  goto err;
+	}
+#endif /* IPV6_TCLASS */
       sa = (struct sockaddr *)&sin6;
       sockaddr_compose(sa, AF_INET6, up->dst->addr, up->dport);
       sl = sizeof(sin6);

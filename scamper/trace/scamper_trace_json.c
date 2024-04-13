@@ -101,11 +101,11 @@ static char *hop_tostr(const scamper_trace_t *trace, scamper_trace_hop_t *hop)
 	 (trace->flags & SCAMPER_TRACE_FLAG_RXERR) == 0)
 	{
 	  string_concat(buf, sizeof(buf), &off,
-			", \"icmp_q_ttl\":%u, \"icmp_q_ipl\":%u",
-			hop->hop_icmp_q_ttl, hop->hop_icmp_q_ipl);
-	  if(SCAMPER_ADDR_TYPE_IS_IPV4(hop->hop_addr))
-	    string_concat(buf, sizeof(buf), &off, ", \"icmp_q_tos\":%u",
-			  hop->hop_icmp_q_tos);
+			", \"icmp_q_ttl\":%u"
+			", \"icmp_q_ipl\":%u"
+			", \"icmp_q_tos\":%u",
+			hop->hop_icmp_q_ttl, hop->hop_icmp_q_ipl,
+			hop->hop_icmp_q_tos);
 	}
       if(SCAMPER_TRACE_HOP_IS_ICMP_PTB(hop))
 	string_concat(buf, sizeof(buf), &off, ", \"icmp_nhmtu:\":%u",
