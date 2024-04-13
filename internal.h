@@ -1,7 +1,7 @@
 /*
  * internal.h
  *
- * $Id: internal.h,v 1.62 2024/02/28 02:11:53 mjl Exp $
+ * $Id: internal.h,v 1.63 2024/04/13 22:55:05 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -70,6 +70,7 @@ typedef unsigned short sa_family_t;
 #define _BSD_SOCKLEN_T_
 #define HAVE_BPF
 #define HAVE_BSD_ROUTE_SOCKET
+#define __APPLE_USE_RFC_3542 1
 #endif
 
 #if defined(__FreeBSD__)
