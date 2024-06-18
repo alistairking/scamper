@@ -341,6 +341,9 @@ static void do_ping_handle_dl(scamper_task_t *task, scamper_dl_rec_t *dl)
 	  else return;
 	}
       else return;
+
+      if(direction == 0)
+	return;
     }
   else if(SCAMPER_DL_IS_TCP(dl))
     {
@@ -645,12 +648,14 @@ static void do_ping_handle_icmp(scamper_task_t *task, scamper_icmp_resp_t *ir)
   if(state == NULL || state->seq == 0)
     return;
 
+#if 0
   /*
    * do not consider ICMP responses if we're going to catch them on
    * the datalink interface
    */
   if(state->dl != NULL)
     return;
+#endif
 
   /* if this is an echo reply packet, then check the id and sequence */
   if(SCAMPER_ICMP_RESP_IS_ECHO_REPLY(ir) || SCAMPER_ICMP_RESP_IS_TIME_REPLY(ir))
@@ -878,6 +883,9 @@ static void do_ping_handle_icmp(scamper_task_t *task, scamper_icmp_resp_t *ir)
       reply->reply_ttl = (uint8_t)ir->ir_ip_ttl;
       reply->flags |= SCAMPER_PING_REPLY_FLAG_REPLY_TTL;
     }
+
+  if(probe->dlts != 0)
+    reply->flags |= SCAMPER_PING_REPLY_FLAG_DLTX;
 
   /*
    * if this is the first reply we have for this hop, then increment
