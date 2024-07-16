@@ -1,7 +1,7 @@
 /*
  * scamper_do_tbit.c
  *
- * $Id: scamper_tbit_do.c,v 1.204 2024/02/27 03:34:02 mjl Exp $
+ * $Id: scamper_tbit_do.c,v 1.206 2024/07/02 02:00:31 mjl Exp $
  *
  * Copyright (C) 2009-2010 Ben Stasiewicz
  * Copyright (C) 2009-2010 Stephen Eichler
@@ -776,7 +776,6 @@ static int tbit_reassemble(scamper_task_t *task, scamper_dl_rec_t **out,
     }
 
   timeval_cpy(&newp->dl_tv, &dl->dl_tv);
-  newp->dl_type       = SCAMPER_DL_TYPE_RAW;
   newp->dl_net_type   = SCAMPER_DL_REC_NET_TYPE_IP;
   newp->dl_ifindex    = dl->dl_ifindex;
   newp->dl_af         = dl->dl_af;
@@ -3771,8 +3770,7 @@ static void do_tbit_probe(scamper_task_t *task)
 
   /* Common to all probes */
   probe.pr_dl     = scamper_fd_dl_get(state->dl);
-  probe.pr_dl_buf = state->dlhdr->buf;
-  probe.pr_dl_len = state->dlhdr->len;
+  probe.pr_dlhdr  = state->dlhdr;
   probe.pr_ip_src = tbit->src;
   probe.pr_ip_dst = tbit->dst;
   probe.pr_ip_ttl = tbit->client_ipttl;

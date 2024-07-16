@@ -1,7 +1,7 @@
 /*
  * scamper_tracelb.c
  *
- * $Id: scamper_tracelb.c,v 1.79 2023/07/31 07:47:48 mjl Exp $
+ * $Id: scamper_tracelb.c,v 1.80 2024/03/04 19:36:41 mjl Exp $
  *
  * Copyright (C) 2008-2010 The University of Waikato
  * Copyright (C) 2012      The Regents of the University of California
@@ -330,7 +330,7 @@ scamper_tracelb_probeset_t *scamper_tracelb_probeset_alloc(void)
 {
   scamper_tracelb_probeset_t *set;
   if((set = malloc_zero(sizeof(scamper_tracelb_probeset_t))) == NULL)
-    return NULL;  
+    return NULL;
 #ifdef BUILDING_LIBSCAMPERFILE
   set->refcnt = 1;
 #endif

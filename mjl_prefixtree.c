@@ -31,7 +31,7 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  *
- * $Id: mjl_prefixtree.c,v 1.20 2023/08/18 21:32:20 mjl Exp $
+ * $Id: mjl_prefixtree.c,v 1.21 2024/03/04 19:36:41 mjl Exp $
  *
  */
 
@@ -476,7 +476,7 @@ int prefix6_isvalid(const struct in6_addr *net, uint8_t len)
     }
 #endif
 
-  return 1;     
+  return 1;
 }
 
 prefix4_t *prefixtree_find_ip4(const prefixtree_t *tree,
@@ -678,7 +678,7 @@ prefixtree_node_t *prefixtree_insert4_dm(prefixtree_t *tree, prefix4_t *pref,
     bit = x->bit;
   else
     bit = pref->len;
-  
+
   /* get the first bit different between the two prefixes */
   fbd = prefix4_fbd(x->pref.v4, pref);
   if(fbd > bit)
@@ -824,7 +824,7 @@ prefixtree_node_t *prefixtree_insert6_dm(prefixtree_t *tree, prefix6_t *pref,
     bit = x->bit;
   else
     bit = pref->len;
-  
+
   /* get the first bit different between the two prefixes */
   fbd = prefix6_fbd(x->pref.v6, pref);
   if(fbd > bit)

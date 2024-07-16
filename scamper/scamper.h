@@ -1,7 +1,7 @@
 /*
  * scamper.h
  *
- * $Id: scamper.h,v 1.73.2.1 2024/02/29 03:56:38 mjl Exp $
+ * $Id: scamper.h,v 1.77.2.1 2024/07/16 01:11:34 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -67,11 +67,16 @@ unsigned int scamper_option_ring_blocks(void);
 unsigned int scamper_option_ring_block_size(void);
 int scamper_option_ring_locked(void);
 
+int scamper_option_dlany(void);
+int scamper_option_dynfilter(void);
+
 void scamper_exitwhendone(int on);
 
 #ifdef HAVE_SETEUID
 uid_t scamper_getuid(void);
 uid_t scamper_geteuid(void);
+int scamper_seteuid_raise(uid_t *uid, uid_t *euid);
+void scamper_seteuid_lower(uid_t *uid, uid_t *euid);
 #endif
 
 int scamper_pidfile(void);
@@ -79,6 +84,6 @@ int scamper_pidfile(void);
 uint16_t scamper_sport_default(void);
 uint16_t scamper_pid_u16(void);
 
-#define SCAMPER_VERSION "20240229"
+#define SCAMPER_VERSION "20240716"
 
 #endif /* __SCAMPER_H */

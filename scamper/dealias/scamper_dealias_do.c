@@ -1,7 +1,7 @@
 /*
  * scamper_do_dealias.c
  *
- * $Id: scamper_dealias_do.c,v 1.198 2024/02/28 04:25:07 mjl Exp $
+ * $Id: scamper_dealias_do.c,v 1.199 2024/03/04 19:36:41 mjl Exp $
  *
  * Copyright (C) 2008-2011 The University of Waikato
  * Copyright (C) 2012-2013 Matthew Luckie
@@ -879,7 +879,7 @@ static int dealias_ally_handlereply_v6(scamper_task_t *task,
 	}
     }
 
-  /* if the response contains an IP-ID, then we're good for this def */  
+  /* if the response contains an IP-ID, then we're good for this def */
   if((reply->flags & SCAMPER_DEALIAS_REPLY_FLAG_IPID32) != 0)
     {
       pd->flags |= DEALIAS_PROBEDEF_FLAG_RX_IPID;
@@ -1029,7 +1029,7 @@ static dealias_probedef_t *
 dealias_radargun_def(scamper_dealias_t *dealias, dealias_state_t *state)
 {
   scamper_dealias_radargun_t *rg = dealias->data;
-  dealias_radargun_t *rgstate = state->methodstate; 
+  dealias_radargun_t *rgstate = state->methodstate;
   if((rg->flags & SCAMPER_DEALIAS_RADARGUN_FLAG_SHUFFLE) == 0)
     return state->pds[state->probe];
   return state->pds[rgstate->order[rgstate->i++]];
@@ -2433,7 +2433,7 @@ static void do_dealias_probe(scamper_task_t *task)
     {
       ptb = slist_head_pop(state->ptbq); def = ptb->def;
       probe.pr_ip_src = def->src;
-      probe.pr_ip_dst = def->dst;      
+      probe.pr_ip_dst = def->dst;
       probe.pr_ip_ttl = 255;
       SCAMPER_PROBE_ICMP_PTB(&probe, def->mtu);
       probe.pr_data   = ptb->quote;

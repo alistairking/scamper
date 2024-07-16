@@ -6,10 +6,10 @@
  * Copyright (c) 2011-2013 Internap Network Services Corporation
  * Copyright (c) 2013      Matthew Luckie
  * Copyright (c) 2013-2015 The Regents of the University of California
- * Copyright (c) 2019-2023 Matthew Luckie
+ * Copyright (c) 2019-2024 Matthew Luckie
  * Authors: Brian Hammond, Matthew Luckie
  *
- * $Id: scamper_ping_json.c,v 1.34 2024/02/28 23:35:23 mjl Exp $
+ * $Id: scamper_ping_json.c,v 1.40 2024/06/26 20:05:29 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -33,6 +33,8 @@
 
 #include "scamper_addr.h"
 #include "scamper_addr_int.h"
+#include "scamper_ifname.h"
+#include "scamper_ifname_int.h"
 #include "scamper_list.h"
 #include "scamper_ping.h"
 #include "scamper_ping_int.h"
@@ -42,24 +44,11 @@
 
 #include "utils.h"
 
-static char *ping_probe_data(const scamper_ping_t *ping, char *buf, size_t len)
-{
-  size_t off = 0;
-  uint16_t i;
-  for(i=0; i+4<ping->probe_datalen; i+=4)
-    string_concat(buf, len, &off, "%02x%02x%02x%02x",
-		  ping->probe_data[i+0], ping->probe_data[i+1],
-		  ping->probe_data[i+2], ping->probe_data[i+3]);
-  while(i<ping->probe_datalen)
-    string_concat(buf, len, &off, "%02x", ping->probe_data[i++]);
-  return buf;
-}
-
 static char *ping_header(const scamper_ping_t *ping)
 {
   static const char *flags[] = {
     "v4rr", "spoof", "payload", "tsonly", "tsandaddr", "icmpsum", "dl", "tbt",
-    "nosrc", "raw"
+    "nosrc", "raw", "sockrx"
   };
   char buf[1024], tmp[512];
   size_t off = 0;
@@ -82,9 +71,9 @@ static char *ping_header(const scamper_ping_t *ping)
 		(long)ping->start.tv_sec, (int)ping->start.tv_usec);
   string_concat(buf, sizeof(buf), &off,
 		", \"ping_sent\":%u, \"probe_size\":%u"
-		", \"userid\":%u, \"ttl\":%u, \"wait\":%u",
+		", \"userid\":%u, \"ttl\":%u, \"tos\":%u, \"wait\":%u",
 		ping->ping_sent, ping->probe_size,
-		ping->userid, ping->probe_ttl,
+		ping->userid, ping->probe_ttl, ping->probe_tos,
 		(uint32_t)ping->wait_probe.tv_sec);
   if(ping->wait_probe.tv_usec != 0)
     string_concat(buf, sizeof(buf), &off, ", \"wait_us\":%u",
@@ -105,19 +94,19 @@ static char *ping_header(const scamper_ping_t *ping)
 
   if(ping->probe_datalen > 0 && ping->probe_data != NULL)
     {
-      if((ping->flags & SCAMPER_PING_FLAG_PAYLOAD) != 0)
-	string_concat(buf, sizeof(buf), &off, ", \"payload\":");
-      else
-	string_concat(buf, sizeof(buf), &off, ", \"pattern\":");
-      string_concat(buf, sizeof(buf), &off, "\"%s\"",
-		    ping_probe_data(ping, tmp, sizeof(tmp)));
+      string_concat(buf, sizeof(buf), &off, ", \"%s\":\"",
+		    (ping->flags & SCAMPER_PING_FLAG_PAYLOAD) != 0 ?
+		    "payload" : "pattern");
+      string_byte2hex(buf, sizeof(buf), &off,
+		      ping->probe_data, ping->probe_datalen);
+      string_concat(buf, sizeof(buf), &off, "\"");
     }
 
   if(ping->flags != 0)
     {
       c = 0;
       string_concat(buf, sizeof(buf), &off, ", \"flags\":[");
-      for(u8=0; u8<10; u8++)
+      for(u8=0; u8<sizeof(flags) / sizeof(char *); u8++)
 	{
 	  if((ping->flags & (0x1 << u8)) == 0)
 	    continue;
@@ -182,6 +171,10 @@ static char *ping_reply(const scamper_ping_t *ping,
   string_concat(buf, sizeof(buf), &off, ", \"reply_proto\":%s",
 		ping_reply_proto(reply, tmp, sizeof(tmp)));
 
+  if(reply->ifname != NULL && reply->ifname->ifname != NULL)
+    string_concat(buf, sizeof(buf), &off, ", \"ifname\":\"%s\"",
+		  reply->ifname->ifname);
+
   if(reply->flags != 0)
     {
       tmp[0] = '\0'; off2 = 0;
@@ -232,7 +225,7 @@ static char *ping_reply(const scamper_ping_t *ping,
       dport = ping->probe_dport;
       if(SCAMPER_PING_METHOD_IS_VARY_DPORT(ping))
 	dport += reply->probe_id;
-	
+
       string_concat(buf, sizeof(buf), &off,
 		    ", \"%s_sport\":%u, \"%s_dport\":%u",
 		    pt, sport, pt, dport);
@@ -250,6 +243,10 @@ static char *ping_reply(const scamper_ping_t *ping,
       string_concat(buf, sizeof(buf), &off,
 		    ", \"reply_ipid\":%u", reply->reply_ipid32);
     }
+
+  if(reply->flags & SCAMPER_PING_REPLY_FLAG_REPLY_TOS)
+    string_concat(buf, sizeof(buf), &off,
+		  ", \"reply_tos\":%u", reply->reply_tos);
 
   if(SCAMPER_PING_REPLY_IS_ICMP(reply))
     {

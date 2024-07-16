@@ -1,12 +1,12 @@
 /*
- * fuzz_dl_parse_ip : fuzz dl_parse_ip function
+ * fuzz_dl_parse : fuzz dl_parse functions
  *
- * $Id: fuzz_dl_parse_ip.c,v 1.3 2023/10/08 04:14:17 mjl Exp $
+ * $Id: fuzz_dl_parse.c,v 1.1 2024/07/02 00:50:12 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
  *
- * Copyright (C) 2023 Matthew Luckie
+ * Copyright (C) 2023-2024 Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -35,7 +35,13 @@
  * function prototype of a normally static function that is not in
  * scamper_dl.h
  */
+#ifdef TEST_DL_PARSE_IP
 int dl_parse_ip(scamper_dl_rec_t *dl, uint8_t *pktbuf, size_t pktlen);
+#endif
+
+#ifdef TEST_DL_PARSE_ARP
+int dl_parse_arp(scamper_dl_rec_t *dl, uint8_t *pktbuf, size_t pktlen);
+#endif
 
 int main(int argc, char *argv[])
 {
@@ -56,7 +62,13 @@ int main(int argc, char *argv[])
   if(read_wrap(fd, buf, &readc, len) != 0 || readc != len)
     goto done;
 
+#ifdef TEST_DL_PARSE_IP
   dl_parse_ip(&dlr, buf, len);
+#endif
+#ifdef TEST_DL_PARSE_ARP
+  dl_parse_arp(&dlr, buf, len);
+#endif
+
   rc = 0;
 
  done:

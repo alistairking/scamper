@@ -5,7 +5,7 @@
  *
  * Author: Matthew Luckie
  *
- * $Id: scamper_udpprobe_warts.c,v 1.3 2023/11/22 21:53:57 mjl Exp $
+ * $Id: scamper_udpprobe_warts.c,v 1.5 2024/04/04 06:55:33 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -386,7 +386,7 @@ static int warts_udpprobe_params_write(const scamper_udpprobe_t *up,
     {&up->dport,          (wpw_t)insert_uint16,       NULL},
     {&up->start,          (wpw_t)insert_timeval,      NULL},
     {&up->wait_timeout,   (wpw_t)insert_rtt,          NULL},
-    {&up->flags,          (wpw_t)insert_byte,         NULL},    
+    {&up->flags,          (wpw_t)insert_byte,         NULL},
     {&up->stop,           (wpw_t)insert_byte,         NULL},
     {&up->len,            (wpw_t)insert_uint16,       NULL},
     {up->data,            (wpw_t)insert_bytes_uint16, &up_len},

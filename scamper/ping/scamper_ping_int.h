@@ -1,7 +1,7 @@
 /*
  * scamper_ping_int.h
  *
- * $Id: scamper_ping_int.h,v 1.8 2024/02/27 01:07:22 mjl Exp $
+ * $Id: scamper_ping_int.h,v 1.12 2024/06/26 20:05:29 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -125,6 +125,39 @@ uint32_t scamper_ping_reply_total(const scamper_ping_t *ping);
   (SCAMPER_PING_REPLY_IS_ICMP_UNREACH_PORT(reply) ||  \
    SCAMPER_PING_REPLY_IS_UDP(reply))))
 
+#define SCAMPER_PING_FLAG_IS_V4RR(ping) (	\
+ ((ping)->flags & SCAMPER_PING_FLAG_V4RR))
+
+#define SCAMPER_PING_FLAG_IS_SPOOF(ping) (	\
+ ((ping)->flags & SCAMPER_PING_FLAG_SPOOF))
+
+#define SCAMPER_PING_FLAG_IS_PAYLOAD(ping) (	\
+ ((ping)->flags & SCAMPER_PING_FLAG_PAYLOAD))
+
+#define SCAMPER_PING_FLAG_IS_TSONLY(ping) (	\
+ ((ping)->flags & SCAMPER_PING_FLAG_TSONLY))
+
+#define SCAMPER_PING_FLAG_IS_TSANDADDR(ping) (	\
+ ((ping)->flags & SCAMPER_PING_FLAG_TSANDADDR))
+
+#define SCAMPER_PING_FLAG_IS_ICMPSUM(ping) (	\
+ ((ping)->flags & SCAMPER_PING_FLAG_ICMPSUM))
+
+#define SCAMPER_PING_FLAG_IS_DL(ping) (		\
+ ((ping)->flags & SCAMPER_PING_FLAG_DL))
+
+#define SCAMPER_PING_FLAG_IS_TBT(ping) (	\
+ ((ping)->flags & SCAMPER_PING_FLAG_TBT))
+
+#define SCAMPER_PING_FLAG_IS_NOSRC(ping) (	\
+ ((ping)->flags & SCAMPER_PING_FLAG_NOSRC))
+
+#define SCAMPER_PING_FLAG_IS_RAW(ping) (	\
+ ((ping)->flags & SCAMPER_PING_FLAG_RAW))
+
+#define SCAMPER_PING_FLAG_IS_SOCKRX(ping) (	\
+ ((ping)->flags & SCAMPER_PING_FLAG_SOCKRX))
+
 struct scamper_ping_stats
 {
   uint32_t nreplies;
@@ -136,6 +169,8 @@ struct scamper_ping_stats
   struct timeval avg_rtt;
   struct timeval stddev_rtt;
 };
+
+struct scamper_ifname;
 
 /*
  * scamper_ping_reply_v4rr
@@ -206,6 +241,7 @@ struct scamper_ping_reply
   uint16_t                   probe_sport;
   uint8_t                    reply_proto;
   uint8_t                    reply_ttl;
+  uint8_t                    reply_tos;
   uint16_t                   reply_size;
   uint16_t                   reply_ipid;
   uint32_t                   reply_ipid32;
@@ -223,6 +259,9 @@ struct scamper_ping_reply
   /* the time elapsed between sending the probe and getting this response */
   struct timeval             tx;
   struct timeval             rtt;
+
+  /* the name of the interface that received the response */
+  struct scamper_ifname     *ifname;
 
   /* data found in IP options, if any */
   scamper_ping_reply_v4rr_t *v4rr;

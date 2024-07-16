@@ -677,7 +677,7 @@ static int do_ctrlsock_readline(void *param, uint8_t *buf, size_t len)
   if(op == '+' || op == '-')
     {
       line++;
-      while(isspace(*line) != 0 && *line != '\0')
+      while(*line != '\0' && isspace((unsigned char)*line) != 0)
 	line++;
       if(*line == '\0')
 	return 0;

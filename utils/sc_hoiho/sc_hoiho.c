@@ -1,7 +1,7 @@
 /*
  * sc_hoiho: Holistic Orthography of Internet Hostname Observations
  *
- * $Id: sc_hoiho.c,v 1.27 2023/12/02 09:31:10 mjl Exp $
+ * $Id: sc_hoiho.c,v 1.29 2024/04/26 06:52:24 mjl Exp $
  *
  *         Matthew Luckie
  *         mjl@luckie.org.nz
@@ -1451,7 +1451,7 @@ static int str_tojson(const char *str, char *buf, size_t len)
 	}
       else
 	{
-	  if(isprint(*str) == 0 || len - off < 2)
+	  if(len - off < 2 || isprint((unsigned char)*str) == 0)
 	    return -1;
 	}
       buf[off++] = *str;
@@ -2050,10 +2050,10 @@ static int pt_to_bits_ip(const sc_ifacedom_t *ifd, size_t *l, size_t lc,
 	k = ifd->len - 1;
 
       /* skip over punctuation */
-      while(isalnum(ifd->label[j]) == 0 && j < k)
+      while(j < k && isalnum((unsigned char)ifd->label[j]) == 0)
 	j++;
       x = k;
-      while(isalnum(ifd->label[x]) == 0 && x >= j)
+      while(x > 0 && x >= j && isalnum((unsigned char)ifd->label[x]) == 0)
 	x--;
       if(x >= j && pt_to_bits_trip(list, BIT_TYPE_SKIP, j, x) != 0)
 	goto done;
@@ -2174,10 +2174,10 @@ static int pt_to_bits_ctype(const sc_ifacedom_t *ifd, int *ctypes,
        * boundary in.
        */
       d = e = -1;
-      if(isdigit(s[k]) != 0)
+      if(isdigit((unsigned char)s[k]) != 0)
 	{
 	  d = e = k;
-	  while(d > 0 && isdigit(s[d-1]) != 0)
+	  while(d > 0 && isdigit((unsigned char)s[d-1]) != 0)
 	    d--;
 	  k = d - 1;
 	}
@@ -2185,7 +2185,7 @@ static int pt_to_bits_ctype(const sc_ifacedom_t *ifd, int *ctypes,
       /* calculate boundaries of skip, skipping over punctuation */
       if(k >= 0)
 	{
-	  while(k > 0 && isalnum(s[k]) == 0)
+	  while(k > 0 && isalnum((unsigned char)s[k]) == 0)
 	    k--;
 	  if(pt_to_bits_trip(list, BIT_TYPE_SKIP, 0, k) != 0)
 	    goto done;
@@ -2204,10 +2204,10 @@ static int pt_to_bits_ctype(const sc_ifacedom_t *ifd, int *ctypes,
 
       /* if there are digits immediately following the capture */
       j = c[i+1] + 1;
-      if(isdigit(s[j]) != 0)
+      if(isdigit((unsigned char)s[j]) != 0)
 	{
 	  k = j;
-	  while(isdigit(s[k+1]) != 0)
+	  while(isdigit((unsigned char)s[k+1]) != 0)
 	    k++;
 	  if(pt_to_bits_trip(list, BIT_TYPE_SKIP_DIGIT, j, k) != 0)
 	    goto done;
@@ -2215,7 +2215,7 @@ static int pt_to_bits_ctype(const sc_ifacedom_t *ifd, int *ctypes,
 	}
 
       /* open the next skip portion, skipping over dashes and dots */
-      while(s[j] != '\0' && isalnum(s[j]) == 0)
+      while(s[j] != '\0' && isalnum((unsigned char)s[j]) == 0)
 	j++;
 
       /* skip portion */
@@ -2224,7 +2224,7 @@ static int pt_to_bits_ctype(const sc_ifacedom_t *ifd, int *ctypes,
 	  if(i+2<cc)
 	    {
 	      k = c[i+2]-1;
-	      while(isalnum(s[k]) == 0 && k > c[i+1])
+	      while(k > c[i+1] && isalnum((unsigned char)s[k]) == 0)
 		k--;
 	    }
 	  else
@@ -2304,14 +2304,29 @@ static int pt_to_bits(const char *str, size_t len, size_t *c, size_t cc,
     goto done;
 
   for(i=0; i<cc; i+=2)
-    for(j=c[i]; j<=c[i+1]; j++)
-      plan[j] |= cap;
+    {
+      for(j=c[i]; j<=c[i+1]; j++)
+	{
+	  assert(j < len);
+	  plan[j] |= cap;
+	}
+    }
   for(i=0; i<lc; i+=2)
-    for(j=l[i]; j<=l[i+1]; j++)
-      plan[j] |= lit;
+    {
+      for(j=l[i]; j<=l[i+1]; j++)
+	{
+	  assert(j < len);
+	  plan[j] |= lit;
+	}
+    }
   for(i=0; i<dc; i+=2)
-    for(j=d[i]; j<=d[i+1]; j++)
-      plan[j] |= dig;
+    {
+      for(j=d[i]; j<=d[i+1]; j++)
+	{
+	  assert(j < len);
+	  plan[j] |= dig;
+	}
+    }
 
   i = 0;
   while(i < len)
@@ -2346,13 +2361,13 @@ static int pt_to_bits(const char *str, size_t len, size_t *c, size_t cc,
 	}
       else
 	{
-	  while(i <= j && isalnum(str[i]) == 0)
+	  while(i <= j && isalnum((unsigned char)str[i]) == 0)
 	    i++;
 	  k = j;
-	  while(i <= k && isalnum(str[k]) == 0)
+	  while(i <= k && isalnum((unsigned char)str[k]) == 0)
 	    k--;
 
-	  if(i <= k && isalnum(str[i]) != 0)
+	  if(i <= k && isalnum((unsigned char)str[i]) != 0)
 	    {
 	      m = BIT_TYPE_SKIP;
 	      if(pt_to_bits_trip(list, m, i, k) != 0)
@@ -2422,7 +2437,7 @@ static int pt_to_bits_noip(const sc_ifacedom_t *ifd,
       if(ip_s > c[i])
 	{
 	  x = ip_s-1;
-	  while(isalpha(ifd->label[x]) == 0 && x > c[i])
+	  while(x > c[i] && isalpha((unsigned char)ifd->label[x]) == 0)
 	    x--;
 	  assert(dc < cc + 2);
 	  d[dc++] = c[i];
@@ -2432,7 +2447,7 @@ static int pt_to_bits_noip(const sc_ifacedom_t *ifd,
       if(ip_e < c[i+1])
 	{
 	  x = ip_e+1;
-	  while(isalpha(ifd->label[x]) == 0 && x < c[i+1])
+	  while(x < c[i+1] && isalpha((unsigned char)ifd->label[x]) == 0)
 	    x++;
 	  assert(dc < cc + 2);
 	  d[dc++] = x;
@@ -2538,7 +2553,7 @@ static int sc_geomap_code(sc_geomap_t *map, sc_ptrc_t *x, size_t xc)
       j = 0; cptr = x[0].ptr;
       for(i=0; i<x[0].c; i++)
 	{
-	  if(isalnum(cptr[i]) == 0)
+	  if(isalnum((unsigned char)cptr[i]) == 0)
 	    continue;
 	  map->code[j++] = cptr[i];
 	}
@@ -2873,7 +2888,7 @@ static int sc_geohint_street_tostr2(const char *in, char *out, size_t len)
   char *endptr;
   long lo;
 
-  if(isdigit(*in) == 0)
+  if(isdigit((unsigned char)*in) == 0)
     return -1;
   lo = strtol(in, &endptr, 10);
   if(lo > 0 && lo < 10)
@@ -2884,9 +2899,9 @@ static int sc_geohint_street_tostr2(const char *in, char *out, size_t len)
   in = endptr;
   while(*in != '\0')
     {
-      if(isalpha(*in) != 0)
+      if(isalpha((unsigned char)*in) != 0)
 	break;
-      if(isspace(*in) == 0)
+      if(isspace((unsigned char)*in) == 0)
 	return -1;
       in++;
     }
@@ -2912,7 +2927,7 @@ static int sc_geohint_street_tostr(const char *in, char *out, size_t len)
 
   while(*in != '\0')
     {
-      if(isdigit(*in) != 0)
+      if(isdigit((unsigned char)*in) != 0)
 	{
 	  lo = strtol(in, &endptr, 10);
 	  if(lo == 0 || lo >= 100 ||
@@ -2928,7 +2943,7 @@ static int sc_geohint_street_tostr(const char *in, char *out, size_t len)
 	  else
 	    snprintf(tmp, sizeof(tmp), "%sy%s",
 		     tens[(lo / 10) - 2], ones[(lo % 10) - 1]);
-	  tmp[0] = toupper(tmp[0]);
+	  tmp[0] = toupper((unsigned char)tmp[0]);
 
 	  x = 0;
 	  while(tmp[x] != '\0')
@@ -2937,7 +2952,7 @@ static int sc_geohint_street_tostr(const char *in, char *out, size_t len)
 	  out[off++] = *endptr;
 	  in = endptr;
 	}
-      else if(isalpha(*in) != 0 || *in == ' ')
+      else if(*in == ' ' || isalpha((unsigned char)*in) != 0)
 	{
 	  out[off++] = *in;
 	}
@@ -3269,22 +3284,24 @@ static int sc_geohint_abbrv(const char *hint_p, const char *map_c,
 	   * York") then require the first letter of the next word to
 	   * match
 	   */
-	  if(hint_p[ho] != '\0' && isalnum(hint_p[ho]) == 0)
+	  if(hint_p[ho] != '\0' && isalnum((unsigned char)hint_p[ho]) == 0)
 	    {
 	      ho++;
 	      for(;;)
 		{
-		  while(isalnum(hint_p[ho]) == 0 && hint_p[ho] != '\0')
+		  while(hint_p[ho] != '\0' &&
+			isalnum((unsigned char)hint_p[ho]) == 0)
 		    ho++;
-		  if(hint_p[ho] == '\0' || tolower(hint_p[ho]) == map_c[mo])
+		  if(hint_p[ho] == '\0' ||
+		     tolower((unsigned char)hint_p[ho]) == map_c[mo])
 		    break;
-		  while(isalnum(hint_p[ho]) != 0)
+		  while(isalnum((unsigned char)hint_p[ho]) != 0)
 		    ho++;
 		}
 	    }
 
 	  /* if the characters match, move onto the next one */
-	  if(tolower(hint_p[ho]) == map_c[mo])
+	  if(tolower((unsigned char)hint_p[ho]) == map_c[mo])
 	    {
 	      offs[mo] = ho;
 	      ho++;
@@ -3689,7 +3706,7 @@ static int sc_geohint_fudge_runlen(const char *hint_p, const size_t *offs,
     {
       if(offs[x] - 1 != last)
 	{
-	  if(isalnum(hint_p[offs[x]-1]) == 0)
+	  if(isalnum((unsigned char)hint_p[offs[x]-1]) == 0)
 	    {
 	      last = offs[x];
 	      cur++;
@@ -3824,7 +3841,8 @@ static int sc_geohint_fudge_place_fac(const sc_georef_t *gr,
     return 0;
 
   /* facility names expressed as in "RagingWire" */
-  if(hint->facname != NULL && map->code[0] == tolower(hint->facname[0]) &&
+  if(hint->facname != NULL &&
+     map->code[0] == tolower((unsigned char)hint->facname[0]) &&
      (tp_c = sc_geohint_fudgeeval(hint, gr, re, &tp_rtt)) > 0 &&
      sc_geohint_abbrv(hint->facname, map->code, gr->offs, map->codelen,
 		      sc_geohint_fudge_place2_ok) != 0)
@@ -3838,7 +3856,7 @@ static int sc_geohint_fudge_place_fac(const sc_georef_t *gr,
   if(hint->street != NULL &&
      (tp_c = sc_geohint_fudgeeval(hint, gr, re, &tp_rtt)) > 0 &&
      sc_geohint_street_tostr2(hint->street, buf, sizeof(buf)) == 0 &&
-     map->code[0] == tolower(buf[0]) &&
+     map->code[0] == tolower((unsigned char)buf[0]) &&
      sc_geohint_abbrv(buf, map->code, gr->offs, map->codelen,
 		      sc_geohint_fudge_place_fac_ok) != 0)
     {
@@ -4038,9 +4056,9 @@ static int idx(int S_len, int T_len, int S_i, int T_i)
 
 static int char_class(char c)
 {
-  if(isalpha(c))
+  if(isalpha((unsigned char)c))
     return 0;
-  else if(isdigit(c))
+  else if(isdigit((unsigned char)c))
     return 1;
   return 2;
 }
@@ -4072,11 +4090,11 @@ static int lcs_trim_class(slist_t *X, const char *S, const char *T)
        * if the class we ended on is non-alphanum, then continue
        * shifting
        */
-      if(isalnum(S[pt->S_start]) == 0)
+      if(isalnum((unsigned char)S[pt->S_start]) == 0)
 	{
 	  while(pt->S_start != pt->S_end && pt->T_start != pt->T_end)
 	    {
-	      if(isalnum(S[pt->S_start]) == 0)
+	      if(isalnum((unsigned char)S[pt->S_start]) == 0)
 		{
 		  pt->S_start++;
 		  pt->T_start++;
@@ -4105,11 +4123,11 @@ static int lcs_trim_class(slist_t *X, const char *S, const char *T)
        * if the class we ended on is non-alphanum, then continue
        * shifting
        */
-      if(isalnum(S[pt->S_end]) == 0)
+      if(isalnum((unsigned char)S[pt->S_end]) == 0)
 	{
 	  while(pt->S_start != pt->S_end && pt->T_start != pt->T_end)
 	    {
-	      if(isalnum(S[pt->S_end]) == 0)
+	      if(isalnum((unsigned char)S[pt->S_end]) == 0)
 		{
 		  pt->S_end--;
 		  pt->T_end--;
@@ -4118,7 +4136,7 @@ static int lcs_trim_class(slist_t *X, const char *S, const char *T)
 	    }
 	}
 
-      if(isalnum(S[pt->S_start]) != 0 &&
+      if(isalnum((unsigned char)S[pt->S_start]) != 0 &&
 	 (pt->S_start == 0 ||
 	  char_class(S[pt->S_start-1]) != char_class(S[pt->S_start])) &&
 	 (pt->T_start == 0 ||
@@ -4157,9 +4175,11 @@ static int lcs_trim(slist_t *X, const char *S, const char *T)
       /* shift start offset */
       while(pt->S_start != pt->S_end && pt->T_start != pt->T_end)
 	{
-	  if((pt->S_start > 0 && isalnum(S[pt->S_start-1]) != 0) ||
-	     (pt->T_start > 0 && isalnum(T[pt->T_start-1]) != 0) ||
-	     isalnum(S[pt->S_start]) == 0)
+	  if((pt->S_start > 0 &&
+	     isalnum((unsigned char)S[pt->S_start-1]) != 0) ||
+	     (pt->T_start > 0 &&
+	      isalnum((unsigned char)T[pt->T_start-1]) != 0) ||
+	     isalnum((unsigned char)S[pt->S_start]) == 0)
 	    {
 	      pt->S_start++;
 	      pt->T_start++;
@@ -4172,9 +4192,9 @@ static int lcs_trim(slist_t *X, const char *S, const char *T)
 	{
 	  while(pt->S_start != pt->S_end && pt->T_start != pt->T_end)
 	    {
-	      if(isalnum(S[pt->S_end+1]) != 0 ||
-		 isalnum(T[pt->T_end+1]) != 0 ||
-		 isalnum(S[pt->S_end]) == 0)
+	      if(isalnum((unsigned char)S[pt->S_end+1]) != 0 ||
+		 isalnum((unsigned char)T[pt->T_end+1]) != 0 ||
+		 isalnum((unsigned char)S[pt->S_end]) == 0) 
 		{
 		  pt->S_end--;
 		  pt->T_end--;
@@ -4183,10 +4203,10 @@ static int lcs_trim(slist_t *X, const char *S, const char *T)
 	    }
 	}
 
-      if((pt->S_start == 0 || isalnum(S[pt->S_start-1]) == 0) &&
-	 (pt->T_start == 0 || isalnum(T[pt->T_start-1]) == 0) &&
-	 isalnum(S[pt->S_end+1]) == 0 &&
-	 isalnum(T[pt->T_end+1]) == 0)
+      if((pt->S_start == 0 || isalnum((unsigned char)S[pt->S_start-1]) == 0) &&
+	 (pt->T_start == 0 || isalnum((unsigned char)T[pt->T_start-1]) == 0) &&
+	 isalnum((unsigned char)S[pt->S_end+1]) == 0 &&
+	 isalnum((unsigned char)T[pt->T_end+1]) == 0)
 	{
 	  if(slist_tail_push(Y, pt) == NULL)
 	    goto err;
@@ -4228,7 +4248,7 @@ static slist_t *lcs_asn(sc_ifacedom_t *S, sc_ifacedom_t *T)
 
   if(S->iface->as_s > 0 && T->iface->as_s > 0 &&
      S->label[S->iface->as_s-1] == T->label[T->iface->as_s-1] &&
-     isalnum(S->label[S->iface->as_s-1]) != 0)
+     isalnum((unsigned char)S->label[S->iface->as_s-1]) != 0)
     {
       /*
        * Expand capture before the ASN to see how much of the
@@ -4240,7 +4260,7 @@ static slist_t *lcs_asn(sc_ifacedom_t *S, sc_ifacedom_t *T)
       while(s_start != 0 && t_start != 0)
 	{
 	  if(S->label[s_start-1] != T->label[t_start-1] ||
-	     isalnum(S->label[s_start-1]) == 0)
+	     isalnum((unsigned char)S->label[s_start-1]) == 0)
 	    break;
 	  s_start--; t_start--;
 	}
@@ -4249,7 +4269,7 @@ static slist_t *lcs_asn(sc_ifacedom_t *S, sc_ifacedom_t *T)
     }
 
   if(S->label[S->iface->as_e+1] == T->label[T->iface->as_e+1] &&
-     isalnum(S->label[S->iface->as_e+1]) != 0)
+     isalnum((unsigned char)S->label[S->iface->as_e+1]) != 0)
     {
       /*
        * Expand capture after the ASN to see how much of the
@@ -4261,7 +4281,7 @@ static slist_t *lcs_asn(sc_ifacedom_t *S, sc_ifacedom_t *T)
       while(S->label[s_end+1] != '\0' && T->label[t_end+1] != '\0')
 	{
 	  if(S->label[s_end+1] != T->label[t_end+1] ||
-	     isalnum(T->label[s_end+1]) == 0)
+	     isalnum((unsigned char)T->label[s_end+1]) == 0)
 	    break;
 	  s_end++; t_end++;
 	}
@@ -4478,7 +4498,7 @@ static int sc_css_hasalpha(const sc_css_t *css)
     {
       while(*ptr != '\0')
 	{
-	  if(isalpha(*ptr) != 0)
+	  if(isalpha((unsigned char)*ptr) != 0)
 	    return 1;
 	  ptr++;
 	}
@@ -4789,14 +4809,14 @@ static sc_css_t *sc_css_alloc_tags(const char *str)
     return NULL;
 
   /* skip over any training non-alnum characters */
-  while(isalnum(str[i]) == 0 && str[i] != '\0')
+  while(str[i] != '\0' && isalnum((unsigned char)str[i]) == 0)
    i++;
   if(str[i] == '\0')
     return css;
 
   while(str[i] != '\0')
     {
-      if(isalnum(str[i]) != 0)
+      if(isalnum((unsigned char)str[i]) != 0)
 	{
 	  css->css[css->len++] = str[i++];
 	  x++;
@@ -4808,7 +4828,7 @@ static sc_css_t *sc_css_alloc_tags(const char *str)
 
       while(str[i] != '\0')
 	{
-	  if(isalnum(str[i]) != 0)
+	  if(isalnum((unsigned char)str[i]) != 0)
 	    break;
 	  i++;
 	}
@@ -4912,7 +4932,8 @@ static int sc_css_match(const sc_css_t *css,const char *S,size_t *out,int alnum)
       /* this part matched */
       if(css->css[c+y] == '\0' &&
 	 (alnum == 0 ||
-	  ((x == 0 || isalnum(S[x-1]) == 0) && isalnum(S[x+y]) == 0)))
+	  ((x == 0 || isalnum((unsigned char)S[x-1]) == 0) &&
+	   isalnum((unsigned char)S[x+y]) == 0)))
 	{
 	  if(out != NULL)
 	    {
@@ -4947,9 +4968,9 @@ static sc_css_t *sc_css_matchxor(const sc_css_t *css, const sc_ifacedom_t *ifd)
     {
       l = 0;
       r = X_array[0] - 1;
-      while(isalnum(ifd->label[l]) == 0 && l < r)
+      while(l < r && isalnum((unsigned char)ifd->label[l]) == 0)
 	l++;
-      while(isalnum(ifd->label[r]) == 0 && r > l)
+      while(r > l && isalnum((unsigned char)ifd->label[r]) == 0)
 	r--;
 
       if(l != r)
@@ -5455,7 +5476,7 @@ static int sc_regex_capget_css_lit2(char *buf, size_t len, size_t *off_in,
   const char *ptr = start;
   size_t off = *off_in;
 
-  while(litend >= start && isalnum(*litend) == 0)
+  while(litend >= start && isalnum((unsigned char)*litend) == 0)
     litend--;
 
   buf[off++] = '(';
@@ -5684,7 +5705,7 @@ static dlist_t *sc_css_reduce_ls(splaytree_t *tree)
       al = 0; num = 0; skip = 0;
       for(ptr = css->css; *ptr != '\0' && skip == 0; ptr++)
 	{
-	  if(isdigit(*ptr) == 0)
+	  if(isdigit((unsigned char)*ptr) == 0)
 	    {
 	      if(num != 0)
 		skip = 1;
@@ -5708,7 +5729,7 @@ static dlist_t *sc_css_reduce_ls(splaytree_t *tree)
 	{
 	  for(ptr = css->css; *ptr != '\0'; ptr++)
 	    {
-	      if(isdigit(*ptr) != 0)
+	      if(isdigit((unsigned char)*ptr) != 0)
 		break;
 	      if((r = re_escape(tmp, sizeof(tmp), *ptr)) == 0)
 		goto done;
@@ -5752,13 +5773,13 @@ static dlist_t *sc_css_reduce_ls(splaytree_t *tree)
       ptr = css->css;
       while(*ptr != '\0')
 	{
-	  if(isdigit(*ptr) != 0)
+	  if(isdigit((unsigned char)*ptr) != 0)
 	    {
 	      buf[off++] = '\\';
 	      buf[off++] = 'd';
 	      buf[off++] = '+';
 	      ptr++;
-	      while(isdigit(*ptr) != 0)
+	      while(isdigit((unsigned char)*ptr) != 0)
 		ptr++;
 	    }
 	  else
@@ -5951,13 +5972,13 @@ static int capcount(const char *str)
 #else
   const char *error;
   int erroffset, n;
-  pcre *pcre;
-  if((pcre = pcre_compile(str, 0, &error, &erroffset, NULL)) == NULL ||
-     pcre_fullinfo(pcre, NULL, PCRE_INFO_CAPTURECOUNT, &n) != 0)
+  pcre *re;
+  if((re = pcre_compile(str, 0, &error, &erroffset, NULL)) == NULL ||
+     pcre_fullinfo(re, NULL, PCRE_INFO_CAPTURECOUNT, &n) != 0)
     goto done;
   rc = n;
  done:
-  if(pcre != NULL) pcre_free(pcre);
+  if(re != NULL) pcre_free(re);
 #endif
   return rc;
 }
@@ -6493,7 +6514,7 @@ static int sc_segscore_switch2(sc_segscore_t *ss, char *alpha)
      (ss->tree = splaytree_alloc((splaytree_cmp_t)strcmp)) == NULL)
     return -1;
 
-  while(isalpha(alpha[i]) != 0)
+  while(isalpha((unsigned int)alpha[i]) != 0)
     {
       if(i+1 >= sizeof(buf))
 	return 0;
@@ -7725,7 +7746,7 @@ static int sc_iface_ip_find_4(sc_iface_t *iface, const char *suffix)
 
   while((size_t)bo < sizeof(sb) / sizeof(long))
     {
-      while(isdigit(*ptr) == 0 && ptr != suffix)
+      while(isdigit((unsigned char)*ptr) == 0 && ptr != suffix)
 	ptr++;
       if(ptr >= suffix)
 	break;
@@ -7978,7 +7999,7 @@ static int sc_iface_ip_isok(const sc_iface_t *iface, const sc_charpos_t *cp)
     }
   for(i=left+1; i<right; i++)
     {
-      if(isalnum(iface->name[i]) == 0 || iface->name[i] == '0')
+      if(iface->name[i] == '0' || isalnum((unsigned char)iface->name[i]) == 0)
 	continue;
       if(ishex(iface->name[i]) == 0)
 	return 0;
@@ -8224,7 +8245,7 @@ static int sc_iface_ip_find_hex_rec(sc_iface_t *iface, const char *suffix,
       return 0;
     }
 
-  if(isdigit(cp->c[x]))
+  if(isdigit((unsigned char)cp->c[x]))
     c = cp->c[x] - '0';
   else
     c = cp->c[x] - 'a' + 10;
@@ -8440,13 +8461,13 @@ static void sc_iface_asn_find_thread(sc_ifacedom_t *ifd)
   i = 0; stop = 0;
   for(;;)
     {
-      while(isdigit(dup[i]) == 0 && dup[i] != '\0')
+      while(dup[i] != '\0' && isdigit((unsigned char)dup[i]) == 0)
 	i++;
       if(dup[i] == '\0')
 	break;
 
       start = i;
-      while(isdigit(dup[i]) != 0 && dup[i] != '\0')
+      while(dup[i] != '\0' && isdigit((unsigned char)dup[i]) != 0)
 	i++;
 
       if(dup[i] == '\0')
@@ -8556,7 +8577,7 @@ static void sc_iface_asname_find_thread(sc_ifacedom_t *ifd)
     goto done;
 
   /* skip over any non-alnum characters */
-  while(isalnum(str[i]) == 0 && str[i] != '\0')
+  while(str[i] != '\0' && isalnum((unsigned char)str[i]) == 0)
    i++;
   if(str[i] == '\0')
     goto done;
@@ -8564,7 +8585,7 @@ static void sc_iface_asname_find_thread(sc_ifacedom_t *ifd)
   j = i;
   for(;;)
     {
-      while(isalnum(str[j]) != 0)
+      while(isalnum((unsigned char)str[j]) != 0)
 	j++;
       if(str[j] == '\0')
 	stop = 1;
@@ -8577,10 +8598,10 @@ static void sc_iface_asname_find_thread(sc_ifacedom_t *ifd)
        * if we can't find this exact tag, and the string ends with digits,
        * try without the digits.
        */
-      if(x == 0 && isdigit(str[j-1]) != 0)
+      if(x == 0 && isdigit((unsigned char)str[j-1]) != 0)
 	{
 	  k = j;
-	  while(k > i && isdigit(str[k-1]))
+	  while(k > i && isdigit((unsigned char)str[k-1]))
 	    k--;
 	  if(sc_iface_asname_find_check(list, iface, str, i, k) < 0)
 	    goto done;
@@ -8591,7 +8612,7 @@ static void sc_iface_asname_find_thread(sc_ifacedom_t *ifd)
       j++;
       while(str[j] != '\0')
 	{
-	  if(isalnum(str[j]) != 0)
+	  if(isalnum((unsigned char)str[j]) != 0)
 	    break;
 	  j++;
 	}
@@ -8855,9 +8876,9 @@ static int sc_iface_geo_find_fac(slist_t *list, const sc_ifacedom_t *ifd,
   if(string_tolong(str, &in_no) != 0)
     return 0;
   ptr = str;
-  while(isdigit(*ptr) != 0)
+  while(isdigit((unsigned char)*ptr) != 0)
     ptr++;
-  while(*ptr != '\0' && isalnum(*ptr) == 0)
+  while(*ptr != '\0' && isalnum((unsigned char)*ptr) == 0)
     ptr++;
   if(*ptr == '\0')
     return 0;
@@ -8876,16 +8897,17 @@ static int sc_iface_geo_find_fac(slist_t *list, const sc_ifacedom_t *ifd,
   for(i=0; i<geohint_facc; i++)
     {
       hint = geohint_facs[i];
-      if(hint->street == NULL || isdigit(hint->street[0]) == 0 ||
+      if(hint->street == NULL ||
+	 isdigit((unsigned char)hint->street[0]) == 0 ||
 	 string_tolong(hint->street, &hint_no) != 0 || in_no != hint_no ||
 	 sc_geohint_checkrtt(hint, iface->rtr) == 0)
 	continue;
 
       /* skip over street number and then spaces after it */
       ptr = hint->street;
-      while(isdigit(*ptr) != 0)
+      while(isdigit((unsigned char)*ptr) != 0)
 	ptr++;
-      while(*ptr != '\0' && isalnum(*ptr) == 0)
+      while(*ptr != '\0' && isalnum((unsigned char)*ptr) == 0)
 	ptr++;
       if(*ptr == '\0')
 	continue;
@@ -9052,7 +9074,7 @@ static void sc_iface_geo_find_thread(sc_ifacedom_t *ifd)
     goto done;
 
   /* skip over any non-alnum characters */
-  while(isalpha(ifd->label[i]) == 0 && ifd->label[i] != '\0')
+  while(ifd->label[i] != '\0' && isalpha((unsigned char)ifd->label[i]) == 0)
    i++;
   if(ifd->label[i] == '\0')
     goto done;
@@ -9060,7 +9082,7 @@ static void sc_iface_geo_find_thread(sc_ifacedom_t *ifd)
   start = j = i;
   for(;;)
     {
-      while(isalpha(ifd->label[j]) != 0)
+      while(isalpha((unsigned char)ifd->label[j]) != 0)
 	j++;
       if(ifd->label[j] == '\0')
 	stop = 1;
@@ -9079,7 +9101,7 @@ static void sc_iface_geo_find_thread(sc_ifacedom_t *ifd)
       j++;
       while(ifd->label[j] != '\0')
 	{
-	  if(isalpha(ifd->label[j]) != 0)
+	  if(isalpha((unsigned char)ifd->label[j]) != 0)
 	    break;
 	  j++;
 	}
@@ -9179,15 +9201,15 @@ static void sc_iface_geo_find_thread(sc_ifacedom_t *ifd)
   for(;;)
     {
       /* look for a sequence that starts with digits, and then alpha */
-      if(isdigit(ifd->label[j]) == 0)
+      if(isdigit((unsigned char)ifd->label[j]) == 0)
 	goto next;
       j++;
-      while(isdigit(ifd->label[j]) != 0)
+      while(isdigit((unsigned char)ifd->label[j]) != 0)
 	j++;
-      if(isalpha(ifd->label[j]) == 0)
+      if(isalpha((unsigned char)ifd->label[j]) == 0)
 	goto next;
       j++;
-      while(isalpha(ifd->label[j]) != 0)
+      while(isalpha((unsigned char)ifd->label[j]) != 0)
 	j++;
 
       assert(j <= ifd->len);
@@ -9202,11 +9224,11 @@ static void sc_iface_geo_find_thread(sc_ifacedom_t *ifd)
 
       /* skip until the next punctuation-delimited sequence */
     next:
-      while(isalnum(ifd->label[j]) != 0)
+      while(isalnum((unsigned char)ifd->label[j]) != 0)
 	j++;
       if(ifd->label[j] == '\0')
 	break;
-      while(isalnum(ifd->label[j]) == 0 && ifd->label[j] != '\0')
+      while(ifd->label[j] != '\0' && isalnum((unsigned char)ifd->label[j]) == 0)
 	j++;
       if(ifd->label[j] == '\0')
 	break;
@@ -9624,9 +9646,10 @@ static int sc_ifacedom_css(const sc_ifacedom_t *ifd, sc_css_t **out, int trim)
   ip_e = ifd->iface->ip_e;
   if(trim != 0)
     {
-      while(ip_s > 0 && isalnum(ifd->label[ip_s-1]) == 0)
+      while(ip_s > 0 && isalnum((unsigned char)ifd->label[ip_s-1]) == 0)
 	ip_s--;
-      while(ifd->label[ip_e] != '\0' && isalnum(ifd->label[ip_e+1]) == 0)
+      while(ifd->label[ip_e] != '\0' &&
+	    isalnum((unsigned char)ifd->label[ip_e+1]) == 0)
 	ip_e++;
     }
   if(ip_s > 0)
@@ -12234,7 +12257,7 @@ static int sc_regex_build_skip(const char *name, int j, char *buf, size_t len,
   char tmp[8];
   size_t r;
 
-  while(isalnum(name[j]) == 0 && name[j] != '\0')
+  while(name[j] != '\0' && isalnum((unsigned char)name[j]) == 0)
     {
       if((r = re_escape(tmp, sizeof(tmp), name[j])) == 0)
 	return -1;
@@ -12280,7 +12303,7 @@ static size_t sc_regex_build_0(const char *name, const sc_rebuild_p_t *p,
   sep = name[bits[x+2]+1];
   if(sep == '\0')
     sep = '.';
-  if(isalnum(sep) != 0)
+  if(isalnum((unsigned char)sep) != 0)
     return 0;
 
   /* skip over any dashes and dots at the start of the string */
@@ -12339,7 +12362,7 @@ static size_t sc_regex_build_1(const char *name, const sc_rebuild_p_t *p,
 
   /* needs to be a separator */
   sep = name[rb->o-1];
-  if(isalnum(sep) != 0)
+  if(isalnum((unsigned char)sep) != 0)
     return 0;
 
   /*
@@ -12475,7 +12498,7 @@ static size_t sc_regex_build_3(const char *name, const sc_rebuild_p_t *p,
   /* according to arrangement of separators observed */
   while(j <= bits[x+2]+1)
     {
-      if(isalnum(name[j]) == 0)
+      if(isalnum((unsigned char)name[j]) == 0)
 	{
 	  if(name[j] == '\0')
 	    sep = '.';
@@ -12490,7 +12513,7 @@ static size_t sc_regex_build_3(const char *name, const sc_rebuild_p_t *p,
 	  memcpy(buf+to, tmp, r); to += r;
 	  buf[to++] = ']'; buf[to++] = '+';
 
-	  while(j != bits[x+2]+1 && isalnum(name[j]) == 0)
+	  while(j != bits[x+2]+1 && isalnum((unsigned char)name[j]) == 0)
 	    {
 	      if((r = re_escape(tmp, sizeof(tmp), name[j])) == 0)
 		return 0;
@@ -12589,9 +12612,9 @@ static size_t sc_regex_build_5_dec(const char *name, const sc_rebuild_p_t *p,
 	return 0;
       buf[to++] = '\\'; buf[to++] = 'd'; buf[to++] = '+';
 
-      while(isdigit(*ptr) != 0)
+      while(isdigit((unsigned char)*ptr) != 0)
 	ptr++;
-      while(isdigit(*ptr) == 0 && ptr < name + bits[x+2])
+      while(ptr < name + bits[x+2] && isdigit((unsigned char)*ptr) == 0)
 	{
 	  if((r = re_escape(tmp, sizeof(tmp), *ptr)) == 0)
 	    return 0;
@@ -12719,7 +12742,7 @@ static size_t sc_regex_build_6(const char *name, const sc_rebuild_p_t *p,
   /* does the string begin with a sequence of digits? */
   while(j <= bits[x+2])
     {
-      if(isdigit(name[j]) == 0)
+      if(isdigit((unsigned char)name[j]) == 0)
 	break;
       digit++;
       j++;
@@ -12740,7 +12763,7 @@ static size_t sc_regex_build_6(const char *name, const sc_rebuild_p_t *p,
     {
       if(name[j] == '\0')
 	break;
-      if(isalnum(name[j]) != 0)
+      if(isalnum((unsigned char)name[j]) != 0)
 	return 0;
       if((r = re_escape(tmp, sizeof(tmp), name[j])) == 0)
 	return 0;
@@ -12787,7 +12810,7 @@ static size_t sc_regex_build_7(const char *name, const sc_rebuild_p_t *p,
   /* find the next separator in this portion of the string */
   while(j <= bits[x+2]+1)
     {
-      if(isalnum(name[j]) == 0)
+      if(isalnum((unsigned char)name[j]) == 0)
 	break;
       j++;
     }
@@ -12896,9 +12919,9 @@ static size_t sc_regex_build_9(const char *name, const sc_rebuild_p_t *p,
     {
       while(j <= bits[x+2])
 	{
-	  if(isdigit(name[j]) != 0)
+	  if(isdigit((unsigned char)name[j]) != 0)
 	    return 0;
-	  if(isalpha(name[j]) == 0 && name[j] != punc)
+	  if(name[j] != punc && isalpha((unsigned char)name[j]) == 0)
 	    {
 	      if(punc != '\0')
 		return 0;
@@ -13121,8 +13144,8 @@ static int sc_regex_build(splaytree_t *tree, const char *name, sc_domain_t *dom,
 	  capc++;
 	}
 
-      while(isalnum(name[o]) == 0 && name[o] != '\0' &&
-	    (x+3 == bitc || o < bits[x+3+1]))
+      while(name[o] != '\0' && (x+3 == bitc || o < bits[x+3+1]) &&
+	    isalnum((unsigned char)name[o]) == 0)
 	{
 	  if((r = re_escape(tmp, sizeof(tmp), name[o])) == 0)
 	    goto done;
@@ -13650,12 +13673,12 @@ static int router_file_line(char *line, void *param)
 
   ip = line;
   ptr = line;
-  while(*ptr != '\0' && isspace(*ptr) == 0)
+  while(*ptr != '\0' && isspace((unsigned char)*ptr) == 0)
     ptr++;
   if(*ptr != '\0')
     {
       *ptr = '\0'; ptr++;
-      while(isspace(*ptr) != 0)
+      while(isspace((unsigned char)*ptr) != 0)
 	ptr++;
       hex_toascii(name, sizeof(name), ptr);
     }
@@ -13686,11 +13709,11 @@ static int sibling_file_line(char *line, void *param)
 
   for(;;)
     {
-      while(isdigit(*ptr) != 0)
+      while(isdigit((unsigned char)*ptr) != 0)
 	ptr++;
       if(*ptr == '\0')
 	last = 1;
-      else if(isspace(*ptr) == 0)
+      else if(isspace((unsigned char)*ptr) == 0)
 	goto err;
       *ptr = '\0'; ptr++;
 
@@ -13708,7 +13731,7 @@ static int sibling_file_line(char *line, void *param)
       /* continue onto the next ASN in this org */
       if(last != 0)
 	break;
-      while(isspace(*ptr) != 0)
+      while(isspace((unsigned char)*ptr) != 0)
 	ptr++;
       if(*ptr == '\0')
 	break;
@@ -16698,7 +16721,7 @@ static int sc_regex_refine_class_do(sc_regex_t *re, slist_t *ifd_list,
 	   */
 	  while(*ptr != '\0')
 	    {
-	      if(isdigit(*ptr) != 0)
+	      if(isdigit((unsigned char)*ptr) != 0)
 		{
 		  if(digit == 0)
 		    {
@@ -16713,7 +16736,7 @@ static int sc_regex_refine_class_do(sc_regex_t *re, slist_t *ifd_list,
 		      score += 3;
 		    }
 		}
-	      else if(isalpha(*ptr) != 0)
+	      else if(isalpha((unsigned char)*ptr) != 0)
 		{
 		  if(alpha == 0)
 		    {
@@ -17205,9 +17228,8 @@ static int sc_regex_refine_fnu(sc_regex_t *re)
        * be found
        */
       Lc = css->cssc;
-      if((La = malloc(sizeof(size_t) * Lc * 2)) == NULL)
-	goto done;
-      if((LAa = malloc(sizeof(size_t) * (Lc+LXc) * 2)) == NULL)
+      if((La = malloc(sizeof(size_t) * Lc * 2)) == NULL ||
+	 (LAa = malloc(sizeof(size_t) * (Lc+LXc) * 2)) == NULL)
 	goto done;
       LAc = Lc + LXc;
 
@@ -17274,6 +17296,8 @@ static int sc_regex_refine_fnu(sc_regex_t *re)
 		      ptr++;
 		    }
 		  ptr = NULL;
+		  if(LXi != LXc * 2)
+		    continue;
 		  pt_merge(LAa, La, Lc, LXa, LXc);
 		}
 	      else
@@ -18461,7 +18485,7 @@ static int sc_regex_refine_merge_strok(const char *str)
 
   while(*str != '\0')
     {
-      if(isalnum(*str) != 0)
+      if(isalnum((unsigned char)*str) != 0)
 	{
 	  ok = 1;
 	  str++;
@@ -18997,7 +19021,7 @@ static int regex_file_line_plan(sc_regex_t *re, char *plan_str)
   char *type, *ptr = plan_str + 7;
   int i = 0, x, eop, rc = -1;
 
-  while(isspace(*ptr) != 0 && *ptr != '\0')
+  while(*ptr != '\0' && isspace((unsigned char)*ptr) != 0)
     ptr++;
 
   /* look for the opening [ */
@@ -19028,7 +19052,7 @@ static int regex_file_line_plan(sc_regex_t *re, char *plan_str)
       while(eop == 0)
 	{
 	  /* skip over any whitespace */
-	  while(isspace(*ptr) != 0)
+	  while(isspace((unsigned char)*ptr) != 0)
 	    ptr++;
 
 	  type = ptr;
@@ -19094,7 +19118,7 @@ static int regex_file_line_plan(sc_regex_t *re, char *plan_str)
 	  goto done;
 	}
       ptr++;
-      while(isspace(*ptr) != 0 && *ptr != '\0')
+      while(*ptr != '\0' && isspace((unsigned char)*ptr) != 0)
 	ptr++;
       i++;
     }
@@ -19806,15 +19830,18 @@ static int refine_regexes_ip(void)
 
 static int refine_regexes_fp(void)
 {
+  struct timeval start, finish;
   slist_node_t *sn, *s2;
   sc_regex_t *best, *re;
   sc_domain_t *dom;
+  char buf[32];
   int rc = -1;
 
   if((refine_mask & REFINE_FP) == 0)
     return 0;
 
   fprintf(stderr, "refining regexes: false positives\n");
+  gettimeofday_wrap(&start);
 
   if((threadp = threadpool_alloc(threadc)) == NULL)
     goto done;
@@ -19833,8 +19860,11 @@ static int refine_regexes_fp(void)
 			       (threadpool_func_t)refine_regexes_fp_thread,re);
 	}
     }
-
   threadpool_join(threadp); threadp = NULL;
+
+  gettimeofday_wrap(&finish);
+  fprintf(stderr, "refining regexes: false positives finished in %s\n",
+          duration_tostr(buf, sizeof(buf), &start, &finish));
   rc = 0;
 
  done:
@@ -20030,7 +20060,7 @@ static int refine_dict_asnames_unk_want(slist_t *thin,
 	      S_i++;
 	      T_i++;
 	    }
-	  else if(isdigit(S[S_i]) != 0)
+	  else if(isdigit((unsigned char)S[S_i]) != 0)
 	    {
 	      digit = S[S_i] - '0';
 	      if(strncmp(T+T_i,digit2string[digit],digit2stringl[digit]) != 0)
@@ -21117,9 +21147,9 @@ static int geohints_file_line_iso3166(const char *line, char **ptr_in,
   char iso3166[8];
   size_t i = 0;
 
-  while((isalnum(*ptr) || *ptr == '-') && i < sizeof(iso3166))
+  while(i < sizeof(iso3166) && (*ptr == '-' || isalnum((unsigned char)*ptr)))
     {
-      iso3166[i++] = tolower(*ptr);
+      iso3166[i++] = tolower((unsigned char)*ptr);
       ptr++;
     }
   if(i == sizeof(iso3166))
@@ -21127,7 +21157,7 @@ static int geohints_file_line_iso3166(const char *line, char **ptr_in,
       fprintf(stderr, "%s: code too long, %s\n", __func__, line);
       return -1;
     }
-  if(*ptr != '\0' && isspace(*ptr) == 0)
+  if(*ptr != '\0' && isspace((unsigned char)*ptr) == 0)
     {
       fprintf(stderr, "%s: unexpected character, %s\n", __func__, line);
       return -1;
@@ -21138,7 +21168,8 @@ static int geohints_file_line_iso3166(const char *line, char **ptr_in,
 
   iso3166[i] = '\0';
 
-  if(isalpha(iso3166[0]) == 0 || isalpha(iso3166[1]) == 0)
+  if(isalpha((unsigned char)iso3166[0]) == 0 ||
+     isalpha((unsigned char)iso3166[1]) == 0)
     {
       fprintf(stderr, "%s: expected country code, %s\n", __func__, line);
       return -1;
@@ -21160,7 +21191,7 @@ static int geohints_file_line_iso3166(const char *line, char **ptr_in,
     {
       if(iso3166[3+i] == '\0')
 	break;
-      if(isalnum(iso3166[3+i]) == 0)
+      if(isalnum((unsigned char)iso3166[3+i]) == 0)
 	{
 	  fprintf(stderr, "%s: expected state code, %s\n", __func__, line);
 	  return -1;
@@ -21168,7 +21199,7 @@ static int geohints_file_line_iso3166(const char *line, char **ptr_in,
       st[i] = iso3166[3+i];
     }
   st[i] = '\0';
-  if(iso3166[3+i] != '\0' && isspace(iso3166[3+i]) == 0)
+  if(iso3166[3+i] != '\0' && isspace((unsigned char)iso3166[3+i]) == 0)
     {
       fprintf(stderr, "%s: invalid state code, %s\n", __func__, line);
       return -1;
@@ -21272,7 +21303,7 @@ static int geohints_file_line(char *line, void *param)
     }
 
   ptr = line + j;
-  while(isspace(*ptr) != 0 && *ptr != '\0')
+  while(*ptr != '\0' && isspace((unsigned char)*ptr) != 0)
     ptr++;
   if(*ptr == '\0')
     goto err;
@@ -21282,16 +21313,16 @@ static int geohints_file_line(char *line, void *param)
     {
       for(i=0; i<expected_len; i++)
 	{
-	  if(isalnum(ptr[i]) == 0 && ptr[i] != '-')
+	  if(ptr[i] != '-' && isalnum((unsigned char)ptr[i]) == 0)
 	    {
 	      fprintf(stderr, "Invalid geocode: %s\n", line);
 	      goto err;
 	    }
-	  code[i] = tolower(ptr[i]);
+	  code[i] = tolower((unsigned char)ptr[i]);
 	}
       code[i] = '\0';
       ptr += expected_len;
-      if(*ptr != '\0' && isspace(*ptr) == 0)
+      if(*ptr != '\0' && isspace((unsigned char)*ptr) == 0)
 	{
 	  fprintf(stderr, "Invalid geocode: %s\n", line);
 	  goto err;
@@ -21301,11 +21332,11 @@ static int geohints_file_line(char *line, void *param)
     {
       for(i=0; i<sizeof(code); i++)
 	{
-	  if(isalnum(ptr[i]) == 0 && ptr[i] != '-')
+	  if(ptr[i] != '-' && isalnum((unsigned char)ptr[i]) == 0)
 	    break;
-	  code[i] = tolower(ptr[i]);
+	  code[i] = tolower((unsigned char)ptr[i]);
 	}
-      if(i == sizeof(code) || isspace(ptr[i]) == 0)
+      if(i == sizeof(code) || isspace((unsigned char)ptr[i]) == 0)
 	{
 	  fprintf(stderr, "Invalid geocode: %s\n", line);
 	  goto err;
@@ -21323,14 +21354,14 @@ static int geohints_file_line(char *line, void *param)
       i = j = 0;
       while(place[i] != '\0')
 	{
-	  if(isalpha(place[i]) != 0)
-	    code[j++] = tolower(place[i]);
+	  if(isalpha((unsigned char)place[i]) != 0)
+	    code[j++] = tolower((unsigned char)place[i]);
 	  i++;
 	}
       code[j] = '\0';
 
       /* skip over spaces */
-      while(isspace(*ptr) != 0 && *ptr != '\0')
+      while(*ptr != '\0' && isspace((unsigned char)*ptr) != 0)
 	ptr++;
 
       /* iso3166 code */
@@ -21340,30 +21371,33 @@ static int geohints_file_line(char *line, void *param)
   else if(type == GEOHINT_TYPE_COUNTRY)
     {
       /* iso3166 2-letter CC */
-      if(isalpha(ptr[0]) != 0 && isalpha(ptr[1]) != 0 && ptr[2] == ' ')
+      if(isalpha((unsigned char)ptr[0]) != 0 &&
+	 isalpha((unsigned char)ptr[1]) != 0 && ptr[2] == ' ')
 	{
-	  cc[0] = tolower(ptr[0]); cc[1] = tolower(ptr[1]);
-	  cc[2] = '\0';
+	  cc[0] = tolower((unsigned char)ptr[0]);
+	  cc[1] = tolower((unsigned char)ptr[1]); cc[2] = '\0';
 	}
       else goto err;
       ptr += 3;
 
       /* skip over whitespace */
-      while(isspace(*ptr) != 0 && *ptr != '\0')
+      while(*ptr != '\0' && isspace((unsigned char)*ptr) != 0)
 	ptr++;
 
       /* iso3166 3-letter CC */
-      if(isalpha(ptr[0]) != 0 && isalpha(ptr[1]) != 0 &&
-	 isalpha(ptr[2]) != 0 && ptr[3] == ' ')
+      if(isalpha((unsigned char)ptr[0]) != 0 &&
+	 isalpha((unsigned char)ptr[1]) != 0 &&
+	 isalpha((unsigned char)ptr[2]) != 0 && ptr[3] == ' ')
 	{
-	  st[0] = tolower(ptr[0]); st[1] = tolower(ptr[1]);
-	  st[2] = tolower(ptr[2]); st[3] = '\0';
+	  st[0] = tolower((unsigned char)ptr[0]);
+	  st[1] = tolower((unsigned char)ptr[1]);
+	  st[2] = tolower((unsigned char)ptr[2]); st[3] = '\0';
 	}
       else goto err;
       ptr += 4;
 
       /* skip over whitespace */
-      while(isspace(*ptr) != 0 && *ptr != '\0')
+      while(*ptr != '\0' && isspace((unsigned char)*ptr) != 0)
 	ptr++;
 
       /* country name */
@@ -21375,8 +21409,8 @@ static int geohints_file_line(char *line, void *param)
       i = j = 0;
       while(place[i] != '\0')
 	{
-	  if(isalpha(place[i]) != 0)
-	    code[j++] = tolower(place[i]);
+	  if(isalpha((unsigned char)place[i]) != 0)
+	    code[j++] = tolower((unsigned char)place[i]);
 	  i++;
 	}
       code[j] = '\0';
@@ -21399,7 +21433,7 @@ static int geohints_file_line(char *line, void *param)
 	return 0;
 
       /* skip over whitespace */
-      while(isspace(*ptr) != 0 && *ptr != '\0')
+      while(*ptr != '\0' && isspace((unsigned char)*ptr) != 0)
 	ptr++;
 
       /* state name */
@@ -21420,12 +21454,12 @@ static int geohints_file_line(char *line, void *param)
   else goto err;
 
   /* lat */
-  while(isspace(*ptr) != 0 && *ptr != '\0')
+  while(*ptr != '\0' && isspace((unsigned char)*ptr) != 0)
     ptr++;
   if(*ptr != '\0')
     {
       lat = strtod(ptr, &end);
-      if(ptr == end || (isspace(*end) == 0 && *end != '\0'))
+      if(ptr == end || (*end != '\0' && isspace((unsigned char)*end) == 0))
 	{
 	  fprintf(stderr, "invalid latitude: %s\n", line);
 	  goto err;
@@ -21435,12 +21469,12 @@ static int geohints_file_line(char *line, void *param)
     }
 
   /* long */
-  while(isspace(*ptr) != 0 && *ptr != '\0')
+  while(*ptr != '\0' && isspace((unsigned char)*ptr) != 0)
     ptr++;
   if(*ptr != '\0')
     {
       lng = strtod(ptr, &end);
-      if(ptr == end || (isspace(*end) == 0 && *end != '\0'))
+      if(ptr == end || (*end != '\0' && isspace((unsigned char)*end) == 0))
 	{
 	  fprintf(stderr, "invalid longitude: %s\n", line);
 	  goto err;
@@ -21456,13 +21490,13 @@ static int geohints_file_line(char *line, void *param)
      type == GEOHINT_TYPE_CLLI || type == GEOHINT_TYPE_LOCODE)
     {
       /* advance over any space, and then parse an iso3166 code if present */
-      while(isspace(*ptr) != 0 && *ptr != '\0')
+      while(*ptr != '\0' && isspace((unsigned char)*ptr) != 0)
 	ptr++;
       if(geohints_file_line_iso3166(line, &ptr, cc, st) != 0)
 	goto err;
 
       /* advance over any space, and then parse the location if present */
-      while(isspace(*ptr) != 0 && *ptr != '\0')
+      while(*ptr != '\0' && isspace((unsigned char)*ptr) != 0)
 	ptr++;
       if(geohints_file_line_place(line, &ptr, place, sizeof(place)) != 0)
 	goto err;
@@ -21470,12 +21504,12 @@ static int geohints_file_line(char *line, void *param)
   else if(type == GEOHINT_TYPE_PLACE)
     {
       /* advance over any space, and then parse population if present */
-      while(isspace(*ptr) != 0 && *ptr != '\0')
+      while(*ptr != '\0' && isspace((unsigned char)*ptr) != 0)
 	ptr++;
       if(*ptr != '\0')
 	{
 	  popn = strtol(ptr, &end, 10);
-	  if(ptr == end || (isspace(*end) == 0 && *end != '\0'))
+	  if(ptr == end || (*end != '\0' && isspace((unsigned char)*end) == 0))
 	    {
 	      fprintf(stderr, "invalid population: %s\n", line);
 	      goto err;
@@ -21485,13 +21519,13 @@ static int geohints_file_line(char *line, void *param)
   else if(type == GEOHINT_TYPE_FACILITY)
     {
       /* advance over any space, and then parse the street address */
-      while(isspace(*ptr) != 0 && *ptr != '\0')
+      while(*ptr != '\0' && isspace((unsigned char)*ptr) != 0)
 	ptr++;
       if(geohints_file_line_place(line, &ptr, street, sizeof(street)) != 0)
 	goto err;
 
       /* advance over any space and then parse the facility name */
-      while(isspace(*ptr) != 0 && *ptr != '\0')
+      while(*ptr != '\0' && isspace((unsigned char)*ptr) != 0)
 	ptr++;
       if(geohints_file_line_place(line, &ptr, facname, sizeof(facname)) != 0)
 	goto err;
@@ -21883,7 +21917,7 @@ static int asnames_file_line(char *line, void *param)
 
   asn = line;
   ptr = line;
-  while(isdigit(*ptr) != 0)
+  while(isdigit((unsigned char)*ptr) != 0)
     ptr++;
   if(*ptr == '\0')
     {
@@ -21893,9 +21927,9 @@ static int asnames_file_line(char *line, void *param)
 
   *ptr = '\0';
   ptr++;
-  if(isspace(*ptr) != 0)
+  if(isspace((unsigned char)*ptr) != 0)
     {
-      while(*ptr != '\0' && isspace(*ptr) == 0)
+      while(*ptr != '\0' && isspace((unsigned char)*ptr) == 0)
 	ptr++;
       if(*ptr == '\0')
 	{

@@ -1,12 +1,12 @@
 /*
- * unit_dl_parse_ip : unit tests for host_rr_list function
+ * unit_host_rr_list : unit tests for host_rr_list function
  *
- * $Id: unit_host_rr_list.c,v 1.3 2023/12/02 20:46:00 mjl Exp $
+ * $Id: unit_host_rr_list.c,v 1.5 2024/04/20 00:15:02 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
  *
- * Copyright (C) 2023 Matthew Luckie
+ * Copyright (C) 2023-2024 Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -36,10 +36,9 @@
 #include "utils.h"
 #include "mjl_list.h"
 
-/*
- * function prototype of a normally static function that is not in
- * scamper_host.h or 
- */
+#include "common.h"
+
+/* function prototype of a normally static function */
 slist_t *host_rr_list(const uint8_t *buf, size_t off, size_t len);
 
 typedef struct sc_test
@@ -69,12 +68,65 @@ static int com_soa(const slist_t *rr_list)
 	     rr->ttl != 509 ||
 	     strcmp(rr->name, "com") != 0 ||
 	     (soa = scamper_host_rr_soa_get(rr)) == NULL)
-	    return -1;	     
+	    return -1;
 	}
       else if(i == 1)
 	{
 	  if(rr->type != SCAMPER_HOST_TYPE_OPT ||
 	     rr->class != 4096 ||
+	     rr->ttl != 0 ||
+	     strcmp(rr->name, "") != 0)
+	    return -1;
+	}
+      else return -1;
+      i++;
+    }
+  return 0;
+}
+
+static int example_org_txt(const slist_t *rr_list)
+{
+  scamper_host_rr_t *rr;
+  scamper_host_rr_txt_t *txt;
+  slist_node_t *sn;
+  const char *str;
+  int i = 0;
+
+  if(rr_list == NULL)
+    return -1;
+  for(sn=slist_head_node(rr_list); sn != NULL; sn=slist_node_next(sn))
+    {
+      rr = slist_node_item(sn);
+      if(i == 0)
+	{
+	  if(scamper_host_rr_data_type(rr->class, rr->type) != SCAMPER_HOST_RR_DATA_TYPE_TXT ||
+	     rr->class != SCAMPER_HOST_CLASS_IN ||
+	     rr->type != SCAMPER_HOST_TYPE_TXT ||
+	     rr->ttl != 86368 ||
+	     strcmp(rr->name, "example.org") != 0 ||
+	     (txt = scamper_host_rr_txt_get(rr)) == NULL ||
+	     scamper_host_rr_txt_strc_get(txt) != 1 ||
+	     (str = scamper_host_rr_txt_str_get(txt, 0)) == NULL ||
+	     strcmp(str, "v=spf1 -all") != 0)
+	    return -1;
+	}
+      else if(i == 1)
+	{
+	  if(scamper_host_rr_data_type(rr->class, rr->type) != SCAMPER_HOST_RR_DATA_TYPE_TXT ||
+	     rr->class != SCAMPER_HOST_CLASS_IN ||
+	     rr->type != SCAMPER_HOST_TYPE_TXT ||
+	     rr->ttl != 86368 ||
+	     strcmp(rr->name, "example.org") != 0 ||
+	     (txt = scamper_host_rr_txt_get(rr)) == NULL ||
+	     scamper_host_rr_txt_strc_get(txt) != 1 ||
+	     (str = scamper_host_rr_txt_str_get(txt, 0)) == NULL ||
+	     strcmp(str, "6r4wtj10lt2hw0zhyhk7cgzzffhjp7fl") != 0)
+	    return -1;
+	}
+      else if(i == 2)
+	{
+	  if(rr->type != SCAMPER_HOST_TYPE_OPT ||
+	     rr->class != 1232 ||
 	     rr->ttl != 0 ||
 	     strcmp(rr->name, "") != 0)
 	    return -1;
@@ -111,8 +163,7 @@ static int make_buf(const char *pkt, uint8_t **buf_out, size_t *len_out)
   return rc;
 }
 
-static int check(const char *pkt, size_t off,
-		 int (*func)(const slist_t *list))
+static int check(const char *pkt, size_t off, int (*func)(const slist_t *list))
 {
   uint8_t *buf = NULL;
   slist_t *rr_list = NULL;
@@ -148,19 +199,51 @@ int main(int argc, char *argv[])
 {
   sc_test_t tests[] = {
     {"c72381800001000100000001" /* 12 byte header */
-     "03636f6d00" "00060001" /* com SOA IN */
+     "03636f6d00" /* com (5 bytes)*/
+     "00060001" /* SOA IN (4 bytes) */
      "c00c00060001000001fd003d01610c6774"
      "6c642d73657276657273036e657400056e73746c640c76657269"
      "7369676e2d677273c00c6545cde0000007080000038400093a80"
-     "000151800000291000000000000000",
+     "00015180"
+     "0000291000000000000000", /* . OPT 4096 ttl=0, rdlength=0 */
      12 + 5 + 4,
      com_soa},
+    {"f0d781a00001000200000001" /* 12 byte header */
+     "076578616d706c65036f726700" /* example.org (13 bytes) */
+     "00100001" /* TXT IN (4 bytes) */
+     "c00c0010000100015160"
+     "000c0b763d73706631202d616c6c" /* v=spf1 -all */
+     "c00c0010000100015160"
+     "00212036723477746a31306c74326877" /* 6r4wtj10lt2hw0zhyhk7cgzzffhjp7fl */
+     "307a6879686b3763677a7a6666686a7037666c"
+     "00002904d0000000000000", /* . OPT 1232 ttl=0, rdlength=0 */
+     12 + 13 + 4,
+     example_org_txt},
   };
   size_t i, testc = sizeof(tests) / sizeof(sc_test_t);
+  char filename[128];
 
-  for(i=0; i<testc; i++)
-    if(check(tests[i].pkt, tests[i].off, tests[i].func) != 0)
-      break;
+  if(argc == 3 && strcasecmp(argv[1], "dump") == 0)
+    {
+      for(i=0; i<testc; i++)
+	{
+	  snprintf(filename, sizeof(filename),
+		   "%s/dealias-%03x.txt", argv[2], (int)i);
+	  if(dump_hex(tests[i].pkt, filename) != 0)
+	    break;
+	}
+    }
+  else if(argc == 1)
+    {
+      for(i=0; i<testc; i++)
+	if(check(tests[i].pkt, tests[i].off, tests[i].func) != 0)
+	  break;
+    }
+  else
+    {
+      printf("invalid usage\n");
+      return -1;
+    }
 
   if(i != testc)
     {

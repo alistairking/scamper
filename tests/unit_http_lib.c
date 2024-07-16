@@ -1,7 +1,7 @@
 /*
  * unit_http_lib: unit tests for http library
  *
- * $Id: unit_http_lib.c,v 1.2 2023/10/26 04:55:29 mjl Exp $
+ * $Id: unit_http_lib.c,v 1.3 2024/03/04 19:36:41 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -39,7 +39,7 @@ static scamper_http_buf_t *htb_make(uint8_t dir, uint8_t type,
 				    const char *data, uint16_t len)
 {
   scamper_http_buf_t *htb;
-  
+
   if((htb = scamper_http_buf_alloc()) == NULL ||
      (htb->data = memdup(data, len)) == NULL)
     goto err;

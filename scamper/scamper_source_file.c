@@ -1,7 +1,7 @@
 /*
  * scamper_source_file.c
  *
- * $Id: scamper_source_file.c,v 1.32 2023/08/26 21:25:08 mjl Exp $
+ * $Id: scamper_source_file.c,v 1.33 2024/06/10 03:28:08 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -433,7 +433,6 @@ int scamper_source_file_update(scamper_source_t *source,
 			       const int *autoreload, const int *cycles)
 {
   scamper_source_file_t *ssf;
-  scamper_source_event_t sse;
 
   if(scamper_source_gettype(source) != SCAMPER_SOURCE_TYPE_FILE ||
      (ssf = (scamper_source_file_t *)scamper_source_getdata(source)) == NULL)
@@ -441,26 +440,11 @@ int scamper_source_file_update(scamper_source_t *source,
       return -1;
     }
 
-  memset(&sse, 0, sizeof(sse));
-
   if(autoreload != NULL)
-    {
-      sse.sse_update_flags |= 0x01;
-      sse.sse_update_autoreload = *autoreload;
-      ssf->autoreload = *autoreload;
-    }
+    ssf->autoreload = *autoreload;
 
   if(cycles != NULL)
-    {
-      sse.sse_update_flags |= 0x02;
-      sse.sse_update_cycles = *cycles;
-      ssf->cycles = *cycles;
-    }
-
-  if(sse.sse_update_flags != 0)
-    {
-      scamper_source_event_post(source, SCAMPER_SOURCE_EVENT_UPDATE, &sse);
-    }
+    ssf->cycles = *cycles;
 
   return 0;
 }

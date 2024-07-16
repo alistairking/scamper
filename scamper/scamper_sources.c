@@ -1,7 +1,7 @@
 /*
  * scamper_source
  *
- * $Id: scamper_sources.c,v 1.79 2024/02/27 03:34:02 mjl Exp $
+ * $Id: scamper_sources.c,v 1.81 2024/06/10 03:28:08 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -150,23 +150,6 @@ struct scamper_sourcetask
   dlist_node_t     *node;
   uint32_t          id;
   splaytree_node_t *idnode;
-};
-
-/*
- * scamper_source_observer
- *
- * this structure records details of an observer interested in monitoring
- * source events.
- *
- *  func:  the callback function to use when an event occurs
- *  param: the parameter to pass to the function
- *  node:  the appropriate dlist_node in the observers dlist.
- */
-struct scamper_source_observer
-{
-  scamper_source_eventf_t  func;
-  void                    *param;
-  dlist_node_t            *node;
 };
 
 /*
@@ -361,7 +344,6 @@ static dlist_t          *finished    = NULL;
 static scamper_source_t *source_cur  = NULL;
 static uint32_t          source_cnt  = 0;
 static splaytree_t      *source_tree = NULL;
-static dlist_t          *observers   = NULL;
 
 /* forward declare */
 static void source_free(scamper_source_t *source);
@@ -456,51 +438,6 @@ static int source_refcnt_dec(scamper_source_t *source)
   assert(source->refcnt > 0);
   source->refcnt--;
   return source->refcnt;
-}
-
-/*
- * source_event_post_cb
- *
- * callback used by source_event_post to send an event to all the observers
- * in the observers list
- */
-static int source_event_post_cb(void *item, void *param)
-{
-  scamper_source_observer_t *observer = (scamper_source_observer_t *)item;
-  scamper_source_event_t *event = (scamper_source_event_t *)param;
-  observer->func(event, observer->param);
-  return 0;
-}
-
-/*
- * scamper_source_event_post
- *
- * send all observers notification that a particular event occured.
- */
-void scamper_source_event_post(scamper_source_t *source, int type,
-			       scamper_source_event_t *ev)
-{
-  scamper_source_event_t sse;
-  struct timeval tv;
-
-  /* check if there is actually anyone observing */
-  if(observers == NULL)
-    return;
-
-  /* if null event, then create one from scratch */
-  if(ev == NULL)
-    {
-      memset(&sse, 0, sizeof(sse));
-      ev = &sse;
-    }
-
-  gettimeofday_wrap(&tv);
-  ev->source = source;
-  ev->event = type;
-  ev->sec = tv.tv_sec;
-  dlist_foreach(observers, source_event_post_cb, ev);
-
-  return;
 }
 
 static scamper_sourcetask_t *sourcetask_alloc(scamper_source_t *source,
@@ -906,7 +843,6 @@ static int command_probe_handle(scamper_source_t *source, command_t *command,
  */
 static int command_cycle_handle(scamper_source_t *source, command_t *command)
 {
-  scamper_source_event_t sse;
   scamper_cycle_t *cycle = command->un.cycle;
   scamper_file_t *file;
   struct timeval tv;
@@ -928,11 +864,6 @@ static int command_cycle_handle(scamper_source_t *source, command_t *command)
     {
       scamper_file_write_cycle_start(file, cycle);
     }
-
-  /* post an event saying the cycle point just rolled around */
-  memset(&sse, 0, sizeof(sse));
-  sse.sse_cycle_cycle_id = cycle->id;
-  scamper_source_event_post(source, SCAMPER_SOURCE_EVENT_CYCLE, &sse);
 
   command_free(command);
   sources_assert();
@@ -1211,9 +1142,6 @@ static void source_free(scamper_source_t *source)
   if(scamper_source_tostr(source, buf, sizeof(buf)) != NULL)
     scamper_debug(__func__, "%s", buf);
 
-  /* the source is now finished.  post a message saying so */
-  scamper_source_event_post(source, SCAMPER_SOURCE_EVENT_FINISH, NULL);
-
   if(source->cyclemon != NULL)
     {
       scamper_cyclemon_source_detach(source->cyclemon);
@@ -1314,7 +1242,6 @@ uint32_t scamper_source_getpriority(const scamper_source_t *source)
 
 void scamper_source_setpriority(scamper_source_t *source, uint32_t priority)
 {
-  scamper_source_event_t sse;
   uint32_t old_priority;
 
   sources_assert();
@@ -1326,11 +1253,6 @@ void scamper_source_setpriority(scamper_source_t *source, uint32_t priority)
     source_blocked_attach(source);
   else if(priority > 0 && old_priority == 0)
     source_active_attach(source);
-
-  memset(&sse, 0, sizeof(sse));
-  sse.sse_update_flags |= 0x04;
-  sse.sse_update_priority = priority;
-  scamper_source_event_post(source, SCAMPER_SOURCE_EVENT_UPDATE, &sse);
 
   sources_assert();
   return;
@@ -1525,7 +1447,7 @@ int scamper_source_command2(scamper_source_t *s, const char *command,
   if(++s->id == 0) s->id = 1;
   if((st->idnode = splaytree_insert(s->idtree, st)) == NULL)
     {
-      snprintf(errbuf, errlen, "could not add to idtree"); 
+      snprintf(errbuf, errlen, "could not add to idtree");
       goto err;
     }
 
@@ -1789,52 +1711,6 @@ scamper_source_t *scamper_source_alloc(const scamper_source_params_t *ssp)
 }
 
 /*
- * scamper_sources_observe
- *
- * something wants to monitor the status of the sources managed by scamper.
- * make a note of that.
- */
-scamper_source_observer_t *scamper_sources_observe(scamper_source_eventf_t cb,
-						   void *param)
-{
-  scamper_source_observer_t *observer = NULL;
-
-  if((observers == NULL && (observers = dlist_alloc()) == NULL) ||
-     (observer = malloc_zero(sizeof(scamper_source_observer_t))) == NULL ||
-     (observer->node = dlist_tail_push(observers, observer)) == NULL)
-    {
-      goto err;
-    }
-
-  observer->func  = cb;
-  observer->param = param;
-
-  return observer;
-
- err:
-  if(observer != NULL) scamper_sources_unobserve(observer);
-  return NULL;
-}
-
-/*
- * scamper_sources_unobserve
- *
- */
-void scamper_sources_unobserve(scamper_source_observer_t *observer)
-{
-  dlist_node_pop(observers, observer->node);
-  free(observer);
-
-  if(dlist_count(observers) == 0)
-    {
-      dlist_free(observers);
-      observers = NULL;
-    }
-
-  return;
-}
-
-/*
  * scamper_sources_get
  *
  * given a name, return the matching source -- if one exists.
@@ -1872,7 +1748,6 @@ int scamper_sources_del(scamper_source_t *source)
       return -1;
     }
 
-  scamper_source_event_post(source, SCAMPER_SOURCE_EVENT_DELETE, NULL);
   source_free(source);
 
   sources_assert();
@@ -2075,7 +1950,6 @@ int scamper_sources_add(scamper_source_t *source)
   if(source_active_attach(source) != 0)
     goto err;
 
-  scamper_source_event_post(source, SCAMPER_SOURCE_EVENT_ADD, NULL);
   sources_assert();
   return 0;
 

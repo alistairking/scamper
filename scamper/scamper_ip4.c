@@ -1,7 +1,7 @@
 /*
  * scamper_ip4.c
  *
- * $Id: scamper_ip4.c,v 1.24 2023/08/26 21:25:08 mjl Exp $
+ * $Id: scamper_ip4.c,v 1.26 2024/07/02 01:11:17 mjl Exp $
  *
  * Copyright (C) 2009-2011 The University of Waikato
  * Copyright (C) 2023      The Regents of the University of California
@@ -33,6 +33,7 @@
 #include "scamper_addr.h"
 #include "scamper_addr_int.h"
 #include "scamper_dl.h"
+#include "scamper_dlhdr.h"
 #include "scamper_probe.h"
 #include "scamper_ip4.h"
 #include "scamper_tcp4.h"
@@ -46,8 +47,6 @@ int scamper_ip4_openraw_fd(void)
 SOCKET scamper_ip4_openraw_fd(void)
 #endif
 {
-  int hdr;
-
 #ifndef _WIN32 /* SOCKET vs int on windows */
   int fd;
 #else
@@ -60,8 +59,7 @@ SOCKET scamper_ip4_openraw_fd(void)
       printerror(__func__, "could not open socket");
       goto err;
     }
-  hdr = 1;
-  if(setsockopt(fd, IPPROTO_IP, IP_HDRINCL, (void *)&hdr, sizeof(hdr)) == -1)
+  if(setsockopt_int(fd, IPPROTO_IP, IP_HDRINCL, 1) != 0)
     {
       printerror(__func__, "could not IP_HDRINCL");
       goto err;

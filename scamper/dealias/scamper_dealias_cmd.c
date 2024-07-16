@@ -1,7 +1,7 @@
 /*
  * scamper_dealias_cmd.c
  *
- * $Id: scamper_dealias_cmd.c,v 1.28 2024/02/15 07:00:24 mjl Exp $
+ * $Id: scamper_dealias_cmd.c,v 1.30 2024/05/02 02:33:38 mjl Exp $
  *
  * Copyright (C) 2008-2011 The University of Waikato
  * Copyright (C) 2012-2013 Matthew Luckie
@@ -522,7 +522,7 @@ static int dealias_alloc_mercator(scamper_dealias_t *d, dealias_options_t *o,
     }
   if((dst = scamper_addrcache_resolve(addrcache, AF_UNSPEC, o->addr)) == NULL)
     {
-      snprintf(errbuf, errlen, "invalid target address: %s", o->addr);
+      snprintf(errbuf, errlen, "invalid target address");
       goto err;
     }
 
@@ -546,7 +546,7 @@ static int dealias_alloc_mercator(scamper_dealias_t *d, dealias_options_t *o,
       goto err;
     }
   mc->attempts = o->attempts;
-  timeval_cpy(&mc->wait_timeout, &o->wait_timeout);  
+  timeval_cpy(&mc->wait_timeout, &o->wait_timeout);
 
   if(o->probedefs == NULL)
     {
@@ -575,12 +575,10 @@ static int dealias_alloc_mercator(scamper_dealias_t *d, dealias_options_t *o,
     }
   mc->probedef->id = 0;
   mc->probedef->dst = dst; dst = NULL;
-
-  d->data = mc;
-
   if(probedef_size_check(mc->probedef, errbuf, errlen) != 0)
     goto err;
 
+  d->data = mc;
   return 0;
 
  err:
@@ -601,7 +599,7 @@ static int dealias_alloc_ally(scamper_dealias_t *d, dealias_options_t *o,
   char *addr2, *pdstr;
 
   memset(&pd, 0, sizeof(pd));
-  
+
   if(o->probedefs != NULL)
     probedefc = slist_count(o->probedefs);
 
@@ -683,13 +681,13 @@ static int dealias_alloc_ally(scamper_dealias_t *d, dealias_options_t *o,
       pd[0].dst = scamper_addrcache_resolve(addrcache, AF_UNSPEC, o->addr);
       if(pd[0].dst == NULL)
 	{
-	  snprintf(errbuf, errlen, "could not resolve %s", o->addr);
+	  snprintf(errbuf, errlen, "could not resolve address");
 	  goto err;
 	}
       pd[1].dst = scamper_addrcache_resolve(addrcache, AF_UNSPEC, addr2);
       if(pd[1].dst == NULL)
 	{
-	  snprintf(errbuf, errlen, "could not resolve %s", addr2);
+	  snprintf(errbuf, errlen, "could not resolve address");
 	  goto err;
 	}
     }
@@ -782,12 +780,12 @@ static int dealias_alloc_radargun(scamper_dealias_t *d, dealias_options_t *o,
 	  a2 = string_nextword(a1);
 	  if((addr = scamper_addrcache_resolve(addrcache,AF_UNSPEC,a1)) == NULL)
 	    {
-	      snprintf(errbuf, errlen, "could not resolve %s", a1);
+	      snprintf(errbuf, errlen, "could not resolve address");
 	      goto err;
 	    }
 	  if(slist_tail_push(addrs, addr) == NULL)
 	    {
-	      snprintf(errbuf, errlen, "could not add %s to list", a1);
+	      snprintf(errbuf, errlen, "could not add address to list");
 	      goto err;
 	    }
 	  addr = NULL;
@@ -1011,7 +1009,7 @@ static int dealias_alloc_prefixscan(scamper_dealias_t *d, dealias_options_t *o,
 
   if(string_tolong(pfxstr, &tmp) != 0 || tmp < 24 || tmp >= 32)
     {
-      snprintf(errbuf, errlen, "invalid prefix %s", pfxstr);
+      snprintf(errbuf, errlen, "invalid prefix");
       goto err;
     }
   prefix = (uint8_t)tmp;
@@ -1047,14 +1045,14 @@ static int dealias_alloc_prefixscan(scamper_dealias_t *d, dealias_options_t *o,
   prefixscan->a = scamper_addrcache_resolve(addrcache, AF_UNSPEC, o->addr);
   if(prefixscan->a == NULL)
     {
-      snprintf(errbuf, errlen, "could not resolve %s", o->addr);
+      snprintf(errbuf, errlen, "could not resolve address");
       goto err;
     }
   af = scamper_addr_af(prefixscan->a);
   prefixscan->b = scamper_addrcache_resolve(addrcache, af, addr2);
   if(prefixscan->b == NULL)
     {
-      snprintf(errbuf, errlen, "could not resolve %s", addr2);
+      snprintf(errbuf, errlen, "could not resolve address");
       goto err;
     }
 
@@ -1080,12 +1078,12 @@ static int dealias_alloc_prefixscan(scamper_dealias_t *d, dealias_options_t *o,
 	  xs = slist_node_item(sn);
 	  if((dst = scamper_addrcache_resolve(addrcache, af, xs)) == NULL)
 	    {
-	      snprintf(errbuf, errlen, "could not resolve %s", xs);
+	      snprintf(errbuf, errlen, "could not resolve address");
 	      goto err;
 	    }
 	  if(scamper_dealias_prefixscan_xs_add(d, dst) != 0)
 	    {
-	      snprintf(errbuf, errlen, "could not add %s to xs", xs);
+	      snprintf(errbuf, errlen, "could not add address to xs");
 	      goto err;
 	    }
 	  scamper_addr_free(dst); dst = NULL;
@@ -1259,12 +1257,12 @@ static int dealias_alloc_midarest(scamper_dealias_t *d, dealias_options_t *o,
       a2 = string_nextword(a1);
       if((addr = scamper_addrcache_resolve(addrcache, AF_INET, a1)) == NULL)
 	{
-	  snprintf(errbuf, errlen, "could not resolve %s as IPv4 address", a1);
+	  snprintf(errbuf, errlen, "could not resolve IPv4 address");
 	  goto err;
 	}
       if(slist_tail_push(addrs, addr) == NULL)
 	{
-	  snprintf(errbuf, errlen, "could not add %s to list", a1);
+	  snprintf(errbuf, errlen, "could not add address to list");
 	  goto err;
 	}
       addr = NULL;
@@ -1583,9 +1581,8 @@ void *scamper_do_dealias_alloc(char *str, char *errbuf, size_t errlen)
 	 dealias_arg_param_validate(opt->id, opt->str, &tmp,
 				    buf, sizeof(buf)) != 0)
 	{
-	  snprintf(errbuf, errlen, "-%c %s failed: %s",
-		   scamper_options_id2c(opts, opts_cnt, opt->id),
-		   opt->str, buf);
+	  snprintf(errbuf, errlen, "-%c failed: %s",
+		   scamper_options_id2c(opts, opts_cnt, opt->id), buf);
 	  goto err;
 	}
 
@@ -1608,7 +1605,7 @@ void *scamper_do_dealias_alloc(char *str, char *errbuf, size_t errlen)
 	    o.inseq = 1;
 	  else
 	    {
-	      snprintf(errbuf, errlen, "-O %s unknown", opt->str);
+	      snprintf(errbuf, errlen, "unknown option");
 	      goto err;
 	    }
 	  break;

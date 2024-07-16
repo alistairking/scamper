@@ -5,7 +5,7 @@
  *
  * Author: Matthew Luckie
  *
- * $Id: scamper_host_warts.c,v 1.17 2023/12/22 18:55:00 mjl Exp $
+ * $Id: scamper_host_warts.c,v 1.19 2024/04/27 21:04:41 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -153,6 +153,19 @@ static const warts_var_t host_rr_soa_vars[] =
 };
 #define host_rr_soa_vars_mfb WARTS_VAR_MFB(host_rr_soa_vars)
 
+/*
+ * the bits of a rr_txt structure
+ */
+#define WARTS_HOST_RR_TXT_STRC      1
+#define WARTS_HOST_RR_TXT_STRS      2
+
+static const warts_var_t host_rr_txt_vars[] =
+{
+  {WARTS_HOST_RR_TXT_STRC,    2},
+  {WARTS_HOST_RR_TXT_STRS,   -1},
+};
+#define host_rr_txt_vars_mfb WARTS_VAR_MFB(host_rr_txt_vars)
+
 typedef struct warts_host_query
 {
   uint8_t   flags[WARTS_VAR_MFB(host_query_vars)];
@@ -177,6 +190,14 @@ typedef struct warts_host_rr_soa
   uint16_t  len;
 } warts_host_rr_soa_t;
 
+typedef struct warts_host_rr_txt
+{
+  uint8_t   flags[WARTS_VAR_MFB(host_rr_txt_vars)];
+  uint16_t  flags_len;
+  uint16_t  params_len;
+  uint16_t  len;
+} warts_host_rr_txt_t;
+
 typedef struct warts_host_rr
 {
   uint8_t   flags[WARTS_VAR_MFB(host_rr_vars)];
@@ -190,6 +211,7 @@ typedef struct warts_host_rr
   {
     warts_host_rr_soa_t *soa;
     warts_host_rr_mx_t  *mx;
+    warts_host_rr_txt_t *txt;
     void                *v;
   } data_un;
 } warts_host_rr_t;
@@ -300,7 +322,7 @@ static int warts_host_rr_mx_params(const scamper_host_rr_mx_t *mx,
       if(var->id == WARTS_HOST_RR_MX_EXCHANGE)
 	{
 	  if(warts_str_size(mx->exchange, &state->params_len) != 0)
-	    return -1;	  
+	    return -1;
 	  continue;
 	}
       assert(var->size >= 0);
@@ -458,6 +480,143 @@ static void warts_host_rr_soa_write(scamper_host_rr_soa_t *soa,
   return;
 }
 
+static int txt_strs_size(const scamper_host_rr_txt_t *txt, uint16_t *len)
+{
+  size_t s = 0, x;
+  uint16_t i;
+  for(i=0; i<txt->strc; i++)
+    {
+      if((x = strlen(txt->strs[i])) >= 256)
+	return -1;
+      s += 1 + x;
+    }
+  if(s > UINT16_MAX || uint16_wouldwrap(*len, (uint16_t)s))
+    return -1;
+  *len += (uint16_t)s;
+  return 0;
+}
+
+static void txt_strs_insert(uint8_t *buf, uint32_t *off, const uint32_t len,
+			    const scamper_host_rr_txt_t *txt, void *param)
+{
+  size_t size;
+  uint16_t i;
+  for(i=0; i<txt->strc; i++)
+    {
+      size = strlen(txt->strs[i]); assert(size < 256);
+      buf[(*off)++] = (uint8_t)size;
+      if(size > 0)
+	{
+	  memcpy(&buf[*off], txt->strs[i], size);
+	  *off += size;
+	}
+    }
+  return;
+}
+
+static int txt_strs_extract(const uint8_t *buf, uint32_t *off,
+			    const uint32_t len,
+			    scamper_host_rr_txt_t *txt, void *param)
+{
+  size_t size;
+  uint16_t i;
+
+  if(*off >= len)
+    return -1;
+
+  if((txt->strs = malloc_zero(txt->strc * sizeof(char *))) == NULL)
+    return -1;
+  for(i=0; i<txt->strc; i++)
+    {
+      size = buf[(*off)++];
+      if(len - *off < size)
+	return -1;
+      if((txt->strs[i] = malloc(size+1)) == NULL)
+	return -1;
+      memcpy(txt->strs[i], &buf[*off], size);
+      txt->strs[i][size] = '\0';
+      *off += size;
+    }
+
+  return 0;
+}
+
+static int warts_host_rr_txt_params(const scamper_host_rr_txt_t *txt,
+				    warts_host_rr_txt_t *state)
+{
+  const warts_var_t *var;
+  int max_id = 0;
+  size_t i;
+
+  memset(state->flags, 0, host_rr_txt_vars_mfb);
+  state->params_len = 0;
+
+  for(i=0; i<sizeof(host_rr_txt_vars)/sizeof(warts_var_t); i++)
+    {
+      var = &host_rr_txt_vars[i];
+      if((var->id == WARTS_HOST_RR_TXT_STRC && txt->strc == 0) ||
+	 (var->id == WARTS_HOST_RR_TXT_STRS && txt->strc == 0))
+	continue;
+
+      flag_set(state->flags, var->id, &max_id);
+      if(var->id == WARTS_HOST_RR_TXT_STRS)
+	{
+	  if(txt_strs_size(txt, &state->params_len) != 0)
+	    return -1;
+	  continue;
+	}
+      assert(var->size >= 0);
+      state->params_len += var->size;
+    }
+
+  state->flags_len += fold_flags(state->flags, max_id);
+  state->len = state->flags_len + state->params_len;
+  if(state->params_len != 0)
+    state->len += 2;
+  return 0;
+}
+
+static int warts_host_rr_txt_read(void **data,
+				  const uint8_t *buf, uint32_t *off,
+				  uint32_t len)
+{
+  scamper_host_rr_txt_t *txt = NULL;
+  warts_param_reader_t handlers[] = {
+    {NULL, (wpr_t)extract_uint16,   NULL}, /* strc */
+    {NULL, (wpr_t)txt_strs_extract, NULL}, /* strs */
+  };
+  const int handler_cnt = sizeof(handlers)/sizeof(warts_param_reader_t);
+
+  if((txt = scamper_host_rr_txt_alloc(0)) == NULL)
+    goto err;
+  handlers[0].data = &txt->strc;
+  handlers[1].data = txt;
+
+  if(warts_params_read(buf, off, len, handlers, handler_cnt) != 0)
+    goto err;
+
+  *data = txt;
+  return 0;
+
+ err:
+  if(txt != NULL) scamper_host_rr_txt_free(txt);
+  return -1;
+}
+
+static void warts_host_rr_txt_write(scamper_host_rr_txt_t *txt,
+				    uint8_t *buf, uint32_t *off, uint32_t len,
+				    warts_host_rr_txt_t *state)
+{
+  warts_param_writer_t handlers[] = {
+    {&txt->strc,     (wpw_t)insert_uint16,   NULL},
+    {txt,            (wpw_t)txt_strs_insert, NULL},
+  };
+  const int handler_cnt = sizeof(handlers)/sizeof(warts_param_writer_t);
+  warts_params_write(buf, off, len, state->flags, state->flags_len,
+		     state->params_len, handlers, handler_cnt);
+  return;
+}
+
 static int extract_rrdata(const uint8_t *buf, uint32_t *off, uint32_t len,
 			  warts_host_rr_read_t *rrdata,
 			  warts_addrtable_t *table)
@@ -493,6 +652,12 @@ static int extract_rrdata(const uint8_t *buf, uint32_t *off, uint32_t len,
 	return -1;
       return 0;
     }
+  else if(type == SCAMPER_HOST_RR_DATA_TYPE_TXT)
+    {
+      if(warts_host_rr_txt_read(&rrdata->data, buf, off, len) != 0)
+	return -1;
+      return 0;
+    }
   return -1;
 }
 
@@ -503,21 +668,16 @@ static void insert_rrdata(uint8_t *buf, uint32_t *off, const uint32_t len,
   insert_uint16(buf, off, len, &rr->data_type, NULL);
 
   if(rr->data_type == SCAMPER_HOST_RR_DATA_TYPE_ADDR)
-    {
-      insert_addr(buf, off, len, rr->rr->un.addr, table);
-    }
+    insert_addr(buf, off, len, rr->rr->un.addr, table);
   else if(rr->data_type == SCAMPER_HOST_RR_DATA_TYPE_STR)
-    {
-      insert_string(buf, off, len, rr->rr->un.str, NULL);
-    }
+    insert_string(buf, off, len, rr->rr->un.str, NULL);
   else if(rr->data_type == SCAMPER_HOST_RR_DATA_TYPE_SOA)
-    {
-      warts_host_rr_soa_write(rr->rr->un.soa, buf, off, len, rr->data_un.soa);
-    }
+    warts_host_rr_soa_write(rr->rr->un.soa, buf, off, len, rr->data_un.soa);
   else if(rr->data_type == SCAMPER_HOST_RR_DATA_TYPE_MX)
-    {
-      warts_host_rr_mx_write(rr->rr->un.mx, buf, off, len, rr->data_un.mx);
-    }
+    warts_host_rr_mx_write(rr->rr->un.mx, buf, off, len, rr->data_un.mx);
+  else if(rr->data_type == SCAMPER_HOST_RR_DATA_TYPE_TXT)
+    warts_host_rr_txt_write(rr->rr->un.txt, buf, off, len, rr->data_un.txt);
+
   return;
 }
 
@@ -533,7 +693,8 @@ static int warts_host_rr_data_len(const scamper_host_rr_t *rr,
   assert(x == SCAMPER_HOST_RR_DATA_TYPE_ADDR ||
 	 x == SCAMPER_HOST_RR_DATA_TYPE_STR ||
 	 x == SCAMPER_HOST_RR_DATA_TYPE_SOA ||
-	 x == SCAMPER_HOST_RR_DATA_TYPE_MX);
+	 x == SCAMPER_HOST_RR_DATA_TYPE_MX  ||
+	 x == SCAMPER_HOST_RR_DATA_TYPE_TXT);
 
   state->data_type = (uint16_t)x;
   state->rr = (scamper_host_rr_t *)rr;
@@ -564,6 +725,15 @@ static int warts_host_rr_data_len(const scamper_host_rr_t *rr,
       if(uint16_wouldwrap(len, state->data_un.mx->len))
 	return -1;
       len += state->data_un.mx->len;
+    }
+  else if(state->data_type == SCAMPER_HOST_RR_DATA_TYPE_TXT)
+    {
+      if((state->data_un.txt=malloc_zero(sizeof(warts_host_rr_txt_t))) == NULL)
+	return -1;
+      warts_host_rr_txt_params(rr->un.txt, state->data_un.txt);
+      if(uint16_wouldwrap(len, state->data_un.txt->len))
+	return -1;
+      len += state->data_un.txt->len;
     }
   else return -1;
 
@@ -665,6 +835,8 @@ static int warts_host_rr_read(scamper_host_rr_t **rr, int i,
 	scamper_host_rr_soa_free(rrdata.data);
       else if(rrdata.type == SCAMPER_HOST_RR_DATA_TYPE_MX)
 	scamper_host_rr_mx_free(rrdata.data);
+      else if(rrdata.type == SCAMPER_HOST_RR_DATA_TYPE_TXT)
+	scamper_host_rr_txt_free(rrdata.data);
     }
   return rc;
 }

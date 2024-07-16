@@ -1,7 +1,7 @@
 /*
  * scamper_udp4.c
  *
- * $Id: scamper_udp4.c,v 1.85 2024/02/21 05:06:43 mjl Exp $
+ * $Id: scamper_udp4.c,v 1.88 2024/07/02 01:11:17 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2010 The University of Waikato
@@ -33,6 +33,7 @@
 #include "scamper_addr.h"
 #include "scamper_addr_int.h"
 #include "scamper_dl.h"
+#include "scamper_dlhdr.h"
 #include "scamper_probe.h"
 #include "scamper_ip4.h"
 #include "scamper_udp4.h"
@@ -277,7 +278,6 @@ SOCKET scamper_udp4_opendgram(const void *addr, int sport)
 {
   struct sockaddr_in sin4;
   char tmp[32];
-  int opt;
 
 #ifndef _WIN32 /* SOCKET vs int on windows */
   int fd;
@@ -292,28 +292,25 @@ SOCKET scamper_udp4_opendgram(const void *addr, int sport)
       goto err;
     }
 
-  opt = 1;
-  if(setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, (void *)&opt, sizeof(opt)) != 0)
+  if(setsockopt_int(fd, SOL_SOCKET, SO_REUSEADDR, 1) != 0)
     {
       printerror(__func__, "could not set SO_REUSEADDR");
       goto err;
     }
 
 #if defined(SO_TIMESTAMP)
-  opt = 1;
-  if(setsockopt(fd, SOL_SOCKET, SO_TIMESTAMP, (void *)&opt, sizeof(opt)) != 0)
+  if(setsockopt_int(fd, SOL_SOCKET, SO_TIMESTAMP, 1) != 0)
     printerror(__func__, "could not set SO_TIMESTAMP");
 #endif
 
-  opt = 1;
-  if(setsockopt(fd, IPPROTO_IP, IP_RECVTTL, (void *)&opt, sizeof(opt)) == -1)
+  if(setsockopt_int(fd, IPPROTO_IP, IP_RECVTTL, 1) != 0)
     printerror(__func__, "could not set IP_RECVTTL");
 
   sockaddr_compose((struct sockaddr *)&sin4, AF_INET, addr, sport);
   if(bind(fd, (struct sockaddr *)&sin4, sizeof(sin4)) == -1)
     {
       printerror(__func__, "could not bind %s",
-		 sockaddr_tostr((struct sockaddr *)&sin4, tmp, sizeof(tmp)));
+		 sockaddr_tostr((struct sockaddr *)&sin4, tmp, sizeof(tmp), 1));
       goto err;
     }
 
@@ -332,7 +329,6 @@ SOCKET scamper_udp4_openraw_fd(const void *addr)
 #endif
 {
   struct sockaddr_in sin4;
-  int hdr;
   char tmp[32];
 
 #ifndef _WIN32 /* SOCKET vs int on windows */
@@ -347,8 +343,7 @@ SOCKET scamper_udp4_openraw_fd(const void *addr)
       printerror(__func__, "could not open socket");
       goto err;
     }
-  hdr = 1;
-  if(setsockopt(fd, IPPROTO_IP, IP_HDRINCL, (void *)&hdr, sizeof(hdr)) == -1)
+  if(setsockopt_int(fd, IPPROTO_IP, IP_HDRINCL, 1) != 0)
     {
       printerror(__func__, "could not IP_HDRINCL");
       goto err;
@@ -357,7 +352,7 @@ SOCKET scamper_udp4_openraw_fd(const void *addr)
   if(bind(fd, (struct sockaddr *)&sin4, sizeof(sin4)) == -1)
     {
       printerror(__func__, "could not bind %s",
-		 sockaddr_tostr((struct sockaddr *)&sin4, tmp, sizeof(tmp)));
+		 sockaddr_tostr((struct sockaddr *)&sin4, tmp, sizeof(tmp), 1));
       goto err;
     }
 
@@ -375,8 +370,6 @@ int scamper_udp4_openraw(const void *addr)
 SOCKET scamper_udp4_openraw(const void *addr)
 #endif
 {
-  int opt;
-
 #ifndef _WIN32 /* SOCKET vs int on windows */
   int fd = -1;
 #else
@@ -407,8 +400,7 @@ SOCKET scamper_udp4_openraw(const void *addr)
   if(socket_isinvalid(fd))
     goto err;
 
-  opt = 65535 + 128;
-  if(setsockopt(fd, SOL_SOCKET, SO_SNDBUF, (void *)&opt, sizeof(opt)) == -1)
+  if(setsockopt_raise(fd, SOL_SOCKET, SO_SNDBUF, 65535 + 128) != 0)
     {
       printerror(__func__, "could not set SO_SNDBUF");
       goto err;

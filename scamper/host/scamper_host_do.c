@@ -1,9 +1,9 @@
 /*
  * scamper_host_do
  *
- * $Id: scamper_host_do.c,v 1.71 2024/02/27 03:34:02 mjl Exp $
+ * $Id: scamper_host_do.c,v 1.78 2024/04/27 21:35:54 mjl Exp $
  *
- * Copyright (C) 2018-2023 Matthew Luckie
+ * Copyright (C) 2018-2024 Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -38,6 +38,7 @@
 #include "scamper_debug.h"
 #include "scamper_host_do.h"
 #include "scamper_fds.h"
+#include "scamper_writebuf.h"
 #include "scamper_privsep.h"
 #include "mjl_list.h"
 #include "mjl_splaytree.h"
@@ -56,6 +57,12 @@ static uint16_t dns_id = 1;
 
 scamper_addr_t *default_ns = NULL;
 
+/* when using a TCP socket */
+#define STATE_MODE_CONNECT   0 /* not connected */
+#define STATE_MODE_CONNECTED 1 /* connected */
+#define STATE_MODE_REQ       2 /* currently sending request */
+#define STATE_MODE_DONE      3
+
 typedef struct host_id
 {
   uint16_t          id;   /* query ID */
@@ -71,9 +78,18 @@ typedef struct host_pid
 
 typedef struct host_state
 {
-  char             *qname;
-  dlist_t          *pids; /* pointers to host ids */
-  dlist_t          *cbs;  /* if we need to pass result to another task */
+  char               *qname;
+  dlist_t            *pids; /* pointers to host ids */
+  dlist_t            *cbs;  /* if we need to pass result to another task */
+
+  /* for TCP probing */
+  scamper_fd_t       *tcp;
+  scamper_writebuf_t *wb;
+  struct timeval      finish;
+  uint8_t             mode;
+  uint8_t            *readbuf;
+  size_t              readbuf_off;
+  size_t              readbuf_len;
 } host_state_t;
 
 struct scamper_host_do
@@ -103,15 +119,15 @@ static int etc_resolv_line(char *line, void *param)
   x = 10;
   if(strncasecmp(line, "nameserver", x) != 0)
     return 0;
-  while(isspace(line[x]) != 0)
+  while(isspace((unsigned char)line[x]) != 0)
     x++;
   if(x == 10 || line[x] == '\0')
     return 0;
 
   /* null terminate at spaces / comments */
   y = x;
-  while(isspace(line[y]) == 0 && line[y] != '\0' && line[y] != '#' &&
-	line[y] != ';')
+  while(line[y] != '\0' && line[y] != '#' && line[y] != ';' &&
+	isspace((unsigned char)line[y]) == 0)
     y++;
   line[y] = '\0';
 
@@ -184,6 +200,18 @@ static int host_fd_close(void *param)
   return 0;
 }
 
+static const char *host_mode(int mode)
+{
+  switch(mode)
+    {
+    case STATE_MODE_CONNECT:   return "connect";
+    case STATE_MODE_CONNECTED: return "connected";
+    case STATE_MODE_REQ:       return "req";
+    case STATE_MODE_DONE:      return "done";
+    }
+  return "unknown";
+}
+
 static scamper_host_t *host_getdata(const scamper_task_t *task)
 {
   return scamper_task_getdata(task);
@@ -192,6 +220,18 @@ static scamper_host_t *host_getdata(const scamper_task_t *task)
 static host_state_t *host_getstate(const scamper_task_t *task)
 {
   return scamper_task_getstate(task);
+}
+
+static void host_queue(scamper_task_t *task)
+{
+  host_state_t *state = host_getstate(task);
+  if(scamper_task_queue_isdone(task))
+    return;
+  if(scamper_writebuf_gtzero(state->wb))
+    scamper_task_queue_probe(task);
+  else
+    scamper_task_queue_wait_tv(task, &state->finish);
+  return;
 }
 
 static void host_stop(scamper_task_t *task, uint8_t reason)
@@ -299,6 +339,12 @@ static void host_state_free(host_state_t *state)
 {
   host_pid_t *pid;
 
+#ifndef _WIN32 /* SOCKET vs int on windows */
+  int fd;
+#else
+  SOCKET fd;
+#endif
+
   if(state == NULL)
     return;
   if(state->qname != NULL)
@@ -319,6 +365,18 @@ static void host_state_free(host_state_t *state)
 	}
       dlist_free(state->pids);
     }
+  if(state->tcp != NULL)
+    {
+      fd = scamper_fd_fd_get(state->tcp);
+      if(socket_isvalid(fd))
+	socket_close(fd);
+      scamper_fd_free(state->tcp);
+    }
+  if(state->wb != NULL)
+    scamper_writebuf_free(state->wb);
+  if(state->readbuf != NULL)
+    free(state->readbuf);
+
   free(state);
   return;
 }
@@ -411,8 +469,13 @@ static host_state_t *host_state_alloc(scamper_task_t *task)
 }
 #endif /* TEST_HOST_RR_LIST */
 
+#ifdef TEST_HOST_RR_LIST
+int extract_name(char *name, size_t namelen,
+		 const uint8_t *pbuf, size_t plen, size_t off)
+#else
 static int extract_name(char *name, size_t namelen,
 			const uint8_t *pbuf, size_t plen, size_t off)
+#endif
 {
   int ptr_used = 0, rc = 0;
   uint16_t u16;
@@ -527,6 +590,55 @@ static int extract_mx(scamper_host_rr_t *rr,
   return 0;
 }
 
+static int extract_txt(scamper_host_rr_t *rr, const uint8_t *pbuf,
+		       size_t plen, size_t off, size_t rdlength)
+{
+  scamper_host_rr_txt_t *txt;
+  slist_t *list = NULL;
+  char *str = NULL;
+  size_t i = 0;
+  uint8_t len;
+
+  if((list = slist_alloc()) == NULL)
+    return -1;
+
+  while(i < rdlength)
+    {
+      len = pbuf[off];
+      if(plen - off < len || rdlength - i < len ||
+	 (str = malloc(len + 1)) == NULL)
+	goto err;
+      memcpy(str, &pbuf[off+1], len);
+      str[len] = '\0';
+      if(slist_tail_push(list, str) == NULL)
+	goto err;
+      str = NULL;
+      i += (len + 1);
+      off += (len + 1);
+    }
+
+  if(slist_count(list) > 65535)
+    goto err;
+
+  if(slist_count(list) > 0)
+    {
+      if((txt = scamper_host_rr_txt_alloc(slist_count(list))) == NULL)
+	goto err;
+      i = 0;
+      while((str = slist_head_pop(list)) != NULL)
+	txt->strs[i++] = str;
+      rr->un.txt = txt;
+    }
+
+  slist_free(list);
+  return 0;
+
+ err:
+  if(str != NULL) free(str);
+  if(list != NULL) slist_free_cb(list, free);
+  return -1;
+}
+
 #ifdef TEST_HOST_RR_LIST
 slist_t *host_rr_list(const uint8_t *buf, size_t off, size_t len)
 #else
@@ -573,7 +685,7 @@ static slist_t *host_rr_list(const uint8_t *buf, size_t off, size_t len)
 	      goto err;
 	    }
 
-	  if(class == 1 &&
+	  if(class == SCAMPER_HOST_CLASS_IN &&
 	     (type == SCAMPER_HOST_TYPE_NS ||
 	      type == SCAMPER_HOST_TYPE_CNAME ||
 	      type == SCAMPER_HOST_TYPE_PTR))
@@ -583,7 +695,8 @@ static slist_t *host_rr_list(const uint8_t *buf, size_t off, size_t len)
 	      if((rr->un.str = strdup(str)) == NULL)
 		goto err;
 	    }
-	  else if(class == 1 && type == SCAMPER_HOST_TYPE_A)
+	  else if(class == SCAMPER_HOST_CLASS_IN &&
+		  type == SCAMPER_HOST_TYPE_A)
 	    {
 	      if(rdlength != 4)
 		goto err;
@@ -592,7 +705,8 @@ static slist_t *host_rr_list(const uint8_t *buf, size_t off, size_t len)
 	      if((rr->un.addr = scamper_addr_alloc_ipv4(&in4)) == NULL)
 		goto err;
 	    }
-	  else if(class == 1 && type == SCAMPER_HOST_TYPE_AAAA)
+	  else if(class == SCAMPER_HOST_CLASS_IN &&
+		  type == SCAMPER_HOST_TYPE_AAAA)
 	    {
 	      if(rdlength != 16)
 		goto err;
@@ -601,14 +715,23 @@ static slist_t *host_rr_list(const uint8_t *buf, size_t off, size_t len)
 	      if((rr->un.addr = scamper_addr_alloc_ipv6(&in6)) == NULL)
 		goto err;
 	    }
-	  else if(class == 1 && type == SCAMPER_HOST_TYPE_SOA)
+	  else if(class == SCAMPER_HOST_CLASS_IN &&
+		  type == SCAMPER_HOST_TYPE_SOA)
 	    {
 	      if(extract_soa(rr, buf, len, off) != 0)
 		goto err;
 	    }
-	  else if(class == 1 && type == SCAMPER_HOST_TYPE_MX)
+	  else if(class == SCAMPER_HOST_CLASS_IN &&
+		  type == SCAMPER_HOST_TYPE_MX)
 	    {
 	      if(extract_mx(rr, buf, len, off) != 0)
+		goto err;
+	    }
+	  else if((class == SCAMPER_HOST_CLASS_IN ||
+		   class == SCAMPER_HOST_CLASS_CH) &&
+		  type == SCAMPER_HOST_TYPE_TXT)
+	    {
+	      if(extract_txt(rr, buf, len, off, rdlength) != 0)
 		goto err;
 	    }
 
@@ -634,51 +757,205 @@ static slist_t *host_rr_list(const uint8_t *buf, size_t off, size_t len)
 
 #ifndef TEST_HOST_RR_LIST
 
+static int process_1(const uint8_t *buf, size_t len, size_t *off,
+		     uint16_t *id, uint16_t *qtype, uint16_t *qclass,
+		     char *name, size_t namelen)
+{
+  uint16_t qdcount;
+  int i;
+
+  if(len < 12)
+    return 0;
+
+  /* QR bit must be set, as we want a response, and one Q per query */
+  qdcount = bytes_ntohs(buf+4);
+  if((buf[2] & 0x80) == 0 || qdcount != 1)
+    return 0;
+
+  *id = bytes_ntohs(buf+0);
+  *off = 12;
+
+  /* get the question out of the packet */
+  if((i = extract_name(name, namelen, buf, len, *off)) <= 0)
+    return 0;
+
+  /* make sure that there's enough buf left after advancing past the qname */
+  if(len - *off <= (size_t)i)
+    return 0;
+  (*off) += i;
+
+  /* make sure that there's enough buf left for qtype / qclass */
+  if(len - *off < 4)
+    return 0;
+
+  *qtype = bytes_ntohs(buf+*off); (*off) += 2;
+  *qclass = bytes_ntohs(buf+*off); (*off) += 2;
+
+  return 1;
+}
+
+static int process_2(const uint8_t *buf, size_t len, size_t off,
+		     scamper_host_query_t *q)
+{
+  slist_t *rr_list = NULL;
+  scamper_host_rr_t **an = NULL, **ns = NULL, **ar = NULL;
+  uint8_t flags[2];
+  uint16_t ancount, nscount, arcount;
+  int i, rc = -1;
+
+  /* parse the RRs, and allocate space to store individual RRs */
+  ancount = bytes_ntohs(buf+6);
+  nscount = bytes_ntohs(buf+8);
+  arcount = bytes_ntohs(buf+10);
+  if((rr_list = host_rr_list(buf, off, len)) == NULL ||
+     (ancount > 0 &&
+      (an = malloc_zero(sizeof(scamper_host_rr_t *) * ancount)) == NULL) ||
+     (nscount > 0 &&
+      (ns = malloc_zero(sizeof(scamper_host_rr_t *) * nscount)) == NULL) ||
+     (arcount > 0 &&
+      (ar = malloc_zero(sizeof(scamper_host_rr_t *) * arcount)) == NULL))
+    goto done;
+
+  /* put each RR in the appropriate section */
+  for(i=0; i<ancount; i++)
+    an[i] = slist_head_pop(rr_list);
+  for(i=0; i<nscount; i++)
+    ns[i] = slist_head_pop(rr_list);
+  for(i=0; i<arcount; i++)
+    ar[i] = slist_head_pop(rr_list);
+
+  /* finalize the scamper_host_rr_t structure */
+  flags[0] = buf[2];
+  flags[1] = buf[3];
+  q->ancount = ancount; q->an = an; an = NULL;
+  q->nscount = nscount; q->ns = ns; ns = NULL;
+  q->arcount = arcount; q->ar = ar; ar = NULL;
+  q->rcode   = flags[1] & 0x0f;
+  q->flags   = ((flags[0] & 0x0f) << 4) | ((flags[1] & 0xf0) >> 4);
+
+  rc = 0;
+
+ done:
+  if(an != NULL) free(an);
+  if(ns != NULL) free(ns);
+  if(ar != NULL) free(ar);
+  if(rr_list != NULL)
+    slist_free_cb(rr_list, (slist_free_t)scamper_host_rr_free);
+  return rc;
+}
+
+static void tcp_process(scamper_task_t *task, uint8_t *buf, size_t len)
+{
+  scamper_host_t *host = host_getdata(task);
+  host_state_t *state = host_getstate(task);
+  uint16_t id, qtype, qclass;
+  char name[256];
+  size_t off;
+
+  if(process_1(buf, len, &off, &id, &qtype, &qclass, name, sizeof(name)) == 0)
+    return;
+
+  if(host->qtype != qtype || host->qclass != qclass ||
+     strcasecmp(state->qname, name) != 0 ||
+     host->queries[0]->id != id)
+    return;
+
+  if(process_2(buf, len, off, host->queries[0]) == 0)
+    host_stop(task, SCAMPER_HOST_STOP_DONE);
+  gettimeofday_wrap(&host->queries[0]->rx);
+
+  return;
+}
+
 #ifndef _WIN32 /* SOCKET vs int on windows */
-static void do_host_read(int fd, void *param)
+static void host_tcp_read(int fd, void *param)
 #else
-static void do_host_read(SOCKET fd, void *param)
+static void host_tcp_read(SOCKET fd, void *param)
+#endif
+{
+  scamper_task_t *task = (scamper_task_t *)param;
+  host_state_t *state = host_getstate(task);
+  ssize_t rc;
+  size_t s;
+
+  if((rc = recv(fd, pktbuf, pktbuf_len, 0)) < 0)
+    {
+      host_stop(task, SCAMPER_HOST_STOP_ERROR);
+      state->mode = STATE_MODE_DONE;
+      return;
+    }
+
+  if(rc == 0)
+    {
+      scamper_debug(__func__, "disconnected fd %d", fd);
+      host_stop(task, SCAMPER_HOST_STOP_DONE);
+      state->mode = STATE_MODE_DONE;
+      return;
+    }
+
+  if(state->readbuf == NULL)
+    {
+      if(rc >= 2 && rc >= (pktbuf[0] * 256) + pktbuf[1] + 2)
+	{
+	  tcp_process(task, pktbuf+2, (size_t)rc-2);
+	  return;
+	}
+
+      if(rc == 1)
+	state->readbuf_len = (pktbuf[0] * 256) + 256 + 2;
+      else
+	state->readbuf_len = (pktbuf[0] * 256) + pktbuf[1] + 2;
+      if((state->readbuf = malloc(state->readbuf_len)) == NULL)
+	return;
+      memcpy(state->readbuf, pktbuf, rc);
+      state->readbuf_off = rc;
+    }
+  else
+    {
+      if(state->readbuf_off == 1)
+	state->readbuf_len = (state->readbuf[0] * 256) + pktbuf[0] + 2;
+      if(state->readbuf_len - state->readbuf_off >= (size_t)rc)
+	s = rc;
+      else
+	s = state->readbuf_len - state->readbuf_off;
+      memcpy(state->readbuf + state->readbuf_off, pktbuf, s);
+      state->readbuf_off += s;
+
+      if(state->readbuf_off == state->readbuf_len)
+	{
+	  tcp_process(task, state->readbuf+2, state->readbuf_len-2);
+	}
+    }
+
+  return;
+}
+
+#ifndef _WIN32 /* SOCKET vs int on windows */
+static void host_udp_read(int fd, void *param)
+#else
+static void host_udp_read(SOCKET fd, void *param)
 #endif
 {
   scamper_task_t *task = NULL;
   scamper_host_t *host = NULL;
   host_state_t *state;
-  slist_t *rr_list = NULL;
-  scamper_host_rr_t **rrs = NULL;
   dlist_node_t *dn;
   host_id_t *hid;
   scamper_host_query_t *q = NULL;
-  uint16_t id, qdcount, qtype, qclass;
-  uint8_t flags[2];
-  ssize_t off, len;
+  uint16_t id, qtype, qclass;
+  size_t off, len;
+  ssize_t rc;
   char name[256];
-  int i, j, x;
+  int i;
 
-  if((len = recv(fd, pktbuf, pktbuf_len, 0)) < 0)
+  if((rc = recv(fd, pktbuf, pktbuf_len, 0)) < 0)
     return;
-  if(len < 12)
+  len = (size_t)rc;
+
+  if(process_1(pktbuf,len,&off,&id,&qtype,&qclass,name,sizeof(name)) == 0)
     return;
 
   id = bytes_ntohs(pktbuf+0);
-  flags[0] = pktbuf[2];
-  flags[1] = pktbuf[3];
-  qdcount = bytes_ntohs(pktbuf+4);
-
-  /* QR bit must be set, as we want a response, and one Q per query */
-  if((flags[0] & 0x80) == 0 || qdcount != 1)
-    return;
-
-  off = 12;
-
-  /* get the question out of the packet */
-  if((i = extract_name(name, sizeof(name), pktbuf, len, off)) <= 0)
-    {
-      scamper_debug(__func__, "could not extract qname");
-      return;
-    }
-  off += i;
-  qtype = bytes_ntohs(pktbuf+off); off += 2;
-  qclass = bytes_ntohs(pktbuf+off); off += 2;
 
   /* find the relevant query we sent */
   if((hid = host_id_find(id)) == NULL)
@@ -711,65 +988,85 @@ static void do_host_read(SOCKET fd, void *param)
   q = host->queries[i];
   gettimeofday_wrap(&q->rx);
 
-  if((rr_list = host_rr_list(pktbuf, off, len)) == NULL)
-    return;
+  if(process_2(pktbuf, len, off, q) == 0)
+    host_stop(task, SCAMPER_HOST_STOP_DONE);
 
-  q->ancount = bytes_ntohs(pktbuf+6);
-  q->nscount = bytes_ntohs(pktbuf+8);
-  q->arcount = bytes_ntohs(pktbuf+10);
-  q->rcode   = flags[1] & 0x0f;
-  q->flags   = ((flags[0] & 0x0f) << 4) | ((flags[1] & 0xf0) >> 4);
-
-  for(i=0; i<3; i++)
-    {
-      if(i == 0)
-	{
-	  x = q->ancount;
-	  if((q->an = malloc_zero(sizeof(scamper_host_rr_t *) * x)) == NULL)
-	    goto err;
-	  rrs = q->an;
-	}
-      else if(i == 1)
-	{
-	  x = q->nscount;
-	  if((q->ns = malloc_zero(sizeof(scamper_host_rr_t *) * x)) == NULL)
-	    goto err;
-	  rrs = q->ns;
-	}
-      else if(i == 2)
-	{
-	  x = q->arcount;
-	  if((q->ar = malloc_zero(sizeof(scamper_host_rr_t *) * x)) == NULL)
-	    goto err;
-	  rrs = q->ar;
-	}
-
-      for(j=0; j<x; j++)
-	rrs[j] = slist_head_pop(rr_list);
-    }
-
-  slist_free_cb(rr_list, (slist_free_t)scamper_host_rr_free);
-  host_stop(task, SCAMPER_HOST_STOP_DONE);
-  return;
-
- err:
-  if(rr_list != NULL)
-    slist_free_cb(rr_list, (slist_free_t)scamper_host_rr_free);
   return;
 }
 
-static void do_host_probe(scamper_task_t *task)
+static int do_host_probe_query(const scamper_host_t *host,
+			       const host_state_t *state, uint16_t id,
+			       uint8_t *buf, size_t *len)
+{
+  const char *ptr, *dot;
+  size_t off;
+
+  if(*len < 12)
+    return -1;      
+
+  /* 12 bytes of DNS header */
+  bytes_htons(buf, id);       /* DNS ID, 16 bits */
+  if((host->flags & SCAMPER_HOST_FLAG_NORECURSE) == 0)
+    bytes_htons(buf+2, 0x0100); /* recursion desired */
+  else
+    bytes_htons(buf+2, 0); /* recursion not desired */
+  bytes_htons(buf+4, 1);      /* QDCOUNT */
+  bytes_htons(buf+6, 0);      /* ANCOUNT */
+  bytes_htons(buf+8, 0);      /* NSCOUNT */
+  bytes_htons(buf+10, 0);     /* ARCOUNT */
+  off = 12;
+
+  ptr = state->qname;
+  for(;;)
+    {
+      /* figure out how long this sequence is, to the next dot */
+      dot = ptr;
+      while(*dot != '.' && *dot != '\0')
+	dot++;
+
+      /* need a label length of at least one */
+      if(dot == ptr)
+	break;
+
+      /* labels are restricted to 63 bytes or less (RFC1035, page 30) */
+      if(dot - ptr > 63)
+	return -1;
+
+      /* store the label length */
+      buf[off++] = dot - ptr;
+
+      /* copy label across */
+      while(ptr != dot)
+	{
+	  buf[off] = *ptr;
+	  ptr++; off++;
+	}
+      if(*ptr == '.')
+	ptr++;
+      else
+	break;
+    }
+  buf[off++] = 0;
+  bytes_htons(buf+off, host->qtype); off += 2;
+  bytes_htons(buf+off, host->qclass); off += 2;
+
+  *len = off;
+  return 0;
+}
+
+static int do_host_probe_udp(scamper_task_t *task)
 {
   scamper_host_t *host = host_getdata(task);
   host_state_t *state = host_getstate(task);
+  scamper_queue_t *sq = NULL;
+  scamper_fd_t *fdn = NULL;
   scamper_host_query_t *q = NULL;
-  const char *ptr, *dot;
-  struct sockaddr_in sin;
-  struct sockaddr_in6 sin6;
+  struct sockaddr_storage ss;
   struct sockaddr *sa;
   struct timeval tv;
   uint16_t id;
-  size_t off;
+  size_t len;
+  int af;
 
 #ifndef _WIN32 /* SOCKET vs int on windows */
   int fd;
@@ -781,142 +1078,92 @@ static void do_host_probe(scamper_task_t *task)
   char buf[128], qtype[16];
 #endif
 
-  if(state == NULL && (state = host_state_alloc(task)) == NULL)
-    goto err;
-
-  if(host->queries == NULL)
-    {
-      if(scamper_host_queries_alloc(host, host->retries + 1) != 0)
-	goto err;
-      gettimeofday_wrap(&host->start);
-    }
-
-  scamper_debug(__func__, "%s %s %s", state->qname,
-		scamper_host_qtype_tostr(host->qtype, qtype, sizeof(qtype)),
-		scamper_addr_tostr(host->dst, buf, sizeof(buf)));
+  fd = socket_invalid();
+  af = scamper_addr_af(host->dst);
+  assert(af == AF_INET || af == AF_INET6);
 
   /* when to close the DNS fd */
   gettimeofday_wrap(&tv); tv.tv_sec += 10;
 
-  if(SCAMPER_ADDR_TYPE_IS_IPV4(host->dst))
+  /*
+   * if we're using UDP probes, then the UDP socket is shared with other
+   * DNS lookup tasks.
+   */
+  if((af == AF_INET  && dns4_fd == NULL) ||
+     (af == AF_INET6 && dns6_fd == NULL))
     {
-      if(dns4_fd == NULL)
+      fd = socket(af, SOCK_DGRAM, IPPROTO_UDP);
+      if(socket_isinvalid(fd))
 	{
-	  fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-	  if(socket_isinvalid(fd))
-	    {
-	      printerror(__func__, "could not open dns4_fd");
-	      goto err;
-	    }
-	  if((dns4_fd = scamper_fd_private(fd,NULL,do_host_read,NULL)) == NULL)
-	    {
-	      printerror(__func__, "could not register dns4_fd");
-	      goto err;
-	    }
-	}
-      else fd = scamper_fd_fd_get(dns4_fd);
-
-      if(dns4_sq == NULL)
-	{
-	  if((dns4_sq = scamper_queue_event(&tv,host_fd_close,dns4_fd)) == NULL)
-	    {
-	      printerror(__func__, "could not register dns4_sq");
-	      goto err;
-	    }
-	}
-      else if(scamper_queue_event_update_time(dns4_sq, &tv) != 0)
-	{
-	  printerror(__func__, "could not update dns4_sq");
+	  printerror(__func__, "could not open udp socket");
 	  goto err;
 	}
 
-      sa = (struct sockaddr *)&sin;
-      sockaddr_compose(sa, AF_INET, host->dst->addr, 53);
-    }
-  else if(SCAMPER_ADDR_TYPE_IS_IPV6(host->dst))
-    {
-      if(dns6_fd == NULL)
+      if((fdn = scamper_fd_private(fd, NULL, host_udp_read, NULL)) == NULL)
 	{
-	  fd = socket(AF_INET6, SOCK_DGRAM, IPPROTO_UDP);
-	  if(socket_isinvalid(fd))
-	    {
-	      printerror(__func__, "could not open dns6_fd");
-	      return;
-	    }
-	  if((dns6_fd = scamper_fd_private(fd,NULL,do_host_read,NULL)) == NULL)
-	    {
-	      printerror(__func__, "could not register dns6_fd");
-	      return;
-	    }
-	}
-      else fd = scamper_fd_fd_get(dns6_fd);
-
-      if(dns6_sq == NULL)
-	{
-	  if((dns6_sq = scamper_queue_event(&tv,host_fd_close,dns6_fd)) == NULL)
-	    {
-	      printerror(__func__, "could not register dns6_sq");
-	      goto err;
-	    }
-	}
-      else if(scamper_queue_event_update_time(dns6_sq, &tv) != 0)
-	{
-	  printerror(__func__, "could not update dns6_sq");
+	  printerror(__func__, "could not register udp socket");
+	  socket_close(fd);
 	  goto err;
 	}
 
-      sa = (struct sockaddr *)&sin6;
-      sockaddr_compose(sa, AF_INET6, host->dst->addr, 53);
+      if((sq = scamper_queue_event(&tv, host_fd_close, fdn)) == NULL)
+	{
+	  printerror(__func__, "could not register sq");
+	  socket_close(fd);
+	  scamper_fd_free(fdn);
+	  goto err;
+	}
+
+      if(af == AF_INET)
+	{
+	  assert(dns4_sq == NULL);
+	  dns4_fd = fdn;
+	  dns4_sq = sq;
+	}
+      else
+	{
+	  assert(dns6_sq == NULL);
+	  dns6_fd = fdn;
+	  dns6_sq = sq;
+	}
     }
   else
     {
-      scamper_debug(__func__, "host->dst is neither IPv4 or IPv6");
-      goto err;
-    }
-
-  if(pktbuf == NULL)
-    {
-      pktbuf_len = 8192;
-      if((pktbuf = malloc(pktbuf_len)) == NULL)
+      if(af == AF_INET)
 	{
-	  printerror(__func__, "could not malloc pktbuf");
+	  sq = dns4_sq;
+	  fd = scamper_fd_fd_get(dns4_fd);
+	}
+      else
+	{
+	  sq = dns6_sq;
+	  fd = scamper_fd_fd_get(dns6_fd);
+	}
+
+      assert(sq != NULL);
+      if(scamper_queue_event_update_time(sq, &tv) != 0)
+	{
+	  printerror(__func__, "could not update sq");
 	  goto err;
 	}
     }
 
-  id = dns_id++;
+  len = pktbuf_len;
+  id = dns_id;
+
+  /* handle wraps with the query id */
+  if(++dns_id == 0)
+    dns_id = 1;
+  
+  if(do_host_probe_query(host, state, id, pktbuf, &len) != 0)
+    goto err;
+
   if(host_query_add(id, task) != 0)
     goto err;
 
-  /* 12 bytes of DNS header */
-  bytes_htons(pktbuf, id);       /* DNS ID, 16 bits */
-  bytes_htons(pktbuf+2, 0x0100); /* recursion desired */
-  bytes_htons(pktbuf+4, 1);      /* QDCOUNT */
-  bytes_htons(pktbuf+6, 0);      /* ANCOUNT */
-  bytes_htons(pktbuf+8, 0);      /* NSCOUNT */
-  bytes_htons(pktbuf+10, 0);     /* ARCOUNT */
-  off = 12;
-
-  ptr = state->qname;
-  for(;;)
-    {
-      dot = ptr;
-      while(*dot != '.' && *dot != '\0')
-	dot++;
-      pktbuf[off++] = dot - ptr;
-      while(ptr != dot)
-	{
-	  pktbuf[off] = *ptr;
-	  ptr++; off++;
-	}
-      if(*ptr == '.')
-	ptr++;
-      else
-	break;
-    }
-  pktbuf[off++] = 0;
-  bytes_htons(pktbuf+off, host->qtype); off += 2;
-  bytes_htons(pktbuf+off, host->qclass); off += 2;
+  scamper_debug(__func__, "%s %s %s", state->qname,
+		scamper_host_qtype_tostr(host->qtype, qtype, sizeof(qtype)),
+		scamper_addr_tostr(host->dst, buf, sizeof(buf)));
 
   if((q = scamper_host_query_alloc()) == NULL)
     {
@@ -926,7 +1173,9 @@ static void do_host_probe(scamper_task_t *task)
   gettimeofday_wrap(&q->tx);
   q->id = id;
 
-  if(sendto(fd, pktbuf, off, 0, sa, sockaddr_len(sa)) == -1)
+  sa = (struct sockaddr *)&ss;
+  sockaddr_compose(sa, af, host->dst->addr, 53);
+  if(sendto(fd, pktbuf, len, 0, sa, sockaddr_len(sa)) == -1)
     {
       printerror(__func__, "could not send query");
       goto err;
@@ -936,11 +1185,219 @@ static void do_host_probe(scamper_task_t *task)
   timeval_add_tv3(&tv, &q->tx, &host->wait_timeout);
   scamper_task_queue_wait_tv(task, &tv);
 
+  return 0;
+
+ err:
+  return -1;
+}
+
+#ifndef _WIN32 /* SOCKET vs int on windows */
+static void host_tcp_write(int fd, void *param)
+#else
+static void host_tcp_write(SOCKET fd, void *param)
+#endif
+{
+  scamper_task_t *task = param;
+  host_state_t *state = host_getstate(task);
+
+  /* always pause -- call unpause from the probe function */
+  scamper_fd_write_pause(state->tcp);
+
+  /*
+   * we successfully connected.  nothing else to do now.  wait to
+   * form first transmission in do_host_probe
+   */
+  if(state->mode == STATE_MODE_CONNECT)
+    {
+      state->mode = STATE_MODE_CONNECTED;
+      scamper_task_queue_probe(task);
+      return;
+    }
+
+  if(state->mode == STATE_MODE_REQ && state->wb != NULL)
+    {
+      /*
+       * make sure that we have something to write.  otherwise we have a
+       * logic error, as we should only be in this function because we
+       * unpaused write (i.e., had something in writebuf to send)
+       */
+      if(scamper_writebuf_gtzero(state->wb) == 0)
+	{
+	  scamper_debug(__func__, "nothing in writebuf, mode %s",
+			host_mode(state->mode));
+	  goto err;
+	}
+
+      /* write whatever we have */
+      if(scamper_writebuf_write(fd, state->wb) != 0)
+	{
+	  scamper_debug(__func__, "could not write from writebuf, mode %s",
+			host_mode(state->mode));
+	  goto err;
+	}
+    }
+
+  host_queue(task);
   return;
 
  err:
-  if(q != NULL) free(q);
   host_stop(task, SCAMPER_HOST_STOP_ERROR);
+  return;
+}
+
+static int do_host_probe_tcp(scamper_task_t *task)
+{
+  scamper_host_t *host = host_getdata(task);
+  host_state_t *state = host_getstate(task);
+  scamper_fd_t *fdn = NULL;
+  scamper_host_query_t *q = NULL;
+  struct sockaddr_storage ss;
+  struct sockaddr *sa;
+  uint16_t id;
+  size_t len;
+  int af;
+
+#ifndef _WIN32 /* SOCKET vs int on windows */
+  int fd;
+#else
+  SOCKET fd;
+#endif
+
+#ifdef HAVE_SCAMPER_DEBUG
+  char buf[128], qtype[16];
+#endif
+
+  if(state->mode == STATE_MODE_CONNECT)
+    {
+      gettimeofday_wrap(&state->finish);
+      timeval_add_tv(&state->finish, &host->wait_timeout);
+
+      af = scamper_addr_af(host->dst);
+      assert(af == AF_INET || af == AF_INET6);
+
+      fd = socket(af, SOCK_STREAM, IPPROTO_TCP);
+      if(socket_isinvalid(fd))
+	{
+	  printerror(__func__, "could not open tcp socket");
+	  goto err;
+	}
+
+#ifdef HAVE_FCNTL
+      if(fcntl_set(fd, O_NONBLOCK) == -1)
+	{
+	  printerror(__func__, "could not set O_NONBLOCK");
+	  socket_close(fd);
+	  goto err;
+	}
+#endif
+
+      sa = (struct sockaddr *)&ss;
+      sockaddr_compose(sa, af, host->dst->addr, 53);
+      if(connect(fd, sa, sockaddr_len(sa)) != 0 && errno != EINPROGRESS)
+	{
+	  printerror(__func__, "could not connect");
+	  socket_close(fd);
+	  goto err;
+	}
+
+      fdn = scamper_fd_private(fd, task, host_tcp_read, host_tcp_write);
+      if(fdn == NULL)
+	{
+	  scamper_debug(__func__, "could not register fd");
+	  socket_close(fd);
+	  goto err;
+	}
+
+      state->tcp = fdn;
+      return 0;
+    }
+
+  if(state->mode == STATE_MODE_CONNECTED)
+    {
+      if((state->wb = scamper_writebuf_alloc()) == NULL)
+	{
+	  scamper_debug(__func__, "could not alloc writebuf");
+	  goto err;
+	}
+
+      len = pktbuf_len-2;
+      id = dns_id;
+
+      /* handle wraps with the query id */
+      if(++dns_id == 0)
+	dns_id = 1;
+
+      if(do_host_probe_query(host, state, id, pktbuf+2, &len) != 0)
+	goto err;
+      bytes_htons(pktbuf, len); len += 2;
+      scamper_writebuf_send(state->wb, pktbuf, len);
+
+      if(host_query_add(id, task) != 0)
+	goto err;
+
+      scamper_debug(__func__, "%s %s %s", state->qname,
+		    scamper_host_qtype_tostr(host->qtype, qtype, sizeof(qtype)),
+		    scamper_addr_tostr(host->dst, buf, sizeof(buf)));
+
+      if((q = scamper_host_query_alloc()) == NULL)
+	{
+	  printerror(__func__, "could not malloc q");
+	  goto err;
+	}
+      gettimeofday_wrap(&q->tx);
+      q->id = id;
+      host->queries[host->qcount++] = q;
+
+      scamper_task_queue_wait_tv(task, &state->finish);
+      state->mode = STATE_MODE_REQ;
+      scamper_fd_write_unpause(state->tcp);
+      return 0;
+    }
+
+  if(state->wb != NULL && scamper_writebuf_gtzero(state->wb))
+    scamper_fd_write_unpause(state->tcp);
+
+  return 0;
+
+ err:
+  return -1;
+}
+
+static void do_host_probe(scamper_task_t *task)
+{
+  scamper_host_t *host = host_getdata(task);
+  host_state_t *state = host_getstate(task);
+  int rc = -1;
+
+  if(pktbuf == NULL)
+    {
+      pktbuf_len = 1024;
+      if((pktbuf = malloc(pktbuf_len)) == NULL)
+	{
+	  printerror(__func__, "could not malloc pktbuf");
+	  goto done;
+	}
+    }
+
+  if(state == NULL && (state = host_state_alloc(task)) == NULL)
+    goto done;
+
+  if(host->queries == NULL)
+    {
+      if(scamper_host_queries_alloc(host, host->retries + 1) != 0)
+	goto done;
+      gettimeofday_wrap(&host->start);
+    }
+
+  if((host->flags & SCAMPER_HOST_FLAG_TCP) == 0)
+    rc = do_host_probe_udp(task);
+  else
+    rc = do_host_probe_tcp(task);
+
+ done:
+  if(rc != 0)
+    host_stop(task, SCAMPER_HOST_STOP_ERROR);
+
   return;
 }
 
@@ -1003,7 +1460,7 @@ void scamper_host_do_free(scamper_host_do_t *hostdo)
 {
   scamper_task_t *task;
   host_state_t *state;
-  
+
   if(hostdo == NULL)
     return;
 

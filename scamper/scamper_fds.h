@@ -1,7 +1,7 @@
 /*
  * scamper_fds: manage events for file descriptors
  *
- * $Id: scamper_fds.h,v 1.32 2024/02/27 01:01:44 mjl Exp $
+ * $Id: scamper_fds.h,v 1.34 2024/07/15 22:08:08 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -114,6 +114,9 @@ scamper_dl_t *scamper_fd_dl_get(const scamper_fd_t *fdn);
 
 /* function to check the status of all file descriptors managed */
 int scamper_fds_poll(struct timeval *timeout);
+
+/* function to obtain source ports held in scamper file descriptors */
+int scamper_fds_sports(uint16_t **ports_out, size_t *portc_out);
 
 /* functions used to initialise or cleanup the fd monitoring state */
 int scamper_fds_init(void);

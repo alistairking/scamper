@@ -1,9 +1,9 @@
 /*
  * scamper_host_lib.c
  *
- * $Id: scamper_host_lib.c,v 1.8 2023/12/22 18:55:00 mjl Exp $
+ * $Id: scamper_host_lib.c,v 1.9 2024/04/20 00:15:02 mjl Exp $
  *
- * Copyright (C) 2023 Matthew Luckie
+ * Copyright (C) 2023-2024 Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -241,6 +241,14 @@ scamper_host_rr_mx_t *scamper_host_rr_mx_get(const scamper_host_rr_t *rr)
   return rr->un.mx;
 }
 
+scamper_host_rr_txt_t *scamper_host_rr_txt_get(const scamper_host_rr_t *rr)
+{
+  if(scamper_host_rr_data_type(rr->class, rr->type) !=
+     SCAMPER_HOST_RR_DATA_TYPE_TXT)
+    return NULL;
+  return rr->un.txt;
+}
+
 #ifdef BUILDING_LIBSCAMPERFILE
 scamper_host_rr_mx_t *scamper_host_rr_mx_use(scamper_host_rr_mx_t *mx)
 {
@@ -300,4 +308,24 @@ uint32_t scamper_host_rr_soa_expire_get(const scamper_host_rr_soa_t *soa)
 uint32_t scamper_host_rr_soa_minimum_get(const scamper_host_rr_soa_t *soa)
 {
   return soa->minimum;
+}
+
+#ifdef BUILDING_LIBSCAMPERFILE
+scamper_host_rr_txt_t *scamper_host_rr_txt_use(scamper_host_rr_txt_t *txt)
+{
+  txt->refcnt++;
+  return txt;
+}
+#endif
+
+uint16_t scamper_host_rr_txt_strc_get(const scamper_host_rr_txt_t *txt)
+{
+  return txt->strc;
+}
+
+const char *scamper_host_rr_txt_str_get(const scamper_host_rr_txt_t *txt, uint16_t i)
+{
+  if(txt != NULL && txt->strs != NULL && i < txt->strc)
+    return txt->strs[i];
+  return NULL;
 }

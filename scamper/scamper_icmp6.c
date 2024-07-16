@@ -1,7 +1,7 @@
 /*
  * scamper_icmp6.c
  *
- * $Id: scamper_icmp6.c,v 1.109 2023/08/26 21:25:08 mjl Exp $
+ * $Id: scamper_icmp6.c,v 1.115 2024/07/02 01:11:17 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -34,6 +34,7 @@
 #include "scamper_addr_int.h"
 #include "scamper_task.h"
 #include "scamper_dl.h"
+#include "scamper_dlhdr.h"
 #include "scamper_probe.h"
 #include "scamper_icmp_resp.h"
 #include "scamper_ip6.h"
@@ -191,13 +192,19 @@ int scamper_icmp6_probe(scamper_probe_t *probe)
   icmphdrlen = (1 + 1 + 2 + 2 + 2);
   len = probe->pr_len + icmphdrlen;
 
-  i = probe->pr_ip_ttl;
-  if(setsockopt(probe->pr_fd,
-		IPPROTO_IPV6, IPV6_UNICAST_HOPS, (void *)&i, sizeof(i)) == -1)
+  if(setsockopt_int(probe->pr_fd, IPPROTO_IPV6, IPV6_UNICAST_HOPS, probe->pr_ip_ttl) != 0)
     {
-      printerror(__func__, "could not set hlim to %d", i);
+      printerror(__func__, "could not set hlim to %d", probe->pr_ip_ttl);
       return -1;
     }
+
+#ifdef IPV6_TCLASS
+  if(setsockopt_int(probe->pr_fd, IPPROTO_IPV6, IPV6_TCLASS, probe->pr_ip_tos) != 0)
+    {
+      printerror(__func__, "could not set tclass to %d", probe->pr_ip_tos);
+      return -1;
+    }
+#endif /* IPV6_TCLASS */
 
   if(txbuf_len < len)
     {
@@ -259,20 +266,25 @@ int scamper_icmp6_probe(scamper_probe_t *probe)
  * get details of when the packet was received.
  */
 #ifndef _WIN32 /* windows does not have msghdr struct */
-static void icmp6_recv_ip_outer(int fd, 
+static void icmp6_recv_ip_outer(int fd,
 				struct msghdr *msg,
 #else
-static void icmp6_recv_ip_outer(SOCKET fd, 
+static void icmp6_recv_ip_outer(SOCKET fd,
 #endif
 				scamper_icmp_resp_t *resp,
 				struct icmp6_hdr *icmp,
 				struct sockaddr_in6 *from, size_t size)
 {
   int16_t hlim = -1;
+  int v;
 
 #if (defined(IPV6_HOPLIMIT) || defined(SO_TIMESTAMP)) && !defined(_WIN32)
   /* get the HLIM field of the ICMP6 packet returned */
   struct cmsghdr *cm;
+
+#ifdef IPV6_PKTINFO
+  struct in6_pktinfo *pi;
+#endif
 
   /*
    * RFC 2292:
@@ -285,7 +297,31 @@ static void icmp6_recv_ip_outer(SOCKET fd,
 	{
 #if defined(IPV6_HOPLIMIT)
 	  if(cm->cmsg_level == IPPROTO_IPV6 && cm->cmsg_type == IPV6_HOPLIMIT)
-	    hlim = *((uint8_t *)CMSG_DATA(cm));
+	    {
+	      v = *((int *)CMSG_DATA(cm));
+	      hlim = (uint8_t)v;
+	      goto next;
+	    }
+#endif
+
+#if defined(IPV6_TCLASS)
+	  if(cm->cmsg_level == IPPROTO_IPV6 && cm->cmsg_type == IPV6_TCLASS)
+	    {
+	      v = *((int *)CMSG_DATA(cm));
+	      resp->ir_ip_tos = (uint8_t)v;
+	      resp->ir_flags |= SCAMPER_ICMP_RESP_FLAG_TCLASS;
+	      goto next;
+	    }
+#endif
+
+#if defined(IPV6_PKTINFO)
+	  if(cm->cmsg_level == IPPROTO_IPV6 && cm->cmsg_type == IPV6_PKTINFO)
+	    {
+	      pi = (struct in6_pktinfo *)CMSG_DATA(cm);
+	      resp->ir_ifindex = pi->ipi6_ifindex;
+	      resp->ir_flags |= SCAMPER_ICMP_RESP_FLAG_IFINDEX;
+	      goto next;
+	    }
 #endif
 
 #if defined(SO_TIMESTAMP)
@@ -293,8 +329,11 @@ static void icmp6_recv_ip_outer(SOCKET fd,
 	    {
 	      timeval_cpy(&resp->ir_rx, (struct timeval *)CMSG_DATA(cm));
 	      resp->ir_flags |= SCAMPER_ICMP_RESP_FLAG_KERNRX;
+	      goto next;
 	    }
 #endif
+
+	next:
 	  cm = (struct cmsghdr *)CMSG_NXTHDR(msg, cm);
 	}
     }
@@ -489,6 +528,7 @@ int scamper_icmp6_recv(SOCKET fd, scamper_icmp_resp_t *resp)
       resp->ir_inner_ip_hlim  = ip->ip6_hlim;
       resp->ir_inner_ip_size  = ntohs(ip->ip6_plen) + sizeof(struct ip6_hdr);
       resp->ir_inner_ip_flow  = ntohl(ip->ip6_flow) & 0xfffff;
+      resp->ir_inner_ip_tos   = ((ntohl(ip->ip6_flow) & 0x0ff00000) >> 20);
 
       if(type == ICMP6_PACKET_TOO_BIG)
 	resp->ir_icmp_nhmtu = (ntohl(icmp->icmp6_mtu) % 0xffff);
@@ -560,7 +600,6 @@ SOCKET scamper_icmp6_open(const void *addr)
 #endif
 {
   struct sockaddr_in6 sin6;
-  int opt;
 
 #ifndef _WIN32 /* SOCKET vs int on windows */
   int fd = -1;
@@ -596,23 +635,20 @@ SOCKET scamper_icmp6_open(const void *addr)
   if(socket_isinvalid(fd))
     goto err;
 
-  opt = 65535 + 128;
-  if(setsockopt(fd, SOL_SOCKET, SO_RCVBUF, (void *)&opt, sizeof(opt)) == -1)
+  if(setsockopt_raise(fd, SOL_SOCKET, SO_RCVBUF, 65535 + 128) != 0)
     {
       printerror(__func__, "could not SO_RCVBUF");
       goto err;
     }
 
-  opt = 65535 + 128;
-  if(setsockopt(fd, SOL_SOCKET, SO_SNDBUF, (void *)&opt, sizeof(opt)) == -1)
+  if(setsockopt_raise(fd, SOL_SOCKET, SO_SNDBUF, 65535 + 128) != 0)
     {
       printerror(__func__, "could not SO_SNDBUF");
       return -1;
     }
 
 #if defined(SO_TIMESTAMP)
-  opt = 1;
-  if(setsockopt(fd, SOL_SOCKET, SO_TIMESTAMP, (void *)&opt, sizeof(opt)) == -1)
+  if(setsockopt_int(fd, SOL_SOCKET, SO_TIMESTAMP, 1) != 0)
     {
       printerror(__func__, "could not set SO_TIMESTAMP");
       goto err;
@@ -638,12 +674,16 @@ SOCKET scamper_icmp6_open(const void *addr)
 #endif
 
 #if defined(IPV6_DONTFRAG)
-  opt = 1;
-  if(setsockopt(fd,IPPROTO_IPV6,IPV6_DONTFRAG,(void *)&opt, sizeof(opt)) == -1)
+  if(setsockopt_int(fd, IPPROTO_IPV6, IPV6_DONTFRAG, 1) != 0)
     {
       printerror(__func__, "could not set IPV6_DONTFRAG");
       goto err;
     }
+#endif
+
+#if defined(IPV6_RECVTCLASS)
+  if(setsockopt_int(fd, IPPROTO_IPV6, IPV6_RECVTCLASS, 1) != 0)
+    printerror(__func__, "could not set IPV6_RECVTCLASS");
 #endif
 
   /*
@@ -651,19 +691,24 @@ SOCKET scamper_icmp6_open(const void *addr)
    * so that scamper might be able to infer the length of the reverse path
    */
 #if defined(IPV6_RECVHOPLIMIT)
-  opt = 1;
-  if(setsockopt(fd, IPPROTO_IPV6, IPV6_RECVHOPLIMIT,
-		(void *)&opt, sizeof(opt)) == -1)
-    {
-      printerror(__func__, "could not set IPV6_RECVHOPLIMIT");
-    }
+  if(setsockopt_int(fd, IPPROTO_IPV6, IPV6_RECVHOPLIMIT, 1) != 0)
+    printerror(__func__, "could not set IPV6_RECVHOPLIMIT");
 #elif defined(IPV6_HOPLIMIT)
+  if(setsockopt_int(fd, IPPROTO_IPV6, IPV6_HOPLIMIT, 1) != 0)
+    printerror(__func__, "could not set IPV6_HOPLIMIT");
+#endif
+
+  /*
+   * ask the icmp6 socket to supply the interface on which it receives
+   * a packet.
+   */
+#if defined(IPV6_RECVPKTINFO)
+  if(setsockopt_int(fd, IPPROTO_IPV6, IPV6_RECVPKTINFO, 1) != 0)
+    printerror(__func__, "could not set IPV6_RECVPKTINFO");
+#elif defined(IPV6_PKTINFO)
   opt = 1;
-  if(setsockopt(fd, IPPROTO_IPV6, IPV6_HOPLIMIT,
-		(void *)&opt, sizeof(opt)) == -1)
-    {
-      printerror(__func__, "could not set IPV6_HOPLIMIT");
-    }
+  if(setsockopt_int(fd, IPPROTO_IPV6, IPV6_PKTINFO, 1) != 0)
+    printerror(__func__, "could not set IPV6_PKTINFO");
 #endif
 
   if(addr != NULL)

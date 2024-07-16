@@ -3,7 +3,7 @@
  *
  * Author: Matthew Luckie
  *
- * $Id$
+ * $Id: scamper_udpprobe_json.c,v 1.3 2024/04/13 01:25:58 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -42,7 +42,6 @@ static char *reply_tostr(const scamper_udpprobe_probe_t *probe,
   struct timeval rtt;
   char buf[(65536 * 2) + 512];
   size_t off = 0;
-  uint16_t i;
 
   if(reply == NULL)
     {
@@ -58,12 +57,10 @@ static char *reply_tostr(const scamper_udpprobe_probe_t *probe,
 		(long)reply->rx.tv_sec, (int)reply->rx.tv_usec,
 		(long)rtt.tv_sec, (int)rtt.tv_usec,
 		reply->len);
-  for(i=0; i<reply->len; i++)
-    string_concat(buf, sizeof(buf), &off, "%02x", reply->data[i]);
+  string_byte2hex(buf, sizeof(buf), &off, reply->data, reply->len);
   string_concat(buf, sizeof(buf), &off, "\"}");
 
   *len = off;
-
   return strdup(buf);
 }
 
@@ -139,7 +136,6 @@ static char *header_tostr(const scamper_udpprobe_t *up)
   static const char *stop_m[] = {"none", "done", "halted", "error"};
   char buf[4096], tmp[512];
   size_t off = 0;
-  uint16_t i;
 
   string_concat(buf, sizeof(buf), &off,
 		"{\"type\":\"udpprobe\", \"version\":\"0.1\"");
@@ -168,8 +164,7 @@ static char *header_tostr(const scamper_udpprobe_t *up)
   string_concat(buf, sizeof(buf), &off, "\"");
 
   string_concat(buf, sizeof(buf), &off, ", \"data\":\"");
-  for(i=0; i<up->len; i++)
-    string_concat(buf, sizeof(buf), &off, "%02x", up->data[i]);
+  string_byte2hex(buf, sizeof(buf), &off, up->data, up->len);
   string_concat(buf, sizeof(buf), &off, "\", \"len\":%u", up->len);
 
   string_concat(buf, sizeof(buf), &off,

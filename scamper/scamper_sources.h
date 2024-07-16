@@ -1,7 +1,7 @@
 /*
  * scamper_source
  *
- * $Id: scamper_sources.h,v 1.18 2024/02/12 20:35:36 mjl Exp $
+ * $Id: scamper_sources.h,v 1.19 2024/06/10 03:28:08 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -131,60 +131,5 @@ void scamper_sources_foreach(void *p, int (*func)(void *, scamper_source_t *));
 void scamper_sources_empty(void);
 int scamper_sources_init(void);
 void scamper_sources_cleanup(void);
-
-/*
- * interface to observe source events.
- *
- *
- */
-typedef struct scamper_source_event
-{
-  scamper_source_t *source;
-  time_t            sec;
-  int               event;
-
-#define SCAMPER_SOURCE_EVENT_ADD     0x01
-#define SCAMPER_SOURCE_EVENT_UPDATE  0x02
-#define SCAMPER_SOURCE_EVENT_CYCLE   0x03
-#define SCAMPER_SOURCE_EVENT_DELETE  0x04
-#define SCAMPER_SOURCE_EVENT_FINISH  0x05
-
-  union
-  {
-
-    struct sse_update
-    {
-      uint8_t flags;  /* 0x01 == autoreload, 0x02 == cycles, 0x03 = priority */
-      int     autoreload;
-      int     cycles;
-      int     priority;
-    } sseu_update;
-
-#define sse_update_flags       sse_un.sseu_update.flags
-#define sse_update_autoreload  sse_un.sseu_update.autoreload
-#define sse_update_cycles      sse_un.sseu_update.cycles
-#define sse_update_priority    sse_un.sseu_update.priority
-
-    struct sse_cycle
-    {
-      int     cycle_id;
-    } sseu_cycle;
-
-#define sse_cycle_cycle_id     sse_un.sseu_cycle.cycle_id
-
-  } sse_un;
-
-} scamper_source_event_t;
-
-typedef struct scamper_source_observer scamper_source_observer_t;
-
-typedef void (*scamper_source_eventf_t)(const scamper_source_event_t *sse,
-					void *param);
-scamper_source_observer_t *scamper_sources_observe(scamper_source_eventf_t cb,
-						   void *param);
-void scamper_sources_unobserve(scamper_source_observer_t *observer);
-
-void scamper_source_event_post(scamper_source_t *source, int type,
-			       scamper_source_event_t *ev);
 
 #endif /* __SCAMPER_SOURCE_H */

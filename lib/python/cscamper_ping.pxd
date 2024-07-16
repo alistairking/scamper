@@ -117,6 +117,7 @@ cdef extern from "scamper_ping.h":
  scamper_ping_reply_v4rr_t *scamper_ping_reply_v4rr_get(const scamper_ping_reply_t *reply)
  scamper_ping_reply_v4ts_t *scamper_ping_reply_v4ts_get(const scamper_ping_reply_t *reply)
  scamper_ping_reply_tsreply_t *scamper_ping_reply_tsreply_get(const scamper_ping_reply_t *reply)
+ const char *scamper_ping_reply_ifname_get(const scamper_ping_reply_t *reply)
 
  void scamper_ping_reply_tsreply_free(scamper_ping_reply_tsreply_t *tsr)
  uint32_t scamper_ping_reply_tsreply_tso_get(const scamper_ping_reply_tsreply_t *tsr)

@@ -1,7 +1,7 @@
 /*
  * scamper_trace_lib.c
  *
- * $Id: scamper_trace_lib.c,v 1.7 2023/12/19 05:41:54 mjl Exp $
+ * $Id: scamper_trace_lib.c,v 1.9 2024/03/04 19:36:41 mjl Exp $
  *
  * Copyright (C) 2023 Matthew Luckie
  *
@@ -63,7 +63,7 @@ uint8_t scamper_trace_pmtud_notec_get(const scamper_trace_pmtud_t *pmtud)
 {
   return pmtud->notec;
 }
-  
+
 scamper_trace_hop_t *scamper_trace_pmtud_hops_get(const scamper_trace_pmtud_t *pmtud)
 {
   return pmtud->hops;
@@ -352,6 +352,11 @@ uint8_t scamper_trace_stop_data_get(const scamper_trace_t *trace)
 uint16_t scamper_trace_hop_count_get(const scamper_trace_t *trace)
 {
   return trace->hop_count;
+}
+
+uint8_t scamper_trace_stop_hop_get(const scamper_trace_t *trace)
+{
+  return trace->stop_hop;
 }
 
 scamper_trace_hop_t *scamper_trace_hop_get(const scamper_trace_t *trace,

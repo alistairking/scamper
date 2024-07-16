@@ -1,7 +1,7 @@
 /*
  * scamper_icmp_resp.c
  *
- * $Id: scamper_icmp_resp.c,v 1.36 2023/05/29 21:22:26 mjl Exp $
+ * $Id: scamper_icmp_resp.c,v 1.37 2024/04/13 22:31:04 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -149,8 +149,8 @@ void scamper_icmp_resp_print(const scamper_icmp_resp_t *ir)
     {
       addr_tostr(AF_INET6, &ir->ir_ip_src.v6, addr, sizeof(addr));
 
-      snprintf(ip, sizeof(ip), "from %s size %d hlim %d", addr,
-	       ir->ir_ip_size, ir->ir_ip_hlim);
+      snprintf(ip, sizeof(ip), "from %s size %d hlim %d tclass 0x%02x", addr,
+	       ir->ir_ip_size, ir->ir_ip_hlim, ir->ir_ip_tos);
 
       switch(ir->ir_icmp_type)
         {
@@ -232,9 +232,9 @@ void scamper_icmp_resp_print(const scamper_icmp_resp_t *ir)
 	{
 	  addr_tostr(AF_INET6, &ir->ir_inner_ip_dst.v6, addr, sizeof(addr));
 	  snprintf(inner_ip, sizeof(inner_ip),
-		   " to %s size %d hlim %d flow 0x%05x", addr,
+		   " to %s size %d hlim %d tclass 0x%02x flow 0x%05x", addr,
 		   ir->ir_inner_ip_size, ir->ir_inner_ip_hlim,
-		   ir->ir_inner_ip_flow);
+		   ir->ir_inner_ip_tos, ir->ir_inner_ip_flow);
 	}
 
       switch(ir->ir_inner_ip_proto)
