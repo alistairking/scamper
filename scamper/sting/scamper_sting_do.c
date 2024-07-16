@@ -1,7 +1,7 @@
 /*
  * scamper_do_sting.c
  *
- * $Id: scamper_sting_do.c,v 1.59 2024/02/27 03:34:02 mjl Exp $
+ * $Id: scamper_sting_do.c,v 1.60 2024/07/02 01:11:17 mjl Exp $
  *
  * Copyright (C) 2008-2011 The University of Waikato
  * Copyright (C) 2012      The Regents of the University of California
@@ -603,8 +603,7 @@ static void do_sting_probe(scamper_task_t *task)
 
   memset(&probe, 0, sizeof(probe));
   probe.pr_dl        = scamper_fd_dl_get(state->dl);
-  probe.pr_dl_buf    = state->dlhdr->buf;
-  probe.pr_dl_len    = state->dlhdr->len;
+  probe.pr_dlhdr     = state->dlhdr;
   probe.pr_ip_src    = sting->src;
   probe.pr_ip_dst    = sting->dst;
   probe.pr_ip_ttl    = 255;

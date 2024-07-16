@@ -2,7 +2,7 @@
  * sc_prefixprober : scamper driver to probe addresses in specified
  *                   prefixes
  *
- * $Id: sc_prefixprober.c,v 1.36 2024/01/05 04:48:53 mjl Exp $
+ * $Id: sc_prefixprober.c,v 1.38 2024/04/26 06:52:24 mjl Exp $
  *
  * Copyright (C) 2023 The Regents of the University of California
  * Author: Matthew Luckie
@@ -212,7 +212,7 @@ static int check_printf(const char *name)
 
   for(ptr=name; *ptr != '\0'; ptr++)
     {
-      if(isprint(*ptr) == 0)
+      if(isprint((unsigned char)*ptr) == 0)
 	return 0;
       if(*ptr == '%')
 	break;
@@ -225,10 +225,10 @@ static int check_printf(const char *name)
   ptr++;
 
   /* check for valid zero padding specification, if %u is zero padded */
-  if(*ptr == '0' && isdigit(ptr[1]) != 0 && ptr[1] != '0')
+  if(*ptr == '0' && ptr[1] != '0' && isdigit((unsigned char)ptr[1]) != 0)
     {
       ptr++;
-      while(isdigit(*ptr) != 0)
+      while(isdigit((unsigned char)*ptr) != 0)
 	ptr++;
     }
 
@@ -240,7 +240,7 @@ static int check_printf(const char *name)
   /* ensure no other % */
   while(*ptr != '\0')
     {
-      if(isprint(*ptr) == 0)
+      if(isprint((unsigned char)*ptr) == 0)
 	return 0;
       if(*ptr == '%')
 	return 0;
@@ -898,7 +898,7 @@ static int dnpfile_line(char *str, void *param)
 /*
  * rec_target_4_addrs
  *
- * 
+ *
  */
 static int rec_target_4_addrs(sc_prefix_t *p,
 			      const struct in_addr *x, const struct in_addr *y)
@@ -1530,7 +1530,7 @@ static void ctrlcb(scamper_inst_t *inst, uint8_t type, scamper_task_t *task,
   else if(type == SCAMPER_CTRL_TYPE_FATAL)
     {
       print("fatal: %s", scamper_ctrl_strerror(scamper_ctrl));
-      goto err;	    
+      goto err;
     }
   return;
 
@@ -1554,7 +1554,7 @@ static int do_scamperconnect(void)
       print("%s: could not alloc scamper_ctrl", __func__);
       return -1;
     }
-  
+
   if(scamper_port != 0)
     {
       type = "port";

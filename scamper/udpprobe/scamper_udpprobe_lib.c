@@ -1,7 +1,7 @@
 /*
  * scamper_udpprobe_lib.c
  *
- * $Id: scamper_udpprobe_lib.c,v 1.3 2023/11/22 20:43:17 mjl Exp $
+ * $Id: scamper_udpprobe_lib.c,v 1.5 2024/04/04 22:57:01 mjl Exp $
  *
  * Copyright (C) 2023 The Regents of the University of California
  *
@@ -78,6 +78,11 @@ const struct timeval *scamper_udpprobe_wait_timeout_get(const scamper_udpprobe_t
   return &udpp->wait_timeout;
 }
 
+const struct timeval *scamper_udpprobe_wait_probe_get(const scamper_udpprobe_t *udpp)
+{
+  return &udpp->wait_probe;
+}
+
 int scamper_udpprobe_flag_is_exitfirst(const scamper_udpprobe_t *udpp)
 {
   return SCAMPER_UDPPROBE_FLAG_IS_EXITFIRST(udpp);
@@ -91,18 +96,6 @@ const uint8_t *scamper_udpprobe_data_get(const scamper_udpprobe_t *up)
 uint16_t scamper_udpprobe_len_get(const scamper_udpprobe_t *up)
 {
   return up->len;
-}
-
-scamper_udpprobe_reply_t *scamper_udpprobe_reply_get(const scamper_udpprobe_t *up, uint8_t i)
-{
-  if(up->replies == NULL || i >= up->replyc)
-    return NULL;
-  return up->replies[i];
-}
-
-uint8_t scamper_udpprobe_replyc_get(const scamper_udpprobe_t *up)
-{
-  return up->replyc;
 }
 
 #ifdef BUILDING_LIBSCAMPERFILE
@@ -123,7 +116,59 @@ uint16_t scamper_udpprobe_reply_len_get(const scamper_udpprobe_reply_t *ur)
   return ur->len;
 }
 
-const struct timeval *scamper_udpprobe_reply_tv_get(const scamper_udpprobe_reply_t *ur)
+const struct timeval *scamper_udpprobe_reply_rx_get(const scamper_udpprobe_reply_t *ur)
 {
-  return &ur->tv;
+  return &ur->rx;
 }
+
+uint8_t scamper_udpprobe_probe_count_get(const scamper_udpprobe_t *up)
+{
+  return up->probe_count;
+}
+
+uint8_t scamper_udpprobe_probe_sent_get(const scamper_udpprobe_t *up)
+{
+  return up->probe_sent;
+}
+
+uint8_t scamper_udpprobe_stop_count_get(const scamper_udpprobe_t *up)
+{
+  return up->stop_count;
+}
+
+scamper_udpprobe_probe_t *scamper_udpprobe_probe_get(const scamper_udpprobe_t *up, uint8_t i)
+{
+  if(up->probes == NULL || i >= up->probe_sent)
+    return NULL;
+  return up->probes[i];
+}
+
+const struct timeval *scamper_udpprobe_probe_tx_get(const scamper_udpprobe_probe_t *probe)
+{
+  return &probe->tx;
+}
+
+uint16_t scamper_udpprobe_probe_sport_get(const scamper_udpprobe_probe_t *probe)
+{
+  return probe->sport;
+}
+
+scamper_udpprobe_reply_t *scamper_udpprobe_probe_reply_get(const scamper_udpprobe_probe_t *probe, uint8_t i)
+{
+  if(probe->replies == NULL || i >= probe->replyc)
+    return NULL;
+  return probe->replies[i];
+}
+
+uint8_t scamper_udpprobe_probe_replyc_get(const scamper_udpprobe_probe_t *probe)
+{
+  return probe->replyc;
+}
+
+#ifdef BUILDING_LIBSCAMPERFILE
+scamper_udpprobe_probe_t *scamper_udpprobe_probe_use(scamper_udpprobe_probe_t *pr)
+{
+  pr->refcnt++;
+  return pr;
+}
+#endif

@@ -1,7 +1,7 @@
 /*
  * scamper_tcp6.c
  *
- * $Id: scamper_tcp6.c,v 1.38 2023/08/20 01:21:17 mjl Exp $
+ * $Id: scamper_tcp6.c,v 1.40 2024/07/02 01:11:17 mjl Exp $
  *
  * Copyright (C) 2006      Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -31,6 +31,7 @@
 
 #include "scamper_addr.h"
 #include "scamper_dl.h"
+#include "scamper_dlhdr.h"
 #include "scamper_probe.h"
 #include "scamper_ip6.h"
 #include "scamper_tcp6.h"
@@ -296,10 +297,6 @@ SOCKET scamper_tcp6_open(const void *addr, int sport)
   SOCKET fd = INVALID_SOCKET;
 #endif
 
-#ifdef IPV6_V6ONLY
-  int opt;
-#endif
-
   fd = socket(AF_INET6, SOCK_STREAM, IPPROTO_TCP);
   if(socket_isinvalid(fd))
     {
@@ -308,8 +305,7 @@ SOCKET scamper_tcp6_open(const void *addr, int sport)
     }
 
 #ifdef IPV6_V6ONLY
-  opt = 1;
-  if(setsockopt(fd,IPPROTO_IPV6,IPV6_V6ONLY, (void *)&opt,sizeof(opt)) == -1)
+  if(setsockopt_int(fd, IPPROTO_IPV6, IPV6_V6ONLY, 1) != 0)
     {
       printerror(__func__, "could not set IPV6_V6ONLY");
       goto err;

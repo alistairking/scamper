@@ -1,7 +1,7 @@
 /*
  * scamper_ping_cmd.c
  *
- * $Id: scamper_ping_cmd.c,v 1.22 2024/02/29 01:43:49 mjl Exp $
+ * $Id: scamper_ping_cmd.c,v 1.25 2024/06/26 20:05:29 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -87,7 +87,7 @@ static const scamper_option_in_t opts[] = {
   {'T', NULL, PING_OPT_TIMESTAMP,    SCAMPER_OPTION_TYPE_STR},
   {'U', NULL, PING_OPT_USERID,       SCAMPER_OPTION_TYPE_NUM},
   {'W', NULL, PING_OPT_WAITTIMEOUT,  SCAMPER_OPTION_TYPE_STR},
-  {'z', NULL, PING_OPT_PROBETOS,     SCAMPER_OPTION_TYPE_NUM},
+  {'z', NULL, PING_OPT_PROBETOS,     SCAMPER_OPTION_TYPE_STR},
 };
 static const int opts_cnt = SCAMPER_OPTION_COUNT(opts);
 
@@ -251,13 +251,15 @@ static int ping_arg_param_validate(int optid, char *param, long long *out,
 	tmp = SCAMPER_PING_FLAG_NOSRC;
       else if(strcasecmp(param, "raw") == 0)
 	tmp = SCAMPER_PING_FLAG_RAW;
+      else if(strcasecmp(param, "sockrx") == 0)
+	tmp = SCAMPER_PING_FLAG_SOCKRX;
       else if(strcasecmp(param, "spoof") == 0)
 	tmp = SCAMPER_PING_FLAG_SPOOF;
       else if(strcasecmp(param, "tbt") == 0)
 	tmp = SCAMPER_PING_FLAG_TBT;
       else
 	{
-	  snprintf(errbuf, errlen, "-O %s unknown", param);
+	  snprintf(errbuf, errlen, "unknown option");
 	  goto err;
 	}
       break;
@@ -440,9 +442,8 @@ void *scamper_do_ping_alloc(char *str, char *errbuf, size_t errlen)
 	 ping_arg_param_validate(opt->id, opt->str, &tmp,
 				 buf, sizeof(buf)) != 0)
 	{
-	  snprintf(errbuf, errlen, "-%c %s failed: %s",
-		   scamper_options_id2c(opts, opts_cnt, opt->id),
-		   opt->str, buf);
+	  snprintf(errbuf, errlen, "-%c failed: %s",
+		   scamper_options_id2c(opts, opts_cnt, opt->id), buf);
 	  goto err;
 	}
 
@@ -789,6 +790,12 @@ void *scamper_do_ping_alloc(char *str, char *errbuf, size_t errlen)
 	  snprintf(errbuf, errlen, "specify valid path-mtu");
 	  goto err;
 	}
+    }
+
+  if(reply_pmtu != 0 && (flags & SCAMPER_PING_FLAG_SOCKRX) != 0)
+    {
+      snprintf(errbuf, errlen, "cannot specify -O sockrx with -M");
+      goto err;
     }
 
   if(src != NULL &&

@@ -2,7 +2,7 @@
  * sc_pinger : scamper driver to probe destinations with various ping
  *             methods
  *
- * $Id: sc_pinger.c,v 1.29 2023/10/20 07:28:37 mjl Exp $
+ * $Id: sc_pinger.c,v 1.30 2024/04/26 06:52:24 mjl Exp $
  *
  * Copyright (C) 2020      The University of Waikato
  * Copyright (C) 2022-2023 Matthew Luckie
@@ -159,7 +159,7 @@ static int check_printf(const char *name)
 
   for(ptr=name; *ptr != '\0'; ptr++)
     {
-      if(isprint(*ptr) == 0)
+      if(isprint((unsigned char)*ptr) == 0)
 	return 0;
       if(*ptr == '%')
 	break;
@@ -172,10 +172,10 @@ static int check_printf(const char *name)
   ptr++;
 
   /* check for valid zero padding specification, if %u is zero padded */
-  if(*ptr == '0' && isdigit(ptr[1]) != 0 && ptr[1] != '0')
+  if(*ptr == '0' && ptr[1] != '0' && isdigit((unsigned char)ptr[1]) != 0)
     {
       ptr++;
-      while(isdigit(*ptr) != 0)
+      while(isdigit((unsigned char )*ptr) != 0)
 	ptr++;
     }
 
@@ -187,7 +187,7 @@ static int check_printf(const char *name)
   /* ensure no other % */
   while(*ptr != '\0')
     {
-      if(isprint(*ptr) == 0)
+      if(isprint((unsigned char)*ptr) == 0)
 	return 0;
       if(*ptr == '%')
 	return 0;

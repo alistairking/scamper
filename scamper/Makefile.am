@@ -1,4 +1,4 @@
-# $Id: Makefile.am,v 1.72 2024/02/29 01:35:31 mjl Exp $
+# $Id: Makefile.am,v 1.76 2024/05/02 21:21:47 mjl Exp $
 
 AUTOMAKE_OPTIONS = subdir-objects
 
@@ -10,7 +10,7 @@ lib_LTLIBRARIES = libscamperfile.la
 
 libscamperfile_la_CFLAGS = -DBUILDING_LIBSCAMPERFILE
 
-libscamperfile_la_LDFLAGS = -version-info 8:1:0 \
+libscamperfile_la_LDFLAGS = -version-info 9:0:0 \
 	-export-symbols-regex '^scamper_'
 
 libscamperfile_la_LIBADD = @ZLIB_LIBS@ @LIBBZ2_LIBS@ @LIBLZMA_LIBS@ @WINSOCK_LIBS@
@@ -26,6 +26,7 @@ libscamperfile_la_SOURCES = \
 	scamper_list.c \
 	scamper_icmpext.c \
 	scamper_icmpext_lib.c \
+	scamper_ifname.c \
 	trace/scamper_trace.c \
 	trace/scamper_trace_warts.c \
 	trace/scamper_trace_text.c \
@@ -70,6 +71,7 @@ libscamperfile_la_SOURCES = \
 	http/scamper_http_lib.c \
 	udpprobe/scamper_udpprobe.c \
 	udpprobe/scamper_udpprobe_warts.c \
+	udpprobe/scamper_udpprobe_json.c \
 	udpprobe/scamper_udpprobe_lib.c
 
 scamper_SOURCES = \
@@ -90,6 +92,8 @@ scamper_SOURCES = \
 	scamper_icmp_resp.c \
 	scamper_icmpext.c \
 	scamper_icmpext_int.c \
+	scamper_ifname.c \
+	scamper_ifname_int.c \
 	scamper_tcp4.c \
 	scamper_tcp6.c \
 	scamper_ip6.c \
@@ -210,6 +214,7 @@ if ENABLE_SCAMPER_UDPPROBE
 scamper_SOURCES += \
 	udpprobe/scamper_udpprobe.c \
 	udpprobe/scamper_udpprobe_warts.c \
+	udpprobe/scamper_udpprobe_json.c \
 	udpprobe/scamper_udpprobe_cmd.c \
 	udpprobe/scamper_udpprobe_do.c
 endif

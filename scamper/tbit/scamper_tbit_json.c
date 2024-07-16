@@ -3,11 +3,11 @@
  *
  * Copyright (c) 2014      Matthew Luckie
  * Copyright (C) 2015      The Regents of the University of California
- * Copyright (C) 2022-2023 Matthew Luckie
+ * Copyright (C) 2022-2024 Matthew Luckie
  *
  * Author: Matthew Luckie
  *
- * $Id: scamper_tbit_json.c,v 1.31 2023/07/29 05:22:23 mjl Exp $
+ * $Id: scamper_tbit_json.c,v 1.33 2024/04/13 01:25:58 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -94,7 +94,6 @@ static char *tbit_header_tostr(const scamper_tbit_t *tbit,
   scamper_tbit_app_http_t *http;
   scamper_tbit_app_bgp_t *bgp;
   uint32_t u32;
-  uint8_t u8;
 
   string_concat(buf, sizeof(buf), &off,
 		"{\"type\":\"tbit\", \"tbit_type\":\"%s\", \"userid\":%u",
@@ -127,8 +126,8 @@ static char *tbit_header_tostr(const scamper_tbit_t *tbit,
   if(tbit->client_fo_cookielen > 0)
     {
       string_concat(buf, sizeof(buf), &off, ", \"fo_cookie\":\"");
-      for(u8=0; u8<tbit->client_fo_cookielen; u8++)
-	string_concat(buf,sizeof(buf),&off, "%02x", tbit->client_fo_cookie[u8]);
+      string_byte2hex(buf, sizeof(buf), &off,
+		      tbit->client_fo_cookie, tbit->client_fo_cookielen);
       string_concat(buf, sizeof(buf), &off, "\"");
     }
 
@@ -394,9 +393,7 @@ static char *tbit_pkt_tostr(const scamper_tbit_t *tbit,
 	      if(pp[1] > 2)
 		{
 		  string_concat(buf, sizeof(buf), &off, ", \"cookie\":\"");
-		  for(u16=0; u16<pp[1]-2; u16++)
-		    string_concat(buf, sizeof(buf), &off, "%02x",
-				  pp[2+u16]);
+		  string_byte2hex(buf, sizeof(buf), &off, pp+2, pp[1]-2);
 		  string_concat(buf, sizeof(buf), &off, "\"}");
 		}
 	      tcpoptc++;
@@ -408,9 +405,7 @@ static char *tbit_pkt_tostr(const scamper_tbit_t *tbit,
 	      if(pp[1] > 4)
 		{
 		  string_concat(buf, sizeof(buf), &off, ", \"cookie\":\"");
-		  for(u16=0; u16<pp[1]-4; u16++)
-		    string_concat(buf, sizeof(buf), &off, "%02x",
-				  pp[4+u16]);
+		  string_byte2hex(buf, sizeof(buf), &off, pp+4, pp[1]-4);
 		  string_concat(buf, sizeof(buf), &off, "\"}");
 		}
 	      tcpoptc++;
@@ -454,7 +449,7 @@ int scamper_file_json_tbit_write(const scamper_file_t *sf,
   int rc = -1;
   uint32_t i;
 
-  memset(&state, 0, sizeof(state)); 
+  memset(&state, 0, sizeof(state));
 
   /* put together packet strings, done first to get state for header string */
   len += 11; /* , "pkts":[] */

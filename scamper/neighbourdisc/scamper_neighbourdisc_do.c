@@ -1,7 +1,7 @@
 /*
  * scamper_do_neighbourdisc
  *
- * $Id: scamper_neighbourdisc_do.c,v 1.48 2024/02/27 03:34:02 mjl Exp $
+ * $Id: scamper_neighbourdisc_do.c,v 1.49 2024/07/02 01:11:17 mjl Exp $
  *
  * Copyright (C) 2009-2023 Matthew Luckie
  *
@@ -32,6 +32,7 @@
 #include "scamper_neighbourdisc.h"
 #include "scamper_neighbourdisc_int.h"
 #include "scamper_dl.h"
+#include "scamper_dlhdr.h"
 #include "scamper_fds.h"
 #include "scamper_probe.h"
 #include "scamper_task.h"

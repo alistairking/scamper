@@ -1,7 +1,7 @@
 /*
  * scamper_tbit_cmd.c
  *
- * $Id: scamper_tbit_cmd.c,v 1.5 2024/02/15 06:51:18 mjl Exp $
+ * $Id: scamper_tbit_cmd.c,v 1.8 2024/05/20 07:40:23 mjl Exp $
  *
  * Copyright (C) 2009-2010 Ben Stasiewicz
  * Copyright (C) 2009-2010 Stephen Eichler
@@ -167,7 +167,7 @@ const char *scamper_do_tbit_usage(void)
 {
   return
     "tbit [-t type] [-p app] [-d dport] [-s sport] [-b asn] [-f cookie]\n"
-    "     [-m mss] [-M mtu] [-o offset] [-O option] [-U userid]\n"
+    "     [-m mss] [-M mtu] [-o offset] [-O option] [-U userid] [-w wscale]\n"
     "     [-P ptbsrc] [-q attempts] [-S srcaddr] [-T ttl] [-u url]";
 }
 
@@ -204,7 +204,7 @@ static int tbit_arg_param_validate(int optid, char *param, long long *out,
 	tmp = SCAMPER_TBIT_TYPE_BLIND_FIN;
       else
 	{
-	  snprintf(errbuf, errlen, "unknown tbit type %s", param);
+	  snprintf(errbuf, errlen, "unknown tbit type");
 	  goto err;
 	}
       break;
@@ -216,7 +216,7 @@ static int tbit_arg_param_validate(int optid, char *param, long long *out,
 	tmp = SCAMPER_TBIT_APP_BGP;
       else
 	{
-	  snprintf(errbuf, errlen, "unknown tbit application %s", param);
+	  snprintf(errbuf, errlen, "unknown tbit application");
 	  goto err;
 	}
       break;
@@ -278,7 +278,7 @@ static int tbit_arg_param_validate(int optid, char *param, long long *out,
 	tmp = TBIT_OPT_OPTION_FO_EXP;
       else
 	{
-	  snprintf(errbuf, errlen, "-O %s unknown", param);
+	  snprintf(errbuf, errlen, "unknown option");
 	  goto err;
 	}
       break;
@@ -648,9 +648,8 @@ void *scamper_do_tbit_alloc(char *str, char *errbuf, size_t errlen)
 	 tbit_arg_param_validate(opt->id, opt->str, &tmp,
 				 buf, sizeof(buf)) != 0)
 	{
-	  snprintf(errbuf, errlen, "-%c %s failed: %s",
-		   scamper_options_id2c(opts, opts_cnt, opt->id),
-		   opt->str, buf);
+	  snprintf(errbuf, errlen, "-%c failed: %s",
+		   scamper_options_id2c(opts, opts_cnt, opt->id), buf);
 	  goto err;
 	}
 
@@ -745,7 +744,7 @@ void *scamper_do_tbit_alloc(char *str, char *errbuf, size_t errlen)
       snprintf(errbuf, errlen, "invalid destination address");
       goto err;
     }
-  
+
   tbit->type            = type;
   tbit->userid          = userid;
   tbit->client_wscale   = wscale;

@@ -1,7 +1,7 @@
 /*
  * scamper_udpprobe_do.c
  *
- * $Id: scamper_udpprobe_do.c,v 1.9 2024/02/27 03:34:02 mjl Exp $
+ * $Id: scamper_udpprobe_do.c,v 1.12 2024/06/25 06:03:55 mjl Exp $
  *
  * Copyright (C) 2023-2024 The Regents of the University of California
  *
@@ -48,8 +48,10 @@ static scamper_task_funcs_t udpprobe_funcs;
 
 typedef struct udpprobe_state
 {
-  scamper_fd_t *fdn;
-  slist_t      *urs;
+  scamper_fd_t **fds;
+  slist_t       *probes;
+  slist_t      **replies;
+  int            probec;
 } udpprobe_state_t;
 
 static scamper_udpprobe_t *udpprobe_getdata(const scamper_task_t *task)
@@ -66,32 +68,69 @@ static void udpprobe_stop(scamper_task_t *task, uint8_t reason)
 {
   scamper_udpprobe_t *up = udpprobe_getdata(task);
   udpprobe_state_t *state = udpprobe_getstate(task);
-  scamper_udpprobe_reply_t *ur;
-  int i, c;
+  scamper_udpprobe_probe_t *probe;
+  scamper_udpprobe_reply_t *reply;
+  int i, j, pc, rc;
 
   up->stop = reason;
 
-  if(state != NULL && state->urs != NULL)
+  if(state != NULL && state->probes != NULL &&
+     (pc = slist_count(state->probes)) > 0)
     {
+      up->probes = malloc_zero(sizeof(scamper_udpprobe_probe_t *) * pc);
+      if(up->probes == NULL)
+	goto done;
+
       i = 0;
-      c = slist_count(state->urs);
-      up->replies = malloc_zero(sizeof(scamper_udpprobe_reply_t *) * c);
-      if(up->replies != NULL)
-	while((ur = slist_head_pop(state->urs)) != NULL)
-	  up->replies[i++] = ur;
-      up->replyc = i;
+      while((probe = slist_head_pop(state->probes)) != NULL)
+	up->probes[i++] = probe;
+      up->probe_sent = i;
+
+      for(i=0; i<pc; i++)
+	{
+	  probe = up->probes[i];
+	  rc = slist_count(state->replies[i]);
+	  if(rc == 0)
+	    continue;
+	  probe->replies = malloc_zero(sizeof(scamper_udpprobe_reply_t *) * rc);
+	  if(probe->replies != NULL)
+	    {
+	      j = 0;
+	      while((reply = slist_head_pop(state->replies[i])) != NULL)
+		probe->replies[j++] = reply;
+	      probe->replyc = j;
+	    }
+	}
     }
 
+ done:
   scamper_task_queue_done(task, 0);
   return;
 }
 
-static void udpprobe_state_free(udpprobe_state_t *state)
+static void udpprobe_state_free(scamper_udpprobe_t *up, udpprobe_state_t *state)
 {
-  if(state->urs != NULL)
-    slist_free_cb(state->urs, (slist_free_t)scamper_udpprobe_reply_free);
-  if(state->fdn != NULL)
-    scamper_fd_free(state->fdn);
+  uint8_t i;
+
+  if(state->replies != NULL)
+    {
+      for(i=0; i<up->probe_count; i++)
+	slist_free_cb(state->replies[i],
+		      (slist_free_t)scamper_udpprobe_reply_free);
+      free(state->replies);
+    }
+
+  if(state->probes != NULL)
+    slist_free_cb(state->probes, (slist_free_t)scamper_udpprobe_probe_free);
+
+  if(state->fds != NULL)
+    {
+      for(i=0; i<up->probe_count; i++)
+	if(state->fds[i] != NULL)
+	  scamper_fd_free(state->fds[i]);
+      free(state->fds);
+    }
+
   free(state);
   return;
 }
@@ -100,31 +139,29 @@ static void do_udpprobe_handle_udp(scamper_task_t *task, scamper_udp_resp_t *ur)
 {
   scamper_udpprobe_t *up = udpprobe_getdata(task);
   udpprobe_state_t *state = udpprobe_getstate(task);
-  scamper_udpprobe_reply_t *upr;
+  scamper_udpprobe_reply_t *reply;
+  int i;
 
   if(state == NULL)
     return;
 
-  /*
-   * ignore the response if it was received on a different socket than
-   * we probed with.  this is to avoid recording duplicate replies
-   */
-  if(ur->fd != scamper_fd_fd_get(state->fdn))
+  /* find the socket we sent the probe with */
+  for(i=0; i<state->probec; i++)
+    if(ur->fd == scamper_fd_fd_get(state->fds[i]))
+      break;
+  if(i == state->probec)
     return;
 
-  if(ur->sport != up->dport)
-    return;
-
-  if((upr = scamper_udpprobe_reply_alloc()) == NULL ||
-     (upr->data = memdup(ur->data, ur->datalen)) == NULL)
+  if((reply = scamper_udpprobe_reply_alloc()) == NULL ||
+     (reply->data = memdup(ur->data, ur->datalen)) == NULL)
     goto err;
   if(timeval_iszero(&ur->rx) == 0)
-    timeval_cpy(&upr->tv, &ur->rx);
+    timeval_cpy(&reply->rx, &ur->rx);
   else
-    gettimeofday_wrap(&upr->tv);
-  upr->len = ur->datalen;
+    gettimeofday_wrap(&reply->rx);
+  reply->len = ur->datalen;
 
-  if(slist_tail_push(state->urs, upr) == NULL)
+  if(slist_tail_push(state->replies[i], reply) == NULL)
     goto err;
 
   if(SCAMPER_UDPPROBE_FLAG_IS_EXITFIRST(up))
@@ -133,55 +170,51 @@ static void do_udpprobe_handle_udp(scamper_task_t *task, scamper_udp_resp_t *ur)
   return;
 
  err:
-  if(upr != NULL) scamper_udpprobe_reply_free(upr);
+  if(reply != NULL) scamper_udpprobe_reply_free(reply);
   return;
 }
 
-static udpprobe_state_t *udpprobe_state_alloc(scamper_task_t *task)
+static int udpprobe_state_alloc(scamper_task_t *task)
 {
   scamper_udpprobe_t *up = udpprobe_getdata(task);
-  udpprobe_state_t *state = NULL;
+  udpprobe_state_t *state = udpprobe_getstate(task);
+  uint8_t i;
 
-  if((state = malloc_zero(sizeof(udpprobe_state_t))) == NULL ||
-     (state->urs = slist_alloc()) == NULL)
+  assert(state != NULL);
+  if((state->probes = slist_alloc()) == NULL ||
+     (state->replies = malloc_zero(sizeof(slist_t *)*up->probe_count)) == NULL)
     {
       printerror(__func__, "could not alloc state");
-      goto err;
+      return -1;
+    }
+  for(i=0; i<up->probe_count; i++)
+    {
+      if((state->replies[i] = slist_alloc()) == NULL)
+	{
+	  printerror(__func__, "could not alloc state");
+	  return -1;
+	}
     }
 
-  if(SCAMPER_ADDR_TYPE_IS_IPV4(up->dst))
-    state->fdn = scamper_fd_udp4dg(up->src->addr, up->sport);
-  else if(SCAMPER_ADDR_TYPE_IS_IPV6(up->dst))
-    state->fdn = scamper_fd_udp6(up->src->addr, up->sport);
-  if(state->fdn == NULL)
-    goto err;
-
-  scamper_task_setstate(task, state);
-  return state;
-
- err:
-  if(state != NULL) udpprobe_state_free(state);
-  return NULL;
+  return 0;
 }
 
 static void do_udpprobe_probe(scamper_task_t *task)
 {
   scamper_udpprobe_t *up = udpprobe_getdata(task);
   udpprobe_state_t *state = udpprobe_getstate(task);
+  scamper_udpprobe_probe_t *probe = NULL;
   struct sockaddr_in6 sin6;
   struct sockaddr_in sin;
   struct sockaddr *sa;
-  struct timeval finish;
+  struct timeval wait_tv;
   socklen_t sl;
-  int fd, ttl = 255;
-  void *ttl_p = (void *)&ttl;
-  size_t ttl_l = sizeof(ttl);
+  int fd;
 
-  assert(state == NULL);
-
-  if((state = udpprobe_state_alloc(task)) == NULL)
+  if(state->probec == 0 && udpprobe_state_alloc(task) != 0)
     goto err;
-  fd = scamper_fd_fd_get(state->fdn);
+
+  fd = scamper_fd_fd_get(state->fds[state->probec]);
 
   if(SCAMPER_ADDR_TYPE_IS_IPV4(up->dst))
     {
@@ -191,22 +224,41 @@ static void do_udpprobe_probe(scamper_task_t *task)
     }
   else if(SCAMPER_ADDR_TYPE_IS_IPV6(up->dst))
     {
-      if(setsockopt(fd, IPPROTO_IPV6, IPV6_UNICAST_HOPS, ttl_p, ttl_l) == -1)
+      if(setsockopt_int(fd, IPPROTO_IPV6, IPV6_UNICAST_HOPS, 255) != 0)
 	{
-	  printerror(__func__, "could not set hlim to %d", ttl);
+	  printerror(__func__, "could not set hlim to 255");
 	  goto err;
 	}
+#ifdef IPV6_TCLASS
+      if(setsockopt_int(fd, IPPROTO_IPV6, IPV6_TCLASS, 0) != 0)
+	{
+	  printerror(__func__, "could not set tclass to 0");
+	  goto err;
+	}
+#endif /* IPV6_TCLASS */
       sa = (struct sockaddr *)&sin6;
       sockaddr_compose(sa, AF_INET6, up->dst->addr, up->dport);
       sl = sizeof(sin6);
     }
   else goto err;
 
-  gettimeofday_wrap(&up->start);
+  if((probe = scamper_udpprobe_probe_alloc()) == NULL ||
+     slist_tail_push(state->probes, probe) == NULL)
+    goto err;
+  gettimeofday_wrap(&probe->tx);
+  scamper_fd_sport(state->fds[state->probec], &probe->sport);
+  if(state->probec == 0)
+    timeval_cpy(&up->start, &probe->tx);
+  state->probec++;
+
   if(sendto(fd, up->data, up->len, 0, sa, sl) != up->len)
     goto err;
-  timeval_add_tv3(&finish, &up->start, &up->wait_timeout);
-  scamper_task_queue_wait_tv(task, &finish);
+
+  if(state->probec < up->probe_count)
+    timeval_add_tv3(&wait_tv, &probe->tx, &up->wait_probe);
+  else
+    timeval_add_tv3(&wait_tv, &probe->tx, &up->wait_timeout);
+  scamper_task_queue_wait_tv(task, &wait_tv);
 
   return;
 
@@ -217,7 +269,12 @@ static void do_udpprobe_probe(scamper_task_t *task)
 
 static void do_udpprobe_handle_timeout(scamper_task_t *task)
 {
-  udpprobe_stop(task, SCAMPER_UDPPROBE_STOP_DONE);
+  scamper_udpprobe_t *up = udpprobe_getdata(task);
+  udpprobe_state_t *state = udpprobe_getstate(task);
+
+  if(state->probec == up->probe_count)
+    udpprobe_stop(task, SCAMPER_UDPPROBE_STOP_DONE);
+
   return;
 }
 
@@ -241,7 +298,7 @@ static void do_udpprobe_free(scamper_task_t *task)
   udpprobe_state_t *state = udpprobe_getstate(task);
 
   if(state != NULL)
-    udpprobe_state_free(state);
+    udpprobe_state_free(up, state);
   if(up != NULL)
     scamper_udpprobe_free(up);
 
@@ -262,9 +319,15 @@ scamper_task_t *scamper_do_udpprobe_alloctask(void *data,
   scamper_udpprobe_t *up = (scamper_udpprobe_t *)data;
   scamper_task_t *task = NULL;
   scamper_task_sig_t *sig = NULL;
+  udpprobe_state_t *state = NULL;
+  uint16_t *sports = NULL;
+  uint8_t i, probec = up->probe_count;
 
   /* allocate a task structure and store the udpprobe with it */
-  if((task = scamper_task_alloc(up, &udpprobe_funcs)) == NULL)
+  if((task = scamper_task_alloc(up, &udpprobe_funcs)) == NULL ||
+     (state = malloc_zero(sizeof(udpprobe_state_t))) == NULL ||
+     (state->fds = malloc_zero(sizeof(scamper_fd_t *) * probec)) == NULL ||
+     (sports = malloc_zero(sizeof(uint16_t) * probec)) == NULL)
     {
       snprintf(errbuf, errlen, "%s: could not malloc state", __func__);
       goto err;
@@ -275,20 +338,46 @@ scamper_task_t *scamper_do_udpprobe_alloctask(void *data,
     goto err;
 
   /* declare the signature of the task's probes */
-  if((sig = scamper_task_sig_alloc(SCAMPER_TASK_SIG_TYPE_TX_IP)) == NULL)
+  for(i=0; i<up->probe_count; i++)
     {
-      snprintf(errbuf, errlen, "%s: could not alloc task signature", __func__);
-      goto err;
+      if(SCAMPER_ADDR_TYPE_IS_IPV4(up->dst))
+	state->fds[i] = scamper_fd_udp4dg_dst(up->src->addr, up->sport,
+					      sports, i,
+					      up->dst->addr, up->dport);
+      else if(SCAMPER_ADDR_TYPE_IS_IPV6(up->dst))
+	state->fds[i] = scamper_fd_udp6_dst(up->src->addr, up->sport,
+					    sports, i,
+					    up->dst->addr, up->dport);
+      if(state->fds[i] == NULL)
+	{
+	  snprintf(errbuf, errlen, "%s: could not open udp socket", __func__);
+	  goto err;
+	}
+      if(scamper_fd_sport(state->fds[i], &sports[i]) != 0)
+	{
+	  snprintf(errbuf, errlen, "%s: could not get udp sport", __func__);
+	  goto err;
+	}
+
+      if((sig = scamper_task_sig_alloc(SCAMPER_TASK_SIG_TYPE_TX_IP)) == NULL)
+	{
+	  snprintf(errbuf, errlen, "%s: could not alloc task signature", __func__);
+	  goto err;
+	}
+      sig->sig_tx_ip_dst = scamper_addr_use(up->dst);
+      sig->sig_tx_ip_src = scamper_addr_use(up->src);
+      SCAMPER_TASK_SIG_UDP(sig, sports[i], up->dport);
+      if(scamper_task_sig_add(task, sig) != 0)
+	{
+	  snprintf(errbuf, errlen, "%s: could not add signature to task", __func__);
+	  goto err;
+	}
+      sig = NULL;
     }
-  sig->sig_tx_ip_dst = scamper_addr_use(up->dst);
-  sig->sig_tx_ip_src = scamper_addr_use(up->src);
-  SCAMPER_TASK_SIG_UDP(sig, up->sport, up->dport);
-  if(scamper_task_sig_add(task, sig) != 0)
-    {
-      snprintf(errbuf, errlen, "%s: could not add signature to task", __func__);
-      goto err;
-    }
-  sig = NULL;
+
+  free(sports);
+
+  scamper_task_setstate(task, state);
 
   /* associate the list and cycle with the http structure */
   up->list = scamper_list_use(list);
@@ -298,6 +387,8 @@ scamper_task_t *scamper_do_udpprobe_alloctask(void *data,
 
  err:
   if(sig != NULL) scamper_task_sig_free(sig);
+  if(state != NULL) udpprobe_state_free(up, state);
+  if(sports != NULL) free(sports);
   if(task != NULL)
     {
       scamper_task_setdatanull(task);

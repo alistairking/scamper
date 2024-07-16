@@ -8,7 +8,7 @@
  * Copyright (C) 2015-2023 Matthew Luckie
  * Author: Matthew Luckie
  *
- * $Id: scamper_trace_warts.c,v 1.41 2023/12/21 06:02:04 mjl Exp $
+ * $Id: scamper_trace_warts.c,v 1.44 2024/04/13 22:31:04 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -91,6 +91,7 @@
 #define WARTS_TRACE_ADDR_RTR       30  /* destination address key */
 #define WARTS_TRACE_SQUERIES       31  /* squeries */
 #define WARTS_TRACE_FLAGS          32  /* 32 bits of flags */
+#define WARTS_TRACE_STOP_HOP       33  /* stop hop */
 
 static const warts_var_t trace_vars[] =
 {
@@ -126,6 +127,7 @@ static const warts_var_t trace_vars[] =
   {WARTS_TRACE_ADDR_RTR,    -1},
   {WARTS_TRACE_SQUERIES,     1},
   {WARTS_TRACE_FLAGS,        4},
+  {WARTS_TRACE_STOP_HOP,     1},
 };
 #define trace_vars_mfb WARTS_VAR_MFB(trace_vars)
 
@@ -287,7 +289,8 @@ static int warts_trace_params(const scamper_trace_t *trace,
 	 (var->id == WARTS_TRACE_FLAGS8 && (trace->flags & 0xFF) == 0) ||
 	 (var->id == WARTS_TRACE_FLAGS && (trace->flags & ~0xFF) == 0) ||
 	 (var->id == WARTS_TRACE_ADDR_RTR && trace->rtr == NULL) ||
-	 (var->id == WARTS_TRACE_SQUERIES && trace->squeries < 2))
+	 (var->id == WARTS_TRACE_SQUERIES && trace->squeries < 2) ||
+	 (var->id == WARTS_TRACE_STOP_HOP && trace->stop_hop == 0))
 	{
 	  continue;
 	}
@@ -360,6 +363,7 @@ static int warts_trace_params_read(scamper_trace_t *trace,warts_state_t *state,
     {&trace->rtr,         (wpr_t)extract_addr_static, NULL},
     {&trace->squeries,    (wpr_t)extract_byte,     NULL},
     {&trace->flags,       (wpr_t)extract_uint32,   NULL},
+    {&trace->stop_hop,    (wpr_t)extract_byte,     NULL},
   };
   const int handler_cnt = sizeof(handlers)/sizeof(warts_param_reader_t);
   uint32_t o = *off;
@@ -431,6 +435,7 @@ static int warts_trace_params_write(const scamper_trace_t *trace,
     {trace->rtr,          (wpw_t)insert_addr_static, NULL},
     {&trace->squeries,    (wpw_t)insert_byte,    NULL},
     {&trace->flags,       (wpw_t)insert_uint32,  NULL},
+    {&trace->stop_hop,    (wpw_t)insert_byte,    NULL},
   };
   const int handler_cnt = sizeof(handlers)/sizeof(warts_param_writer_t);
 
@@ -559,8 +564,6 @@ static int warts_trace_hop_params(const scamper_trace_t *trace,
       else if(var->id == WARTS_TRACE_HOP_Q_IPTOS)
 	{
 	  if(SCAMPER_TRACE_HOP_IS_ICMP_Q(hop) == 0)
-	    continue;
-	  if(hop->hop_addr->type != SCAMPER_ADDR_TYPE_IPV4)
 	    continue;
 	}
       else if(var->id == WARTS_TRACE_HOP_NHMTU)
@@ -1145,7 +1148,7 @@ static int warts_trace_dtree_params(const scamper_file_t *sf,
       if(var->id == WARTS_TRACE_DTREE_LSS_STOP)
 	{
 	  if(warts_addr_size(table, dtree->lss_stop, &state->params_len) != 0)
-	    return -1;	  
+	    return -1;
 	  continue;
 	}
       else if(var->id == WARTS_TRACE_DTREE_LSS_NAME)

@@ -1,7 +1,7 @@
 /*
  * unit_cmd_trace : unit tests for trace commands
  *
- * $Id: unit_cmd_trace.c,v 1.12 2024/02/14 07:36:37 mjl Exp $
+ * $Id: unit_cmd_trace.c,v 1.13 2024/03/04 19:36:41 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -153,13 +153,13 @@ static int do_pmtud(scamper_trace_t *trace)
     return -1;
   return 0;
 }
-	  
+
 static int squeries_4_gaplimit_6(scamper_trace_t *trace)
 {
   if(trace == NULL ||
      check_wait_probe_def(trace) != 0 || check_wait_timeout_def(trace) != 0 ||
      scamper_trace_squeries_get(trace) != 4 ||
-     scamper_trace_gaplimit_get(trace) != 6) 
+     scamper_trace_gaplimit_get(trace) != 6)
     return -1;
   return 0;
 }

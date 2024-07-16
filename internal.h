@@ -1,7 +1,7 @@
 /*
  * internal.h
  *
- * $Id: internal.h,v 1.62 2024/02/28 02:11:53 mjl Exp $
+ * $Id: internal.h,v 1.66 2024/04/22 09:04:23 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -10,7 +10,7 @@
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2013-2015 The Regents of the University of California
  * Copyright (C) 2014-2016 Matthew Luckie
- * Copyright (C) 2023      Matthew Luckie
+ * Copyright (C) 2023-2024 Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -30,6 +30,14 @@
 #ifdef _WIN32 /* use rand_s on windows */
 #define _CRT_RAND_S
 #define _CRT_SECURE_NO_WARNINGS
+#endif
+
+#if defined(__linux__)
+/*
+ * the following is necessary to get struct in6_pktinfo on modern
+ * (2024) linux systems.
+ */
+#define _GNU_SOURCE
 #endif
 
 #if defined(_MSC_VER)
@@ -70,6 +78,7 @@ typedef unsigned short sa_family_t;
 #define _BSD_SOCKLEN_T_
 #define HAVE_BPF
 #define HAVE_BSD_ROUTE_SOCKET
+#define __APPLE_USE_RFC_3542 1
 #endif
 
 #if defined(__FreeBSD__)
@@ -93,6 +102,13 @@ typedef unsigned short sa_family_t;
 #endif
 
 #if defined(__linux__)
+/*
+ * the following is not necessary on modern (2024) linux systems, but
+ * is necessary to get TH_SYN, and uh_sport for older still-supported
+ * linux systems.  keep it here for now.  note: we define TH_SYN below
+ * if TH_SYN is not defined, so the original reason for including this
+ * (according to CVS logs) is no longer true.
+ */
 #define __FAVOR_BSD
 #endif
 

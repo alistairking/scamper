@@ -4,7 +4,7 @@
  * Copyright (c) 2023 Matthew Luckie
  * Author: Matthew Luckie
  *
- * $Id: scamper_host_json.c,v 1.9 2023/12/22 18:55:00 mjl Exp $
+ * $Id: scamper_host_json.c,v 1.11 2024/04/25 01:17:25 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -75,8 +75,9 @@ static char *header_tostr(const scamper_host_t *host)
 
 static char *rr_tostr(const scamper_host_rr_t *rr)
 {
-  char buf[1024], tmp[256], tmp2[256];
-  size_t off = 0;
+  char *out, buf[1024], tmp[512], tmp2[256];
+  size_t off = 0, len, *lens = NULL;
+  uint16_t i;
 
   string_concat(buf, sizeof(buf), &off, "{\"class\":\"%s\"",
 		scamper_host_qclass_tostr(rr->class, tmp, sizeof(tmp)));
@@ -118,9 +119,56 @@ static char *rr_tostr(const scamper_host_rr_t *rr)
 		    rr->un.soa->retry, rr->un.soa->expire,
 		    rr->un.soa->minimum);
       break;
-    }
-  string_concat(buf, sizeof(buf), &off, "}");
 
+    case SCAMPER_HOST_RR_DATA_TYPE_TXT:
+      string_concat(buf, sizeof(buf), &off, ", \"strc\":%u, \"strs\":[",
+		    rr->un.txt->strc);
+
+      /*
+       * figure out how large the total rr string will be, and allocate
+       * that much memory
+       */
+      len = off;
+      if(rr->un.txt->strc > 0)
+	{
+	  if((lens = malloc(sizeof(size_t) * rr->un.txt->strc)) == NULL)
+	    return NULL;
+	  for(i=0; i<rr->un.txt->strc; i++)
+	    {
+	      lens[i] = json_esc_len(rr->un.txt->strs[i]);
+	      len += (lens[i] > 0 ? lens[i]-1 : 0) + 2; /* "" */
+	    }
+	  len += (2 * (rr->un.txt->strc-1)); /* , */
+	}
+      len += 3; /* ]}\0 */
+      if((out = malloc(len)) == NULL)
+	return NULL;
+
+      /* form the RR string and return it */
+      memcpy(out, buf, off);
+      if(lens != NULL)
+	{
+	  out[off++] = '"';
+	  json_esc(rr->un.txt->strs[0], out+off, len-off);
+	  off += (lens[0] > 0 ? lens[0]-1 : 0);
+	  out[off++] = '"';
+	  for(i=1; i<rr->un.txt->strc; i++)
+	    {
+	      out[off++] = ','; out[off++] = ' '; out[off++] = '"';
+	      json_esc(rr->un.txt->strs[i], out+off, len-off);
+	      off += (lens[i] > 0 ? lens[i]-1 : 0);
+	      out[off++] = '"';
+	    }
+	  free(lens);
+	}
+      out[off++] = ']';
+      out[off++] = '}';
+      out[off++] = '\0';
+      assert(off == len);
+      return out;
+    }
+
+  string_concat(buf, sizeof(buf), &off, "}");
   return strdup(buf);
 }
 

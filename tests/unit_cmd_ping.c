@@ -1,7 +1,7 @@
 /*
  * unit_cmd_ping : unit tests for ping commands
  *
- * $Id: unit_cmd_ping.c,v 1.14 2024/02/19 07:33:40 mjl Exp $
+ * $Id: unit_cmd_ping.c,v 1.15 2024/06/26 20:09:22 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -52,8 +52,35 @@ static int isnull(const scamper_ping_t *ping)
 static int recordroute(const scamper_ping_t *ping)
 {
   if(ping == NULL ||
-     (scamper_ping_flags_get(ping) & SCAMPER_PING_FLAG_V4RR) == 0 ||
+     scamper_ping_flags_get(ping) != SCAMPER_PING_FLAG_V4RR ||
      scamper_ping_probe_size_get(ping) != 20 + 40 + 8 + 56 ||
+     check_addr(scamper_ping_dst_get(ping), "192.0.2.1") != 0)
+    return -1;
+  return 0;
+}
+
+static int sockrx(const scamper_ping_t *ping)
+{
+  if(ping == NULL ||
+     scamper_ping_flags_get(ping) != SCAMPER_PING_FLAG_SOCKRX ||
+     check_addr(scamper_ping_dst_get(ping), "192.0.2.1") != 0)
+    return -1;
+  return 0;
+}
+
+static int sockrx_dl(const scamper_ping_t *ping)
+{
+  if(ping == NULL ||
+     scamper_ping_flags_get(ping) != (SCAMPER_PING_FLAG_SOCKRX|SCAMPER_PING_FLAG_DL) ||
+     check_addr(scamper_ping_dst_get(ping), "192.0.2.1") != 0)
+    return -1;
+  return 0;
+}
+
+static int spoof(const scamper_ping_t *ping)
+{
+  if(ping == NULL ||
+     scamper_ping_flags_get(ping) != SCAMPER_PING_FLAG_SPOOF ||
      check_addr(scamper_ping_dst_get(ping), "192.0.2.1") != 0)
     return -1;
   return 0;
@@ -104,7 +131,7 @@ static int atf(const scamper_ping_t *ping)
      tv->tv_sec != 1 || tv->tv_usec != 0 ||
      scamper_ping_probe_tos_get(ping) != 0 ||
      scamper_ping_probe_count_get(ping) != 5 ||
-     (scamper_ping_flags_get(ping) & SCAMPER_PING_FLAG_DL) == 0 ||
+     scamper_ping_flags_get(ping) != SCAMPER_PING_FLAG_DL ||
      check_addr(scamper_ping_dst_get(ping), "2001:db8::1") != 0)
     return -1;
   return 0;
@@ -113,8 +140,7 @@ static int atf(const scamper_ping_t *ping)
 static int tbt_1280_1300(const scamper_ping_t *ping)
 {
   if(ping == NULL ||
-     (scamper_ping_flags_get(ping) & SCAMPER_PING_FLAG_DL) == 0 ||
-     (scamper_ping_flags_get(ping) & SCAMPER_PING_FLAG_TBT) == 0 ||
+     scamper_ping_flags_get(ping) != (SCAMPER_PING_FLAG_TBT|SCAMPER_PING_FLAG_DL) ||
      scamper_ping_probe_size_get(ping) != 1300 ||
      scamper_ping_reply_pmtu_get(ping) != 1280)
     return -1;
@@ -149,6 +175,14 @@ static int tcpsyn_plain(const scamper_ping_t *ping)
      scamper_ping_probe_method_get(ping) != SCAMPER_PING_METHOD_TCP_SYN ||
      scamper_ping_method_is_tcp(ping) == 0 ||
      scamper_ping_probe_size_get(ping) != 20 + 20)
+    return -1;
+  return 0;
+}
+
+static int tcpsyn_raw(const scamper_ping_t *ping)
+{
+  if(tcpsyn_plain(ping) != 0 ||
+     scamper_ping_flags_get(ping) != SCAMPER_PING_FLAG_RAW)
     return -1;
   return 0;
 }
@@ -322,7 +356,6 @@ static int check(const char *cmd, int (*func)(const scamper_ping_t *in))
 int main(int argc, char *argv[])
 {
   sc_test_t tests[] = {
-    {"-R 192.0.2.1", recordroute},
     {"-A -1 -P tcp-ack 192.0.2.1", isnull},
     {"-A 2323 -P tcp-ack 192.0.2.1", tcpack_2323},
     {"-A 2323 -P tcp-syn 192.0.2.1", tcpsyn_2323},
@@ -342,6 +375,11 @@ int main(int argc, char *argv[])
     {"-i 21 192.0.2.1", isnull},
     {"-i 21s 192.0.2.1", isnull},
     {"-O dl -O tbt -M 1280 -s 1300 2001:db8::1", tbt_1280_1300},
+    {"-O sockrx 192.0.2.1", sockrx},
+    {"-O sockrx -M 1280 -s 1300 2001:db8::1", isnull},
+    {"-O sockrx -O dl 192.0.2.1", sockrx_dl},
+    {"-O raw -P tcp-syn 192.0.2.1", tcpsyn_raw},
+    {"-O spoof 192.0.2.1", spoof},
     {"-P icmp-echo 192.0.2.1", icmpecho_plain},
     {"-P icmp-time 192.0.2.1", icmptime_plain},
     {"-P tcp-syn 192.0.2.1", tcpsyn_plain},
@@ -354,6 +392,7 @@ int main(int argc, char *argv[])
     {"-P icmp-echo -b 0 -s 48 2001:db8::1", icmpecho_zero_payload_v6},
     {"-P icmp-echo -b 4 -C 2323 192.0.2.1", icmpecho_csum_payload4},
     {"-P udp -B 0000000000000000000000000000000000000000 -c 1 192.0.2.1", udp_zero_bytes_c1},
+    {"-R 192.0.2.1", recordroute},
     {"-W 1. 192.0.2.1", isnull},
     {"-W 1 192.0.2.1", wait_timeout_1_0},
     {"-W 1s 192.0.2.1", wait_timeout_1_0},

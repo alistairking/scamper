@@ -1,7 +1,7 @@
 /*
  * scamper_udpprobe_int.h
  *
- * $Id: scamper_udpprobe_int.h,v 1.2 2023/11/22 20:43:17 mjl Exp $
+ * $Id: scamper_udpprobe_int.h,v 1.3 2024/04/04 06:55:33 mjl Exp $
  *
  * Copyright (C) 2023 The Regents of the University of California
  *
@@ -24,6 +24,7 @@
 #define __SCAMPER_UDPPROBE_INT_H
 
 scamper_udpprobe_t *scamper_udpprobe_alloc(void);
+scamper_udpprobe_probe_t *scamper_udpprobe_probe_alloc(void);
 scamper_udpprobe_reply_t *scamper_udpprobe_reply_alloc(void);
 
 #define SCAMPER_UDPPROBE_FLAG_EXITFIRST 0x01 /* return on first reply */
@@ -40,7 +41,18 @@ struct scamper_udpprobe_reply
 {
   uint8_t                   *data;
   uint16_t                   len;
-  struct timeval             tv;
+  struct timeval             rx;
+#ifdef BUILDING_LIBSCAMPERFILE
+  int                        refcnt;
+#endif
+};
+
+struct scamper_udpprobe_probe
+{
+  struct timeval             tx;
+  uint16_t                   sport;
+  scamper_udpprobe_reply_t **replies;
+  uint8_t                    replyc;
 #ifdef BUILDING_LIBSCAMPERFILE
   int                        refcnt;
 #endif
@@ -52,21 +64,24 @@ struct scamper_udpprobe
   scamper_cycle_t           *cycle;
   uint32_t                   userid;
 
+  /* probing parameters */
   scamper_addr_t            *src;
   scamper_addr_t            *dst;
   uint16_t                   sport;
   uint16_t                   dport;
+  uint8_t                    probe_count;
+  uint8_t                    stop_count;
   struct timeval             start;
   struct timeval             wait_timeout;
-
+  struct timeval             wait_probe;
   uint8_t                    flags;
-  uint8_t                    stop;
-
   uint8_t                   *data;
   uint16_t                   len;
 
-  scamper_udpprobe_reply_t **replies;
-  uint8_t                    replyc;
+  /* collected data */
+  uint8_t                    stop;
+  scamper_udpprobe_probe_t **probes;
+  uint8_t                    probe_sent;
 };
 
 #endif /* __SCAMPER_UDPPROBE_INT_H */

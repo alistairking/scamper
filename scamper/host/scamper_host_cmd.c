@@ -1,7 +1,7 @@
 /*
  * scamper_host_cmd
  *
- * $Id: scamper_host_cmd.c,v 1.9 2024/02/15 20:34:26 mjl Exp $
+ * $Id: scamper_host_cmd.c,v 1.14 2024/05/02 02:33:38 mjl Exp $
  *
  * Copyright (C) 2018-2024 Matthew Luckie
  *
@@ -40,12 +40,16 @@
 #define HOST_OPT_TYPE      4
 #define HOST_OPT_USERID    5
 #define HOST_OPT_WAIT      6
+#define HOST_OPT_CLASS     7
+#define HOST_OPT_TCP       8
 
 static const scamper_option_in_t opts[] = {
+  {'c', NULL, HOST_OPT_CLASS,     SCAMPER_OPTION_TYPE_STR},
   {'r', NULL, HOST_OPT_NORECURSE, SCAMPER_OPTION_TYPE_NULL},
   {'R', NULL, HOST_OPT_RETRIES,   SCAMPER_OPTION_TYPE_NUM},
   {'s', NULL, HOST_OPT_SERVER,    SCAMPER_OPTION_TYPE_STR},
   {'t', NULL, HOST_OPT_TYPE,      SCAMPER_OPTION_TYPE_STR},
+  {'T', NULL, HOST_OPT_TCP,       SCAMPER_OPTION_TYPE_NULL},
   {'U', NULL, HOST_OPT_USERID,    SCAMPER_OPTION_TYPE_NUM},
   {'W', NULL, HOST_OPT_WAIT,      SCAMPER_OPTION_TYPE_STR},
 };
@@ -59,7 +63,7 @@ void etc_resolv(void);
 const char *scamper_do_host_usage(void)
 {
   return
-    "host [-r] [-R number] [-s server] [-t type] [-U userid] [-W wait] name\n";
+    "host [-rT] [-c class] [-R number] [-s server] [-t type] [-U userid] [-W wait] name\n";
 }
 
 static int host_arg_param_validate(int optid, char *param, long long *out,
@@ -75,6 +79,7 @@ static int host_arg_param_validate(int optid, char *param, long long *out,
 
   switch(optid)
     {
+    case HOST_OPT_TCP:
     case HOST_OPT_NORECURSE:
       return 0;
 
@@ -95,6 +100,18 @@ static int host_arg_param_validate(int optid, char *param, long long *out,
       scamper_addr_free(addr);
       break;
 
+    case HOST_OPT_CLASS:
+      if(strcasecmp(param, "IN") == 0)
+	tmp = SCAMPER_HOST_CLASS_IN;
+      else if(strcasecmp(param, "CH") == 0 || strcasecmp(param, "CHAOS") == 0)
+	tmp = SCAMPER_HOST_CLASS_CH;
+      else
+	{
+	  snprintf(errbuf, errlen, "unsupported query class");
+	  goto err;
+	}
+      break;
+
     case HOST_OPT_TYPE:
       if(strcasecmp(param, "A") == 0)
 	tmp = SCAMPER_HOST_TYPE_A;
@@ -108,9 +125,11 @@ static int host_arg_param_validate(int optid, char *param, long long *out,
 	tmp = SCAMPER_HOST_TYPE_NS;
       else if(strcasecmp(param, "SOA") == 0)
 	tmp = SCAMPER_HOST_TYPE_SOA;
+      else if(strcasecmp(param, "TXT") == 0)
+	tmp = SCAMPER_HOST_TYPE_TXT;
       else
 	{
-	  snprintf(errbuf, errlen, "unsupported query type %s", param);
+	  snprintf(errbuf, errlen, "unsupported query type");
 	  goto err;
 	}
       break;
@@ -209,9 +228,8 @@ void *scamper_do_host_alloc(char *str, char *errbuf, size_t errlen)
 	 host_arg_param_validate(opt->id, opt->str, &tmp,
 				 buf, sizeof(buf)) != 0)
 	{
-	  snprintf(errbuf, errlen, "-%c %s failed: %s",
-		   scamper_options_id2c(opts, opts_cnt, opt->id),
-		   opt->str, buf);
+	  snprintf(errbuf, errlen, "-%c failed: %s",
+		   scamper_options_id2c(opts, opts_cnt, opt->id), buf);
 	  goto err;
 	}
 
@@ -229,6 +247,10 @@ void *scamper_do_host_alloc(char *str, char *errbuf, size_t errlen)
 	  flags |= SCAMPER_HOST_FLAG_NORECURSE;
 	  break;
 
+	case HOST_OPT_TCP:
+	  flags |= SCAMPER_HOST_FLAG_TCP;
+	  break;
+
 	case HOST_OPT_RETRIES:
 	  retries = (uint8_t)tmp;
 	  break;
@@ -239,6 +261,10 @@ void *scamper_do_host_alloc(char *str, char *errbuf, size_t errlen)
 	      snprintf(errbuf, errlen, "server must be an IPv4 address");
 	      goto err;
 	    }
+	  break;
+
+	case HOST_OPT_CLASS:
+	  qclass = (uint16_t)tmp;
 	  break;
 
 	case HOST_OPT_TYPE:
@@ -295,9 +321,15 @@ void *scamper_do_host_alloc(char *str, char *errbuf, size_t errlen)
 	  goto err;
 	}
     }
-  else
+  else if(qtype != SCAMPER_HOST_TYPE_TXT)
     {
       snprintf(errbuf, errlen, "unhandled qtype %d", qtype);
+      goto err;
+    }
+
+  if((flags & SCAMPER_HOST_FLAG_TCP) && retries > 0)
+    {
+      snprintf(errbuf, errlen, "no retry with TCP");
       goto err;
     }
 

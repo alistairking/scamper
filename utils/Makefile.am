@@ -11,7 +11,13 @@ SUBDIRS+= sc_hoiho
 endif
 
 SUBDIRS+= \
-	sc_ipiddump \
+	sc_ipiddump
+
+if ENABLE_SC_MINRTT
+SUBDIRS+= sc_minrtt
+endif
+
+SUBDIRS+= \
 	sc_pinger \
 	sc_prefixprober \
 	sc_prefixscan \

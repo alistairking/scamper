@@ -1,7 +1,7 @@
 /*
  * scamper_icmp4.c
  *
- * $Id: scamper_icmp4.c,v 1.136 2023/08/26 21:25:08 mjl Exp $
+ * $Id: scamper_icmp4.c,v 1.141 2024/07/02 01:11:17 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -35,6 +35,7 @@
 #include "scamper_addr_int.h"
 #include "scamper_task.h"
 #include "scamper_dl.h"
+#include "scamper_dlhdr.h"
 #include "scamper_probe.h"
 #include "scamper_icmp_resp.h"
 #include "scamper_ip4.h"
@@ -209,8 +210,7 @@ int scamper_icmp4_probe(scamper_probe_t *probe)
     }
   else
     {
-      i = probe->pr_ip_ttl;
-      if(setsockopt(probe->pr_fd,IPPROTO_IP,IP_TTL, (void *)&i, sizeof(i)) < 0)
+      if(setsockopt_int(probe->pr_fd,IPPROTO_IP,IP_TTL, probe->pr_ip_ttl) != 0)
 	{
 	  printerror(__func__, "could not set IP_TTL");
 	  return -1;
@@ -532,6 +532,10 @@ static void icmp4_recv_ip(SOCKET fd,
 #if defined(SO_TIMESTAMP)
   struct cmsghdr *cmsg;
 
+#ifdef IP_PKTINFO
+  struct in_pktinfo *pi;
+#endif
+
   /*
    * RFC 2292:
    * this should be taken care of by CMSG_FIRSTHDR, but not always is.
@@ -545,8 +549,20 @@ static void icmp4_recv_ip(SOCKET fd,
 	    {
 	      timeval_cpy(&ir->ir_rx, (struct timeval *)CMSG_DATA(cmsg));
 	      ir->ir_flags |= SCAMPER_ICMP_RESP_FLAG_KERNRX;
-	      break;
+	      goto next;
 	    }
+
+#if defined(IP_PKTINFO)
+	  if(cmsg->cmsg_level == IPPROTO_IP && cmsg->cmsg_type == IP_PKTINFO)
+	    {
+	      pi = (struct in_pktinfo *)CMSG_DATA(cmsg);
+	      ir->ir_ifindex = pi->ipi_ifindex;
+	      ir->ir_flags |= SCAMPER_ICMP_RESP_FLAG_IFINDEX;
+	      goto next;
+	    }
+#endif
+
+	next:
 	  cmsg = (struct cmsghdr *)CMSG_NXTHDR(msg, cmsg);
 	}
     }
@@ -588,7 +604,7 @@ static int scamper_icmp4_recv_err(int fd, scamper_icmp_resp_t *resp)
 {
   struct icmp *icmp = (struct icmp *)rxbuf;
   struct sock_extended_err *ee = NULL;
-  struct sockaddr_in from, *sin;  
+  struct sockaddr_in from, *sin;
   struct cmsghdr *cmsg;
   struct msghdr msg;
   struct iovec iov;
@@ -708,7 +724,7 @@ static int scamper_icmp4_recv_err(int fd, scamper_icmp_resp_t *resp)
     }
 
   /* record details of the IP header found in the ICMP error message */
-  resp->ir_inner_ip_proto = IPPROTO_ICMP; 
+  resp->ir_inner_ip_proto = IPPROTO_ICMP;
 
   if(type == ICMP_UNREACH && code == ICMP_UNREACH_NEEDFRAG)
     resp->ir_icmp_nhmtu = ntohs(icmp->icmp_nextmtu);
@@ -997,7 +1013,6 @@ SOCKET scamper_icmp4_open_err(const void *addr)
 #ifdef IP_RECVERR
   struct sockaddr_in sin;
   char tmp[32];
-  int opt;
 
 #ifndef _WIN32 /* SOCKET vs int on windows */
   int fd;
@@ -1012,53 +1027,46 @@ SOCKET scamper_icmp4_open_err(const void *addr)
       goto err;
     }
 
-  opt = 65535 + 128;
-  if(setsockopt(fd, SOL_SOCKET, SO_RCVBUF, (void *)&opt, sizeof(opt)) == -1)
+  if(setsockopt_raise(fd, SOL_SOCKET, SO_RCVBUF, 65535 + 128) != 0)
     {
       printerror(__func__, "could not set SO_RCVBUF");
       goto err;
     }
 
-  opt = 65535 + 128;
-  if(setsockopt(fd, SOL_SOCKET, SO_SNDBUF, (void *)&opt, sizeof(opt)) == -1)
+  if(setsockopt_raise(fd, SOL_SOCKET, SO_SNDBUF, 65535 + 128) != 0)
     {
       printerror(__func__, "could not set SO_SNDBUF");
       goto err;
     }
 
 #if defined(SO_TIMESTAMP)
-  opt = 1;
-  if(setsockopt(fd, SOL_SOCKET, SO_TIMESTAMP, (void *)&opt, sizeof(opt)) == -1)
+  if(setsockopt_int(fd, SOL_SOCKET, SO_TIMESTAMP, 1) != 0)
     {
       printerror(__func__, "could not set SO_TIMESTAMP");
       goto err;
     }
 #endif
 
-  opt = 1;
-  if(setsockopt(fd, SOL_IP, IP_RECVERR, (void *)&opt, sizeof(opt)) < 0)
+  if(setsockopt_int(fd, SOL_IP, IP_RECVERR, 1) != 0)
     {
       printerror(__func__, "could not set IP_RECVERR");
       goto err;
     }
 
-  opt = 1;
-  if(setsockopt(fd, SOL_IP, IP_RECVTTL, (void *)&opt, sizeof(opt)) == -1)
+  if(setsockopt_int(fd, SOL_IP, IP_RECVTTL, 1) != 0)
     {
       printerror(__func__, "could not set IP_RECVTTL");
       goto err;
     }
 
-  opt = 1;
-  if(setsockopt(fd, SOL_IP, IP_RECVTOS, (void *)&opt, sizeof(opt)) == -1)
+  if(setsockopt_int(fd, SOL_IP, IP_RECVTOS, 1) != 0)
     {
       printerror(__func__, "could not set IP_RECVTOS");
       goto err;
     }
 
 #ifdef IP_RECVOPTS
-  opt = 1;
-  if(setsockopt(fd, SOL_IP, IP_RECVOPTS, (void *)&opt, sizeof(opt)) == -1)
+  if(setsockopt_int(fd, SOL_IP, IP_RECVOPTS, 1) != 0)
     {
       printerror(__func__, "could not set IP_RECVOPTS");
       goto err;
@@ -1070,8 +1078,8 @@ SOCKET scamper_icmp4_open_err(const void *addr)
       sockaddr_compose((struct sockaddr *)&sin, AF_INET, addr, 0);
       if(bind(fd, (struct sockaddr *)&sin, sizeof(sin)) != 0)
 	{
-	  printerror(__func__, "could not bind %s",
-		     sockaddr_tostr((struct sockaddr *)&sin,tmp,sizeof(tmp)));
+	  sockaddr_tostr((struct sockaddr *)&sin, tmp, sizeof(tmp), 0);
+	  printerror(__func__, "could not bind %s", tmp);
 	  goto err;
 	}
     }
@@ -1091,8 +1099,6 @@ int scamper_icmp4_open_fd(void)
 SOCKET scamper_icmp4_open_fd(void)
 #endif
 {
-  int opt = 1;
-
 #ifndef _WIN32 /* SOCKET vs int on windows */
   int fd;
 #else
@@ -1105,7 +1111,7 @@ SOCKET scamper_icmp4_open_fd(void)
       printerror(__func__, "could not open ICMP socket");
       goto err;
     }
-  if(setsockopt(fd, IPPROTO_IP, IP_HDRINCL, (void *)&opt, sizeof(opt)) == -1)
+  if(setsockopt_int(fd, IPPROTO_IP, IP_HDRINCL, 1) != 0)
     {
       printerror(__func__, "could not set IP_HDRINCL");
       goto err;
@@ -1126,7 +1132,6 @@ SOCKET scamper_icmp4_open(const void *addr)
 {
   struct sockaddr_in sin;
   char tmp[32];
-  int opt;
 
 #ifndef _WIN32 /* SOCKET vs int on windows */
   int fd = -1;
@@ -1162,27 +1167,36 @@ SOCKET scamper_icmp4_open(const void *addr)
   if(socket_isinvalid(fd))
     return socket_invalid();
 
-  opt = 65535 + 128;
-  if(setsockopt(fd, SOL_SOCKET, SO_RCVBUF, (void *)&opt, sizeof(opt)) == -1)
+  if(setsockopt_raise(fd, SOL_SOCKET, SO_RCVBUF, 65535 + 128) != 0)
     {
       printerror(__func__, "could not set SO_RCVBUF");
       goto err;
     }
 
-  opt = 65535 + 128;
-  if(setsockopt(fd, SOL_SOCKET, SO_SNDBUF, (void *)&opt, sizeof(opt)) == -1)
+  if(setsockopt_raise(fd, SOL_SOCKET, SO_SNDBUF, 65535 + 128) != 0)
     {
       printerror(__func__, "could not set SO_SNDBUF");
       goto err;
-    }      
+    }
 
 #if defined(SO_TIMESTAMP)
-  opt = 1;
-  if(setsockopt(fd, SOL_SOCKET, SO_TIMESTAMP, (void *)&opt, sizeof(opt)) == -1)
+  if(setsockopt_int(fd, SOL_SOCKET, SO_TIMESTAMP, 1) != 0)
     {
       printerror(__func__, "could not set SO_TIMESTAMP");
       goto err;
     }
+#endif
+
+  /*
+   * ask the icmp6 socket to supply the interface on which it receives
+   * a packet.
+   */
+#if defined(IP_RECVPKTINFO)
+  if(setsockopt_int(fd, IPPROTO_IP, IP_RECVPKTINFO, 1) != 0)
+    printerror(__func__, "could not set IP_RECVPKTINFO");
+#elif defined(IP_PKTINFO)
+  if(setsockopt_int(fd, IPPROTO_IP, IP_PKTINFO, 1) != 0)
+    printerror(__func__, "could not set IP_PKTINFO");
 #endif
 
   /*
@@ -1208,8 +1222,8 @@ SOCKET scamper_icmp4_open(const void *addr)
       sockaddr_compose((struct sockaddr *)&sin, AF_INET, addr, 0);
       if(bind(fd, (struct sockaddr *)&sin, sizeof(sin)) != 0)
 	{
-	  printerror(__func__, "could not bind %s",
-		     sockaddr_tostr((struct sockaddr *)&sin,tmp,sizeof(tmp)));
+	  sockaddr_tostr((struct sockaddr *)&sin, tmp, sizeof(tmp), 0);
+	  printerror(__func__, "could not bind %s", tmp);
 	  goto err;
 	}
     }

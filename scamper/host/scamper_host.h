@@ -1,9 +1,9 @@
 /*
  * scamper_host
  *
- * $Id: scamper_host.h,v 1.22 2023/12/22 18:55:00 mjl Exp $
+ * $Id: scamper_host.h,v 1.25 2024/04/27 21:35:54 mjl Exp $
  *
- * Copyright (C) 2018-2023 Matthew Luckie
+ * Copyright (C) 2018-2024 Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -28,6 +28,7 @@ typedef struct scamper_host_query scamper_host_query_t;
 typedef struct scamper_host_rr scamper_host_rr_t;
 typedef struct scamper_host_rr_soa scamper_host_rr_soa_t;
 typedef struct scamper_host_rr_mx scamper_host_rr_mx_t;
+typedef struct scamper_host_rr_txt scamper_host_rr_txt_t;
 
 void scamper_host_free(scamper_host_t *host);
 char *scamper_host_stop_tostr(const scamper_host_t *h, char *b, size_t l);
@@ -81,6 +82,7 @@ scamper_addr_t *scamper_host_rr_addr_get(const scamper_host_rr_t *rr);
 const char *scamper_host_rr_str_get(const scamper_host_rr_t *rr);
 scamper_host_rr_soa_t *scamper_host_rr_soa_get(const scamper_host_rr_t *rr);
 scamper_host_rr_mx_t *scamper_host_rr_mx_get(const scamper_host_rr_t *rr);
+scamper_host_rr_txt_t *scamper_host_rr_txt_get(const scamper_host_rr_t *rr);
 
 scamper_host_rr_mx_t *scamper_host_rr_mx_use(scamper_host_rr_mx_t *mx);
 void scamper_host_rr_mx_free(scamper_host_rr_mx_t *mx);
@@ -97,9 +99,16 @@ uint32_t scamper_host_rr_soa_retry_get(const scamper_host_rr_soa_t *soa);
 uint32_t scamper_host_rr_soa_expire_get(const scamper_host_rr_soa_t *soa);
 uint32_t scamper_host_rr_soa_minimum_get(const scamper_host_rr_soa_t *soa);
 
+scamper_host_rr_txt_t *scamper_host_rr_txt_use(scamper_host_rr_txt_t *txt);
+void scamper_host_rr_txt_free(scamper_host_rr_txt_t *txt);
+uint16_t scamper_host_rr_txt_strc_get(const scamper_host_rr_txt_t *txt);
+const char *scamper_host_rr_txt_str_get(const scamper_host_rr_txt_t *txt, uint16_t i);
+
 #define SCAMPER_HOST_FLAG_NORECURSE 0x0001
+#define SCAMPER_HOST_FLAG_TCP       0x0002
 
 #define SCAMPER_HOST_CLASS_IN     1
+#define SCAMPER_HOST_CLASS_CH     3
 
 #define SCAMPER_HOST_TYPE_A       1
 #define SCAMPER_HOST_TYPE_NS      2
@@ -145,5 +154,6 @@ uint32_t scamper_host_rr_soa_minimum_get(const scamper_host_rr_soa_t *soa);
 #define SCAMPER_HOST_RR_DATA_TYPE_STR  2
 #define SCAMPER_HOST_RR_DATA_TYPE_SOA  3
 #define SCAMPER_HOST_RR_DATA_TYPE_MX   4
+#define SCAMPER_HOST_RR_DATA_TYPE_TXT  5
 
 #endif /* __SCAMPER_HOST_H */

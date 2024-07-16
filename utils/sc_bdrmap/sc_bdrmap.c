@@ -1,7 +1,7 @@
 /*
  * sc_bdrmap: driver to map first hop border routers of networks
  *
- * $Id: sc_bdrmap.c,v 1.49 2023/12/02 20:43:54 mjl Exp $
+ * $Id: sc_bdrmap.c,v 1.50 2024/04/26 06:52:24 mjl Exp $
  *
  *         Matthew Luckie
  *         mjl@caida.org / mjl@wand.net.nz
@@ -5425,12 +5425,12 @@ static int ip2name_line(char *line, void *param)
 
   ip = line;
   name = line;
-  while(isspace(*name) == 0 && *name != '\0')
+  while(*name != '\0' && isspace((unsigned char)*name) == 0)
     name++;
   if(*name == '\0')
     return 0;
   *name = '\0'; name++;
-  while(isspace(*name) != 0)
+  while(isspace((unsigned char)*name) != 0)
     name++;
 
   if(sa_type == SCAMPER_ADDR_TYPE_IPV4)
@@ -5488,23 +5488,23 @@ static int ip2as_line(char *line, void *param)
   n = line;
 
   m = line;
-  while(isspace(*m) == 0 && *m != '\0')
+  while(*m != '\0' && isspace((unsigned char)*m) == 0)
     m++;
   if(*m == '\0')
     return -1;
   *m = '\0'; m++;
-  while(isspace(*m) != 0)
+  while(isspace((unsigned char)*m) != 0)
     m++;
   if(string_tolong(m, &lo) != 0)
     return -1;
 
   a = m;
-  while(isspace(*a) == 0 && *a != '\0')
+  while(*a != '\0' && isspace((unsigned char)*a) == 0)
     a++;
   if(*a == '\0')
     return -1;
   *a = '\0'; a++;
-  while(isspace(*a) != 0)
+  while(isspace((unsigned char)*a) != 0)
     a++;
 
   if(sa_type == SCAMPER_ADDR_TYPE_IPV4)
@@ -5594,12 +5594,12 @@ static int ipmap_line(char *line, void *param)
   a = line;
 
   /* get the AS number */
-  while(isspace(*a) == 0 && *a != '\0')
+  while(*a != '\0' && isspace((unsigned char)*a) == 0)
     a++;
   if(*a == '\0')
     goto err;
   *a = '\0'; a++;
-  while(isspace(*a) != 0)
+  while(isspace((unsigned char)*a) != 0)
     a++;
   if(string_isnumber(a) == 0 || string_tolong(a, &lo) != 0)
     goto err;

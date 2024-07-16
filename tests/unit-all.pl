@@ -16,12 +16,14 @@ my @tests = (
     "unit_cmd_tbit",
     "unit_cmd_trace",
     "unit_cmd_udpprobe",
+    "unit_dl_parse_arp",
     "unit_dl_parse_ip",
     "unit_fds",
     "unit_host_rr_list",
     "unit_http_lib",
     "unit_options",
     "unit_osinfo",
+    "unit_string",
     "unit_timeval",
     );
 foreach my $test (@tests)

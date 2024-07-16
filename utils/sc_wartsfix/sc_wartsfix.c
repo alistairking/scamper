@@ -1,7 +1,7 @@
 /*
  * warts-fix
  *
- * $Id: sc_wartsfix.c,v 1.13 2023/08/11 08:59:41 mjl Exp $
+ * $Id: sc_wartsfix.c,v 1.14 2024/04/26 06:50:53 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -114,7 +114,7 @@ int main(int argc, char *argv[])
 
 	  memcpy(tmp, hdr, 8);
 	  rc = read(in, tmp+8, u32);
-	  if(rc != u32)
+	  if(rc < 0 || (uint32_t)rc != u32)
 	    break;
 	}
       else
