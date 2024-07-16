@@ -10,9 +10,9 @@
 .\" Copyright (c) 2024      The Regents of the University of California
 .\"                         All rights reserved
 .\"
-.\" $Id: scamper.1,v 1.133 2024/05/02 21:33:19 mjl Exp $
+.\" $Id: scamper.1,v 1.140 2024/07/15 23:12:44 mjl Exp $
 .\"
-.Dd May 3, 2024
+.Dd July 16, 2024
 .Dt SCAMPER 1
 .Os
 .\""""""""""""
@@ -47,8 +47,8 @@ to IPv4 and IPv6 addresses, in parallel, to fill a specified
 packets-per-second rate.  Currently,
 .Nm
 supports the well-known traceroute and ping techniques, DNS,
-as well as MDA traceroute, alias resolution, some parts of tbit, sting,
-and neighbour discovery.
+as well as MDA traceroute, six different alias resolution techniques,
+most tbit methods, sting, neighbour discovery, HTTP(S), and UDP probes.
 .Pp
 .Nm
 has five modes of operation.
@@ -299,6 +299,22 @@ tell scamper to create a memory-mapped ring buffer to receive datalink
 responses. This significantly improves scamper performance and
 accuracy on Linux systems with other non-scamper traffic. See
 .Xr packet 7
+for further details.
+.It
+.Sy dl-any:
+tell scamper to use a single socket to receive datalink responses on
+Linux.  This prevents datalink transmission at this time.  See
+.Xr packet 7
+for further details.
+.It
+.Sy dyn-filter:
+tell scamper to use dynamic BPF filters to filter datalink responses
+in the kernel, rather than a static BPF filter that passes all traffic
+through.  This facility is available on Linux, and BSD systems with
+BIOCSETFNR available, such as MacOS and FreeBSD. See
+.Xr packet 7
+or
+.Xr bpf 4
 for further details.
 .It
 .Sy cmdfile:
@@ -619,6 +635,10 @@ the payload of the packet when the spoof option is used.
 .Sy raw:
 send IPv4 TCP probes using a raw socket, rather than a datalink interface.
 .It
+.Sy sockrx:
+specifies that responses should be collected from a socket, rather than
+from a datalink interface.
+.It
 .Sy spoof:
 specifies that the source address is to be spoofed according to the address
 specified with the
@@ -888,18 +908,15 @@ tbit command:
 .Pp
 tbit
 .\"tbit [-t type] [-p app] [-d dport] [-s sport] [-b asn] [-f cookie]\n"
-.\"     [-i icw] [-L abclimit] [-m mss] [-M mtu] [-o offset] [-O option]\n"
+.\"     [-m mss] [-M mtu] [-o offset] [-O option] [-U userid] [-w wscale]\n"
 .\"     [-P ptbsrc] [-q attempts] [-S srcaddr] [-T ttl] [-u url]";
 .Bk -words
 .Op Fl t Ar type
 .Op Fl p Ar app
 .Op Fl d Ar dport
 .Op Fl s Ar sport
-.Op Fl a Ar acks
 .Op Fl b Ar ASN
-.Op Fl i Ar ICW
 .Op Fl f Ar cookie
-.Op Fl L Ar limit
 .Op Fl m Ar mss
 .Op Fl M Ar mtu
 .Op Fl o Ar offset
@@ -915,8 +932,8 @@ tbit
 .Bl -tag -width Es
 .It Fl t Ar type
 specifies which type of testing to use.
-Valid options are: pmtud, ecn, null, sack-rcvr, icw, abc, blind-rst,
-blind-syn, blind-data.
+Valid options are: pmtud, ecn, null, sack-rcvr, icw, blind-rst,
+blind-syn, blind-data, blind-fin.
 .It Fl p Ar app
 specifies what kind of traffic to generate for testing.
 Destination port defaults the application standard port.
@@ -929,20 +946,12 @@ specifies the source port for the packets being sent.
 By default,
 .Nm
 uses a value it derives from the process ID.
-.It Fl a Ar acks
-specifies the sequence of packets that should be acknowledged as part of
-the ABC test.
 .It Fl b Ar ASN
 specifies the autonomous system number (ASN) that should be used when
 establishing a BGP session.
-.It Fl i Ar ICW
-specifies the initial congestion window (ICW) that we expect from the peer
-when conducting the ABC test.
 .It Fl f Ar cookie
 specifies the TCP fast open cookie that should be used when establishing
 a TCP connection.
-.It Fl L Ar limit
-test the response to a theoretical limit (L) value with ABC.
 .It Fl m Ar mss
 specifies the maximum segment size to advertise to the remote host.
 .It Fl M Ar mtu
@@ -1527,19 +1536,6 @@ The
 .Ic outfile list
 command outputs a list of the existing outfiles.
 .El
-.It Ic observe sources
-This command allows for monitoring of source events.
-When executed, the control socket will then supply event notices
-whenever a source is added, updated, deleted, finished, or cycled.
-Each event is prefixed with a count of the number of seconds elapsed since
-the Unix epoch.
-The following examples illustrate the event monitoring capabilities:
-.Pp
-.Dl EVENT 1169065640 source add name 'foo' list_id 5 priority 1
-.Dl EVENT 1169065641 source update 'foo' priority 15
-.Dl EVENT 1169065642 source cycle 'bar' id 2
-.Dl EVENT 1169065650 source finish 'bar'
-.Dl EVENT 1169065661 source delete 'foo'
 .It Ic shutdown Ar argument
 The shutdown argument allows the
 .Nm
@@ -1693,6 +1689,7 @@ scamper -R foo.example.com:31337 -O cafile=/etc/ssl/certs/ca-certificates.crt
 .Sh SEE ALSO
 .Xr ping 8 ,
 .Xr traceroute 8 ,
+.Xr libscamperctrl 3 ,
 .Xr libscamperfile 3 ,
 .Xr sc_ally 1 ,
 .Xr sc_analysis_dump 1 ,
@@ -1833,7 +1830,8 @@ scamper -R foo.example.com:31337 -O cafile=/etc/ssl/certs/ca-certificates.crt
 .Sh AUTHORS
 .Nm
 was written by Matthew Luckie <mjl@luckie.org.nz>.
-Alistair King contributed an initial implementation of Doubletree;
+Alistair King contributed an initial implementation of Doubletree and
+support for memory-mapped ring buffers on Linux;
 Ben Stasiewicz contributed an initial implementation of TBIT's PMTUD test;
 Stephen Eichler contributed an initial implementation of TBIT's ECN test;
 Boris Pfahringer adapted

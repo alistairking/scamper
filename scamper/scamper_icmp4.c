@@ -1,7 +1,7 @@
 /*
  * scamper_icmp4.c
  *
- * $Id: scamper_icmp4.c,v 1.138 2024/04/22 05:55:29 mjl Exp $
+ * $Id: scamper_icmp4.c,v 1.141 2024/07/02 01:11:17 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -35,6 +35,7 @@
 #include "scamper_addr_int.h"
 #include "scamper_task.h"
 #include "scamper_dl.h"
+#include "scamper_dlhdr.h"
 #include "scamper_probe.h"
 #include "scamper_icmp_resp.h"
 #include "scamper_ip4.h"
@@ -209,8 +210,7 @@ int scamper_icmp4_probe(scamper_probe_t *probe)
     }
   else
     {
-      i = probe->pr_ip_ttl;
-      if(setsockopt(probe->pr_fd,IPPROTO_IP,IP_TTL, (void *)&i, sizeof(i)) < 0)
+      if(setsockopt_int(probe->pr_fd,IPPROTO_IP,IP_TTL, probe->pr_ip_ttl) != 0)
 	{
 	  printerror(__func__, "could not set IP_TTL");
 	  return -1;
@@ -1013,7 +1013,6 @@ SOCKET scamper_icmp4_open_err(const void *addr)
 #ifdef IP_RECVERR
   struct sockaddr_in sin;
   char tmp[32];
-  int opt;
 
 #ifndef _WIN32 /* SOCKET vs int on windows */
   int fd;
@@ -1028,53 +1027,46 @@ SOCKET scamper_icmp4_open_err(const void *addr)
       goto err;
     }
 
-  opt = 65535 + 128;
-  if(setsockopt(fd, SOL_SOCKET, SO_RCVBUF, (void *)&opt, sizeof(opt)) == -1)
+  if(setsockopt_raise(fd, SOL_SOCKET, SO_RCVBUF, 65535 + 128) != 0)
     {
       printerror(__func__, "could not set SO_RCVBUF");
       goto err;
     }
 
-  opt = 65535 + 128;
-  if(setsockopt(fd, SOL_SOCKET, SO_SNDBUF, (void *)&opt, sizeof(opt)) == -1)
+  if(setsockopt_raise(fd, SOL_SOCKET, SO_SNDBUF, 65535 + 128) != 0)
     {
       printerror(__func__, "could not set SO_SNDBUF");
       goto err;
     }
 
 #if defined(SO_TIMESTAMP)
-  opt = 1;
-  if(setsockopt(fd, SOL_SOCKET, SO_TIMESTAMP, (void *)&opt, sizeof(opt)) == -1)
+  if(setsockopt_int(fd, SOL_SOCKET, SO_TIMESTAMP, 1) != 0)
     {
       printerror(__func__, "could not set SO_TIMESTAMP");
       goto err;
     }
 #endif
 
-  opt = 1;
-  if(setsockopt(fd, SOL_IP, IP_RECVERR, (void *)&opt, sizeof(opt)) < 0)
+  if(setsockopt_int(fd, SOL_IP, IP_RECVERR, 1) != 0)
     {
       printerror(__func__, "could not set IP_RECVERR");
       goto err;
     }
 
-  opt = 1;
-  if(setsockopt(fd, SOL_IP, IP_RECVTTL, (void *)&opt, sizeof(opt)) == -1)
+  if(setsockopt_int(fd, SOL_IP, IP_RECVTTL, 1) != 0)
     {
       printerror(__func__, "could not set IP_RECVTTL");
       goto err;
     }
 
-  opt = 1;
-  if(setsockopt(fd, SOL_IP, IP_RECVTOS, (void *)&opt, sizeof(opt)) == -1)
+  if(setsockopt_int(fd, SOL_IP, IP_RECVTOS, 1) != 0)
     {
       printerror(__func__, "could not set IP_RECVTOS");
       goto err;
     }
 
 #ifdef IP_RECVOPTS
-  opt = 1;
-  if(setsockopt(fd, SOL_IP, IP_RECVOPTS, (void *)&opt, sizeof(opt)) == -1)
+  if(setsockopt_int(fd, SOL_IP, IP_RECVOPTS, 1) != 0)
     {
       printerror(__func__, "could not set IP_RECVOPTS");
       goto err;
@@ -1086,8 +1078,8 @@ SOCKET scamper_icmp4_open_err(const void *addr)
       sockaddr_compose((struct sockaddr *)&sin, AF_INET, addr, 0);
       if(bind(fd, (struct sockaddr *)&sin, sizeof(sin)) != 0)
 	{
-	  printerror(__func__, "could not bind %s",
-		     sockaddr_tostr((struct sockaddr *)&sin,tmp,sizeof(tmp)));
+	  sockaddr_tostr((struct sockaddr *)&sin, tmp, sizeof(tmp), 0);
+	  printerror(__func__, "could not bind %s", tmp);
 	  goto err;
 	}
     }
@@ -1107,8 +1099,6 @@ int scamper_icmp4_open_fd(void)
 SOCKET scamper_icmp4_open_fd(void)
 #endif
 {
-  int opt = 1;
-
 #ifndef _WIN32 /* SOCKET vs int on windows */
   int fd;
 #else
@@ -1121,7 +1111,7 @@ SOCKET scamper_icmp4_open_fd(void)
       printerror(__func__, "could not open ICMP socket");
       goto err;
     }
-  if(setsockopt(fd, IPPROTO_IP, IP_HDRINCL, (void *)&opt, sizeof(opt)) == -1)
+  if(setsockopt_int(fd, IPPROTO_IP, IP_HDRINCL, 1) != 0)
     {
       printerror(__func__, "could not set IP_HDRINCL");
       goto err;
@@ -1142,7 +1132,6 @@ SOCKET scamper_icmp4_open(const void *addr)
 {
   struct sockaddr_in sin;
   char tmp[32];
-  int opt;
 
 #ifndef _WIN32 /* SOCKET vs int on windows */
   int fd = -1;
@@ -1178,23 +1167,20 @@ SOCKET scamper_icmp4_open(const void *addr)
   if(socket_isinvalid(fd))
     return socket_invalid();
 
-  opt = 65535 + 128;
-  if(setsockopt(fd, SOL_SOCKET, SO_RCVBUF, (void *)&opt, sizeof(opt)) == -1)
+  if(setsockopt_raise(fd, SOL_SOCKET, SO_RCVBUF, 65535 + 128) != 0)
     {
       printerror(__func__, "could not set SO_RCVBUF");
       goto err;
     }
 
-  opt = 65535 + 128;
-  if(setsockopt(fd, SOL_SOCKET, SO_SNDBUF, (void *)&opt, sizeof(opt)) == -1)
+  if(setsockopt_raise(fd, SOL_SOCKET, SO_SNDBUF, 65535 + 128) != 0)
     {
       printerror(__func__, "could not set SO_SNDBUF");
       goto err;
     }
 
 #if defined(SO_TIMESTAMP)
-  opt = 1;
-  if(setsockopt(fd, SOL_SOCKET, SO_TIMESTAMP, (void *)&opt, sizeof(opt)) == -1)
+  if(setsockopt_int(fd, SOL_SOCKET, SO_TIMESTAMP, 1) != 0)
     {
       printerror(__func__, "could not set SO_TIMESTAMP");
       goto err;
@@ -1206,17 +1192,11 @@ SOCKET scamper_icmp4_open(const void *addr)
    * a packet.
    */
 #if defined(IP_RECVPKTINFO)
-  opt = 1;
-  if(setsockopt(fd, IPPROTO_IP, IP_RECVPKTINFO, (void *)&opt, sizeof(opt)) != 0)
-    {
-      printerror(__func__, "could not set IP_RECVPKTINFO");
-    }
+  if(setsockopt_int(fd, IPPROTO_IP, IP_RECVPKTINFO, 1) != 0)
+    printerror(__func__, "could not set IP_RECVPKTINFO");
 #elif defined(IP_PKTINFO)
-  opt = 1;
-  if(setsockopt(fd, IPPROTO_IP, IP_PKTINFO, (void *)&opt, sizeof(opt)) != 0)
-    {
-      printerror(__func__, "could not set IP_PKTINFO");
-    }
+  if(setsockopt_int(fd, IPPROTO_IP, IP_PKTINFO, 1) != 0)
+    printerror(__func__, "could not set IP_PKTINFO");
 #endif
 
   /*
@@ -1242,8 +1222,8 @@ SOCKET scamper_icmp4_open(const void *addr)
       sockaddr_compose((struct sockaddr *)&sin, AF_INET, addr, 0);
       if(bind(fd, (struct sockaddr *)&sin, sizeof(sin)) != 0)
 	{
-	  printerror(__func__, "could not bind %s",
-		     sockaddr_tostr((struct sockaddr *)&sin,tmp,sizeof(tmp)));
+	  sockaddr_tostr((struct sockaddr *)&sin, tmp, sizeof(tmp), 0);
+	  printerror(__func__, "could not bind %s", tmp);
 	  goto err;
 	}
     }

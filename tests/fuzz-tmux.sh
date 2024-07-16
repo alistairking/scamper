@@ -41,35 +41,55 @@ prepare cmd_sting
 prepare cmd_tbit
 prepare cmd_trace
 prepare cmd_udpprobe
+prepare dl_parse_arp
+prepare dl_parse_ip
 prepare host_rr_list
 
+WIN=0
 tmux new-session -d -s fuzz-scamper
-tmux rename-window -t fuzz-scamper:0 'fuzz-cmd-dealias'
-fuzz_tmux cmd_dealias fuzz-scamper:0
+tmux rename-window -t fuzz-scamper:${WIN} 'fuzz-cmd-dealias'
+fuzz_tmux cmd_dealias fuzz-scamper:${WIN}
 
-tmux new-window -t fuzz-scamper:1 -n 'fuzz-cmd-host'
-fuzz_tmux cmd_host fuzz-scamper:1
+WIN=`expr ${WIN} + 1`
+tmux new-window -t fuzz-scamper:${WIN} -n 'fuzz-cmd-host'
+fuzz_tmux cmd_host fuzz-scamper:${WIN}
 
-tmux new-window -t fuzz-scamper:2 -n 'fuzz-cmd-http'
-fuzz_tmux cmd_http fuzz-scamper:2
+WIN=`expr ${WIN} + 1`
+tmux new-window -t fuzz-scamper:${WIN} -n 'fuzz-cmd-http'
+fuzz_tmux cmd_http fuzz-scamper:${WIN}
 
-tmux new-window -t fuzz-scamper:3 -n 'fuzz-cmd-ping'
-fuzz_tmux cmd_ping fuzz-scamper:3
+WIN=`expr ${WIN} + 1`
+tmux new-window -t fuzz-scamper:${WIN} -n 'fuzz-cmd-ping'
+fuzz_tmux cmd_ping fuzz-scamper:${WIN}
 
-tmux new-window -t fuzz-scamper:4 -n 'fuzz-cmd-sniff'
-fuzz_tmux cmd_sniff fuzz-scamper:4
+WIN=`expr ${WIN} + 1`
+tmux new-window -t fuzz-scamper:${WIN} -n 'fuzz-cmd-sniff'
+fuzz_tmux cmd_sniff fuzz-scamper:${WIN}
 
-tmux new-window -t fuzz-scamper:5 -n 'fuzz-cmd-sting'
-fuzz_tmux cmd_sting fuzz-scamper:5
+WIN=`expr ${WIN} + 1`
+tmux new-window -t fuzz-scamper:${WIN} -n 'fuzz-cmd-sting'
+fuzz_tmux cmd_sting fuzz-scamper:${WIN}
 
-tmux new-window -t fuzz-scamper:6 -n 'fuzz-cmd-tbit'
-fuzz_tmux cmd_tbit fuzz-scamper:6
+WIN=`expr ${WIN} + 1`
+tmux new-window -t fuzz-scamper:${WIN} -n 'fuzz-cmd-tbit'
+fuzz_tmux cmd_tbit fuzz-scamper:${WIN}
 
-tmux new-window -t fuzz-scamper:7 -n 'fuzz-cmd-trace'
-fuzz_tmux cmd_trace fuzz-scamper:7
+WIN=`expr ${WIN} + 1`
+tmux new-window -t fuzz-scamper:${WIN} -n 'fuzz-cmd-trace'
+fuzz_tmux cmd_trace fuzz-scamper:${WIN}
 
-tmux new-window -t fuzz-scamper:8 -n 'fuzz-cmd-udpprobe'
-fuzz_tmux cmd_udpprobe fuzz-scamper:8
+WIN=`expr ${WIN} + 1`
+tmux new-window -t fuzz-scamper:${WIN} -n 'fuzz-cmd-udpprobe'
+fuzz_tmux cmd_udpprobe fuzz-scamper:${WIN}
 
-tmux new-window -t fuzz-scamper:9 -n 'fuzz-host-rr-list'
-fuzz_tmux host_rr_list fuzz-scamper:9
+WIN=`expr ${WIN} + 1`
+tmux new-window -t fuzz-scamper:${WIN} -n 'fuzz-dl-parse-arp'
+fuzz_tmux dl_parse_arp fuzz-scamper:${WIN}
+
+WIN=`expr ${WIN} + 1`
+tmux new-window -t fuzz-scamper:${WIN} -n 'fuzz-dl-parse-ip'
+fuzz_tmux dl_parse_ip fuzz-scamper:${WIN}
+
+WIN=`expr ${WIN} + 1`
+tmux new-window -t fuzz-scamper:${WIN} -n 'fuzz-host-rr-list'
+fuzz_tmux host_rr_list fuzz-scamper:${WIN}

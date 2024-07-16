@@ -1,7 +1,7 @@
 /*
  * scamper_tracelb_do.c
  *
- * $Id: scamper_tracelb_do.c,v 1.309 2024/03/04 19:36:41 mjl Exp $
+ * $Id: scamper_tracelb_do.c,v 1.310 2024/07/02 01:11:17 mjl Exp $
  *
  * Copyright (C) 2008-2011 The University of Waikato
  * Copyright (C) 2012      The Regents of the University of California
@@ -4333,8 +4333,7 @@ static void do_tracelb_probe(scamper_task_t *task)
   if(state->dl != NULL)
     {
       probe.pr_dl        = scamper_fd_dl_get(state->dl);
-      probe.pr_dl_buf    = state->dlhdr->buf;
-      probe.pr_dl_len    = state->dlhdr->len;
+      probe.pr_dlhdr     = state->dlhdr;
     }
 
   if(scamper_probe(&probe) == -1)

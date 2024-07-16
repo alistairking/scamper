@@ -1,7 +1,7 @@
 /*
  * scamper_fds: manage events and file descriptors
  *
- * $Id: scamper_fds.c,v 1.125 2024/03/28 06:57:03 mjl Exp $
+ * $Id: scamper_fds.c,v 1.130 2024/07/15 23:12:44 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -396,6 +396,35 @@ static void fd_refcnt_0(scamper_fd_t *fdn)
 
   return;
 }
+
+#if defined(BUILDING_SCAMPER) && (defined(__linux__) || defined(BIOCSETFNR))
+static void fd_dynfilter(void)
+{
+  dlist_node_t *dn;
+  scamper_fd_t *fdn;
+  uint16_t *sports = NULL;
+  size_t len = 0;
+  int seen = 0;
+
+  for(dn=dlist_head_node(fd_list); dn != NULL; dn=dlist_node_next(dn))
+    {
+      fdn = dlist_node_item(dn);
+      if(fdn->type != SCAMPER_FD_TYPE_DL)
+	continue;
+      if(seen == 0)
+	{
+	  scamper_fds_sports(&sports, &len);
+	  seen = 1;
+	}
+      scamper_dl_filter(fdn->fd_dl, sports, len);
+    }
+
+  if(sports != NULL)
+    free(sports);
+
+  return;
+}
+#endif
 
 static int fd_poll_setlist(void *item, void *param)
 {
@@ -1246,6 +1275,12 @@ static scamper_fd_t *fd_tcp(int type, void *src, uint16_t sport,
     }
 
   scamper_debug(__func__, "fd %d type %s", fdn->fd, fd_tostr(fdn));
+
+#if defined(BUILDING_SCAMPER) && (defined(__linux__) || defined(BIOCSETFNR))
+  if(scamper_option_dynfilter())
+    fd_dynfilter();
+#endif
+
   return fdn;
 
  err:
@@ -1377,6 +1412,13 @@ static scamper_fd_t *fd_udp(int type, void *src, uint16_t sport,
     }
 
   scamper_debug(__func__, "fd %d type %s", fdn->fd, fd_tostr(fdn));
+
+#if defined(BUILDING_SCAMPER) && (defined(__linux__) || defined(BIOCSETFNR))
+  if(scamper_option_dynfilter() &&
+     (fdn->type == SCAMPER_FD_TYPE_UDP4DG || fdn->type == SCAMPER_FD_TYPE_UDP6))
+    fd_dynfilter();
+#endif
+
   return fdn;
 
  err:
@@ -1755,6 +1797,11 @@ scamper_fd_t *scamper_fd_dl(int ifindex)
   SOCKET fd = INVALID_SOCKET;
 #endif
 
+#if defined(BUILDING_SCAMPER) && defined(__linux__)
+  if(scamper_option_dlany() != 0)
+    ifindex = 0;
+#endif
+
   findme.type = SCAMPER_FD_TYPE_DL;
   findme.fd_ifindex = ifindex;
 
@@ -2043,6 +2090,76 @@ static void cleanup_list(dlist_t *list)
 }
 
 /*
+ * scamper_fds_sports:
+ *
+ * return the list of ports that tcp/udp sockets are bound to.  does
+ * not consider udp4err sockets.
+ *
+ * on return, the first 4 entries of the ports_out array reports how
+ * many udp4, tcp4, udp6, and tcp6 ports are recorded in the array.
+ * the ports are then recorded in the array in that order.  the caller
+ * is responsible for freeing the ports_out array.
+ *
+ */
+int scamper_fds_sports(uint16_t **ports_out, size_t *portc_out)
+{
+  size_t udp4c = 0, udp6c = 0, tcp4c = 0, tcp6c = 0;
+  size_t udp4i, udp6i, tcp4i, tcp6i;
+  scamper_fd_t *fdn;
+  dlist_node_t *dn;
+  uint16_t *ports;
+  size_t portc;
+
+  for(dn=dlist_head_node(fd_list); dn != NULL; dn=dlist_node_next(dn))
+    {
+      fdn = dlist_node_item(dn);
+      switch(fdn->type)
+	{
+	case SCAMPER_FD_TYPE_UDP4DG: udp4c++; break;
+	case SCAMPER_FD_TYPE_UDP6:   udp6c++; break;
+	case SCAMPER_FD_TYPE_TCP4:   tcp4c++; break;
+	case SCAMPER_FD_TYPE_TCP6:   tcp6c++; break;
+	}
+    }
+
+  portc = 4 + udp4c + udp6c + tcp4c + tcp6c;
+  if((ports = malloc(sizeof(uint16_t) * portc)) == NULL)
+    {
+      *ports_out = NULL;
+      *portc_out = 0;
+      return -1;
+    }
+  ports[0] = udp4c; udp4i = 4;
+  ports[1] = tcp4c; tcp4i = udp4i + udp4c;
+  ports[2] = udp6c; udp6i = tcp4i + tcp4c;
+  ports[3] = tcp6c; tcp6i = udp6i + udp6c;
+
+  for(dn=dlist_head_node(fd_list); dn != NULL; dn=dlist_node_next(dn))
+    {
+      fdn = dlist_node_item(dn);
+      switch(fdn->type)
+        {
+        case SCAMPER_FD_TYPE_UDP4DG:
+	  ports[udp4i++] = fdn->fd_sport;
+	  break;
+        case SCAMPER_FD_TYPE_UDP6:
+	  ports[udp6i++] = fdn->fd_sport;
+	  break;
+	case SCAMPER_FD_TYPE_TCP4:
+	  ports[tcp4i++] = fdn->fd_sport;
+	  break;
+        case SCAMPER_FD_TYPE_TCP6:
+	  ports[tcp6i++] = fdn->fd_sport;
+	  break;
+        }
+    }
+
+  *ports_out = ports;
+  *portc_out = portc;
+  return 0;
+}
+
+/*
  * scamper_fds_cleanup
  *
  * tidy up the state allocated to maintain fd records.
@@ -2089,6 +2206,7 @@ void scamper_fds_cleanup()
       free(fd_array);
       fd_array = NULL;
     }
+  fd_array_s = 0;
 
 #ifdef HAVE_POLL
   if(poll_fds != NULL)

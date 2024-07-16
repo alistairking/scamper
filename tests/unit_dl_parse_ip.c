@@ -1,7 +1,7 @@
 /*
  * unit_dl_parse_ip : unit tests for dl_parse_ip function
  *
- * $Id: unit_dl_parse_ip.c,v 1.7 2024/04/20 00:15:02 mjl Exp $
+ * $Id: unit_dl_parse_ip.c,v 1.8 2024/07/02 00:50:12 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -76,6 +76,15 @@ static int tcp_cookie_base(const scamper_dl_rec_t *dl, const uint8_t *pkt,
     if(dl->dl_ip_src[i] != ip_src[i] || dl->dl_ip_dst[i] != ip_dst[i])
       return -1;
 
+  return 0;
+}
+
+static int empty(uint8_t *pkt, size_t len)
+{
+  scamper_dl_rec_t dl;
+  memset(&dl, 0, sizeof(dl));
+  if(dl_parse_ip(&dl, pkt, len) != 0)
+    return -1;
   return 0;
 }
 
@@ -207,6 +216,8 @@ static int check(const char *pkt, int (*func)(uint8_t *pkt, size_t len))
 int main(int argc, char *argv[])
 {
   sc_test_t tests[] = {
+    {"",
+     empty},
     {"4500004400004000f606c5ebc0000201c0000202"
      "0050a2f3cd2552f877aec23ec012f5074a150000"
      "221a11608b6208513160d501b3ce216084703bc1216084703bc10000",

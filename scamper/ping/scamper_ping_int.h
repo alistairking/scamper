@@ -1,7 +1,7 @@
 /*
  * scamper_ping_int.h
  *
- * $Id: scamper_ping_int.h,v 1.10 2024/05/01 07:46:20 mjl Exp $
+ * $Id: scamper_ping_int.h,v 1.12 2024/06/26 20:05:29 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -124,6 +124,39 @@ uint32_t scamper_ping_reply_total(const scamper_ping_t *ping);
  (SCAMPER_PING_METHOD_IS_UDP(ping) &&                 \
   (SCAMPER_PING_REPLY_IS_ICMP_UNREACH_PORT(reply) ||  \
    SCAMPER_PING_REPLY_IS_UDP(reply))))
+
+#define SCAMPER_PING_FLAG_IS_V4RR(ping) (	\
+ ((ping)->flags & SCAMPER_PING_FLAG_V4RR))
+
+#define SCAMPER_PING_FLAG_IS_SPOOF(ping) (	\
+ ((ping)->flags & SCAMPER_PING_FLAG_SPOOF))
+
+#define SCAMPER_PING_FLAG_IS_PAYLOAD(ping) (	\
+ ((ping)->flags & SCAMPER_PING_FLAG_PAYLOAD))
+
+#define SCAMPER_PING_FLAG_IS_TSONLY(ping) (	\
+ ((ping)->flags & SCAMPER_PING_FLAG_TSONLY))
+
+#define SCAMPER_PING_FLAG_IS_TSANDADDR(ping) (	\
+ ((ping)->flags & SCAMPER_PING_FLAG_TSANDADDR))
+
+#define SCAMPER_PING_FLAG_IS_ICMPSUM(ping) (	\
+ ((ping)->flags & SCAMPER_PING_FLAG_ICMPSUM))
+
+#define SCAMPER_PING_FLAG_IS_DL(ping) (		\
+ ((ping)->flags & SCAMPER_PING_FLAG_DL))
+
+#define SCAMPER_PING_FLAG_IS_TBT(ping) (	\
+ ((ping)->flags & SCAMPER_PING_FLAG_TBT))
+
+#define SCAMPER_PING_FLAG_IS_NOSRC(ping) (	\
+ ((ping)->flags & SCAMPER_PING_FLAG_NOSRC))
+
+#define SCAMPER_PING_FLAG_IS_RAW(ping) (	\
+ ((ping)->flags & SCAMPER_PING_FLAG_RAW))
+
+#define SCAMPER_PING_FLAG_IS_SOCKRX(ping) (	\
+ ((ping)->flags & SCAMPER_PING_FLAG_SOCKRX))
 
 struct scamper_ping_stats
 {

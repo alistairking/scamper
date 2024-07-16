@@ -1,7 +1,7 @@
 /*
  * scamper_udpprobe_do.c
  *
- * $Id: scamper_udpprobe_do.c,v 1.11 2024/04/13 22:31:04 mjl Exp $
+ * $Id: scamper_udpprobe_do.c,v 1.12 2024/06/25 06:03:55 mjl Exp $
  *
  * Copyright (C) 2023-2024 The Regents of the University of California
  *
@@ -209,9 +209,7 @@ static void do_udpprobe_probe(scamper_task_t *task)
   struct sockaddr *sa;
   struct timeval wait_tv;
   socklen_t sl;
-  int fd, i;
-  void *i_p = (void *)&i;
-  size_t i_l = sizeof(i);
+  int fd;
 
   if(state->probec == 0 && udpprobe_state_alloc(task) != 0)
     goto err;
@@ -226,17 +224,15 @@ static void do_udpprobe_probe(scamper_task_t *task)
     }
   else if(SCAMPER_ADDR_TYPE_IS_IPV6(up->dst))
     {
-      i = 255;
-      if(setsockopt(fd, IPPROTO_IPV6, IPV6_UNICAST_HOPS, i_p, i_l) != 0)
+      if(setsockopt_int(fd, IPPROTO_IPV6, IPV6_UNICAST_HOPS, 255) != 0)
 	{
-	  printerror(__func__, "could not set hlim to %d", i);
+	  printerror(__func__, "could not set hlim to 255");
 	  goto err;
 	}
 #ifdef IPV6_TCLASS
-      i = 0;
-      if(setsockopt(fd, IPPROTO_IPV6, IPV6_TCLASS, i_p, i_l) != 0)
+      if(setsockopt_int(fd, IPPROTO_IPV6, IPV6_TCLASS, 0) != 0)
 	{
-	  printerror(__func__, "could not set tclass to %d", i);
+	  printerror(__func__, "could not set tclass to 0");
 	  goto err;
 	}
 #endif /* IPV6_TCLASS */

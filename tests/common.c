@@ -1,7 +1,7 @@
 /*
  * common.c: common functions that we might need for linking unit tests
  *
- * $Id: common.c,v 1.6 2024/04/20 00:15:02 mjl Exp $
+ * $Id: common.c,v 1.7 2024/07/02 00:50:12 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -89,12 +89,18 @@ int dump_cmd(const char *cmd, const char *filename)
 
 int hex2buf(const char *str, uint8_t **buf_out, size_t *len_out)
 {
-  size_t len = strlen(str);
-  size_t i, off = 0;
+  size_t i, len, off = 0;
   uint8_t *buf = NULL;
   int rc = -1;
 
-  if((len % 2) != 0 || len == 0 || (buf = malloc(len / 2)) == NULL)
+  if((len = strlen(str)) == 0)
+    {
+      *buf_out = NULL;
+      *len_out = 0;
+      return 0;
+    }
+
+  if((len % 2) != 0 || (buf = malloc(len / 2)) == NULL)
     goto done;
 
   for(i=0; i<len; i+=2)
@@ -127,18 +133,21 @@ int dump_hex(const char *str, const char *filename)
   if(hex2buf(str, &buf, &len) != 0)
     goto done;
 
-  if((fd = open(filename, fd_flags, MODE_644)) == -1)
+  if(len > 0)
     {
-      fprintf(stderr, "%s: could not open %s: %s\n",
-	      __func__, filename, strerror(errno));
-      goto done;
-    }
+      if((fd = open(filename, fd_flags, MODE_644)) == -1)
+	{
+	  fprintf(stderr, "%s: could not open %s: %s\n",
+		  __func__, filename, strerror(errno));
+	  goto done;
+	}
 
-  if(write_wrap(fd, buf, &wc, len) != 0 || wc != len)
-    {
-      fprintf(stderr, "%s: could not write %s: %s\n",
-	      __func__, filename, strerror(errno));
-      goto done;
+      if(write_wrap(fd, buf, &wc, len) != 0 || wc != len)
+	{
+	  fprintf(stderr, "%s: could not write %s: %s\n",
+		  __func__, filename, strerror(errno));
+	  goto done;
+	}
     }
 
   rc = 0;

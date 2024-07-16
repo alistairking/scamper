@@ -1,7 +1,7 @@
 /*
  * scamper_dlhdr.h
  *
- * $Id: scamper_dlhdr.h,v 1.5 2012/04/05 18:00:54 mjl Exp $
+ * $Id: scamper_dlhdr.h,v 1.6 2024/06/30 19:08:57 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2010 The University of Waikato
@@ -24,9 +24,6 @@
 
 #ifndef __SCAMPER_DLHDR_H
 #define __SCAMPER_DLHDR_H
-
-int scamper_dlhdr_init(void);
-void scamper_dlhdr_cleanup(void);
 
 typedef struct scamper_dlhdr scamper_dlhdr_t;
 

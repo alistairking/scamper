@@ -1,0 +1,172 @@
+.\"
+.\" sc_minrtt.1
+.\"
+.\" Author: Matthew Luckie <mjl@luckie.org.nz>
+.\"
+.\" Copyright (c) 2024 The Regents of the University of California
+.\"               All rights reserved
+.\"
+.\" $Id: sc_minrtt.1,v 1.1 2024/07/09 22:05:41 mjl Exp $
+.\"
+.Dd April 2, 2024
+.Dt SC_MINRTT 1
+.Os
+.Sh NAME
+.Nm sc_minrtt
+.Nd Manage RTT input to sc_hoiho
+.Sh SYNOPSIS
+.Nm
+.Bk -words
+.Op Fl c
+.Op Fl d Ar db-file
+.Ek
+.Pp
+.Nm
+.Bk -words
+.Op Fl i
+.Op Fl d Ar db-file
+.Op Fl R Ar regex
+.Ar
+.Ek
+.Pp
+.Nm
+.Bk -words
+.Op Fl p Ar process-mode
+.Op Fl d Ar db-file
+.Op Fl r Ar router-file
+.Op Fl t Ar threadc
+.Op Fl V Ar vploc-file
+.Ek
+.\""""""""""""
+.Sh DESCRIPTION
+The
+.Nm
+utility processes RTT data collected with
+.Xr sc_pinger 1
+using a series of vantage points into a format for
+.Xr sc_hoiho 1
+to use.
+.Nm
+builds an sqlite3
+database, which it uses to store RTT samples for faster processing.
+The intended workflow using
+.Nm
+is to first create a blank sqlite3 database using
+.Fl c ,
+import the RTT samples from
+.Xr warts 5
+files using
+.Fl i ,
+and then use the database to create the RTT constraints file for
+.Xr sc_hoiho 1
+using
+.Fl p.
+The supported options to
+.Nm
+are as follows:
+.Bl -tag -width Ds
+.It Fl c
+specifies that a sqlite3 database file is to be created.
+.It Fl d Ar db-file
+specifies the name of the sqlite3 database file to use.
+.It Fl i
+specifies that the RTT samples in the supplied
+.Xr warts 5
+files collected with
+.Xr sc_pinger 1
+should be imported into the sqlite3 database.
+.It Fl p Ar process-mode
+specifies the processing to do on the RTT samples, either
+mode 1 or 2.  Mode 1 identifies VPs that might be contributing
+spurious RTT samples.  Mode 2 dumps the minimum set of RTT
+constraints from the collected RTT samples.
+.It Fl r Ar router-file
+specifies the name of a corresponding router file that maps IP
+addresses to routers.
+The format of this file is the same as that supplied to
+.Xr sc_hoiho 1 .
+.It Fl R Ar regex
+specifies the regular expression to apply to input file names that
+extracts a vantage point name.  The extracted vantage point name
+must subsequently match an entry in the vploc file supplied with
+the
+.Fl V
+option when processing the samples.
+.It Fl t Ar threadc
+specifies the number of threads to use when processing the database.
+.It Fl V Ar vploc-file
+specifies a file containing a mapping of vantage point names to lat /
+long coordinates.
+.El
+.\""""""""""""
+.Sh EXAMPLES
+Given a set of warts files named hlz2-nz.pinger.warts,
+ams7-nl.pinger.warts, cld-us.pinger.warts, and a blank database
+created with
+.Pp
+sc_minrtt -c -d minrtt.sqlite
+.Pp
+the following will import the RTT samples:
+.Pp
+sc_minrtt -i -d minrtt.sqlite -R "([a-z]{3}\\d*-[a-z]{2})\\.pinger\\.warts$" /path/to/*.pinger.warts
+.Pp
+To dump the minimum set of RTT values providing constraints per IP address, use:
+.Pp
+sc_minrtt -p 2 -d minrtt.sqlite -v vploc.txt
+.Pp
+To dump the minimum set of RTT values per router for use by
+.Xr sc_hoiho 1 ,
+use:
+.Pp
+sc_minrtt -p 2 -d minrtt.sqlite -v vploc.txt -r routers.txt
+.Pp
+.\""""""""""""
+.Sh NOTES
+.Nm
+records which files it has imported in the database, so that it does
+not re-import the same file multiple times.  It does not store the
+full path to the file, so all filenames need to be unique, even if
+they are stored in different directories.
+.Pp
+.Nm
+organizes entries in a binary blob for each IP address in the sqlite
+database.  It is best to write the database to a file located on a
+.Xr tmpfs 5
+filesystem, and then copy it to disk once it is created.
+.Pp
+.Nm
+attempts to determine responses that are forged by a middle-box close
+to the vantage point by looking for reply-TTL run-lengths involving
+many unique destinations.  Internally, the threshold is a run of 50
+unique destinations with the same reply-TTL run-length.  This feature
+cannot currently be disabled or changed at runtime.
+.Pp
+The format of the vploc.txt file can be one of two supported formats,
+either
+.Pp
+.Dl ams7-nl 52.35 4.82
+.Dl hlz2-nz -37.78 175.17
+.Dl cld-us 32.88 -117.24
+.Pp
+or
+.Pp
+.Dl vp ams7-nl 52.35 4.82
+.Dl vp hlz2-nz -37.78 175.17
+.Dl vp cld-us 32.88 -117.24
+.Pp
+The latter format has the string "vp" at the start of each line, and
+is the same format used by
+.Xr sc_hoiho 1 ,
+so you can supply the same vploc.txt file to both
+.Xr sc_hoiho 1
+and
+.Nm .
+.Sh SEE ALSO
+.Xr sc_hoiho 1 ,
+.Xr sc_pinger 1 ,
+.Xr sqlite3 1
+.Sh AUTHORS
+.Nm
+was written by Matthew Luckie.
+Shivani Hariprasad and Harsh Gondaliya developed code to emit the
+minimum set of RTT constraints per address or router.

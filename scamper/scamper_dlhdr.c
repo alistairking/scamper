@@ -1,7 +1,7 @@
 /*
  * scamper_dlhdr.c
  *
- * $Id: scamper_dlhdr.c,v 1.18 2023/05/29 21:22:26 mjl Exp $
+ * $Id: scamper_dlhdr.c,v 1.19 2024/06/30 23:18:14 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2010 The University of Waikato
@@ -42,25 +42,14 @@
 #include "neighbourdisc/scamper_neighbourdisc_do.h"
 #include "utils.h"
 
-static void dlhdr_ethmake(scamper_dlhdr_t *dlhdr, scamper_addr_t *mac)
+static int dlhdr_eth_common(scamper_dlhdr_t *dlhdr)
 {
   if((dlhdr->buf = malloc_zero(14)) == NULL)
     {
       dlhdr->error = errno;
-      return;
+      return -1;
     }
   dlhdr->len = 14;
-
-  /* copy the destination mac address to use */
-  memcpy(dlhdr->buf, mac->addr, 6);
-
-  /* the source mac address to use */
-  if(scamper_if_getmac(dlhdr->ifindex, dlhdr->buf+6) != 0)
-    {
-      dlhdr->error = errno;
-      scamper_debug(__func__, "could not get source mac");
-      return;
-    }
 
   /* the ethertype */
   if(SCAMPER_ADDR_TYPE_IS_IPV4(dlhdr->dst))
@@ -77,7 +66,28 @@ static void dlhdr_ethmake(scamper_dlhdr_t *dlhdr, scamper_addr_t *mac)
     {
       dlhdr->error = EINVAL;
       scamper_debug(__func__, "unhandled ip->type %d", dlhdr->dst->type);
+      return -1;
     }
+
+  return 0;
+}
+
+static void dlhdr_ethmake(scamper_dlhdr_t *dlhdr, scamper_addr_t *mac)
+{
+  if(dlhdr_eth_common(dlhdr) != 0)
+    return;
+  
+  /* copy the destination mac address to use */
+  memcpy(dlhdr->buf, mac->addr, 6);
+
+  /* the source mac address to use */
+  if(scamper_if_getmac(dlhdr->ifindex, dlhdr->buf+6) != 0)
+    {
+      dlhdr->error = errno;
+      scamper_debug(__func__, "could not get source mac");
+      return;
+    }
+
   return;
 }
 
@@ -148,30 +158,7 @@ static int dlhdr_ethernet(scamper_dlhdr_t *dlhdr)
 
 static int dlhdr_ethloop(scamper_dlhdr_t *dlhdr)
 {
-  if((dlhdr->buf = malloc_zero(14)) == NULL)
-    {
-      dlhdr->error = errno;
-      goto done;
-    }
-  dlhdr->len = 14;
-
-  if(SCAMPER_ADDR_TYPE_IS_IPV4(dlhdr->dst))
-    {
-      dlhdr->buf[12] = 0x08;
-      dlhdr->buf[13] = 0x00;
-    }
-  else if(SCAMPER_ADDR_TYPE_IS_IPV6(dlhdr->dst))
-    {
-      dlhdr->buf[12] = 0x86;
-      dlhdr->buf[13] = 0xDD;
-    }
-  else
-    {
-      dlhdr->error = EINVAL;
-      goto done;
-    }
-
- done:
+  dlhdr_eth_common(dlhdr);
   dlhdr->cb(dlhdr);
   return 0;
 }

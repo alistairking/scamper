@@ -1,6 +1,6 @@
 #!/usr/bin/env perl
 #
-# $Id: build-man-pdfs.pl,v 1.22 2023/04/10 07:45:38 mjl Exp $
+# $Id: build-man-pdfs.pl,v 1.23 2024/07/09 22:05:41 mjl Exp $
 
 use strict;
 use warnings;
@@ -24,6 +24,7 @@ my @mans = ("scamper/scamper.1",
 	    "utils/sc_filterpolicy/sc_filterpolicy.1",
 	    "utils/sc_hoiho/sc_hoiho.1",
 	    "utils/sc_ipiddump/sc_ipiddump.1",
+	    "utils/sc_minrtt/sc_minrtt.1",
 	    "utils/sc_pinger/sc_pinger.1",
 	    "utils/sc_prefixprober/sc_prefixprober.1",
 	    "utils/sc_prefixscan/sc_prefixscan.1",

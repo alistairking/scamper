@@ -1,7 +1,7 @@
 /*
  * scamper_do_ping.c
  *
- * $Id: scamper_ping_do.c,v 1.185 2024/05/01 07:46:20 mjl Exp $
+ * $Id: scamper_ping_do.c,v 1.190 2024/07/11 09:50:36 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -140,7 +140,7 @@ static int ping_dltx(scamper_ping_t *ping)
 {
   if(ping->rtr != NULL || ping->reply_pmtu != 0 ||
      (SCAMPER_ADDR_TYPE_IS_IPV4(ping->dst) && scamper_osinfo_is_sunos()) ||
-     (ping->flags & SCAMPER_PING_FLAG_SPOOF) != 0)
+     SCAMPER_PING_FLAG_IS_SPOOF(ping))
     return 1;
   return 0;
 }
@@ -186,6 +186,8 @@ static uint16_t match_ipid(scamper_task_t *task, uint16_t ipid)
 
 static void do_ping_handle_dl(scamper_task_t *task, scamper_dl_rec_t *dl)
 {
+  static const int DIR_INBOUND  = 0;
+  static const int DIR_OUTBOUND = 1;
   scamper_ping_t       *ping  = ping_getdata(task);
   ping_state_t         *state = ping_getstate(task);
   scamper_ping_reply_t *reply = NULL;
@@ -223,9 +225,7 @@ static void do_ping_handle_dl(scamper_task_t *task, scamper_dl_rec_t *dl)
 	     dl->dl_icmp_id != ping->probe_sport)
 	    return;
 
-	  /* this is an inbound packet */
-	  direction = 0;
-
+	  direction = DIR_INBOUND;
 	  seq = dl->dl_icmp_seq;
 	  if(seq < ping->probe_dport)
 	    seq = seq + 0x10000;
@@ -261,9 +261,7 @@ static void do_ping_handle_dl(scamper_task_t *task, scamper_dl_rec_t *dl)
 	     scamper_addr_raw_cmp(ping->dst, dl->dl_ip_dst) != 0)
 	    return;
 
-	  /* this is an outbound packet */
-	  direction = 1;
-
+	  direction = DIR_OUTBOUND;
 	  seq = dl->dl_icmp_seq;
 	  if(seq < ping->probe_dport)
 	    seq = seq + 0x10000;
@@ -277,9 +275,7 @@ static void do_ping_handle_dl(scamper_task_t *task, scamper_dl_rec_t *dl)
 	  if(scamper_addr_raw_cmp(ping->dst, dl->dl_icmp_ip_dst) != 0)
 	    return;
 
-	  /* this is an inbound packet */
-	  direction = 0;
-
+	  direction = DIR_INBOUND;
 	  if(SCAMPER_PING_METHOD_IS_ICMP(ping))
 	    {
 	      if((SCAMPER_PING_METHOD_IS_ICMP_ECHO(ping) &&
@@ -343,6 +339,9 @@ static void do_ping_handle_dl(scamper_task_t *task, scamper_dl_rec_t *dl)
 	  else return;
 	}
       else return;
+
+      if(direction == DIR_INBOUND && SCAMPER_PING_FLAG_IS_SOCKRX(ping))
+	return;
     }
   else if(SCAMPER_DL_IS_TCP(dl))
     {
@@ -398,8 +397,7 @@ static void do_ping_handle_dl(scamper_task_t *task, scamper_dl_rec_t *dl)
 	      seq = u16;
 	    }
 
-	  /* this is an outbound packet */
-	  direction = 1;
+	  direction = DIR_OUTBOUND;
 	}
       else if(dl->dl_tcp_sport == ping->probe_dport &&
 	      scamper_addr_raw_cmp(ping->src, dl->dl_ip_dst) == 0 &&
@@ -431,8 +429,7 @@ static void do_ping_handle_dl(scamper_task_t *task, scamper_dl_rec_t *dl)
 	      seq = u16;
 	    }
 
-	  /* this is an inbound packet */
-	  direction = 0;
+	  direction = DIR_INBOUND;
 	}
       else return;
     }
@@ -466,8 +463,7 @@ static void do_ping_handle_dl(scamper_task_t *task, scamper_dl_rec_t *dl)
 	    }
 	  else return;
 
-	  /* this is an inbound packet */
-	  direction = 0;
+	  direction = DIR_INBOUND;
 	}
       else if(dl->dl_udp_sport == ping->probe_sport &&
 	      scamper_addr_raw_cmp(ping->src, dl->dl_ip_src) == 0 &&
@@ -488,8 +484,7 @@ static void do_ping_handle_dl(scamper_task_t *task, scamper_dl_rec_t *dl)
 	    }
 	  else return;
 
-	  /* this is an outbound packet */
-	  direction = 1;
+	  direction = DIR_OUTBOUND;
 	}
       else return;
     }
@@ -502,7 +497,7 @@ static void do_ping_handle_dl(scamper_task_t *task, scamper_dl_rec_t *dl)
   probe = state->probes[seq];
   assert(probe != NULL);
 
-  if(direction == 0)
+  if(direction == DIR_INBOUND)
     {
       /* allocate a reply structure for the response */
       if((reply = scamper_ping_reply_alloc()) == NULL)
@@ -557,9 +552,11 @@ static void do_ping_handle_dl(scamper_task_t *task, scamper_dl_rec_t *dl)
       reply->reply_tos = dl->dl_ip_tos;
       reply->flags |= SCAMPER_PING_REPLY_FLAG_REPLY_TOS;
 
+      reply->ifname = scamper_ifname_int_get(dl->dl_ifindex, &dl->dl_tv);
+
       if(ping->ping_replies[seq] == NULL)
 	{
-	  if((ping->flags & SCAMPER_PING_FLAG_TBT) == 0)
+	  if(SCAMPER_PING_FLAG_IS_TBT(ping) == 0)
 	    {
 	      /*
 	       * if this is the first reply we have for this hop, then increment
@@ -654,7 +651,7 @@ static void do_ping_handle_icmp(scamper_task_t *task, scamper_icmp_resp_t *ir)
    * do not consider ICMP responses if we're going to catch them on
    * the datalink interface
    */
-  if(state->dl != NULL)
+  if(state->dl != NULL && SCAMPER_PING_FLAG_IS_SOCKRX(ping) == 0)
     return;
 
   /* if this is an echo reply packet, then check the id and sequence */
@@ -895,6 +892,9 @@ static void do_ping_handle_icmp(scamper_task_t *task, scamper_icmp_resp_t *ir)
   if(ir->ir_flags & SCAMPER_ICMP_RESP_FLAG_IFINDEX)
     reply->ifname = scamper_ifname_int_get(ir->ir_ifindex, &ir->ir_rx);
 
+  if(probe->dlts != 0)
+    reply->flags |= SCAMPER_PING_REPLY_FLAG_DLTX;
+
   /*
    * if this is the first reply we have for this hop, then increment
    * the replies counter we keep state with
@@ -1085,20 +1085,20 @@ static int ping_state_payload(scamper_ping_t *ping, ping_state_t *state)
   char errbuf[256];
 
   /* payload to send in the probe */
-  if(ping->dst->type == SCAMPER_ADDR_TYPE_IPV4)
+  if(SCAMPER_ADDR_TYPE_IS_IPV4(ping->dst))
     {
       al = 4;
       hdr = 20;
-      if((ping->flags & SCAMPER_PING_FLAG_V4RR) != 0)
+      if(SCAMPER_PING_FLAG_IS_V4RR(ping))
 	hdr += 40;
-      else if((ping->flags & SCAMPER_PING_FLAG_TSONLY) != 0)
+      else if(SCAMPER_PING_FLAG_IS_TSONLY(ping))
 	hdr += 40;
-      else if((ping->flags & SCAMPER_PING_FLAG_TSANDADDR) != 0)
+      else if(SCAMPER_PING_FLAG_IS_TSANDADDR(ping))
 	hdr += 36;
       else if(state->tsps_ipc > 0)
 	hdr += (state->tsps_ipc * 4 * 2) + 4;
     }
-  else if(ping->dst->type == SCAMPER_ADDR_TYPE_IPV6)
+  else if(SCAMPER_ADDR_TYPE_IS_IPV6(ping->dst))
     {
       al = 16;
       hdr = 40;
@@ -1134,8 +1134,8 @@ static int ping_state_payload(scamper_ping_t *ping, ping_state_t *state)
       off += 12;
     }
 
-  if((ping->flags & SCAMPER_PING_FLAG_SPOOF) != 0 &&
-     (ping->flags & SCAMPER_PING_FLAG_NOSRC) == 0 &&
+  if(SCAMPER_PING_FLAG_IS_SPOOF(ping) &&
+     SCAMPER_PING_FLAG_IS_NOSRC(ping) == 0 &&
      ping->probe_method != SCAMPER_PING_METHOD_TCP_SYNACK &&
      ping->probe_method != SCAMPER_PING_METHOD_TCP_RST)
     {
@@ -1149,7 +1149,7 @@ static int ping_state_payload(scamper_ping_t *ping, ping_state_t *state)
     }
 
   /* need scratch space in the probe to help fudge icmp checksum */
-  if((ping->flags & SCAMPER_PING_FLAG_ICMPSUM) != 0)
+  if(SCAMPER_PING_FLAG_IS_ICMPSUM(ping))
     {
       assert(state->payload_len >= off + 2);
       state->payload[off++] = 0;
@@ -1158,7 +1158,7 @@ static int ping_state_payload(scamper_ping_t *ping, ping_state_t *state)
 
   if(ping->probe_data != NULL)
     {
-      if((ping->flags & SCAMPER_PING_FLAG_PAYLOAD) != 0)
+      if(SCAMPER_PING_FLAG_IS_PAYLOAD(ping))
 	{
 	  assert(state->payload_len >= off + ping->probe_datalen);
 	  memcpy(state->payload+off, ping->probe_data, ping->probe_datalen);
@@ -1254,7 +1254,7 @@ static int ping_state_alloc(scamper_task_t *task)
     for(i=0; i<ping->probe_tsps->ipc; i++)
       memcpy(&state->tsps_ips[i], ping->probe_tsps->ips[i]->addr, 4);
 
-  if((ping->flags & SCAMPER_PING_FLAG_DL) != 0 ||
+  if(SCAMPER_PING_FLAG_IS_DL(ping) ||
      SCAMPER_PING_METHOD_IS_TCP(ping) ||
      ping_dltx(ping))
     {
@@ -1269,7 +1269,7 @@ static int ping_state_alloc(scamper_task_t *task)
       state->mode = MODE_PING;
     }
 
-  if((ping->flags & SCAMPER_PING_FLAG_SPOOF) == 0)
+  if(SCAMPER_PING_FLAG_IS_SPOOF(ping) == 0)
     {
       if(SCAMPER_ADDR_TYPE_IS_IPV4(ping->dst))
 	state->icmp = scamper_fd_icmp4(ping->src->addr);
@@ -1284,7 +1284,7 @@ static int ping_state_alloc(scamper_task_t *task)
     {
       state->raw = scamper_fd_udp4raw(ping->src->addr);
     }
-  else if((ping->flags & SCAMPER_PING_FLAG_RAW) != 0)
+  else if(SCAMPER_PING_FLAG_IS_RAW(ping))
     {
       /* probe using a raw TCP socket */
       state->raw = scamper_fd_ip4();
@@ -1370,8 +1370,7 @@ static void do_ping_probe(scamper_task_t *task)
       ping_dltx(ping)))
     {
       probe.pr_dl     = scamper_fd_dl_get(state->dl);
-      probe.pr_dl_buf = state->dlhdr->buf;
-      probe.pr_dl_len = state->dlhdr->len;
+      probe.pr_dlhdr  = state->dlhdr;
     }
 
   if(state->ptb != 0)
@@ -1418,19 +1417,19 @@ static void do_ping_probe(scamper_task_t *task)
   if(ping->dst->type == SCAMPER_ADDR_TYPE_IPV4)
     probe.pr_ip_off  = IP_DF;
 
-  if((ping->flags & SCAMPER_PING_FLAG_V4RR) != 0)
+  if(SCAMPER_PING_FLAG_IS_V4RR(ping))
     {
       opt.type = SCAMPER_PROBE_IPOPTS_V4RR;
       probe.pr_ipopts = &opt;
       probe.pr_ipoptc = 1;
     }
-  else if((ping->flags & SCAMPER_PING_FLAG_TSONLY) != 0)
+  else if(SCAMPER_PING_FLAG_IS_TSONLY(ping))
     {
       opt.type = SCAMPER_PROBE_IPOPTS_V4TSO;
       probe.pr_ipopts = &opt;
       probe.pr_ipoptc = 1;
     }
-  else if((ping->flags & SCAMPER_PING_FLAG_TSANDADDR) != 0)
+  else if(SCAMPER_PING_FLAG_IS_TSANDADDR(ping))
     {
       opt.type = SCAMPER_PROBE_IPOPTS_V4TSAA;
       probe.pr_ipopts = &opt;
@@ -1464,10 +1463,10 @@ static void do_ping_probe(scamper_task_t *task)
 	  i += 12;
 	}
 
-      if((ping->flags & SCAMPER_PING_FLAG_ICMPSUM) != 0)
+      if(SCAMPER_PING_FLAG_IS_ICMPSUM(ping))
 	{
 	  probe.pr_icmp_sum = u16 = htons(ping->probe_icmpsum);
-	  if((ping->flags & SCAMPER_PING_FLAG_SPOOF) != 0)
+	  if(SCAMPER_PING_FLAG_IS_SPOOF(ping))
 	    i += 4;
 	  memcpy(state->payload+i, &u16, 2);
 	  if(SCAMPER_ADDR_TYPE_IS_IPV4(ping->dst))
@@ -1616,7 +1615,7 @@ scamper_task_t *scamper_do_ping_alloctask(void *data, scamper_list_t *list,
   if(ping->src == NULL &&
      (ping->src = scamper_getsrc(ping->dst, 0, errbuf, errlen)) == NULL)
     goto err;
-  if((ping->flags & SCAMPER_PING_FLAG_SPOOF) == 0)
+  if(SCAMPER_PING_FLAG_IS_SPOOF(ping) == 0)
     sig->sig_tx_ip_src = scamper_addr_use(ping->src);
 
   /* allocate a file descriptor for each source port needed */
@@ -1636,7 +1635,7 @@ scamper_task_t *scamper_do_ping_alloctask(void *data, scamper_list_t *list,
    * no need to open a probe socket if we're going to spoof, as we'll
    * be using a datalink interface
    */
-  if((ping->flags & SCAMPER_PING_FLAG_SPOOF) != 0)
+  if(SCAMPER_PING_FLAG_IS_SPOOF(ping))
     goto install;
 
   if(SCAMPER_PING_METHOD_IS_TCP(ping))
@@ -1763,7 +1762,7 @@ scamper_task_t *scamper_do_ping_alloctask(void *data, scamper_list_t *list,
 	  goto err;
 	}
       sig->sig_tx_ip_dst = scamper_addr_use(ping->dst);
-      if((ping->flags & SCAMPER_PING_FLAG_SPOOF) == 0)
+      if(SCAMPER_PING_FLAG_IS_SPOOF(ping) == 0)
 	sig->sig_tx_ip_src = scamper_addr_use(ping->src);
 
       if(SCAMPER_ADDR_TYPE_IS_IPV4(ping->dst))

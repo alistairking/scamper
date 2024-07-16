@@ -1,7 +1,7 @@
 /*
  * scamper_ping_cmd.c
  *
- * $Id: scamper_ping_cmd.c,v 1.24 2024/05/02 02:33:38 mjl Exp $
+ * $Id: scamper_ping_cmd.c,v 1.25 2024/06/26 20:05:29 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -251,6 +251,8 @@ static int ping_arg_param_validate(int optid, char *param, long long *out,
 	tmp = SCAMPER_PING_FLAG_NOSRC;
       else if(strcasecmp(param, "raw") == 0)
 	tmp = SCAMPER_PING_FLAG_RAW;
+      else if(strcasecmp(param, "sockrx") == 0)
+	tmp = SCAMPER_PING_FLAG_SOCKRX;
       else if(strcasecmp(param, "spoof") == 0)
 	tmp = SCAMPER_PING_FLAG_SPOOF;
       else if(strcasecmp(param, "tbt") == 0)
@@ -788,6 +790,12 @@ void *scamper_do_ping_alloc(char *str, char *errbuf, size_t errlen)
 	  snprintf(errbuf, errlen, "specify valid path-mtu");
 	  goto err;
 	}
+    }
+
+  if(reply_pmtu != 0 && (flags & SCAMPER_PING_FLAG_SOCKRX) != 0)
+    {
+      snprintf(errbuf, errlen, "cannot specify -O sockrx with -M");
+      goto err;
     }
 
   if(src != NULL &&

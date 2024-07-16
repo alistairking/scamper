@@ -1,7 +1,7 @@
 /*
  * scamper_control.c
  *
- * $Id: scamper_control.c,v 1.268 2024/04/26 06:52:24 mjl Exp $
+ * $Id: scamper_control.c,v 1.271 2024/06/25 06:03:55 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -192,9 +192,6 @@ typedef struct client
 
   /* node for this client in the list of connected clients */
   dlist_node_t       *node;
-
-  /* pointer returned by the source observe code */
-  void               *observe;
 
   /* linepoll to process incoming lines of text */
   scamper_linepoll_t *lp;
@@ -444,7 +441,7 @@ static char *client_sockaddr_tostr(client_t *client, char *buf, size_t len)
    * get the name of the connected socket, which is used to name the
    * source and the outfile
    */
-  if(sockaddr_tostr(client->un.sock.sa, buf, len) == NULL)
+  if(sockaddr_tostr(client->un.sock.sa, buf, len, 1) == NULL)
     {
       printerror_msg(__func__, "could not decipher client sockaddr");
       return NULL;
@@ -513,13 +510,6 @@ static void client_free(client_t *client)
     {
       dlist_node_pop(client_list, client->node);
       client->node = NULL;
-    }
-
-  /* if we are monitoring source events, unobserve */
-  if(client->observe != NULL)
-    {
-      scamper_sources_unobserve(client->observe);
-      client->observe = NULL;
     }
 
   /* make sure the source is empty before freeing */
@@ -1151,133 +1141,6 @@ static int command_get(client_t *client, char *buf)
 static int command_help(client_t *client, char *buf)
 {
   client_send(client, "ERR XXX: todo");
-  return 0;
-}
-
-static void observe_source_event_add(const scamper_source_event_t *sse,
-				     char *buf, const size_t len)
-{
-  buf[0] = 'a'; buf[1] = 'd'; buf[2] = 'd'; buf[3] = ' ';
-  source_tostr(buf+4, len-4, sse->source);
-  return;
-}
-
-static void observe_source_event_update(const scamper_source_event_t *sse,
-					char *buf, const size_t len)
-{
-  char autoreload[16];
-  char cycles[16];
-  char priority[24];
-
-  /* autoreload */
-  if(sse->sse_update_flags & 0x01)
-    snprintf(autoreload, sizeof(autoreload),
-	     " autoreload %d", sse->sse_update_autoreload);
-  else autoreload[0] = '\0';
-
-  /* cycles */
-  if(sse->sse_update_flags & 0x02)
-    snprintf(cycles, sizeof(cycles),
-	     " cycles %d", sse->sse_update_cycles);
-  else cycles[0] = '\0';
-
-  /* priority */
-  if(sse->sse_update_flags & 0x04)
-    snprintf(priority, sizeof(priority),
-	     " priority %d", sse->sse_update_priority);
-  else priority[0] = '\0';
-
-  snprintf(buf, len, "update '%s'%s%s%s",
-	   scamper_source_getname(sse->source),
-	   autoreload, cycles, priority);
-  return;
-}
-
-static void observe_source_event_cycle(const scamper_source_event_t *sse,
-				       char *buf, const size_t len)
-{
-  snprintf(buf, len, "cycle '%s' id %d",
-	   scamper_source_getname(sse->source),
-	   sse->sse_cycle_cycle_id);
-  return;
-}
-
-static void observe_source_event_delete(const scamper_source_event_t *sse,
-					char *buf, const size_t len)
-{
-  snprintf(buf, len, "delete '%s'",
-	   scamper_source_getname(sse->source));
-  return;
-}
-
-static void observe_source_event_finish(const scamper_source_event_t *sse,
-					char *buf, const size_t len)
-{
-  snprintf(buf, len, "finish '%s'",
-	   scamper_source_getname(sse->source));
-  return;
-}
-
-/*
- * command_observe_source_cb
- *
- * this function is a callback that is used whenever some event occurs
- * with a source.
- */
-static void command_observe_source_cb(const scamper_source_event_t *sse,
-				      void *param)
-{
-  static void (* const func[])(const scamper_source_event_t *,
-			       char *, const size_t) =
-  {
-    observe_source_event_add,
-    observe_source_event_update,
-    observe_source_event_cycle,
-    observe_source_event_delete,
-    observe_source_event_finish,
-  };
-  client_t *client = (client_t *)param;
-  char buf[512];
-  size_t len;
-
-  if(sse->event < 0x01 || sse->event > 0x05)
-    {
-      return;
-    }
-
-  snprintf(buf, sizeof(buf), "EVENT %u source ", (uint32_t)sse->sec);
-  len = strlen(buf);
-
-  func[sse->event-1](sse, buf + len, sizeof(buf)-len);
-  client_send(client, "%s", buf);
-
-  return;
-}
-
-static int command_observe(client_t *client, char *buf)
-{
-  if(buf == NULL)
-    {
-      client_send(client, "ERR usage: observe [sources]");
-      return 0;
-    }
-  string_nextword(buf);
-
-  if(strcasecmp(buf, "sources") != 0)
-    {
-      client_send(client, "ERR usage: observe [sources]");
-      return 0;
-    }
-
-  client->observe = scamper_sources_observe(command_observe_source_cb, client);
-  if(client->observe == NULL)
-    {
-      printerror(__func__, "could not observe sources");
-      client_send(client, "ERR could not observe");
-      return -1;
-    }
-
-  client_send(client, "OK");
   return 0;
 }
 
@@ -2432,7 +2295,6 @@ static int client_interactive_cb(client_t *client, uint8_t *buf, size_t len)
     {"get",        command_get},
     {"help",       command_help},
     {"lss-clear",  command_lss_clear},
-    {"observe",    command_observe},
     {"outfile",    command_outfile},
     {"remote",     command_remote},
     {"set",        command_set},
@@ -3846,15 +3708,13 @@ static int remote_socket(control_remote_t *rm, int fd)
 static int remote_socket(control_remote_t *rm, SOCKET fd)
 #endif
 {
-  int opt = 1;
-
   if((rm->wb = scamper_writebuf_alloc()) == NULL)
     {
       printerror(__func__, "could not alloc wb");
       goto err;
     }
 
-  if(setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, (void *)&opt, sizeof(opt)) != 0)
+  if(setsockopt_int(fd, IPPROTO_TCP, TCP_NODELAY, 1) != 0)
     {
       printerror(__func__, "could not set TCP_NODELAY");
       goto err;
@@ -4202,7 +4062,7 @@ int scamper_control_add_inet(const char *ip, int port)
   struct sockaddr_storage sas;
   struct sockaddr *sa = (struct sockaddr *)&sas;
   struct in_addr in;
-  int af = AF_INET, opt;
+  int af = AF_INET;
 
 #ifndef _WIN32 /* SOCKET vs int on windows */
   int fd = -1;
@@ -4235,15 +4095,13 @@ int scamper_control_add_inet(const char *ip, int port)
       goto err;
     }
 
-  opt = 1;
-  if(setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, (void *)&opt, sizeof(opt)) != 0)
+  if(setsockopt_int(fd, SOL_SOCKET, SO_REUSEADDR, 1) != 0)
     {
       printerror(__func__, "could not set SO_REUSEADDR");
       goto err;
     }
 
-  opt = 1;
-  if(setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, (void *)&opt, sizeof(opt)) != 0)
+  if(setsockopt_int(fd, IPPROTO_TCP, TCP_NODELAY, 1) != 0)
     {
       printerror(__func__, "could not set TCP_NODELAY");
       goto err;

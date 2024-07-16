@@ -1,7 +1,7 @@
 /*
  * unit_fds : unit tests for scamper_fd
  *
- * $Id: unit_fds.c,v 1.5 2024/03/04 19:36:41 mjl Exp $
+ * $Id: unit_fds.c,v 1.6 2024/07/15 22:17:36 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -315,6 +315,55 @@ static int test_1(void)
   return -1;
 }
 
+static int test_2(void)
+{
+  scamper_fd_t *fds[10];
+  size_t i;
+  uint16_t *ports = NULL;
+  uint16_t *u4, *u6, *t4, *t6, u4c, u6c, t4c, t6c;
+  int rc = -1;
+
+  memset(fds, 0, sizeof(fds));
+
+  if((fds[0] = scamper_fd_udp4dg(NULL, 38421)) == NULL ||
+     (fds[1] = scamper_fd_udp6(NULL, 12492)) == NULL ||
+     (fds[2] = scamper_fd_tcp4(NULL, 51745)) == NULL ||
+     (fds[3] = scamper_fd_tcp6(NULL, 24531)) == NULL ||
+     (fds[4] = scamper_fd_udp4dg(NULL, 44258)) == NULL ||
+     (fds[5] = scamper_fd_udp6(NULL, 52532)) == NULL ||
+     (fds[6] = scamper_fd_tcp4(NULL, 543)) == NULL ||
+     (fds[7] = scamper_fd_tcp6(NULL, 31315)) == NULL ||
+     (fds[8] = scamper_fd_udp4dg(NULL, 12345)) == NULL ||
+     (fds[9] = scamper_fd_udp6(NULL, 42152)) == NULL)
+    goto done;
+
+  if(scamper_fds_sports(&ports, &i) != 0)
+    goto done;
+  if(i != 4 + 10)
+    goto done;
+  u4 = ports+4;  u4c = ports[0]; if(u4c != 3) goto done;
+  t4 = u4 + u4c; t4c = ports[1]; if(t4c != 2) goto done;
+  u6 = t4 + t4c; u6c = ports[2]; if(u6c != 3) goto done;
+  t6 = u6 + u6c; t6c = ports[3]; if(t6c != 2) goto done;
+
+  if(u4[0] != 38421 || u4[1] != 44258 || u4[2] != 12345)
+    goto done;
+  if(t4[0] != 51745 || t4[1] != 543)
+    goto done;
+  if(u6[0] != 12492 || u6[1] != 52532 || u6[2] != 42152)
+    goto done;
+  if(t6[0] != 24531 || t6[1] != 31315)
+    goto done;
+
+  rc = 0;
+ done:
+  for(i=0; i<10; i++)
+    if(fds[i] != NULL) scamper_fd_free(fds[i]);
+  if(ports != NULL)
+    free(ports);
+  return rc;
+}
+
 static int check(int id, int (*func)(void))
 {
   int rc;
@@ -328,7 +377,8 @@ static int check(int id, int (*func)(void))
   fd_n = 4;
 
   scamper_fds_init();
-  rc = func();
+  if((rc = func()) != 0)
+    printf("fail: %d\n", id);
   scamper_fds_cleanup();
 
 #ifdef DMALLOC
@@ -348,6 +398,7 @@ int main(int argc, char *argv[])
   static int (*const tests[])(void) = {
     test_0,
     test_1,
+    test_2,
   };
   int i, testc = sizeof(tests) / sizeof(void *);
 

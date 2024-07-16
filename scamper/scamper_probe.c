@@ -1,7 +1,7 @@
 /*
  * scamper_probe.c
  *
- * $Id: scamper_probe.c,v 1.84 2024/03/04 19:36:41 mjl Exp $
+ * $Id: scamper_probe.c,v 1.85 2024/07/02 01:11:17 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -34,6 +34,7 @@
 #include "scamper_addr.h"
 #include "scamper_addr_int.h"
 #include "scamper_dl.h"
+#include "scamper_dlhdr.h"
 #include "scamper_fds.h"
 #include "scamper_rtsock.h"
 #include "scamper_task.h"
@@ -330,8 +331,7 @@ static scamper_probe_t *probe_dup(scamper_probe_t *pr)
     goto err;
 
   pd->pr_dl = NULL;
-  pd->pr_dl_buf = NULL;
-  pd->pr_dl_len = 0;
+  pd->pr_dlhdr = NULL;
   pd->pr_ipopts = NULL;
   pd->pr_data = NULL;
   if(pr->pr_ip_src != NULL)
@@ -908,7 +908,8 @@ int scamper_probe(scamper_probe_t *probe)
   int (*send_func)(scamper_probe_t *) = NULL;
   int (*build_func)(scamper_probe_t *, uint8_t *, size_t *) = NULL;
   size_t pad, len;
-  uint8_t *buf;
+  uint8_t *buf, *dl_buf;
+  uint16_t dl_len;
 
   probe->pr_errno = 0;
   probe_print(probe);
@@ -981,22 +982,24 @@ int scamper_probe(scamper_probe_t *probe)
    * bytes to put at the front of the packet buffer so that the IP layer
    * is properly aligned for the architecture
    */
-  pad = PAD(probe->pr_dl_len);
-  if(pad + probe->pr_dl_len >= pktbuf_len)
+  dl_buf = probe->pr_dlhdr->buf;
+  dl_len = probe->pr_dlhdr->len;
+  pad = PAD(dl_len);
+  if(pad + dl_len >= pktbuf_len)
     len = 0;
   else
-    len = pktbuf_len - pad - probe->pr_dl_len;
+    len = pktbuf_len - pad - dl_len;
 
   /*
    * try building the probe.  if it returns -1, then hopefully the len field
    * will supply a clue as to what it should be
    */
-  if(build_func(probe, pktbuf + pad + probe->pr_dl_len, &len) != 0)
+  if(build_func(probe, pktbuf + pad + dl_len, &len) != 0)
     {
-      assert(pktbuf_len < pad + probe->pr_dl_len + len);
+      assert(pktbuf_len < pad + dl_len + len);
 
       /* reallocate the packet buffer */
-      len += pad + probe->pr_dl_len;
+      len += pad + dl_len;
       if((buf = realloc(pktbuf, len)) == NULL)
 	{
 	  probe->pr_errno = errno;
@@ -1006,8 +1009,8 @@ int scamper_probe(scamper_probe_t *probe)
       pktbuf     = buf;
       pktbuf_len = len;
 
-      len = pktbuf_len - pad - probe->pr_dl_len;
-      if(build_func(probe, pktbuf + pad + probe->pr_dl_len, &len) != 0)
+      len = pktbuf_len - pad - dl_len;
+      if(build_func(probe, pktbuf + pad + dl_len, &len) != 0)
 	{
 	  probe->pr_errno = EINVAL;
 	  return -1;
@@ -1015,11 +1018,11 @@ int scamper_probe(scamper_probe_t *probe)
     }
 
   /* add the datalink header size back to the length field */
-  len += probe->pr_dl_len;
+  len += dl_len;
 
   /* pre-pend the datalink header, if there is one */
-  if(probe->pr_dl_len > 0)
-    memcpy(pktbuf+pad, probe->pr_dl_buf, probe->pr_dl_len);
+  if(dl_len > 0)
+    memcpy(pktbuf+pad, dl_buf, dl_len);
 
   gettimeofday_wrap(&probe->pr_tx);
   if(scamper_dl_tx(probe->pr_dl, pktbuf+pad, len) == -1)
@@ -1028,8 +1031,8 @@ int scamper_probe(scamper_probe_t *probe)
       return -1;
     }
 
-  probe->pr_tx_raw = pktbuf + pad + probe->pr_dl_len;
-  probe->pr_tx_rawlen = len - probe->pr_dl_len;
+  probe->pr_tx_raw = pktbuf + pad + dl_len;
+  probe->pr_tx_rawlen = len - dl_len;
   return 0;
 }
 

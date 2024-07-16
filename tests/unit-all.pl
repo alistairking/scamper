@@ -16,6 +16,7 @@ my @tests = (
     "unit_cmd_tbit",
     "unit_cmd_trace",
     "unit_cmd_udpprobe",
+    "unit_dl_parse_arp",
     "unit_dl_parse_ip",
     "unit_fds",
     "unit_host_rr_list",

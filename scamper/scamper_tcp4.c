@@ -1,7 +1,7 @@
 /*
  * scamper_tcp4.c
  *
- * $Id: scamper_tcp4.c,v 1.64 2023/08/20 01:21:17 mjl Exp $
+ * $Id: scamper_tcp4.c,v 1.66 2024/07/02 01:11:17 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -32,6 +32,7 @@
 #include "scamper_addr.h"
 #include "scamper_addr_int.h"
 #include "scamper_dl.h"
+#include "scamper_dlhdr.h"
 #include "scamper_probe.h"
 #include "scamper_ip4.h"
 #include "scamper_tcp4.h"
@@ -363,7 +364,6 @@ SOCKET scamper_tcp4_open(const void *addr, int sport)
 {
   struct sockaddr_in sin4;
   char tmp[32];
-  int opt;
 
 #ifndef _WIN32 /* SOCKET vs int on windows */
   int fd = -1;
@@ -378,15 +378,13 @@ SOCKET scamper_tcp4_open(const void *addr, int sport)
       goto err;
     }
 
-  opt = 1;
-  if(setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, (void *)&opt, sizeof(opt)) != 0)
+  if(setsockopt_int(fd, SOL_SOCKET, SO_REUSEADDR, 1) != 0)
     {
       printerror(__func__, "could not set SO_REUSEADDR");
       goto err;
     }
 
-  opt = 65535 + 128;
-  if(setsockopt(fd, SOL_SOCKET, SO_SNDBUF, (void *)&opt, sizeof(opt)) != 0)
+  if(setsockopt_raise(fd, SOL_SOCKET, SO_SNDBUF, 65535 + 128) != 0)
     {
       printerror(__func__, "could not set SO_SNDBUF");
       return -1;

@@ -1,7 +1,7 @@
 /*
  * sc_wartsdump
  *
- * $Id: sc_wartsdump.c,v 1.296 2024/05/01 07:46:20 mjl Exp $
+ * $Id: sc_wartsdump.c,v 1.297 2024/06/26 20:06:13 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -895,7 +895,7 @@ static void dump_ping(scamper_ping_t *ping)
 {
   static const char *flagstr[] = {
     "v4rr", "spoof", "payload", "tsonly", "tsandaddr", "icmpsum", "dl", "tbt",
-    "nosrc",
+    "nosrc", "raw", "sockrx"
   };
   const scamper_ping_reply_t *reply;
   const scamper_ping_v4ts_t *v4ts;
@@ -936,7 +936,7 @@ static void dump_ping(scamper_ping_t *ping)
     {
       printf(" flags:");
       u32 = 0;
-      for(u8=0; u8<9; u8++)
+      for(u8=0; u8<sizeof(flagstr) / sizeof(char *); u8++)
 	{
 	  if((flags & (0x1 << u8)) == 0)
 	    continue;

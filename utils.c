@@ -1,7 +1,7 @@
 /*
  * utils.c
  *
- * $Id: utils.c,v 1.241 2024/05/02 00:13:57 mjl Exp $
+ * $Id: utils.c,v 1.244 2024/07/14 10:07:22 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -207,7 +207,8 @@ static char *link_tostr(const struct sockaddr_dl *sdl, char *buf, size_t len)
 }
 #endif
 
-char *sockaddr_tostr(const struct sockaddr *sa, char *buf, size_t len)
+char *sockaddr_tostr(const struct sockaddr *sa, char *buf, size_t len,
+		     int with_port)
 {
   char addr[128];
 
@@ -227,8 +228,11 @@ char *sockaddr_tostr(const struct sockaddr *sa, char *buf, size_t len)
 	}
 #endif
 
-      snprintf(buf, len, "%s:%d", addr,
-	       ntohs(((const struct sockaddr_in *)sa)->sin_port));
+      if(with_port != 0)
+	snprintf(buf, len, "%s:%d", addr,
+		 ntohs(((const struct sockaddr_in *)sa)->sin_port));
+      else
+	snprintf(buf, len, "%s", addr);
     }
   else if(sa->sa_family == AF_INET6)
     {
@@ -246,8 +250,11 @@ char *sockaddr_tostr(const struct sockaddr *sa, char *buf, size_t len)
 	}
 #endif
 
-      snprintf(buf, len, "%s.%d", addr,
-	       ntohs(((const struct sockaddr_in6 *)sa)->sin6_port));
+      if(with_port != 0)
+	snprintf(buf, len, "%s.%d", addr,
+		 ntohs(((const struct sockaddr_in6 *)sa)->sin6_port));
+      else
+	snprintf(buf, len, "%s", addr);
     }
 #if defined(AF_LINK) && !defined(_WIN32)
   else if(sa->sa_family == AF_LINK)
@@ -1026,6 +1033,23 @@ int timeval_iszero(const struct timeval *tv)
   return 0;
 }
 
+int setsockopt_raise(int fd, int lvl, int opt, int val)
+{
+  socklen_t slt;
+  int cur;
+
+  slt = sizeof(cur);
+  if(getsockopt(fd, lvl, opt, (void *)&cur, &slt) == 0 && cur >= val)
+    return 0;
+
+  return setsockopt(fd, lvl, opt, (void *)&val, sizeof(val));
+}
+
+int setsockopt_int(int fd, int lvl, int opt, int val)
+{
+  return setsockopt(fd, lvl, opt, (void *)&val, sizeof(val));
+}
+
 #ifdef HAVE_FCNTL
 int fcntl_unset(int fd, int flags)
 {
@@ -1407,7 +1431,7 @@ int string_isfloat(const char *str)
 char *string_nextword(char *buf)
 {
   /* scan for a start of a word */
-  while(*buf != '\0' && isspace((int)*buf) == 0)
+  while(*buf != '\0' && isspace((unsigned char)*buf) == 0)
     {
       buf++;
     }
@@ -1420,7 +1444,7 @@ char *string_nextword(char *buf)
   buf++;
 
   /* now scan for the end of the word */
-  while(*buf != '\0' && isspace((int)*buf) != 0)
+  while(*buf != '\0' && isspace((unsigned char)*buf) != 0)
     {
       buf++;
     }

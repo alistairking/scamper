@@ -1,7 +1,7 @@
 /*
  * scamper
  *
- * $Id: scamper.c,v 1.334 2024/05/01 07:46:20 mjl Exp $
+ * $Id: scamper.c,v 1.339 2024/07/16 00:36:18 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -57,6 +57,7 @@
 #include "scamper_tcp4.h"
 #include "scamper_rtsock.h"
 #include "scamper_dl.h"
+#include "scamper_dlhdr.h"
 #include "scamper_firewall.h"
 #include "scamper_probe.h"
 #include "scamper_privsep.h"
@@ -144,7 +145,15 @@
 #define FLAG_ICMP_RECVERR    0x00000400
 #endif
 #define FLAG_POLL            0x00000800
+#ifdef HAVE_STRUCT_TPACKET_REQ3
 #define FLAG_RING            0x00001000
+#endif
+#ifdef __linux__
+#define FLAG_DLANY           0x00002000
+#endif
+#if defined(__linux__) || defined(BIOCSETFNR)
+#define FLAG_DYNFILTER       0x00004000
+#endif
 
 /*
  * parameters configurable by the command line:
@@ -389,6 +398,12 @@ static void usage(uint32_t opt_mask)
 #endif
 #ifdef HAVE_STRUCT_TPACKET_REQ3
       usage_line("ring: use PACKET_RX_RING to receive datalink packets");
+#endif
+#ifdef FLAG_DLANY
+      usage_line("dl-any: open a cooked any datalink interface");
+#endif
+#ifdef FLAG_DYNFILTER
+      usage_line("dyn-filter: use dynamic BPF filters on datalink interfaces");
 #endif
     }
 
@@ -770,6 +785,14 @@ static int check_options(int argc, char *argv[])
 	  else if(strncasecmp(optarg, "client-certfile=", 16) == 0)
 	    remote_client_certfile = optarg+16;
 #endif
+#ifdef FLAG_DLANY
+	  else if(strcasecmp(optarg, "dl-any") == 0)
+	    flags |= FLAG_DLANY;
+#endif
+#ifdef FLAG_DYNFILTER
+	  else if(strcasecmp(optarg, "dyn-filter") == 0)
+	    flags |= FLAG_DYNFILTER;
+#endif
 #ifdef HAVE_STRUCT_TPACKET_REQ3
 	  else if(strcasecmp(optarg, "ring") == 0)
 	    flags |= FLAG_RING;
@@ -926,6 +949,15 @@ static int check_options(int argc, char *argv[])
       printerror(__func__, "could not strdup pidfile");
       return -1;
     }
+
+#if defined(FLAG_DLANY) && defined(FLAG_DYNFILTER)
+  if((flags & FLAG_DLANY) != 0 && (flags & FLAG_DYNFILTER) != 0)
+    {
+      usage(OPT_OPTION);
+      fprintf(stderr, "cannot specify both -O dl-any and -O dyn-filter\n");
+      return -1;
+    }
+#endif
 
 #ifdef HAVE_STRUCT_TPACKET_REQ3
   if(opt_ring_blocks != NULL)
@@ -1313,6 +1345,24 @@ int scamper_option_daemon(void)
   return 0;
 }
 
+int scamper_option_dlany(void)
+{
+#ifdef FLAG_DLANY
+  if(flags & FLAG_DLANY)
+    return 1;
+#endif
+  return 0;
+}
+
+int scamper_option_dynfilter(void)
+{
+#ifdef FLAG_DYNFILTER
+  if(flags & FLAG_DYNFILTER)
+    return 1;
+#endif
+  return 0;
+}
+
 #ifdef HAVE_STRUCT_TPACKET_REQ3
 int scamper_option_ring(void)
 {
@@ -1338,6 +1388,29 @@ int scamper_option_ring_locked(void)
 #endif
 
 #ifdef HAVE_SETEUID
+int scamper_seteuid_raise(uid_t *uid_p, uid_t *euid_p)
+{
+  *uid_p = uid;
+  *euid_p = euid;
+  if(*uid_p != *euid_p && seteuid(*euid_p) != 0)
+    {
+      printerror(__func__, "could not claim euid");
+      return -1;
+    }
+  return 0;
+}
+
+void scamper_seteuid_lower(uid_t *uid_p, uid_t *euid_p)
+{
+  if(*uid_p != *euid_p && seteuid(*uid_p) != 0)
+    {
+      printerror(__func__, "could not return to uid");
+      exit(-errno);
+    }
+  *euid_p = *uid_p;
+  return;
+}
+
 uid_t scamper_getuid(void)
 {
   return uid;

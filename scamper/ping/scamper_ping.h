@@ -1,7 +1,7 @@
 /*
  * scamper_ping.h
  *
- * $Id: scamper_ping.h,v 1.74 2024/05/01 07:46:20 mjl Exp $
+ * $Id: scamper_ping.h,v 1.75 2024/06/26 20:05:29 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -68,6 +68,7 @@ typedef struct scamper_ping_stats scamper_ping_stats_t;
 #define SCAMPER_PING_FLAG_TBT             0x80 /* -O tbt: too big trick */
 #define SCAMPER_PING_FLAG_NOSRC           0x100 /* -O nosrc: do not embed src */
 #define SCAMPER_PING_FLAG_RAW             0x200 /* -O raw: tx with raw IPv4 */
+#define SCAMPER_PING_FLAG_SOCKRX          0x400 /* -O sockrx: rx from socket */
 
 /* basic routines to use and free scamper_ping structures */
 void scamper_ping_free(scamper_ping_t *ping);

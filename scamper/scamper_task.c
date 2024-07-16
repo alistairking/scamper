@@ -1,7 +1,7 @@
 /*
  * scamper_task.c
  *
- * $Id: scamper_task.c,v 1.87 2024/02/27 01:01:44 mjl Exp $
+ * $Id: scamper_task.c,v 1.88 2024/07/14 05:02:02 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -238,9 +238,16 @@ static void tx_ip_check(scamper_dl_rec_t *dl)
   else if(SCAMPER_DL_IS_TCP(dl))
     {
       if((dl->dl_tcp_flags & TH_SYN) && (dl->dl_tcp_flags & TH_ACK) == 0)
-	addr.addr = dl->dl_ip_dst;
+	{
+	  addr.addr = dl->dl_ip_dst;
+	}
       else
-	addr.addr = dl->dl_ip_src;
+	{
+	  addr.addr = dl->dl_ip_src;
+	  addr2buf.type = addr.type;
+	  addr2buf.addr = dl->dl_ip_dst;
+	  addr2 = &addr2buf;
+	}
     }
   else if(SCAMPER_DL_IS_ICMP(dl))
     {
@@ -248,11 +255,9 @@ static void tx_ip_check(scamper_dl_rec_t *dl)
 	addr.addr = dl->dl_ip_dst;
       else if(SCAMPER_DL_IS_ICMP_ECHO_REPLY(dl))
 	addr.addr = dl->dl_ip_src;
-      else if(SCAMPER_DL_IS_ICMP_TTL_EXP(dl))
-	addr.addr = dl->dl_icmp_ip_dst;
-      else if(SCAMPER_DL_IS_ICMP_UNREACH(dl))
-	addr.addr = dl->dl_icmp_ip_dst;
-      else if(SCAMPER_DL_IS_ICMP_PACKET_TOO_BIG(dl))
+      else if(SCAMPER_DL_IS_ICMP_TTL_EXP(dl) ||
+	      SCAMPER_DL_IS_ICMP_UNREACH(dl) ||
+	      SCAMPER_DL_IS_ICMP_PACKET_TOO_BIG(dl))
 	addr.addr = dl->dl_icmp_ip_dst;
       else
 	return;
@@ -261,7 +266,8 @@ static void tx_ip_check(scamper_dl_rec_t *dl)
     {
       addr.addr = dl->dl_ip_dst;
       addr2buf.type = addr.type;
-      addr2buf.addr = dl->dl_ip_src; addr2 = &addr2buf;
+      addr2buf.addr = dl->dl_ip_src;
+      addr2 = &addr2buf;
     }
   else
     {

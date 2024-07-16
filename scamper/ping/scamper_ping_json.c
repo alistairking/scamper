@@ -9,7 +9,7 @@
  * Copyright (c) 2019-2024 Matthew Luckie
  * Authors: Brian Hammond, Matthew Luckie
  *
- * $Id: scamper_ping_json.c,v 1.39 2024/05/01 07:46:20 mjl Exp $
+ * $Id: scamper_ping_json.c,v 1.40 2024/06/26 20:05:29 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -48,7 +48,7 @@ static char *ping_header(const scamper_ping_t *ping)
 {
   static const char *flags[] = {
     "v4rr", "spoof", "payload", "tsonly", "tsandaddr", "icmpsum", "dl", "tbt",
-    "nosrc", "raw"
+    "nosrc", "raw", "sockrx"
   };
   char buf[1024], tmp[512];
   size_t off = 0;
@@ -106,7 +106,7 @@ static char *ping_header(const scamper_ping_t *ping)
     {
       c = 0;
       string_concat(buf, sizeof(buf), &off, ", \"flags\":[");
-      for(u8=0; u8<10; u8++)
+      for(u8=0; u8<sizeof(flags) / sizeof(char *); u8++)
 	{
 	  if((ping->flags & (0x1 << u8)) == 0)
 	    continue;

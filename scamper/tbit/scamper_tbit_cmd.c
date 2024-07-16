@@ -1,7 +1,7 @@
 /*
  * scamper_tbit_cmd.c
  *
- * $Id: scamper_tbit_cmd.c,v 1.7 2024/05/02 02:33:38 mjl Exp $
+ * $Id: scamper_tbit_cmd.c,v 1.8 2024/05/20 07:40:23 mjl Exp $
  *
  * Copyright (C) 2009-2010 Ben Stasiewicz
  * Copyright (C) 2009-2010 Stephen Eichler
@@ -167,7 +167,7 @@ const char *scamper_do_tbit_usage(void)
 {
   return
     "tbit [-t type] [-p app] [-d dport] [-s sport] [-b asn] [-f cookie]\n"
-    "     [-m mss] [-M mtu] [-o offset] [-O option] [-U userid]\n"
+    "     [-m mss] [-M mtu] [-o offset] [-O option] [-U userid] [-w wscale]\n"
     "     [-P ptbsrc] [-q attempts] [-S srcaddr] [-T ttl] [-u url]";
 }
 

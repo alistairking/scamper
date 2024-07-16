@@ -1,7 +1,7 @@
 /*
  * scamper_udp6.c
  *
- * $Id: scamper_udp6.c,v 1.77 2024/04/13 22:31:04 mjl Exp $
+ * $Id: scamper_udp6.c,v 1.79 2024/07/02 01:11:17 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2010 The University of Waikato
@@ -33,6 +33,7 @@
 #include "scamper_addr_int.h"
 #include "scamper_task.h"
 #include "scamper_dl.h"
+#include "scamper_dlhdr.h"
 #include "scamper_probe.h"
 #include "scamper_ip6.h"
 #include "scamper_udp6.h"
@@ -152,20 +153,18 @@ int scamper_udp6_probe(scamper_probe_t *probe)
   assert(probe->pr_ip_src != NULL);
   assert(probe->pr_len != 0 || probe->pr_data == NULL);
 
-  i = probe->pr_ip_ttl;
-  if(setsockopt(probe->pr_fd,
-		IPPROTO_IPV6, IPV6_UNICAST_HOPS, (void *)&i, sizeof(i)) != 0)
+  if(setsockopt_int(probe->pr_fd,
+		    IPPROTO_IPV6, IPV6_UNICAST_HOPS, probe->pr_ip_ttl) != 0)
     {
-      printerror(__func__, "could not set hlim to %d", i);
+      printerror(__func__, "could not set hlim to %d", probe->pr_ip_ttl);
       return -1;
     }
 
 #ifdef IPV6_TCLASS
-  i = probe->pr_ip_tos;
-  if(setsockopt(probe->pr_fd,
-		IPPROTO_IPV6, IPV6_TCLASS, (void *)&i, sizeof(i)) != 0)
+  if(setsockopt_int(probe->pr_fd,
+		    IPPROTO_IPV6, IPV6_TCLASS, probe->pr_ip_tos) != 0)
     {
-      printerror(__func__, "could not set tclass to %d", i);
+      printerror(__func__, "could not set tclass to %d", probe->pr_ip_tos);
       return -1;
     }
 #endif /* IPV6_TCLASS */
@@ -407,9 +406,6 @@ SOCKET scamper_udp6_open(const void *addr, int sport)
 {
   struct sockaddr_in6 sin6;
   char buf[128];
-  int opt;
-  void *optr = (void *)&opt;
-  size_t olen = sizeof(opt);
 
 #ifndef _WIN32 /* SOCKET vs int on windows */
   int fd = -1;
@@ -425,8 +421,7 @@ SOCKET scamper_udp6_open(const void *addr, int sport)
     }
 
 #ifdef IPV6_V6ONLY
-  opt = 1;
-  if(setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY, optr, olen) == -1)
+  if(setsockopt_int(fd, IPPROTO_IPV6, IPV6_V6ONLY, 1) != 0)
     {
       printerror(__func__, "could not set IPV6_V6ONLY");
       goto err;
@@ -443,16 +438,14 @@ SOCKET scamper_udp6_open(const void *addr, int sport)
       goto err;
     }
 
-  opt = 65535 + 128;
-  if(setsockopt(fd, SOL_SOCKET, SO_SNDBUF, (void *)&opt, sizeof(opt)) == -1)
+  if(setsockopt_raise(fd, SOL_SOCKET, SO_SNDBUF, 65535 + 128) != 0)
     {
       printerror(__func__, "could not set SO_SNDBUF");
       return -1;
     }
 
 #if defined(IPV6_DONTFRAG)
-  opt = 1;
-  if(setsockopt(fd, IPPROTO_IPV6, IPV6_DONTFRAG, optr, olen) == -1)
+  if(setsockopt_int(fd, IPPROTO_IPV6, IPV6_DONTFRAG, 1) != 0)
     {
       printerror(__func__, "could not set IPV6_DONTFRAG");
       goto err;
@@ -460,18 +453,15 @@ SOCKET scamper_udp6_open(const void *addr, int sport)
 #endif
 
 #if defined(IPV6_RECVHOPLIMIT)
-  opt = 1;
-  if(setsockopt(fd, IPPROTO_IPV6, IPV6_RECVHOPLIMIT, optr, olen) != 0)
+  if(setsockopt_int(fd, IPPROTO_IPV6, IPV6_RECVHOPLIMIT, 1) != 0)
     printerror(__func__, "could not set IPV6_RECVHOPLIMIT");
 #elif defined(IPV6_HOPLIMIT)
-  opt = 1;
-  if(setsockopt(fd, IPPROTO_IPV6, IPV6_HOPLIMIT, optr, olen) != 0)
+  if(setsockopt_int(fd, IPPROTO_IPV6, IPV6_HOPLIMIT, 1) != 0)
     printerror(__func__, "could not set IPV6_HOPLIMIT");
 #endif
 
 #if defined(SO_TIMESTAMP)
-  opt = 1;
-  if(setsockopt(fd, SOL_SOCKET, SO_TIMESTAMP, optr, olen) != 0)
+  if(setsockopt_int(fd, SOL_SOCKET, SO_TIMESTAMP, 1) != 0)
     printerror(__func__, "could not set SO_TIMESTAMP");
 #endif
 
@@ -490,9 +480,6 @@ SOCKET scamper_udp6_open_err(const void *addr, int sport)
 #endif
 {
 #ifdef IPV6_RECVERR
-  int opt;
-  void *optr = (void *)&opt;
-  size_t olen = sizeof(opt);
 
 #ifndef _WIN32 /* SOCKET vs int on windows */
   int fd;
@@ -504,15 +491,13 @@ SOCKET scamper_udp6_open_err(const void *addr, int sport)
   if(socket_isinvalid(fd))
     return socket_invalid();
 
-  opt = 65535 + 128;
-  if(setsockopt(fd, SOL_SOCKET, SO_RCVBUF, optr, olen) != 0)
+  if(setsockopt_raise(fd, SOL_SOCKET, SO_RCVBUF, 65535 + 128) != 0)
     {
       printerror(__func__, "could not set SO_RCVBUF");
       goto err;
     }
 
-  opt = 1;
-  if(setsockopt(fd, IPPROTO_IPV6, IPV6_RECVERR, optr, olen) != 0)
+  if(setsockopt_int(fd, IPPROTO_IPV6, IPV6_RECVERR, 1) != 0)
     {
       printerror(__func__, "could not set IPV6_RECVERR");
       goto err;

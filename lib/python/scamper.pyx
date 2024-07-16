@@ -62,6 +62,8 @@ The scamper module supports the following measurements:
 :meth:`~scamper.ScamperCtrl.do_http`
 #. UDP probes (:class:`ScamperUdpprobe`) via \
 :meth:`~scamper.ScamperCtrl.do_udpprobe`
+#. TCP behavior inference (:class:`ScamperTbit`) via \
+:meth:`~scamper.ScamperCtrl.do_tbit`
 
 In order to request one of the scamper instances represented by a
 :class:`ScamperInst` object conducts a measurement, call the specific
@@ -392,7 +394,7 @@ cdef class ScamperAddr:
     cdef cscamper_addr.scamper_addr_t *_c
 
     def __init__(self, addr):
-        cdef cscamper_addr.scamper_addr_t *c
+        cdef cscamper_addr.scamper_addr_t *c = NULL
         cdef uint8_t buf[16]
         cdef int at
         if isinstance(addr, str):
@@ -409,7 +411,7 @@ cdef class ScamperAddr:
             for i, b in enumerate(addr):
                 buf[i] = b
             c = cscamper_addr.scamper_addr_alloc(at, buf)
-        else:
+        if c == NULL:
             raise ValueError("invalid address")
         self._c = c
 
@@ -443,15 +445,15 @@ cdef class ScamperAddr:
             return NotImplemented
         if op == Py_EQ:
             return x == 0
-        elif op == Py_NE:
+        if op == Py_NE:
             return x != 0
-        elif op == Py_LT:
+        if op == Py_LT:
             return x < 0
-        elif op == Py_LE:
+        if op == Py_LE:
             return x <= 0
-        elif op == Py_GT:
+        if op == Py_GT:
             return x > 0
-        elif op == Py_GE:
+        if op == Py_GE:
             return x >= 0
         return NotImplemented
 
@@ -581,35 +583,23 @@ cdef class ScamperList:
         if self._c != NULL:
             cscamper_list.scamper_list_free(self._c)
 
-    def __eq__(self, other):
+    def __richcmp__(self, other, int op):
         if not isinstance(other, ScamperList):
             return NotImplemented
-        return cscamper_list.scamper_list_cmp(self._c, (<ScamperList>other)._c) == 0
-
-    def __ne__(self, other):
-        if not isinstance(other, ScamperList):
-            return NotImplemented
-        return cscamper_list.scamper_list_cmp(self._c, (<ScamperList>other)._c) != 0
-
-    def __lt__(self, other):
-        if not isinstance(other, ScamperList):
-            return NotImplemented
-        return cscamper_list.scamper_list_cmp(self._c, (<ScamperList>other)._c) < 0
-
-    def __le__(self, other):
-        if not isinstance(other, ScamperList):
-            return NotImplemented
-        return cscamper_list.scamper_list_cmp(self._c, (<ScamperList>other)._c) <= 0
-
-    def __gt__(self, other):
-        if not isinstance(other, ScamperList):
-            return NotImplemented
-        return cscamper_list.scamper_list_cmp(self._c, (<ScamperList>other)._c) > 0
-
-    def __ge__(self, other):
-        if not isinstance(other, ScamperList):
-            return NotImplemented
-        return cscamper_list.scamper_list_cmp(self._c, (<ScamperList>other)._c) >= 0
+        x = cscamper_list.scamper_list_cmp(self._c, (<ScamperList>other)._c)
+        if op == Py_EQ:
+            return x == 0
+        if op == Py_NE:
+            return x != 0
+        if op == Py_LT:
+            return x < 0
+        if op == Py_LE:
+            return x <= 0
+        if op == Py_GT:
+            return x > 0
+        if op == Py_GE:
+            return x >= 0
+        return NotImplemented
 
     @staticmethod
     cdef ScamperList from_ptr(cscamper_list.scamper_list_t *ptr):
@@ -698,35 +688,23 @@ cdef class ScamperCycle:
         if self._c != NULL:
             cscamper_list.scamper_cycle_free(self._c)
 
-    def __eq__(self, other):
+    def __richcmp__(self, other, int op):
         if not isinstance(other, ScamperCycle):
             return NotImplemented
-        return cscamper_list.scamper_cycle_cmp(self._c, (<ScamperCycle>other)._c) == 0
-
-    def __ne__(self, other):
-        if not isinstance(other, ScamperCycle):
-            return NotImplemented
-        return cscamper_list.scamper_cycle_cmp(self._c, (<ScamperCycle>other)._c) != 0
-
-    def __lt__(self, other):
-        if not isinstance(other, ScamperCycle):
-            return NotImplemented
-        return cscamper_list.scamper_cycle_cmp(self._c, (<ScamperCycle>other)._c) < 0
-
-    def __le__(self, other):
-        if not isinstance(other, ScamperCycle):
-            return NotImplemented
-        return cscamper_list.scamper_cycle_cmp(self._c, (<ScamperCycle>other)._c) <= 0
-
-    def __gt__(self, other):
-        if not isinstance(other, ScamperCycle):
-            return NotImplemented
-        return cscamper_list.scamper_cycle_cmp(self._c, (<ScamperCycle>other)._c) > 0
-
-    def __ge__(self, other):
-        if not isinstance(other, ScamperCycle):
-            return NotImplemented
-        return cscamper_list.scamper_cycle_cmp(self._c, (<ScamperCycle>other)._c) >= 0
+        x = cscamper_list.scamper_cycle_cmp(self._c, (<ScamperCycle>other)._c)
+        if op == Py_EQ:
+            return x == 0
+        if op == Py_NE:
+            return x != 0
+        if op == Py_LT:
+            return x < 0
+        if op == Py_LE:
+            return x <= 0
+        if op == Py_GT:
+            return x > 0
+        if op == Py_GE:
+            return x >= 0
+        return NotImplemented
 
     @staticmethod
     cdef ScamperCycle from_ptr(cscamper_list.scamper_cycle_t *ptr, uint16_t t):
@@ -894,35 +872,23 @@ cdef class ScamperIcmpExt:
         if self._c != NULL:
             cscamper_icmpext.scamper_icmpext_free(self._c)
 
-    def __eq__(self, other):
+    def __richcmp__(self, other, int op):
         if not isinstance(other, ScamperIcmpExt):
             return NotImplemented
-        return cscamper_icmpext.scamper_icmpext_cmp(self._c, (<ScamperIcmpExt>other)._c) == 0
-
-    def __ne__(self, other):
-        if not isinstance(other, ScamperIcmpExt):
-            return NotImplemented
-        return cscamper_icmpext.scamper_icmpext_cmp(self._c, (<ScamperIcmpExt>other)._c) != 0
-
-    def __lt__(self, other):
-        if not isinstance(other, ScamperIcmpExt):
-            return NotImplemented
-        return cscamper_icmpext.scamper_icmpext_cmp(self._c, (<ScamperIcmpExt>other)._c) < 0
-
-    def __le__(self, other):
-        if not isinstance(other, ScamperIcmpExt):
-            return NotImplemented
-        return cscamper_icmpext.scamper_icmpext_cmp(self._c, (<ScamperIcmpExt>other)._c) <= 0
-
-    def __gt__(self, other):
-        if not isinstance(other, ScamperIcmpExt):
-            return NotImplemented
-        return cscamper_icmpext.scamper_icmpext_cmp(self._c, (<ScamperIcmpExt>other)._c) > 0
-
-    def __ge__(self, other):
-        if not isinstance(other, ScamperIcmpExt):
-            return NotImplemented
-        return cscamper_icmpext.scamper_icmpext_cmp(self._c, (<ScamperIcmpExt>other)._c) >= 0
+        x = cscamper_icmpext.scamper_icmpext_cmp(self._c, (<ScamperIcmpExt>other)._c)
+        if op == Py_EQ:
+            return x == 0
+        if op == Py_NE:
+            return x != 0
+        if op == Py_LT:
+            return x < 0
+        if op == Py_LE:
+            return x <= 0
+        if op == Py_GT:
+            return x > 0
+        if op == Py_GE:
+            return x >= 0
+        return NotImplemented
 
     @staticmethod
     cdef ScamperIcmpExt from_ptr(cscamper_icmpext.scamper_icmpext_t *ptr):
@@ -3333,14 +3299,15 @@ cdef class ScamperTracelbLink:
 
     def __str__(self):
         cdef char buf[128]
+        out = []
 
         n = cscamper_tracelb.scamper_tracelb_link_from_get(self._c)
         a = cscamper_tracelb.scamper_tracelb_node_addr_get(n)
         if a != NULL:
             cscamper_addr.scamper_addr_tostr(a, buf, sizeof(buf))
-            out = buf.decode('UTF-8', 'strict')
+            out.append(buf.decode('UTF-8', 'strict'))
         else:
-            out = "*"
+            out.append("*")
 
         hopc = cscamper_tracelb.scamper_tracelb_link_hopc_get(self._c)
         for j in range(hopc-1):
@@ -3349,30 +3316,30 @@ cdef class ScamperTracelbLink:
             nullc = cscamper_tracelb.scamper_tracelb_probeset_summary_nullc_get(sm)
             addrc = cscamper_tracelb.scamper_tracelb_probeset_summary_addrc_get(sm)
             if nullc > 0 and addrc == 0:
-                out = out + " -> *"
+                out.append(" -> *")
             else:
-                out = out + "("
+                out.append("(")
                 for k in range(addrc):
                     if k > 0:
-                        out = out + ", "
+                        out.append(", ")
                     a = cscamper_tracelb.scamper_tracelb_probeset_summary_addr_get(sm, k)
                     cscamper_addr.scamper_addr_tostr(a, buf, sizeof(buf))
-                    out = out + buf.decode('UTF-8', 'strict')
+                    out.append(buf.decode('UTF-8', 'strict'))
                 if nullc > 0:
-                    out = out + ", *)"
+                    out.append(", *)")
                 else:
-                    out = out + ")"
+                    out.append(")")
             cscamper_tracelb.scamper_tracelb_probeset_summary_free(sm)
 
         n = cscamper_tracelb.scamper_tracelb_link_to_get(self._c)
         a = cscamper_tracelb.scamper_tracelb_node_addr_get(n)
         if a != NULL:
             cscamper_addr.scamper_addr_tostr(a, buf, sizeof(buf))
-            out = out + " -> " + buf.decode('UTF-8', 'strict')
+            out.append(" -> " + buf.decode('UTF-8', 'strict'))
         else:
-            out = out + " -> *"
+            out.append(" -> *")
 
-        return out
+        return ''.join(out)
 
     @staticmethod
     cdef ScamperTracelbLink from_ptr(cscamper_tracelb.scamper_tracelb_link_t *ptr):
@@ -4188,7 +4155,8 @@ cdef class ScamperDealiasProbedef:
             return None
         cscamper_dealias.scamper_dealias_probedef_method_tostr(self._c, buf,
                                                                sizeof(buf))
-        out = "-P " + buf.decode('UTF-8', 'strict')
+        out = []
+        out.append("-P " + buf.decode('UTF-8', 'strict'))
         ttl = cscamper_dealias.scamper_dealias_probedef_ttl_get(self._c)
         size = cscamper_dealias.scamper_dealias_probedef_size_get(self._c)
         udp = cscamper_dealias.scamper_dealias_probedef_udp_get(self._c)
@@ -4198,7 +4166,7 @@ cdef class ScamperDealiasProbedef:
         if icmp != NULL:
             csum = cscamper_dealias.scamper_dealias_probedef_icmp_csum_get(icmp)
             if csum != 0:
-                out += f" -c {csum}"
+                out.append(f"-c {csum}")
         if udp != NULL or tcp != NULL:
             if udp != NULL:
                 sport = cscamper_dealias.scamper_dealias_probedef_udp_sport_get(udp)
@@ -4207,17 +4175,17 @@ cdef class ScamperDealiasProbedef:
                 sport = cscamper_dealias.scamper_dealias_probedef_tcp_sport_get(tcp)
                 dport = cscamper_dealias.scamper_dealias_probedef_tcp_dport_get(tcp)
             if dport != 0:
-                out += f" -d {dport}"
+                out.append(f"-d {dport}")
             if sport != 0:
-                out += f" -F {sport}"
+                out.append(f"-F {sport}")
         if dst != NULL:
             cscamper_addr.scamper_addr_tostr(dst, buf, sizeof(buf))
-            out += " -i " + buf.decode('UTF-8', 'strict')
+            out.append("-i " + buf.decode('UTF-8', 'strict'))
         if size != 0:
-            out += f" -s {size}"
+            out.append(f"-s {size}")
         if ttl != 0:
-            out += f" -t {ttl}"
-        return out
+            out.append(f"-t {ttl}")
+        return ' '.join(out)
 
     def __repr__(self):
         cdef char buf[128]
@@ -4230,45 +4198,46 @@ cdef class ScamperDealiasProbedef:
         tcp = cscamper_dealias.scamper_dealias_probedef_tcp_get(self._c)
         src = cscamper_dealias.scamper_dealias_probedef_src_get(self._c)
         dst = cscamper_dealias.scamper_dealias_probedef_dst_get(self._c)
-
         cscamper_dealias.scamper_dealias_probedef_method_tostr(self._c, buf,
                                                                sizeof(buf))
-        out = "ScamperDealiasProbedef('" + buf.decode('UTF-8', 'strict') + "'"
+
+        out = []
+        out.append("ScamperDealiasProbedef('" + buf.decode('UTF-8', 'strict') + "'")
 
         if src != NULL:
             cscamper_addr.scamper_addr_tostr(src, buf, sizeof(buf))
-            out += ", src='" + buf.decode('UTF-8', 'strict') + "'"
+            out.append(", src='" + buf.decode('UTF-8', 'strict') + "'")
         if dst != NULL:
             cscamper_addr.scamper_addr_tostr(dst, buf, sizeof(buf))
-            out += ", dst='" + buf.decode('UTF-8', 'strict') + "'"
+            out.append(", dst='" + buf.decode('UTF-8', 'strict') + "'")
         if ttl != 0:
-            out += f", ttl={ttl}"
+            out.append(f", ttl={ttl}")
         if size != 0:
-            out += f", size={size}"
+            out.append(f", size={size}")
 
         if udp != NULL:
             sp = cscamper_dealias.scamper_dealias_probedef_udp_sport_get(udp)
             dp = cscamper_dealias.scamper_dealias_probedef_udp_dport_get(udp)
             if sp != 0:
-                out += f", sport={sp}"
+                out.append(f", sport={sp}")
             if dp != 0:
-                out += f", dport={dp}"
+                out.append(f", dport={dp}")
         elif tcp != NULL:
             sp = cscamper_dealias.scamper_dealias_probedef_tcp_sport_get(tcp)
             dp = cscamper_dealias.scamper_dealias_probedef_tcp_dport_get(tcp)
             if sp != 0:
-                out += f", sport={sp}"
+                out.append(f", sport={sp}")
             if dp != 0:
-                out += f", dport={dp}"
+                out.append(f", dport={dp}")
         elif icmp != NULL:
             icmpid = cscamper_dealias.scamper_dealias_probedef_icmp_id_get(icmp)
             csum = cscamper_dealias.scamper_dealias_probedef_icmp_csum_get(icmp)
             if icmpid != 0:
-                out += f", icmp_id={icmpid}"
+                out.append(f", icmp_id={icmpid}")
             if csum != 0:
-                out += f", icmp_sum={csum}"
-        out += ")"
-        return out
+                out.append(f", icmp_sum={csum}")
+        out.append(")")
+        return ''.join(out)
 
     @staticmethod
     cdef ScamperDealiasProbedef from_ptr(cscamper_dealias.scamper_dealias_probedef_t *ptr):
@@ -5033,8 +5002,83 @@ cdef class ScamperNeighbourdisc:
 #### Scamper Tbit Object
 ####
 
+cdef class ScamperTbitPkt:
+    """
+    :class:`ScamperTbitPkt` is used by scamper to store information about
+    a single packet captured in a :class:`ScamperTbit`.
+    """
+    cdef cscamper_tbit.scamper_tbit_pkt_t *_c
+
+    def __init__(self):
+        raise TypeError("This class cannot be instantiated directly.")
+
+    def __dealloc__(self):
+        if self._c != NULL:
+            cscamper_tbit.scamper_tbit_pkt_free(self._c)
+
+    @staticmethod
+    cdef ScamperTbitPkt from_ptr(cscamper_tbit.scamper_tbit_pkt_t *ptr):
+        cdef ScamperTbitPkt pkt = ScamperTbitPkt.__new__(ScamperTbitPkt)
+        pkt._c = cscamper_tbit.scamper_tbit_pkt_use(ptr)
+        return pkt
+
+    @property
+    def timestamp(self):
+        """
+        get method that returns the time when this packet was transmitted
+        or received.
+
+        :returns: the timestamp for this packet
+        :rtype: datetime
+        """
+        c = cscamper_tbit.scamper_tbit_pkt_tv_get(self._c)
+        if c == NULL:
+            return None
+        t = time.gmtime(c.tv_sec)
+        return datetime.datetime(t[0], t[1], t[2], t[3], t[4], t[5], c.tv_usec,
+                                 tzinfo=datetime.timezone.utc)
+
+    def is_tx(self):
+        """
+        get method that returns True if the packet was transmitted by the
+        tbit client.
+
+        :returns: True if the packet was transmitted
+        :rtype: bool
+        """
+        d = cscamper_tbit.scamper_tbit_pkt_dir_get(self._c)
+        return d == 1
+
+    def is_rx(self):
+        """
+        get method that returns True if the packet was received by the
+        tbit client.
+
+        :returns: True if the packet was received
+        :rtype: bool
+        """
+        d = cscamper_tbit.scamper_tbit_pkt_dir_get(self._c)
+        return d == 2
+
+    @property
+    def data(self):
+        """
+        get method to obtain the contents of the packet.
+
+        :returns: contents of the packet including IP header
+        :rtype: bytes
+        """
+        cdef uint16_t s
+        cdef const uint8_t *ptr
+        s = cscamper_tbit.scamper_tbit_pkt_len_get(self._c)
+        ptr = cscamper_tbit.scamper_tbit_pkt_data_get(self._c)
+        if s == 0 or ptr == NULL:
+            return None
+        return ptr[:s]
+
 cdef class ScamperTbit:
     cdef cscamper_tbit.scamper_tbit_t *_c
+    cdef uint32_t _i, _pktc
     cdef public ScamperInst _inst
 
     def __init__(self):
@@ -5044,10 +5088,25 @@ cdef class ScamperTbit:
         if self._c != NULL:
             cscamper_tbit.scamper_tbit_free(self._c)
 
+    def __len__(self):
+        return self._pktc
+
+    def __iter__(self):
+        self._i = 0
+        return self
+
+    def __next__(self):
+        if self._i >= self._pktc:
+            raise StopIteration
+        c = cscamper_tbit.scamper_tbit_pkt_get(self._c, self._i)
+        self._i = self._i + 1
+        return ScamperTbitPkt.from_ptr(c)
+
     @staticmethod
     cdef ScamperTbit from_ptr(cscamper_tbit.scamper_tbit_t *ptr):
         cdef ScamperTbit tbit = ScamperTbit.__new__(ScamperTbit)
         tbit._c = ptr
+        tbit._pktc = cscamper_tbit.scamper_tbit_pktc_get(ptr)
         return tbit
 
     @property
@@ -5060,6 +5119,127 @@ cdef class ScamperTbit:
         :rtype: ScamperInst
         """
         return self._inst
+
+    @property
+    def list(self):
+        """
+        get list associated with this measurement.
+
+        :returns: the list
+        :rtype: ScamperList
+        """
+        c = cscamper_tbit.scamper_tbit_list_get(self._c)
+        return ScamperList.from_ptr(c)
+
+    @property
+    def cycle(self):
+        """
+        get cycle associated with this measurement.
+
+        :returns: the cycle
+        :rtype: ScamperCycle
+        """
+        c = cscamper_tbit.scamper_tbit_cycle_get(self._c)
+        return ScamperCycle.from_ptr(c, SCAMPER_FILE_OBJ_CYCLE_DEF)
+
+    @property
+    def src(self):
+        """
+        get method to obtain the source address for a tbit measurement.
+
+        :returns: the source address
+        :rtype: ScamperAddr
+        """
+        c_a = cscamper_tbit.scamper_tbit_src_get(self._c)
+        return ScamperAddr.from_ptr(c_a)
+
+    @property
+    def dst(self):
+        """
+        get method to obtain the destination address for tbit measurement.
+
+        :returns: the destination address
+        :rtype: ScamperAddr
+        """
+        c_a = cscamper_tbit.scamper_tbit_dst_get(self._c)
+        return ScamperAddr.from_ptr(c_a)
+
+    @property
+    def userid(self):
+        """
+        get method to obtain the userid parameter.
+
+        :returns: the userid
+        :rtype: int
+        """
+        return cscamper_tbit.scamper_tbit_userid_get(self._c)
+
+    @property
+    def start(self):
+        """
+        get method to obtain the time this measurement started.
+
+        :returns: the start timestamp
+        :rtype: datetime
+        """
+        c = cscamper_tbit.scamper_tbit_start_get(self._c)
+        if c == NULL:
+            return None
+        t = time.gmtime(c.tv_sec)
+        return datetime.datetime(t[0], t[1], t[2], t[3], t[4], t[5], c.tv_usec,
+                                 tzinfo=datetime.timezone.utc)
+
+    @property
+    def result(self):
+        """
+        get method to obtain the result of this measurement.
+
+        :returns: the result:
+        :rtype: string
+        """
+        cdef char buf[128]
+        cscamper_tbit.scamper_tbit_result_tostr(self._c, buf, sizeof(buf))
+        return buf.decode('UTF-8', 'strict')
+
+    @property
+    def pkt_count(self):
+        """
+        get method to obtain the number of packets exchanged
+
+        :returns: the number of exchanged packets
+        :rtype: int
+        """
+        return cscamper_tbit.scamper_tbit_pktc_get(self._c)
+
+    @property
+    def client_mss(self):
+        """
+        get method to obtain the MSS advertised by the tbit client
+
+        :returns: the client's maximum segment size
+        :rtype: int
+        """
+        return cscamper_tbit.scamper_tbit_client_mss_get(self._c)
+
+    @property
+    def client_wscale(self):
+        """
+        get method to obtain the window scale advertised by the tbit client
+
+        :returns: the client's window scale value
+        :rtype: int
+        """
+        return cscamper_tbit.scamper_tbit_client_wscale_get(self._c)
+
+    @property
+    def client_ipttl(self):
+        """
+        get method to obtain the IP TTL value used by the tbit client
+
+        :returns: the client's IP TTL value
+        :rtype: int
+        """
+        return cscamper_tbit.scamper_tbit_client_ipttl_get(self._c)
 
 ####
 #### Scamper Sting Object
@@ -7663,14 +7843,18 @@ cdef class ScamperCtrl:
 
     def __dealloc__(self):
         # cython does not seem to empty lists on dealloc, so explicitly empty
-        while len(self._insts) > 0:
-            self._insts.pop(0)
-        while len(self._objs) > 0:
-            self._objs.pop(0)
-        while len(self._exceptions) > 0:
-            self._exceptions.pop(0)
-        while len(self._tasks) > 0:
-            self._tasks.pop(0)
+        if self._insts is not None:
+            while len(self._insts) > 0:
+                self._insts.pop(0)
+        if self._objs is not None:
+            while len(self._objs) > 0:
+                self._objs.pop(0)
+        if self._exceptions is not None:
+            while len(self._exceptions) > 0:
+                self._exceptions.pop(0)
+        if self._tasks is not None:
+            while len(self._tasks) > 0:
+                self._tasks.pop(0)
 
         # free the control structure
         if self._c != NULL:
@@ -8054,7 +8238,8 @@ cdef class ScamperCtrl:
         :rtype: ScamperTask
         """
 
-        cmd = "trace"
+        args = []
+        args.append("trace")
         inst = self._getinst(inst)
 
         if method is not None:
@@ -8075,51 +8260,52 @@ cdef class ScamperCtrl:
                 raise ValueError("cannot specify ICMP parameters with " + method)
 
         if confidence is not None:
-            cmd = cmd + " -C " + str(confidence)
+            args.append(f"-C {confidence}")
         if dport is not None:
-            cmd = cmd + " -d " + str(dport)
+            args.append(f"-d {dport}")
         if firsthop is not None:
-            cmd = cmd + " -f " + str(firsthop)
+            args.append(f"-f {firsthop}")
         if gaplimit is not None:
-            cmd = cmd + " -g " + str(gaplimit)
+            args.append(f"-g {gaplimit}")
         if loops is not None:
-            cmd = cmd = " -l " + str(loops)
+            args.append(f"-l {loops}")
         if hoplimit is not None:
-            cmd = cmd + " -m " + str(hoplimit)
+            args.append(f"-m {hoplimit}")
         if pmtud is not None and pmtud is True:
-            cmd = cmd + " -M"
+            args.append("-M")
         if squeries is not None:
-            cmd = cmd + " -N " + str(squeries)
+            args.append(f"-N {squeries}")
         if ptr is not None and ptr is True:
-            cmd = cmd + " -O ptr"
+            args.append("-O ptr")
         if payload is not None:
-            cmd = cmd + " -p " + binascii.hexlify(payload).decode('ascii')
+            args.append(f"-p {binascii.hexlify(payload).decode('ascii')}")
         if method is not None:
-            cmd = cmd + " -P " + method
+            args.append(f"-P {method}")
         if attempts is not None:
-            cmd = cmd + " -q " + str(attempts)
+            args.append(f"-q {attempts}")
         if all_attempts is not None and all_attempts is True:
-            cmd = cmd + " -Q"
+            args.append("-Q")
         if rtr is not None:
-            cmd = cmd + " -r " + str(rtr)
+            args.append(f"-r {rtr}")
         if sport is not None:
-            cmd = cmd + " -s " + str(sport)
+            args.append(f"-s {sport}")
         if src is not None:
-            cmd = cmd + " -S " + str(src)
+            args.append(f"-S {src}")
         if tos is not None:
-            cmd = cmd + " -t " + str(tos)
+            args.append(f"-t {tos}")
         if userid is not None:
-            cmd = cmd + " -U " + str(userid)
+            args.append(f"-U {userid}")
         if wait_timeout is not None:
             if not isinstance(wait_timeout, datetime.timedelta):
                 wait_timeout = datetime.timedelta(seconds=wait_timeout)
-            cmd += f" -w {wait_timeout.total_seconds()}s"
+            args.append(f"-w {wait_timeout.total_seconds()}s")
         if wait_probe is not None:
             if not isinstance(wait_probe, datetime.timedelta):
                 wait_probe = datetime.timedelta(seconds=wait_probe)
-            cmd += f" -W {wait_probe.total_seconds()}s"
-        cmd = cmd + " " + str(dst)
+            args.append(f"-W {wait_probe.total_seconds()}s")
+        args.append(f"{dst}")
 
+        cmd = ' '.join(args)
         c = clibscamperctrl.scamper_inst_do((<ScamperInst>inst)._c,
                                             cmd.encode('UTF-8'), NULL)
         if c == NULL:
@@ -8170,7 +8356,8 @@ cdef class ScamperCtrl:
         :rtype: ScamperTask
         """
 
-        cmd = "tracelb"
+        args = []
+        args.append("tracelb")
         inst = self._getinst(inst)
 
         if method is not None:
@@ -8185,37 +8372,38 @@ cdef class ScamperCtrl:
                 raise ValueError("cannot specify source or destination ports with " + method)
 
         if confidence is not None:
-            cmd = cmd + " -c " + str(confidence)
+            args.append(f"-c {confidence}")
         if dport is not None:
-            cmd = cmd + " -d " + str(dport)
+            args.append(f"-d {dport}")
         if firsthop is not None:
-            cmd = cmd + " -f " + str(firsthop)
+            args.append(f"-f {firsthop}")
         if gaplimit is not None:
-            cmd = cmd + " -g " + str(gaplimit)
+            args.append(f"-g {gaplimit}")
         if method is not None:
-            cmd = cmd + " -P " + method
+            args.append(f"-P {method}")
         if attempts is not None:
-            cmd = cmd + " -q " + str(attempts)
+            args.append(f"-q {attempts}")
         if ptr is not None and ptr is True:
-            cmd = cmd + " -O ptr"
+            args.append("-O ptr")
         if rtr is not None:
-            cmd = cmd + " -r " + str(rtr)
+            args.append(f"-r {rtr}")
         if sport is not None:
-            cmd = cmd + " -s " + str(sport)
+            args.append(f"-s {sport}")
         if tos is not None:
-            cmd = cmd + " -t " + str(tos)
+            args.append(f"-t {tos}")
         if userid is not None:
-            cmd = cmd + " -U " + str(userid)
+            args.append(f"-U {userid}")
         if wait_timeout is not None:
             if not isinstance(wait_timeout, datetime.timedelta):
                 wait_timeout = datetime.timedelta(seconds=wait_timeout)
-            cmd += f" -w {wait_timeout.total_seconds()}s"
+            args.append(f"-w {wait_timeout.total_seconds()}s")
         if wait_probe is not None:
             if not isinstance(wait_probe, datetime.timedelta):
                 wait_probe = datetime.timedelta(seconds=wait_probe)
-            cmd += f" -W {wait_probe.total_seconds()}s"
-        cmd = cmd + " " + str(dst)
+            args.append(f"-W {wait_probe.total_seconds()}s")
+        args.append(f"{dst}")
 
+        cmd = ' '.join(args)
         c = clibscamperctrl.scamper_inst_do((<ScamperInst>inst)._c,
                                             cmd.encode('UTF-8'), NULL)
         if c == NULL:
@@ -8281,7 +8469,8 @@ cdef class ScamperCtrl:
         :rtype: ScamperTask
         """
 
-        cmd = "ping"
+        args = []
+        args.append("ping")
         inst = self._getinst(inst)
 
         if dst is None:
@@ -8321,53 +8510,54 @@ cdef class ScamperCtrl:
                 raise ValueError("cannot specify source or destination ports with " + method)
 
         if tcp_ack is not None:
-            cmd = cmd + " -A " + str(tcp_ack)
+            args.append(f"-A {tcp_ack}")
         if tcp_seq is not None:
-            cmd = cmd + " -A " + str(tcp_seq)
+            args.append(f"-A {tcp_seq}")
         if payload is not None:
-            cmd = cmd + " -B " + binascii.hexlify(payload).decode('ascii')
+            args.append(f"-B {binascii.hexlify(payload).decode('ascii')}")
         if attempts is not None:
-            cmd = cmd + " -c " + str(attempts)
+            args.append(f"-c {attempts}")
         if icmp_sum is not None:
-            cmd = cmd + " -C " + str(icmp_sum)
+            args.append(f"-C {icmp_sum}")
         if dport is not None:
-            cmd = cmd + " -d " + str(dport)
+            args.append(f"-d {dport}")
         if icmp_seq is not None:
-            cmd = cmd + " -d " + str(icmp_seq)
+            args.append(f"-d {icmp_seq}")
         if sport is not None:
-            cmd = cmd + " -F " + str(sport)
+            args.append(f"-F {sport}")
         if icmp_id is not None:
-            cmd = cmd + " -F " + str(icmp_id)
+            args.append(f"-F {icmp_id}")
         if wait_probe is not None:
             if not isinstance(wait_probe, datetime.timedelta):
                 wait_probe = datetime.timedelta(seconds=wait_probe)
-            cmd += f" -i {wait_probe.total_seconds()}s"
+            args.append(f"-i {wait_probe.total_seconds()}s")
         if ttl is not None:
-            cmd = cmd + " -m " + str(ttl)
+            args.append(f"-m {ttl}")
         if mtu is not None:
-            cmd = cmd + " -M " + str(mtu)
+            args.append(f"-M {mtu}")
         if stop_count is not None:
-            cmd = cmd + " -o " + str(stop_count)
+            args.append(f"-o {stop_count}")
         if method is not None:
-            cmd = cmd + " -P " + method
+            args.append(f"-P {method}")
         if rtr is not None:
-            cmd = cmd + " -r " + str(rtr)
+            args.append(f"-r {rtr}")
         if recordroute is not None and recordroute:
-            cmd = cmd + " -R "
+            args.append("-R")
         if size is not None:
-            cmd = cmd + " -s " + str(size)
+            args.append(f"-s {size}")
         if src is not None:
-            cmd = cmd + " -S " + str(src)
+            args.append(f"-S {src}")
         if userid is not None:
-            cmd = cmd + " -U " + str(userid)
+            args.append(f"-U {userid}")
         if wait_timeout is not None:
             if not isinstance(wait_timeout, datetime.timedelta):
                 wait_timeout = datetime.timedelta(seconds=wait_timeout)
-            cmd += f" -W {wait_timeout.total_seconds()}s"
+            args.append(f"-W {wait_timeout.total_seconds()}s")
         if tos is not None:
-            cmd = cmd + " -z " + str(tos)
-        cmd = cmd + " " + str(dst)
+            args.append(f"-z {tos}")
+        args.append(f"{dst}")
 
+        cmd = ' '.join(args)
         c = clibscamperctrl.scamper_inst_do((<ScamperInst>inst)._c,
                                             cmd.encode('UTF-8'), NULL)
         if c == NULL:
@@ -8405,32 +8595,34 @@ cdef class ScamperCtrl:
         :rtype: ScamperTask or the completed measurement if sync=True
         """
 
-        cmd = "host"
+        args = []
+        args.append("host")
         inst = self._getinst(inst)
 
         if attempts is not None and attempts < 1:
             raise ValueError("attempts < 1")
 
         if server is not None:
-            cmd = cmd + " -s " + str(server)
+            args.append(f"-s {server}")
         if qclass is not None:
-            cmd = cmd + " -c " + qclass
+            args.append(f"-c {qclass}")
         if qtype is not None:
-            cmd = cmd + " -t " + qtype
+            args.append(f"-t {qtype}")
         if attempts is not None:
-            cmd = cmd + " -R " + str(attempts)
+            args.append(f"-R {attempts}")
         if wait_timeout is not None:
             if not isinstance(wait_timeout, datetime.timedelta):
                 wait_timeout = datetime.timedelta(seconds=wait_timeout)
-            cmd += f" -W {wait_timeout.total_seconds()}s"
+            args.append(f"-W {wait_timeout.total_seconds()}s")
         if userid is not None:
-            cmd = cmd + " -U " + str(userid)
+            args.append(f"-U {userid}")
         if rd is not None and not rd:
-            cmd = cmd + " -r"
+            args.append("-r")
         if tcp is not None and tcp:
-            cmd = cmd + " -T"
-        cmd = cmd + " " + str(qname)
+            args.append("-T")
+        args.append(f"{qname}")
 
+        cmd = ' '.join(args)
         c = clibscamperctrl.scamper_inst_do((<ScamperInst>inst)._c,
                                             cmd.encode('UTF-8'), NULL)
         if c == NULL:
@@ -8478,7 +8670,8 @@ cdef class ScamperCtrl:
         :rtype: ScamperTask
         """
 
-        cmd = "dealias -m ally"
+        args = []
+        args.append("dealias -m ally")
         inst = self._getinst(inst)
 
         if method is not None:
@@ -8504,33 +8697,36 @@ cdef class ScamperCtrl:
 
         # if user specifies a method, then construct a probedef
         if m is not None:
-            cmd = cmd + " -p '-P " + m
+            pd = []
+            pd.append(f"-p '-P {m}")
             if sport is not None:
-                cmd = cmd + " -F " + str(sport)
+                pd.append(f" -F {sport}")
             if dport is not None:
-                cmd = cmd + " -d " + str(dport)
+                pd.append(f" -d {dport}")
             if icmp_sum is not None:
-                cmd = cmd + " -c " + str(icmp_sum)
-            cmd = cmd + "'"
+                pd.append(f" -c {icmp_sum}")
+            pd.append("'")
+            args.append(''.join(pd))
 
         # other parameters to the dealias method
         if fudge is not None:
             if fudge == 0:
-                cmd = cmd + " -O inseq"
+                args.append("-O inseq")
             else:
-                cmd = cmd + " -f " + str(fudge)
+                args.append(f"-f {fudge}")
         if userid is not None:
-            cmd = cmd + " -U " + str(userid)
+            args.append(f"-U {userid}")
         if wait_probe is not None:
             if not isinstance(wait_probe, datetime.timedelta):
                 wait_probe = datetime.timedelta(seconds=wait_probe)
-            cmd += f" -W {wait_probe.total_seconds()}s"
+            args.append(f"-W {wait_probe.total_seconds()}s")
         if wait_timeout is not None:
             if not isinstance(wait_timeout, datetime.timedelta):
                 wait_timeout = datetime.timedelta(seconds=wait_timeout)
-            cmd += f" -w {wait_timeout.total_seconds()}s"
-        cmd = cmd + " " + str(dst1) + " " + str(dst2)
+            args.append(f"-w {wait_timeout.total_seconds()}s")
+        args.append(f"{dst1} {dst2}")
 
+        cmd = ' '.join(args)
         c = clibscamperctrl.scamper_inst_do((<ScamperInst>inst)._c,
                                             cmd.encode('UTF-8'), NULL)
         if c == NULL:
@@ -8552,13 +8748,15 @@ cdef class ScamperCtrl:
         :rtype: ScamperTask
         """
 
-        cmd = "dealias -m mercator"
+        args = []
+        args.append("dealias -m mercator")
         inst = self._getinst(inst)
 
         if userid is not None:
-            cmd = cmd + " -U " + str(userid)
-        cmd = cmd + " " + str(dst)
+            args.append(f"-U {userid}")
+        args.append(f"{dst}")
 
+        cmd = ' '.join(args)
         c = clibscamperctrl.scamper_inst_do((<ScamperInst>inst)._c,
                                             cmd.encode('UTF-8'), NULL)
         if c == NULL:
@@ -8590,7 +8788,9 @@ cdef class ScamperCtrl:
         :returns: a task object representing the midarest alias resolution
         :rtype: ScamperTask
         """
-        cmd = "dealias -m midarest"
+
+        args = []
+        args.append("dealias -m midarest")
         inst = self._getinst(inst)
 
         if probedefs is None:
@@ -8601,42 +8801,43 @@ cdef class ScamperCtrl:
         if rounds is not None:
             if not isinstance(rounds, int):
                 raise ValueError("rounds not an integer")
-            cmd += f" -q {rounds}"
+            args.append(f"-q {rounds}")
         if userid is not None:
             if not isinstance(userid, int):
                 raise ValueError("userid not an integer")
-            cmd += f" -U {userid}"
+            args.append(f"-U {userid}")
         if wait_probe is not None:
             if not isinstance(wait_probe, datetime.timedelta):
                 wait_probe = datetime.timedelta(seconds=wait_probe)
             ms = int(wait_probe.seconds * 1000) + int(wait_probe.microseconds / 1000)
             if ms <= 0:
                 raise ValueError("wait_probe must be at least 1ms")
-            cmd += f" -W {ms}"
+            args.append(f"-W {ms}")
         if wait_timeout is not None:
             if not isinstance(wait_timeout, datetime.timedelta):
                 wait_timeout = datetime.timedelta(seconds=wait_timeout)
             s = int(wait_timeout.seconds)
             if s <= 0:
                 raise ValueError("wait_timeout must be at least 1s")
-            cmd += f" -w {s}"
+            args.append(f"-w {s}")
         if wait_round is not None:
             if not isinstance(wait_round, datetime.timedelta):
                 wait_round = datetime.timedelta(seconds=wait_round)
             ms = int(wait_round.seconds * 1000) + int(wait_round.microseconds / 1000)
             if ms <= 0:
                 raise ValueError("wait_round must be at least 1ms")
-            cmd += f" -r {ms}"
+            args.append(f"-r {ms}")
 
         for pd in probedefs:
             if not isinstance(pd, ScamperDealiasProbedef):
                 raise ValueError("expected probedef in probedefs")
-            cmd += f" -p '{pd}'"
+            args.append(f"-p '{pd}'")
         for addr in addrs:
             if not isinstance(addr, str) and not isinstance(addr, ScamperAddr):
                 raise ValueError("expected str in addrs")
-            cmd += f" {addr}"
+            args.append(f"{addr}")
 
+        cmd = ' '.join(args)
         c = clibscamperctrl.scamper_inst_do((<ScamperInst>inst)._c,
                                             cmd.encode('UTF-8'), NULL)
         if c == NULL:
@@ -8665,7 +8866,9 @@ cdef class ScamperCtrl:
         :returns: a task object representing the midardisc alias resolution
         :rtype: ScamperTask
         """
-        cmd = "dealias -m midardisc"
+
+        args = []
+        args.append("dealias -m midardisc")
         inst = self._getinst(inst)
 
         if probedefs is None:
@@ -8676,31 +8879,32 @@ cdef class ScamperCtrl:
         if userid is not None:
             if not isinstance(userid, int):
                 raise ValueError("userid not an integer")
-            cmd += f" -U {userid}"
+            args.append(f"-U {userid}")
         if wait_timeout is not None:
             if not isinstance(wait_timeout, datetime.timedelta):
                 wait_timeout = datetime.timedelta(seconds=wait_timeout)
             s = int(wait_timeout.seconds)
             if s <= 0:
                 raise ValueError("wait_timeout must be at least 1s")
-            cmd += f" -w {s}"
+            args.append(f"-w {s}")
         if startat is not None:
             if not isinstance(startat, datetime.datetime):
                 raise ValueError("startat not a datetime")
-            cmd += f" -@ {startat.timestamp()}"
+            args.append(f"-@ {startat.timestamp()}")
 
         for pd in probedefs:
             if not isinstance(pd, ScamperDealiasProbedef):
                 raise ValueError("expected probedef in probedefs")
             if pd.dst is None:
                 raise ValueError("missing IP address in probedef")
-            cmd += f" -p '{pd}'"
+            args.append(f"-p '{pd}'")
 
         for s in schedule:
             if not isinstance(s, ScamperDealiasMidardiscRound):
                 raise ValueError("expected round in schedule")
-            cmd += f" -S {s}"
+            args.append(f"-S {s}")
 
+        cmd = ' '.join(args)
         c = clibscamperctrl.scamper_inst_do((<ScamperInst>inst)._c,
                                             cmd.encode('UTF-8'), NULL)
         if c == NULL:
@@ -8738,7 +8942,9 @@ cdef class ScamperCtrl:
         :returns: a task object representing the radargun alias resolution
         :rtype: ScamperTask
         """
-        cmd = "dealias -m radargun"
+
+        args = []
+        args.append("dealias -m radargun")
         inst = self._getinst(inst)
 
         if probedefs is None:
@@ -8747,33 +8953,33 @@ cdef class ScamperCtrl:
         if rounds is not None:
             if not isinstance(rounds, int):
                 raise ValueError("rounds not an integer")
-            cmd += f" -q {rounds}"
+            args.append(f"-q {rounds}")
 
         if userid is not None:
             if not isinstance(userid, int):
                 raise ValueError("userid not an integer")
-            cmd += f" -U {userid}"
+            args.append(f"-U {userid}")
 
         if wait_probe is not None:
             if not isinstance(wait_probe, datetime.timedelta):
                 wait_probe = datetime.timedelta(seconds=wait_probe)
             if wait_probe <= datetime.timedelta(seconds=0):
                 raise ValueError("wait_probe must be greater than zero")
-            cmd += f" -W {wait_probe.total_seconds()}s"
+            args.append(f"-W {wait_probe.total_seconds()}s")
 
         if wait_round is not None:
             if not isinstance(wait_round, datetime.timedelta):
                 wait_round = datetime.timedelta(seconds=wait_round)
             if wait_round <= datetime.timedelta(seconds=0):
                 raise ValueError("wait_round must be greater than zero")
-            cmd += f" -r {wait_round.total_seconds()}s"
+            args.append(f"-r {wait_round.total_seconds()}s")
 
         if wait_timeout is not None:
             if not isinstance(wait_timeout, datetime.timedelta):
                 wait_timeout = datetime.timedelta(seconds=wait_timeout)
             if not wait_timeout >= datetime.timedelta(seconds=1):
                 raise ValueError("wait_timeout must be at least 1s")
-            cmd += f" -w {wait_timeout.total_seconds()}s"
+            args.append(f"-w {wait_timeout.total_seconds()}s")
 
         for pd in probedefs:
             if not isinstance(pd, ScamperDealiasProbedef):
@@ -8782,12 +8988,13 @@ cdef class ScamperCtrl:
                 raise ValueError("missing IP address in probedef")
             elif addrs is not None and pd.dst is not None:
                 raise ValueError("unexpected IP address in probedef")
-            cmd += f" -p '{pd}'"
+            args.append(f"-p '{pd}'")
 
         if addrs is not None:
             for a in addrs:
-                cmd += f" {a}"
+                args.append(f"{a}")
 
+        cmd = ' '.join(args)
         c = clibscamperctrl.scamper_inst_do((<ScamperInst>inst)._c,
                                             cmd.encode('UTF-8'), NULL)
         if c == NULL:
@@ -8837,7 +9044,8 @@ cdef class ScamperCtrl:
         :rtype: ScamperTask
         """
 
-        cmd = "dealias -m prefixscan"
+        args = []
+        args.append("dealias -m prefixscan")
         inst = self._getinst(inst)
 
         if method is not None:
@@ -8871,34 +9079,37 @@ cdef class ScamperCtrl:
 
         # if user specifies a method, then construct a probedef
         if m is not None:
-            cmd = cmd + " -p '-P " + m
+            pd = []
+            pd.append(f"-p '-P {m}")
             if sport is not None:
-                cmd = cmd + " -F " + str(sport)
+                pd.append(f" -F {sport}")
             if dport is not None:
-                cmd = cmd + " -d " + str(dport)
+                pd.append(f" -d {dport}")
             if icmp_sum is not None:
-                cmd = cmd + " -c " + str(icmp_sum)
-            cmd = cmd + "'"
+                pd.append(f" -c {icmp_sum}")
+            pd.append("'")
+            args.append(''.join(pd))
 
         # other parameters to the dealias method
         if fudge is not None:
             if fudge == 0:
-                cmd = cmd + " -O inseq"
+                args.append("-O inseq")
             else:
-                cmd = cmd + " -f " + str(fudge)
+                args.append(f"-f {fudge}")
         if userid is not None:
-            cmd = cmd + " -U " + str(userid)
+            args.append(f"-U {userid}")
         if wait_probe is not None:
             if not isinstance(wait_probe, datetime.timedelta):
                 wait_probe = datetime.timedelta(seconds=wait_probe)
-            cmd += f" -W {wait_probe.total_seconds()}s"
+            args.append(f"-W {wait_probe.total_seconds()}s")
         if wait_timeout is not None:
             if not isinstance(wait_timeout, datetime.timedelta):
                 wait_timeout = datetime.timedelta(seconds=wait_timeout)
-            cmd += f" -w {wait_timeout.total_seconds()}s"
+            args.append(f"-w {wait_timeout.total_seconds()}s")
 
-        cmd = cmd + " " + str(near) + " " + str(far) + "/" + str(prefixlen)
+        args.append(f"{near} {far}/{prefixlen}")
 
+        cmd = ' '.join(args)
         c = clibscamperctrl.scamper_inst_do((<ScamperInst>inst)._c,
                                             cmd.encode('UTF-8'), NULL)
         if c == NULL:
@@ -8925,7 +9136,8 @@ cdef class ScamperCtrl:
         :rtype: ScamperTask
         """
 
-        cmd = "sniff -S " + str(src)
+        args = []
+        args.append(f"sniff -S {src}")
         inst = self._getinst(inst)
 
         if icmp_id < 0 or icmp_id > 65535:
@@ -8936,16 +9148,17 @@ cdef class ScamperCtrl:
             raise ValueError("invalid limit_time")
 
         if limit_pkt_count is not None:
-            cmd = cmd + " -c " + str(limit_pkt_count)
+            args.append(f"-c {limit_pkt_count}")
         if limit_time is not None:
             if not isinstance(limit_time, datetime.timedelta):
                 limit_time = datetime.timedelta(seconds=limit_time)
-            cmd += f" -G {limit_time.total_seconds()}s"
+            args.append(f"-G {limit_time.total_seconds()}s")
         if userid is not None:
-            cmd = cmd + " -U " + str(userid)
+            args.append(f"-U {userid}")
 
-        cmd = cmd + " icmp[icmpid] == " + str(icmp_id)
+        args.append(f"icmp[icmpid] == {icmp_id}")
 
+        cmd = ' '.join(args)
         c = clibscamperctrl.scamper_inst_do((<ScamperInst>inst)._c,
                                             cmd.encode('UTF-8'), NULL)
         if c == NULL:
@@ -8974,7 +9187,8 @@ cdef class ScamperCtrl:
         :rtype: ScamperTask
         """
 
-        cmd = "http"
+        args = []
+        args.append("http")
         inst = self._getinst(inst)
 
         if dst is None:
@@ -8983,12 +9197,12 @@ cdef class ScamperCtrl:
             raise ValueError("invalid url")
 
         if insecure is True:
-            cmd = cmd + " -O insecure"
+            args.append("-O insecure")
 
         if limit_time is not None:
             if not isinstance(limit_time, datetime.timedelta):
                 limit_time = datetime.timedelta(seconds=limit_time)
-            cmd = cmd + f" -m {limit_time.total_seconds()}s"
+            args.append(f"-m {limit_time.total_seconds()}s")
 
         if headers is not None:
             if not isinstance(headers, dict):
@@ -8999,9 +9213,12 @@ cdef class ScamperCtrl:
                 fbody = headers[fname]
                 if not isinstance(fbody, str) or not fbody.isascii():
                     raise ValueError("header field-body is not ascii")
-                cmd = cmd + f" -H '{fname}: {fbody}'"
+                args.append(f"-H '{fname}: {fbody}'")
 
-        cmd = cmd + " -u '" + str(url) + "' " + str(dst)
+        esc = str(url).replace("'", "\\'")
+        args.append(f"-u '{esc}' {dst}")
+
+        cmd = ' '.join(args)
         c = clibscamperctrl.scamper_inst_do((<ScamperInst>inst)._c,
                                             cmd.encode('UTF-8'), NULL)
         if c == NULL:
@@ -9022,15 +9239,16 @@ cdef class ScamperCtrl:
         :param bytes payload: the payload to include in the probe
         :param int attempts: the number of probes to send
         :param int stop_count: stop after receiving replies to this many probes
-        :param int userid: the userid value to tag with this measurement
         :param ScamperInst inst: The specific instance to issue command over
+        :param int userid: the userid value to tag with this measurement
         :param bool sync: operate the measurement synchronously
             (the method returns when the measurement completes).
         :returns: an object representing the UDP probe task.
         :rtype: ScamperTask
         """
 
-        cmd = "udpprobe"
+        args = []
+        args.append("udpprobe")
         inst = self._getinst(inst)
 
         if dst is None or dport is None or payload is None:
@@ -9038,16 +9256,57 @@ cdef class ScamperCtrl:
         if dport < 1 or dport > 65535:
             raise ValueError(f"invalid destination port {dport}")
 
-        cmd = cmd + f" -d {dport}"
-        cmd = cmd + " -p " + binascii.hexlify(payload).decode('ascii')
+        args.append(f"-d {dport}")
+        args.append(f"-p {binascii.hexlify(payload).decode('ascii')}")
         if attempts is not None:
-            cmd = cmd + " -c " + str(attempts)
+            args.append(f"-c {attempts}")
         if stop_count is not None:
-            cmd = cmd + " -o " + str(stop_count)
+            args.append(f"-o {stop_count}")
         if userid is not None:
-            cmd = cmd + " -U " + userid
-        cmd = cmd + f" {dst}"
+            args.append(f"-U {userid}")
+        args.append(f"{dst}")
 
+        cmd = ' '.join(args)
+        c = clibscamperctrl.scamper_inst_do((<ScamperInst>inst)._c,
+                                            cmd.encode('UTF-8'), NULL)
+        if c == NULL:
+            raise RuntimeError("could not schedule command")
+        return self._task(c, (<ScamperInst>inst)._c, sync)
+
+    def do_tbit(self, dst, method=None, url=None,
+                inst=None, userid=None, sync=False):
+        """
+        do_tbit(dst, method=None, url=None,
+                inst=None, userid=None, sync=False)
+        conduct a TBIT test using the specified destination and method.
+        If this method could not queue the measurement,
+        it will raise a :py:exc:`RuntimeError` exception.
+
+        :param string dst: the destination address to measure
+        :param string method: the tbit test method to use
+        :param string url: a URL specifying an object to fetch as part of test
+        :param ScamperInst inst: The specific instance to issue command over
+        :param int userid: the userid value to tag with this measurement
+        :param bool sync: operate the measurement synchronously
+            (the method returns when the measurement completes).
+        :returns: an object representing the UDP probe task.
+        :rtype: ScamperTask
+        """
+
+        args = []
+        args.append("tbit")
+        inst = self._getinst(inst)
+
+        if dst is None or method is None or url is None:
+            raise ValueError("must specify dst, method, and url")
+
+        if userid is not None:
+            args.append(f"-U {userid}")
+
+        esc = str(url).replace("'", "\\'")
+        args.append(f"-u '{esc}' -t {method} {dst}")
+
+        cmd = ' '.join(args)
         c = clibscamperctrl.scamper_inst_do((<ScamperInst>inst)._c,
                                             cmd.encode('UTF-8'), NULL)
         if c == NULL:
@@ -9081,8 +9340,9 @@ cdef class ScamperInst:
         raise TypeError("This class cannot be instantiated directly.")
 
     def __dealloc__(self):
-        while len(self._tasks) > 0:
-            self._tasks.pop(0)
+        if self._tasks is not None:
+            while len(self._tasks) > 0:
+                self._tasks.pop(0)
         if self._c_f != NULL:
             cscamper_file.scamper_file_close(self._c_f)
         if self._c_rb != NULL:
@@ -9090,35 +9350,22 @@ cdef class ScamperInst:
         if self._c != NULL:
             clibscamperctrl.scamper_inst_free(self._c)
 
-    def __eq__(self, other):
+    def __richcmp__(self, other, int op):
         if not isinstance(other, ScamperInst):
             return NotImplemented
-        return self._c == (<ScamperInst>other)._c
-
-    def __ne__(self, other):
-        if not isinstance(other, ScamperInst):
-            return NotImplemented
-        return self._c != (<ScamperInst>other)._c
-
-    def __lt__(self, other):
-        if not isinstance(other, ScamperInst):
-            return NotImplemented
-        return self._c < (<ScamperInst>other)._c
-
-    def __le__(self, other):
-        if not isinstance(other, ScamperInst):
-            return NotImplemented
-        return self._c <= (<ScamperInst>other)._c
-
-    def __gt__(self, other):
-        if not isinstance(other, ScamperInst):
-            return NotImplemented
-        return self._c > (<ScamperInst>other)._c
-
-    def __ge__(self, other):
-        if not isinstance(other, ScamperInst):
-            return NotImplemented
-        return self._c >= (<ScamperInst>other)._c
+        if op == Py_EQ:
+            return self._c == (<ScamperInst>other)._c
+        elif op == Py_NE:
+            return self._c != (<ScamperInst>other)._c
+        elif op == Py_LT:
+            return self._c <  (<ScamperInst>other)._c
+        elif op == Py_LE:
+            return self._c <= (<ScamperInst>other)._c
+        elif op == Py_GT:
+            return self._c >  (<ScamperInst>other)._c
+        elif op == Py_GE:
+            return self._c >= (<ScamperInst>other)._c
+        return NotImplemented
 
     def __hash__(self):
         return hash((<Py_ssize_t>self._c))
@@ -9187,35 +9434,22 @@ cdef class ScamperTask:
         if self._c != NULL:
             clibscamperctrl.scamper_task_free(self._c)
 
-    def __eq__(self, other):
+    def __richcmp__(self, other, int op):
         if not isinstance(other, ScamperTask):
             return NotImplemented
-        return self._c == (<ScamperTask>other)._c
-
-    def __ne__(self, other):
-        if not isinstance(other, ScamperTask):
-            return NotImplemented
-        return self._c != (<ScamperTask>other)._c
-
-    def __lt__(self, other):
-        if not isinstance(other, ScamperTask):
-            return NotImplemented
-        return self._c < (<ScamperTask>other)._c
-
-    def __le__(self, other):
-        if not isinstance(other, ScamperTask):
-            return NotImplemented
-        return self._c <= (<ScamperTask>other)._c
-
-    def __gt__(self, other):
-        if not isinstance(other, ScamperTask):
-            return NotImplemented
-        return self._c > (<ScamperTask>other)._c
-
-    def __ge__(self, other):
-        if not isinstance(other, ScamperTask):
-            return NotImplemented
-        return self._c >= (<ScamperTask>other)._c
+        if op == Py_EQ:
+            return self._c == (<ScamperTask>other)._c
+        if op == Py_NE:
+            return self._c != (<ScamperTask>other)._c
+        if op == Py_LT:
+            return self._c <  (<ScamperTask>other)._c
+        if op == Py_LE:
+            return self._c <= (<ScamperTask>other)._c
+        if op == Py_GT:
+            return self._c >  (<ScamperTask>other)._c
+        if op == Py_GE:
+            return self._c >= (<ScamperTask>other)._c
+        return NotImplemented
 
     def __hash__(self):
         return hash((<Py_ssize_t>self._c))

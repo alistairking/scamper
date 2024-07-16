@@ -1,7 +1,7 @@
 /*
  * utils.h
  *
- * $Id: utils.h,v 1.159 2024/04/28 00:47:41 mjl Exp $
+ * $Id: utils.h,v 1.161 2024/06/25 06:03:55 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -200,7 +200,7 @@ int sockaddr_compose_str(struct sockaddr *sa, const char *ip, int port)
   ATTRIBUTE_NONNULL;
 int sockaddr_len(const struct sockaddr *sa)
   ATTRIBUTE_NONNULL_PURE;
-char *sockaddr_tostr(const struct sockaddr *sa, char *buf, size_t len)
+char *sockaddr_tostr(const struct sockaddr *sa, char *buf, size_t len, int with_port)
   ATTRIBUTE_NONNULL;
 
 /*
@@ -208,6 +208,9 @@ char *sockaddr_tostr(const struct sockaddr *sa, char *buf, size_t len)
  */
 int fcntl_set(int fd, int flags);
 int fcntl_unset(int fd, int flags);
+
+int setsockopt_raise(int fd, int lvl, int opt, int val);
+int setsockopt_int(int fd, int lvl, int opt, int val);
 
 /* get the source port that a socket is bound to */
 #ifndef _WIN32 /* SOCKET vs int on windows */

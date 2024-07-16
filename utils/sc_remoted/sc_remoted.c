@@ -1,12 +1,12 @@
 /*
  * sc_remoted
  *
- * $Id: sc_remoted.c,v 1.108 2024/04/26 06:52:24 mjl Exp $
+ * $Id: sc_remoted.c,v 1.115 2024/06/26 22:08:27 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
  *
- * Copyright (C) 2014-2023 Matthew Luckie
+ * Copyright (C) 2014-2024 Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -235,15 +235,15 @@ typedef struct sc_fd
 typedef struct sc_master
 {
   sc_unit_t          *unit;
-  char               *monitorname;
-  char               *name;
-  uint8_t            *magic;
-  uint8_t             magic_len;
-  int                 mode;
+  char               *monitorname; /* -M parameter to scamper */
+  char               *name;        /* socket name (prefaced by monitorname) */
+  uint8_t            *magic;       /* magic value first sent by scamper */
+  uint8_t             magic_len;   /* size of magic first sent by scamper */
+  int                 mode;        /* connect / go / flush */
 
-  sc_fd_t            *unix_fd;
-  sc_fd_t             inet_fd;
-  scamper_writebuf_t *inet_wb;
+  sc_fd_t            *unix_fd;     /* socket that accepts clients */
+  sc_fd_t             inet_fd;     /* the socket to the scamper instance */
+  scamper_writebuf_t *inet_wb;     /* data outstanding towards scamper */
 
 #ifdef HAVE_OPENSSL
   int                 inet_mode;
@@ -277,14 +277,14 @@ typedef struct sc_master
  */
 typedef struct sc_channel
 {
-  uint32_t            id;
+  uint32_t            id;      /* id, derived from master->next_channel */
   sc_unit_t          *unit;
   sc_fd_t            *unix_fd;
   scamper_linepoll_t *unix_lp;
   scamper_writebuf_t *unix_wb;
-  sc_master_t        *master;
-  dlist_node_t       *node;
-  uint8_t             flags;
+  sc_master_t        *master;  /* corresponding master */
+  dlist_node_t       *node;    /* node in master->channels */
+  uint8_t             flags;   /* channel flags: eof tx/rx */
 } sc_channel_t;
 
 /*
@@ -649,18 +649,18 @@ static void remote_debug(const char *func, const char *format, ...)
   return;
 }
 
-static int sc_fd_peername(const sc_fd_t *fd, char *buf, size_t len)
+static int fd_peername(int fd, char *buf, size_t len, int with_port)
 {
   struct sockaddr_storage sas;
-  socklen_t sl;
+  socklen_t socklen;
 
-  sl = sizeof(sas);
-  if(getpeername(fd->fd, (struct sockaddr *)&sas, &sl) != 0)
+  socklen = sizeof(sas);
+  if(getpeername(fd, (struct sockaddr *)&sas, &socklen) != 0)
     {
       remote_debug(__func__, "could not getpeername: %s", strerror(errno));
       return -1;
     }
-  if(sockaddr_tostr((struct sockaddr *)&sas, buf, len) == NULL)
+  if(sockaddr_tostr((struct sockaddr *)&sas, buf, len, with_port) == NULL)
     {
       remote_debug(__func__, "could not convert to string");
       return -1;
@@ -1130,46 +1130,12 @@ static int sc_master_is_valid_client_cert_1(sc_master_t *ms)
 }
 #endif /* HAVE_OPENSSL */
 
-/*
- * sc_master_unix_create
- *
- * create a unix domain socket for the scamper instance, that local
- * users can connect to in order to interact with the remote scamper
- * instance.  The name of the socket is derived from getpeername on the
- * Internet socket, and the monitorname if the remote scamper supplied
- * that variable.
- */
-static int sc_master_unix_create(sc_master_t *ms)
+static int unix_create(const char *filename)
 {
+  int fd = -1;
   struct sockaddr_un sn;
   mode_t mode;
-  char sab[128], filename[65535], tmp[512];
-  int fd;
-
-  /*
-   * these are set so that we know whether or not to take
-   * responsibility for cleaning them up upon a failure condition.
-   */
-  fd = -1;
-  filename[0] = '\0';
-
-  /* figure out the name for the unix domain socket */
-  if(sc_fd_peername(&ms->inet_fd, sab, sizeof(sab)) != 0)
-    goto err;
-  if(ms->monitorname != NULL)
-    {
-      snprintf(tmp, sizeof(tmp), "%s-%s", ms->monitorname, sab);
-      ms->name = strdup(tmp);
-    }
-  else
-    {
-      ms->name = strdup(sab);
-    }
-  if(ms->name == NULL)
-    {
-      remote_debug(__func__, "could not strdup ms->name: %s", strerror(errno));
-      goto err;
-    }
+  int bound = 0;
 
   /* create a unix domain socket for the remote scamper process */
   if((fd = socket(AF_UNIX, SOCK_STREAM, 0)) == -1)
@@ -1178,19 +1144,17 @@ static int sc_master_unix_create(sc_master_t *ms)
 		   strerror(errno));
       goto err;
     }
-  snprintf(filename, sizeof(filename), "%s/%s", unix_name, ms->name);
   if(sockaddr_compose_un((struct sockaddr *)&sn, filename) != 0)
     {
-      filename[0] = '\0'; /* could not actually bind so no unlink */
       remote_debug(__func__, "could not compose socket: %s", strerror(errno));
       goto err;
     }
   if(bind(fd, (struct sockaddr *)&sn, sizeof(sn)) != 0)
     {
-      filename[0] = '\0'; /* could not actually bind so no unlink */
       remote_debug(__func__, "could not bind unix socket: %s",strerror(errno));
       goto err;
     }
+  bound = 1;
 
   /* set the requested permissions on the control sockets */
   mode = S_IRWXU;
@@ -1207,6 +1171,57 @@ static int sc_master_unix_create(sc_master_t *ms)
       remote_debug(__func__, "could not listen: %s", strerror(errno));
       goto err;
     }
+
+  return fd;
+
+ err:
+  if(bound != 0) unlink(filename);
+  if(fd != -1) close(fd);
+  return -1;
+}
+
+/*
+ * sc_master_unix_create
+ *
+ * create a unix domain socket for the scamper instance, that local
+ * users can connect to in order to interact with the remote scamper
+ * instance.  The name of the socket is derived from getpeername on the
+ * Internet socket, and the monitorname if the remote scamper supplied
+ * that variable.
+ */
+static int sc_master_unix_create(sc_master_t *ms)
+{
+  char sab[128], filename[65535], tmp[512];
+  int fd;
+
+  /*
+   * these are set so that we know whether or not to take
+   * responsibility for cleaning them up upon a failure condition.
+   */
+  fd = -1;
+  filename[0] = '\0';
+
+  /* figure out the name for the unix domain socket */
+  if(fd_peername(ms->inet_fd.fd, sab, sizeof(sab), 1) != 0)
+    goto err;
+  if(ms->monitorname != NULL)
+    {
+      snprintf(tmp, sizeof(tmp), "%s-%s", ms->monitorname, sab);
+      ms->name = strdup(tmp);
+    }
+  else
+    {
+      ms->name = strdup(sab);
+    }
+  if(ms->name == NULL)
+    {
+      remote_debug(__func__, "could not strdup ms->name: %s", strerror(errno));
+      goto err;
+    }
+
+  snprintf(filename, sizeof(filename), "%s/%s", unix_name, ms->name);
+  if((fd = unix_create(filename)) == -1)
+    goto err;
 
   /*
    * at this point, allocate the unix_fd structure and take
@@ -1228,8 +1243,11 @@ static int sc_master_unix_create(sc_master_t *ms)
   return 0;
 
  err:
-  if(fd != -1) close(fd);
-  if(filename[0] != '\0') unlink(filename);
+  if(fd != -1)
+    {
+      if(filename[0] != '\0') unlink(filename);
+      close(fd);
+    }
   return -1;
 }
 
@@ -1417,7 +1435,7 @@ static int sc_master_control_master(sc_master_t *ms, uint8_t *buf, size_t len)
     goto err;
 
   /* send the list name to the client. do not expect an ack */
-  if(sc_fd_peername(&ms->inet_fd, sab, sizeof(sab)) != 0)
+  if(fd_peername(ms->inet_fd.fd, sab, sizeof(sab), 1) != 0)
     goto err;
   remote_debug(__func__, "%s", sab);
   ms->mode = MASTER_MODE_GO;
@@ -1670,6 +1688,11 @@ static int sc_master_control_resume(sc_master_t *ms, uint8_t *buf, size_t len)
   return -1;
 }
 
+/*
+ * sc_master_control
+ *
+ * process data received on the inet_fd and placed in the buf struct.
+ */
 static int sc_master_control(sc_master_t *ms)
 {
   uint32_t seq;
@@ -1947,13 +1970,11 @@ static void sc_master_inet_read_do(sc_master_t *ms)
  */
 static void sc_master_unix_accept_do(sc_master_t *ms)
 {
-  struct sockaddr_storage ss;
-  socklen_t socklen = sizeof(ss);
   sc_channel_t *cn = NULL;
   uint8_t msg[1+4];
   int s = -1;
 
-  if((s = accept(ms->unix_fd->fd, (struct sockaddr *)&ss, &socklen)) == -1)
+  if((s = accept(ms->unix_fd->fd, NULL, NULL)) == -1)
     {
       remote_debug(__func__, "accept failed: %s", strerror(errno));
       goto err;
@@ -2238,14 +2259,11 @@ static void sc_channel_free(sc_channel_t *cn)
  */
 static int serversocket_accept(int ss)
 {
-  struct sockaddr_storage sas;
   sc_master_t *ms = NULL;
-  socklen_t slen;
   int inet_fd = -1;
   char buf[256];
 
-  slen = sizeof(ss);
-  if((inet_fd = accept(ss, (struct sockaddr *)&sas, &slen)) == -1)
+  if((inet_fd = accept(ss, NULL, NULL)) == -1)
     {
       remote_debug(__func__, "could not accept: %s", strerror(errno));
       goto err;
@@ -2261,7 +2279,7 @@ static int serversocket_accept(int ss)
   if(ms == NULL)
     goto err;
 
-  if(sc_fd_peername(&ms->inet_fd, buf, sizeof(buf)) == 0)
+  if(fd_peername(ms->inet_fd.fd, buf, sizeof(buf), 1) == 0)
     remote_debug(__func__, "%s", buf);
 
   if(sc_fd_read_add(&ms->inet_fd) != 0)
@@ -2290,7 +2308,7 @@ static int serversocket_accept(int ss)
 static int serversocket_init_sa(const struct sockaddr *sa)
 {
   char buf[256];
-  int opt, fd = -1;
+  int fd = -1;
 
   if((fd = socket(sa->sa_family, SOCK_STREAM, IPPROTO_TCP)) < 0)
     {
@@ -2299,8 +2317,7 @@ static int serversocket_init_sa(const struct sockaddr *sa)
       goto err;
     }
 
-  opt = 1;
-  if(setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, (void *)&opt, sizeof(opt)) != 0)
+  if(setsockopt_int(fd, SOL_SOCKET, SO_REUSEADDR, 1) != 0)
     {
       remote_debug(__func__, "could not set SO_REUSEADDR on %s socket: %s",
 		   sa->sa_family == AF_INET ? "ipv4" : "ipv6", strerror(errno));
@@ -2310,9 +2327,7 @@ static int serversocket_init_sa(const struct sockaddr *sa)
 #ifdef IPV6_V6ONLY
   if(sa->sa_family == PF_INET6)
     {
-      opt = 1;
-      if(setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY,
-		    (void *)&opt, sizeof(opt)) != 0)
+      if(setsockopt_int(fd, IPPROTO_IPV6, IPV6_V6ONLY, 1) != 0)
 	{
 	  remote_debug(__func__, "could not set IPV6_V6ONLY: %s",
 		       strerror(errno));
@@ -2325,7 +2340,7 @@ static int serversocket_init_sa(const struct sockaddr *sa)
     {
       remote_debug(__func__, "could not bind %s socket to %s: %s",
 		   sa->sa_family == AF_INET ? "ipv4" : "ipv6",
-		   sockaddr_tostr(sa, buf, sizeof(buf)), strerror(errno));
+		   sockaddr_tostr(sa, buf, sizeof(buf), 1), strerror(errno));
       goto err;
     }
 
