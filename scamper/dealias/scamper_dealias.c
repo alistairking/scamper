@@ -1,7 +1,7 @@
 /*
  * scamper_dealias.c
  *
- * $Id: scamper_dealias.c,v 1.73 2023/12/29 03:46:11 mjl Exp $
+ * $Id: scamper_dealias.c,v 1.74 2024/03/04 19:36:41 mjl Exp $
  *
  * Copyright (C) 2008-2010 The University of Waikato
  * Copyright (C) 2012-2013 The Regents of the University of California
@@ -348,7 +348,7 @@ scamper_dealias_prefixscan_t *scamper_dealias_prefixscan_alloc(void)
 }
 
 void scamper_dealias_prefixscan_free(scamper_dealias_prefixscan_t *prefixscan)
-{  
+{
   uint16_t i;
 
   if(prefixscan == NULL)

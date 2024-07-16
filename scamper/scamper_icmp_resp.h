@@ -1,7 +1,7 @@
 /*
  * scamper_icmp_resp.h
  *
- * $Id: scamper_icmp_resp.h,v 1.36 2023/08/20 01:21:17 mjl Exp $
+ * $Id: scamper_icmp_resp.h,v 1.38 2024/04/22 05:55:29 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -32,6 +32,8 @@
 #define SCAMPER_ICMP_RESP_FLAG_IPOPT_TS        0x04
 #define SCAMPER_ICMP_RESP_FLAG_INNER_IPOPT_TS  0x08
 #define SCAMPER_ICMP_RESP_FLAG_RXERR           0x10
+#define SCAMPER_ICMP_RESP_FLAG_TCLASS          0x20
+#define SCAMPER_ICMP_RESP_FLAG_IFINDEX         0x40
 
 #define SCAMPER_ICMP_RESP_IS_ECHO_REPLY(ir) ( \
  (ir->ir_af == AF_INET  && ir->ir_icmp_type == 0) || \
@@ -119,6 +121,9 @@ typedef struct scamper_icmp_resp
   /* flags, whose meanings are defined above */
   uint8_t           ir_flags;
 
+  /* the interface the response was received on */
+  unsigned int      ir_ifindex;
+
   /*
    * category 1: the IP header;
    *
@@ -136,7 +141,7 @@ typedef struct scamper_icmp_resp
 
   uint16_t          ir_ip_size;
   uint16_t          ir_ip_id;
-  uint8_t           ir_ip_tos;
+  uint8_t           ir_ip_tos;  /* tclass in IPv6 */
   int16_t           ir_ip_ttl;  /* ir_ip_hlim; -1 if unavailable */
 
   /*

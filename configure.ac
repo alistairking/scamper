@@ -1,6 +1,6 @@
 # Process this file with autoconf to produce a configure script.
 
-AC_INIT([scamper],[20240229],[mjl@luckie.org.nz])
+AC_INIT([scamper],[20240503],[mjl@luckie.org.nz])
 
 AC_CONFIG_SRCDIR([scamper/scamper.c])
 AC_CONFIG_AUX_DIR([.])
@@ -12,7 +12,6 @@ AM_MAINTAINER_MODE([disable])
 
 LT_INIT
 AC_PROG_CC
-AC_PROG_GCC_TRADITIONAL
 AC_PROG_INSTALL
 AC_PROG_MKDIR_P
 AC_LANG(C)
@@ -420,7 +419,7 @@ AC_CHECK_MEMBER([struct sockaddr.sa_len],
 	[#include <sys/types.h>
 	 #include <sys/socket.h>])
 
-if test "x$ac_cv_header_net_pfvar_h" == xyes; then
+if test "x$ac_cv_header_net_pfvar_h" = xyes; then
    AC_CHECK_MEMBER([struct pfioc_trans_e.type],
 	[AC_DEFINE([HAVE_STRUCT_PFIOC_TRANS_E_TYPE],[1],
 	[Define if struct pfioc_trans_e has a type member])],[:],
@@ -452,7 +451,7 @@ if test "x$ac_cv_header_net_pfvar_h" == xyes; then
 	 #include <sys/socket.h>
 	 #include <netinet/in.h>
 	 #include <net/if.h>
-	 #include <net/pfvar.h>]) 
+	 #include <net/pfvar.h>])
 fi
 
 # Check for structs

@@ -359,11 +359,6 @@ class ScamperHostType(enum.IntEnum):
     NSEC = 47
     DNSKEY = 48
 
-SCAMPER_HOST_RR_DATA_TYPE_ADDR = 1
-SCAMPER_HOST_RR_DATA_TYPE_STR  = 2
-SCAMPER_HOST_RR_DATA_TYPE_SOA  = 3
-SCAMPER_HOST_RR_DATA_TYPE_MX   = 4
-
 # from scamper_sniff.h
 class ScamperSniffStop(enum.IntEnum):
     NoReason = 0
@@ -398,11 +393,24 @@ cdef class ScamperAddr:
 
     def __init__(self, addr):
         cdef cscamper_addr.scamper_addr_t *c
-        if not isinstance(addr, str):
-            raise TypeError("expected string for addr")
-        c = cscamper_addr.scamper_addr_fromstr(0, addr.encode('UTF-8'))
-        if c == NULL:
-            raise ValueError("invalid address passed in string")
+        cdef uint8_t buf[16]
+        cdef int at
+        if isinstance(addr, str):
+            c = cscamper_addr.scamper_addr_fromstr(0, addr.encode('UTF-8'))
+        elif isinstance(addr, bytes):
+            if len(addr) == 4:
+                at = 1
+            elif len(addr) == 16:
+                at = 2
+            elif len(addr) == 6:
+                at = 3
+            else:
+                raise ValueError("expected bytes array of 4/6/16 bytes")
+            for i, b in enumerate(addr):
+                buf[i] = b
+            c = cscamper_addr.scamper_addr_alloc(at, buf)
+        else:
+            raise ValueError("invalid address")
         self._c = c
 
     def __str__(self):
@@ -2122,6 +2130,27 @@ cdef class ScamperPingReply:
         return datetime.timedelta(seconds=c.tv_sec, microseconds=c.tv_usec)
 
     @property
+    def rx(self):
+        """
+        get method to obtain the receive time for this response, if
+        available.
+
+        :returns: the receive time
+        :rtype: datetime
+        """
+        txc = cscamper_ping.scamper_ping_reply_tx_get(self._c)
+        if txc == NULL:
+            return None
+        t = time.gmtime(txc.tv_sec)
+        rttc = cscamper_ping.scamper_ping_reply_rtt_get(self._c)
+
+        dt = datetime.datetime(t[0], t[1], t[2], t[3], t[4], t[5], txc.tv_usec,
+                               tzinfo=datetime.timezone.utc)
+        td = datetime.timedelta(seconds=rttc.tv_sec, microseconds=rttc.tv_usec)
+
+        return dt + td;
+
+    @property
     def attempt(self):
         """
         get method to obtain the attempt number for this probe.  The
@@ -2306,6 +2335,20 @@ cdef class ScamperPingReply:
         if not cscamper_ping.scamper_ping_reply_is_tcp(self._c):
             return None
         return cscamper_ping.scamper_ping_reply_tcp_flags_get(self._c)
+
+    @property
+    def ifname(self):
+        """
+        get method to obtain the name of the interface that received the
+        reply, if recorded.
+
+        :return: the name of the interface.
+        :rtype: string
+        """
+        c = cscamper_ping.scamper_ping_reply_ifname_get(self._c)
+        if c == NULL:
+            return None
+        return c.decode('UTF-8', 'strict')
 
 cdef class ScamperPing:
     """
@@ -3739,6 +3782,7 @@ cdef class ScamperDealiasReply:
     individual alias resolution probes.
     """
     cdef cscamper_dealias.scamper_dealias_reply_t *_c
+    cdef bint _fromdst
 
     def __init__(self):
         raise TypeError("This class cannot be insantiated directly.")
@@ -3748,13 +3792,24 @@ cdef class ScamperDealiasReply:
             cscamper_dealias.scamper_dealias_reply_free(self._c)
 
     @staticmethod
-    cdef ScamperDealiasReply from_ptr(cscamper_dealias.scamper_dealias_reply_t *ptr):
+    cdef ScamperDealiasReply from_ptr(cscamper_dealias.scamper_dealias_reply_t *ptr,
+                                      cscamper_dealias.scamper_dealias_probe_t *probe):
         cdef ScamperDealiasReply r
         if ptr == NULL:
             return None
         r = ScamperDealiasReply.__new__(ScamperDealiasReply)
         r._c = cscamper_dealias.scamper_dealias_reply_use(ptr)
+        r._fromdst = cscamper_dealias.scamper_dealias_reply_from_target(probe, ptr)
         return r
+
+    def is_from_target(self):
+        """
+        get method to determine if the reply came from the target.
+
+        :returns: True if the reply came from the target.
+        :rtype: bool
+        """
+        return self._fromdst
 
     @property
     def src(self):
@@ -4441,7 +4496,7 @@ cdef class ScamperDealiasProbe:
         :rtype: ScamperDealiasReply
         """
         r = cscamper_dealias.scamper_dealias_probe_reply_get(self._c, i)
-        return ScamperDealiasReply.from_ptr(r)
+        return ScamperDealiasReply.from_ptr(r, self._c)
 
     @property
     def reply_count(self):
@@ -5443,6 +5498,66 @@ cdef class ScamperHostSOA:
         """
         return cscamper_host.scamper_host_rr_soa_minimum_get(self._c)
 
+cdef class ScamperHostTXT:
+    """
+    The :class:`ScamperHostTXT` object stores fields from the TXT resource
+    record.
+    """
+    cdef cscamper_host.scamper_host_rr_txt_t *_c
+    cdef uint16_t _i
+
+    def __init__(self):
+        raise TypeError("This class cannot be instantiated directly.")
+
+    def __dealloc__(self):
+        if self._c != NULL:
+            cscamper_host.scamper_host_rr_txt_free(self._c)
+
+    @staticmethod
+    cdef ScamperHostTXT from_ptr(cscamper_host.scamper_host_rr_txt_t *ptr):
+        cdef ScamperHostTXT txt
+        if ptr == NULL:
+            return None
+        txt = ScamperHostTXT.__new__(ScamperHostTXT)
+        txt._c = cscamper_host.scamper_host_rr_txt_use(ptr)
+        return txt
+
+    def __iter__(self):
+        self._i = 0
+        return self
+
+    def __next__(self):
+        strc = cscamper_host.scamper_host_rr_txt_strc_get(self._c)
+        while self._i < strc:
+            txt = cscamper_host.scamper_host_rr_txt_str_get(self._c, self._i)
+            self._i += 1
+            if txt != NULL:
+                return txt.decode('UTF-8', 'strict')
+        raise StopIteration
+
+    @property
+    def strc(self):
+        """
+        get method to obtain the number of strings in this TXT record.
+
+        :returns: the number of strings
+        :rtype: int
+        """
+        return cscamper_host.scamper_host_rr_txt_strc_get(self._c)
+
+    def str(self, i):
+        """
+        get method to obtain the number of strings in this TXT record.
+
+        :param int i: The string of interest
+        :returns: the string
+        :rtype: string
+        """
+        txt = cscamper_host.scamper_host_rr_txt_str_get(self._c, i)
+        if txt == NULL:
+            return None
+        return txt.decode('UTF-8', 'strict')
+
 cdef class ScamperHostRR:
     """
     The :class:`ScamperHostRR` object stores fields from a DNS resource record.
@@ -5470,20 +5585,20 @@ cdef class ScamperHostRR:
         cscamper_host.scamper_host_qclass_tostr(class_n, qclass, sizeof(qclass))
         cscamper_host.scamper_host_qtype_tostr(type_n, qtype, sizeof(qtype))
 
-        dt = cscamper_host.scamper_host_rr_data_type(class_n, type_n)
-        if dt == SCAMPER_HOST_RR_DATA_TYPE_ADDR:
-            sa = cscamper_host.scamper_host_rr_addr_get(self._c)
-            x = ScamperAddr.from_ptr(sa)
-        elif dt == SCAMPER_HOST_RR_DATA_TYPE_STR:
-            rrstr = cscamper_host.scamper_host_rr_str_get(self._c)
+        sa = cscamper_host.scamper_host_rr_addr_get(self._c)
+        rrstr = cscamper_host.scamper_host_rr_str_get(self._c)
+        mx = cscamper_host.scamper_host_rr_mx_get(self._c)
+        soa = cscamper_host.scamper_host_rr_soa_get(self._c)
+        txt = cscamper_host.scamper_host_rr_txt_get(self._c)
+        if sa != NULL:
+            x = str(ScamperAddr.from_ptr(sa))
+        elif rrstr != NULL:
             x = rrstr.decode('UTF-8', 'strict')
-        elif dt == SCAMPER_HOST_RR_DATA_TYPE_MX:
-            mx = cscamper_host.scamper_host_rr_mx_get(self._c)
+        elif mx != NULL:
             mx_pref = cscamper_host.scamper_host_rr_mx_preference_get(mx)
             mx_exch = cscamper_host.scamper_host_rr_mx_exchange_get(mx)
             x = "{} {}".format(mx_pref, mx_exch.decode('UTF-8', 'strict'))
-        elif dt == SCAMPER_HOST_RR_DATA_TYPE_SOA:
-            soa = cscamper_host.scamper_host_rr_soa_get(self._c)
+        elif soa != NULL:
             soa_mname = cscamper_host.scamper_host_rr_soa_mname_get(soa)
             soa_rname = cscamper_host.scamper_host_rr_soa_rname_get(soa)
             soa_serial = cscamper_host.scamper_host_rr_soa_serial_get(soa)
@@ -5491,11 +5606,22 @@ cdef class ScamperHostRR:
             soa_retry = cscamper_host.scamper_host_rr_soa_retry_get(soa)
             soa_expire = cscamper_host.scamper_host_rr_soa_expire_get(soa)
             soa_minimum = cscamper_host.scamper_host_rr_soa_minimum_get(soa)
-            x = "{} {} {} {} {} {} {}".format(soa_mname.decode('UTF-8', 'strict'),
-                                              soa_rname.decode('UTF-8', 'strict'),
+            x = "{} {} {} {} {} {} {}".format(soa_mname.decode('UTF-8',
+                                                               'strict'),
+                                              soa_rname.decode('UTF-8',
+                                                               'strict'),
                                               soa_serial, soa_refresh,
                                               soa_retry, soa_expire,
                                               soa_minimum)
+        elif txt != NULL:
+            txt_strc = cscamper_host.scamper_host_rr_txt_strc_get(txt)
+            x = ""
+            for i in range(txt_strc):
+                txt_str = cscamper_host.scamper_host_rr_txt_str_get(txt, i)
+                if txt_str != NULL:
+                    if x != "":
+                        x = x + " "
+                    x = x + "\"" + txt_str.decode('UTF-8', 'strict') + "\""
         else:
             x = "not implemented"
 
@@ -5636,12 +5762,23 @@ cdef class ScamperHostRR:
         soa = cscamper_host.scamper_host_rr_soa_get(self._c)
         return ScamperHostSOA.from_ptr(soa)
 
+    @property
+    def txt(self):
+        """
+        get method to obtain an object that contains the TXT record.
+
+        :returns: the TXT record
+        :rtype: ScamperHostTXT
+        """
+        txt = cscamper_host.scamper_host_rr_txt_get(self._c)
+        return ScamperHostTXT.from_ptr(txt)
+
 class _ScamperHostRRIterator:
     """
     The :class:`_ScamperHostRRIterator` class provides a convenient
     interface to iterate over a given section in a DNS response.
     """
-    def __init__(self, query, section):
+    def __init__(self, query, section, rrtypes):
         """
         Construct a _ScamperHostRRIterator object.
 
@@ -5653,6 +5790,8 @@ class _ScamperHostRRIterator:
         self._query = query
         self._section = section
         self._index = 0
+        self._count = 0
+        self._rrtypes = None
         if query is not None:
             if section == 0:
                 self._count = query.ancount
@@ -5660,23 +5799,45 @@ class _ScamperHostRRIterator:
                 self._count = query.nscount
             else:
                 self._count = query.arcount
-        else:
-            self._count = 0
+        if rrtypes is not None:
+            self._rrtypes = {}
+            for rrtype in rrtypes:
+                if not isinstance(rrtype, str):
+                    raise ValueError("expected str in rrtypes")
+                rrtl = rrtype.lower()
+                if rrtl == 'a':
+                    self._rrtypes[1] = 1
+                elif rrtl == 'aaaa':
+                    self._rrtypes[28] = 1
+                elif rrtl == 'ptr':
+                    self._rrtypes[12] = 1
+                elif rrtl == 'mx':
+                    self._rrtypes[15] = 1
+                elif rrtl == 'ns':
+                    self._rrtypes[2] = 1
+                elif rrtl == 'soa':
+                    self._rrtypes[6] = 1
+                elif rrtl == 'txt':
+                    self._rrtypes[16] = 1
+                else:
+                    raise ValueError(f"cannot filter {rrtype}")
 
     def __iter__(self):
         return self
 
     def __next__(self):
-        if self._index >= self._count:
-            raise StopIteration
-        if self._section == 0:
-            rr = self._query.an(self._index)
-        elif self._section == 1:
-            rr = self._query.ns(self._index)
-        else:
-            rr = self._query.ar(self._index)
-        self._index += 1
-        return rr
+        while self._index < self._count:
+            if self._section == 0:
+                rr = self._query.an(self._index)
+            elif self._section == 1:
+                rr = self._query.ns(self._index)
+            else:
+                rr = self._query.ar(self._index)
+            self._index += 1
+            if (self._rrtypes is None or
+                (rr.rclass == 1 and rr.rtype in self._rrtypes)):
+                return rr
+        raise StopIteration
 
 cdef class ScamperHostQuery:
     """
@@ -5729,6 +5890,21 @@ cdef class ScamperHostQuery:
         t = time.gmtime(c.tv_sec)
         return datetime.datetime(t[0], t[1], t[2], t[3], t[4], t[5], c.tv_usec,
                                  tzinfo=datetime.timezone.utc)
+
+    @property
+    def rtt(self):
+        """
+        get method that returns the the delay between query and response
+        for the query
+
+        :returns: the delay between query and response
+        :rtype: timedelta
+        """
+        tx = self.tx
+        rx = self.rx
+        if tx is None or rx is None:
+            return None
+        return rx - tx
 
     @property
     def rcode(self):
@@ -5992,6 +6168,45 @@ cdef class ScamperHost:
         return self._q.rcode
 
     @property
+    def tx(self):
+        """
+        get method to obtain the transmit time for the first query with
+        a response
+
+        :returns: the transmit timestamp
+        :rtype: datetime
+        """
+        if self._q is None:
+            return None
+        return self._q.tx
+
+    @property
+    def rx(self):
+        """
+        get method to obtain the receive time for the first query with
+        a response
+
+        :returns: the receive timestamp
+        :rtype: datetime
+        """
+        if self._q is None:
+            return None
+        return self._q.rx
+
+    @property
+    def rtt(self):
+        """
+        get method to obtain the delay between query and response for the
+        first query with a response
+
+        :returns: the delay between query and response
+        :rtype: timedelta
+        """
+        if self._q is None:
+            return None
+        return self._q.rtt
+
+    @property
     def ancount(self):
         """
         get method to obtain the number of AN RRs from the first query
@@ -6017,7 +6232,7 @@ cdef class ScamperHost:
             return None
         return self._q.an(i)
 
-    def ans(self):
+    def ans(self, rrtypes=None):
         """
         get method to obtain a RR Iterator over the AN section of the first
         query with a response
@@ -6025,7 +6240,7 @@ cdef class ScamperHost:
         :returns: an iterator
         :rtype: _ScamperHostRRIterator
         """
-        return _ScamperHostRRIterator(self._q, 0)
+        return _ScamperHostRRIterator(self._q, 0, rrtypes)
 
     @property
     def nscount(self):
@@ -6053,7 +6268,7 @@ cdef class ScamperHost:
             return None
         return self._q.ns(i)
 
-    def nss(self):
+    def nss(self, rrtypes=None):
         """
         get method to obtain a RR Iterator over the NS section of the first
         query with a response
@@ -6061,7 +6276,7 @@ cdef class ScamperHost:
         :returns: an iterator
         :rtype: _ScamperHostRRIterator
         """
-        return _ScamperHostRRIterator(self._q, 1)
+        return _ScamperHostRRIterator(self._q, 1, rrtypes)
 
     @property
     def arcount(self):
@@ -6089,7 +6304,7 @@ cdef class ScamperHost:
             return None
         return self._q.ar(i)
 
-    def ars(self):
+    def ars(self, rrtypes=None):
         """
         get method to obtain a RR Iterator over the AR section of the first
         query with a response
@@ -6097,7 +6312,7 @@ cdef class ScamperHost:
         :returns: an iterator
         :rtype: _ScamperHostRRIterator
         """
-        return _ScamperHostRRIterator(self._q, 2)
+        return _ScamperHostRRIterator(self._q, 2, rrtypes=None)
 
     def ans_addrs(self):
         """
@@ -6111,6 +6326,32 @@ cdef class ScamperHost:
             if rec.addr is not None:
                 addrs[rec.addr] = 1
         return list(addrs.keys())
+
+    def ans_nses(self):
+        """
+        get method to obtain all unique nameservers returned
+
+        :returns: a list of :str:
+        :rtype: a list of :str:
+        """
+        nses = {}
+        for rec in self.ans():
+            if rec.ns is not None:
+                nses[rec.ns] = 1
+        return list(nses.keys())
+
+    def ans_txts(self):
+        """
+        get method to obtain all txt records returned
+
+        :returns: a list of TXT RRs
+        :rtype: a list of :ScamperHostRR:
+        """
+        txts = []
+        for rec in self.ans():
+            if rec.txt is not None:
+                txts.append(rec)
+        return txts
 
 ####
 #### Scamper HTTP Object
@@ -6567,6 +6808,27 @@ cdef class ScamperHttp:
 ####
 #### Scamper Udpprobe Object
 ####
+class _ScamperUdpprobeReplyIterator:
+    def __init__(self, up):
+        self._up = up
+        self._pi = 0
+        self._pc = up.probe_sent
+        self._ri = 0
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        while self._pi < self._pc:
+            probe = self._up.probe(self._pi)
+            while self._ri < probe.reply_count:
+                reply = probe.reply(self._ri)
+                self._ri += 1
+                return reply
+            self._pi += 1
+            self._ri = 0
+        raise StopIteration
+
 cdef class ScamperUdpprobeReply:
     """
     :class:`ScamperUdpprobeReply` is used by scamper to store responses
@@ -6595,7 +6857,7 @@ cdef class ScamperUdpprobeReply:
         :returns: the timestamp for the reply
         :rtype: datetime
         """
-        c = cscamper_udpprobe.scamper_udpprobe_reply_tv_get(self._c)
+        c = cscamper_udpprobe.scamper_udpprobe_reply_rx_get(self._c)
         if c == NULL:
             return None
         t = time.gmtime(c.tv_sec)
@@ -6618,6 +6880,86 @@ cdef class ScamperUdpprobeReply:
             return None
         return buf[:s]
 
+cdef class ScamperUdpprobeProbe:
+    """
+    :class:`ScamperUdpprobeProbe` is used by scamper to store information
+    about a specific UDP probe.
+    """
+    cdef cscamper_udpprobe.scamper_udpprobe_probe_t *_c
+    cdef uint8_t _i, _probe_sent
+
+    def __init__(self):
+        raise TypeError("This class cannot be instantiated directly.")
+
+    def __dealloc__(self):
+        if self._c != NULL:
+            cscamper_udpprobe.scamper_udpprobe_probe_free(self._c)
+
+    @staticmethod
+    cdef ScamperUdpprobeProbe from_ptr(cscamper_udpprobe.scamper_udpprobe_probe_t *ptr):
+        cdef ScamperUdpprobeProbe pr = ScamperUdpprobeProbe.__new__(ScamperUdpprobeProbe)
+        pr._c = cscamper_udpprobe.scamper_udpprobe_probe_use(ptr);
+        return pr
+
+    def __iter__(self):
+        self._i = 0
+        self._replyc = cscamper_udpprobe.scamper_udpprobe_probe_replyc_get(self._c)
+        return self
+
+    def __next__(self):
+        while self._i < self._replyc:
+            reply = cscamper_udpprobe.scamper_udpprobe_probe_reply_get(self._c, self._i)
+            self._i += 1
+            if reply != NULL:
+                return ScamperUdpprobeReply.from_ptr(reply)
+        raise StopIteration
+
+    @property
+    def tx(self):
+        """
+        get method that returns the time when the probe was transmitted.
+
+        :returns: the timestamp for the probe
+        :rtype: datetime
+        """
+        c = cscamper_udpprobe.scamper_udpprobe_probe_tx_get(self._c)
+        if c == NULL:
+            return None
+        t = time.gmtime(c.tv_sec)
+        return datetime.datetime(t[0], t[1], t[2], t[3], t[4], t[5], c.tv_usec,
+                                 tzinfo=datetime.timezone.utc)
+
+    @property
+    def sport(self):
+        """
+        get method to obtain the source port value used by this probe
+
+        :returns: the source port
+        :rtype: int
+        """
+        return cscamper_udpprobe.scamper_udpprobe_probe_sport_get(self._c)
+
+    @property
+    def reply_count(self):
+        """
+        get method that returns the number of replies recorded for this probe
+
+        :returns: the number of replies recorded
+        :rtype: int
+        """
+        return cscamper_udpprobe.scamper_udpprobe_probe_replyc_get(self._c)
+
+    def reply(self, i):
+        """
+        reply(i)
+        get method to obtain a reply for a specific attempt, starting at zero.
+
+        :returns: the nominated reply
+        :rtype: ScamperUdpprobeReply
+        """
+        c = cscamper_udpprobe.scamper_udpprobe_probe_reply_get(self._c, i)
+        return ScamperUdpprobeReply.from_ptr(c)
+
 cdef class ScamperUdpprobe:
     """
     :class:`ScamperUdpprobe` is used by scamper to store results from a UDP
@@ -6625,7 +6967,7 @@ cdef class ScamperUdpprobe:
     """
     cdef cscamper_udpprobe.scamper_udpprobe_t *_c
     cdef public ScamperInst _inst
-    cdef uint8_t _i, _replyc
+    cdef uint8_t _i, _probe_sent
 
     def __init__(self):
         raise TypeError("This class cannot be instantiated directly.")
@@ -6636,15 +6978,15 @@ cdef class ScamperUdpprobe:
 
     def __iter__(self):
         self._i = 0
-        self._replyc = cscamper_udpprobe.scamper_udpprobe_replyc_get(self._c)
+        self._probe_sent = cscamper_udpprobe.scamper_udpprobe_probe_sent_get(self._c)
         return self
 
     def __next__(self):
-        while self._i < self._replyc:
-            ur = cscamper_udpprobe.scamper_udpprobe_reply_get(self._c, self._i)
+        while self._i < self._probe_sent:
+            probe = cscamper_udpprobe.scamper_udpprobe_probe_get(self._c, self._i)
             self._i += 1
-            if ur != NULL: #iterate to the next buf
-                return ScamperUdpprobeReply.from_ptr(ur)
+            if probe != NULL:
+                return ScamperUdpprobeProbe.from_ptr(probe)
         raise StopIteration
 
     @staticmethod
@@ -6736,7 +7078,8 @@ cdef class ScamperUdpprobe:
     @property
     def sport(self):
         """
-        get method to obtain the source port the client used.
+        get method to obtain the source port value provided to the udpprobe
+        measurement.
 
         :returns: the source port
         :rtype: int
@@ -6784,8 +7127,25 @@ cdef class ScamperUdpprobe:
         return buf[:s]
 
     @property
-    def replyc(self):
-        return cscamper_udpprobe.scamper_udpprobe_replyc_get(self._c)
+    def probe_sent(self):
+        return cscamper_udpprobe.scamper_udpprobe_probe_sent_get(self._c)
+
+    def probe(self, i):
+        """
+        get method that returns a specific probe
+
+        :returns: the probe identified
+        :rtype: ScamperUdpprobeProbe
+        """
+        c = cscamper_udpprobe.scamper_udpprobe_probe_get(self._c, i)
+        return ScamperUdpprobeProbe.from_ptr(c)
+
+    def replies(self):
+        """
+        get an Iterator that contains the replies obtained during the
+        measurement.
+        """
+        return _ScamperUdpprobeReplyIterator(self)
 
 ####
 #### Scamper File Object
@@ -7200,15 +7560,18 @@ cdef void _ctrl_cb(clibscamperctrl.scamper_inst_t *c_inst,
                 ctrl._exceptions.append(e)
 
     elif cb_type == SCAMPER_CTRL_TYPE_ERR:
-        if data != NULL:
-            errstr = <const char *>data
-            ctrl._exceptions.append(ScamperInstError(
-                errstr.decode('UTF-8', 'strict'), inst))
-        else:
-            ctrl._exceptions.append(ScamperInstError("got err", inst))
+        errstr = <const char *>data
+        excstr = f"got err from {inst.name}"
+        if errstr != NULL and errstr[0] != ord('\0'):
+            excstr += ": " + errstr.decode('UTF-8', 'strict')
+        ctrl._exceptions.append(ScamperInstError(excstr, inst))
 
     elif cb_type == SCAMPER_CTRL_TYPE_FATAL:
-        ctrl._exceptions.append(RuntimeError("got fatal"))
+        excstr = f"got fatal from {inst.name}"
+        errstr = clibscamperctrl.scamper_ctrl_strerror(c_ctrl)
+        if errstr != NULL and errstr[0] != ord('\0'):
+            excstr += ": " + errstr.decode('UTF-8', 'strict')
+        ctrl._exceptions.append(ScamperInstError(excstr, inst))
 
     elif cb_type == SCAMPER_CTRL_TYPE_EOF:
         # got an eof on an instance.  remove the references to the tasks
@@ -7248,7 +7611,7 @@ cdef class ScamperCtrl:
     results.  This can save the caller from doing that itself.
     - unix: the path to a unix domain socket representing a local instance, \
     which will then become a :class:`ScamperInst`.
-    - remote_unix: the path to a unix domain socket representing a remote \
+    - remote: the path to a unix domain socket representing a remote \
     instance, which will then become a :class:`ScamperInst`.
     - remote_dir: the path to a directory containing unix domain sockets \
     each representing a remote instance, which will each then become a \
@@ -7613,7 +7976,7 @@ cdef class ScamperCtrl:
         """
         do(cmd, inst=None, sync=False)
         sends a manually-constructed command using scamper syntax to the scamper
-        instance.  you should use one of the do_trace/do_ping/do_host functions
+        instance.  you should use one of the do_trace/do_ping/do_dns functions
         instead.
 
         :param string cmd: the command to send.
@@ -7738,11 +8101,11 @@ cdef class ScamperCtrl:
         if all_attempts is not None and all_attempts is True:
             cmd = cmd + " -Q"
         if rtr is not None:
-            cmd = cmd + " -r " + rtr
+            cmd = cmd + " -r " + str(rtr)
         if sport is not None:
             cmd = cmd + " -s " + str(sport)
         if src is not None:
-            cmd = cmd + " -S " + src
+            cmd = cmd + " -S " + str(src)
         if tos is not None:
             cmd = cmd + " -t " + str(tos)
         if userid is not None:
@@ -7836,7 +8199,7 @@ cdef class ScamperCtrl:
         if ptr is not None and ptr is True:
             cmd = cmd + " -O ptr"
         if rtr is not None:
-            cmd = cmd + " -r " + rtr
+            cmd = cmd + " -r " + str(rtr)
         if sport is not None:
             cmd = cmd + " -s " + str(sport)
         if tos is not None:
@@ -7988,13 +8351,13 @@ cdef class ScamperCtrl:
         if method is not None:
             cmd = cmd + " -P " + method
         if rtr is not None:
-            cmd = cmd + " -r " + rtr
+            cmd = cmd + " -r " + str(rtr)
         if recordroute is not None and recordroute:
             cmd = cmd + " -R "
         if size is not None:
             cmd = cmd + " -s " + str(size)
         if src is not None:
-            cmd = cmd + " -S " + src
+            cmd = cmd + " -S " + str(src)
         if userid is not None:
             cmd = cmd + " -U " + str(userid)
         if wait_timeout is not None:
@@ -8011,11 +8374,13 @@ cdef class ScamperCtrl:
             raise RuntimeError("could not schedule command")
         return self._task(c, (<ScamperInst>inst)._c, sync)
 
-    def do_dns(self, qname, server=None, qtype=None, attempts=None, rd=None,
-               wait_timeout=None, userid=None, inst=None, sync=False):
+    def do_dns(self, qname, server=None, qclass=None, qtype=None,
+               attempts=None, rd=None, wait_timeout=None, tcp=None,
+               userid=None, inst=None, sync=False):
         """
-        do_dns(qname, server=None, qtype=None, attempts=None, rd=None,\
-               wait_timeout=None, userid=None, inst=None, sync=False)
+        do_dns(qname, server=None, qclass=None, qtype=None,
+               attempts=None, rd=None, wait_timeout=None, tcp=None,
+               userid=None, inst=None, sync=False)
         conduct a DNS measurement guided by the assembled parameters.
         Only the qname is required; scamper will use built-in defaults
         for the other optional parameters if they are not provided.
@@ -8027,9 +8392,11 @@ cdef class ScamperCtrl:
         :param string qname: The name to query
         :param ScamperInst inst: The specific instance to issue command over
         :param string server: The DNS server to use
+        :param string qclass: The query class to use
         :param string qtype: The query type to use
         :param int attempts: The number of queries to make before giving up
         :param timedelta wait_timeout: The length of time to wait for a response
+        :param bool tcp: Use TCP instead of UDP for queries
         :param int userid: The userid value to tag with the DNS measurement
         :param bool rd: The recursion desired value to use
         :param bool sync: operate the measurement synchronously
@@ -8046,6 +8413,8 @@ cdef class ScamperCtrl:
 
         if server is not None:
             cmd = cmd + " -s " + str(server)
+        if qclass is not None:
+            cmd = cmd + " -c " + qclass
         if qtype is not None:
             cmd = cmd + " -t " + qtype
         if attempts is not None:
@@ -8058,6 +8427,8 @@ cdef class ScamperCtrl:
             cmd = cmd + " -U " + str(userid)
         if rd is not None and not rd:
             cmd = cmd + " -r"
+        if tcp is not None and tcp:
+            cmd = cmd + " -T"
         cmd = cmd + " " + str(qname)
 
         c = clibscamperctrl.scamper_inst_do((<ScamperInst>inst)._c,
@@ -8262,7 +8633,7 @@ cdef class ScamperCtrl:
                 raise ValueError("expected probedef in probedefs")
             cmd += f" -p '{pd}'"
         for addr in addrs:
-            if not isinstance(addr, str):
+            if not isinstance(addr, str) and not isinstance(addr, ScamperAddr):
                 raise ValueError("expected str in addrs")
             cmd += f" {addr}"
 
@@ -8637,10 +9008,11 @@ cdef class ScamperCtrl:
             raise RuntimeError("could not schedule command")
         return self._task(c, (<ScamperInst>inst)._c, sync)
 
-    def do_udpprobe(self, dst, dport, payload,
-                    inst=None, userid=None, sync=False):
+    def do_udpprobe(self, dst, dport, payload, attempts=None,
+                    stop_count=None, inst=None, userid=None, sync=False):
         """
-        do_udpprobe(dst, dport, payload, inst=None, userid=None, sync=False)
+        do_udpprobe(dst, dport, payload, attempts=None, stop_count=None,\
+                    inst=None, userid=None, sync=False)
         conduct a UDP probe specified destination, port, and payload.
         If this method could not queue the measurement,
         it will raise a :py:exc:`RuntimeError` exception.
@@ -8648,6 +9020,8 @@ cdef class ScamperCtrl:
         :param string dst: the destination address to send the probe to
         :param int dport: the destination port to send the probe to
         :param bytes payload: the payload to include in the probe
+        :param int attempts: the number of probes to send
+        :param int stop_count: stop after receiving replies to this many probes
         :param int userid: the userid value to tag with this measurement
         :param ScamperInst inst: The specific instance to issue command over
         :param bool sync: operate the measurement synchronously
@@ -8664,11 +9038,14 @@ cdef class ScamperCtrl:
         if dport < 1 or dport > 65535:
             raise ValueError(f"invalid destination port {dport}")
 
-        if userid is not None:
-            cmd = cmd + " -U " + userid
-
         cmd = cmd + f" -d {dport}"
         cmd = cmd + " -p " + binascii.hexlify(payload).decode('ascii')
+        if attempts is not None:
+            cmd = cmd + " -c " + str(attempts)
+        if stop_count is not None:
+            cmd = cmd + " -o " + str(stop_count)
+        if userid is not None:
+            cmd = cmd + " -U " + userid
         cmd = cmd + f" {dst}"
 
         c = clibscamperctrl.scamper_inst_do((<ScamperInst>inst)._c,

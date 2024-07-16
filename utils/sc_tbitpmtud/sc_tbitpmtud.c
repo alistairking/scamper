@@ -21,7 +21,7 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
- * $Id: sc_tbitpmtud.c,v 1.35 2023/09/24 22:35:02 mjl Exp $
+ * $Id: sc_tbitpmtud.c,v 1.37 2024/04/26 06:52:24 mjl Exp $
  */
 
 #ifdef HAVE_CONFIG_H
@@ -392,7 +392,7 @@ static int check_options(int argc, char *argv[])
 	  usage(OPT_IP2AS);
 	  return -1;
 	}
-      
+
       return 0;
     }
 
@@ -1405,23 +1405,23 @@ static int ip2as_line(char *line, void *param)
   n = line;
 
   m = line;
-  while(isspace(*m) == 0 && *m != '\0')
+  while(*m != '\0' && isspace((unsigned char)*m) == 0)
     m++;
   if(*m == '\0')
     return -1;
   *m = '\0'; m++;
-  while(isspace(*m) != 0)
+  while(isspace((unsigned char)*m) != 0)
     m++;
   if(string_tolong(m, &lo) != 0)
     return -1;
 
   a = m;
-  while(isspace(*a) == 0 && *a != '\0')
+  while(*a != '\0' && isspace((unsigned char)*a) == 0)
     a++;
   if(*a == '\0')
     return -1;
   *a = '\0'; a++;
-  while(isspace(*a) != 0)
+  while(isspace((unsigned char)*a) != 0)
     a++;
 
   if(inet_pton(AF_INET, n, &in) == 1)
@@ -1544,7 +1544,7 @@ static char *percentage(char *buf, size_t len, uint32_t a, uint32_t x)
   if(x == 0) string_concat(buf, len, &off, "-");
   else if(a == x) string_concat(buf, len, &off, "100%%");
   else string_concat(buf, len, &off, "%.1f%%", (float)(a * 100) / x);
-  return buf;    
+  return buf;
 }
 
 typedef struct sc_mssresult
@@ -1865,7 +1865,7 @@ static int finish_2(void)
 	  artree = tree_2_6;
 	  tasr = total_2_6;
 	}
-      
+
       splaytree_inorder(artree, tree_to_slist, arlist);
       if(slist_count(arlist) == 0)
 	continue;

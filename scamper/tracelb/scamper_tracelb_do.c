@@ -1,7 +1,7 @@
 /*
  * scamper_tracelb_do.c
  *
- * $Id: scamper_tracelb_do.c,v 1.308 2024/02/28 04:25:07 mjl Exp $
+ * $Id: scamper_tracelb_do.c,v 1.309 2024/03/04 19:36:41 mjl Exp $
  *
  * Copyright (C) 2008-2011 The University of Waikato
  * Copyright (C) 2012      The Regents of the University of California
@@ -571,7 +571,7 @@ static tracelb_link_t *tracelb_isloop_addr(const tracelb_path_t *path,
 
 	  /*
 	   * if the link includes a clump, then check the replies in
-	   * the clump 
+	   * the clump
 	   */
 	  if(link->hopc > 0)
 	    {
@@ -4415,7 +4415,7 @@ scamper_task_t *scamper_do_tracelb_alloctask(void *data,
     case SCAMPER_TRACELB_TYPE_UDP_SPORT:
       SCAMPER_TASK_SIG_UDP_SPORT(sig, 0, 65535, trace->dport);
       break;
-      
+
     case SCAMPER_TRACELB_TYPE_TCP_SPORT:
     case SCAMPER_TRACELB_TYPE_TCP_ACK_SPORT:
       SCAMPER_TASK_SIG_TCP_SPORT(sig, 0, 65535, trace->dport);
@@ -4425,7 +4425,7 @@ scamper_task_t *scamper_do_tracelb_alloctask(void *data,
       snprintf(errbuf, errlen, "%s: unhandled type %d", __func__, trace->type);
       goto err;
     }
-  
+
   if(scamper_task_sig_add(task, sig) != 0)
     {
       snprintf(errbuf, errlen, "%s: could not add signature to task", __func__);

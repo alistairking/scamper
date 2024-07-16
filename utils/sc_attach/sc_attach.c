@@ -21,7 +21,7 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
- * $Id: sc_attach.c,v 1.41 2024/02/28 04:31:52 mjl Exp $
+ * $Id: sc_attach.c,v 1.42 2024/03/04 19:36:41 mjl Exp $
  *
  */
 
@@ -303,7 +303,7 @@ static int check_options(int argc, char *argv[])
 #endif
 
 	case 'v':
-	  printf("$Id: sc_attach.c,v 1.41 2024/02/28 04:31:52 mjl Exp $\n");
+	  printf("$Id: sc_attach.c,v 1.42 2024/03/04 19:36:41 mjl Exp $\n");
 	  return -1;
 
 	case '?':
@@ -534,7 +534,7 @@ static int do_scamperread_line(void *param, uint8_t *buf, size_t linelen)
   /* feedback letting us know that the command was accepted */
   if(linelen >= 2 && strncasecmp(head, "OK", 2) == 0)
     return 0;
-  
+
   /* if the scamper process is asking for more tasks, give it more */
   if(linelen == 4 && strncasecmp(head, "MORE", linelen) == 0)
     {

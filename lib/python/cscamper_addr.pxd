@@ -24,6 +24,7 @@ cdef extern from "scamper_addr.h":
  void scamper_addr_free(scamper_addr_t *sa)
  scamper_addr_t *scamper_addr_use(scamper_addr_t *sa)
  scamper_addr_t *scamper_addr_fromstr(int kind, const char *addr)
+ scamper_addr_t *scamper_addr_alloc(int kind, const void *addr)
 
  const char *scamper_addr_tostr(const scamper_addr_t *sa,
 			        char *dst, const size_t size)

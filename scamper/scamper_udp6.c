@@ -1,7 +1,7 @@
 /*
  * scamper_udp6.c
  *
- * $Id: scamper_udp6.c,v 1.73 2024/02/21 04:58:05 mjl Exp $
+ * $Id: scamper_udp6.c,v 1.77 2024/04/13 22:31:04 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2010 The University of Waikato
@@ -154,11 +154,21 @@ int scamper_udp6_probe(scamper_probe_t *probe)
 
   i = probe->pr_ip_ttl;
   if(setsockopt(probe->pr_fd,
-		IPPROTO_IPV6, IPV6_UNICAST_HOPS, (void *)&i, sizeof(i)) == -1)
+		IPPROTO_IPV6, IPV6_UNICAST_HOPS, (void *)&i, sizeof(i)) != 0)
     {
       printerror(__func__, "could not set hlim to %d", i);
       return -1;
     }
+
+#ifdef IPV6_TCLASS
+  i = probe->pr_ip_tos;
+  if(setsockopt(probe->pr_fd,
+		IPPROTO_IPV6, IPV6_TCLASS, (void *)&i, sizeof(i)) != 0)
+    {
+      printerror(__func__, "could not set tclass to %d", i);
+      return -1;
+    }
+#endif /* IPV6_TCLASS */
 
   sockaddr_compose((struct sockaddr *)&sin6, AF_INET6,
 		   probe->pr_ip_dst->addr, probe->pr_udp_dport);
@@ -224,6 +234,7 @@ void scamper_udp6_read_cb(SOCKET fd, void *param)
   struct cmsghdr *cmsg;
   struct iovec iov;
   ssize_t rrc;
+  int v;
 
   memset(&iov, 0, sizeof(iov));
   iov.iov_base = (caddr_t)buf;
@@ -252,7 +263,10 @@ void scamper_udp6_read_cb(SOCKET fd, void *param)
 #if defined(IPV6_HOPLIMIT)
 	  else if(cmsg->cmsg_level == IPPROTO_IPV6 &&
 		  cmsg->cmsg_type == IPV6_HOPLIMIT)
-	    ur.ttl = *((uint8_t *)CMSG_DATA(cmsg));
+	    {
+	      v = *((int *)CMSG_DATA(cmsg));
+	      ur.ttl = (uint8_t)v;
+	    }
 #endif
 	  cmsg = (struct cmsghdr *)CMSG_NXTHDR(&msg, cmsg);
 	}
@@ -274,12 +288,13 @@ void scamper_udp6_read_cb(SOCKET fd, void *param)
 static int scamper_udp6_read_err(int fd, scamper_icmp_resp_t *resp)
 {
   struct sock_extended_err *ee = NULL;
-  struct sockaddr_in6 from, *sin6;  
+  struct sockaddr_in6 from, *sin6;
   struct cmsghdr *cm;
   struct msghdr msg;
   struct iovec iov;
   ssize_t pbuflen;
   uint8_t ctrlbuf[2048];
+  int v;
 
   memset(&iov, 0, sizeof(iov));
   iov.iov_base = (caddr_t)rxbuf;
@@ -328,13 +343,22 @@ static int scamper_udp6_read_err(int fd, scamper_icmp_resp_t *resp)
 #if defined(IPV6_HOPLIMIT)
       else if(cm->cmsg_level == IPPROTO_IPV6 && cm->cmsg_type == IPV6_HOPLIMIT)
 	{
-	  resp->ir_ip_ttl = *((uint8_t *)CMSG_DATA(cm));
+	  v = *((int *)CMSG_DATA(cm));
+	  resp->ir_ip_ttl = (uint8_t)v;
+	}
+#endif
+#if defined(IPV6_TCLASS)
+      else if(cm->cmsg_level == IPPROTO_IPV6 && cm->cmsg_type == IPV6_TCLASS)
+	{
+	  v = *((int *)CMSG_DATA(cm));
+	  resp->ir_ip_tos = (uint8_t)v;
+	  resp->ir_flags |= SCAMPER_ICMP_RESP_FLAG_TCLASS;
 	}
 #endif
       cm = (struct cmsghdr *)CMSG_NXTHDR(&msg, cm);
     }
 
-  if(ee == NULL || 
+  if(ee == NULL ||
      (resp->ir_icmp_type != ICMP6_TIME_EXCEEDED &&
       resp->ir_icmp_type != ICMP6_DST_UNREACH))
      return -1;

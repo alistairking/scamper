@@ -1,7 +1,7 @@
 /*
  * scamper_probe.c
  *
- * $Id: scamper_probe.c,v 1.83 2024/02/28 20:33:41 mjl Exp $
+ * $Id: scamper_probe.c,v 1.84 2024/03/04 19:36:41 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -506,7 +506,7 @@ static int probe_dl_tx(probe_state_t *pt)
       pt->error = EINVAL;
       return -1;
     }
-  
+
   if(pt->buf == pktbuf)
     gettimeofday_wrap(&pt->tv);
   dl = scamper_fd_dl_get(fd);

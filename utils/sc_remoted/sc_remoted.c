@@ -1,7 +1,7 @@
 /*
  * sc_remoted
  *
- * $Id: sc_remoted.c,v 1.106 2024/01/03 00:39:00 mjl Exp $
+ * $Id: sc_remoted.c,v 1.108 2024/04/26 06:52:24 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -139,7 +139,7 @@
  * scamper can resume by sending a resumption message with the same
  * magic value scamper supplied initially.  the resume message also
  * includes the next sequence number the scamper expects from remoted,
- * the left edge of the 
+ * the left edge of the
  *
  * uint8_t   magic_len
  * uint8_t  *magic
@@ -509,7 +509,7 @@ static int check_options(int argc, char *argv[])
 	      return -1;
 	    }
 	  break;
-	  
+
 	case 'P':
 	  opt_addrport = optarg;
 	  break;
@@ -1381,8 +1381,8 @@ static int sc_master_control_master(sc_master_t *ms, uint8_t *buf, size_t len)
       monitorname = (char *)(buf+off);
       for(u8=0; u8<monitorname_len-1; u8++)
 	{
-	  if(isalnum(monitorname[u8]) == 0 &&
-	     monitorname[u8] != '.' && monitorname[u8] != '-')
+	  if(monitorname[u8] != '.' && monitorname[u8] != '-' &&
+	     isalnum((unsigned char)monitorname[u8]) == 0)
 	    goto err;
 	}
       if(monitorname[monitorname_len-1] != '\0')
@@ -1818,13 +1818,13 @@ static void sc_master_inet_read_cb(sc_master_t *ms, uint8_t *buf, size_t len)
       if(channel->unix_wb != NULL)
 	{
 	  if(scamper_writebuf_send(channel->unix_wb, ptr, msglen) != 0)
-	    sc_unit_gc(channel->unit);	
+	    sc_unit_gc(channel->unit);
 	  sc_fd_write_add(channel->unix_fd);
 	}
     }
 
   return;
-  
+
  err:
   sc_unit_gc(ms->unit);
   return;
@@ -2033,7 +2033,7 @@ static void sc_master_free(sc_master_t *ms)
 static sc_master_t *sc_master_alloc(int fd)
 {
   sc_master_t *ms = NULL;
-  
+
 #ifdef HAVE_OPENSSL
   int rc;
 #endif

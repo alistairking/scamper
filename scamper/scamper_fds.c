@@ -1,7 +1,7 @@
 /*
  * scamper_fds: manage events and file descriptors
  *
- * $Id: scamper_fds.c,v 1.123 2024/02/27 02:39:13 mjl Exp $
+ * $Id: scamper_fds.c,v 1.125 2024/03/28 06:57:03 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -1256,12 +1256,13 @@ static scamper_fd_t *fd_tcp(int type, void *src, uint16_t sport,
 }
 
 static scamper_fd_t *fd_udp(int type, void *src, uint16_t sport,
+			    uint16_t *sportx, size_t sportxc,
 			    void *dst, uint16_t dport)
 {
   scamper_addr_t sa;
   scamper_fd_t *fdn = NULL, *exist, findme;
   dlist_node_t *dn;
-  size_t len = 0;
+  size_t s, len = 0;
   int rc;
 
 #ifndef _WIN32 /* SOCKET vs int on windows */
@@ -1305,6 +1306,16 @@ static scamper_fd_t *fd_udp(int type, void *src, uint16_t sport,
 	  exist = dlist_node_item(dn);
 	  if(exist->type != type)
 	    continue;
+
+	  /* has the caller asked to not provide specific sports? */
+	  if(sportx != NULL)
+	    {
+	      for(s=0; s<sportxc; s++)
+		if(sportx[s] == exist->fd_sport)
+		  break;
+	      if(s != sportxc)
+		continue;
+	    }
 	  rc = scamper_task_sig_sport_used(&sa, IPPROTO_UDP,
 					   exist->fd_sport, dport);
 	  if(rc == -1)
@@ -1640,7 +1651,8 @@ scamper_fd_t *scamper_fd_tcp6_dst(void *src, uint16_t sport,
 scamper_fd_t *scamper_fd_udp4dg(void *src, uint16_t sport)
 {
   scamper_fd_t *fdn;
-  if((fdn = fd_udp(SCAMPER_FD_TYPE_UDP4DG, src, sport, NULL, 0)) != NULL)
+  fdn = fd_udp(SCAMPER_FD_TYPE_UDP4DG, src, sport, NULL, 0, NULL, 0);
+  if(fdn != NULL)
     {
       fdn->read.cb = scamper_udp4_read_cb;
       scamper_fd_read_unpause(fdn);
@@ -1649,10 +1661,12 @@ scamper_fd_t *scamper_fd_udp4dg(void *src, uint16_t sport)
 }
 
 scamper_fd_t *scamper_fd_udp4dg_dst(void *src, uint16_t sport,
+				    uint16_t *sportx, size_t sportxc,
 				    void *dst, uint16_t dport)
 {
   scamper_fd_t *fdn;
-  if((fdn = fd_udp(SCAMPER_FD_TYPE_UDP4DG, src, sport, dst, dport)) != NULL)
+  fdn = fd_udp(SCAMPER_FD_TYPE_UDP4DG, src, sport, sportx, sportxc, dst, dport);
+  if(fdn != NULL)
     {
       fdn->read.cb = scamper_udp4_read_cb;
       scamper_fd_read_unpause(fdn);
@@ -1662,13 +1676,14 @@ scamper_fd_t *scamper_fd_udp4dg_dst(void *src, uint16_t sport,
 
 scamper_fd_t *scamper_fd_udp4raw(void *src)
 {
-  return fd_udp(SCAMPER_FD_TYPE_UDP4RAW, src, 0, NULL, 0);
+  return fd_udp(SCAMPER_FD_TYPE_UDP4RAW, src, 0, NULL, 0, NULL, 0);
 }
 
 scamper_fd_t *scamper_fd_udp6(void *src, uint16_t sport)
 {
   scamper_fd_t *fdn;
-  if((fdn = fd_udp(SCAMPER_FD_TYPE_UDP6, src, sport, NULL, 0)) != NULL)
+  fdn = fd_udp(SCAMPER_FD_TYPE_UDP6, src, sport, NULL, 0, NULL, 0);
+  if(fdn != NULL)
     {
       fdn->read.cb = scamper_udp6_read_cb;
       scamper_fd_read_unpause(fdn);
@@ -1677,15 +1692,24 @@ scamper_fd_t *scamper_fd_udp6(void *src, uint16_t sport)
 }
 
 scamper_fd_t *scamper_fd_udp6_dst(void *src, uint16_t sport,
+				  uint16_t *sportx, size_t sportxc,
 				  void *dst, uint16_t dport)
 {
-  return fd_udp(SCAMPER_FD_TYPE_UDP6, src, sport, dst, dport);
+  scamper_fd_t *fdn;
+  fdn = fd_udp(SCAMPER_FD_TYPE_UDP6, src, sport, sportx, sportxc, dst, dport);
+  if(fdn != NULL)
+    {
+      fdn->read.cb = scamper_udp6_read_cb;
+      scamper_fd_read_unpause(fdn);
+    }
+  return fdn;
 }
 
 scamper_fd_t *scamper_fd_udp6err(void *src, uint16_t sport)
 {
   scamper_fd_t *fdn;
-  if((fdn = fd_udp(SCAMPER_FD_TYPE_UDP6ERR, src, sport, NULL, 0)) != NULL)
+  fdn = fd_udp(SCAMPER_FD_TYPE_UDP6ERR, src, sport, NULL, 0, NULL, 0);
+  if(fdn != NULL)
     {
       fdn->read.param = fdn;
       fdn->read.cb = scamper_udp6_read_err_cb;
@@ -1695,10 +1719,12 @@ scamper_fd_t *scamper_fd_udp6err(void *src, uint16_t sport)
 }
 
 scamper_fd_t *scamper_fd_udp6err_dst(void *src, uint16_t sport,
+				     uint16_t *sportx, size_t sportxc,
 				     void *dst, uint16_t dport)
 {
   scamper_fd_t *fdn;
-  if((fdn = fd_udp(SCAMPER_FD_TYPE_UDP6ERR, src, sport, dst, dport)) != NULL)
+  if((fdn = fd_udp(SCAMPER_FD_TYPE_UDP6ERR, src, sport, sportx, sportxc,
+		   dst, dport)) != NULL)
     {
       fdn->read.param = fdn;
       fdn->read.cb = scamper_udp6_read_err_cb;
@@ -1878,7 +1904,7 @@ int scamper_fd_sport(const scamper_fd_t *fdn, uint16_t *sport)
   if(SCAMPER_FD_HAS_SPORT(fdn) == 0)
     return -1;
   *sport = fdn->fd_sport;
-  return 0;    
+  return 0;
 }
 
 /*

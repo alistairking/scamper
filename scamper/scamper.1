@@ -10,12 +10,9 @@
 .\" Copyright (c) 2024      The Regents of the University of California
 .\"                         All rights reserved
 .\"
-.\" $Id: scamper.1,v 1.131 2024/02/29 01:48:36 mjl Exp $
+.\" $Id: scamper.1,v 1.133 2024/05/02 21:33:19 mjl Exp $
 .\"
-.\"  nroff -man scamper.1
-.\"  groff -man -Tascii scamper.1 | man2html -title scamper.1
-.\"
-.Dd February 29, 2024
+.Dd May 3, 2024
 .Dt SCAMPER 1
 .Os
 .\""""""""""""
@@ -385,6 +382,7 @@ trace
 .Op Fl f Ar firsthop
 .Op Fl g Ar gaplimit
 .Op Fl G Ar gapaction
+.Op Fl H Ar wait-probe-hop
 .Op Fl l Ar loops
 .Op Fl m Ar maxttl
 .Op Fl N Ar squeries
@@ -424,6 +422,11 @@ not recommended.
 specifies what should happen if the gaplimit condition is met.  A value of
 1 (default) means halt probing, while a value of 2 means send last-ditch
 probes.
+.It Fl H Ar wait-probe-hop
+specifies the minimum time to wait, in seconds, between sending
+consecutive probes that use the same TTL value.  By default, the next
+probe is sent as soon as possible after receiving a response to a probe
+with a given TTL value.  The limit is 2 seconds.
 .It Fl l Ar loops
 specifies the maximum number of loops permitted until probing stops.  By
 default, a value of one is used.  A value of zero disables loop checking.
@@ -1170,8 +1173,12 @@ sting
 .Bl -tag -width Es
 .It Fl c Ar limit-pktc
 specifies the maximum number of packets to capture.
+By default, sniff will return after it has captured 100 packets;
+the maximum value is 5000 packets.
 .It Fl G Ar limit-time
 specifies the maximum time, in seconds, to capture packets.
+By default, sniff will return after it has listened for 60 seconds;
+the limit is 20 minutes.
 .It Fl S Ar ipaddr
 specifies the IP address that packets must arrive using.
 scamper uses the IP address to identify the appropriate interface

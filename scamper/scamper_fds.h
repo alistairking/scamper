@@ -1,7 +1,7 @@
 /*
  * scamper_fds: manage events for file descriptors
  *
- * $Id: scamper_fds.h,v 1.32 2024/02/27 01:01:44 mjl Exp $
+ * $Id: scamper_fds.h,v 1.33 2024/03/28 06:57:03 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -49,10 +49,13 @@ scamper_fd_t *scamper_fd_dl(int ifindex);
 scamper_fd_t *scamper_fd_ip4(void);
 
 scamper_fd_t *scamper_fd_udp4dg_dst(void *src, uint16_t sport,
+				    uint16_t *sportx, size_t sportxc,
 				    void *dst, uint16_t dport);
 scamper_fd_t *scamper_fd_udp6_dst(void *src, uint16_t sport,
+				  uint16_t *sportx, size_t sportxc,
 				  void *dst, uint16_t dport);
 scamper_fd_t *scamper_fd_udp6err_dst(void *src, uint16_t sport,
+				     uint16_t *sportx, size_t sportxc,
 				     void *dst, uint16_t dport);
 scamper_fd_t *scamper_fd_tcp4_dst(void *src, uint16_t sport,
 				  uint16_t *sportx, size_t sportxc,

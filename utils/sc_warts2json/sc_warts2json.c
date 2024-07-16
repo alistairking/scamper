@@ -1,7 +1,7 @@
 /*
  * sc_warts2json
  *
- * $Id: sc_warts2json.c,v 1.11 2023/05/03 20:50:01 mjl Exp $
+ * $Id: sc_warts2json.c,v 1.12 2024/03/21 22:44:03 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -40,6 +40,7 @@
 #include "dealias/scamper_dealias.h"
 #include "tbit/scamper_tbit.h"
 #include "host/scamper_host.h"
+#include "udpprobe/scamper_udpprobe.h"
 #include "utils.h"
 
 int main(int argc, char *argv[])
@@ -53,6 +54,7 @@ int main(int argc, char *argv[])
     SCAMPER_FILE_OBJ_DEALIAS,
     SCAMPER_FILE_OBJ_TBIT,
     SCAMPER_FILE_OBJ_HOST,
+    SCAMPER_FILE_OBJ_UDPPROBE,
   };
   scamper_file_t *in, *out;
   scamper_file_filter_t *filter;
@@ -120,6 +122,8 @@ int main(int argc, char *argv[])
 	    scamper_tracelb_free(data);
 	  else if(type == SCAMPER_FILE_OBJ_HOST)
 	    scamper_host_free(data);
+	  else if(type == SCAMPER_FILE_OBJ_UDPPROBE)
+	    scamper_udpprobe_free(data);
 	  else if(type == SCAMPER_FILE_OBJ_CYCLE_START ||
 		  type == SCAMPER_FILE_OBJ_CYCLE_STOP)
 	    scamper_cycle_free(data);

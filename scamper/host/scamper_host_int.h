@@ -1,7 +1,7 @@
 /*
  * scamper_host_int.h
  *
- * $Id: scamper_host_int.h,v 1.5 2023/12/22 18:55:00 mjl Exp $
+ * $Id: scamper_host_int.h,v 1.6 2024/04/20 00:15:02 mjl Exp $
  *
  * Copyright (C) 2018-2023 Matthew Luckie
  *
@@ -31,11 +31,22 @@ scamper_host_rr_t *scamper_host_rr_alloc(const char *,
 					 uint16_t, uint16_t, uint32_t);
 scamper_host_rr_mx_t *scamper_host_rr_mx_alloc(uint16_t, const char *);
 scamper_host_rr_soa_t *scamper_host_rr_soa_alloc(const char *, const char *);
+scamper_host_rr_txt_t *scamper_host_rr_txt_alloc(uint16_t strc);
 
 struct scamper_host_rr_mx
 {
   uint16_t                 preference;
   char                    *exchange;
+
+#ifdef BUILDING_LIBSCAMPERFILE
+  int                      refcnt;
+#endif
+};
+
+struct scamper_host_rr_txt
+{
+  char                   **strs;
+  uint16_t                 strc;
 
 #ifdef BUILDING_LIBSCAMPERFILE
   int                      refcnt;
@@ -70,6 +81,7 @@ struct scamper_host_rr
     char                  *str;
     scamper_host_rr_soa_t *soa;
     scamper_host_rr_mx_t  *mx;
+    scamper_host_rr_txt_t *txt;
   } un;
 
 #ifdef BUILDING_LIBSCAMPERFILE

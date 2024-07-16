@@ -1,13 +1,13 @@
 /*
  * utils.c
  *
- * $Id: utils.c,v 1.235 2024/02/20 21:02:50 mjl Exp $
+ * $Id: utils.c,v 1.241 2024/05/02 00:13:57 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2011      Matthew Luckie
  * Copyright (C) 2012-2015 The Regents of the University of California
- * Copyright (C) 2015-2023 Matthew Luckie
+ * Copyright (C) 2015-2024 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -762,14 +762,14 @@ int timeval_cmp(const struct timeval *a, const struct timeval *b)
   return 0;
 }
 
-int timeval_cmp_lt(const struct timeval *tv, time_t s, uint32_t us)
+int timeval_cmp_lt(const struct timeval *tv, time_t s, suseconds_t us)
 {
   if(tv->tv_sec < s || (tv->tv_sec == s && tv->tv_usec < us))
     return 1;
   return 0;
 }
 
-int timeval_cmp_gt(const struct timeval *tv, time_t s, uint32_t us)
+int timeval_cmp_gt(const struct timeval *tv, time_t s, suseconds_t us)
 {
   if(tv->tv_sec > s || (tv->tv_sec == s && tv->tv_usec > us))
     return 1;
@@ -838,7 +838,7 @@ void timeval_sub_tv(struct timeval *tv, const struct timeval *sub)
     {
       tv->tv_usec -= sub->tv_usec;
     }
-  
+
   return;
 }
 
@@ -1062,40 +1062,56 @@ int fcntl_set(int fd, int flags)
 }
 #endif
 
+size_t json_esc_len(const char *in)
+{
+  size_t len = 0;
+
+  assert(in != NULL);
+  while(*in != '\0')
+    {
+      if(isprint((unsigned char)*in) == 0)
+	break;
+
+      if(*in == '"' || *in == '\\')
+	len++;
+      len++;
+      in++;
+    }
+
+  len++;
+  return len;
+}
+
 char *json_esc(const char *in, char *out, size_t len)
 {
   size_t off = 0;
 
+  if(len == 0)
+    return NULL;
+
+  assert(in != NULL);
   while(*in != '\0')
     {
-      if(isprint(*in) == 0)
+      if(isprint((unsigned char)*in) == 0)
 	break;
 
-      switch(*in)
+      if(*in == '"' || *in == '\\')
 	{
-	case '"':
-	  if(off + 2 >= len)
-	    goto done;
+	  if(len - off <= 2)
+	    break;
 	  out[off++] = '\\';
-	  out[off++] = '"';
-	  break;
-
-	case '\\':
-	  if(off + 2 >= len)
-	    goto done;
-	  out[off++] = '\\';
-	  out[off++] = '\\';
-	  break;
-
-	default:
 	  out[off++] = *in;
-	  break;
 	}
+      else
+	{
+	  if(len - off <= 1)
+	    break;
+	  out[off++] = *in;
+	}
+
       in++;
     }
   out[off++] = '\0';
-
- done:
   return out;
 }
 
@@ -1179,7 +1195,7 @@ int string_isprint(const char *str, size_t len)
 
   for(i=0; i<len; i++)
     {
-      if(isprint((int)str[i]) != 0)
+      if(isprint((unsigned char)str[i]) != 0)
 	{
 	  continue;
 	}
@@ -1198,7 +1214,7 @@ char *string_toupper(char *buf, size_t len, const char *in)
   size_t off = 0;
   while(in[off] != '\0' && len - off > 1)
     {
-      buf[off] = toupper(in[off]);
+      buf[off] = toupper((unsigned char)in[off]);
       off++;
     }
   buf[off] = '\0';
@@ -1210,7 +1226,7 @@ char *string_tolower(char *buf, size_t len, const char *in)
   size_t off = 0;
   while(in[off] != '\0' && len - off > 1)
     {
-      buf[off] = tolower(in[off]);
+      buf[off] = tolower((unsigned char)in[off]);
       off++;
     }
   buf[off] = '\0';
@@ -1269,7 +1285,7 @@ int string_isalnum(const char *str)
 {
   if(*str == '\0')
     return 0;
-  while(isalnum(*str) != 0)
+  while(isalnum((unsigned char)*str) != 0)
     str++;
   if(*str == '\0')
     return 1;
@@ -1286,7 +1302,7 @@ int string_isdigit(const char *str)
 {
   if(*str == '\0')
     return 0;
-  while(isdigit(*str) != 0)
+  while(isdigit((unsigned char)*str) != 0)
     str++;
   if(*str == '\0')
     return 1;
@@ -1303,7 +1319,7 @@ int string_isalpha(const char *str)
 {
   if(*str == '\0')
     return 0;
-  while(isalpha(*str) != 0)
+  while(isalpha((unsigned char)*str) != 0)
     str++;
   if(*str == '\0')
     return 1;
@@ -1319,14 +1335,14 @@ int string_isnumber(const char *str)
 {
   int i = 1;
 
-  if(str[0] != '-' && str[0] != '+' && isdigit((int)str[0]) == 0)
+  if(str[0] != '-' && str[0] != '+' && isdigit((unsigned char)str[0]) == 0)
     {
       return 0;
     }
 
   while(str[i] != '\0')
     {
-      if(isdigit((int)str[i]) != 0)
+      if(isdigit((unsigned char)str[i]) != 0)
 	{
 	  i++;
 	  continue;
@@ -1348,7 +1364,7 @@ int string_isfloat(const char *str)
   int seen_dp = 0;
   int i = 1;
 
-  if(str[0] != '-' && str[0] != '+' && isdigit((int)str[0]) == 0)
+  if(str[0] != '-' && str[0] != '+' && isdigit((unsigned char)str[0]) == 0)
     {
       if(str[0] == '.')
 	{
@@ -1359,7 +1375,7 @@ int string_isfloat(const char *str)
 
   while(str[i] != '\0')
     {
-      if(isdigit((int)str[i]) != 0)
+      if(isdigit((unsigned char)str[i]) != 0)
 	{
 	  i++;
 	  continue;
@@ -1589,6 +1605,29 @@ char *string_concat(char *str, size_t len, size_t *off, const char *fs, ...)
   return str;
 }
 
+char *string_byte2hex(char *str, size_t len, size_t *off,
+		      const uint8_t *b, size_t bl)
+{
+  size_t i;
+
+  if(len < *off)
+    return NULL;
+
+  if((len - *off) == 0)
+    return str;
+
+  for(i=0; i<bl; i++)
+    {
+      if(len - *off <= 2)
+	break;
+      byte2hex(b[i], str+(*off));
+      (*off) += 2;
+    }
+
+  str[*off] = '\0';
+  return str;
+}
+
 /*
  * string_addrport
  *
@@ -1714,7 +1753,7 @@ uint8_t hex2byte(char a, char b)
 
 void byte2hex(uint8_t byte, char *a)
 {
-  static const char hex[] = "01234567890abcdef";
+  static const char hex[] = "0123456789abcdef";
   a[0] = hex[(byte >> 4)];
   a[1] = hex[byte & 0x0f];
   return;
@@ -2443,7 +2482,7 @@ char *strerror_wrap(char *errbuf, size_t errlen, const char *format, ...)
   va_start(ap, format);
   vsnprintf(message, sizeof(message), format, ap);
   va_end(ap);
-  snprintf(errbuf, errlen, "%s: %s\n", message, strerror(ecode));
+  snprintf(errbuf, errlen, "%s: %s", message, strerror(ecode));
 
   return errbuf;
 }

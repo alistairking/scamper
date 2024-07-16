@@ -7,7 +7,7 @@
  * Copyright (C) 2016-2023 Matthew Luckie
  * Authors: Matthew Luckie, Ben Stasiewicz
  *
- * $Id: scamper_tbit_warts.c,v 1.39 2023/10/02 07:54:10 mjl Exp $
+ * $Id: scamper_tbit_warts.c,v 1.40 2024/03/04 19:36:41 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -888,7 +888,7 @@ static int warts_tbit_params_read(scamper_tbit_t *tbit,
 
   if(flag_isset(&buf[o], WARTS_TBIT_TTL) == 0)
     tbit->client_ipttl = 255;
-  
+
   return 0;
 }
 
@@ -1000,7 +1000,7 @@ int scamper_file_warts_tbit_read(scamper_file_t *sf, const warts_hdr_t *hdr,
     case SCAMPER_TBIT_TYPE_BLIND_FIN:
       if((tbit->data = scamper_tbit_blind_alloc()) == NULL)
 	goto err;
-      break;      
+      break;
     }
 
   /* Determine how many tbit_pkts to read */
@@ -1050,7 +1050,7 @@ int scamper_file_warts_tbit_read(scamper_file_t *sf, const warts_hdr_t *hdr,
 	      if(warts_tbit_icw_read(tbit, buf, &i, hdr->len) != 0)
 		goto err;
 	      break;
-	      
+
 	    case SCAMPER_TBIT_TYPE_BLIND_RST:
 	    case SCAMPER_TBIT_TYPE_BLIND_SYN:
 	    case SCAMPER_TBIT_TYPE_BLIND_DATA:
@@ -1147,7 +1147,7 @@ int scamper_file_warts_tbit_write(const scamper_file_t *sf,
 	  warts_tbit_icw_params(tbit, &icw);
 	  len += (2 + 4 + icw.len);
 	  break;
-	  
+
 	case SCAMPER_TBIT_TYPE_BLIND_RST:
 	case SCAMPER_TBIT_TYPE_BLIND_SYN:
 	case SCAMPER_TBIT_TYPE_BLIND_DATA:
@@ -1220,7 +1220,7 @@ int scamper_file_warts_tbit_write(const scamper_file_t *sf,
 	  insert_uint32(buf, &off, len, &icw.len, NULL);
 	  warts_tbit_icw_write(tbit, buf, &off, len, &icw);
 	  break;
-	  
+
 	case SCAMPER_TBIT_TYPE_BLIND_RST:
 	case SCAMPER_TBIT_TYPE_BLIND_SYN:
 	case SCAMPER_TBIT_TYPE_BLIND_DATA:

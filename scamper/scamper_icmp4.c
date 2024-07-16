@@ -1,7 +1,7 @@
 /*
  * scamper_icmp4.c
  *
- * $Id: scamper_icmp4.c,v 1.136 2023/08/26 21:25:08 mjl Exp $
+ * $Id: scamper_icmp4.c,v 1.138 2024/04/22 05:55:29 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -532,6 +532,10 @@ static void icmp4_recv_ip(SOCKET fd,
 #if defined(SO_TIMESTAMP)
   struct cmsghdr *cmsg;
 
+#ifdef IP_PKTINFO
+  struct in_pktinfo *pi;
+#endif
+
   /*
    * RFC 2292:
    * this should be taken care of by CMSG_FIRSTHDR, but not always is.
@@ -545,8 +549,20 @@ static void icmp4_recv_ip(SOCKET fd,
 	    {
 	      timeval_cpy(&ir->ir_rx, (struct timeval *)CMSG_DATA(cmsg));
 	      ir->ir_flags |= SCAMPER_ICMP_RESP_FLAG_KERNRX;
-	      break;
+	      goto next;
 	    }
+
+#if defined(IP_PKTINFO)
+	  if(cmsg->cmsg_level == IPPROTO_IP && cmsg->cmsg_type == IP_PKTINFO)
+	    {
+	      pi = (struct in_pktinfo *)CMSG_DATA(cmsg);
+	      ir->ir_ifindex = pi->ipi_ifindex;
+	      ir->ir_flags |= SCAMPER_ICMP_RESP_FLAG_IFINDEX;
+	      goto next;
+	    }
+#endif
+
+	next:
 	  cmsg = (struct cmsghdr *)CMSG_NXTHDR(msg, cmsg);
 	}
     }
@@ -588,7 +604,7 @@ static int scamper_icmp4_recv_err(int fd, scamper_icmp_resp_t *resp)
 {
   struct icmp *icmp = (struct icmp *)rxbuf;
   struct sock_extended_err *ee = NULL;
-  struct sockaddr_in from, *sin;  
+  struct sockaddr_in from, *sin;
   struct cmsghdr *cmsg;
   struct msghdr msg;
   struct iovec iov;
@@ -708,7 +724,7 @@ static int scamper_icmp4_recv_err(int fd, scamper_icmp_resp_t *resp)
     }
 
   /* record details of the IP header found in the ICMP error message */
-  resp->ir_inner_ip_proto = IPPROTO_ICMP; 
+  resp->ir_inner_ip_proto = IPPROTO_ICMP;
 
   if(type == ICMP_UNREACH && code == ICMP_UNREACH_NEEDFRAG)
     resp->ir_icmp_nhmtu = ntohs(icmp->icmp_nextmtu);
@@ -1174,7 +1190,7 @@ SOCKET scamper_icmp4_open(const void *addr)
     {
       printerror(__func__, "could not set SO_SNDBUF");
       goto err;
-    }      
+    }
 
 #if defined(SO_TIMESTAMP)
   opt = 1;
@@ -1182,6 +1198,24 @@ SOCKET scamper_icmp4_open(const void *addr)
     {
       printerror(__func__, "could not set SO_TIMESTAMP");
       goto err;
+    }
+#endif
+
+  /*
+   * ask the icmp6 socket to supply the interface on which it receives
+   * a packet.
+   */
+#if defined(IP_RECVPKTINFO)
+  opt = 1;
+  if(setsockopt(fd, IPPROTO_IP, IP_RECVPKTINFO, (void *)&opt, sizeof(opt)) != 0)
+    {
+      printerror(__func__, "could not set IP_RECVPKTINFO");
+    }
+#elif defined(IP_PKTINFO)
+  opt = 1;
+  if(setsockopt(fd, IPPROTO_IP, IP_PKTINFO, (void *)&opt, sizeof(opt)) != 0)
+    {
+      printerror(__func__, "could not set IP_PKTINFO");
     }
 #endif
 

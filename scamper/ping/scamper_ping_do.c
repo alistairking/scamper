@@ -1,7 +1,7 @@
 /*
  * scamper_do_ping.c
  *
- * $Id: scamper_ping_do.c,v 1.182 2024/02/29 03:37:00 mjl Exp $
+ * $Id: scamper_ping_do.c,v 1.185 2024/05/01 07:46:20 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -32,6 +32,8 @@
 #include "scamper.h"
 #include "scamper_addr.h"
 #include "scamper_addr_int.h"
+#include "scamper_ifname.h"
+#include "scamper_ifname_int.h"
 #include "scamper_list.h"
 #include "scamper_ping.h"
 #include "scamper_ping_int.h"
@@ -552,6 +554,9 @@ static void do_ping_handle_dl(scamper_task_t *task, scamper_dl_rec_t *dl)
 	  reply->flags |= SCAMPER_PING_REPLY_FLAG_REPLY_IPID;
 	}
 
+      reply->reply_tos = dl->dl_ip_tos;
+      reply->flags |= SCAMPER_PING_REPLY_FLAG_REPLY_TOS;
+
       if(ping->ping_replies[seq] == NULL)
 	{
 	  if((ping->flags & SCAMPER_PING_FLAG_TBT) == 0)
@@ -834,6 +839,9 @@ static void do_ping_handle_icmp(scamper_task_t *task, scamper_icmp_resp_t *ir)
       reply->probe_ipid = probe->ipid;
       reply->flags |= SCAMPER_PING_REPLY_FLAG_PROBE_IPID;
 
+      reply->reply_tos = ir->ir_ip_tos;
+      reply->flags |= SCAMPER_PING_REPLY_FLAG_REPLY_TOS;
+
       reply->reply_proto = IPPROTO_ICMP;
 
       if(ips != NULL && ipc > 0)
@@ -871,6 +879,11 @@ static void do_ping_handle_icmp(scamper_task_t *task, scamper_icmp_resp_t *ir)
   else if(ir->ir_af == AF_INET6)
     {
       reply->reply_proto = IPPROTO_ICMPV6;
+      if(ir->ir_flags & SCAMPER_ICMP_RESP_FLAG_TCLASS)
+	{
+	  reply->reply_tos = ir->ir_ip_tos;
+	  reply->flags |= SCAMPER_PING_REPLY_FLAG_REPLY_TOS;
+	}
     }
 
   if(ir->ir_ip_ttl != -1)
@@ -878,6 +891,9 @@ static void do_ping_handle_icmp(scamper_task_t *task, scamper_icmp_resp_t *ir)
       reply->reply_ttl = (uint8_t)ir->ir_ip_ttl;
       reply->flags |= SCAMPER_PING_REPLY_FLAG_REPLY_TTL;
     }
+
+  if(ir->ir_flags & SCAMPER_ICMP_RESP_FLAG_IFINDEX)
+    reply->ifname = scamper_ifname_int_get(ir->ir_ifindex, &ir->ir_rx);
 
   /*
    * if this is the first reply we have for this hop, then increment
@@ -1649,10 +1665,12 @@ scamper_task_t *scamper_do_ping_alloctask(void *data, scamper_list_t *list,
       if(SCAMPER_ADDR_TYPE_IS_IPV4(ping->dst))
 	state->fds[0] = scamper_fd_udp4dg_dst(ping->src->addr,
 					      ping->probe_sport,
+					      NULL, 0,
 					      ping->dst->addr,
 					      ping->probe_dport);
       else
 	state->fds[0] = scamper_fd_udp6_dst(ping->src->addr, ping->probe_sport,
+					    NULL, 0,
 					    ping->dst->addr, ping->probe_dport);
       if(state->fds[0] == NULL)
 	{

@@ -1,12 +1,12 @@
 /*
  * utils.h
  *
- * $Id: utils.h,v 1.155 2024/02/20 21:02:50 mjl Exp $
+ * $Id: utils.h,v 1.159 2024/04/28 00:47:41 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2012-2014 The Regents of the University of California
- * Copyright (C) 2015-2023 Matthew Luckie
+ * Copyright (C) 2015-2024 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -62,9 +62,9 @@
  */
 int timeval_cmp(const struct timeval *a, const struct timeval *b)
   ATTRIBUTE_NONNULL_PURE;
-int timeval_cmp_lt(const struct timeval *tv, time_t s, uint32_t us)
+int timeval_cmp_lt(const struct timeval *tv, time_t s, suseconds_t us)
   ATTRIBUTE_NONNULL_PURE;
-int timeval_cmp_gt(const struct timeval *tv, time_t s, uint32_t us)
+int timeval_cmp_gt(const struct timeval *tv, time_t s, suseconds_t us)
   ATTRIBUTE_NONNULL_PURE;
 
 int timeval_inrange_us(const struct timeval *a, const struct timeval *b, int c)
@@ -181,7 +181,7 @@ void addr6_add(struct in6_addr *out,
 	       const struct in6_addr *x, const struct in6_addr *y)
   ATTRIBUTE_NONNULL;
 int addr6_add_netlen(struct in6_addr *in, int netlen)
-  ATTRIBUTE_NONNULL;  
+  ATTRIBUTE_NONNULL;
 void addr6_sub(struct in6_addr *out,
 	       const struct in6_addr *y, const struct in6_addr *x)
   ATTRIBUTE_NONNULL;
@@ -250,6 +250,9 @@ char *string_concat(char *str, size_t len, size_t *off, const char *fs, ...)
 #else
 char *string_concat(char *str, size_t len, size_t *off, const char *fs, ...);
 #endif
+char *string_byte2hex(char *str, size_t len, size_t *off,
+		      const uint8_t *b, size_t bl) ATTRIBUTE_NONNULL;
+
 const char *string_findlc(const char *str, const char *find)
   ATTRIBUTE_NONNULL_PURE;
 int   string_addrport(const char *in, char **addr, int *port)
@@ -260,11 +263,12 @@ int   string_endswith(const char *in, const char *ending)
 #ifndef NDEBUG
 int string_isdash(const char *str) ATTRIBUTE_NONNULL_PURE;
 #else
-#define string_isdash(str)((str)[0] == '-' && (str)[1] == '\0') 
+#define string_isdash(str)((str)[0] == '-' && (str)[1] == '\0')
 #endif
 
 /* escape a string for json output */
 char *json_esc(const char *in, char *out, size_t len) ATTRIBUTE_NONNULL;
+size_t json_esc_len(const char *in) ATTRIBUTE_NONNULL;
 
 /* parse a URL into its components */
 int url_parse(const char *in, uint16_t *port, char **scheme,

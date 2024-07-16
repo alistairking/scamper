@@ -4,7 +4,7 @@
  * Copyright (C) 2023 Matthew Luckie
  * Author: Matthew Luckie
  *
- * $Id: scamper_ping_lib.c,v 1.8 2024/02/28 23:35:23 mjl Exp $
+ * $Id: scamper_ping_lib.c,v 1.10 2024/05/01 07:46:20 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -31,6 +31,8 @@
 #include "scamper_addr_int.h"
 #include "scamper_ping.h"
 #include "scamper_ping_int.h"
+#include "scamper_ifname.h"
+#include "scamper_ifname_int.h"
 
 scamper_list_t *scamper_ping_list_get(const scamper_ping_t *ping)
 {
@@ -247,6 +249,11 @@ uint8_t scamper_ping_reply_ttl_get(const scamper_ping_reply_t *reply)
   return reply->reply_ttl;
 }
 
+uint8_t scamper_ping_reply_tos_get(const scamper_ping_reply_t *reply)
+{
+  return reply->reply_tos;
+}
+
 uint16_t scamper_ping_reply_size_get(const scamper_ping_reply_t *reply)
 {
   return reply->reply_size;
@@ -287,6 +294,13 @@ uint8_t scamper_ping_reply_icmp_code_get(const scamper_ping_reply_t *reply)
 uint8_t scamper_ping_reply_tcp_flags_get(const scamper_ping_reply_t *reply)
 {
   return reply->tcp_flags;
+}
+
+const char *scamper_ping_reply_ifname_get(const scamper_ping_reply_t *reply)
+{
+  if(reply->ifname == NULL)
+    return NULL;
+  return reply->ifname->ifname;
 }
 
 int scamper_ping_reply_is_icmp(const scamper_ping_reply_t *reply)

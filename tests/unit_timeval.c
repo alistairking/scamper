@@ -1,7 +1,7 @@
 /*
  * unit_timeval: unit tests for timeval_* functions in utils.c
  *
- * $Id: unit_timeval.c,v 1.1 2024/02/20 21:05:14 mjl Exp $
+ * $Id: unit_timeval.c,v 1.2 2024/03/05 08:03:42 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -48,6 +48,15 @@ typedef struct sc_fromstr_test
   time_t      finish_sec;
   suseconds_t finish_usec;
 } sc_fromstr_test_t;
+
+typedef struct sc_cmp_test
+{
+  time_t      a_sec;
+  suseconds_t a_usec;
+  time_t      b_sec;
+  suseconds_t b_usec;
+  int         rc;
+} sc_cmp_test_t;
 
 int fromstr_tests(void)
 {
@@ -143,10 +152,35 @@ int sub_tests(void)
   return 0;
 }
 
+int cmp_tests(void)
+{
+  sc_cmp_test_t tests[] = {
+    {1708459200, 100000, 1708459201, 100000, -1},
+  };
+  size_t i, testc = sizeof(tests) / sizeof(sc_cmp_test_t);
+  struct timeval a, b;
+
+  for(i=0; i<testc; i++)
+    {
+      a.tv_sec  = tests[i].a_sec;
+      a.tv_usec = tests[i].a_usec;
+      b.tv_sec  = tests[i].b_sec;
+      b.tv_usec = tests[i].b_usec;
+      if(timeval_cmp(&a, &b) != tests[i].rc)
+	{
+	  printf("cmp fail %lu\n", i);
+	  return -1;
+	}
+    }
+
+  return 0;
+}
+
 int main(int argc, char *argv[])
 {
   if(fromstr_tests() != 0 ||
-     sub_tests() != 0)
+     sub_tests() != 0 ||
+     cmp_tests() != 0)
     return -1;
 
   printf("OK\n");

@@ -3,7 +3,7 @@
  *
  * This is a utility program to concatenate warts data files together.
  *
- * $Id: sc_wartscat.c,v 1.47 2024/01/02 20:24:52 mjl Exp $
+ * $Id: sc_wartscat.c,v 1.48 2024/03/04 01:52:23 mjl Exp $
  *
  * Copyright (C) 2007-2011 The University of Waikato
  * Copyright (C) 2022-2023 Matthew Luckie
@@ -379,7 +379,7 @@ static int simple_cat(void)
       if(rc != 0)
 	{
 	  fprintf(stderr, "%s: error reading %s\n", __func__,
-		  scamper_file_getfilename(infiles[1]));
+		  scamper_file_getfilename(infiles[i]));
 	  return -1;
 	}
 

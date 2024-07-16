@@ -1,7 +1,7 @@
 /*
  * scamper_control.c
  *
- * $Id: scamper_control.c,v 1.266 2024/02/12 20:35:36 mjl Exp $
+ * $Id: scamper_control.c,v 1.268 2024/04/26 06:52:24 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -1766,7 +1766,7 @@ static int command_set_nameserver(client_t *client, char *buf)
 #else
   client_send(client, "ERR scamper not built with host support");
   return -1;
-#endif  
+#endif
 }
 
 static int command_set_pps(client_t *client, char *buf)
@@ -2534,7 +2534,7 @@ static void client_read(const int fd, client_t *client)
       client_free(client);
       return;
     }
-  
+
   /* handle disconnection */
   if(rrc == 0)
     {
@@ -2596,7 +2596,7 @@ static int client_write_do(client_t *client,
 	    len = snprintf(str, sizeof(str), "DATA %d id-%u\n", (int)x, o->id);
 	  else
 	    len = snprintf(str, sizeof(str), "DATA %d\n", (int)x);
-	  
+
 	  if(sendfunc(client, str, len) < 0)
 	    {
 	      printerror(__func__, "could not send DATA header");
@@ -3201,7 +3201,7 @@ static int remote_read_control_channel_new(control_remote_t *rm,
   channel = bytes_ntohl(buf);
 
   snprintf(listname,sizeof(listname), "%s_%u", rm->alias, rm->num++);
-  
+
   if((client = client_alloc(CLIENT_TYPE_CHANNEL)) == NULL ||
      (client->sof_objs = slist_alloc()) == NULL ||
      (client->sof = scamper_outfile_opennull(listname, "warts")) == NULL)
@@ -3538,8 +3538,8 @@ static int remote_send_master(control_remote_t *rm)
       off = 0;
       while(monitorname[off] != '\0')
 	{
-	  if(isalnum(monitorname[off]) == 0 &&
-	     monitorname[off] != '.' && monitorname[off] != '-')
+	  if(monitorname[off] != '.' && monitorname[off] != '-' &&
+	     isalnum((unsigned char)monitorname[off]) == 0)
 	    {
 	      printerror_msg(__func__, "monitorname contains invalid char");
 	      return -1;
@@ -3715,7 +3715,7 @@ static void remote_read(SOCKET fd, void *param)
 #endif
 
   assert(scamper_fd_fd_get(rm->fd) == fd);
-  
+
   if((rc = remote_read_sock(rm)) < 0)
     goto retry;
 
@@ -3756,7 +3756,7 @@ static int client_channel_send(client_t *client, void *buf, size_t len)
   assert(client->type == CLIENT_TYPE_CHANNEL);
   if(remote_sock_send(client->un.chan.rem, buf, len, client->un.chan.id, 1) < 0)
     return -1;
-  return 0;  
+  return 0;
 }
 
 #ifndef _WIN32 /* SOCKET vs int on windows */
@@ -4226,7 +4226,7 @@ int scamper_control_add_inet(const char *ip, int port)
       in.s_addr = htonl(INADDR_LOOPBACK);
       sockaddr_compose(sa, AF_INET, &in, port);
     }
-  
+
   /* open the TCP socket we are going to listen on */
   fd = socket(af, SOCK_STREAM, IPPROTO_TCP);
   if(socket_isinvalid(fd))

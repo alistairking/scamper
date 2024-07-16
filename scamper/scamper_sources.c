@@ -1,7 +1,7 @@
 /*
  * scamper_source
  *
- * $Id: scamper_sources.c,v 1.79 2024/02/27 03:34:02 mjl Exp $
+ * $Id: scamper_sources.c,v 1.80 2024/03/04 19:36:41 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -1522,7 +1522,7 @@ int scamper_source_command2(scamper_source_t *s, const char *command,
   if(++s->id == 0) s->id = 1;
   if((st->idnode = splaytree_insert(s->idtree, st)) == NULL)
     {
-      snprintf(errbuf, errlen, "could not add to idtree"); 
+      snprintf(errbuf, errlen, "could not add to idtree");
       goto err;
     }
 

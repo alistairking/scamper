@@ -9,7 +9,7 @@
  * Copyright (C) 2023 Matthew Luckie
  * Copyright (C) 2023 The Regents of the University of California
  *
- * $Id: sc_uptime.c,v 1.88 2023/09/24 22:35:02 mjl Exp $
+ * $Id: sc_uptime.c,v 1.89 2024/03/04 19:36:41 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -2021,7 +2021,7 @@ static int up_import_blob_new(sc_dst_t *dst, sqlite3_stmt *st_sample_ins,
 {
   int x;
 
-  /* insert an empty blob into the database */     
+  /* insert an empty blob into the database */
   sqlite3_bind_int64(st_sample_ins, 1, dst->id);
   if((x = sqlite3_step(st_sample_ins)) != SQLITE_DONE)
     {
@@ -2272,7 +2272,7 @@ static int up_import(void)
 		  fprintf(stderr, "%s: could not insert address %s: %s\n",
 			  __func__, buf, sqlite3_errstr(x));
 		  goto done;
-		}	      
+		}
 	      dst->id = sqlite3_last_insert_rowid(db);
 	      sqlite3_clear_bindings(st_addr_ins);
 	      sqlite3_reset(st_addr_ins);
@@ -2480,7 +2480,7 @@ static int up_reboots_init(slist_t *sample_list, sc_sample_t ***out, int *outc)
 
   *out = samples;
   *outc = samplec;
-  return 0;  
+  return 0;
 }
 
 static void sc_ipidseq_free(sc_ipidseq_t *seq)
@@ -2536,7 +2536,7 @@ static int up_reboots_seqs_make(slist_t *seqs, sc_sample_t **samples,
 
  err:
   if(seq != NULL) sc_ipidseq_free(seq);
-  return -1;      
+  return -1;
 }
 
 static int up_reboots_seqs_class_reseed(slist_t *seqs)
@@ -2861,7 +2861,7 @@ static int up_reboots_doone(sc_dst_t *dst, slist_t *samplist, slist_t *reboots)
       /* if a sequence ended here, then no reboot */
       if(seq->prev != NULL)
 	goto next;
-      
+
       /*
        * both the current and previous sequences must be assigned from
        * a counter to infer a reboot

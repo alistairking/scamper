@@ -146,7 +146,7 @@ static int check_options(int argc, char *argv[])
 	  options |= OPT_APPTYPE;
 	  opt_apptype = optarg;
 	  break;
-	  
+
 	case 'c':
 	  options |= OPT_COMPLETED;
 	  opt_comp = optarg;
@@ -272,7 +272,7 @@ static int check_options(int argc, char *argv[])
 	}
       wait_between = lo;
     }
-  
+
   if(opt_text != NULL)
     {
       if((text = fopen(opt_text, "w")) == NULL)
@@ -404,7 +404,7 @@ static void target_free(target_t *target)
 
   if(target->methods != NULL)
     slist_free(target->methods);
-  
+
   free(target);
   return;
 }
@@ -809,10 +809,10 @@ static int process_tbit(target_t *target, scamper_tbit_t *tbit)
     {
       target->mode++;
     }
-  
+
   if(target->mode > MODE_LAST)
     goto completed;
-  
+
   /* wait before we try again, by default a minute */
   timeval_add_s(&target->next, &now, wait_between);
   if((target->hn = heap_insert(heap, target)) == NULL)

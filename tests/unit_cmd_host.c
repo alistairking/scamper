@@ -1,7 +1,7 @@
 /*
  * unit_cmd_host : unit tests for host commands
  *
- * $Id: unit_cmd_host.c,v 1.4 2024/02/14 08:05:55 mjl Exp $
+ * $Id: unit_cmd_host.c,v 1.5 2024/04/28 20:10:19 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -104,6 +104,68 @@ static int ns_example_com_ns_R_1(const scamper_host_t *in)
   return 0;
 }
 
+static int example_com_txt_T(const scamper_host_t *in)
+{
+  const char *qname;
+
+  if(in == NULL ||
+     check_addr(scamper_host_dst_get(in), "192.0.2.2") != 0 ||
+     (qname = scamper_host_qname_get(in)) == NULL ||
+     strcmp(qname, "example.com") != 0 ||
+     scamper_host_qclass_get(in) != SCAMPER_HOST_CLASS_IN ||
+     scamper_host_qtype_get(in) != SCAMPER_HOST_TYPE_TXT ||
+     (scamper_host_flags_get(in) & SCAMPER_HOST_FLAG_TCP) == 0)
+    return -1;
+
+  return 0;
+}
+
+static int example_com_aaaa_r(const scamper_host_t *in)
+{
+  const char *qname;
+
+  if(in == NULL ||
+     check_addr(scamper_host_dst_get(in), "192.0.2.2") != 0 ||
+     (qname = scamper_host_qname_get(in)) == NULL ||
+     strcmp(qname, "example.com") != 0 ||
+     scamper_host_qclass_get(in) != SCAMPER_HOST_CLASS_IN ||
+     scamper_host_qtype_get(in) != SCAMPER_HOST_TYPE_AAAA ||
+     (scamper_host_flags_get(in) & SCAMPER_HOST_FLAG_NORECURSE) == 0)
+    return -1;
+
+  return 0;
+}
+
+static int example_com_soa(const scamper_host_t *in)
+{
+  const char *qname;
+
+  if(in == NULL ||
+     check_addr(scamper_host_dst_get(in), "192.0.2.2") != 0 ||
+     (qname = scamper_host_qname_get(in)) == NULL ||
+     strcmp(qname, "example.com") != 0 ||
+     scamper_host_qclass_get(in) != SCAMPER_HOST_CLASS_IN ||
+     scamper_host_qtype_get(in) != SCAMPER_HOST_TYPE_SOA)
+    return -1;
+
+  return 0;
+}
+
+static int x192_0_2_55_ptr(const scamper_host_t *in)
+{
+  const char *qname;
+
+  if(in == NULL ||
+     check_addr(scamper_host_dst_get(in), "192.0.2.2") != 0 ||
+     (qname = scamper_host_qname_get(in)) == NULL ||
+     strcmp(qname, "192.0.2.55") != 0 ||
+     scamper_host_qclass_get(in) != SCAMPER_HOST_CLASS_IN ||
+     scamper_host_qtype_get(in) != SCAMPER_HOST_TYPE_PTR)
+    return -1;
+
+  return 0;
+}
+
 static int check(const char *cmd, int (*func)(const scamper_host_t *in))
 {
   scamper_host_t *host;
@@ -148,6 +210,7 @@ int main(int argc, char *argv[])
 {
   sc_test_t tests[] = {
     {"-s 192.0.2.1 example.com", example_com_a},
+    {"-s 192.0.2.1 -t a example.com", example_com_a},
     {"-s 192.0.2.1 -t mx -W 1.5 mail.example.com", mail_example_com_mx_w_1_5},
     {"-s 192.0.2.1 -t mx -W 1.500 mail.example.com", mail_example_com_mx_w_1_5},
     {"-s 192.0.2.1 -t mx -W 1.5001 mail.example.com", isnull},
@@ -156,6 +219,11 @@ int main(int argc, char *argv[])
     {"-s 192.0.2.1 -t mx -W 1.5001s mail.example.com", isnull},
     {"-s 192.0.2.1 -t mx -W 1500ms mail.example.com", mail_example_com_mx_w_1_5},
     {"-s 192.0.2.2 -t ns -R 1 ns.example.com", ns_example_com_ns_R_1},
+    {"-s 192.0.2.2 -t txt -T example.com", example_com_txt_T},
+    {"-s 192.0.2.2 -t soa example.com", example_com_soa},
+    {"-s 192.0.2.2 -t aaaa -r example.com", example_com_aaaa_r},
+    {"-s 192.0.2.2 192.0.2.55", x192_0_2_55_ptr},
+    {"-s 192.0.2.2 -t ptr 192.0.2.55", x192_0_2_55_ptr},
   };
   size_t i, testc = sizeof(tests) / sizeof(sc_test_t);
   char filename[128];

@@ -1,13 +1,13 @@
 /*
  * scamper_file.c
  *
- * $Id: scamper_file.c,v 1.124 2023/11/22 04:10:09 mjl Exp $
+ * $Id: scamper_file.c,v 1.127 2024/03/21 22:44:03 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2012      The Regents of the University of California
  * Copyright (C) 2022-2023 Matthew Luckie
- * Copyright (C) 2023      The Regents of the University of California
+ * Copyright (C) 2023-2024 The Regents of the University of California
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -90,6 +90,7 @@
 #if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_UDPPROBE)
 #include "udpprobe/scamper_udpprobe.h"
 #include "udpprobe/scamper_udpprobe_warts.h"
+#include "udpprobe/scamper_udpprobe_json.h"
 #endif
 
 #include "utils.h"
@@ -284,7 +285,7 @@ static write_handlers_t json_write_handlers =
   NULL,                                   /* http */
 #endif
 #if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_UDPPROBE)
-  NULL,                                   /* udpprobe */
+ scamper_file_json_udpprobe_write,        /* udpprobe */
 #endif
 };
 
@@ -966,16 +967,16 @@ static void z_flush(scamper_file_z_t *z, int fd)
     {
       z->s.bzs->next_in = NULL;
       z->s.bzs->avail_in = 0;
-      z->s.bzs->avail_out = sizeof(z->out);
-      z->s.bzs->next_out = (char *)z->out;
       do
 	{
+	  z->s.bzs->avail_out = sizeof(z->out);
+	  z->s.bzs->next_out = (char *)z->out;
 	  rc = BZ2_bzCompress(z->s.bzs, BZ_FINISH);
-	  have = sizeof(z->out) - z->s.bzs->avail_out;
-	  if(have > 0)
+	  if((rc == BZ_FINISH_OK || rc == BZ_STREAM_END) &&
+	     (have = sizeof(z->out) - z->s.bzs->avail_out) > 0)
 	    write_wrap(fd, z->out, NULL, have);
 	}
-      while(rc != BZ_STREAM_END);
+      while(rc == BZ_FINISH_OK);
       return;
     }
 #endif
@@ -985,10 +986,10 @@ static void z_flush(scamper_file_z_t *z, int fd)
     {
       z->s.xzs->next_in = NULL;
       z->s.xzs->avail_in = 0;
-      z->s.xzs->avail_out = sizeof(z->out);
-      z->s.xzs->next_out = z->out;
       do
 	{
+	  z->s.xzs->avail_out = sizeof(z->out);
+	  z->s.xzs->next_out = z->out;
 	  rc = lzma_code(z->s.xzs, LZMA_FINISH);
 	  have = sizeof(z->out) - z->s.xzs->avail_out;
 	  if(have > 0)
@@ -1304,7 +1305,7 @@ static int z_read(scamper_file_t *sf, uint8_t **data, size_t len)
 	  if(z_decompress(sf->z, &have) != 0)
 	    goto err;
 	}
-      while(have == 0 && sf->z->eof == 0);      
+      while(have == 0 && sf->z->eof == 0);
     }
 
   free(tmp);

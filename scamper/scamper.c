@@ -1,7 +1,7 @@
 /*
  * scamper
  *
- * $Id: scamper.c,v 1.331 2024/02/28 02:11:53 mjl Exp $
+ * $Id: scamper.c,v 1.334 2024/05/01 07:46:20 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -37,6 +37,8 @@
 #include "scamper_debug.h"
 #include "scamper_addr.h"
 #include "scamper_addr_int.h"
+#include "scamper_ifname.h"
+#include "scamper_ifname_int.h"
 #include "scamper_list.h"
 #include "scamper_file.h"
 #include "scamper_outfiles.h"
@@ -239,7 +241,7 @@ static char *remote_client_certfile = NULL;
 /* runtime config for linux AF_PACKET ring */
 static unsigned int ring_block_size = 1 << 16; /* 65 KiB */
 static unsigned int ring_blocks     = 64;
-static int          ring_nolocked   = 0;       /* don't use MAP_LOCKED if set */
+static int          ring_locked     = 0;       /* use MAP_LOCKED if set */
 #endif
 
 /* Source port to use in our probes */
@@ -349,7 +351,7 @@ static void usage(uint32_t opt_mask)
       usage_line("warts.gz: output results in gzipped warts format");
 #endif
 #ifdef HAVE_LIBBZ2
-      usage_line("warts.bz2: output results in bzip2 warts format"); 
+      usage_line("warts.bz2: output results in bzip2 warts format");
 #endif
 #ifdef HAVE_LIBLZMA
       usage_line("warts.xz: output results in xz warts format");
@@ -601,7 +603,7 @@ static int check_options(int argc, char *argv[])
 #ifndef WITHOUT_DEBUGFILE
   char *opt_debugfile = NULL;
 #endif
-  
+
   size_t argv0 = strlen(argv[0]);
   size_t m, len;
   size_t off;
@@ -778,7 +780,12 @@ static int check_options(int argc, char *argv[])
 	  else if(strcasecmp(optarg, "ring-nolocked") == 0)
 	    {
 	      flags |= FLAG_RING;
-	      ring_nolocked = 1;
+	      ring_locked = 0;
+	    }
+	  else if(strcasecmp(optarg, "ring-locked") == 0)
+	    {
+	      flags |= FLAG_RING;
+	      ring_locked = 1;
 	    }
 #endif
 	  else
@@ -1324,9 +1331,9 @@ unsigned int scamper_option_ring_block_size(void)
   return ring_block_size;
 }
 
-int scamper_option_ring_nolocked(void)
+int scamper_option_ring_locked(void)
 {
-  return ring_nolocked;
+  return ring_locked;
 }
 #endif
 
@@ -1564,6 +1571,7 @@ static void cleanup(void)
   scamper_tcp4_cleanup();
 
   scamper_addr2mac_cleanup();
+  scamper_ifname_int_cleanup();
 
 #ifndef DISABLE_SCAMPER_TRACE
   scamper_do_trace_cleanup();
@@ -1978,7 +1986,7 @@ static int scamper(int argc, char *argv[])
 
   /* initialise scamper measurement methods */
   if(scamper_do_neighbourdisc_init() != 0)
-    goto done;  
+    goto done;
 #ifndef DISABLE_SCAMPER_TRACE
   if(scamper_do_trace_init() != 0)
     goto done;
@@ -2019,6 +2027,9 @@ static int scamper(int argc, char *argv[])
   if(scamper_do_udpprobe_init() != 0)
     goto done;
 #endif
+
+  if(scamper_ifname_int_init() != 0)
+    goto done;
 
   if(options & (OPT_CTRL_INET|OPT_CTRL_UNIX|OPT_CTRL_REMOTE))
     {
@@ -2129,7 +2140,7 @@ static int scamper(int argc, char *argv[])
 
       if(scamper_queue_event_proc(&tv) != 0)
 	goto done;
-      
+
       /* take any 'done' tasks and output them now */
       while((task = scamper_queue_getdone(&tv)) != NULL)
 	{

@@ -1,7 +1,7 @@
 /*
  * common.c: common functions that we might need for linking unit tests
  *
- * $Id: common.c,v 1.5 2024/02/27 08:14:29 mjl Exp $
+ * $Id: common.c,v 1.6 2024/04/20 00:15:02 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -73,6 +73,68 @@ int dump_cmd(const char *cmd, const char *filename)
 
   len = strlen(cmd);
   if(write_wrap(fd, cmd, &wc, len) != 0 || wc != len)
+    {
+      fprintf(stderr, "%s: could not write %s: %s\n",
+	      __func__, filename, strerror(errno));
+      goto done;
+    }
+
+  rc = 0;
+
+ done:
+  if(fd != -1) close(fd);
+  if(buf != NULL) free(buf);
+  return rc;
+}
+
+int hex2buf(const char *str, uint8_t **buf_out, size_t *len_out)
+{
+  size_t len = strlen(str);
+  size_t i, off = 0;
+  uint8_t *buf = NULL;
+  int rc = -1;
+
+  if((len % 2) != 0 || len == 0 || (buf = malloc(len / 2)) == NULL)
+    goto done;
+
+  for(i=0; i<len; i+=2)
+    {
+      if(ishex(str[i]) == 0 || ishex(str[i+1]) == 0)
+	goto done;
+      buf[off++] = hex2byte(str[i], str[i+1]);
+    }
+
+  *buf_out = buf; buf = NULL;
+  *len_out = off;
+  rc = 0;
+
+ done:
+  if(buf != NULL) free(buf);
+  return rc;
+}
+
+int dump_hex(const char *str, const char *filename)
+{
+  size_t len, wc;
+  uint8_t *buf = NULL;
+  int rc = -1, fd = -1;
+  int fd_flags = O_WRONLY | O_CREAT | O_TRUNC;
+
+#ifdef _WIN32 /* windows needs O_BINARY */
+  fd_flags |= O_BINARY;
+#endif
+
+  if(hex2buf(str, &buf, &len) != 0)
+    goto done;
+
+  if((fd = open(filename, fd_flags, MODE_644)) == -1)
+    {
+      fprintf(stderr, "%s: could not open %s: %s\n",
+	      __func__, filename, strerror(errno));
+      goto done;
+    }
+
+  if(write_wrap(fd, buf, &wc, len) != 0 || wc != len)
     {
       fprintf(stderr, "%s: could not write %s: %s\n",
 	      __func__, filename, strerror(errno));

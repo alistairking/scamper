@@ -1,7 +1,7 @@
 /*
  * unit_fds : unit tests for scamper_fd
  *
- * $Id: unit_fds.c,v 1.4 2024/02/27 08:14:29 mjl Exp $
+ * $Id: unit_fds.c,v 1.5 2024/03/04 19:36:41 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -234,7 +234,7 @@ static int test_0(void)
 
   /*
    * scamper_fd_addr should only work on IP sockets, and should only
-   * return 0 to signify it is not bound to any address 
+   * return 0 to signify it is not bound to any address
    */
   if(scamper_fd_addr(fds[0], &in4, sizeof(in4)) != 0 ||       /* udp4dg */
      scamper_fd_addr(fds[1], &in4, sizeof(in4)) != 0 ||       /* tcp4 */

@@ -1,7 +1,7 @@
 /*
  * scamper_ping_int.h
  *
- * $Id: scamper_ping_int.h,v 1.8 2024/02/27 01:07:22 mjl Exp $
+ * $Id: scamper_ping_int.h,v 1.10 2024/05/01 07:46:20 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -137,6 +137,8 @@ struct scamper_ping_stats
   struct timeval stddev_rtt;
 };
 
+struct scamper_ifname;
+
 /*
  * scamper_ping_reply_v4rr
  *
@@ -206,6 +208,7 @@ struct scamper_ping_reply
   uint16_t                   probe_sport;
   uint8_t                    reply_proto;
   uint8_t                    reply_ttl;
+  uint8_t                    reply_tos;
   uint16_t                   reply_size;
   uint16_t                   reply_ipid;
   uint32_t                   reply_ipid32;
@@ -223,6 +226,9 @@ struct scamper_ping_reply
   /* the time elapsed between sending the probe and getting this response */
   struct timeval             tx;
   struct timeval             rtt;
+
+  /* the name of the interface that received the response */
+  struct scamper_ifname     *ifname;
 
   /* data found in IP options, if any */
   scamper_ping_reply_v4rr_t *v4rr;

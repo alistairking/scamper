@@ -1,7 +1,7 @@
 /*
  * unit_cmd_dealias : unit tests for dealias commands
  *
- * $Id: unit_cmd_dealias.c,v 1.28 2024/02/14 08:09:25 mjl Exp $
+ * $Id: unit_cmd_dealias.c,v 1.29 2024/03/04 19:36:41 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -685,9 +685,9 @@ int main(int argc, char *argv[])
      " -p '-P icmp-echo -i 192.0.2.1' 192.0.2.2", isnull},
     {"-m ally -W 1000"
      " -p '-P icmp-echo -i 192.0.2.1' 192.0.2.1 192.0.2.2", isnull},
-    /* valid mercator without a probedef */    
+    /* valid mercator without a probedef */
     {"-m mercator 192.0.2.1", mercator},
-    {"-m mercator -p '-P udp -d 54321' 192.0.2.1", mercator_54321},    
+    {"-m mercator -p '-P udp -d 54321' 192.0.2.1", mercator_54321},
     /* bump needs two probedefs */
     {"-m bump 192.0.2.1 192.0.2.2", isnull},
     {"-m bump -p '-P udp' 192.0.2.1 192.0.2.2", isnull},

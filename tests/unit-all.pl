@@ -22,6 +22,7 @@ my @tests = (
     "unit_http_lib",
     "unit_options",
     "unit_osinfo",
+    "unit_string",
     "unit_timeval",
     );
 foreach my $test (@tests)
