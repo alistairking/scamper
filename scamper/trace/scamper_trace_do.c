@@ -3274,6 +3274,8 @@ static void do_trace_handle_dl(scamper_task_t *task, scamper_dl_rec_t *dl)
     NULL,            /* MODE_DTREE_FIRST */
     NULL,            /* MODE_DTREE_FWD */
     NULL,            /* MODE_DTREE_BACK */
+    dlout_trace,     /* MODE_PARALLEL */
+    dlout_trace,     /* MODE_PARALLEL_FINISH */
   };
 
   static void (* const dlin_func[])(scamper_trace_t *, scamper_dl_rec_t *,
@@ -3290,6 +3292,8 @@ static void do_trace_handle_dl(scamper_task_t *task, scamper_dl_rec_t *dl)
     NULL,            /* MODE_DTREE_FIRST */
     NULL,            /* MODE_DTREE_FWD */
     NULL,            /* MODE_DTREE_BACK */
+    NULL,            /* MODE_PARALLEL */
+    NULL,            /* MODE_PARALLEL_FINISH */
   };
 
   static int (* const handletp_func[])(scamper_task_t *,
@@ -3306,6 +3310,8 @@ static void do_trace_handle_dl(scamper_task_t *task, scamper_dl_rec_t *dl)
     NULL,                /* MODE_DTREE_FIRST */
     NULL,                /* MODE_DTREE_FWD */
     NULL,                /* MODE_DTREE_BACK */
+    NULL,                /* MODE_PARALLEL */
+    NULL,                /* MODE_PARALLEL_FINISH */
   };
   static const int DIR_INBOUND  = 0;
   static const int DIR_OUTBOUND = 1;
