@@ -1,7 +1,7 @@
 /*
  * libscamperctrl
  *
- * $Id: libscamperctrl.c,v 1.57 2024/02/18 19:06:41 mjl Exp $
+ * $Id: libscamperctrl.c,v 1.59 2024/04/26 06:52:24 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -285,7 +285,7 @@ static scamper_cmd_t *scamper_inst_cmd(scamper_inst_t *inst,
     }
   for(i=0; i<len; i++)
     {
-      if(isprint(str[i]) == 0)
+      if(isprint((unsigned char)str[i]) == 0)
 	{
 	  snprintf(inst->err, sizeof(inst->err),
 		   "unprintable character in command");
@@ -992,7 +992,7 @@ static int scamper_inst_read(scamper_inst_t *inst)
 	      if(start[3] == ' ' && start[4] != '\0')
 		{
 		  ptr = start + 4; i = 0;
-		  while(isprint(ptr[i]))
+		  while(isprint((unsigned char)ptr[i]))
 		    i++;
 		  if(ptr[i] == '\0')
 		    size = i;
@@ -1562,7 +1562,7 @@ scamper_attp_t *scamper_attp_alloc_dm(const char *file, const int line)
   if(attp == NULL) return NULL;
   memset(attp, 0, len);
   return attp;
-}  
+}
 
 #ifdef DMALLOC
 #undef scamper_attp_alloc
@@ -1586,7 +1586,7 @@ static int scamper_attp_str_isvalid(const char *str)
 
   for(i=0; str[i] != '\0'; i++)
     {
-      if(isprint(str[i]) == 0)
+      if(isprint((unsigned char)str[i]) == 0)
 	return 0;
       if(str[i] == '"')
 	return 0;
@@ -1622,7 +1622,7 @@ int scamper_attp_set_listdescr(scamper_attp_t *attp, char *list_descr)
     return -1;
   if(attp->l_descr != NULL)
     free(attp->l_descr);
-  attp->l_descr = tmp;  
+  attp->l_descr = tmp;
   return 0;
 }
 
@@ -1634,7 +1634,7 @@ int scamper_attp_set_listmonitor(scamper_attp_t *attp, char *list_monitor)
     return -1;
   if(attp->l_monitor != NULL)
     free(attp->l_monitor);
-  attp->l_monitor = tmp;  
+  attp->l_monitor = tmp;
   return 0;
 }
 

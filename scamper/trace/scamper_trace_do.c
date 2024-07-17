@@ -1,7 +1,7 @@
 /*
  * scamper_do_trace.c
  *
- * $Id: scamper_trace_do.c,v 1.369 2024/03/04 23:40:02 mjl Exp $
+ * $Id: scamper_trace_do.c,v 1.374 2024/07/02 01:11:17 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -1459,6 +1459,7 @@ static scamper_trace_hop_t *trace_icmp_hop(const scamper_task_t *task,
   hop->hop_reply_size = ir->ir_ip_size;
   hop->hop_icmp_type  = ir->ir_icmp_type;
   hop->hop_icmp_code  = ir->ir_icmp_code;
+  hop->hop_reply_tos  = ir->ir_ip_tos;
 
   /*
    * we cannot depend on the TTL field of the IP packet being made available,
@@ -1493,22 +1494,13 @@ static scamper_trace_hop_t *trace_icmp_hop(const scamper_task_t *task,
     hop->hop_icmp_nhmtu = ir->ir_icmp_nhmtu;
 
   if(ir->ir_af == AF_INET)
-    {
-      hop->hop_reply_ipid = ir->ir_ip_id;
-      hop->hop_reply_tos  = ir->ir_ip_tos;
-    }
+    hop->hop_reply_ipid = ir->ir_ip_id;
 
   if(SCAMPER_ICMP_RESP_INNER_IS_SET(ir))
     {
       hop->hop_icmp_q_ttl = ir->ir_inner_ip_ttl;
       hop->hop_icmp_q_ipl = ir->ir_inner_ip_size;
-
-      /*
-       * IPv4: record ToS byte
-       * IPv6: might pay to record traffic class byte here.
-       */
-      if(ir->ir_af == AF_INET)
-	hop->hop_icmp_q_tos = ir->ir_inner_ip_tos;
+      hop->hop_icmp_q_tos = ir->ir_inner_ip_tos;
     }
 
   /* if ICMP extensions are included, then parse and include them. */
@@ -1541,16 +1533,14 @@ static scamper_trace_hop_t *trace_dl_hop(scamper_task_t *task,
   /* fill out the basic bits of the hop structure */
   hop->hop_reply_size = dl->dl_ip_size;
   hop->hop_reply_ttl = dl->dl_ip_ttl;
+  hop->hop_reply_tos = dl->dl_ip_tos;
   hop->hop_flags |= (SCAMPER_TRACE_HOP_FLAG_REPLY_TTL |
 		     SCAMPER_TRACE_HOP_FLAG_TS_DL_RX);
   timeval_cpy(&hop->hop_tx, &pr->tx_tv);
   timeval_diff_tv(&hop->hop_rtt, &pr->tx_tv, &dl->dl_tv);
 
   if(dl->dl_af == AF_INET)
-    {
-      hop->hop_reply_ipid = dl->dl_ip_id;
-      hop->hop_reply_tos  = dl->dl_ip_tos;
-    }
+    hop->hop_reply_ipid = dl->dl_ip_id;
 
   if(dl->dl_ip_proto == IPPROTO_TCP)
     {
@@ -3284,6 +3274,8 @@ static void do_trace_handle_dl(scamper_task_t *task, scamper_dl_rec_t *dl)
     NULL,            /* MODE_DTREE_FIRST */
     NULL,            /* MODE_DTREE_FWD */
     NULL,            /* MODE_DTREE_BACK */
+    dlout_trace,     /* MODE_PARALLEL */
+    dlout_trace,     /* MODE_PARALLEL_FINISH */
   };
 
   static void (* const dlin_func[])(scamper_trace_t *, scamper_dl_rec_t *,
@@ -3300,6 +3292,8 @@ static void do_trace_handle_dl(scamper_task_t *task, scamper_dl_rec_t *dl)
     NULL,            /* MODE_DTREE_FIRST */
     NULL,            /* MODE_DTREE_FWD */
     NULL,            /* MODE_DTREE_BACK */
+    NULL,            /* MODE_PARALLEL */
+    NULL,            /* MODE_PARALLEL_FINISH */
   };
 
   static int (* const handletp_func[])(scamper_task_t *,
@@ -3316,7 +3310,11 @@ static void do_trace_handle_dl(scamper_task_t *task, scamper_dl_rec_t *dl)
     NULL,                /* MODE_DTREE_FIRST */
     NULL,                /* MODE_DTREE_FWD */
     NULL,                /* MODE_DTREE_BACK */
+    NULL,                /* MODE_PARALLEL */
+    NULL,                /* MODE_PARALLEL_FINISH */
   };
+  static const int DIR_INBOUND  = 0;
+  static const int DIR_OUTBOUND = 1;
 
   scamper_trace_t *trace = trace_getdata(task);
   trace_state_t   *state = trace_getstate(task);
@@ -3361,8 +3359,7 @@ static void do_trace_handle_dl(scamper_task_t *task, scamper_dl_rec_t *dl)
 	     scamper_addr_raw_cmp(trace->dst, dl->dl_ip_dst) == 0 &&
 	     scamper_addr_raw_cmp(trace->src, dl->dl_ip_src) == 0)
 	    {
-	      /* this is an outbound packet */
-	      direction = 1;
+	      direction = DIR_OUTBOUND;
 	      if(trace->type == SCAMPER_TRACE_TYPE_UDP)
 		probe_id = dl->dl_udp_dport - trace->dport;
 	      else if(SCAMPER_TRACE_FLAG_IS_CONSTPAYLOAD(trace) == 0)
@@ -3378,8 +3375,7 @@ static void do_trace_handle_dl(scamper_task_t *task, scamper_dl_rec_t *dl)
 		  scamper_addr_raw_cmp(trace->dst, dl->dl_ip_src) == 0 &&
 		  scamper_addr_raw_cmp(trace->src, dl->dl_ip_dst) == 0)
 	    {
-	      /* this is an inbound packet */
-	      direction = 0;
+	      direction = DIR_INBOUND;
 	      if(trace->type == SCAMPER_TRACE_TYPE_UDP)
 		probe_id = dl->dl_udp_sport - trace->dport;
 	      else
@@ -3400,8 +3396,7 @@ static void do_trace_handle_dl(scamper_task_t *task, scamper_dl_rec_t *dl)
 	  if(dl->dl_icmp_udp_sport != trace->sport)
 	    return;
 
-	  /* this is an inbound packet */
-	  direction = 0;
+	  direction = DIR_INBOUND;
 
 	  if(trace->type == SCAMPER_TRACE_TYPE_UDP)
 	    {
@@ -3447,30 +3442,27 @@ static void do_trace_handle_dl(scamper_task_t *task, scamper_dl_rec_t *dl)
 
       if(SCAMPER_DL_IS_ICMP_ECHO_REQUEST(dl))
 	{
-	  /* this is an outbound packet */
 	  if(dl->dl_icmp_id != trace->sport)
 	    return;
 	  probe_id = dl->dl_icmp_seq;
-	  direction = 1;
+	  direction = DIR_OUTBOUND;
 	}
       else if(SCAMPER_DL_IS_ICMP_ECHO_REPLY(dl))
 	{
-	  /* this is an inbound packet */
 	  if(dl->dl_icmp_id != trace->sport)
 	    return;
 	  probe_id = dl->dl_icmp_seq;
-	  direction = 0;
+	  direction = DIR_INBOUND;
 	}
       else if((SCAMPER_DL_IS_ICMP_TTL_EXP(dl) ||
 	       SCAMPER_DL_IS_ICMP_UNREACH(dl) ||
 	       SCAMPER_DL_IS_ICMP_PACKET_TOO_BIG(dl)) &&
 	      SCAMPER_DL_IS_ICMP_Q_ICMP_ECHO_REQ(dl))
 	{
-	  /* this is an inbound packet */
 	  if(dl->dl_icmp_icmp_id != trace->sport)
 	    return;
 	  probe_id = dl->dl_icmp_icmp_seq;
-	  direction = 0;
+	  direction = DIR_INBOUND;
 	}
       else return;
     }
@@ -3492,8 +3484,7 @@ static void do_trace_handle_dl(scamper_task_t *task, scamper_dl_rec_t *dl)
 	      (trace->type == SCAMPER_TRACE_TYPE_TCP_ACK &&
 	       dl->dl_tcp_flags == TH_ACK)))
 	    {
-	      /* this is an outbound packet */
-	      direction = 1;
+	      direction = DIR_OUTBOUND;
 	      if(dl->dl_af == AF_INET)
 		probe_id = dl->dl_ip_id - 1;
 	      else
@@ -3509,7 +3500,7 @@ static void do_trace_handle_dl(scamper_task_t *task, scamper_dl_rec_t *dl)
 	       * there is no easy way to determine which probe the reply is
 	       * for, so assume it was for the last one
 	       */
-	      direction = 0;
+	      direction = DIR_INBOUND;
 	      probe_id = state->id_next - 1;
 	    }
 	  else return;
@@ -3543,7 +3534,7 @@ static void do_trace_handle_dl(scamper_task_t *task, scamper_dl_rec_t *dl)
 	    }
 
 	  /* this is an inbound packet */
-	  direction = 0;
+	  direction = DIR_INBOUND;
 	}
       else return;
     }
@@ -3558,7 +3549,7 @@ static void do_trace_handle_dl(scamper_task_t *task, scamper_dl_rec_t *dl)
   assert(probe->mode <= MODE_MAX);
 
   /* if this is an inbound packet with a timestamp attached */
-  if(direction == 0)
+  if(direction == DIR_INBOUND)
     {
       /* inbound TCP packets result in a hop record being created */
       if(dl->dl_ip_proto == IPPROTO_TCP || dl->dl_ip_proto == IPPROTO_UDP)
@@ -4234,8 +4225,7 @@ static void do_trace_probe(scamper_task_t *task)
       (SCAMPER_TRACE_TYPE_IS_TCP(trace) && state->raw == NULL)))
     {
       probe.pr_dl     = scamper_fd_dl_get(state->dl);
-      probe.pr_dl_buf = state->dlhdr->buf;
-      probe.pr_dl_len = state->dlhdr->len;
+      probe.pr_dlhdr  = state->dlhdr;
     }
 
   if(trace->payload_len == 0 || MODE_IS_PMTUD(state->mode))

@@ -1,7 +1,7 @@
 /*
  * unit_dl_parse_ip : unit tests for dl_parse_ip function
  *
- * $Id: unit_dl_parse_ip.c,v 1.5 2024/01/16 06:30:28 mjl Exp $
+ * $Id: unit_dl_parse_ip.c,v 1.8 2024/07/02 00:50:12 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -28,7 +28,9 @@
 #endif
 #include "internal.h"
 
+#include "scamper_addr.h"
 #include "scamper_dl.h"
+#include "common.h"
 #include "utils.h"
 
 /*
@@ -77,6 +79,15 @@ static int tcp_cookie_base(const scamper_dl_rec_t *dl, const uint8_t *pkt,
   return 0;
 }
 
+static int empty(uint8_t *pkt, size_t len)
+{
+  scamper_dl_rec_t dl;
+  memset(&dl, 0, sizeof(dl));
+  if(dl_parse_ip(&dl, pkt, len) != 0)
+    return -1;
+  return 0;
+}
+
 static int tcp_cookie_24(uint8_t *pkt, size_t len)
 {
   const uint8_t cookie[] =
@@ -92,7 +103,7 @@ static int tcp_cookie_24(uint8_t *pkt, size_t len)
      tcp_cookie_base(&dl, pkt, 48, 68, 12 * 4, cookie, 24) != 0)
     return -1;
 
-  return 0;  
+  return 0;
 }
 
 static int tcp_cookie_38(uint8_t *pkt, size_t len)
@@ -113,7 +124,7 @@ static int tcp_cookie_38(uint8_t *pkt, size_t len)
      tcp_cookie_base(&dl, pkt, 60, 80, 15 * 4, cookie, 38) != 0)
     return -1;
 
-  return 0;  
+  return 0;
 }
 
 static int tcp_cookie_bad(uint8_t *pkt, size_t len)
@@ -177,7 +188,7 @@ static int icmp6_echo_req(uint8_t *pkt, size_t len)
   if(dl_parse_ip(&dl, pkt, len) == 0 ||
      SCAMPER_DL_IS_IPV6(&dl) == 0 ||
      dl.dl_ip_hl != 40 || dl.dl_ip_data != pkt + 40 ||
-     dl.dl_ip_size != 104 || dl.dl_ip_datalen != len - 40 || 
+     dl.dl_ip_size != 104 || dl.dl_ip_datalen != len - 40 ||
      dl.dl_ip_ttl != 64 ||
      SCAMPER_DL_IS_ICMP_ECHO_REPLY(&dl) == 0 ||
      dl.dl_icmp_id != 3 || dl.dl_icmp_seq != 1)
@@ -186,40 +197,13 @@ static int icmp6_echo_req(uint8_t *pkt, size_t len)
   return 0;
 }
 
-static int make_buf(const char *pkt, uint8_t **buf_out, size_t *len_out)
-{
-  size_t len = strlen(pkt);
-  size_t i, off = 0;
-  uint8_t *buf = NULL;
-  int rc = -1;
-
-  if((len % 2) != 0 || len == 0 || (buf = malloc(len / 2)) == NULL)
-    goto done;
-
-  for(i=0; i<len; i+=2)
-    {
-      if(ishex(pkt[i]) == 0 || ishex(pkt[i+1]) == 0)
-	goto done;
-      buf[off++] = hex2byte(pkt[i], pkt[i+1]);
-    }
-
-  *buf_out = buf; buf = NULL;
-  *len_out = off;
-  rc = 0;
-
- done:
-  if(buf != NULL) free(buf);
-  return rc;
-}
-
-static int check(const char *pkt,
-		 int (*func)(uint8_t *pkt, size_t len))
+static int check(const char *pkt, int (*func)(uint8_t *pkt, size_t len))
 {
   size_t len;
   uint8_t *buf = NULL;
   int rc = -1;
 
-  if(make_buf(pkt, &buf, &len) != 0)
+  if(hex2buf(pkt, &buf, &len) != 0)
     goto done;
 
   rc = func(buf, len);
@@ -229,48 +213,11 @@ static int check(const char *pkt,
   return rc;
 }
 
-static int dump(const char *pkt, const char *path, size_t i)
-{
-  char filename[128];
-  size_t len, wc;
-  uint8_t *buf = NULL;
-  int rc = -1, fd = -1;
-  int fd_flags = O_WRONLY | O_CREAT | O_TRUNC;
-
-  snprintf(filename, sizeof(filename), "%s/pkt-%04x.dat", path, (int)i);
-
-#ifdef _WIN32 /* windows needs O_BINARY */
-  fd_flags |= O_BINARY;
-#endif
-
-  if(make_buf(pkt, &buf, &len) != 0)
-    goto done;
-
-  if((fd = open(filename, fd_flags, MODE_644)) == -1)
-    {
-      fprintf(stderr, "%s: could not open %s: %s\n",
-	      __func__, filename, strerror(errno));
-      goto done;
-    }
-
-  if(write_wrap(fd, buf, &wc, len) != 0 || wc != len)
-    {
-      fprintf(stderr, "%s: could not write %s: %s\n",
-	      __func__, filename, strerror(errno));
-      goto done;
-    }
-
-  rc = 0;
-
- done:
-  if(fd != -1) close(fd);
-  if(buf != NULL) free(buf);
-  return rc;
-}
-
 int main(int argc, char *argv[])
 {
   sc_test_t tests[] = {
+    {"",
+     empty},
     {"4500004400004000f606c5ebc0000201c0000202"
      "0050a2f3cd2552f877aec23ec012f5074a150000"
      "221a11608b6208513160d501b3ce216084703bc1216084703bc10000",
@@ -309,13 +256,18 @@ int main(int argc, char *argv[])
      icmp6_echo_req},
   };
   size_t i, testc = sizeof(tests) / sizeof(sc_test_t);
+  char filename[128];
 
   /* dump packets if requested */
   if(argc == 3 && strcasecmp(argv[1], "dump") == 0)
     {
       for(i=0; i<testc; i++)
-	if(dump(tests[i].pkt, argv[2], i) != 0)
-	  break;
+	{
+	  snprintf(filename, sizeof(filename),
+		   "%s/pkt-%03x.dat", argv[2], (int)i);
+	  if(dump_hex(tests[i].pkt, filename) != 0)
+	    break;
+	}
     }
   else if(argc == 1)
     {

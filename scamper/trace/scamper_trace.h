@@ -1,7 +1,7 @@
 /*
  * scamper_trace.h
  *
- * $Id: scamper_trace.h,v 1.160 2024/02/27 02:57:58 mjl Exp $
+ * $Id: scamper_trace.h,v 1.161 2024/03/04 06:59:23 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -60,6 +60,7 @@ char *scamper_trace_stop_tostr(const scamper_trace_t *trace,
 scamper_trace_hop_t *scamper_trace_hop_get(const scamper_trace_t *trace,
 					   uint8_t i);
 uint16_t scamper_trace_hop_count_get(const scamper_trace_t *trace);
+uint8_t scamper_trace_stop_hop_get(const scamper_trace_t *trace);
 
 uint8_t scamper_trace_type_get(const scamper_trace_t *trace);
 char *scamper_trace_type_tostr(const scamper_trace_t *trace,

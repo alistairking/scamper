@@ -10,7 +10,7 @@
  *
  * Authors: Brian Hammond, Matthew Luckie
  *
- * $Id: scamper_trace_json.c,v 1.31 2024/03/04 19:36:41 mjl Exp $
+ * $Id: scamper_trace_json.c,v 1.32 2024/04/13 22:31:04 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -101,11 +101,11 @@ static char *hop_tostr(const scamper_trace_t *trace, scamper_trace_hop_t *hop)
 	 (trace->flags & SCAMPER_TRACE_FLAG_RXERR) == 0)
 	{
 	  string_concat(buf, sizeof(buf), &off,
-			", \"icmp_q_ttl\":%u, \"icmp_q_ipl\":%u",
-			hop->hop_icmp_q_ttl, hop->hop_icmp_q_ipl);
-	  if(SCAMPER_ADDR_TYPE_IS_IPV4(hop->hop_addr))
-	    string_concat(buf, sizeof(buf), &off, ", \"icmp_q_tos\":%u",
-			  hop->hop_icmp_q_tos);
+			", \"icmp_q_ttl\":%u"
+			", \"icmp_q_ipl\":%u"
+			", \"icmp_q_tos\":%u",
+			hop->hop_icmp_q_ttl, hop->hop_icmp_q_ipl,
+			hop->hop_icmp_q_tos);
 	}
       if(SCAMPER_TRACE_HOP_IS_ICMP_PTB(hop))
 	string_concat(buf, sizeof(buf), &off, ", \"icmp_nhmtu:\":%u",

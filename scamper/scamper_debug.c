@@ -1,7 +1,7 @@
 /*
  * scamper_debug.c
  *
- * $Id: scamper_debug.c,v 1.46 2023/08/24 04:18:44 mjl Exp $
+ * $Id: scamper_debug.c,v 1.47 2024/03/04 19:36:41 mjl Exp $
  *
  * routines to reduce the impact of debugging cruft in scamper's code.
  *
@@ -210,7 +210,7 @@ void printerror_ssl(const char *func, const char *format, ...)
       string_concat(sslbuf, sizeof(sslbuf), &off, "%s%s",
 		    off > 0 ? " " : "", buf);
     }
-  
+
   if(isdaemon == 0)
     {
       fprintf(stderr, "%s %s: %s: %s\n", ts, func, msg, sslbuf);

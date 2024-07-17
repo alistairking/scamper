@@ -1,4 +1,4 @@
-# $Id: Makefile.am,v 1.26 2024/02/20 21:05:14 mjl Exp $
+# $Id: Makefile.am,v 1.30 2024/07/02 00:50:12 mjl Exp $
 
 AUTOMAKE_OPTIONS = subdir-objects
 
@@ -27,13 +27,17 @@ noinst_PROGRAMS = \
 	unit_addr \
 	fuzz_osinfo \
 	unit_osinfo \
+	fuzz_dl_parse_arp \
+	unit_dl_parse_arp \
 	fuzz_dl_parse_ip \
 	unit_dl_parse_ip \
 	fuzz_http_lib_chunked \
 	fuzz_http_lib_hdrs \
 	unit_http_lib \
+	fuzz_host_rr_list \
 	unit_host_rr_list \
 	unit_options \
+	unit_string \
 	unit_timeval \
 	unit_fds
 
@@ -46,6 +50,7 @@ libcmdtest_a_SOURCES = \
 	../scamper/scamper_list.c \
 	../scamper/scamper_options.c \
 	../scamper/scamper_icmpext.c \
+	../scamper/scamper_ifname.c \
 	../mjl_splaytree.c \
 	../mjl_list.c \
 	common.c
@@ -192,15 +197,29 @@ fuzz_osinfo_LDADD = libosinfotest.a
 unit_osinfo_SOURCES = unit_osinfo.c
 unit_osinfo_LDADD = libosinfotest.a
 
+fuzz_dl_parse_arp_CFLAGS = -DTEST_DL_PARSE_ARP
+fuzz_dl_parse_arp_SOURCES = fuzz_dl_parse.c \
+	../scamper/scamper_dl.c \
+	../utils.c
+
+unit_dl_parse_arp_CFLAGS = -DTEST_DL_PARSE_ARP
+unit_dl_parse_arp_SOURCES = unit_dl_parse_arp.c \
+	../scamper/scamper_dl.c \
+	../scamper/scamper_addr.c \
+	../utils.c \
+	common.c
+
 fuzz_dl_parse_ip_CFLAGS = -DTEST_DL_PARSE_IP
-fuzz_dl_parse_ip_SOURCES = fuzz_dl_parse_ip.c \
+fuzz_dl_parse_ip_SOURCES = fuzz_dl_parse.c \
 	../scamper/scamper_dl.c \
 	../utils.c
 
 unit_dl_parse_ip_CFLAGS = -DTEST_DL_PARSE_IP
 unit_dl_parse_ip_SOURCES = unit_dl_parse_ip.c \
 	../scamper/scamper_dl.c \
-	../utils.c
+	../scamper/scamper_addr.c \
+	../utils.c \
+	common.c
 
 fuzz_http_lib_chunked_CFLAGS = -I$(top_srcdir)/scamper/http -DFUZZ_CHUNKED
 fuzz_http_lib_chunked_SOURCES = fuzz_http_lib.c \
@@ -220,6 +239,16 @@ unit_http_lib_SOURCES = unit_http_lib.c \
 	../scamper/http/scamper_http_lib.c
 unit_http_lib_LDADD = libcmdtest.a
 
+fuzz_host_rr_list_CFLAGS = -I$(top_srcdir)/scamper/host -DTEST_HOST_RR_LIST
+fuzz_host_rr_list_SOURCES = fuzz_host_rr_list.c \
+	../scamper/host/scamper_host_do.c \
+	../scamper/host/scamper_host.c \
+	../scamper/scamper_addr.c \
+	../scamper/scamper_list.c \
+	../mjl_list.c \
+	../utils.c \
+	common.c
+
 unit_host_rr_list_CFLAGS = -I$(top_srcdir)/scamper/host -DTEST_HOST_RR_LIST
 unit_host_rr_list_SOURCES = unit_host_rr_list.c \
 	../scamper/host/scamper_host_do.c \
@@ -233,6 +262,9 @@ unit_host_rr_list_SOURCES = unit_host_rr_list.c \
 
 unit_options_SOURCES = unit_options.c \
 	../scamper/scamper_options.c \
+	../utils.c
+
+unit_string_SOURCES = unit_string.c \
 	../utils.c
 
 unit_timeval_SOURCES = unit_timeval.c \

@@ -1,7 +1,7 @@
 /*
  * common.h : functions common to unit tests
  *
- * $Id: common.h,v 1.2 2023/11/27 07:56:14 mjl Exp $
+ * $Id: common.h,v 1.3 2024/04/20 00:15:02 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -25,3 +25,5 @@
 
 int dump_cmd(const char *cmd, const char *filename);
 int check_addr(const scamper_addr_t *sa, const char *str);
+int dump_hex(const char *str, const char *filename);
+int hex2buf(const char *str, uint8_t **buf_out, size_t *len_out);

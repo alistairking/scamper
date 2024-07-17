@@ -1,7 +1,7 @@
 /*
  * scamper_udpprobe_json.h
  *
- * $Id$
+ * $Id: scamper_udpprobe_json.h,v 1.1 2024/03/21 22:44:03 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by

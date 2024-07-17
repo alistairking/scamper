@@ -1,7 +1,7 @@
 /*
  * scamper_ping.h
  *
- * $Id: scamper_ping.h,v 1.72 2024/02/28 23:35:23 mjl Exp $
+ * $Id: scamper_ping.h,v 1.75 2024/06/26 20:05:29 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -45,6 +45,7 @@ typedef struct scamper_ping_stats scamper_ping_stats_t;
 #define SCAMPER_PING_REPLY_FLAG_PROBE_IPID 0x04 /* probe ipid included */
 #define SCAMPER_PING_REPLY_FLAG_DLTX       0x08 /* datalink tx timestamp */
 #define SCAMPER_PING_REPLY_FLAG_DLRX       0x10 /* datalink rx timestamp */
+#define SCAMPER_PING_REPLY_FLAG_REPLY_TOS  0x20 /* reply tos included */
 
 #define SCAMPER_PING_METHOD_ICMP_ECHO     0x00
 #define SCAMPER_PING_METHOD_TCP_ACK       0x01
@@ -67,6 +68,7 @@ typedef struct scamper_ping_stats scamper_ping_stats_t;
 #define SCAMPER_PING_FLAG_TBT             0x80 /* -O tbt: too big trick */
 #define SCAMPER_PING_FLAG_NOSRC           0x100 /* -O nosrc: do not embed src */
 #define SCAMPER_PING_FLAG_RAW             0x200 /* -O raw: tx with raw IPv4 */
+#define SCAMPER_PING_FLAG_SOCKRX          0x400 /* -O sockrx: rx from socket */
 
 /* basic routines to use and free scamper_ping structures */
 void scamper_ping_free(scamper_ping_t *ping);
@@ -124,6 +126,7 @@ uint16_t scamper_ping_reply_probe_ipid_get(const scamper_ping_reply_t *reply);
 uint16_t scamper_ping_reply_probe_sport_get(const scamper_ping_reply_t *reply);
 uint8_t scamper_ping_reply_proto_get(const scamper_ping_reply_t *reply);
 uint8_t scamper_ping_reply_ttl_get(const scamper_ping_reply_t *reply);
+uint8_t scamper_ping_reply_tos_get(const scamper_ping_reply_t *reply);
 uint16_t scamper_ping_reply_size_get(const scamper_ping_reply_t *reply);
 uint16_t scamper_ping_reply_ipid_get(const scamper_ping_reply_t *reply);
 uint32_t scamper_ping_reply_ipid32_get(const scamper_ping_reply_t *reply);
@@ -132,6 +135,7 @@ int scamper_ping_reply_flag_is_reply_ipid(const scamper_ping_reply_t *reply);
 uint8_t scamper_ping_reply_icmp_type_get(const scamper_ping_reply_t *reply);
 uint8_t scamper_ping_reply_icmp_code_get(const scamper_ping_reply_t *reply);
 uint8_t scamper_ping_reply_tcp_flags_get(const scamper_ping_reply_t *reply);
+const char *scamper_ping_reply_ifname_get(const scamper_ping_reply_t *reply);
 int scamper_ping_reply_is_icmp(const scamper_ping_reply_t *reply);
 int scamper_ping_reply_is_tcp(const scamper_ping_reply_t *reply);
 int scamper_ping_reply_is_udp(const scamper_ping_reply_t *reply);

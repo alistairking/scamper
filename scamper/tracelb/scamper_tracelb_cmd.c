@@ -1,7 +1,7 @@
 /*
  * scamper_tracelb_cmd.c
  *
- * $Id: scamper_tracelb_cmd.c,v 1.7 2024/02/15 01:55:34 mjl Exp $
+ * $Id: scamper_tracelb_cmd.c,v 1.8 2024/05/02 02:33:38 mjl Exp $
  *
  * Copyright (C) 2008-2011 The University of Waikato
  * Copyright (C) 2012      The Regents of the University of California
@@ -160,7 +160,7 @@ static int tracelb_arg_param_validate(int optid, char *param, long long *out,
 	}
       else
 	{
-	  snprintf(errbuf, errlen, "-O %s unknown", param);
+	  snprintf(errbuf, errlen, "unknown option");
 	  goto err;
 	}
       break;
@@ -292,9 +292,8 @@ void *scamper_do_tracelb_alloc(char *str, char *errbuf, size_t errlen)
 	 tracelb_arg_param_validate(opt->id, opt->str, &tmp,
 				    buf, sizeof(buf)) != 0)
 	{
-	  snprintf(errbuf, errlen, "-%c %s failed: %s",
-		   scamper_options_id2c(opts, opts_cnt, opt->id),
-		   opt->str, buf);
+	  snprintf(errbuf, errlen, "-%c failed: %s",
+		   scamper_options_id2c(opts, opts_cnt, opt->id), buf);
 	  goto err;
 	}
 

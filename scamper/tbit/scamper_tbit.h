@@ -1,7 +1,7 @@
 /*
  * scamper_tbit.h
  *
- * $Id: scamper_tbit.h,v 1.65 2023/08/08 06:19:31 mjl Exp $
+ * $Id: scamper_tbit.h,v 1.66 2024/05/20 04:52:37 mjl Exp $
  *
  * Copyright (C) 2009-2010 Ben Stasiewicz
  * Copyright (C) 2010-2011 University of Waikato
@@ -180,6 +180,7 @@ int scamper_tbit_server_fo_cookie_get(scamper_tbit_t *tbit,
 int scamper_tbit_type_isblind(const scamper_tbit_t *tbit);
 
 /* scamper_tbit_pkt_t functions */
+scamper_tbit_pkt_t *scamper_tbit_pkt_use(scamper_tbit_pkt_t *pkt);
 void scamper_tbit_pkt_free(scamper_tbit_pkt_t *pkt);
 const struct timeval *scamper_tbit_pkt_tv_get(const scamper_tbit_pkt_t *pkt);
 uint8_t scamper_tbit_pkt_dir_get(const scamper_tbit_pkt_t *pkt);

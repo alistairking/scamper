@@ -1,6 +1,6 @@
 # Process this file with autoconf to produce a configure script.
 
-AC_INIT([scamper],[20240229],[mjl@luckie.org.nz])
+AC_INIT([scamper],[20240716],[mjl@luckie.org.nz])
 
 AC_CONFIG_SRCDIR([scamper/scamper.c])
 AC_CONFIG_AUX_DIR([.])
@@ -12,7 +12,6 @@ AM_MAINTAINER_MODE([disable])
 
 LT_INIT
 AC_PROG_CC
-AC_PROG_GCC_TRADITIONAL
 AC_PROG_INSTALL
 AC_PROG_MKDIR_P
 AC_LANG(C)
@@ -252,13 +251,21 @@ if test "x$with_python" = xyes; then
 fi
 AM_CONDITIONAL([ENABLE_PYTHON], [test x$with_python = xyes])
 
-# sc_hoiho utlity
+# sc_hoiho utility
 AC_ARG_ENABLE([sc_hoiho],
   [AS_HELP_STRING([--enable-sc_hoiho], [enable support for sc_hoiho])],
   [enable_sc_hoiho=$enableval],
   [enable_sc_hoiho=no]
 )
 AM_CONDITIONAL([ENABLE_SC_HOIHO], [test x$enable_sc_hoiho = xyes])
+
+# sc_minrtt utility
+AC_ARG_ENABLE([sc_minrtt],
+  [AS_HELP_STRING([--enable-sc_minrtt], [enable support for sc_minrtt])],
+  [enable_sc_minrtt=$enableval],
+  [enable_sc_minrtt=no]
+)
+AM_CONDITIONAL([ENABLE_SC_MINRTT], [test x$enable_sc_minrtt = xyes])
 
 # sc_uptime prober support
 AC_ARG_ENABLE([sc_uptime],
@@ -420,7 +427,7 @@ AC_CHECK_MEMBER([struct sockaddr.sa_len],
 	[#include <sys/types.h>
 	 #include <sys/socket.h>])
 
-if test "x$ac_cv_header_net_pfvar_h" == xyes; then
+if test "x$ac_cv_header_net_pfvar_h" = xyes; then
    AC_CHECK_MEMBER([struct pfioc_trans_e.type],
 	[AC_DEFINE([HAVE_STRUCT_PFIOC_TRANS_E_TYPE],[1],
 	[Define if struct pfioc_trans_e has a type member])],[:],
@@ -452,7 +459,7 @@ if test "x$ac_cv_header_net_pfvar_h" == xyes; then
 	 #include <sys/socket.h>
 	 #include <netinet/in.h>
 	 #include <net/if.h>
-	 #include <net/pfvar.h>]) 
+	 #include <net/pfvar.h>])
 fi
 
 # Check for structs
@@ -873,7 +880,8 @@ AC_CONFIG_FILES([
 	utils/sc_analysis_dump/Makefile
 	utils/sc_attach/Makefile
 	utils/sc_bdrmap/Makefile
-	utils/sc_erosprober/Makefile])
+	utils/sc_erosprober/Makefile
+	utils/sc_filterpolicy/Makefile])
 
 AM_COND_IF([ENABLE_SC_HOIHO],
 	[AC_CONFIG_FILES([
@@ -881,8 +889,14 @@ AM_COND_IF([ENABLE_SC_HOIHO],
 	])])
 
 AC_CONFIG_FILES([
-	utils/sc_filterpolicy/Makefile
-	utils/sc_ipiddump/Makefile
+	utils/sc_ipiddump/Makefile])
+
+AM_COND_IF([ENABLE_SC_MINRTT],
+	[AC_CONFIG_FILES([
+	utils/sc_minrtt/Makefile
+	])])
+
+AC_CONFIG_FILES([
 	utils/sc_pinger/Makefile
 	utils/sc_prefixprober/Makefile
 	utils/sc_prefixscan/Makefile

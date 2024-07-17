@@ -41,6 +41,8 @@ cdef extern from "scamper_host.h":
   pass
  ctypedef struct scamper_host_rr_mx_t:
   pass
+ ctypedef struct scamper_host_rr_txt_t:
+  pass
 
  void scamper_host_free(scamper_host_t *host)
 
@@ -92,6 +94,7 @@ cdef extern from "scamper_host.h":
  const char *scamper_host_rr_str_get(const scamper_host_rr_t *rr)
  scamper_host_rr_soa_t *scamper_host_rr_soa_get(const scamper_host_rr_t *rr)
  scamper_host_rr_mx_t *scamper_host_rr_mx_get(const scamper_host_rr_t *rr)
+ scamper_host_rr_txt_t *scamper_host_rr_txt_get(const scamper_host_rr_t *rr)
 
  scamper_host_rr_mx_t *scamper_host_rr_mx_use(scamper_host_rr_mx_t *mx)
  void scamper_host_rr_mx_free(scamper_host_rr_mx_t *mx)
@@ -107,3 +110,8 @@ cdef extern from "scamper_host.h":
  uint32_t scamper_host_rr_soa_retry_get(const scamper_host_rr_soa_t *soa)
  uint32_t scamper_host_rr_soa_expire_get(const scamper_host_rr_soa_t *soa)
  uint32_t scamper_host_rr_soa_minimum_get(const scamper_host_rr_soa_t *soa)
+
+ scamper_host_rr_txt_t *scamper_host_rr_txt_use(scamper_host_rr_txt_t *txt)
+ void scamper_host_rr_txt_free(scamper_host_rr_txt_t *txt)
+ uint16_t scamper_host_rr_txt_strc_get(const scamper_host_rr_txt_t *txt)
+ const char *scamper_host_rr_txt_str_get(const scamper_host_rr_txt_t *txt, uint16_t i)

@@ -1,7 +1,7 @@
 /*
  * scamper_http_cmd.c
  *
- * $Id: scamper_http_cmd.c,v 1.6 2024/02/15 07:43:23 mjl Exp $
+ * $Id: scamper_http_cmd.c,v 1.8 2024/05/02 02:33:38 mjl Exp $
  *
  * Copyright (C) 2023-2024 The Regents of the University of California
  *
@@ -84,7 +84,7 @@ static int http_header_validate(const char *header)
   /* check that the field-body is well formed */
   while(*ptr != '\0')
     {
-      if(isprint(*ptr) == 0)
+      if(isprint((unsigned char)*ptr) == 0)
 	return -1;
       ptr++;
     }
@@ -135,7 +135,7 @@ static int http_arg_param_validate(int optid, char *param, long long *out,
 	tmp = SCAMPER_HTTP_FLAG_INSECURE;
       else
 	{
-	  snprintf(errbuf, errlen, "-O %s unknown", param);
+	  snprintf(errbuf, errlen, "unknown option");
 	  goto err;
 	}
       break;
@@ -218,9 +218,8 @@ void *scamper_do_http_alloc(char *str, char *errbuf, size_t errlen)
 	 http_arg_param_validate(opt->id, opt->str, &tmp,
 				 buf, sizeof(buf)) != 0)
 	{
-	  snprintf(errbuf, errlen, "-%c %s failed: %s",
-		   scamper_options_id2c(opts, opts_cnt, opt->id),
-		   opt->str, buf);
+	  snprintf(errbuf, errlen, "-%c failed: %s",
+		   scamper_options_id2c(opts, opts_cnt, opt->id), buf);
 	  goto err;
 	}
 

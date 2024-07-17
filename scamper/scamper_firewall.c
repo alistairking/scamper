@@ -1,7 +1,7 @@
 /*
  * scamper_firewall.c
  *
- * $Id: scamper_firewall.c,v 1.58 2023/09/22 22:02:48 mjl Exp $
+ * $Id: scamper_firewall.c,v 1.59 2024/07/14 10:55:43 mjl Exp $
  *
  * Copyright (C) 2008-2011 The University of Waikato
  * Copyright (C) 2016-2023 Matthew Luckie
@@ -29,7 +29,7 @@
 
 #ifdef HAVE_NETINET_IP_FW_H
 #include <netinet/ip_fw.h>
-#ifdef HAVE_NETINET6_IP_FW_H
+#ifdef HAVE_NETINET6_IP6_FW_H
 #include <netinet6/ip6_fw.h>
 #endif
 #endif

@@ -1,7 +1,7 @@
 /*
  * fuzz_osinfo : simple program to fuzz osinfo
  *
- * $Id: fuzz_osinfo.c,v 1.1 2023/08/07 21:02:30 mjl Exp $
+ * $Id: fuzz_osinfo.c,v 1.2 2024/03/04 19:36:41 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -76,5 +76,5 @@ int main(int argc, char *argv[])
       return -1;
     }
 
-  return 0;    
+  return 0;
 }

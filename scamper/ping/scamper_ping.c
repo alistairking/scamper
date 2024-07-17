@@ -7,7 +7,7 @@
  * Copyright (C) 2020-2023 Matthew Luckie
  * Author: Matthew Luckie
  *
- * $Id: scamper_ping.c,v 1.52 2023/07/25 08:46:24 mjl Exp $
+ * $Id: scamper_ping.c,v 1.53 2024/05/01 07:46:20 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -32,6 +32,7 @@
 #include "scamper_list.h"
 #include "scamper_addr.h"
 #include "scamper_addr_int.h"
+#include "scamper_ifname.h"
 #include "scamper_ping.h"
 #include "scamper_ping_int.h"
 
@@ -411,6 +412,9 @@ void scamper_ping_reply_free(scamper_ping_reply_t *reply)
 
   if(reply->tsreply != NULL)
     scamper_ping_reply_tsreply_free(reply->tsreply);
+
+  if(reply->ifname != NULL)
+    scamper_ifname_free(reply->ifname);
 
   free(reply);
   return;

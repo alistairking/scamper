@@ -3,12 +3,13 @@
  *
  * the warts file format
  *
- * $Id: scamper_file_warts.h,v 1.31 2023/10/02 07:54:10 mjl Exp $
+ * $Id: scamper_file_warts.h,v 1.34 2024/05/01 07:46:20 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2012      The Regents of the University of California
  * Copyright (C) 2016-2023 Matthew Luckie
+ * Copyright (C) 2024      The Regents of the University of California
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -29,8 +30,8 @@
 #ifndef __SCAMPER_FILE_WARTS_H
 #define __SCAMPER_FILE_WARTS_H
 
-#include "mjl_splaytree.h"
 #include "scamper_icmpext.h"
+#include "scamper_ifname.h"
 
 /*
  * warts_var
@@ -53,36 +54,12 @@ typedef struct warts_var
 			      (WARTS_VAR_COUNT(array) % 7 == 0 ? 0 : 1))
 
 /*
- * warts_list / warts_cycle
+ * warts_addrtable
  *
- * these structures associate a scamper structure with an id number used
- * to represent the structure on disk.
+ * keep track of addresses and ifnames being written to disk.
  */
-typedef struct warts_list
-{
-  scamper_list_t *list;
-  uint32_t id;
-} warts_list_t;
-typedef struct warts_cycle
-{
-  scamper_cycle_t *cycle;
-  uint32_t id;
-} warts_cycle_t;
-
-
-
-/*
- * warts_addr, warts_addrtable
- *
- * keep track of addresses being written to disk.
- */
-typedef struct warts_addr
-{
-  scamper_addr_t *addr;
-  uint32_t        id;
-  uint8_t         ondisk;
-} warts_addr_t;
 typedef struct warts_addrtable warts_addrtable_t;
+typedef struct warts_ifnametable warts_ifnametable_t;
 
 /*
  * warts_hdr
@@ -104,44 +81,9 @@ typedef struct warts_hdr
  * warts_state
  *
  * warts keeps state of lists, cycles, and addresses declared in a warts
- * file.  each resource is stored either in a tree (for fast searching) or
- * a table (for fast indexing).  when a file is open for writing, the tree
- * is used.  when a file is open for reading, the table is used.  each null
- * entry is used for the first ([0]) entry in the corresponding table.
+ * file.
  */
-typedef struct warts_state
-{
-  int               isreg;
-  off_t             off;
-
-  /* temporary buffer for leftover partial reads */
-  uint8_t          *readbuf;
-  size_t            readlen;
-  size_t            readbuf_len;
-
-  /*
-   * if a partial read was done on the last loop through but whatever
-   * warts object was there was not completely read, then keep track of it
-   */
-  warts_hdr_t       hdr;
-
-  /* list state */
-  uint32_t          list_count;
-  splaytree_t      *list_tree;
-  warts_list_t    **list_table;
-  warts_list_t      list_null;
-
-  /* cycle state */
-  uint32_t          cycle_count;
-  splaytree_t      *cycle_tree;
-  warts_cycle_t   **cycle_table;
-  warts_cycle_t     cycle_null;
-
-  /* address state */
-  uint32_t          addr_count;
-  scamper_addr_t  **addr_table;
-
-} warts_state_t;
+typedef struct warts_state warts_state_t;
 
 typedef int (*wpr_t)(const uint8_t *,uint32_t *,const uint32_t,void *, void *);
 typedef void (*wpw_t)(uint8_t *,uint32_t *,const uint32_t,const void *,void *);
@@ -173,10 +115,20 @@ int warts_addr_size(warts_addrtable_t *t, scamper_addr_t *addr, uint16_t *len);
 int warts_addr_size_static(scamper_addr_t *addr, uint16_t *len);
 void warts_addrtable_free(warts_addrtable_t *t);
 
+warts_ifnametable_t *warts_ifnametable_alloc_byname(void);
+warts_ifnametable_t *warts_ifnametable_alloc_byid(void);
+int warts_ifname_size(warts_ifnametable_t *t, scamper_ifname_t *addr,
+		      uint16_t *len);
+void warts_ifnametable_free(warts_ifnametable_t *t);
+void insert_ifname(uint8_t *buf, uint32_t *off, const uint32_t len,
+                   const scamper_ifname_t *ifn, warts_ifnametable_t *table);
+int extract_ifname(const uint8_t *buf, uint32_t *off, uint32_t len,
+		   scamper_ifname_t **out, warts_ifnametable_t *table);
+
 void insert_addr_static(uint8_t *buf, uint32_t *off, const uint32_t len,
 			const scamper_addr_t *addr, void *param);
 void insert_addr(uint8_t *buf, uint32_t *off, const uint32_t len,
-			const scamper_addr_t *addr, void *param);
+			const scamper_addr_t *addr, warts_addrtable_t *param);
 void insert_uint16(uint8_t *buf, uint32_t *off, const uint32_t len,
 			  const uint16_t *in, void *param);
 void insert_uint32(uint8_t *buf, uint32_t *off, const uint32_t len,
@@ -198,8 +150,8 @@ void insert_rtt(uint8_t *buf, uint32_t *off, const uint32_t len,
 
 int extract_addr_static(const uint8_t *buf, uint32_t *off,
 			const uint32_t len, scamper_addr_t **out, void *param);
-int extract_addr(const uint8_t *buf, uint32_t *off,
-			const uint32_t len, scamper_addr_t **out, void *param);
+int extract_addr(const uint8_t *buf, uint32_t *off, uint32_t len,
+		 scamper_addr_t **out, warts_addrtable_t *table);
 int extract_string(const uint8_t *buf, uint32_t *off,
 			  const uint32_t len, char **out, void *param);
 int extract_uint16(const uint8_t *buf, uint32_t *off,
@@ -252,8 +204,6 @@ int warts_write(const scamper_file_t *sf, const void *buf, size_t len, void *p);
 int warts_hdr_read(scamper_file_t *sf, warts_hdr_t *hdr);
 int warts_addr_read(scamper_file_t *sf, const warts_hdr_t *hdr,
 			   scamper_addr_t **addr_out);
-warts_list_t *warts_list_alloc(scamper_list_t *list, uint32_t id);
-void warts_list_free(warts_list_t *wl);
 int warts_list_params(const scamper_list_t *list, uint8_t *flags,
 		      uint16_t *flags_len, uint16_t *params_len);
 int warts_list_params_read(scamper_list_t *list,
@@ -270,8 +220,6 @@ int warts_list_write(const scamper_file_t *sf, scamper_list_t *list,
 			    uint32_t *id);
 int warts_list_getid(const scamper_file_t *sf, scamper_list_t *list,
 			    uint32_t *id);
-warts_cycle_t *warts_cycle_alloc(scamper_cycle_t *cycle, uint32_t id);
-void warts_cycle_free(warts_cycle_t *cycle);
 int warts_cycle_params(const scamper_cycle_t *cycle, uint8_t *flags,
 		       uint16_t *flags_len, uint16_t *params_len);
 void warts_cycle_params_write(const scamper_cycle_t *cycle,

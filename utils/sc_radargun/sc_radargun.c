@@ -1,7 +1,7 @@
 /*
  * sc_radargun : scamper driver to do radargun-style probing.
  *
- * $Id: sc_radargun.c,v 1.21 2024/01/16 06:55:18 mjl Exp $
+ * $Id: sc_radargun.c,v 1.23 2024/04/26 06:52:24 mjl Exp $
  *
  * Copyright (C) 2014      The Regents of the University of California
  * Copyright (C) 2016      The University of Waikato
@@ -1476,7 +1476,7 @@ static int addrfile_line(char *line, void *param)
       start = ptr = line;
       while(last == 0)
 	{
-	  if(*ptr == '\0' || isspace(*ptr) != 0)
+	  if(*ptr == '\0' || isspace((unsigned char)*ptr) != 0)
 	    {
 	      if(*ptr == '\0')
 		last = 1;
@@ -1488,7 +1488,7 @@ static int addrfile_line(char *line, void *param)
 	      if(last == 0)
 		{
 		  ptr++;
-		  while(*ptr != '\0' && isspace(*ptr) != 0)
+		  while(*ptr != '\0' && isspace((unsigned char)*ptr) != 0)
 		    ptr++;
 		  if(*ptr == '\0')
 		    last = 1;
@@ -1918,7 +1918,7 @@ static int process_dealias_1(scamper_dealias_t *dealias)
 	  slist_qsort(addrset->addrs, (slist_cmp_t)sc_addr2set_cmp);
 	}
       dlist_qsort(list, (dlist_cmp_t)sc_addrset_cmp);
-      
+
       while((addrset = dlist_head_pop(list)) != NULL)
 	{
 	  i = 0;

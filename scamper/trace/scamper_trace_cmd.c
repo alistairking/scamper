@@ -1,7 +1,7 @@
 /*
  * scamper_trace_cmd.c
  *
- * $Id: scamper_trace_cmd.c,v 1.22 2024/03/04 23:40:02 mjl Exp $
+ * $Id: scamper_trace_cmd.c,v 1.24 2024/05/02 02:33:38 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -96,7 +96,7 @@ static const scamper_option_in_t opts[] = {
   {'r', NULL, TRACE_OPT_RTRADDR,     SCAMPER_OPTION_TYPE_STR},
   {'s', NULL, TRACE_OPT_SPORT,       SCAMPER_OPTION_TYPE_NUM},
   {'S', NULL, TRACE_OPT_SRCADDR,     SCAMPER_OPTION_TYPE_STR},
-  {'t', NULL, TRACE_OPT_TOS,         SCAMPER_OPTION_TYPE_NUM},
+  {'t', NULL, TRACE_OPT_TOS,         SCAMPER_OPTION_TYPE_STR},
   {'T', NULL, TRACE_OPT_TTLDST,      SCAMPER_OPTION_TYPE_NULL},
   {'U', NULL, TRACE_OPT_USERID,      SCAMPER_OPTION_TYPE_NUM},
   {'w', NULL, TRACE_OPT_WAITTIMEOUT, SCAMPER_OPTION_TYPE_STR},
@@ -211,7 +211,7 @@ static int trace_arg_param_validate(int optid, char *param, long long *out,
 	tmp = SCAMPER_TRACE_FLAG_RAW;
       else
 	{
-	  snprintf(errbuf, errlen, "-O %s unknown", param);
+	  snprintf(errbuf, errlen, "unknown option");
 	  goto err;
 	}
       break;
@@ -421,9 +421,8 @@ void *scamper_do_trace_alloc(char *str, char *errbuf, size_t errlen)
 	 trace_arg_param_validate(opt->id, opt->str, &tmp,
 				  buf, sizeof(buf)) != 0)
 	{
-	  snprintf(errbuf, errlen, "-%c %s failed: %s",
-		   scamper_options_id2c(opts, opts_cnt, opt->id),
-		   opt->str, buf);
+	  snprintf(errbuf, errlen, "-%c failed: %s",
+		   scamper_options_id2c(opts, opts_cnt, opt->id), buf);
 	  goto err;
 	}
 
@@ -772,7 +771,7 @@ void *scamper_do_trace_alloc(char *str, char *errbuf, size_t errlen)
 	    {
 	      if((sa = scamper_addrcache_resolve(addrcache,af,addr)) == NULL)
 		{
-		  snprintf(errbuf, errlen, "cannot resolve gss %s", addr);
+		  snprintf(errbuf, errlen, "cannot resolve gss");
 		  goto err;
 		}
 	      if(splaytree_find(gss_tree, sa) != NULL ||

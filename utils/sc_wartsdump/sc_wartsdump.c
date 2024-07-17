@@ -1,7 +1,7 @@
 /*
  * sc_wartsdump
  *
- * $Id: sc_wartsdump.c,v 1.290 2024/02/28 23:35:23 mjl Exp $
+ * $Id: sc_wartsdump.c,v 1.297 2024/06/26 20:06:13 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -216,11 +216,7 @@ static void dump_trace_hop(const scamper_trace_t *trace,
 	       scamper_trace_hop_reply_ipid_get(hop));
     }
 
-  if(scamper_addr_isipv4(hop_addr))
-    printf("%s reply-tos 0x%02x", comma, scamper_trace_hop_reply_tos_get(hop));
-
-  if(comma[0] != '\0')
-    printf("\n");
+  printf("%s reply-tos: 0x%02x\n", comma, scamper_trace_hop_reply_tos_get(hop));
 
   if(scamper_trace_hop_is_icmp(hop))
     {
@@ -229,11 +225,10 @@ static void dump_trace_hop(const scamper_trace_t *trace,
 	     scamper_trace_hop_icmp_code_get(hop));
       if(scamper_trace_hop_is_icmp_q(hop))
 	{
-	  printf(", q-ttl: %d, q-len: %d",
+	  printf(", q-ttl: %d, q-len: %d, q-tos %d",
 		 scamper_trace_hop_icmp_q_ttl_get(hop),
-		 scamper_trace_hop_icmp_q_ipl_get(hop));
-	  if(scamper_addr_isipv4(hop_addr))
-	    printf(", q-tos %d", scamper_trace_hop_icmp_q_tos_get(hop));
+		 scamper_trace_hop_icmp_q_ipl_get(hop),
+		 scamper_trace_hop_icmp_q_tos_get(hop));
 	}
       if(scamper_trace_hop_is_icmp_ptb(hop))
 	printf(", nhmtu: %d", scamper_trace_hop_icmp_nhmtu_get(hop));
@@ -320,6 +315,7 @@ static void dump_trace(scamper_trace_t *trace)
     printf(" rtr: %s\n", scamper_addr_tostr(addr, buf, sizeof(buf)));
   dump_timeval("start", scamper_trace_start_get(trace));
 
+  hop_count = scamper_trace_hop_count_get(trace);
   sport = scamper_trace_sport_get(trace);
   dport = scamper_trace_dport_get(trace);
   printf(" type: ");
@@ -375,9 +371,13 @@ static void dump_trace(scamper_trace_t *trace)
       printf("\n");
     }
 
-  printf(" attempts: %d, hoplimit: %d, loops: %d, probec: %d\n",
+  printf(" attempts: %d, hoplimit: %d, loops: %d, probec: %d, hopcount: %d",
 	 scamper_trace_attempts_get(trace), scamper_trace_hoplimit_get(trace),
-	 scamper_trace_loops_get(trace), scamper_trace_probec_get(trace));
+	 scamper_trace_loops_get(trace), scamper_trace_probec_get(trace),
+	 hop_count);
+  if((u8 = scamper_trace_stop_hop_get(trace)) != 0)
+    printf(", stophop: %d", u8);
+  printf("\n");
   printf(" squeries: %d, firsthop: %d, gaplimit: %d, gapaction: %s\n",
 	 scamper_trace_squeries_get(trace),
 	 scamper_trace_firsthop_get(trace),
@@ -389,7 +389,7 @@ static void dump_trace(scamper_trace_t *trace)
     dump_wait(", wait-probe", tv);
   if((u8 = scamper_trace_confidence_get(trace)) != 0)
     printf(", confidence: %d%%", u8);
-  printf("\n");
+  printf(", tos: 0x%02x\n", scamper_trace_tos_get(trace));
 
   flags = scamper_trace_flags_get(trace);
   printf(" flags: 0x%02x", flags);
@@ -471,7 +471,6 @@ static void dump_trace(scamper_trace_t *trace)
     }
   printf("\n");
 
-  hop_count = scamper_trace_hop_count_get(trace);
   for(u16=0; u16<hop_count; u16++)
     for(hop = scamper_trace_hop_get(trace, u16); hop != NULL;
 	hop = scamper_trace_hop_next_get(hop))
@@ -773,6 +772,7 @@ static void dump_ping_reply(const scamper_ping_t *ping,
   const scamper_ping_reply_v4ts_t *v4ts;
   const scamper_ping_reply_tsreply_t *tsreply;
   const struct timeval *start, *tx, *rtt;
+  const char *str;
   scamper_addr_t *addr;
   uint32_t flags, tso, tsr, tst, tsc;
   uint16_t probe_id, sport;
@@ -798,10 +798,14 @@ static void dump_ping_reply(const scamper_ping_t *ping,
   flags = scamper_ping_reply_flags_get(reply);
   if(flags & SCAMPER_PING_REPLY_FLAG_REPLY_TTL)
     printf(", ttl: %d", scamper_ping_reply_ttl_get(reply));
+  if(flags & SCAMPER_PING_REPLY_FLAG_REPLY_TOS)
+    printf(", tos: 0x%02x", scamper_ping_reply_tos_get(reply));
   if((sport = scamper_ping_reply_probe_sport_get(reply)) != 0)
     printf(", probe-sport: %u", sport);
   if(flags & SCAMPER_PING_REPLY_FLAG_PROBE_IPID)
     printf(", probe-ipid: 0x%04x", scamper_ping_reply_probe_ipid_get(reply));
+  if((str = scamper_ping_reply_ifname_get(reply)) != NULL)
+    printf(", ifname: %s", str);
   if(flags & SCAMPER_PING_REPLY_FLAG_REPLY_IPID)
     {
       if(scamper_addr_isipv4(addr))
@@ -891,7 +895,7 @@ static void dump_ping(scamper_ping_t *ping)
 {
   static const char *flagstr[] = {
     "v4rr", "spoof", "payload", "tsonly", "tsandaddr", "icmpsum", "dl", "tbt",
-    "nosrc",
+    "nosrc", "raw", "sockrx"
   };
   const scamper_ping_reply_t *reply;
   const scamper_ping_v4ts_t *v4ts;
@@ -925,13 +929,14 @@ static void dump_ping(scamper_ping_t *ping)
     printf(", reply-pmtu: %d", u16);
   dump_wait(", wait", scamper_ping_wait_probe_get(ping));
   dump_wait(", timeout", scamper_ping_wait_timeout_get(ping));
-  printf(", ttl: %u\n", scamper_ping_probe_ttl_get(ping));
+  printf(", ttl: %u, tos: 0x%02x\n", scamper_ping_probe_ttl_get(ping),
+	 scamper_ping_probe_tos_get(ping));
 
   if(flags != 0)
     {
       printf(" flags:");
       u32 = 0;
-      for(u8=0; u8<9; u8++)
+      for(u8=0; u8<sizeof(flagstr) / sizeof(char *); u8++)
 	{
 	  if((flags & (0x1 << u8)) == 0)
 	    continue;
@@ -2127,11 +2132,12 @@ static void dump_sniff(scamper_sniff_t *sniff)
 static void dump_host_rr(const scamper_host_rr_t *rr, const char *section)
 {
   char buf[256];
-  const char *name;
+  const char *name, *str;
   scamper_addr_t *addr;
   const scamper_host_rr_mx_t *mx;
   const scamper_host_rr_soa_t *soa;
-  uint16_t class, type;
+  const scamper_host_rr_txt_t *txt;
+  uint16_t class, type, i, strc;
 
   name = scamper_host_rr_name_get(rr);
   class = scamper_host_rr_class_get(rr);
@@ -2168,6 +2174,17 @@ static void dump_host_rr(const scamper_host_rr_t *rr, const char *section)
 	     scamper_host_rr_soa_retry_get(soa),
 	     scamper_host_rr_soa_expire_get(soa),
 	     scamper_host_rr_soa_minimum_get(soa));
+      break;
+
+    case SCAMPER_HOST_RR_DATA_TYPE_TXT:
+      txt = scamper_host_rr_txt_get(rr);
+      strc = scamper_host_rr_txt_strc_get(txt);
+      printf(" %d", strc);
+      for(i=0; i<strc; i++)
+	{
+	  str = scamper_host_rr_txt_str_get(txt, i);
+	  printf(" \"%s\"", str != NULL ? str : "<null>");
+	}
       break;
     }
 

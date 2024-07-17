@@ -2,7 +2,7 @@
  * sc_ally : scamper driver to collect data on candidate aliases using the
  *           Ally method.
  *
- * $Id: sc_ally.c,v 1.60 2023/09/24 22:35:01 mjl Exp $
+ * $Id: sc_ally.c,v 1.61 2024/03/04 19:36:41 mjl Exp $
  *
  * Copyright (C) 2009-2011 The University of Waikato
  * Copyright (C) 2013-2015 The Regents of the University of California
@@ -1697,7 +1697,7 @@ static void ctrlcb(scamper_inst_t *inst, uint8_t type, scamper_task_t *task,
   else if(type == SCAMPER_CTRL_TYPE_FATAL)
     {
       print("fatal: %s", scamper_ctrl_strerror(scamper_ctrl));
-      goto err;	    
+      goto err;
     }
   return;
 
@@ -1723,7 +1723,7 @@ static int do_scamperconnect(void)
       fprintf(stderr, "could not alloc scamper_ctrl\n");
       return -1;
     }
-  
+
   if(options & OPT_PORT)
     {
       type = "port";

@@ -1,7 +1,7 @@
 /*
  * scamper_probe.h
  *
- * $Id: scamper_probe.h,v 1.48 2023/08/20 01:21:17 mjl Exp $
+ * $Id: scamper_probe.h,v 1.49 2024/07/02 01:11:17 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -122,8 +122,7 @@ typedef struct scamper_probe
   SOCKET                 pr_fd;
 #endif
   scamper_dl_t          *pr_dl;
-  uint8_t               *pr_dl_buf;
-  uint16_t               pr_dl_len;
+  scamper_dlhdr_t       *pr_dlhdr;
 
   /* flags set on input */
   uint16_t               pr_flags;

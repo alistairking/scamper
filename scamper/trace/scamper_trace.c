@@ -1,7 +1,7 @@
 /*
  * scamper_trace.c
  *
- * $Id: scamper_trace.c,v 1.116 2023/10/01 07:53:17 mjl Exp $
+ * $Id: scamper_trace.c,v 1.118 2024/04/22 08:56:38 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2003-2011 The University of Waikato
@@ -176,7 +176,6 @@ scamper_addr_t *scamper_trace_dtree_gss_find(const scamper_trace_dtree_t *dtree,
 {
   if(dtree == NULL)
     return NULL;
-  assert(dtree->gssc >= 0);
   return array_find((void **)dtree->gss, (size_t)dtree->gssc, iface,
 		    (array_cmp_t)scamper_addr_cmp);
 }
@@ -185,7 +184,6 @@ void scamper_trace_dtree_gss_sort(const scamper_trace_dtree_t *dtree)
 {
   if(dtree == NULL)
     return;
-  assert(dtree->gssc >= 0);
   array_qsort((void **)dtree->gss, (size_t)dtree->gssc,
 	      (array_cmp_t)scamper_addr_cmp);
   return;
@@ -203,7 +201,7 @@ int scamper_trace_hops_alloc(scamper_trace_t *trace, uint16_t hops)
 
   if(h == NULL)
     return -1;
-  
+
   trace->hops = h;
   return 0;
 }

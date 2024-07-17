@@ -1,7 +1,7 @@
 /*
  * scamper_dl.h
  *
- * $Id: scamper_dl.h,v 1.65 2024/02/10 06:16:02 mjl Exp $
+ * $Id: scamper_dl.h,v 1.68 2024/07/15 23:12:44 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -47,19 +47,6 @@
 
 #define SCAMPER_DL_REC_NET_TYPE_IP    0x01
 #define SCAMPER_DL_REC_NET_TYPE_ARP   0x02
-
-/*
- * these types are set in scamper_dl_rec.dl_type
- *
- * SCAMPER_DL_TYPE_RAW: datalink record off a raw interface, no L2 header
- * SCAMPER_DL_TYPE_NULL: datalink record off a null interface, no L2 recorded
- * SCAMPER_DL_TYPE_ETHERNET: datalink record off an ethernet interface
- * SCAMPER_DL_TYPE_FIREWIRE: datalink record off a firewire interface
- */
-#define SCAMPER_DL_TYPE_RAW       0x01
-#define SCAMPER_DL_TYPE_NULL      0x02
-#define SCAMPER_DL_TYPE_ETHERNET  0x03
-#define SCAMPER_DL_TYPE_FIREWIRE  0x04
 
 #define SCAMPER_DL_IP_FLAG_DF     0x01
 #define SCAMPER_DL_IP_FLAG_MF     0x02
@@ -255,9 +242,6 @@ typedef struct scamper_dl_rec
   /* flags, meanings defined above */
   uint32_t         dl_flags;
 
-  /* type of the datalink which passed the packet */
-  uint32_t         dl_type;
-
   /* the time that the packet was seen on the datalink */
   struct timeval   dl_tv;
 
@@ -268,16 +252,7 @@ typedef struct scamper_dl_rec
   int              dl_ifindex;
 
   /*
-   * category 1: the datalink frame header, if any.
-   *
-   * scamper records the source and destination link local addresses if the
-   * frame is ethernet or firewire; otherwise these fields are null;
-   */
-  uint8_t         *dl_lladdr_src;
-  uint8_t         *dl_lladdr_dst;
-
-  /*
-   * category 2: the network layer
+   * the network layer
    *
    * scamper records the network headers found.  either IPv4/IPv6, or ARP.
    *
@@ -323,7 +298,7 @@ typedef struct scamper_dl_rec
   } dl_net_un;
 
   /*
-   * category 3: the transport header
+   * the transport header
    *
    * scamper records the details of the datalink in the following union
    * [if it understands it]
@@ -522,8 +497,8 @@ int scamper_dl_tx_type(scamper_dl_t *);
  * scamper_dl_open:    open datalink interface, use privsep if required
  * scamper_dl_open_fd: open datalink interface. for the benefit of privsep code
  */
-int scamper_dl_open(const int ifindex);
-int scamper_dl_open_fd(const int ifindex);
+int scamper_dl_open(int ifindex);
+int scamper_dl_open_fd(int ifindex);
 
 /*
  * scamper_dl_state_alloc: allocate state to be held with fd
@@ -548,8 +523,16 @@ void scamper_dl_read_cb(SOCKET fd, void *param);
  * transmit the packet, including relevant headers which are included, on
  * the datalink.
  */
-int scamper_dl_tx(const scamper_dl_t *dl,
-		  const uint8_t *pkt, const size_t len);
+int scamper_dl_tx(const scamper_dl_t *dl, const uint8_t *pkt, size_t len);
+
+#if defined(__linux__) || defined(BIOCSETFNR)
+/*
+ * scamper_dl_filter:
+ * update the filter on the datalink socket.
+ */
+int scamper_dl_filter(const scamper_dl_t *dl,
+		      const uint16_t *sports, size_t len);
+#endif
 
 #ifdef __SCAMPER_ADDR_H
 int scamper_dl_rec_src(scamper_dl_rec_t *dl, scamper_addr_t *addr);

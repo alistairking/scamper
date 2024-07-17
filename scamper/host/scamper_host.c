@@ -1,9 +1,9 @@
 /*
  * scamper_host
  *
- * $Id: scamper_host.c,v 1.16 2023/11/14 21:42:45 mjl Exp $
+ * $Id: scamper_host.c,v 1.19 2024/04/27 21:11:55 mjl Exp $
  *
- * Copyright (C) 2018-2023 Matthew Luckie
+ * Copyright (C) 2018-2024 Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -47,6 +47,44 @@ int scamper_host_query_counts(scamper_host_query_t *q,
     return -1;
 
   return 0;
+}
+
+void scamper_host_rr_txt_free(scamper_host_rr_txt_t *txt)
+{
+  uint16_t i;
+  if(txt == NULL)
+    return;
+#ifdef BUILDING_LIBSCAMPERFILE
+  if(--txt->refcnt > 0)
+    return;
+#endif
+  if(txt->strs != NULL)
+    {
+      for(i=0; i<txt->strc; i++)
+	if(txt->strs[i] != NULL)
+	  free(txt->strs[i]);
+      free(txt->strs);
+    }
+  free(txt);
+  return;
+}
+
+scamper_host_rr_txt_t *scamper_host_rr_txt_alloc(uint16_t strc)
+{
+  scamper_host_rr_txt_t *txt;
+  if((txt = malloc_zero(sizeof(scamper_host_rr_txt_t))) == NULL)
+    return NULL;
+#ifdef BUILDING_LIBSCAMPERFILE
+  txt->refcnt = 1;
+#endif
+  if(strc > 0 &&
+     (txt->strs = malloc_zero(sizeof(char *) * strc)) == NULL)
+    {
+      scamper_host_rr_txt_free(txt);
+      return NULL;
+    }
+  txt->strc = strc;
+  return txt;
 }
 
 void scamper_host_rr_soa_free(scamper_host_rr_soa_t *soa)
@@ -141,6 +179,17 @@ int scamper_host_rr_data_type(uint16_t class, uint16_t type)
 
 	case SCAMPER_HOST_TYPE_MX:
 	  return SCAMPER_HOST_RR_DATA_TYPE_MX;
+
+	case SCAMPER_HOST_TYPE_TXT:
+	  return SCAMPER_HOST_RR_DATA_TYPE_TXT;
+	}
+    }
+  else if(class == SCAMPER_HOST_CLASS_CH)
+    {
+      switch(type)
+	{
+	case SCAMPER_HOST_TYPE_TXT:
+	  return SCAMPER_HOST_RR_DATA_TYPE_TXT;
 	}
     }
 
@@ -176,6 +225,10 @@ void scamper_host_rr_free(scamper_host_rr_t *rr)
 
     case SCAMPER_HOST_RR_DATA_TYPE_MX:
       if(rr->un.mx != NULL) scamper_host_rr_mx_free(rr->un.mx);
+      break;
+
+    case SCAMPER_HOST_RR_DATA_TYPE_TXT:
+      if(rr->un.txt != NULL) scamper_host_rr_txt_free(rr->un.txt);
       break;
     }
 
@@ -330,6 +383,8 @@ char *scamper_host_qclass_tostr(uint16_t qclass, char *b, size_t l)
 {
   if(qclass == SCAMPER_HOST_CLASS_IN)
     snprintf(b, l, "IN");
+  else if(qclass == SCAMPER_HOST_CLASS_CH)
+    snprintf(b, l, "CH");
   else
     snprintf(b, l, "%u", qclass);
   return b;
@@ -373,7 +428,7 @@ void scamper_host_free(scamper_host_t *host)
   if(host->list != NULL) scamper_list_free(host->list);
 
   free(host);
-  return;  
+  return;
 }
 
 scamper_host_t *scamper_host_alloc(void)

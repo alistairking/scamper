@@ -1,7 +1,7 @@
 /*
  * scamper_udpprobe_lib.c
  *
- * $Id: scamper_udpprobe_lib.c,v 1.3 2023/11/22 20:43:17 mjl Exp $
+ * $Id: scamper_udpprobe_lib.c,v 1.5 2024/04/04 22:57:01 mjl Exp $
  *
  * Copyright (C) 2023 The Regents of the University of California
  *
@@ -164,3 +164,11 @@ uint8_t scamper_udpprobe_probe_replyc_get(const scamper_udpprobe_probe_t *probe)
 {
   return probe->replyc;
 }
+
+#ifdef BUILDING_LIBSCAMPERFILE
+scamper_udpprobe_probe_t *scamper_udpprobe_probe_use(scamper_udpprobe_probe_t *pr)
+{
+  pr->refcnt++;
+  return pr;
+}
+#endif
