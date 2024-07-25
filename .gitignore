@@ -103,5 +103,8 @@ utils/sc_wartsfix/sc_wartsfix
 # Upstream files that we don't want
 .cvsignore
 
+# cythonized scamper module
+lib/python/scamper.c
+
 # Local build artifacts
 build/
