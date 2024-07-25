@@ -1,7 +1,7 @@
 /*
  * scamper_probe.c
  *
- * $Id: scamper_probe.c,v 1.85 2024/07/02 01:11:17 mjl Exp $
+ * $Id: scamper_probe.c,v 1.86 2024/07/19 06:59:03 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -306,9 +306,7 @@ static void probe_print(scamper_probe_t *probe)
 
   return;
 }
-#else
-#define probe_print(probe) ((void)0)
-#endif
+#endif /* HAVE_SCAMPER_DEBUG */
 
 static void probe_free(scamper_probe_t *pr)
 {
@@ -825,7 +823,10 @@ int scamper_probe_task(scamper_probe_t *pr, scamper_task_t *task)
   scamper_fd_t *icmp = NULL;
   int dl = 0;
 
-  probe_print(pr);
+#ifdef HAVE_SCAMPER_DEBUG
+  if(scamper_debug_would())
+    probe_print(pr);
+#endif
 
   /* get an ICMP socket to listen for responses */
   if(SCAMPER_ADDR_TYPE_IS_IPV4(pr->pr_ip_dst))
@@ -912,7 +913,11 @@ int scamper_probe(scamper_probe_t *probe)
   uint16_t dl_len;
 
   probe->pr_errno = 0;
-  probe_print(probe);
+
+#ifdef HAVE_SCAMPER_DEBUG
+  if(scamper_debug_would())
+    probe_print(probe);
+#endif
 
   /* determine which function scamper should use to build or send the probe */
   if(probe->pr_ip_dst->type == SCAMPER_ADDR_TYPE_IPV4)

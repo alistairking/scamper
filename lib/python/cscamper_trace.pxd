@@ -58,6 +58,7 @@ cdef extern from "scamper_trace.h":
  scamper_trace_hop_t *scamper_trace_hop_get(const scamper_trace_t *trace,
 					    uint8_t i)
  uint16_t scamper_trace_hop_count_get(const scamper_trace_t *trace)
+ uint8_t  scamper_trace_stop_hop_get(const scamper_trace_t *trace)
 
  uint8_t scamper_trace_type_get(const scamper_trace_t *trace)
  uint8_t scamper_trace_attempts_get(const scamper_trace_t *trace)

@@ -1,7 +1,7 @@
 /*
  * scamper_host_do
  *
- * $Id: scamper_host_do.c,v 1.78 2024/04/27 21:35:54 mjl Exp $
+ * $Id: scamper_host_do.c,v 1.79 2024/07/19 05:23:50 mjl Exp $
  *
  * Copyright (C) 2018-2024 Matthew Luckie
  *
@@ -200,6 +200,7 @@ static int host_fd_close(void *param)
   return 0;
 }
 
+#ifdef HAVE_SCAMPER_DEBUG
 static const char *host_mode(int mode)
 {
   switch(mode)
@@ -211,6 +212,7 @@ static const char *host_mode(int mode)
     }
   return "unknown";
 }
+#endif
 
 static scamper_host_t *host_getdata(const scamper_task_t *task)
 {
@@ -1002,7 +1004,7 @@ static int do_host_probe_query(const scamper_host_t *host,
   size_t off;
 
   if(*len < 12)
-    return -1;      
+    return -1;
 
   /* 12 bytes of DNS header */
   bytes_htons(buf, id);       /* DNS ID, 16 bits */
@@ -1154,7 +1156,7 @@ static int do_host_probe_udp(scamper_task_t *task)
   /* handle wraps with the query id */
   if(++dns_id == 0)
     dns_id = 1;
-  
+
   if(do_host_probe_query(host, state, id, pktbuf, &len) != 0)
     goto err;
 

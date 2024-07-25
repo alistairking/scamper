@@ -1,7 +1,7 @@
 /*
  * scamper_debug.c
  *
- * $Id: scamper_debug.c,v 1.47 2024/03/04 19:36:41 mjl Exp $
+ * $Id: scamper_debug.c,v 1.48 2024/07/19 06:59:03 mjl Exp $
  *
  * routines to reduce the impact of debugging cruft in scamper's code.
  *
@@ -230,6 +230,24 @@ void printerror_ssl(const char *func, const char *format, ...)
 #endif
 
 #ifdef HAVE_SCAMPER_DEBUG
+/*
+ * scamper_debug_would
+ *
+ * would scamper_debug emit something, if called now?
+ */
+int scamper_debug_would(void)
+{
+#ifndef NDEBUG
+  if(isdaemon == 0)
+    return 1;
+#endif
+#ifndef WITHOUT_DEBUGFILE
+  if(debugfile != NULL)
+    return 1;
+#endif
+  return 0; /* into the flood again */
+}
+
 void scamper_debug(const char *func, const char *format, ...)
 {
   char     message[512];
@@ -237,22 +255,10 @@ void scamper_debug(const char *func, const char *format, ...)
   char     ts[16];
   char     fs[64];
 
-#if !defined(WITHOUT_DEBUGFILE) && defined(NDEBUG)
-  if(debugfile == NULL)
-    return;
-#endif
-
   assert(format != NULL);
 
-  if(isdaemon != 0)
-    {
-#ifndef WITHOUT_DEBUGFILE
-      if(debugfile == NULL)
-	return;
-#else
-      return;
-#endif
-    }
+  if(scamper_debug_would() == 0)
+    return;
 
   va_start(ap, format);
   vsnprintf(message, sizeof(message), format, ap);

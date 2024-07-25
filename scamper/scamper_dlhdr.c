@@ -1,7 +1,7 @@
 /*
  * scamper_dlhdr.c
  *
- * $Id: scamper_dlhdr.c,v 1.19 2024/06/30 23:18:14 mjl Exp $
+ * $Id: scamper_dlhdr.c,v 1.20 2024/07/19 05:46:26 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2010 The University of Waikato
@@ -76,7 +76,7 @@ static void dlhdr_ethmake(scamper_dlhdr_t *dlhdr, scamper_addr_t *mac)
 {
   if(dlhdr_eth_common(dlhdr) != 0)
     return;
-  
+
   /* copy the destination mac address to use */
   memcpy(dlhdr->buf, mac->addr, 6);
 

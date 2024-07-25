@@ -1,7 +1,7 @@
 /*
  * scamper
  *
- * $Id: scamper.c,v 1.339 2024/07/16 00:36:18 mjl Exp $
+ * $Id: scamper.c,v 1.345 2024/07/23 22:46:55 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -954,15 +954,6 @@ static int check_options(int argc, char *argv[])
       return -1;
     }
 
-#if defined(FLAG_DLANY) && defined(FLAG_DYNFILTER)
-  if((flags & FLAG_DLANY) != 0 && (flags & FLAG_DYNFILTER) != 0)
-    {
-      usage(OPT_OPTION);
-      fprintf(stderr, "cannot specify both -O dl-any and -O dyn-filter\n");
-      return -1;
-    }
-#endif
-
 #ifdef HAVE_STRUCT_TPACKET_REQ3
   if(opt_ring_blocks != NULL)
     {
@@ -1394,6 +1385,7 @@ int scamper_option_ring_locked(void)
 #ifdef HAVE_SETEUID
 int scamper_seteuid_raise(uid_t *uid_p, uid_t *euid_p)
 {
+  assert(uid_p != euid_p);
   *uid_p = uid;
   *euid_p = euid;
   if(*uid_p != *euid_p && seteuid(*euid_p) != 0)
@@ -1406,6 +1398,7 @@ int scamper_seteuid_raise(uid_t *uid_p, uid_t *euid_p)
 
 void scamper_seteuid_lower(uid_t *uid_p, uid_t *euid_p)
 {
+  assert(uid_p != euid_p);
   if(*uid_p != *euid_p && seteuid(*uid_p) != 0)
     {
       printerror(__func__, "could not return to uid");
@@ -1413,11 +1406,6 @@ void scamper_seteuid_lower(uid_t *uid_p, uid_t *euid_p)
     }
   *euid_p = *uid_p;
   return;
-}
-
-uid_t scamper_getuid(void)
-{
-  return uid;
 }
 
 uid_t scamper_geteuid(void)
