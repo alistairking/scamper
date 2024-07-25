@@ -1,7 +1,7 @@
 /*
  * scamper_udp4.c
  *
- * $Id: scamper_udp4.c,v 1.88 2024/07/02 01:11:17 mjl Exp $
+ * $Id: scamper_udp4.c,v 1.89 2024/07/18 22:26:44 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2010 The University of Waikato
@@ -378,21 +378,13 @@ SOCKET scamper_udp4_openraw(const void *addr)
 
 #ifdef DISABLE_PRIVSEP
 #ifdef HAVE_SETEUID
-  uid_t uid = scamper_getuid();
-  uid_t euid = scamper_geteuid();
-  if(uid != euid && seteuid(euid) != 0)
-    {
-      printerror(__func__, "could not claim euid");
-      goto err;
-    }
+  uid_t uid, euid;
+  if(scamper_seteuid_raise(&uid, &euid) != 0)
+    return -1;
 #endif
   fd = scamper_udp4_openraw_fd(addr);
 #ifdef HAVE_SETEUID
-  if(uid != euid && seteuid(uid) != 0)
-    {
-      printerror(__func__, "could not return to uid");
-      exit(-errno);
-    }
+  scamper_seteuid_lower(&uid, &euid);
 #endif
 #else
   fd = scamper_privsep_open_rawudp(addr);

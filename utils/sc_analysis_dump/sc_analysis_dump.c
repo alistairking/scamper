@@ -1,7 +1,7 @@
 /*
  * sc_analysis_dump
  *
- * $Id: sc_analysis_dump.c,v 1.68 2023/08/27 06:39:31 mjl Exp $
+ * $Id: sc_analysis_dump.c,v 1.69 2024/07/19 08:12:26 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -72,19 +72,12 @@ static int    filelist_len = 0;
 /* where the output goes.  stdout by default */
 static FILE *out = NULL;
 
-#ifdef HAVE_NETACUITY
-#define OPT_GEO           0x08000
-#define OPT_GEOSERV       0x10000
-static char               *geo_serv = NULL;
-static struct splaytree_t *geo_seen = NULL;
-#endif
-
 static void usage(void)
 {
   fprintf(stderr,
-	  "usage: sc_analysis_dump [-oeCsdlctrHpighUQMT]\n"
+	  "usage: sc_analysis_dump [-oeCsdlctrHpihUQMT]\n"
 	  "                        [-S skip count] [-D debug count]\n"
-	  "                        [-G geo server] [file1 file2 ... fileN]\n");
+	  "                        [file1 file2 ... fileN]\n");
 
   return;
 }
@@ -94,10 +87,6 @@ static int check_options(int argc, char *argv[])
   int i, ch;
   char opts[48];
   snprintf(opts, sizeof(opts), "oeCsdlctrHpiS:D:?UQMT");
-
-#ifdef HAVE_NETACUITY
-  strcat(opts, "gG:");
-#endif
 
   while((i = getopt(argc, argv, opts)) != -1)
     {
@@ -177,17 +166,6 @@ static int check_options(int argc, char *argv[])
 	case 'T':
 	  options |= OPT_SHOWIPTTL;
 	  break;
-
-#ifdef HAVE_NETACUITY
-	case 'g':
-	  options |= OPT_GEO;
-	  break;
-
-	case 'G':
-	  options |= OPT_GEOSERV;
-	  geo_serv = optarg;
-	  break;
-#endif
 
 	case '?':
 	  options |= OPT_HELP;
@@ -388,14 +366,6 @@ static void print_help()
   "  D numline - debug mode that only reads the first numline objects\n"
   "  S numline - skips first numline objects in the file\n"
   "\n"
-#ifdef HAVE_NETACUITY
-  "  g - print out geographical information\n"
-  "      assuming that environmental variable NETACUITY_SERVER is set\n"
-  "      to the NETACUITY server\n"
-  "  G servername - the same as g except it uses the servername\n"
-  "      given on the command line.\n"
-  " \n"
-#endif
   "  ? - prints this message\n"
   " \n"
  );
@@ -778,18 +748,6 @@ static void print_path_fields(const scamper_trace_t *trace,
   char buf[256], path_complete;
   int i, j, unresponsive = 0;
 
-#ifdef HAVE_NETACUITY
-  if((options & OPT_GEO) != 0 && trace->hop_count != 0)
-    {
-      for(i=0; i<trace->hop_count; i++)
-	{
-	  for(hop = scamper_trace_hop_get(trace, i); hop != NULL;
-	      hop = scamper_trace_hop_next_get(hop))
-	    print_geo_info(hop->hop_addr);
-	}
-    }
-#endif
-
   /*
    * decide what the path_complete flag should be set to.  if we reached
    * the destination then the path_complete flag == 'C' (for complete).
@@ -883,120 +841,6 @@ static void print_path_fields(const scamper_trace_t *trace,
   return;
 }
 
-#ifdef HAVE_NETACUITY
-static int print_geo_info(scamper_addr_t *addr)
-{
-  na_geo_struct answer;
-  char buf[256];
-
-  if(splaytree_find(geo_seen, addr) != NULL)
-    {
-      return 0;
-    }
-
-  if(splaytree_insert(geo_seen, scamper_addr_use(addr)) != 1)
-    {
-      return -1;
-    }
-
-  if(scamper_addr_tostr(addr, buf, sizeof(buf)) == NULL)
-    {
-      return -1;
-    }
-
-  if(na_query_geo(buf, &answer))
-    {
-      fprintf(out, "G\t%s\t%s=%d\t%s=%d\t%s=%d\t%s\t%d\t%.3f\t%.3f\n",
-	      buf,
-	      answer.country, answer.country_c,
-	      answer.region, answer.region_c,
-	      answer.city, answer.city_c,
-	      answer.speed,
-	      answer.metro_code,
-	      answer.latitude, answer.longitude);
-    }
-  else
-    {
-      fprintf(stderr, "Error in na_query_geo(%s)\n", buf);
-    }
-
-  return 0;
-}
-
-static void print_path_geo_info(const scamper_trace_t *trace)
-{
-  const scamper_trace_hop_t *hop;
-  int i, j;
-
-  j = scamper_trace_hop_count_get(trace);
-  for(i=0; i<j; i++)
-    {
-      for(hop = scamper_trace_hop_get(trace, i); hop != NULL;
-	  hop = scamper_trace_hop_next_get(hop))
-	{
-	  print_geo_info(scamper_trace_hop_addr_get(hop));
-	}
-    }
-
-  return;
-}
-
-static int setup_netacuity_server(char *server)
-{
-  struct addrinfo hints, *res, *res0;
-  char buf[256];
-  int set = 0;
-
-  memset(&hints, 0, sizeof(hints));
-
-  hints.ai_socktype = SOCK_DGRAM;
-  hints.ai_protocol = IPPROTO_UDP;
-  hints.ai_family   = AF_INET;
-
-  if((error = getaddrinfo(ipstr, NULL, &hints, &res0)) != 0 || res0 == NULL)
-    {
-      fprintf(stderr, "could not resolve %s: %s", server, gai_strerror(error));
-      return -1;
-    }
-
-  for(res = res0; res != NULL; res = res->ai_next)
-    {
-      if(res->ai_family == PF_INET)
-	{
-	  inet_ntop(res->ai_family,
-		    &((struct sockaddr_in *)ai_list->ai_addr)->sin_addr,
-		    buf, sizeof(buf));
-
-	  if(na_api_set_server_addr(buf))
-	    {
-	      set = 1;
-	      break;
-	    }
-	  else
-	    {
-	      fprintf(stderr, "Error in setting server addr %s", buf);
-	    }
-	}
-    }
-
-  freeaddrinfo(res0);
-
-  if(set == 1)
-    {
-      geo_seen = splaytree_alloc((splaytree_cmp_t)scamper_addr_cmp);
-      if(geo_seen == NULL)
-	{
-	  return -1;
-	}
-
-      return 0;
-    }
-
-  return -1;
-}
-
-#endif /* HAVE_NETACUITY */
-
 static void print_trace(const scamper_trace_t *trace)
 {
   const scamper_trace_hop_t *dst = NULL, *hop;
@@ -1031,24 +875,6 @@ static void print_trace(const scamper_trace_t *trace)
 	    }
 	}
     }
-
-#ifdef HAVE_NETACUITY
-  if(options & OPT_GEO)
-    {
-      if((options & OPT_HIDESRC) == 0)
-	{
-	  print_geo_info(scamper_trace_src_get(trace));
-	}
-      if((options & OPT_HIDEDST) == 0)
-	{
-	  print_geo_info(scamper_trace_dst_get(trace));
-	}
-      if((options & OPT_HIDEPATH) == 0)
-	{
-	  print_path_geo_info(trace);
-	}
-    }
-#endif
 
   if((options & OPT_OLDFORMAT) == 0)
     {

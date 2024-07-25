@@ -1,7 +1,7 @@
 /*
  * scamper_dl: manage BPF/PF_PACKET datalink instances for scamper
  *
- * $Id: scamper_dl.c,v 1.216 2024/07/16 00:42:55 mjl Exp $
+ * $Id: scamper_dl.c,v 1.218 2024/07/20 03:07:08 mjl Exp $
  *
  *          Matthew Luckie
  *          Ben Stasiewicz added fragmentation support.
@@ -1438,7 +1438,7 @@ static int linux_read(int fd, scamper_dl_t *node)
 	return 0;
       if(node->dlt_cb(&dl, readbuf, s) == 0)
 	return 0;
-      dl.dl_ifindex = node->ifindex;      
+      dl.dl_ifindex = node->ifindex;
     }
   else
     {
@@ -1942,6 +1942,7 @@ static int dl_filter_compile(const scamper_dl_t *node,
   struct bpf_insn *insns = NULL;
 #else
   struct sock_filter *insns = NULL;
+  int extra = 0;
 #endif
 
   uint32_t ipv4_c, ipv6_c, udp4_c, udp6_c, tcp4_c, tcp6_c, ip_off, k_dlt;
@@ -1990,6 +1991,20 @@ static int dl_filter_compile(const scamper_dl_t *node,
 
   if(node->dlt_cb == dlt_en10mb_cb)
     len = 4;
+#ifdef __linux__
+  else if(node->ifindex == 0)
+    {
+      len = 12;
+#ifdef ARPHRD_SIT
+      len++;
+      extra++;
+#endif
+#ifdef ARPHRD_VOID
+      len++;
+      extra++;
+#endif
+    }
+#endif /* __linux__ */
 #ifdef HAVE_BPF
   else if(node->dlt_cb == dlt_null_cb)
     len = 3;
@@ -2032,6 +2047,47 @@ static int dl_filter_compile(const scamper_dl_t *node,
 	       len - off - 2,
 	       len - off - 3);
     }
+#ifdef __linux__
+  else if(node->ifindex == 0)
+    {
+      ip_off = 0;
+      bpf_stmt(insns, len, &off, BPF_LD+BPF_ABS+BPF_H,
+	       SKF_AD_OFF + SKF_AD_HATYPE);
+      bpf_jump(insns, len, &off, BPF_JMP+BPF_JEQ+BPF_K, ARPHRD_ETHER,
+	       2 + extra, 0);
+      bpf_jump(insns, len, &off, BPF_JMP+BPF_JEQ+BPF_K, ARPHRD_LOOPBACK,
+	       1 + extra, 0);
+#ifdef ARPHRD_SIT
+      extra--;
+      bpf_jump(insns, len, &off, BPF_JMP+BPF_JEQ+BPF_K, ARPHRD_SIT,
+	       5 + extra, 0);
+#endif
+#ifdef ARPHRD_VOID
+      bpf_jump(insns, len, &off, BPF_JMP+BPF_JEQ+BPF_K, ARPHRD_VOID,
+	       5, 0);
+#endif
+      bpf_jump(insns, len, &off, BPF_JMP+BPF_JEQ+BPF_K, ARPHRD_PPP,
+	       4, len - off - 3);
+
+      /* handle ARPHRD_ETHER, ARPHRD_LOOPBACK */
+      bpf_stmt(insns, len, &off, BPF_LD+BPF_ABS+BPF_H,
+	       SKF_AD_OFF + SKF_AD_PROTOCOL);
+      bpf_jump(insns, len, &off, BPF_JMP+BPF_JEQ+BPF_K, ETHERTYPE_IP,
+	       4 + 2, 0);
+      bpf_jump(insns, len, &off, BPF_JMP+BPF_JEQ+BPF_K, ETHERTYPE_IPV6,
+	       4 + ipv4_c + 1, 0);
+      bpf_jump(insns, len, &off, BPF_JMP+BPF_JEQ+BPF_K, ETHERTYPE_ARP,
+	       len - off - 2,
+	       len - off - 3);
+
+      /* handle ARPHRD_SIT, ARPHRD_VOID, ARPHRD_PPP */
+      bpf_stmt(insns, len, &off, BPF_LD+BPF_ABS+BPF_B, 0);
+      bpf_stmt(insns, len, &off, BPF_ALU+BPF_RSH+BPF_K, 4);
+      bpf_jump(insns, len, &off, BPF_JMP+BPF_JEQ+BPF_K, 4, 1, 0);
+      bpf_jump(insns, len, &off, BPF_JMP+BPF_JEQ+BPF_K, 6, ipv4_c,
+	       len - off - 3);
+    }
+#endif /* __linux__ */
 #ifdef HAVE_BPF
   else if(node->dlt_cb == dlt_null_cb)
     {
@@ -2350,13 +2406,16 @@ int scamper_dl_rec_icmp_ip_dst(scamper_dl_rec_t *dl, scamper_addr_t *addr)
   return 0;
 }
 
-#if !defined(NDEBUG) && !defined(WITHOUT_DEBUGFILE)
+#ifdef HAVE_SCAMPER_DEBUG
 void scamper_dl_rec_frag_print(const scamper_dl_rec_t *dl)
 {
   char addr[64];
   uint32_t id;
 
   assert(dl->dl_af == AF_INET || dl->dl_af == AF_INET6);
+
+  if(scamper_debug_would() == 0)
+    return;
 
   if(dl->dl_af == AF_INET)
     id = dl->dl_ip_id;
@@ -2376,6 +2435,9 @@ void scamper_dl_rec_udp_print(const scamper_dl_rec_t *dl)
 
   assert(dl->dl_af == AF_INET || dl->dl_af == AF_INET6);
   assert(dl->dl_ip_proto == IPPROTO_UDP);
+
+  if(scamper_debug_would() == 0)
+    return;
 
   if(dl->dl_af == AF_INET)
     snprintf(ipid, sizeof(ipid), "ipid 0x%04x ", dl->dl_ip_id);
@@ -2410,6 +2472,9 @@ void scamper_dl_rec_tcp_print(const scamper_dl_rec_t *dl)
 
   assert(dl->dl_af == AF_INET || dl->dl_af == AF_INET6);
   assert(dl->dl_ip_proto == IPPROTO_TCP);
+
+  if(scamper_debug_would() == 0)
+    return;
 
   if((u8 = dl->dl_tcp_flags) != 0)
     {
@@ -2466,6 +2531,9 @@ void scamper_dl_rec_icmp_print(const scamper_dl_rec_t *dl)
   size_t off;
 
   assert(dl->dl_af == AF_INET || dl->dl_af == AF_INET6);
+
+  if(scamper_debug_would() == 0)
+    return;
 
   if(dl->dl_af == AF_INET)
     {
@@ -2664,7 +2732,7 @@ void scamper_dl_rec_icmp_print(const scamper_dl_rec_t *dl)
   scamper_debug(NULL, "%s %s%s%s", ip, icmp, inner_ip, inner_transport);
   return;
 }
-#endif
+#endif /* HAVE_SCAMPER_DEBUG */
 
 /*
  * dl_read_cb
