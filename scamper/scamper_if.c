@@ -1,7 +1,7 @@
 /*
  * scamper_if.c
  *
- * $Id: scamper_if.c,v 1.29 2023/08/26 21:25:08 mjl Exp $
+ * $Id: scamper_if.c,v 1.30 2024/07/18 22:26:44 mjl Exp $
  *
  * Copyright (C) 2008-2011 The University of Waikato
  * Copyright (C) 2014      The Regents of the University of California
@@ -216,34 +216,17 @@ int scamper_if_getmac(const int ifindex, uint8_t *mac)
 
 #ifdef DISABLE_PRIVSEP
   char ifname[5+IFNAMSIZ];
-  uid_t uid = scamper_getuid();
-  uid_t euid = scamper_geteuid();
-  int sete = 0;
-  if(uid != euid)
-    {
-      if(seteuid(euid) != 0)
-	{
-	  printerror(__func__, "could not claim euid");
-	  goto err;
-	}
-      sete = 1;
-    }
+  uid_t uid, euid;
+
   strncpy(ifname, "/dev/", sizeof(ifname));
   if(if_indextoname(ifindex, ifname+5) == NULL)
     {
       printerror(__func__, "if_indextoname %d", ifindex);
       goto err;
     }
+  scamper_seteuid_raise(&uid, &euid);
   fd = open(ifname, O_RDWR);
-  if(uid != euid)
-    {
-      if(seteuid(uid) != 0)
-	{
-	  printerror(__func__, "could not return to uid");
-	  exit(-errno);
-	}
-      sete = 0;
-    }
+  scamper_seteuid_lower(&uid, &euid);
 #else
   fd = scamper_privsep_open_datalink(ifindex);
 #endif
@@ -288,10 +271,6 @@ int scamper_if_getmac(const int ifindex, uint8_t *mac)
 
  err:
   if(fd != -1) close(fd);
-#ifdef DISABLE_PRIVSEP
-  if(sete != 0 && seteuid(uid) != 0)
-    exit(-errno);
-#endif
   return -1;
 }
 #else

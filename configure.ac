@@ -1,6 +1,6 @@
 # Process this file with autoconf to produce a configure script.
 
-AC_INIT([scamper],[20240716],[mjl@luckie.org.nz])
+AC_INIT([scamper],[20240725],[mjl@luckie.org.nz])
 
 AC_CONFIG_SRCDIR([scamper/scamper.c])
 AC_CONFIG_AUX_DIR([.])
@@ -536,6 +536,16 @@ AC_COMPILE_IFELSE([AC_LANG_PROGRAM(
 	[
 		AC_MSG_RESULT([no])
 	])
+
+AC_ARG_ENABLE([scamper-ring],
+  [AS_HELP_STRING([--enable-scamper-ring], [enable ring buffer by default])],
+  [enable_scamper_ring=$enableval],
+  [enable_scamper_ring=no])
+if test "x$enable_scamper_ring" = xyes; then
+  AC_DEFINE([ENABLE_SCAMPER_RING], [1],
+            [Define to 1 if we want to use ring buffer by default])
+fi
+AM_CONDITIONAL([ENABLE_SCAMPER_RING], [test x$enable_scamper_ring = xyes])
 
 # These libraries have to be explicitly linked in OpenSolaris
 AC_SEARCH_LIBS(getaddrinfo, socket, [], [], -lnsl)

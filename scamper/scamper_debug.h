@@ -1,7 +1,7 @@
 /*
  * scamper_debug.h
  *
- * $Id: scamper_debug.h,v 1.23 2023/08/24 04:18:44 mjl Exp $
+ * $Id: scamper_debug.h,v 1.24 2024/07/19 06:59:03 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2009 The University of Waikato
@@ -53,6 +53,7 @@ void printerror_ssl(const char *func, const char *format, ...);
 #define scamper_debug(func, format, ...) ((void)0)
 #else
 #define HAVE_SCAMPER_DEBUG
+int scamper_debug_would(void);
 #ifdef HAVE_FUNC_ATTRIBUTE_FORMAT
 void scamper_debug(const char *func, const char *format, ...)
   __attribute__((format(printf, 2, 3)));
