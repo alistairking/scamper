@@ -1,7 +1,7 @@
 /*
  * sc_hoiho: Holistic Orthography of Internet Hostname Observations
  *
- * $Id: sc_hoiho.c,v 1.29 2024/04/26 06:52:24 mjl Exp $
+ * $Id: sc_hoiho.c,v 1.30 2024/07/19 05:46:26 mjl Exp $
  *
  *         Matthew Luckie
  *         mjl@luckie.org.nz
@@ -4194,7 +4194,7 @@ static int lcs_trim(slist_t *X, const char *S, const char *T)
 	    {
 	      if(isalnum((unsigned char)S[pt->S_end+1]) != 0 ||
 		 isalnum((unsigned char)T[pt->T_end+1]) != 0 ||
-		 isalnum((unsigned char)S[pt->S_end]) == 0) 
+		 isalnum((unsigned char)S[pt->S_end]) == 0)
 		{
 		  pt->S_end--;
 		  pt->T_end--;

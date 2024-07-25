@@ -1,7 +1,7 @@
 /*
  * scamper_rtsock: code to deal with a route socket or equivalent
  *
- * $Id: scamper_rtsock.c,v 1.97 2023/08/26 21:25:08 mjl Exp $
+ * $Id: scamper_rtsock.c,v 1.98 2024/07/18 22:26:44 mjl Exp $
  *
  *          Matthew Luckie
  *
@@ -706,21 +706,13 @@ int scamper_rtsock_open()
 
 #ifdef DISABLE_PRIVSEP
 #ifdef HAVE_SETEUID
-  uid_t uid = scamper_getuid();
-  uid_t euid = scamper_geteuid();
-  if(uid != euid && seteuid(euid) != 0)
-    {
-      printerror(__func__, "could not claim euid");
-      return -1;
-    }
+  uid_t uid, euid;
+  if(scamper_seteuid_raise(&uid, &euid) != 0)
+    return -1;
 #endif
   fd = scamper_rtsock_open_fd();
 #ifdef HAVE_SETEUID
-  if(uid != euid && seteuid(uid) != 0)
-    {
-      printerror(__func__, "could not return to uid");
-      exit(-errno);
-    }
+  scamper_seteuid_lower(&uid, &euid);
 #endif
 #else
   fd = scamper_privsep_open_rtsock();

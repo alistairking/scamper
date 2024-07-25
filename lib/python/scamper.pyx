@@ -1409,7 +1409,7 @@ class _ScamperTraceHopIterator:
     def __init__(self, trace):
         self._trace = trace
         self._index = 0
-        self._hopc = trace.hop_count
+        self._hopc = trace.stop_hop
 
     def __iter__(self):
         return self
@@ -1625,6 +1625,20 @@ cdef class ScamperTrace:
         """
         return cscamper_trace.scamper_trace_hop_count_get(self._c)
 
+    @property
+    def stop_hop(self):
+        """
+        get method to obtain the number of hops in the path before the
+        traceroute could stop.
+
+        :returns: the stopping hop
+        :rtype: int
+        """
+        stop_hop = cscamper_trace.scamper_trace_stop_hop_get(self._c)
+        if stop_hop == 0:
+            return cscamper_trace.scamper_trace_hop_count_get(self._c)
+        return stop_hop
+
     def hops(self):
         """
         get method to obtain an iterator for recorded hops.
@@ -1633,6 +1647,20 @@ cdef class ScamperTrace:
         :rtype: _ScamperTraceHopIterator
         """
         return _ScamperTraceHopIterator(self)
+
+    def addrs(self, reserved=True):
+        """
+        get method to obtain unique addresses in traceroute hops.
+
+        :returns: a list of unique addresses, according to selection.
+        :rtype: list[ScamperAddr]
+        """
+        addrs = {}
+        for hop in self.hops():
+            if hop is None or (not reserved and hop.src.is_reserved()):
+                continue
+            addrs[hop.src] = 1
+        return list(addrs.keys())
 
     @property
     def attempts(self):
@@ -6520,6 +6548,19 @@ cdef class ScamperHost:
                 nses[rec.ns] = 1
         return list(nses.keys())
 
+    def ans_ptrs(self):
+        """
+        get method to obtain all unique PTR records returned
+
+        :returns: a list of :str:
+        :rtype: a list of :str:
+        """
+        ptrs = {}
+        for rec in self.ans():
+            if rec.ptr is not None:
+                ptrs[rec.ptr] = 1
+        return list(ptrs.keys())
+
     def ans_txts(self):
         """
         get method to obtain all txt records returned
@@ -7066,7 +7107,7 @@ cdef class ScamperUdpprobeProbe:
     about a specific UDP probe.
     """
     cdef cscamper_udpprobe.scamper_udpprobe_probe_t *_c
-    cdef uint8_t _i, _probe_sent
+    cdef uint8_t _i, _replyc
 
     def __init__(self):
         raise TypeError("This class cannot be instantiated directly.")

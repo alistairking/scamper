@@ -1,7 +1,7 @@
 /*
  * scamper_icmp_resp.c
  *
- * $Id: scamper_icmp_resp.c,v 1.37 2024/04/13 22:31:04 mjl Exp $
+ * $Id: scamper_icmp_resp.c,v 1.38 2024/07/19 06:59:03 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -33,10 +33,10 @@
 #include "scamper_addr.h"
 #include "scamper_addr_int.h"
 #include "scamper_task.h"
-#include "scamper_icmp_resp.h"
 #include "scamper_debug.h"
+#include "scamper_icmp_resp.h"
 
-#if !defined(NDEBUG) || !defined(WITHOUT_DEBUGFILE)
+#ifdef HAVE_SCAMPER_DEBUG
 void scamper_icmp_resp_print(const scamper_icmp_resp_t *ir)
 {
   char *t = NULL, tbuf[64];
@@ -51,6 +51,9 @@ void scamper_icmp_resp_print(const scamper_icmp_resp_t *ir)
   size_t off;
 
   assert(ir->ir_af == AF_INET || ir->ir_af == AF_INET6);
+
+  if(scamper_debug_would() == 0)
+    return;
 
   if(ir->ir_af == AF_INET)
     {
@@ -300,7 +303,7 @@ void scamper_icmp_resp_print(const scamper_icmp_resp_t *ir)
   scamper_debug(NULL, "%s %s%s%s%s", ip, icmp, inner_ip, inner_transport, ext);
   return;
 }
-#endif
+#endif /* HAVE_SCAMPER_DEBUG */
 
 int scamper_icmp_resp_src(scamper_icmp_resp_t *resp, scamper_addr_t *addr)
 {
