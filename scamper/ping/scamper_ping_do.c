@@ -1714,6 +1714,10 @@ scamper_task_t *scamper_do_ping_alloctask(void *data, scamper_list_t *list,
       if(ping->probe_sport == 0)
 	{
 	  ping->probe_sport = scamper_pid_u16();
+	  if(ping->probe_method == SCAMPER_PING_METHOD_ICMP_ECHO)
+	    SCAMPER_TASK_SIG_ICMP_ECHO(sig, ping->probe_sport);
+	  else
+	    SCAMPER_TASK_SIG_ICMP_TIME(sig, ping->probe_sport);
 	  if(scamper_task_find(sig) != NULL)
 	    {
 	      /*
