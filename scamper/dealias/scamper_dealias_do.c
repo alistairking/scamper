@@ -1,7 +1,7 @@
 /*
  * scamper_do_dealias.c
  *
- * $Id: scamper_dealias_do.c,v 1.199 2024/03/04 19:36:41 mjl Exp $
+ * $Id: scamper_dealias_do.c,v 1.201 2024/08/13 05:14:13 mjl Exp $
  *
  * Copyright (C) 2008-2011 The University of Waikato
  * Copyright (C) 2012-2013 Matthew Luckie
@@ -35,6 +35,7 @@
 #include "internal.h"
 
 #include "scamper.h"
+#include "scamper_debug.h"
 #include "scamper_addr.h"
 #include "scamper_addr_int.h"
 #include "scamper_list.h"
@@ -55,7 +56,6 @@
 #include "scamper_icmp6.h"
 #include "scamper_queue.h"
 #include "scamper_file.h"
-#include "scamper_debug.h"
 #include "scamper_dealias_do.h"
 #include "mjl_splaytree.h"
 #include "mjl_list.h"
@@ -1829,7 +1829,7 @@ static void do_dealias_handle_dl(scamper_task_t *task, scamper_dl_rec_t *dl)
   else if(dl->dl_af != AF_INET6)
     return;
 
-  if(v4 && SCAMPER_DL_IS_TCP(dl))
+  if(SCAMPER_DL_IS_TCP(dl))
     {
       if(scamper_dl_rec_src(dl, &a) != 0 ||
 	 (tgt = dealias_target_find(state, &a)) == NULL)

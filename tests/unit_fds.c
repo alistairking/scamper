@@ -1,7 +1,7 @@
 /*
  * unit_fds : unit tests for scamper_fd
  *
- * $Id: unit_fds.c,v 1.6 2024/07/15 22:17:36 mjl Exp $
+ * $Id: unit_fds.c,v 1.8 2024/08/13 05:47:16 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -28,9 +28,9 @@
 #endif
 #include "internal.h"
 
+#include "scamper_addr.h"
 #include "scamper_fds.h"
 #include "scamper_dl.h"
-#include "scamper_addr.h"
 #include "utils.h"
 
 static int fd_n = 4;
@@ -45,17 +45,6 @@ int scamper_dl_open(int ifindex)
 
 void scamper_dl_read_cb(int fd, void *param)
 {
-  return;
-}
-
-scamper_dl_t *scamper_dl_state_alloc(scamper_fd_t *fdn)
-{
-  return malloc_zero(sizeof(int));
-}
-
-void scamper_dl_state_free(scamper_dl_t *dl)
-{
-  free(dl);
   return;
 }
 

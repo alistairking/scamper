@@ -1,7 +1,7 @@
 /*
  * scamper_probe.c
  *
- * $Id: scamper_probe.c,v 1.86 2024/07/19 06:59:03 mjl Exp $
+ * $Id: scamper_probe.c,v 1.87 2024/08/13 05:14:13 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -31,6 +31,7 @@
 #include "internal.h"
 
 #include "scamper.h"
+#include "scamper_debug.h"
 #include "scamper_addr.h"
 #include "scamper_addr_int.h"
 #include "scamper_dl.h"
@@ -50,7 +51,6 @@
 #include "scamper_dl.h"
 #include "scamper_dlhdr.h"
 #include "scamper_osinfo.h"
-#include "scamper_debug.h"
 #include "utils.h"
 
 /*

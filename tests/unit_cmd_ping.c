@@ -1,7 +1,7 @@
 /*
  * unit_cmd_ping : unit tests for ping commands
  *
- * $Id: unit_cmd_ping.c,v 1.15 2024/06/26 20:09:22 mjl Exp $
+ * $Id: unit_cmd_ping.c,v 1.16 2024/08/01 04:49:23 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -252,27 +252,31 @@ static int udp_zero_bytes_c1(const scamper_ping_t *ping)
   return 0;
 }
 
-static int wait_timeout_1_0(const scamper_ping_t *ping)
+static int wait_probe_1_0_timeout_1_0(const scamper_ping_t *ping)
 {
   const struct timeval *tv;
   if(ping == NULL ||
+     (tv = scamper_ping_wait_probe_get(ping)) == NULL ||
+     tv->tv_sec != 1 || tv->tv_usec != 0 ||
      (tv = scamper_ping_wait_timeout_get(ping)) == NULL ||
      tv->tv_sec != 1 || tv->tv_usec != 0)
     return -1;
   return 0;
 }
 
-static int wait_timeout_1_5(const scamper_ping_t *ping)
+static int wait_probe_1_0_timeout_1_5(const scamper_ping_t *ping)
 {
   const struct timeval *tv;
   if(ping == NULL ||
+     (tv = scamper_ping_wait_probe_get(ping)) == NULL ||
+     tv->tv_sec != 1 || tv->tv_usec != 0 ||
      (tv = scamper_ping_wait_timeout_get(ping)) == NULL ||
      tv->tv_sec != 1 || tv->tv_usec != 500000)
     return -1;
   return 0;
 }
 
-static int wait_probe_3_0(const scamper_ping_t *ping)
+static int wait_probe_3_0_timeout_3_0(const scamper_ping_t *ping)
 {
   const struct timeval *tv;
   if(ping == NULL ||
@@ -284,17 +288,19 @@ static int wait_probe_3_0(const scamper_ping_t *ping)
   return 0;
 }
 
-static int wait_probe_3_69(const scamper_ping_t *ping)
+static int wait_probe_3_69_timeout_3_69(const scamper_ping_t *ping)
 {
   const struct timeval *tv;
   if(ping == NULL ||
      (tv = scamper_ping_wait_probe_get(ping)) == NULL ||
+     tv->tv_sec != 3 || tv->tv_usec != 690000 ||
+     (tv = scamper_ping_wait_timeout_get(ping)) == NULL ||
      tv->tv_sec != 3 || tv->tv_usec != 690000)
     return -1;
   return 0;
 }
 
-static int wait_probe_0_5(const scamper_ping_t *ping)
+static int wait_probe_0_5_timeout_1_0(const scamper_ping_t *ping)
 {
   const struct timeval *tv;
   if(ping == NULL ||
@@ -302,6 +308,18 @@ static int wait_probe_0_5(const scamper_ping_t *ping)
      tv->tv_sec != 0 || tv->tv_usec != 500000 ||
      (tv = scamper_ping_wait_timeout_get(ping)) == NULL ||
      tv->tv_sec != 1 || tv->tv_usec != 0)
+    return -1;
+  return 0;
+}
+
+static int wait_probe_0_5_timeout_0_25(const scamper_ping_t *ping)
+{
+  const struct timeval *tv;
+  if(ping == NULL ||
+     (tv = scamper_ping_wait_probe_get(ping)) == NULL ||
+     tv->tv_sec != 0 || tv->tv_usec != 500000 ||
+     (tv = scamper_ping_wait_timeout_get(ping)) == NULL ||
+     tv->tv_sec != 0 || tv->tv_usec != 250000)
     return -1;
   return 0;
 }
@@ -362,16 +380,17 @@ int main(int argc, char *argv[])
     {"-B 0123456789abcdef -s 36 192.0.2.1", payload_hex},
     {"-B 0123 -B 456789abcdef 192.0.2.1", isnull},
     {"-d 0 -P icmp-echo -i 1 -z 0 -c 5 -F 0 -O dl 2001:db8::1", atf},
-    {"-i 3 192.0.2.1", wait_probe_3_0},
-    {"-i 3s 192.0.2.1", wait_probe_3_0},
-    {"-i 3.69 192.0.2.1", wait_probe_3_69},
-    {"-i 3.69s 192.0.2.1", wait_probe_3_69},
-    {"-i 0.5 192.0.2.1", wait_probe_0_5},
-    {"-i 0.5s 192.0.2.1", wait_probe_0_5},
+    {"-i 3 192.0.2.1", wait_probe_3_0_timeout_3_0},
+    {"-i 3s 192.0.2.1", wait_probe_3_0_timeout_3_0},
+    {"-i 3.69 192.0.2.1", wait_probe_3_69_timeout_3_69},
+    {"-i 3.69s 192.0.2.1", wait_probe_3_69_timeout_3_69},
+    {"-i 0.5 192.0.2.1", wait_probe_0_5_timeout_1_0},
+    {"-i 0.5s 192.0.2.1", wait_probe_0_5_timeout_1_0},
     {"-i 0.25 -W 0.5 192.0.2.1", wait_probe_0_25_timeout_0_5},
     {"-i 0.25s -W 0.5 192.0.2.1", wait_probe_0_25_timeout_0_5},
     {"-i 0.25 -W 0.5s 192.0.2.1", wait_probe_0_25_timeout_0_5},
     {"-i 0.25s -W 0.5s 192.0.2.1", wait_probe_0_25_timeout_0_5},
+    {"-i 0.5s -W 0.25s 192.0.2.1", wait_probe_0_5_timeout_0_25},
     {"-i 21 192.0.2.1", isnull},
     {"-i 21s 192.0.2.1", isnull},
     {"-O dl -O tbt -M 1280 -s 1300 2001:db8::1", tbt_1280_1300},
@@ -394,10 +413,10 @@ int main(int argc, char *argv[])
     {"-P udp -B 0000000000000000000000000000000000000000 -c 1 192.0.2.1", udp_zero_bytes_c1},
     {"-R 192.0.2.1", recordroute},
     {"-W 1. 192.0.2.1", isnull},
-    {"-W 1 192.0.2.1", wait_timeout_1_0},
-    {"-W 1s 192.0.2.1", wait_timeout_1_0},
-    {"-W 1.5 192.0.2.1", wait_timeout_1_5},
-    {"-W 1.5s 192.0.2.1", wait_timeout_1_5},
+    {"-W 1 192.0.2.1", wait_probe_1_0_timeout_1_0},
+    {"-W 1s 192.0.2.1", wait_probe_1_0_timeout_1_0},
+    {"-W 1.5 192.0.2.1", wait_probe_1_0_timeout_1_5},
+    {"-W 1.5s 192.0.2.1", wait_probe_1_0_timeout_1_5},
     {"-W 1.5000000 192.0.2.1", isnull},
     {"-W 1.5000000s 192.0.2.1", isnull},
   };

@@ -1,7 +1,7 @@
 /*
  * common.c: common functions that we might need for linking unit tests
  *
- * $Id: common.c,v 1.7 2024/07/02 00:50:12 mjl Exp $
+ * $Id: common.c,v 1.8 2024/08/01 05:16:40 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -31,6 +31,7 @@
 #include "utils.h"
 #include "common.h"
 
+#ifdef COMMON_CHECK_ADDR
 int check_addr(const scamper_addr_t *sa, const char *str)
 {
   struct in_addr in;
@@ -56,6 +57,7 @@ int check_addr(const scamper_addr_t *sa, const char *str)
 
   return -1;
 }
+#endif
 
 int dump_cmd(const char *cmd, const char *filename)
 {

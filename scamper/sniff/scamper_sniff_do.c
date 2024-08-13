@@ -1,7 +1,7 @@
 /*
  * scamper_sniff_do.c
  *
- * $Id: scamper_sniff_do.c,v 1.26 2024/02/27 03:34:02 mjl Exp $
+ * $Id: scamper_sniff_do.c,v 1.27 2024/08/13 05:14:13 mjl Exp $
  *
  * Copyright (C) 2011      The University of Waikato
  * Copyright (C) 2022-2023 Matthew Luckie
@@ -28,6 +28,7 @@
 #include "internal.h"
 
 #include "scamper.h"
+#include "scamper_debug.h"
 #include "scamper_addr.h"
 #include "scamper_addr_int.h"
 #include "scamper_list.h"
@@ -39,7 +40,6 @@
 #include "scamper_if.h"
 #include "scamper_queue.h"
 #include "scamper_file.h"
-#include "scamper_debug.h"
 #include "scamper_sniff_do.h"
 #include "mjl_list.h"
 #include "utils.h"

@@ -1,7 +1,7 @@
 /*
  * scamper_tcp4.c
  *
- * $Id: scamper_tcp4.c,v 1.66 2024/07/02 01:11:17 mjl Exp $
+ * $Id: scamper_tcp4.c,v 1.67 2024/08/13 05:14:13 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -29,6 +29,7 @@
 #endif
 #include "internal.h"
 
+#include "scamper_debug.h"
 #include "scamper_addr.h"
 #include "scamper_addr_int.h"
 #include "scamper_dl.h"
@@ -36,7 +37,6 @@
 #include "scamper_probe.h"
 #include "scamper_ip4.h"
 #include "scamper_tcp4.h"
-#include "scamper_debug.h"
 #include "utils.h"
 
 /*

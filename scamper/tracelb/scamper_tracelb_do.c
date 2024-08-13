@@ -1,7 +1,7 @@
 /*
  * scamper_tracelb_do.c
  *
- * $Id: scamper_tracelb_do.c,v 1.310 2024/07/02 01:11:17 mjl Exp $
+ * $Id: scamper_tracelb_do.c,v 1.311 2024/08/13 05:14:13 mjl Exp $
  *
  * Copyright (C) 2008-2011 The University of Waikato
  * Copyright (C) 2012      The Regents of the University of California
@@ -34,6 +34,7 @@
 #include "internal.h"
 
 #include "scamper.h"
+#include "scamper_debug.h"
 #include "scamper_addr.h"
 #include "scamper_addr_int.h"
 #include "scamper_list.h"
@@ -55,7 +56,6 @@
 #include "scamper_icmp6.h"
 #include "scamper_queue.h"
 #include "scamper_file.h"
-#include "scamper_debug.h"
 #ifndef DISABLE_SCAMPER_HOST
 #include "host/scamper_host_do.h"
 #endif

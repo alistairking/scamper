@@ -1,7 +1,7 @@
 /*
  * scamper_fds: manage events and file descriptors
  *
- * $Id: scamper_fds.c,v 1.130 2024/07/15 23:12:44 mjl Exp $
+ * $Id: scamper_fds.c,v 1.131 2024/07/30 09:19:09 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -1178,14 +1178,15 @@ static scamper_fd_t *fd_icmp(int type, void *addr)
   return NULL;
 }
 
-static scamper_fd_t *fd_tcp(int type, void *src, uint16_t sport,
-			    uint16_t *sportx, size_t sportxc,
-			    void *dst, uint16_t dport)
+static scamper_fd_t *fd_tcpudp(int type, void *src, uint16_t sport,
+			       uint16_t *sportx, size_t sportxc,
+			       void *dst, uint16_t dport)
 {
   scamper_addr_t sa;
   scamper_fd_t *fdn = NULL, *exist, findme;
   dlist_node_t *dn;
-  size_t s, len;
+  uint8_t proto;
+  size_t s, len = 0;
   int rc;
 
 #ifndef _WIN32 /* SOCKET vs int on windows */
@@ -1195,14 +1196,48 @@ static scamper_fd_t *fd_tcp(int type, void *src, uint16_t sport,
 #endif
 
   assert(type == SCAMPER_FD_TYPE_TCP4 ||
-	 type == SCAMPER_FD_TYPE_TCP6);
+	 type == SCAMPER_FD_TYPE_TCP6 ||
+	 type == SCAMPER_FD_TYPE_UDP4RAW ||
+	 type == SCAMPER_FD_TYPE_UDP4DG ||
+	 type == SCAMPER_FD_TYPE_UDP6ERR ||
+	 type == SCAMPER_FD_TYPE_UDP6);
+
+  if(type == SCAMPER_FD_TYPE_UDP4RAW)
+    {
+      findme.type = type;
+      findme.fd_addr = src;
+      findme.fd_sport = sport;
+      if((fdn = fd_find(&findme)) != NULL)
+	return fdn;
+      fd  = scamper_udp4_openraw(src);
+      len = sizeof(struct in_addr);
+      goto build;
+    }
 
   if(sport == 0 && dst != NULL)
     {
-      if(type == SCAMPER_FD_TYPE_TCP4)
-	sa.type = SCAMPER_ADDR_TYPE_IPV4;
-      else
-	sa.type = SCAMPER_ADDR_TYPE_IPV6;
+      switch(type)
+	{
+	case SCAMPER_FD_TYPE_TCP4:
+	  sa.type = SCAMPER_ADDR_TYPE_IPV4; proto = IPPROTO_TCP;
+	  break;
+	  
+	case SCAMPER_FD_TYPE_TCP6:
+	  sa.type = SCAMPER_ADDR_TYPE_IPV6; proto = IPPROTO_TCP;
+	  break;
+
+	case SCAMPER_FD_TYPE_UDP4DG:
+	  sa.type = SCAMPER_ADDR_TYPE_IPV4; proto = IPPROTO_UDP;
+	  break;
+
+	case SCAMPER_FD_TYPE_UDP6:
+	case SCAMPER_FD_TYPE_UDP6ERR:
+	  sa.type = SCAMPER_ADDR_TYPE_IPV6; proto = IPPROTO_UDP;
+	  break;
+
+	default:
+	  goto err;
+	}
       sa.addr = dst;
 
       /*
@@ -1214,6 +1249,7 @@ static scamper_fd_t *fd_tcp(int type, void *src, uint16_t sport,
 	  exist = dlist_node_item(dn);
 	  if(exist->type != type)
 	    continue;
+
 	  /* has the caller asked to not provide specific sports? */
 	  if(sportx != NULL)
 	    {
@@ -1223,8 +1259,7 @@ static scamper_fd_t *fd_tcp(int type, void *src, uint16_t sport,
 	      if(s != sportxc)
 		continue;
 	    }
-	  rc = scamper_task_sig_sport_used(&sa, IPPROTO_TCP,
-					   exist->fd_sport, dport);
+	  rc = scamper_task_sig_sport_used(&sa, proto, exist->fd_sport, dport);
 	  if(rc == 0)
 	    return scamper_fd_use(exist);
 	  if(rc == -1)
@@ -1243,147 +1278,31 @@ static scamper_fd_t *fd_tcp(int type, void *src, uint16_t sport,
 	return fdn;
     }
 
-  if(type == SCAMPER_FD_TYPE_TCP4)
+  switch(type)
     {
-      fd  = scamper_tcp4_open(src, sport);
-      len = sizeof(struct in_addr);
-    }
-  else if(type == SCAMPER_FD_TYPE_TCP6)
-    {
-      fd = scamper_tcp6_open(src, sport);
-      len = sizeof(struct in6_addr);
-    }
-  else goto err;
+    case SCAMPER_FD_TYPE_TCP4:
+      fd = scamper_tcp4_open(src, sport); len = sizeof(struct in_addr);
+      break;
 
-  if(sport == 0 && socket_isvalid(fd) && socket_sport(fd, &sport) != 0)
-    {
-      printerror(__func__, "could not get sport for socket");
+    case SCAMPER_FD_TYPE_TCP6:
+      fd = scamper_tcp6_open(src, sport); len = sizeof(struct in6_addr);
+      break;
+
+    case SCAMPER_FD_TYPE_UDP6:
+      fd = scamper_udp6_open(src, sport); len = sizeof(struct in6_addr);
+      break;
+
+    case SCAMPER_FD_TYPE_UDP4DG:
+      fd = scamper_udp4_opendgram(src, sport); len = sizeof(struct in_addr);
+      break;
+
+    case SCAMPER_FD_TYPE_UDP6ERR:
+      fd = scamper_udp6_open_err(src, sport); len = sizeof(struct in6_addr);
+      break;
+
+    default:
       goto err;
     }
-
-  if(socket_isinvalid(fd) || (fdn = fd_alloc(type, fd)) == NULL ||
-     (src != NULL && (fdn->fd_addr = memdup(src, len)) == NULL))
-    {
-      goto err;
-    }
-  fdn->fd_sport = sport;
-
-  if((fdn->fd_tree_node = splaytree_insert(fd_tree, fdn)) == NULL ||
-     (fdn->fd_list_node = dlist_tail_push(fd_list, fdn)) == NULL)
-    {
-      goto err;
-    }
-
-  scamper_debug(__func__, "fd %d type %s", fdn->fd, fd_tostr(fdn));
-
-#if defined(BUILDING_SCAMPER) && (defined(__linux__) || defined(BIOCSETFNR))
-  if(scamper_option_dynfilter())
-    fd_dynfilter();
-#endif
-
-  return fdn;
-
- err:
-  if(socket_isvalid(fd))
-    socket_close(fd);
-  if(fdn != NULL) fd_free(fdn);
-  return NULL;
-}
-
-static scamper_fd_t *fd_udp(int type, void *src, uint16_t sport,
-			    uint16_t *sportx, size_t sportxc,
-			    void *dst, uint16_t dport)
-{
-  scamper_addr_t sa;
-  scamper_fd_t *fdn = NULL, *exist, findme;
-  dlist_node_t *dn;
-  size_t s, len = 0;
-  int rc;
-
-#ifndef _WIN32 /* SOCKET vs int on windows */
-  int fd = -1;
-#else
-  SOCKET fd = INVALID_SOCKET;
-#endif
-
-  assert(type == SCAMPER_FD_TYPE_UDP4RAW ||
-	 type == SCAMPER_FD_TYPE_UDP4DG ||
-	 type == SCAMPER_FD_TYPE_UDP6ERR ||
-	 type == SCAMPER_FD_TYPE_UDP6);
-
-  findme.type = type;
-  findme.fd_addr = src;
-  findme.fd_sport = sport;
-
-  if(type == SCAMPER_FD_TYPE_UDP4RAW)
-    {
-      if((fdn = fd_find(&findme)) != NULL)
-	return fdn;
-      fd  = scamper_udp4_openraw(src);
-      len = sizeof(struct in_addr);
-      goto build;
-    }
-
-  if(sport == 0 && dst != NULL)
-    {
-      if(type == SCAMPER_FD_TYPE_UDP4DG)
-	sa.type = SCAMPER_ADDR_TYPE_IPV4;
-      else
-	sa.type = SCAMPER_ADDR_TYPE_IPV6;
-      sa.addr = dst;
-
-      /*
-       * check to see if we can satisfy this request with an already
-       * open fd
-       */
-      for(dn = dlist_head_node(fd_list); dn != NULL; dn = dlist_node_next(dn))
-	{
-	  exist = dlist_node_item(dn);
-	  if(exist->type != type)
-	    continue;
-
-	  /* has the caller asked to not provide specific sports? */
-	  if(sportx != NULL)
-	    {
-	      for(s=0; s<sportxc; s++)
-		if(sportx[s] == exist->fd_sport)
-		  break;
-	      if(s != sportxc)
-		continue;
-	    }
-	  rc = scamper_task_sig_sport_used(&sa, IPPROTO_UDP,
-					   exist->fd_sport, dport);
-	  if(rc == -1)
-	    {
-	      printerror_msg(__func__, "could not determine if sport used");
-	      goto err;
-	    }
-	  if(rc == 0)
-	    return scamper_fd_use(exist);
-	}
-    }
-  else if(sport != 0)
-    {
-      if((fdn = fd_find(&findme)) != NULL)
-	return fdn;
-    }
-
-  if(type == SCAMPER_FD_TYPE_UDP6)
-    {
-      fd  = scamper_udp6_open(src, sport);
-      len = sizeof(struct in6_addr);
-    }
-  else if(type == SCAMPER_FD_TYPE_UDP4DG)
-    {
-      fd  = scamper_udp4_opendgram(src, sport);
-      len = sizeof(struct in_addr);
-    }
-  else if(type == SCAMPER_FD_TYPE_UDP6ERR)
-    {
-      fd  = scamper_udp6_open_err(src, sport);
-      len = sizeof(struct in6_addr);
-    }
-  else goto err;
 
   if(sport == 0 && socket_isvalid(fd) && socket_sport(fd, &sport) != 0)
     {
@@ -1395,7 +1314,6 @@ static scamper_fd_t *fd_udp(int type, void *src, uint16_t sport,
   if(socket_isinvalid(fd) || (fdn = fd_alloc(type, fd)) == NULL ||
      (src != NULL && (fdn->fd_addr = memdup(src, len)) == NULL))
     {
-      printerror(__func__, "could not open socket");
       goto err;
     }
   fdn->fd_sport = sport;
@@ -1415,7 +1333,10 @@ static scamper_fd_t *fd_udp(int type, void *src, uint16_t sport,
 
 #if defined(BUILDING_SCAMPER) && (defined(__linux__) || defined(BIOCSETFNR))
   if(scamper_option_dynfilter() &&
-     (fdn->type == SCAMPER_FD_TYPE_UDP4DG || fdn->type == SCAMPER_FD_TYPE_UDP6))
+     (fdn->type == SCAMPER_FD_TYPE_UDP4DG ||
+      fdn->type == SCAMPER_FD_TYPE_UDP6 ||
+      fdn->type == SCAMPER_FD_TYPE_TCP4 ||
+      fdn->type == SCAMPER_FD_TYPE_TCP6))
     fd_dynfilter();
 #endif
 
@@ -1668,33 +1589,35 @@ scamper_fd_t *scamper_fd_rtsock(void)
 
 scamper_fd_t *scamper_fd_tcp4(void *src, uint16_t sport)
 {
-  return fd_tcp(SCAMPER_FD_TYPE_TCP4, src, sport, NULL, 0, NULL, 0);
+  return fd_tcpudp(SCAMPER_FD_TYPE_TCP4, src, sport, NULL, 0, NULL, 0);
 }
 
 scamper_fd_t *scamper_fd_tcp4_dst(void *src, uint16_t sport,
 				  uint16_t *sportx, size_t sportxc,
 				  void *dst, uint16_t dport)
 {
-  return fd_tcp(SCAMPER_FD_TYPE_TCP4, src, sport, sportx, sportxc, dst, dport);
+  return fd_tcpudp(SCAMPER_FD_TYPE_TCP4,
+		   src, sport, sportx, sportxc, dst, dport);
 }
 
 scamper_fd_t *scamper_fd_tcp6(void *src, uint16_t sport)
 {
-  return fd_tcp(SCAMPER_FD_TYPE_TCP6, src, sport, NULL, 0, NULL, 0);
+  return fd_tcpudp(SCAMPER_FD_TYPE_TCP6, src, sport, NULL, 0, NULL, 0);
 }
 
 scamper_fd_t *scamper_fd_tcp6_dst(void *src, uint16_t sport,
 				  uint16_t *sportx, size_t sportxc,
 				  void *dst, uint16_t dport)
 {
-  return fd_tcp(SCAMPER_FD_TYPE_TCP6, src, sport, sportx, sportxc, dst, dport);
+  return fd_tcpudp(SCAMPER_FD_TYPE_TCP6,
+		   src, sport, sportx, sportxc, dst, dport);
 }
 
 scamper_fd_t *scamper_fd_udp4dg(void *src, uint16_t sport)
 {
   scamper_fd_t *fdn;
-  fdn = fd_udp(SCAMPER_FD_TYPE_UDP4DG, src, sport, NULL, 0, NULL, 0);
-  if(fdn != NULL)
+  if((fdn = fd_tcpudp(SCAMPER_FD_TYPE_UDP4DG,
+		      src, sport, NULL, 0, NULL, 0)) != NULL)
     {
       fdn->read.cb = scamper_udp4_read_cb;
       scamper_fd_read_unpause(fdn);
@@ -1707,8 +1630,8 @@ scamper_fd_t *scamper_fd_udp4dg_dst(void *src, uint16_t sport,
 				    void *dst, uint16_t dport)
 {
   scamper_fd_t *fdn;
-  fdn = fd_udp(SCAMPER_FD_TYPE_UDP4DG, src, sport, sportx, sportxc, dst, dport);
-  if(fdn != NULL)
+  if((fdn = fd_tcpudp(SCAMPER_FD_TYPE_UDP4DG,
+		      src, sport, sportx, sportxc, dst, dport)) != NULL)
     {
       fdn->read.cb = scamper_udp4_read_cb;
       scamper_fd_read_unpause(fdn);
@@ -1718,14 +1641,14 @@ scamper_fd_t *scamper_fd_udp4dg_dst(void *src, uint16_t sport,
 
 scamper_fd_t *scamper_fd_udp4raw(void *src)
 {
-  return fd_udp(SCAMPER_FD_TYPE_UDP4RAW, src, 0, NULL, 0, NULL, 0);
+  return fd_tcpudp(SCAMPER_FD_TYPE_UDP4RAW, src, 0, NULL, 0, NULL, 0);
 }
 
 scamper_fd_t *scamper_fd_udp6(void *src, uint16_t sport)
 {
   scamper_fd_t *fdn;
-  fdn = fd_udp(SCAMPER_FD_TYPE_UDP6, src, sport, NULL, 0, NULL, 0);
-  if(fdn != NULL)
+  if((fdn = fd_tcpudp(SCAMPER_FD_TYPE_UDP6,
+		      src, sport, NULL, 0, NULL, 0)) != NULL)
     {
       fdn->read.cb = scamper_udp6_read_cb;
       scamper_fd_read_unpause(fdn);
@@ -1738,8 +1661,8 @@ scamper_fd_t *scamper_fd_udp6_dst(void *src, uint16_t sport,
 				  void *dst, uint16_t dport)
 {
   scamper_fd_t *fdn;
-  fdn = fd_udp(SCAMPER_FD_TYPE_UDP6, src, sport, sportx, sportxc, dst, dport);
-  if(fdn != NULL)
+  if((fdn = fd_tcpudp(SCAMPER_FD_TYPE_UDP6,
+		      src, sport, sportx, sportxc, dst, dport)) != NULL)
     {
       fdn->read.cb = scamper_udp6_read_cb;
       scamper_fd_read_unpause(fdn);
@@ -1750,8 +1673,8 @@ scamper_fd_t *scamper_fd_udp6_dst(void *src, uint16_t sport,
 scamper_fd_t *scamper_fd_udp6err(void *src, uint16_t sport)
 {
   scamper_fd_t *fdn;
-  fdn = fd_udp(SCAMPER_FD_TYPE_UDP6ERR, src, sport, NULL, 0, NULL, 0);
-  if(fdn != NULL)
+  if((fdn = fd_tcpudp(SCAMPER_FD_TYPE_UDP6ERR,
+		      src, sport, NULL, 0, NULL, 0)) != NULL)
     {
       fdn->read.param = fdn;
       fdn->read.cb = scamper_udp6_read_err_cb;
@@ -1765,8 +1688,8 @@ scamper_fd_t *scamper_fd_udp6err_dst(void *src, uint16_t sport,
 				     void *dst, uint16_t dport)
 {
   scamper_fd_t *fdn;
-  if((fdn = fd_udp(SCAMPER_FD_TYPE_UDP6ERR, src, sport, sportx, sportxc,
-		   dst, dport)) != NULL)
+  if((fdn = fd_tcpudp(SCAMPER_FD_TYPE_UDP6ERR,
+		      src, sport, sportx, sportxc, dst, dport)) != NULL)
     {
       fdn->read.param = fdn;
       fdn->read.cb = scamper_udp6_read_err_cb;

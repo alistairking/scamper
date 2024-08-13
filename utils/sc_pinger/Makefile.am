@@ -1,6 +1,11 @@
 AUTOMAKE_OPTIONS = subdir-objects
 
-AM_CPPFLAGS = -I$(top_srcdir) -I$(top_srcdir)/scamper
+AM_CPPFLAGS = \
+	-I$(top_srcdir) \
+	-I$(top_srcdir)/scamper \
+	-I$(top_srcdir)/scamper/ping \
+	-I$(top_srcdir)/scamper/dealias \
+	-I$(top_srcdir)/lib/libscamperctrl
 
 bin_PROGRAMS = sc_pinger
 

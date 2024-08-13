@@ -1,7 +1,7 @@
 /*
  * scamper_udp6.c
  *
- * $Id: scamper_udp6.c,v 1.79 2024/07/02 01:11:17 mjl Exp $
+ * $Id: scamper_udp6.c,v 1.80 2024/08/13 05:14:13 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2010 The University of Waikato
@@ -29,6 +29,7 @@
 #endif
 #include "internal.h"
 
+#include "scamper_debug.h"
 #include "scamper_addr.h"
 #include "scamper_addr_int.h"
 #include "scamper_task.h"
@@ -40,8 +41,6 @@
 #include "scamper_icmp_resp.h"
 #include "scamper_udp_resp.h"
 #include "scamper_fds.h"
-
-#include "scamper_debug.h"
 #include "utils.h"
 
 #if defined(IPV6_RECVERR)
