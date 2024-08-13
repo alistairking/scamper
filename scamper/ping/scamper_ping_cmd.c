@@ -1,7 +1,7 @@
 /*
  * scamper_ping_cmd.c
  *
- * $Id: scamper_ping_cmd.c,v 1.25 2024/06/26 20:05:29 mjl Exp $
+ * $Id: scamper_ping_cmd.c,v 1.26 2024/08/01 04:48:33 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -435,6 +435,9 @@ void *scamper_do_ping_alloc(char *str, char *errbuf, size_t errlen)
       goto err;
     }
 
+  wait_probe.tv_sec = 1; wait_probe.tv_usec = 0;
+  wait_timeout.tv_sec = 1; wait_timeout.tv_usec = 0;
+
   /* parse the options, do preliminary sanity checks */
   for(opt = opts_out; opt != NULL; opt = opt->next)
     {
@@ -580,25 +583,13 @@ void *scamper_do_ping_alloc(char *str, char *errbuf, size_t errlen)
     }
   scamper_options_free(opts_out); opts_out = NULL;
 
-  if((optids & (0x1 << PING_OPT_WAITPROBE)) == 0)
-    {
-      wait_probe.tv_sec = 1;
-      wait_probe.tv_usec = 0;
-    }
-
-  if((optids & (0x1 << PING_OPT_WAITTIMEOUT)) == 0)
-    {
-      if(wait_probe.tv_sec >= 1)
-	{
-	  wait_timeout.tv_sec = wait_probe.tv_sec;
-	  wait_timeout.tv_usec = wait_probe.tv_usec;
-	}
-      else
-	{
-	  wait_timeout.tv_sec = 1;
-	  wait_timeout.tv_usec = 0;
-	}
-    }
+  /*
+   * increase wait-timeout if wait-probe is larger, and wait-timeout
+   * is not specified
+   */
+  if((optids & (0x1 << PING_OPT_WAITTIMEOUT)) == 0 &&
+     timeval_cmp(&wait_timeout, &wait_probe) < 0)
+    timeval_cpy(&wait_timeout, &wait_probe);
 
   /* allocate the ping object and determine the address to probe */
   if((ping = scamper_ping_alloc()) == NULL)

@@ -2,11 +2,11 @@
  * sc_pinger : scamper driver to probe destinations with various ping
  *             methods
  *
- * $Id: sc_pinger.c,v 1.30 2024/04/26 06:52:24 mjl Exp $
+ * $Id: sc_pinger.c,v 1.32.2.1 2024/08/13 08:47:13 mjl Exp $
  *
  * Copyright (C) 2020      The University of Waikato
  * Copyright (C) 2022-2023 Matthew Luckie
- * Copyright (C) 2023      The Regents of the University of California
+ * Copyright (C) 2023-2024 The Regents of the University of California
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -31,9 +31,10 @@
 
 #include "scamper_addr.h"
 #include "scamper_list.h"
-#include "ping/scamper_ping.h"
+#include "scamper_ping.h"
+#include "scamper_dealias.h"
 #include "scamper_file.h"
-#include "lib/libscamperctrl/libscamperctrl.h"
+#include "libscamperctrl.h"
 #include "mjl_list.h"
 #include "utils.h"
 
@@ -61,6 +62,7 @@ static int                    more          = 0;
 static int                    completed     = 0;
 static int                    probe_count   = 5;
 static int                    reply_count   = 3;
+static int                    batch_count   = 0;
 static uint32_t               limit         = 0;
 static uint32_t               outfile_u     = 0;
 static uint32_t               outfile_c     = 0;
@@ -81,6 +83,8 @@ static int                    error         = 0;
 #define OPT_REMOTE      0x0100
 #define OPT_LIMIT       0x0200
 #define OPT_MOVE        0x0400
+#define OPT_BATCH       0x0800
+#define OPT_METHOD      0x1000
 
 /*
  * sc_pingtest
@@ -93,13 +97,24 @@ typedef struct sc_pinger
   int               step;
 } sc_pinger_t;
 
+typedef struct sc_cmdstate
+{
+  uint8_t           type;
+  union
+  {
+    sc_pinger_t    *pinger;
+    slist_t        *batch;
+    void           *ptr;
+  } un;
+} sc_cmdstate_t;
+
 static void usage(uint32_t opt_mask)
 {
   fprintf(stderr,
 	  "usage: sc_pinger [-D?]\n"
 	  "                 [-a infile] [-o outfile] [-p port] [-R unix]\n"
-	  "                 [-U unix] [-c probec] [-l limit] [-m method]\n"
-	  "                 [-M dir] [-t logfile]\n");
+	  "                 [-U unix] [-b batch-count] [-c probe-count]\n"
+	  "                 [-l limit] [-m method] [-M dir] [-t logfile]\n");
 
   if(opt_mask == 0)
     {
@@ -128,14 +143,20 @@ static void usage(uint32_t opt_mask)
   if(opt_mask & OPT_DAEMON)
     fprintf(stderr, "     -D start as daemon\n");
 
+  if(opt_mask & OPT_BATCH)
+    fprintf(stderr, "     -b number of destinations to probe in batch\n");
+
   if(opt_mask & OPT_COUNT)
     fprintf(stderr, "     -c [replyc]/probec\n");
 
   if(opt_mask & OPT_LIMIT)
-    fprintf(stderr, "     -l limit on object count per output file\n");
+    fprintf(stderr, "     -l limit on (dst, method) tuples per output file\n");
+
+  if(opt_mask & OPT_METHOD)
+    fprintf(stderr, "     -m probe method to try\n");
 
   if(opt_mask & OPT_MOVE)
-    fprintf(stderr, "     -m directory to move completed files to\n");
+    fprintf(stderr, "     -M directory to move completed files to\n");
 
   if(opt_mask & OPT_LOG)
     fprintf(stderr, "     -t logfile\n");
@@ -219,7 +240,6 @@ static int parse_count(const char *opt)
 	 string_tolong(ptr, &lo_pc) != 0 ||
 	 lo_rc > lo_pc || lo_pc > 30 || lo_rc < 1 || lo_pc < 1)
 	goto done;
-
       reply_count = lo_rc;
       probe_count = lo_pc;
     }
@@ -241,7 +261,8 @@ static int parse_count(const char *opt)
 static int check_options(int argc, char *argv[])
 {
   char *opt_count = NULL, *opt_port = NULL, *opt_limit = NULL;
-  char *opts = "a:c:Dl:m:M:o:p:R:t:U:?", *ptr, *dup = NULL;
+  char *opt_batch = NULL;
+  char *opts = "a:b:c:Dl:m:M:o:p:R:t:U:?", *ptr, *dup = NULL;
   struct stat sb;
   slist_t *list = NULL;
   long lo;
@@ -256,6 +277,10 @@ static int check_options(int argc, char *argv[])
 	{
 	case 'a':
 	  addrfile_name = optarg;
+	  break;
+
+	case 'b':
+	  opt_batch = optarg;
 	  break;
 
 	case 'c':
@@ -368,6 +393,23 @@ static int check_options(int argc, char *argv[])
     {
       usage(OPT_COUNT);
       goto done;
+    }
+
+  if(opt_batch != NULL)
+    {
+      if(opt_count != NULL && probe_count != reply_count)
+	{
+	  usage(OPT_BATCH | OPT_COUNT);
+	  fprintf(stderr, "cannot specify both reply_count probe batches\n");
+	  goto done;
+	}
+      if(string_tolong(opt_batch, &lo) != 0 || lo < 2)
+	{
+	  usage(OPT_BATCH);
+	  goto done;
+	}
+      batch_count = lo;
+      probe_count = reply_count;
     }
 
   if((methodc = slist_count(list)) > 0)
@@ -551,6 +593,17 @@ static void sc_pinger_free(sc_pinger_t *pinger)
   return;
 }
 
+static sc_cmdstate_t *sc_cmdstate_alloc(uint8_t type, void *ptr)
+{
+  sc_cmdstate_t *cs;
+  if(type > 1 ||
+     (cs = malloc_zero(sizeof(sc_cmdstate_t))) == NULL)
+    return NULL;
+  cs->type = type;
+  cs->un.ptr = ptr;
+  return cs;
+}
+
 static int do_addrfile_line(char *buf)
 {
   static int line = 0;
@@ -646,14 +699,44 @@ static int do_addrfile(void)
   return -1;
 }
 
-static int do_method(void)
+static int do_method_ping_cmd(sc_pinger_t *pinger)
 {
   char cmd[512], addr[128];
-  sc_pinger_t *pinger;
+  sc_cmdstate_t *cs = NULL;
   size_t off = 0;
 
-  if(more < 1)
-    return 0;
+  assert(pinger != NULL);
+
+  scamper_addr_tostr(pinger->dst, addr, sizeof(addr));
+  if(probe_count != reply_count)
+    string_concat(cmd, sizeof(cmd), &off, "ping -c %d -o %d -P %s %s",
+		  probe_count, reply_count, methods[pinger->step], addr);
+  else
+    string_concat(cmd, sizeof(cmd), &off, "ping -c %d -P %s %s",
+		  probe_count, methods[pinger->step], addr);
+
+  if((cs = sc_cmdstate_alloc(0, pinger)) == NULL)
+    {
+      print("%s: could not alloc cmdstate", __func__);
+      return -1;
+    }
+
+  /* got a command, send it */
+  if(scamper_inst_do(scamper_inst, cmd, cs) == NULL)
+    {
+      print("%s: could not send %s", __func__, cmd);
+      return -1;
+    }
+  probing++;
+  more--;
+
+  print("p %d, c %d: %s", probing, completed, cmd);
+  return 0;
+}
+
+static int do_method_ping(void)
+{
+  sc_pinger_t *pinger;
 
   if((pinger = slist_head_pop(waiting)) == NULL &&
      (pinger = slist_head_pop(virgin)) == NULL)
@@ -666,22 +749,120 @@ static int do_method(void)
 	return 0;
     }
 
-  scamper_addr_tostr(pinger->dst, addr, sizeof(addr));
-  string_concat(cmd, sizeof(cmd), &off, "ping -c %d -o %d -P %s %s",
-		probe_count, reply_count, methods[pinger->step], addr);
+  return do_method_ping_cmd(pinger);
+}
+
+static int do_method_radargun(void)
+{
+  slist_t *batch = NULL;
+  slist_t *cmd_parts = NULL;
+  char part[512], addr[128], *dup = NULL, *cmd = NULL;
+  sc_pinger_t *pinger;
+  sc_cmdstate_t *cs = NULL;
+  size_t off, len = 0;
+  int rc = 1;
+
+  if((batch = slist_alloc()) == NULL || (cmd_parts = slist_alloc()) == NULL)
+    {
+      print("%s: could not alloc list", __func__);
+      goto done;
+    }
+
+  /* put the first part of the probe command on the list */
+  off = 0;
+  string_concat(part, sizeof(part), &off,
+		"dealias -w 1s -r 1s -m radargun -q %d", reply_count);
+  if((dup = memdup(part, off+1)) == NULL ||
+     slist_tail_push(cmd_parts, dup) == NULL)
+    goto done;
+  dup = NULL;
+  len += off;
+
+  while(slist_count(batch) < batch_count)
+    {
+      if((pinger = slist_head_pop(waiting)) == NULL &&
+	 (pinger = slist_head_pop(virgin)) == NULL)
+	{
+	  if(addrfile_fd == -1)
+	    break;
+	  if(do_addrfile() != 0)
+	    return -1;
+	  if((pinger = slist_head_pop(virgin)) == NULL)
+	    break;
+	}
+
+      off = 0;
+      scamper_addr_tostr(pinger->dst, addr, sizeof(addr));
+      string_concat(part, sizeof(part), &off, " -p '-P %s -i %s'",
+		    methods[pinger->step], addr);
+      len += off;
+
+      if((dup = memdup(part, off+1)) == NULL ||
+	 slist_tail_push(cmd_parts, dup) == NULL)
+	goto done;
+      dup = NULL;
+
+      if(slist_tail_push(batch, pinger) == NULL)
+	goto done;
+      pinger = NULL;
+    }
+
+  if(slist_count(batch) == 0)
+    {
+      rc = 0;
+      goto done;
+    }
+
+  /* can't do radargun with a single IP address */
+  if(slist_count(batch) == 1)
+    {
+      pinger = slist_head_item(batch);
+      rc = do_method_ping_cmd(pinger);
+      goto done;
+    }
+
+  if((cmd = malloc(len + 1)) == NULL)
+    goto done;
+  off = 0;
+  while((dup = slist_head_pop(cmd_parts)) != NULL)
+    {
+      string_concat(cmd, len + 1, &off, "%s", dup);
+      free(dup); dup = NULL;
+    }
+
+  if((cs = sc_cmdstate_alloc(1, batch)) == NULL)
+    goto done;
+  batch = NULL;
 
   /* got a command, send it */
-  if(scamper_inst_do(scamper_inst, cmd, pinger) == NULL)
+  if(scamper_inst_do(scamper_inst, cmd, cs) == NULL)
     {
       print("%s: could not send %s", __func__, cmd);
-      return -1;
+      goto done;
     }
-  probing++;
+  probing += slist_count(cs->un.batch);
+  cs = NULL;
   more--;
 
   print("p %d, c %d: %s", probing, completed, cmd);
+  rc = 0;
 
-  return 0;
+ done:
+  if(cs != NULL) free(cs);
+  if(cmd != NULL) free(cmd);
+  if(dup != NULL) free(dup);
+  if(cmd_parts != NULL) slist_free_cb(cmd_parts, free);
+  if(batch != NULL) slist_free(batch);
+  return rc;
+}
+
+static int do_method(void)
+{
+  if(more < 1)
+    return 0;
+  if(batch_count >= 2)
+    return do_method_radargun();
+  return do_method_ping();
 }
 
 static int process_pinger(sc_pinger_t *pinger, scamper_ping_t *ping)
@@ -724,7 +905,7 @@ static int process_pinger(sc_pinger_t *pinger, scamper_ping_t *ping)
 		scamper_addr_tostr(pinger->dst, buf, sizeof(buf)));
 	  return -1;
 	}
-      return 0;
+      goto rotate;
     }
 
  done:
@@ -732,13 +913,103 @@ static int process_pinger(sc_pinger_t *pinger, scamper_ping_t *ping)
   print("%s: done %s", __func__,
 	scamper_addr_tostr(pinger->dst, buf, sizeof(buf)));
   sc_pinger_free(pinger);
+
+ rotate:
+  if(limit != 0 && ++outfile_c == limit && rotatefile() != 0)
+    return -1;
   return 0;
+}
+
+static int process_radargun(slist_t *batch, scamper_dealias_t *dealias)
+{
+  scamper_dealias_radargun_t *rg;
+  scamper_dealias_probe_t *probe;
+  scamper_dealias_reply_t *reply;
+  scamper_dealias_probedef_t *def;
+  sc_pinger_t *pinger;
+  int *replyc = NULL;
+  uint32_t i, probec, id;
+  int x, batchc;
+  char buf[128];
+  int rc = -1;
+
+  if((batchc = slist_count(batch)) < 1)
+    goto done;
+  probing -= batchc;
+
+  if((replyc = malloc_zero(batchc * sizeof(int))) == NULL)
+    goto done;
+
+  if(dealias != NULL)
+    {
+      if((rg = scamper_dealias_radargun_get(dealias)) == NULL ||
+	 scamper_dealias_radargun_defc_get(rg) != (uint32_t)batchc)
+	goto done;
+      probec = scamper_dealias_probec_get(dealias);
+
+      for(i=0; i<probec; i++)
+	{
+	  probe = scamper_dealias_probe_get(dealias, i);
+	  reply = scamper_dealias_probe_reply_get(probe, 0);
+	  if(reply == NULL ||
+	     scamper_dealias_reply_from_target(probe, reply) == 0)
+	    continue;
+	  def = scamper_dealias_probe_def_get(probe);
+	  id = scamper_dealias_probedef_id_get(def);
+	  if(id >= (uint32_t)batchc)
+	    goto done;
+	  replyc[id]++;
+	}
+
+      scamper_dealias_free(dealias);
+    }
+
+  for(x=0; x<batchc; x++)
+    {
+      pinger = slist_head_pop(batch);
+
+      /* successful ping, we're done */
+      if(replyc[x] >= reply_count)
+	goto completed;
+
+      /* try with the next method, if there is another method to try */
+      if(++pinger->step < methodc)
+	{
+	  if(slist_tail_push(waiting, pinger) == NULL)
+	    {
+	      print("%s: could not try next method for %s", __func__,
+		    scamper_addr_tostr(pinger->dst, buf, sizeof(buf)));
+	      goto done;
+	    }
+	  continue;
+	}
+
+    completed:
+      completed++;
+      print("%s: done %s", __func__,
+	    scamper_addr_tostr(pinger->dst, buf, sizeof(buf)));
+      sc_pinger_free(pinger);
+    }
+
+  if(limit != 0)
+    {
+      outfile_c += batchc;
+      if(outfile_c >= limit && rotatefile() != 0)
+	return -1;
+    }
+
+  rc = 0;
+
+ done:
+  if(replyc != NULL) free(replyc);
+  if(batch != NULL) slist_free(batch);
+  return rc;
 }
 
 static void ctrlcb(scamper_inst_t *inst, uint8_t type, scamper_task_t *task,
 		   const void *data, size_t len)
 {
-  sc_pinger_t *pinger;
+  sc_cmdstate_t *cs = NULL;
   uint16_t obj_type;
   void *obj_data;
 
@@ -773,23 +1044,43 @@ static void ctrlcb(scamper_inst_t *inst, uint8_t type, scamper_task_t *task,
 	  return;
 	}
 
-      if(obj_type != SCAMPER_FILE_OBJ_PING)
+      cs = scamper_task_getparam(task);
+      if(obj_type == SCAMPER_FILE_OBJ_PING)
+	{
+	  if(cs->type != 0)
+	    goto err;
+	  if(process_pinger(cs->un.pinger, (scamper_ping_t *)obj_data) != 0)
+	    goto err;
+	}
+      else if(obj_type == SCAMPER_FILE_OBJ_DEALIAS)
+	{
+	  if(cs->type != 1)
+	    goto err;
+	  if(process_radargun(cs->un.batch, (scamper_dealias_t *)obj_data) != 0)
+	    goto err;
+	}
+      else
 	{
 	  print("%s: unknown object %d", __func__, obj_type);
 	  goto err;
 	}
-      pinger = scamper_task_getparam(task);
-      if(process_pinger(pinger, (scamper_ping_t *)obj_data) != 0)
-	goto err;
-
-      if(limit != 0 && ++outfile_c == limit && rotatefile() != 0)
-	goto err;
+      free(cs); cs = NULL;
     }
   else if(type == SCAMPER_CTRL_TYPE_ERR)
     {
-      pinger = scamper_task_getparam(task);
-      if(process_pinger(pinger, NULL) != 0)
-	goto err;
+      cs = scamper_task_getparam(task);
+      if(cs->type == 0)
+	{
+	  if(process_pinger(cs->un.pinger, NULL) != 0)
+	    goto err;
+	}
+      else if(cs->type == 1)
+	{
+	  if(process_radargun(cs->un.batch, NULL) != 0)
+	    goto err;
+	}
+      else goto err;
+      free(cs); cs = NULL;
     }
   else if(type == SCAMPER_CTRL_TYPE_EOF)
     {
@@ -805,6 +1096,7 @@ static void ctrlcb(scamper_inst_t *inst, uint8_t type, scamper_task_t *task,
   return;
 
  err:
+  if(cs != NULL) free(cs);
   error = 1;
   return;
 }
@@ -860,7 +1152,8 @@ static int pinger_data(void)
 {
   uint16_t types[] = {SCAMPER_FILE_OBJ_CYCLE_START,
 		      SCAMPER_FILE_OBJ_CYCLE_STOP,
-		      SCAMPER_FILE_OBJ_PING};
+		      SCAMPER_FILE_OBJ_PING,
+		      SCAMPER_FILE_OBJ_DEALIAS};
   int typec = sizeof(types) / sizeof(uint16_t);
   int done = 0, rc = -1;
   char *fn = NULL;
@@ -875,6 +1168,10 @@ static int pinger_data(void)
 #endif
 
   assert(addrfile_name != NULL);
+
+  /* won't need to read radargun objects */
+  if(batch_count < 2)
+    typec--;
 
   if((logfile_name != NULL && (logfile_fd=fopen(logfile_name, "w")) == NULL) ||
      (addrfile_fd = open(addrfile_name, O_RDONLY)) < 0 ||

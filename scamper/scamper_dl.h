@@ -1,7 +1,7 @@
 /*
  * scamper_dl.h
  *
- * $Id: scamper_dl.h,v 1.69 2024/07/19 06:59:03 mjl Exp $
+ * $Id: scamper_dl.h,v 1.70 2024/08/07 16:12:37 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -481,6 +481,12 @@ typedef struct scamper_dl_rec
 #define SCAMPER_DL_TX_NULL                  0x02
 #define SCAMPER_DL_TX_RAW                   0x03
 #define SCAMPER_DL_TX_ETHLOOP               0x04
+
+#define SCAMPER_DL_RX_UNSUPPORTED           0x00
+#define SCAMPER_DL_RX_ETHERNET              0x01
+#define SCAMPER_DL_RX_NULL                  0x02
+#define SCAMPER_DL_RX_RAW                   0x03
+#define SCAMPER_DL_RX_COOKED                0x04
 
 typedef struct scamper_dl scamper_dl_t;
 

@@ -1,7 +1,7 @@
 /*
  * scamper_host_do
  *
- * $Id: scamper_host_do.c,v 1.79 2024/07/19 05:23:50 mjl Exp $
+ * $Id: scamper_host_do.c,v 1.80 2024/08/13 06:16:30 mjl Exp $
  *
  * Copyright (C) 2018-2024 Matthew Luckie
  *
@@ -1368,7 +1368,6 @@ static int do_host_probe_tcp(scamper_task_t *task)
 static void do_host_probe(scamper_task_t *task)
 {
   scamper_host_t *host = host_getdata(task);
-  host_state_t *state = host_getstate(task);
   int rc = -1;
 
   if(pktbuf == NULL)
@@ -1381,7 +1380,7 @@ static void do_host_probe(scamper_task_t *task)
 	}
     }
 
-  if(state == NULL && (state = host_state_alloc(task)) == NULL)
+  if(host_getstate(task) == NULL && host_state_alloc(task) == NULL)
     goto done;
 
   if(host->queries == NULL)

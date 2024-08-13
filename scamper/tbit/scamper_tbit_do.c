@@ -1,7 +1,7 @@
 /*
  * scamper_do_tbit.c
  *
- * $Id: scamper_tbit_do.c,v 1.206 2024/07/02 02:00:31 mjl Exp $
+ * $Id: scamper_tbit_do.c,v 1.207 2024/08/13 05:43:54 mjl Exp $
  *
  * Copyright (C) 2009-2010 Ben Stasiewicz
  * Copyright (C) 2009-2010 Stephen Eichler
@@ -43,6 +43,7 @@
 #include "internal.h"
 
 #include "scamper.h"
+#include "scamper_debug.h"
 #include "scamper_addr.h"
 #include "scamper_addr_int.h"
 #include "scamper_list.h"
@@ -59,7 +60,6 @@
 #include "scamper_tcp6.h"
 #include "scamper_queue.h"
 #include "scamper_file.h"
-#include "scamper_debug.h"
 #include "utils.h"
 #include "mjl_list.h"
 #include "scamper_tbit.h"

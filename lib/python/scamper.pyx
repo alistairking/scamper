@@ -7801,6 +7801,10 @@ cdef void _ctrl_cb(clibscamperctrl.scamper_inst_t *c_inst,
             task = inst._tasks.pop(0)
             ctrl._tasks.remove(task)
 
+        # mark the inst as having reached eof incase holder attempts to
+        # use the instance again.
+        inst._eof = True
+
         # remove the instance from the set of instances managed by ctrl
         # and call the eofcb if one provided by the user.
         ctrl._insts.remove(inst)
@@ -8166,12 +8170,18 @@ cdef class ScamperCtrl:
         if inst is not None:
             if not isinstance(inst, ScamperInst):
                 raise TypeError("inst not ScamperInst type")
-        elif len(self._insts) == 0:
-            raise RuntimeError("no connected ScamperInst")
-        elif len(self._insts) != 1:
-            raise RuntimeError("specify a ScamperInst")
         else:
-            inst = self._insts[0]
+            if len(self._insts) == 0:
+                raise RuntimeError("no connected ScamperInst")
+            elif len(self._insts) != 1:
+                raise RuntimeError("specify a ScamperInst")
+            else:
+                inst = self._insts[0]
+        if inst._eof:
+            if inst.name:
+                raise RuntimeError(f"ScamperInst {inst.name} has signalled EOF")
+            else:
+                raise RuntimeError("ScamperInst has signalled EOF")
         return inst
 
     cdef _task(self, clibscamperctrl.scamper_task_t *task,
@@ -9376,6 +9386,7 @@ cdef class ScamperInst:
     cdef cscamper_file.scamper_file_t *_c_f
     cdef cscamper_file.scamper_file_readbuf_t *_c_rb
     cdef object _tasks # = []
+    cdef public bint _eof
 
     def __init__(self):
         raise TypeError("This class cannot be instantiated directly.")
@@ -9424,6 +9435,7 @@ cdef class ScamperInst:
         inst._c_f = cscamper_file.scamper_file_opennull(ord('r'), "warts")
         inst._c_rb = cscamper_file.scamper_file_readbuf_alloc()
         inst._tasks = []
+        inst._eof = False
         cscamper_file.scamper_file_setreadfunc(inst._c_f, inst._c_rb,
                                                cscamper_file.scamper_file_readbuf_read)
         clibscamperctrl.scamper_inst_setparam(ptr, <PyObject *>inst)
@@ -9459,6 +9471,12 @@ cdef class ScamperInst:
         ScamperInst
         """
         clibscamperctrl.scamper_inst_done(self._c)
+
+    def is_eof(self):
+        """
+        check if the instance has signalled eof.
+        """
+        return self._eof
 
 cdef class ScamperTask:
     """

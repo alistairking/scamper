@@ -1,7 +1,7 @@
 /*
  * heap routines
  *
- * $Id: mjl_heap.c,v 1.12 2020/03/17 07:32:15 mjl Exp $
+ * $Id: mjl_heap.c,v 1.13 2024/08/13 04:58:16 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -38,6 +38,10 @@
 
 #if defined(DMALLOC)
 #include <dmalloc.h>
+#endif
+
+#if defined(HAVE_CONFIG_H)
+#include "config.h"
 #endif
 
 #include "mjl_heap.h"

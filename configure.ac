@@ -1,6 +1,6 @@
 # Process this file with autoconf to produce a configure script.
 
-AC_INIT([scamper],[20240725],[mjl@luckie.org.nz])
+AC_INIT([scamper],[20240813],[mjl@luckie.org.nz])
 
 AC_CONFIG_SRCDIR([scamper/scamper.c])
 AC_CONFIG_AUX_DIR([.])
@@ -292,6 +292,7 @@ AC_CHECK_HEADERS(netdb.h)
 AC_CHECK_HEADERS(net/if_dl.h)
 AC_CHECK_HEADERS(net/if_types.h)
 AC_CHECK_HEADERS(netinet/in.h)
+AC_CHECK_HEADERS(netinet/tcp_timer.h)
 AC_CHECK_HEADERS(poll.h)
 AC_CHECK_HEADERS(stdint.h)
 AC_CHECK_HEADERS(stdlib.h)
@@ -345,6 +346,9 @@ AC_CHECK_HEADERS([netinet/tcp_var.h], [], [],
 # include <netinet/in.h>
 #endif
 #include <sys/queue.h>
+#if HAVE_NETINET_TCP_TIMER_H
+# include <netinet/tcp_timer.h>
+#endif
 #include <netinet/tcp.h>
 ]])
 
