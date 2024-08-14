@@ -1,7 +1,7 @@
 /*
  * internal.h
  *
- * $Id: internal.h,v 1.66 2024/04/22 09:04:23 mjl Exp $
+ * $Id: internal.h,v 1.67 2024/07/28 08:02:42 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -158,6 +158,9 @@ typedef unsigned short sa_family_t;
 #include <netinet/udp.h>
 #include <netinet/icmp6.h>
 #include <netinet/tcp.h>
+#ifdef HAVE_NETINET_TCP_TIMER_H
+#include <netinet/tcp_timer.h>
+#endif
 #ifdef HAVE_NETINET_TCP_VAR_H
 #include <netinet/tcp_var.h>
 #endif

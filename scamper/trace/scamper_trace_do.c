@@ -1,7 +1,7 @@
 /*
  * scamper_do_trace.c
  *
- * $Id: scamper_trace_do.c,v 1.375 2024/07/17 01:13:41 mjl Exp $
+ * $Id: scamper_trace_do.c,v 1.376 2024/08/13 05:43:54 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -35,6 +35,7 @@
 #include "internal.h"
 
 #include "scamper.h"
+#include "scamper_debug.h"
 #include "scamper_addr.h"
 #include "scamper_addr_int.h"
 #include "scamper_list.h"
@@ -52,7 +53,6 @@
 #include "scamper_rtsock.h"
 #include "scamper_getsrc.h"
 #include "scamper_file.h"
-#include "scamper_debug.h"
 #include "scamper_trace_do.h"
 #include "scamper_addr2mac.h"
 #include "scamper_icmp4.h"

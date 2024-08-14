@@ -1,7 +1,7 @@
 /*
  * scamper_dl: manage BPF/PF_PACKET datalink instances for scamper
  *
- * $Id: scamper_dl.c,v 1.218 2024/07/20 03:07:08 mjl Exp $
+ * $Id: scamper_dl.c,v 1.227 2024/08/13 07:13:23 mjl Exp $
  *
  *          Matthew Luckie
  *          Ben Stasiewicz added fragmentation support.
@@ -43,6 +43,20 @@
 
 #if defined(HAVE_BPF) || defined(__linux__)
 #define HAVE_BPF_FILTER
+#endif
+
+#if defined(BIOCSETFNR) || defined(__linux__)
+#define HAVE_BPF_DYN_FILTER
+#endif
+
+#ifdef HAVE_BPF
+typedef struct bpf_insn    filt_insn_t;
+typedef struct bpf_program filt_prog_t;
+#endif
+
+#ifdef __linux__
+typedef struct sock_filter filt_insn_t;
+typedef struct sock_fprog  filt_prog_t;
 #endif
 
 #include "scamper.h"
@@ -120,11 +134,10 @@ static size_t            readbuf_len = 0;
 #ifdef __linux__
 static int               lo_ifindex = -1;
 #endif
-#endif /* BUILDING_SCAMPER */
-
-#if defined(BUILDING_SCAMPER) && defined(HAVE_BPF)
+#ifdef HAVE_BPF
 static const scamper_osinfo_t *osinfo = NULL;
 #endif
+#endif /* BUILDING_SCAMPER */
 
 /*
  * dl_parse_ip
@@ -620,6 +633,358 @@ static int dl_parse_arp(scamper_dl_rec_t *dl, uint8_t *pkt, size_t len)
 }
 #endif /* BUILDING_SCAMPER or TEST_DL_PARSE_ARP */
 
+#if defined(BUILDING_SCAMPER) || defined(TEST_DL_FILTER_COMPILE)
+#ifdef HAVE_BPF_FILTER
+static void bpf_stmt(filt_insn_t *insns, size_t len, size_t *off,
+		     uint16_t code, uint32_t k)
+{
+  if(*off >= len)
+    return;
+  insns[*off].code = code;
+  insns[*off].jt   = 0;
+  insns[*off].jf   = 0;
+  insns[*off].k    = k;
+  (*off)++;
+  return;
+}
+#endif /* HAVE_BPF_FILTER */
+
+#if defined(HAVE_BPF_DYN_FILTER) || defined(TEST_DL_FILTER_COMPILE)
+static void bpf_jump(filt_insn_t *insns, size_t len, size_t *off,
+		     uint16_t code, uint32_t k, uint8_t jt, uint8_t jf)
+{
+  if(*off >= len)
+    return;
+  insns[*off].code = code;
+  insns[*off].jt   = jt;
+  insns[*off].jf   = jf;
+  insns[*off].k    = k;
+  (*off)++;
+  return;
+}
+#endif /* HAVE_BPF_DYN_FILTER or TEST_DL_FILTER_COMPILE */
+
+#if defined(HAVE_BPF_DYN_FILTER) || defined(TEST_DL_FILTER_COMPILE)
+#ifdef BUILDING_SCAMPER
+static int dl_filter_compile(uint8_t rx_type, filt_prog_t *prog,
+			     const uint16_t *ports, size_t portc)
+#else
+int dl_filter_compile(uint8_t rx_type, filt_prog_t *prog,
+		      const uint16_t *ports, size_t portc)
+#endif
+{
+  uint32_t ipv4_c, ipv6_c, udp4_c, udp6_c, tcp4_c, tcp6_c, ip_off, k_dlt;
+  const uint16_t *udp4_ports; uint16_t udp4_portc;
+  const uint16_t *tcp4_ports; uint16_t tcp4_portc;
+  const uint16_t *udp6_ports; uint16_t udp6_portc;
+  const uint16_t *tcp6_ports; uint16_t tcp6_portc;
+  uint16_t i;
+  size_t len, off = 0;
+  filt_insn_t *insns = NULL;
+
+#ifdef __linux__
+  int extra = 0;
+#endif
+
+  udp4_portc = ports[0]; udp4_ports = ports + 4;
+  tcp4_portc = ports[1]; tcp4_ports = udp4_ports + udp4_portc;
+  udp6_portc = ports[2]; udp6_ports = tcp4_ports + tcp4_portc;
+  tcp6_portc = ports[3]; tcp6_ports = udp6_ports + udp6_portc;
+
+  ipv4_c = 4;
+  if(udp4_portc > 0 || tcp4_portc > 0)
+    {
+      ipv4_c += 1;
+      if(udp4_portc > 0)
+	{
+	  udp4_c = (udp4_portc * 2) + 2;
+	  ipv4_c += (1 + udp4_c);
+	}
+      if(tcp4_portc > 0)
+	{
+	  tcp4_c = (tcp4_portc * 2) + 2;
+	  ipv4_c += (1 + tcp4_c);
+	}
+    }
+
+  ipv6_c = 2 + 4;
+  if(udp6_portc > 0 || tcp6_portc > 0)
+    {
+      if(udp6_portc > 0)
+	{
+	  udp6_c = (udp6_portc * 2) + 2;
+	  ipv6_c += (1 + udp6_c);
+	}
+      if(tcp6_portc > 0)
+	{
+	  tcp6_c = (tcp6_portc * 2) + 2;
+	  ipv6_c += (1 + tcp6_c);
+	}
+    }
+
+  if(rx_type == SCAMPER_DL_RX_ETHERNET)
+    len = 4;
+#ifdef __linux__
+  else if(rx_type == SCAMPER_DL_RX_COOKED)
+    {
+      len = 12;
+#ifdef ARPHRD_SIT
+      len++;
+      extra++;
+#endif
+#ifdef ARPHRD_VOID
+      len++;
+      extra++;
+#endif
+    }
+#endif /* __linux__ */
+#if defined(HAVE_BPF) || defined(TEST_DL_FILTER_COMPILE)
+  else if(rx_type == SCAMPER_DL_RX_NULL)
+    len = 3;
+#endif
+  else if(rx_type == SCAMPER_DL_RX_RAW)
+    len = 4;
+  else
+    return -1;
+
+  len += 2 + ipv4_c + ipv6_c;
+
+#ifdef __linux__
+  /* prog.len is an unsigned short on linux */
+  if(len > UINT16_MAX)
+    return -1;
+#endif
+
+  if((insns = malloc(sizeof(filt_insn_t) * len)) == NULL)
+    return -1;
+
+  if(rx_type == SCAMPER_DL_RX_ETHERNET)
+    {
+      ip_off = 14;
+      k_dlt = ETHERTYPE_IP;
+      bpf_stmt(insns, len, &off, BPF_LD+BPF_ABS+BPF_H, 12);
+      bpf_jump(insns, len, &off, BPF_JMP+BPF_JEQ+BPF_K, k_dlt,
+	       2,
+	       0);
+      k_dlt = ETHERTYPE_IPV6;
+      bpf_jump(insns, len, &off, BPF_JMP+BPF_JEQ+BPF_K, k_dlt,
+	       ipv4_c + 1,
+	       0);
+      k_dlt = ETHERTYPE_ARP;
+      bpf_jump(insns, len, &off, BPF_JMP+BPF_JEQ+BPF_K, k_dlt,
+	       len - off - 2,
+	       len - off - 3);
+    }
+#ifdef __linux__
+  else if(rx_type == SCAMPER_DL_RX_COOKED)
+    {
+      ip_off = 0;
+      bpf_stmt(insns, len, &off, BPF_LD+BPF_ABS+BPF_H,
+	       SKF_AD_OFF + SKF_AD_HATYPE);
+      bpf_jump(insns, len, &off, BPF_JMP+BPF_JEQ+BPF_K, ARPHRD_ETHER,
+	       2 + extra, 0);
+      bpf_jump(insns, len, &off, BPF_JMP+BPF_JEQ+BPF_K, ARPHRD_LOOPBACK,
+	       1 + extra, 0);
+#ifdef ARPHRD_SIT
+      extra--;
+      bpf_jump(insns, len, &off, BPF_JMP+BPF_JEQ+BPF_K, ARPHRD_SIT,
+	       5 + extra, 0);
+#endif
+#ifdef ARPHRD_VOID
+      bpf_jump(insns, len, &off, BPF_JMP+BPF_JEQ+BPF_K, ARPHRD_VOID,
+	       5, 0);
+#endif
+      bpf_jump(insns, len, &off, BPF_JMP+BPF_JEQ+BPF_K, ARPHRD_PPP,
+	       4, len - off - 3);
+
+      /* handle ARPHRD_ETHER, ARPHRD_LOOPBACK */
+      bpf_stmt(insns, len, &off, BPF_LD+BPF_ABS+BPF_H,
+	       SKF_AD_OFF + SKF_AD_PROTOCOL);
+      bpf_jump(insns, len, &off, BPF_JMP+BPF_JEQ+BPF_K, ETHERTYPE_IP,
+	       4 + 2, 0);
+      bpf_jump(insns, len, &off, BPF_JMP+BPF_JEQ+BPF_K, ETHERTYPE_IPV6,
+	       4 + ipv4_c + 1, 0);
+      bpf_jump(insns, len, &off, BPF_JMP+BPF_JEQ+BPF_K, ETHERTYPE_ARP,
+	       len - off - 2,
+	       len - off - 3);
+
+      /* handle ARPHRD_SIT, ARPHRD_VOID, ARPHRD_PPP */
+      bpf_stmt(insns, len, &off, BPF_LD+BPF_ABS+BPF_B, 0);
+      bpf_stmt(insns, len, &off, BPF_ALU+BPF_RSH+BPF_K, 4);
+      bpf_jump(insns, len, &off, BPF_JMP+BPF_JEQ+BPF_K, 4, 1, 0);
+      bpf_jump(insns, len, &off, BPF_JMP+BPF_JEQ+BPF_K, 6, ipv4_c,
+	       len - off - 3);
+    }
+#endif /* __linux__ */
+#if defined(HAVE_BPF) || defined(TEST_DL_FILTER_COMPILE)
+  else if(rx_type == SCAMPER_DL_RX_NULL)
+    {
+      ip_off = 4;
+      k_dlt = htonl(PF_INET);
+      bpf_stmt(insns, len, &off, BPF_LD+BPF_ABS+BPF_W, 0);
+      bpf_jump(insns, len, &off, BPF_JMP+BPF_JEQ+BPF_K, k_dlt, 1, 0);
+      k_dlt = htonl(PF_INET6);
+      bpf_jump(insns, len, &off, BPF_JMP+BPF_JEQ+BPF_K, k_dlt, ipv4_c,
+	       len - off - 3);
+    }
+#endif
+  else if(rx_type == SCAMPER_DL_RX_RAW)
+    {
+      ip_off = 0;
+      bpf_stmt(insns, len, &off, BPF_LD+BPF_ABS+BPF_B, 0);
+      bpf_stmt(insns, len, &off, BPF_ALU+BPF_RSH+BPF_K, 4);
+      bpf_jump(insns, len, &off, BPF_JMP+BPF_JEQ+BPF_K, 4, 1, 0);
+      bpf_jump(insns, len, &off, BPF_JMP+BPF_JEQ+BPF_K, 6, ipv4_c,
+	       len - off - 3);
+    }
+  else
+    {
+      free(insns);
+      return -1;
+    }
+
+  /* we know the packet is IPv4.  if fragment offset is > 0, pass it */
+  bpf_stmt(insns, len, &off, BPF_LD+BPF_ABS+BPF_H, ip_off+6);
+  bpf_jump(insns, len, &off, BPF_JMP+BPF_JSET+BPF_K, IP_OFFMASK,
+	   ipv6_c + ipv4_c - 1, 0);
+
+  /*
+   * calculate the length of the IP header so that we can then
+   * calculate the distance of the transport header into the packet
+   */
+  if(udp4_portc > 0 || tcp4_portc > 0)
+    bpf_stmt(insns, len, &off, BPF_LDX+BPF_MSH+BPF_B, ip_off);
+
+  /* load the protocol type into the accumulator */
+  bpf_stmt(insns, len, &off, BPF_LD+BPF_ABS+BPF_B, ip_off+9);
+
+  /* if it is ICMP, which is specific to IPv4, pass it */
+  bpf_jump(insns, len, &off, BPF_JMP+BPF_JEQ+BPF_K, IPPROTO_ICMP,
+	   len - off - 2,
+	   udp4_portc > 0 || tcp4_portc > 0 ? 0 : len - off - 3);
+
+  if(udp4_portc > 0)
+    bpf_jump(insns, len, &off, BPF_JMP+BPF_JEQ+BPF_K, IPPROTO_UDP,
+	     tcp4_portc > 0 ? 1 : 0,
+	     tcp4_portc > 0 ? 0 : len - off - 3);
+
+  if(tcp4_portc > 0)
+    bpf_jump(insns, len, &off, BPF_JMP+BPF_JEQ+BPF_K, IPPROTO_TCP,
+	     udp4_portc > 0 ? (udp4_portc * 2) + 2 : 0,
+	     len - off - 3);
+
+  if(udp4_portc > 0)
+    {
+      /* check udp4 sport */
+      bpf_stmt(insns, len, &off, BPF_LD+BPF_IND+BPF_H, ip_off + 0);
+      for(i=0; i<udp4_portc; i++)
+	bpf_jump(insns, len, &off, BPF_JMP+BPF_JEQ+BPF_K, udp4_ports[i],
+		 len - off - 2,
+		 0);
+
+      /* check udp4 dport */
+      bpf_stmt(insns, len, &off, BPF_LD+BPF_IND+BPF_H, ip_off + 2);
+      for(i=0; i<udp4_portc; i++)
+	bpf_jump(insns, len, &off, BPF_JMP+BPF_JEQ+BPF_K, udp4_ports[i],
+		 len - off - 2,
+		 udp4_portc - i > 1 ? 0 : len - off - 3);
+    }
+
+  if(tcp4_portc > 0)
+    {
+      /* check tcp4 sport */
+      bpf_stmt(insns, len, &off, BPF_LD+BPF_IND+BPF_H, ip_off + 0);
+      for(i=0; i<tcp4_portc; i++)
+	bpf_jump(insns, len, &off, BPF_JMP+BPF_JEQ+BPF_K, tcp4_ports[i],
+		 len - off - 2,
+		 0);
+
+      /* check tcp4 dport */
+      bpf_stmt(insns, len, &off, BPF_LD+BPF_IND+BPF_H, ip_off + 2);
+      for(i=0; i<tcp4_portc; i++)
+	bpf_jump(insns, len, &off, BPF_JMP+BPF_JEQ+BPF_K, tcp4_ports[i],
+		 len - off - 2,
+		 tcp4_portc - i > 1 ? 0 : len - off - 3);
+    }
+
+  /* load the IPv6 protocol type into the accumulator */
+  bpf_stmt(insns, len, &off, BPF_LD+BPF_ABS+BPF_B, ip_off+6);
+
+  /* if it is ICMP, which is specific to IPv6, pass it */
+  bpf_jump(insns, len, &off, BPF_JMP+BPF_JEQ+BPF_K, IPPROTO_ICMPV6,
+	   len - off - 2, 0);
+
+  if(udp6_portc > 0)
+    bpf_jump(insns, len, &off, BPF_JMP+BPF_JEQ+BPF_K, IPPROTO_UDP,
+	     4 + (tcp6_portc > 0 ? 1 : 0),
+	     0);
+
+  if(tcp6_portc > 0)
+    bpf_jump(insns, len, &off, BPF_JMP+BPF_JEQ+BPF_K, IPPROTO_TCP,
+	     4 + (udp6_portc > 0 ? (udp6_portc * 2) + 2 : 0),
+	     0);
+
+  /* just pass these packets through */
+  bpf_jump(insns, len, &off, BPF_JMP+BPF_JEQ+BPF_K, IPPROTO_FRAGMENT,
+	   len - off - 2, 0);
+  bpf_jump(insns, len, &off, BPF_JMP+BPF_JEQ+BPF_K, IPPROTO_HOPOPTS,
+	   len - off - 2, 0);
+  bpf_jump(insns, len, &off, BPF_JMP+BPF_JEQ+BPF_K, IPPROTO_DSTOPTS,
+	   len - off - 2, 0);
+  bpf_jump(insns, len, &off, BPF_JMP+BPF_JEQ+BPF_K, IPPROTO_ROUTING,
+	   len - off - 2, len - off - 3);
+
+  if(udp6_portc > 0)
+    {
+      /* check udp6 sport */
+      bpf_stmt(insns, len, &off, BPF_LD+BPF_ABS+BPF_H, ip_off + 40);
+      for(i=0; i<udp6_portc; i++)
+	bpf_jump(insns, len, &off, BPF_JMP+BPF_JEQ+BPF_K, udp6_ports[i],
+		 len - off - 2,
+		 0);
+
+      /* check udp6 dport */
+      bpf_stmt(insns, len, &off, BPF_LD+BPF_ABS+BPF_H, ip_off + 42);
+      for(i=0; i<udp6_portc; i++)
+	bpf_jump(insns, len, &off, BPF_JMP+BPF_JEQ+BPF_K, udp6_ports[i],
+		 len - off - 2,
+		 udp6_portc - i > 1 ? 0 : len - off - 3);
+    }
+
+  if(tcp6_portc > 0)
+    {
+      /* check tcp6 sport */
+      bpf_stmt(insns, len, &off, BPF_LD+BPF_ABS+BPF_H, ip_off + 40);
+      for(i=0; i<tcp6_portc; i++)
+	bpf_jump(insns, len, &off, BPF_JMP+BPF_JEQ+BPF_K, tcp6_ports[i],
+		 len - off - 2,
+		 0);
+
+      /* check tcp6 dport */
+      bpf_stmt(insns, len, &off, BPF_LD+BPF_ABS+BPF_H, ip_off + 42);
+      for(i=0; i<tcp6_portc; i++)
+	bpf_jump(insns, len, &off, BPF_JMP+BPF_JEQ+BPF_K, tcp6_ports[i],
+		 len - off - 2,
+		 tcp6_portc - i > 1 ? 0 : len - off - 3);
+    }
+
+  /* branch targets to cause the packet to pass/fail the filter */
+  bpf_stmt(insns, len, &off, BPF_RET+BPF_K, 0);
+  bpf_stmt(insns, len, &off, BPF_RET+BPF_K, 65535);
+
+#ifdef HAVE_BPF
+  prog->bf_len = len;
+  prog->bf_insns = insns;
+#else
+  prog->len = len;
+  prog->filter = insns;
+#endif
+
+  return 0;
+}
+#endif /* HAVE_BPF_DYN_FILTER or TEST_DL_FILTER_COMPILE */
+#endif /* BUILDING_SCAMPER or TEST_DL_FILTER_COMPILE */
+
 #ifdef BUILDING_SCAMPER
 
 /*
@@ -1001,9 +1366,9 @@ static int dl_bpf_tx(const scamper_dl_t *node, const uint8_t *pkt, size_t len)
 
   return 0;
 }
+#endif /* HAVE_BPF */
 
-#elif defined(__linux__)
-
+#ifdef __linux__
 static int linux_read_sll(scamper_dl_rec_t *dl, struct sockaddr_ll *sll,
 			  uint8_t *buf, size_t len)
 {
@@ -1558,9 +1923,9 @@ static int dl_linux_init(void)
 
   return 0;
 }
+#endif /* __linux__ */
 
-#elif defined(HAVE_DLPI)
-
+#ifdef HAVE_DLPI
 static int dl_dlpi_open(int ifindex)
 {
   char ifname[5+IFNAMSIZ];
@@ -1892,392 +2257,39 @@ static int dl_dlpi_init(void)
   return 0;
 }
 
-#endif
+#endif /* HAVE_DLPI */
 
-#if defined(HAVE_BPF_FILTER)
-
-#if defined(HAVE_BPF)
-static void bpf_stmt(struct bpf_insn *insns, size_t len, size_t *off,
-		     uint16_t code, uint32_t k)
-#else
-static void bpf_stmt(struct sock_filter *insns, size_t len, size_t *off,
-		     uint16_t code, uint32_t k)
-#endif
+#ifdef HAVE_BPF_DYN_FILTER
+static uint8_t dl_rx_type(const scamper_dl_t *node)
 {
-  if(*off >= len)
-    return;
-  insns[*off].code = code;
-  insns[*off].jt   = 0;
-  insns[*off].jf   = 0;
-  insns[*off].k    = k;
-  (*off)++;
-  return;
-}
-
-#if defined(__linux__) || defined(BIOCSETFNR)
-#if defined(HAVE_BPF)
-static void bpf_jump(struct bpf_insn *insns, size_t len, size_t *off,
-		     uint16_t code, uint32_t k, uint8_t jt, uint8_t jf)
-#else
-static void bpf_jump(struct sock_filter *insns, size_t len, size_t *off,
-		     uint16_t code, uint32_t k, uint8_t jt, uint8_t jf)
-#endif
-{
-  if(*off >= len)
-    return;
-  insns[*off].code = code;
-  insns[*off].jt   = jt;
-  insns[*off].jf   = jf;
-  insns[*off].k    = k;
-  (*off)++;
-  return;
-}
-#endif /* __linux__ or BIOCSETFNR */
-
-#if defined(__linux__) || defined(BIOCSETFNR)
-#if defined(HAVE_BPF)
-static int dl_filter_compile(const scamper_dl_t *node,
-			     struct bpf_program *prog,
-			     const uint16_t *ports, size_t portc)
-#else
-static int dl_filter_compile(const scamper_dl_t *node,
-			     struct sock_fprog *prog,
-			     const uint16_t *ports, size_t portc)
-#endif
-{
-#if defined(HAVE_BPF)
-  struct bpf_insn *insns = NULL;
-#else
-  struct sock_filter *insns = NULL;
-  int extra = 0;
-#endif
-
-  uint32_t ipv4_c, ipv6_c, udp4_c, udp6_c, tcp4_c, tcp6_c, ip_off, k_dlt;
-  const uint16_t *udp4_ports; uint16_t udp4_portc;
-  const uint16_t *tcp4_ports; uint16_t tcp4_portc;
-  const uint16_t *udp6_ports; uint16_t udp6_portc;
-  const uint16_t *tcp6_ports; uint16_t tcp6_portc;
-  uint16_t i;
-  size_t len, off = 0;
-
-  udp4_portc = ports[0]; udp4_ports = ports + 4;
-  tcp4_portc = ports[1]; tcp4_ports = udp4_ports + udp4_portc;
-  udp6_portc = ports[2]; udp6_ports = tcp4_ports + tcp4_portc;
-  tcp6_portc = ports[3]; tcp6_ports = udp6_ports + udp6_portc;
-
-  ipv4_c = 4;
-  if(udp4_portc > 0 || tcp4_portc > 0)
-    {
-      ipv4_c += 1;
-      if(udp4_portc > 0)
-	{
-	  udp4_c = (udp4_portc * 2) + 2;
-	  ipv4_c += (1 + udp4_c);
-	}
-      if(tcp4_portc > 0)
-	{
-	  tcp4_c = (tcp4_portc * 2) + 2;
-	  ipv4_c += (1 + tcp4_c);
-	}
-    }
-
-  ipv6_c = 2 + 4;
-  if(udp6_portc > 0 || tcp6_portc > 0)
-    {
-      if(udp6_portc > 0)
-	{
-	  udp6_c = (udp6_portc * 2) + 2;
-	  ipv6_c += (1 + udp6_c);
-	}
-      if(tcp6_portc > 0)
-	{
-	  tcp6_c = (tcp6_portc * 2) + 2;
-	  ipv6_c += (1 + tcp6_c);
-	}
-    }
-
   if(node->dlt_cb == dlt_en10mb_cb)
-    len = 4;
+    return SCAMPER_DL_RX_ETHERNET;
 #ifdef __linux__
-  else if(node->ifindex == 0)
-    {
-      len = 12;
-#ifdef ARPHRD_SIT
-      len++;
-      extra++;
+  if(node->ifindex == 0)
+    return SCAMPER_DL_RX_COOKED;
 #endif
-#ifdef ARPHRD_VOID
-      len++;
-      extra++;
-#endif
-    }
-#endif /* __linux__ */
 #ifdef HAVE_BPF
-  else if(node->dlt_cb == dlt_null_cb)
-    len = 3;
+  if(node->dlt_cb == dlt_null_cb)
+    return SCAMPER_DL_RX_NULL;
 #endif
-  else if(node->dlt_cb == dlt_raw_cb)
-    len = 4;
-  else
-    return -1;
-
-  len += 2 + ipv4_c + ipv6_c;
-
-#ifdef __linux__
-  /* prog.len is an unsigned short on linux */
-  if(len > UINT16_MAX)
-    return -1;
-#endif
-
-#ifdef HAVE_BPF
-  if((insns = malloc(sizeof(struct bpf_insn) * len)) == NULL)
-    return -1;
-#else
-  if((insns = malloc(sizeof(struct sock_filter) * len)) == NULL)
-    return -1;
-#endif
-
-  if(node->dlt_cb == dlt_en10mb_cb)
-    {
-      ip_off = 14;
-      k_dlt = ETHERTYPE_IP;
-      bpf_stmt(insns, len, &off, BPF_LD+BPF_ABS+BPF_H, 12);
-      bpf_jump(insns, len, &off, BPF_JMP+BPF_JEQ+BPF_K, k_dlt,
-	       2,
-	       0);
-      k_dlt = ETHERTYPE_IPV6;
-      bpf_jump(insns, len, &off, BPF_JMP+BPF_JEQ+BPF_K, k_dlt,
-	       ipv4_c + 1,
-	       0);
-      k_dlt = ETHERTYPE_ARP;
-      bpf_jump(insns, len, &off, BPF_JMP+BPF_JEQ+BPF_K, k_dlt,
-	       len - off - 2,
-	       len - off - 3);
-    }
-#ifdef __linux__
-  else if(node->ifindex == 0)
-    {
-      ip_off = 0;
-      bpf_stmt(insns, len, &off, BPF_LD+BPF_ABS+BPF_H,
-	       SKF_AD_OFF + SKF_AD_HATYPE);
-      bpf_jump(insns, len, &off, BPF_JMP+BPF_JEQ+BPF_K, ARPHRD_ETHER,
-	       2 + extra, 0);
-      bpf_jump(insns, len, &off, BPF_JMP+BPF_JEQ+BPF_K, ARPHRD_LOOPBACK,
-	       1 + extra, 0);
-#ifdef ARPHRD_SIT
-      extra--;
-      bpf_jump(insns, len, &off, BPF_JMP+BPF_JEQ+BPF_K, ARPHRD_SIT,
-	       5 + extra, 0);
-#endif
-#ifdef ARPHRD_VOID
-      bpf_jump(insns, len, &off, BPF_JMP+BPF_JEQ+BPF_K, ARPHRD_VOID,
-	       5, 0);
-#endif
-      bpf_jump(insns, len, &off, BPF_JMP+BPF_JEQ+BPF_K, ARPHRD_PPP,
-	       4, len - off - 3);
-
-      /* handle ARPHRD_ETHER, ARPHRD_LOOPBACK */
-      bpf_stmt(insns, len, &off, BPF_LD+BPF_ABS+BPF_H,
-	       SKF_AD_OFF + SKF_AD_PROTOCOL);
-      bpf_jump(insns, len, &off, BPF_JMP+BPF_JEQ+BPF_K, ETHERTYPE_IP,
-	       4 + 2, 0);
-      bpf_jump(insns, len, &off, BPF_JMP+BPF_JEQ+BPF_K, ETHERTYPE_IPV6,
-	       4 + ipv4_c + 1, 0);
-      bpf_jump(insns, len, &off, BPF_JMP+BPF_JEQ+BPF_K, ETHERTYPE_ARP,
-	       len - off - 2,
-	       len - off - 3);
-
-      /* handle ARPHRD_SIT, ARPHRD_VOID, ARPHRD_PPP */
-      bpf_stmt(insns, len, &off, BPF_LD+BPF_ABS+BPF_B, 0);
-      bpf_stmt(insns, len, &off, BPF_ALU+BPF_RSH+BPF_K, 4);
-      bpf_jump(insns, len, &off, BPF_JMP+BPF_JEQ+BPF_K, 4, 1, 0);
-      bpf_jump(insns, len, &off, BPF_JMP+BPF_JEQ+BPF_K, 6, ipv4_c,
-	       len - off - 3);
-    }
-#endif /* __linux__ */
-#ifdef HAVE_BPF
-  else if(node->dlt_cb == dlt_null_cb)
-    {
-      ip_off = 4;
-      k_dlt = htonl(PF_INET);
-      bpf_stmt(insns, len, &off, BPF_LD+BPF_ABS+BPF_W, 0);
-      bpf_jump(insns, len, &off, BPF_JMP+BPF_JEQ+BPF_K, k_dlt, 1, 0);
-      k_dlt = htonl(PF_INET6);
-      bpf_jump(insns, len, &off, BPF_JMP+BPF_JEQ+BPF_K, k_dlt, ipv4_c,
-	       len - off - 3);
-    }
-#endif
-  else if(node->dlt_cb == dlt_raw_cb)
-    {
-      ip_off = 0;
-      bpf_stmt(insns, len, &off, BPF_LD+BPF_ABS+BPF_B, 0);
-      bpf_stmt(insns, len, &off, BPF_ALU+BPF_RSH+BPF_K, 4);
-      bpf_jump(insns, len, &off, BPF_JMP+BPF_JEQ+BPF_K, 4, 1, 0);
-      bpf_jump(insns, len, &off, BPF_JMP+BPF_JEQ+BPF_K, 6, ipv4_c,
-	       len - off - 3);
-    }
-  else
-    {
-      free(insns);
-      return -1;
-    }
-
-  /* we know the packet is IPv4.  if fragment offset is > 0, pass it */
-  bpf_stmt(insns, len, &off, BPF_LD+BPF_ABS+BPF_H, ip_off+6);
-  bpf_jump(insns, len, &off, BPF_JMP+BPF_JSET+BPF_K, IP_OFFMASK,
-	   ipv6_c + ipv4_c - 1, 0);
-
-  /*
-   * calculate the length of the IP header so that we can then
-   * calculate the distance of the transport header into the packet
-   */
-  if(udp4_portc > 0 || tcp4_portc > 0)
-    bpf_stmt(insns, len, &off, BPF_LDX+BPF_MSH+BPF_B, ip_off);
-
-  /* load the protocol type into the accumulator */
-  bpf_stmt(insns, len, &off, BPF_LD+BPF_ABS+BPF_B, ip_off+9);
-
-  /* if it is ICMP, which is specific to IPv4, pass it */
-  bpf_jump(insns, len, &off, BPF_JMP+BPF_JEQ+BPF_K, IPPROTO_ICMP,
-	   len - off - 2,
-	   udp4_portc > 0 || tcp4_portc > 0 ? 0 : len - off - 3);
-
-    if(udp4_portc > 0)
-    bpf_jump(insns, len, &off, BPF_JMP+BPF_JEQ+BPF_K, IPPROTO_UDP,
-	     tcp4_portc > 0 ? 1 : 0,
-	     tcp4_portc > 0 ? 0 : len - off - 3);
-
-  if(tcp4_portc > 0)
-    bpf_jump(insns, len, &off, BPF_JMP+BPF_JEQ+BPF_K, IPPROTO_TCP,
-	     udp4_portc > 0 ? (udp4_portc * 2) + 2 : 0,
-	     len - off - 3);
-
-  if(udp4_portc > 0)
-    {
-      /* check udp4 sport */
-      bpf_stmt(insns, len, &off, BPF_LD+BPF_IND+BPF_H, ip_off + 0);
-      for(i=0; i<udp4_portc; i++)
-	bpf_jump(insns, len, &off, BPF_JMP+BPF_JEQ+BPF_K, udp4_ports[i],
-		 len - off - 2,
-		 0);
-
-      /* check udp4 dport */
-      bpf_stmt(insns, len, &off, BPF_LD+BPF_IND+BPF_H, ip_off + 2);
-      for(i=0; i<udp4_portc; i++)
-	bpf_jump(insns, len, &off, BPF_JMP+BPF_JEQ+BPF_K, udp4_ports[i],
-		 len - off - 2,
-		 udp4_portc - i > 1 ? 0 : len - off - 3);
-    }
-
-  if(tcp4_portc > 0)
-    {
-      /* check tcp4 sport */
-      bpf_stmt(insns, len, &off, BPF_LD+BPF_IND+BPF_H, ip_off + 0);
-      for(i=0; i<tcp4_portc; i++)
-	bpf_jump(insns, len, &off, BPF_JMP+BPF_JEQ+BPF_K, tcp4_ports[i],
-		 len - off - 2,
-		 0);
-
-      /* check tcp4 dport */
-      bpf_stmt(insns, len, &off, BPF_LD+BPF_IND+BPF_H, ip_off + 2);
-      for(i=0; i<tcp4_portc; i++)
-	bpf_jump(insns, len, &off, BPF_JMP+BPF_JEQ+BPF_K, tcp4_ports[i],
-		 len - off - 2,
-		 tcp4_portc - i > 1 ? 0 : len - off - 3);
-    }
-
-  /* load the IPv6 protocol type into the accumulator */
-  bpf_stmt(insns, len, &off, BPF_LD+BPF_ABS+BPF_B, ip_off+6);
-
-  /* if it is ICMP, which is specific to IPv6, pass it */
-  bpf_jump(insns, len, &off, BPF_JMP+BPF_JEQ+BPF_K, IPPROTO_ICMPV6,
-	   len - off - 2, 0);
-
-  if(udp6_portc > 0)
-    bpf_jump(insns, len, &off, BPF_JMP+BPF_JEQ+BPF_K, IPPROTO_UDP,
-	     4 + (tcp6_portc > 0 ? 1 : 0),
-	     0);
-
-  if(tcp6_portc > 0)
-    bpf_jump(insns, len, &off, BPF_JMP+BPF_JEQ+BPF_K, IPPROTO_TCP,
-	     4 + (udp6_portc > 0 ? (udp6_portc * 2) + 2 : 0),
-	     0);
-
-  /* just pass these packets through */
-  bpf_jump(insns, len, &off, BPF_JMP+BPF_JEQ+BPF_K, IPPROTO_FRAGMENT,
-	   len - off - 2, 0);
-  bpf_jump(insns, len, &off, BPF_JMP+BPF_JEQ+BPF_K, IPPROTO_HOPOPTS,
-	   len - off - 2, 0);
-  bpf_jump(insns, len, &off, BPF_JMP+BPF_JEQ+BPF_K, IPPROTO_DSTOPTS,
-	   len - off - 2, 0);
-  bpf_jump(insns, len, &off, BPF_JMP+BPF_JEQ+BPF_K, IPPROTO_ROUTING,
-	   len - off - 2, len - off - 3);
-
-  if(udp6_portc > 0)
-    {
-      /* check udp6 sport */
-      bpf_stmt(insns, len, &off, BPF_LD+BPF_ABS+BPF_H, ip_off + 40);
-      for(i=0; i<udp6_portc; i++)
-	bpf_jump(insns, len, &off, BPF_JMP+BPF_JEQ+BPF_K, udp6_ports[i],
-		 len - off - 2,
-		 0);
-
-      /* check udp6 dport */
-      bpf_stmt(insns, len, &off, BPF_LD+BPF_ABS+BPF_H, ip_off + 42);
-      for(i=0; i<udp6_portc; i++)
-	bpf_jump(insns, len, &off, BPF_JMP+BPF_JEQ+BPF_K, udp6_ports[i],
-		 len - off - 2,
-		 udp6_portc - i > 1 ? 0 : len - off - 3);
-    }
-
-  if(tcp6_portc > 0)
-    {
-      /* check tcp6 sport */
-      bpf_stmt(insns, len, &off, BPF_LD+BPF_ABS+BPF_H, ip_off + 40);
-      for(i=0; i<tcp6_portc; i++)
-	bpf_jump(insns, len, &off, BPF_JMP+BPF_JEQ+BPF_K, tcp6_ports[i],
-		 len - off - 2,
-		 0);
-
-      /* check tcp6 dport */
-      bpf_stmt(insns, len, &off, BPF_LD+BPF_ABS+BPF_H, ip_off + 42);
-      for(i=0; i<tcp6_portc; i++)
-	bpf_jump(insns, len, &off, BPF_JMP+BPF_JEQ+BPF_K, tcp6_ports[i],
-		 len - off - 2,
-		 tcp6_portc - i > 1 ? 0 : len - off - 3);
-    }
-
-  /* branch targets to cause the packet to pass/fail the filter */
-  bpf_stmt(insns, len, &off, BPF_RET+BPF_K, 0);
-  bpf_stmt(insns, len, &off, BPF_RET+BPF_K, 65535);
-
-#ifdef HAVE_BPF
-  prog->bf_len = len;
-  prog->bf_insns = insns;
-#else
-  prog->len = len;
-  prog->filter = insns;
-#endif
-
-  return 0;
+  if(node->dlt_cb == dlt_raw_cb)
+    return SCAMPER_DL_RX_RAW;
+  return SCAMPER_DL_RX_UNSUPPORTED;
 }
-#endif /* __linux__ or BIOCSETFNR */
+#endif /* HAVE_BPF_DYN_FILTER */
 
+#ifdef HAVE_BPF_FILTER
 int scamper_dl_filter(const scamper_dl_t *node,
 		      const uint16_t *ports, size_t portc)
 {
-#if defined(HAVE_BPF)
-  struct bpf_program prog;
-  struct bpf_insn open[1];
-#else
-  struct sock_fprog prog;
-  struct sock_filter open[1];
-#endif
+  filt_prog_t prog;
+  filt_insn_t open[1];
   int rc, fd;
   size_t off = 0;
 
-#if defined(__linux__) || defined(BIOCSETFNR)
+#ifdef HAVE_BPF_DYN_FILTER
   int dyn = scamper_option_dynfilter();
+  uint8_t rx_type = dl_rx_type(node);
 #endif
 
   memset(&prog, 0, sizeof(prog));
@@ -2285,8 +2297,8 @@ int scamper_dl_filter(const scamper_dl_t *node,
 
   /* fallback to an open filter */
   if(ports == NULL
-#if defined(__linux__) || defined(BIOCSETFNR)
-     || dyn == 0 || dl_filter_compile(node, &prog, ports, portc) != 0
+#ifdef HAVE_BPF_DYN_FILTER
+     || dyn == 0 || dl_filter_compile(rx_type, &prog, ports, portc) != 0
 #endif
      )
     {
@@ -2368,7 +2380,7 @@ int scamper_dl_filter(const scamper_dl_t *node,
 
 static int dl_filter_init(const scamper_dl_t *node)
 {
-#if defined(__linux__) || defined(BIOCSETFNR)
+#ifdef HAVE_BPF_DYN_FILTER
   uint16_t *ports = NULL;
   size_t portc = 0;
   int rc;
@@ -2766,10 +2778,12 @@ void scamper_dl_read_cb(SOCKET fd, void *param)
   return;
 }
 
+#endif /* ifdef BUILDING_SCAMPER */
+
 void scamper_dl_state_free(scamper_dl_t *dl)
 {
   assert(dl != NULL);
-#ifdef HAVE_STRUCT_TPACKET_REQ3
+#if defined(BUILDING_SCAMPER) && defined(HAVE_STRUCT_TPACKET_REQ3)
   if(dl->ring != NULL)
     ring_free(dl->ring);
 #endif
@@ -2795,6 +2809,7 @@ scamper_dl_t *scamper_dl_state_alloc(scamper_fd_t *fdn)
     }
   dl->fdn = fdn;
 
+#if defined(BUILDING_SCAMPER)
   if(scamper_fd_ifindex(fdn, &dl->ifindex) != 0)
     {
       printerror_msg(__func__, "could not get ifindex");
@@ -2815,6 +2830,7 @@ scamper_dl_t *scamper_dl_state_alloc(scamper_fd_t *fdn)
 #if defined(HAVE_BPF_FILTER)
   dl_filter_init(dl);
 #endif
+#endif /* BUILDING_SCAMPER */
 
   return dl;
 
@@ -2823,6 +2839,7 @@ scamper_dl_t *scamper_dl_state_alloc(scamper_fd_t *fdn)
   return NULL;
 }
 
+#ifdef BUILDING_SCAMPER
 int scamper_dl_tx(const scamper_dl_t *node, const uint8_t *pkt, size_t len)
 {
 #if defined(HAVE_BPF)

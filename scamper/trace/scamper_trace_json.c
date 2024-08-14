@@ -10,7 +10,7 @@
  *
  * Authors: Brian Hammond, Matthew Luckie
  *
- * $Id: scamper_trace_json.c,v 1.32 2024/04/13 22:31:04 mjl Exp $
+ * $Id: scamper_trace_json.c,v 1.33 2024/08/13 05:54:41 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -35,10 +35,10 @@
 #include "scamper_addr.h"
 #include "scamper_addr_int.h"
 #include "scamper_list.h"
-#include "scamper_trace.h"
-#include "scamper_trace_int.h"
 #include "scamper_icmpext.h"
 #include "scamper_icmpext_int.h"
+#include "scamper_trace.h"
+#include "scamper_trace_int.h"
 #include "scamper_file.h"
 #include "scamper_file_json.h"
 #include "scamper_trace_json.h"
