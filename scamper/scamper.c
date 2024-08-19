@@ -1,7 +1,7 @@
 /*
  * scamper
  *
- * $Id: scamper.c,v 1.345 2024/07/23 22:46:55 mjl Exp $
+ * $Id: scamper.c,v 1.346 2024/08/13 06:04:22 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -50,16 +50,16 @@
 #include "scamper_queue.h"
 #include "scamper_getsrc.h"
 #include "scamper_addr2mac.h"
+#include "scamper_dl.h"
+#include "scamper_dlhdr.h"
+#include "scamper_probe.h"
 #include "scamper_icmp4.h"
 #include "scamper_icmp6.h"
 #include "scamper_udp4.h"
 #include "scamper_udp6.h"
 #include "scamper_tcp4.h"
 #include "scamper_rtsock.h"
-#include "scamper_dl.h"
-#include "scamper_dlhdr.h"
 #include "scamper_firewall.h"
-#include "scamper_probe.h"
 #include "scamper_privsep.h"
 #include "scamper_control.h"
 #include "scamper_osinfo.h"

@@ -35,6 +35,10 @@
 #include <dmalloc.h>
 #endif
 
+#if defined(HAVE_CONFIG_H)
+#include "config.h"
+#endif
+
 #include "mjl_splaytree.h"
 
 /*
@@ -69,11 +73,7 @@ struct splaytree
   splaytree_onremove_t  onremove;
 };
 
-#ifdef HAVE_FUNC_ATTRIBUTE_MALLOC
-static splaytree_stack_t *stack_create(void) __attribute__ ((malloc));
-#else
 static splaytree_stack_t *stack_create(void);
-#endif
 
 #ifdef HAVE_FUNC_ATTRIBUTE_NONNULL
 static splaytree_node_t *stack_pop(splaytree_stack_t *stack)

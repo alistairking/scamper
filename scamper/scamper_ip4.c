@@ -1,7 +1,7 @@
 /*
  * scamper_ip4.c
  *
- * $Id: scamper_ip4.c,v 1.27 2024/07/18 22:26:44 mjl Exp $
+ * $Id: scamper_ip4.c,v 1.28 2024/08/13 05:14:13 mjl Exp $
  *
  * Copyright (C) 2009-2011 The University of Waikato
  * Copyright (C) 2023      The Regents of the University of California
@@ -29,7 +29,7 @@
 #include "internal.h"
 
 #include "scamper.h"
-
+#include "scamper_debug.h"
 #include "scamper_addr.h"
 #include "scamper_addr_int.h"
 #include "scamper_dl.h"
@@ -38,7 +38,6 @@
 #include "scamper_ip4.h"
 #include "scamper_tcp4.h"
 #include "scamper_privsep.h"
-#include "scamper_debug.h"
 #include "utils.h"
 
 #ifndef _WIN32 /* SOCKET vs int on windows */

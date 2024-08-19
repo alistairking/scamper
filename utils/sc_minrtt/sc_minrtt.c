@@ -1,7 +1,7 @@
 /*
  * sc_minrtt: dump RTT values by node for use by sc_hoiho
  *
- * $Id: sc_minrtt.c,v 1.4 2024/07/14 22:40:25 mjl Exp $
+ * $Id: sc_minrtt.c,v 1.6 2024/08/01 04:49:47 mjl Exp $
  *
  *         Matthew Luckie
  *         mjl@luckie.org.nz
@@ -49,7 +49,8 @@
 
 #include "scamper_addr.h"
 #include "scamper_list.h"
-#include "ping/scamper_ping.h"
+#include "scamper_ping.h"
+#include "scamper_dealias.h"
 #include "scamper_file.h"
 #include "mjl_list.h"
 #include "mjl_splaytree.h"
@@ -980,6 +981,7 @@ static int do_sqlite_open(void)
    * before opening the database file, check if it exists.
    * if the file does not exist, only create the dbfile if we've been told.
    */
+  assert(dbfile != NULL);
   rc = stat(dbfile, &sb);
   if(options & OPT_CREATE)
     {
@@ -1255,29 +1257,155 @@ static char *do_import_extract_vp(const char *filename)
   return vp_name;
 }
 
+static int do_import_ping(scamper_ping_t *ping, sc_vp_t *vp, slist_t *out)
+{
+  scamper_ping_reply_t *reply;
+  const struct timeval *reply_rtt, *reply_tx;
+  scamper_addr_t *ping_dst;
+  sc_sample_t *sample;
+  uint8_t reply_ttl, method;
+  uint16_t i, reply_count;
+  uint32_t rtt;
+  int rc = -1;
+
+  ping_dst = scamper_ping_dst_get(ping);
+  reply_count = scamper_ping_reply_count_get(ping);
+
+  for(i=0; i<reply_count; i++)
+    {
+      if((reply = scamper_ping_reply_get(ping, i)) == NULL ||
+	 scamper_ping_reply_is_from_target(ping, reply) == 0 ||
+	 (reply_tx = scamper_ping_reply_tx_get(reply)) == NULL ||
+	 (reply_rtt = scamper_ping_reply_rtt_get(reply)) == NULL)
+	continue;
+
+      reply_ttl = scamper_ping_reply_ttl_get(reply);
+      switch(scamper_ping_probe_method_get(ping))
+	{
+	case SCAMPER_PING_METHOD_UDP:
+	case SCAMPER_PING_METHOD_UDP_DPORT:
+	  method = RTT_METHOD_UDP;
+	  break;
+
+	case SCAMPER_PING_METHOD_ICMP_ECHO:
+	  method = RTT_METHOD_ICMP_ECHO;
+	  break;
+
+	case SCAMPER_PING_METHOD_TCP_ACK_SPORT:
+	  method = RTT_METHOD_TCP_ACK_SP;
+	  break;
+
+	default:
+	  continue;
+	}
+
+      rtt = (reply_rtt->tv_sec * 1000000) + reply_rtt->tv_usec;
+      if((sample = sc_sample_alloc(ping_dst, vp, method,
+				   reply_ttl, rtt)) == NULL ||
+	 slist_tail_push(out, sample) == NULL)
+	{
+	  if(sample != NULL) sc_sample_free(sample);
+	  goto done;
+	}
+      timeval_cpy(&sample->tx, reply_tx);
+    }
+
+  rc = 0;
+
+ done:
+  scamper_ping_free(ping);
+  return rc;
+}
+
+static int do_import_dealias(scamper_dealias_t *dealias, sc_vp_t *vp,
+			     slist_t *out)
+{
+  scamper_dealias_probe_t *probe;
+  scamper_dealias_reply_t *reply;
+  scamper_dealias_probedef_t *def;
+  const struct timeval *tx, *rx;
+  scamper_addr_t *dst;
+  struct timeval tv;
+  sc_sample_t *sample;
+  uint32_t i, probec, rtt;
+  uint8_t reply_ttl, method;
+  int rc = -1;
+
+  probec = scamper_dealias_probec_get(dealias);
+  for(i=0; i<probec; i++)
+    {
+      /* check that any reply is from the target */
+      probe = scamper_dealias_probe_get(dealias, i);
+      reply = scamper_dealias_probe_reply_get(probe, 0);
+      if(reply == NULL ||
+	 scamper_dealias_reply_from_target(probe, reply) == 0)
+	continue;
+
+      /* reply should not have a negative RTT */
+      tx = scamper_dealias_probe_tx_get(probe);
+      rx = scamper_dealias_reply_rx_get(reply);
+      if(timeval_cmp(rx, tx) < 0)
+	continue;
+
+      /* fill out the sample record */
+      def = scamper_dealias_probe_def_get(probe);
+      switch(scamper_dealias_probedef_method_get(def))
+	{
+	case SCAMPER_DEALIAS_PROBEDEF_METHOD_UDP:
+	case SCAMPER_DEALIAS_PROBEDEF_METHOD_UDP_DPORT:
+	  method = RTT_METHOD_UDP;
+	  break;
+
+	case SCAMPER_DEALIAS_PROBEDEF_METHOD_ICMP_ECHO:
+	  method = RTT_METHOD_ICMP_ECHO;
+	  break;
+
+	case SCAMPER_DEALIAS_PROBEDEF_METHOD_TCP_ACK_SPORT:
+	  method = RTT_METHOD_TCP_ACK_SP;
+	  break;
+
+	default:
+	  continue;
+	}
+      reply_ttl = scamper_dealias_reply_ttl_get(reply);
+      dst = scamper_dealias_probedef_dst_get(def);
+      timeval_diff_tv(&tv, tx, rx);
+      rtt = (tv.tv_sec * 1000000) + tv.tv_usec;
+      if((sample = sc_sample_alloc(dst, vp, method, reply_ttl, rtt)) == NULL ||
+	 slist_tail_push(out, sample) == NULL)
+	{
+	  if(sample != NULL) sc_sample_free(sample);
+	  goto done;
+	}
+      timeval_cpy(&sample->tx, tx);
+    }
+
+  rc = 0;
+ done:
+  scamper_dealias_free(dealias);
+  return rc;
+}
+
 static void do_import_file(char *filename)
 {
   scamper_file_t *file = NULL;
   scamper_file_filter_t *ffilter = NULL;
-  scamper_ping_t *ping = NULL;
-  scamper_addr_t *ping_dst;
   sc_sample_t *sample, *rxttl, *start, *ins;
   char *vp_name = NULL;
   sc_vp_t *vp = NULL;
   int begun = 0;
-  scamper_ping_reply_t *reply;
   splaytree_t *dl_tree = NULL, *rxs_trees[4], *addr_tree = NULL;
-  const struct timeval *reply_rtt, *reply_tx;
   uint16_t filter_types[] = {
     SCAMPER_FILE_OBJ_PING,
+    SCAMPER_FILE_OBJ_DEALIAS,
   };
   uint16_t filter_cnt = sizeof(filter_types)/sizeof(uint16_t);
-  uint16_t type, i, reply_count;
+  uint16_t type, i;
+  slist_t *samples = NULL;
   slist_node_t *sn;
   sc_dstlist_t *dl = NULL;
   slist_t *rxs_list = NULL, *dl_list = NULL;
-  uint8_t reply_ttl, method;
-  uint32_t rtt, runlen;
+  uint32_t runlen;
   uint32_t runlens[4][256];
   sc_dst_t *dst;
   void *data;
@@ -1290,7 +1418,8 @@ static void do_import_file(char *filename)
 
   memset(rxs_trees, 0, sizeof(rxs_trees));
 
-  if((vp_name = do_import_extract_vp(filename)) == NULL ||
+  if((samples = slist_alloc()) == NULL ||
+     (vp_name = do_import_extract_vp(filename)) == NULL ||
      (ffilter = scamper_file_filter_alloc(filter_types, filter_cnt)) == NULL)
     goto done;
 
@@ -1372,53 +1501,27 @@ static void do_import_file(char *filename)
       if(data == NULL)
 	break;
 
-      ping = data;
-      ping_dst = scamper_ping_dst_get(ping);
-      reply_count = scamper_ping_reply_count_get(ping);
-
-      for(i=0; i<reply_count; i++)
+      if(type == SCAMPER_FILE_OBJ_PING)
 	{
-	  if((reply = scamper_ping_reply_get(ping, i)) == NULL ||
-	     scamper_ping_reply_is_from_target(ping, reply) == 0 ||
-	     (reply_tx = scamper_ping_reply_tx_get(reply)) == NULL ||
-	     (reply_rtt = scamper_ping_reply_rtt_get(reply)) == NULL)
-	    continue;
-
-	  reply_ttl = scamper_ping_reply_ttl_get(reply);
-	  switch(scamper_ping_probe_method_get(ping))
-	    {
-	    case SCAMPER_PING_METHOD_UDP:
-	    case SCAMPER_PING_METHOD_UDP_DPORT:
-	      method = RTT_METHOD_UDP;
-	      break;
-
-	    case SCAMPER_PING_METHOD_ICMP_ECHO:
-	      method = RTT_METHOD_ICMP_ECHO;
-	      break;
-
-	    case SCAMPER_PING_METHOD_TCP_ACK_SPORT:
-	      method = RTT_METHOD_TCP_ACK_SP;
-	      break;
-
-	    default:
-	      continue;
-	    }
-
-	  rtt = (reply_rtt->tv_sec * 1000000) + reply_rtt->tv_usec;
-	  if((sample = sc_sample_alloc(ping_dst, vp, method,
-				       reply_ttl, rtt)) == NULL ||
-	     sc_dstlist_add(dl_tree, sample) != 0)
-	    {
-	      if(sample != NULL) sc_sample_free(sample);
-	      goto done;
-	    }
-	  timeval_cpy(&sample->tx, reply_tx);
-	  if(sc_rxsec_add(rxs_trees, sample) != 0)
+	  if(do_import_ping(data, vp, samples) != 0)
 	    goto done;
-	  sample = NULL;
+	}
+      else if(type == SCAMPER_FILE_OBJ_DEALIAS)
+	{
+	  if(do_import_dealias(data, vp, samples) != 0)
+	    goto done;
 	}
 
-      scamper_ping_free(ping); ping = NULL;
+      while((sample = slist_head_pop(samples)) != NULL)
+	{
+	  if(sc_dstlist_add(dl_tree, sample) != 0)
+	    {
+	      sc_sample_free(sample);
+	      goto done;
+	    }
+	  if(sc_rxsec_add(rxs_trees, sample) != 0)
+	    goto done;
+	}
     }
   scamper_file_filter_free(ffilter); ffilter = NULL;
   scamper_file_close(file); file = NULL;
@@ -1547,9 +1650,10 @@ static void do_import_file(char *filename)
 #ifdef HAVE_PTHREAD
   if(locked != 0) pthread_mutex_unlock(&db_mutex);
 #endif
-  if(ping != NULL) scamper_ping_free(ping);
   if(ffilter != NULL) scamper_file_filter_free(ffilter);
   if(file != NULL) scamper_file_close(file);
+  if(samples != NULL)
+    slist_free_cb(samples, (slist_free_t)sc_sample_free);
   if(dl_list != NULL)
     slist_free_cb(dl_list, (slist_free_t)sc_dstlist_free);
   if(dl_tree != NULL)
@@ -1775,7 +1879,7 @@ static slist_t *do_read_dst_samples(sc_dst_t *dst)
   scamper_addr_tostr(dst->addr, buf, sizeof(buf));
 
   sqlite3_bind_int64(st_sample_sel, 1, dst->id);
-  while((x = sqlite3_step(st_sample_sel)) == SQLITE_ROW)
+  while(sqlite3_step(st_sample_sel) == SQLITE_ROW)
     {
       sample_id = sqlite3_column_int64(st_sample_sel, 0);
 
@@ -1963,17 +2067,13 @@ static void do_process_1_dst(sc_dst_t *dst)
   char buf[256];
 
 #ifdef HAVE_PTHREAD
-  int locked = 0;
-
   pthread_mutex_lock(&db_mutex);
-  locked = 1;
 #endif
 
   samples = do_read_dst_samples(dst);
 
 #ifdef HAVE_PTHREAD
   pthread_mutex_unlock(&db_mutex);
-  locked = 0;
 #endif
 
   if(samples == NULL || slist_count(samples) == 0)
@@ -2043,9 +2143,6 @@ static void do_process_1_dst(sc_dst_t *dst)
 #endif
 
  done:
-#ifdef HAVE_PTHREAD
-  assert(locked == 0);
-#endif
   slist_free_cb(samples, (slist_free_t)sc_sample_free);
   return;
 }

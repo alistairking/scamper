@@ -16,6 +16,7 @@ my @tests = (
     "unit_cmd_tbit",
     "unit_cmd_trace",
     "unit_cmd_udpprobe",
+    "unit_dl_filter_compile",
     "unit_dl_parse_arp",
     "unit_dl_parse_ip",
     "unit_fds",
@@ -41,14 +42,14 @@ foreach my $test (@tests)
     if(scalar(@out) == 0)
     {
 	$rc = -1;
-	printf "%-20s %s\n", $test, "no output";
+	printf "%-24s %s\n", $test, "no output";
     }
     else
     {
 	$rc = -1 if(scalar(@out) != 1 || $out[0] ne "OK");
 	foreach my $out (@out)
 	{
-	    printf "%-20s %s\n", $test, $out;
+	    printf "%-24s %s\n", $test, $out;
 	}
     }
 }

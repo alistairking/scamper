@@ -1,7 +1,7 @@
 /*
  * scamper_do_sting.c
  *
- * $Id: scamper_sting_do.c,v 1.60 2024/07/02 01:11:17 mjl Exp $
+ * $Id: scamper_sting_do.c,v 1.61 2024/08/13 05:14:13 mjl Exp $
  *
  * Copyright (C) 2008-2011 The University of Waikato
  * Copyright (C) 2012      The Regents of the University of California
@@ -36,6 +36,7 @@
 #include "internal.h"
 
 #include "scamper.h"
+#include "scamper_debug.h"
 #include "scamper_addr.h"
 #include "scamper_list.h"
 #include "scamper_sting.h"
@@ -52,7 +53,6 @@
 #include "scamper_tcp6.h"
 #include "scamper_queue.h"
 #include "scamper_file.h"
-#include "scamper_debug.h"
 #include "scamper_sting_do.h"
 #include "utils.h"
 #include "mjl_list.h"

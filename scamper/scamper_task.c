@@ -1,7 +1,7 @@
 /*
  * scamper_task.c
  *
- * $Id: scamper_task.c,v 1.88 2024/07/14 05:02:02 mjl Exp $
+ * $Id: scamper_task.c,v 1.90 2024/08/13 06:07:01 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -31,6 +31,7 @@
 #include "internal.h"
 
 #include "scamper.h"
+#include "scamper_debug.h"
 #include "scamper_addr.h"
 #include "scamper_addr_int.h"
 #include "scamper_icmp_resp.h"
@@ -38,12 +39,11 @@
 #include "scamper_fds.h"
 #include "scamper_task.h"
 #include "scamper_queue.h"
-#include "scamper_debug.h"
 #include "scamper_list.h"
 #include "scamper_cyclemon.h"
+#include "scamper_file.h"
 #include "scamper_outfiles.h"
 #include "scamper_sources.h"
-#include "scamper_file.h"
 #include "scamper_rtsock.h"
 #include "scamper_dl.h"
 #include "mjl_list.h"

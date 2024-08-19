@@ -1,7 +1,7 @@
 /*
  * scamper_tcp6.c
  *
- * $Id: scamper_tcp6.c,v 1.40 2024/07/02 01:11:17 mjl Exp $
+ * $Id: scamper_tcp6.c,v 1.41 2024/08/13 05:14:13 mjl Exp $
  *
  * Copyright (C) 2006      Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -29,14 +29,13 @@
 #endif
 #include "internal.h"
 
+#include "scamper_debug.h"
 #include "scamper_addr.h"
 #include "scamper_dl.h"
 #include "scamper_dlhdr.h"
 #include "scamper_probe.h"
 #include "scamper_ip6.h"
 #include "scamper_tcp6.h"
-
-#include "scamper_debug.h"
 #include "utils.h"
 
 static size_t tcp_mss(uint8_t *buf, uint16_t mss)

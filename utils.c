@@ -1,7 +1,7 @@
 /*
  * utils.c
  *
- * $Id: utils.c,v 1.244 2024/07/14 10:07:22 mjl Exp $
+ * $Id: utils.c,v 1.245 2024/08/01 04:16:39 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -2485,6 +2485,7 @@ int socket_sport(SOCKET fd, uint16_t *sport)
   socklen_t sl;
 
   sl = sizeof(struct sockaddr_storage);
+  memset(&ss, 0, sl);
   if(getsockname(fd, (struct sockaddr *)&ss, &sl) != 0)
     return -1;
   sa = (struct sockaddr *)&ss;

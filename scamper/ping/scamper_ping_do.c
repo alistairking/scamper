@@ -1,7 +1,7 @@
 /*
  * scamper_do_ping.c
  *
- * $Id: scamper_ping_do.c,v 1.190 2024/07/11 09:50:36 mjl Exp $
+ * $Id: scamper_ping_do.c,v 1.192 2024/08/13 05:14:13 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -30,6 +30,7 @@
 #include "internal.h"
 
 #include "scamper.h"
+#include "scamper_debug.h"
 #include "scamper_addr.h"
 #include "scamper_addr_int.h"
 #include "scamper_ifname.h"
@@ -47,7 +48,6 @@
 #include "scamper_probe.h"
 #include "scamper_queue.h"
 #include "scamper_file.h"
-#include "scamper_debug.h"
 #include "scamper_ping_do.h"
 #include "scamper_icmp4.h"
 #include "scamper_icmp6.h"
