@@ -1,7 +1,7 @@
 /*
  * scamper_do_ping.c
  *
- * $Id: scamper_ping_do.c,v 1.192 2024/08/13 05:14:13 mjl Exp $
+ * $Id: scamper_ping_do.c,v 1.194 2024/08/19 22:50:41 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -192,7 +192,7 @@ static void do_ping_handle_dl(scamper_task_t *task, scamper_dl_rec_t *dl)
   ping_state_t         *state = ping_getstate(task);
   scamper_ping_reply_t *reply = NULL;
   ping_probe_t         *probe;
-  uint16_t              u16;
+  uint16_t              u16, sport;
   int                   seq;
   int                   direction;
   struct timeval        diff;
@@ -315,12 +315,12 @@ static void do_ping_handle_dl(scamper_task_t *task, scamper_dl_rec_t *dl)
 	    }
 	  else if(SCAMPER_PING_METHOD_IS_UDP(ping))
 	    {
-	      if(SCAMPER_DL_IS_ICMP_Q_UDP(dl) == 0 ||
-		 dl->dl_icmp_udp_sport != ping->probe_sport)
+	      if(SCAMPER_DL_IS_ICMP_Q_UDP(dl) == 0)
 		return;
 	      if(ping->probe_method == SCAMPER_PING_METHOD_UDP)
 		{
-		  if(dl->dl_icmp_udp_dport != ping->probe_dport)
+		  if(dl->dl_icmp_udp_sport != ping->probe_sport ||
+		     dl->dl_icmp_udp_dport != ping->probe_dport)
 		    return;
 		  if(ping->dst->type == SCAMPER_ADDR_TYPE_IPV4)
 		    seq = match_ipid(task, dl->dl_icmp_ip_id);
@@ -329,10 +329,22 @@ static void do_ping_handle_dl(scamper_task_t *task, scamper_dl_rec_t *dl)
 		}
 	      else if(ping->probe_method == SCAMPER_PING_METHOD_UDP_DPORT)
 		{
-		  if(dl->dl_icmp_udp_dport > ping->probe_dport + state->seq ||
+		  if(dl->dl_icmp_udp_sport != ping->probe_sport ||
+		     dl->dl_icmp_udp_dport > ping->probe_dport + state->seq ||
 		     dl->dl_icmp_udp_dport < ping->probe_dport)
 		    return;
 		  seq = dl->dl_icmp_udp_dport - ping->probe_dport;
+		}
+	      else if(ping->probe_method == SCAMPER_PING_METHOD_UDP_SPORT)
+		{
+		  if(dl->dl_icmp_udp_dport != ping->probe_dport)
+		    return;
+		  for(u16=0; u16<state->seq; u16++)
+		    if(state->sports[u16] == dl->dl_icmp_udp_sport)
+		      break;
+		  if(u16 == state->seq)
+		    return;
+		  seq = u16;
 		}
 	      else return;
 	    }
@@ -435,56 +447,70 @@ static void do_ping_handle_dl(scamper_task_t *task, scamper_dl_rec_t *dl)
     }
   else if(SCAMPER_DL_IS_UDP(dl))
     {
-      if(SCAMPER_PING_METHOD_IS_UDP(ping) == 0)
-	return;
-
-      /*
-       * UDP ping methods do not currently vary the source port.
-       * therefore, any packet arriving with a destination port
-       * matching the source port that we probed from is inferred to
-       * be an inbound packet.
-       */
-      if(dl->dl_udp_dport == ping->probe_sport &&
-	 scamper_addr_raw_cmp(ping->src, dl->dl_ip_dst) == 0 &&
-	 scamper_addr_raw_cmp(ping->dst, dl->dl_ip_src) == 0)
+      if(ping->probe_method == SCAMPER_PING_METHOD_UDP)
 	{
-	  if(ping->probe_method == SCAMPER_PING_METHOD_UDP)
+	  /* make sure the src/dst ports exactly match */
+	  if(ping->probe_sport == dl->dl_udp_dport &&
+	     ping->probe_dport == dl->dl_udp_sport &&
+	     scamper_addr_raw_cmp(ping->src, dl->dl_ip_dst) == 0 &&
+	     scamper_addr_raw_cmp(ping->dst, dl->dl_ip_src) == 0)
 	    {
-	      /* make sure the destination exactly matches */
-	      if(dl->dl_udp_sport != ping->probe_dport)
-		return;
+	      direction = DIR_INBOUND;
 	      seq = state->seq - 1;
 	    }
-	  else if(ping->probe_method == SCAMPER_PING_METHOD_UDP_DPORT)
+	  else if(ping->probe_sport == dl->dl_udp_sport &&
+		  ping->probe_dport == dl->dl_udp_dport &&
+		  scamper_addr_raw_cmp(ping->src, dl->dl_ip_src) == 0 &&
+		  scamper_addr_raw_cmp(ping->dst, dl->dl_ip_dst) == 0)
 	    {
-	      if(dl->dl_udp_sport < ping->probe_dport)
-		return;
-	      seq = dl->dl_udp_sport - ping->probe_dport;
+	      direction = DIR_OUTBOUND;
+	      seq = state->seq - 1;
 	    }
 	  else return;
-
-	  direction = DIR_INBOUND;
 	}
-      else if(dl->dl_udp_sport == ping->probe_sport &&
-	      scamper_addr_raw_cmp(ping->src, dl->dl_ip_src) == 0 &&
-	      scamper_addr_raw_cmp(ping->dst, dl->dl_ip_dst) == 0)
+      else if(ping->probe_method == SCAMPER_PING_METHOD_UDP_DPORT)
 	{
-	  if(ping->probe_method == SCAMPER_PING_METHOD_UDP)
+	  if(ping->probe_sport == dl->dl_udp_dport &&
+	     ping->probe_dport <= dl->dl_udp_sport &&
+	     scamper_addr_raw_cmp(ping->src, dl->dl_ip_dst) == 0 &&
+	     scamper_addr_raw_cmp(ping->dst, dl->dl_ip_src) == 0)
 	    {
-	      /* make sure the destination port exactly matches */
-	      if(dl->dl_udp_dport != ping->probe_dport)
-		return;
-	      seq = state->seq - 1;
+	      direction = DIR_INBOUND;
+	      seq = dl->dl_udp_sport - ping->probe_dport;
 	    }
-	  else if(ping->probe_method == SCAMPER_PING_METHOD_UDP_DPORT)
+	  else if(ping->probe_sport == dl->dl_udp_sport &&
+		  ping->probe_dport <= dl->dl_udp_dport &&
+		  scamper_addr_raw_cmp(ping->src, dl->dl_ip_src) == 0 &&
+		  scamper_addr_raw_cmp(ping->dst, dl->dl_ip_dst) == 0)
 	    {
-	      if(dl->dl_udp_dport < ping->probe_dport)
-		return;
+	      direction = DIR_OUTBOUND;
 	      seq = dl->dl_udp_dport - ping->probe_dport;
 	    }
 	  else return;
-
-	  direction = DIR_OUTBOUND;
+	}
+      else if(ping->probe_method == SCAMPER_PING_METHOD_UDP_SPORT)
+	{
+	  if(ping->probe_dport == dl->dl_udp_sport &&
+	     scamper_addr_raw_cmp(ping->src, dl->dl_ip_dst) == 0 &&
+	     scamper_addr_raw_cmp(ping->dst, dl->dl_ip_src) == 0)
+	    {
+	      direction = DIR_INBOUND;
+	      sport = dl->dl_udp_dport;
+	    }
+	  else if(ping->probe_dport == dl->dl_udp_dport &&
+		  scamper_addr_raw_cmp(ping->src, dl->dl_ip_src) == 0 &&
+		  scamper_addr_raw_cmp(ping->dst, dl->dl_ip_dst) == 0)
+	    {
+	      direction = DIR_OUTBOUND;
+	      sport = dl->dl_udp_sport;
+	    }
+	  else return;
+	  for(u16=0; u16<state->seq; u16++)
+	    if(state->sports[u16] == sport)
+	      break;
+	  if(u16 == state->seq)
+	    return;
+	  seq = u16;
 	}
       else return;
     }
@@ -742,15 +768,13 @@ static void do_ping_handle_icmp(scamper_task_t *task, scamper_icmp_resp_t *ir)
 	}
       else if(SCAMPER_PING_METHOD_IS_UDP(ping))
 	{
-	  if(SCAMPER_ICMP_RESP_INNER_IS_UDP(ir) == 0 ||
-	     ir->ir_inner_udp_sport != ping->probe_sport)
-	    {
-	      return;
-	    }
+	  if(SCAMPER_ICMP_RESP_INNER_IS_UDP(ir) == 0)
+	    return;
 
 	  if(ping->probe_method == SCAMPER_PING_METHOD_UDP)
 	    {
-	      if(ir->ir_inner_udp_dport != ping->probe_dport)
+	      if(ir->ir_inner_udp_sport != ping->probe_sport ||
+		 ir->ir_inner_udp_dport != ping->probe_dport)
 		return;
 	      if(ping->dst->type == SCAMPER_ADDR_TYPE_IPV4)
 		seq = match_ipid(task, ir->ir_inner_ip_id);
@@ -759,10 +783,22 @@ static void do_ping_handle_icmp(scamper_task_t *task, scamper_icmp_resp_t *ir)
 	    }
 	  else if(ping->probe_method == SCAMPER_PING_METHOD_UDP_DPORT)
 	    {
-	      if(ir->ir_inner_udp_dport > ping->probe_dport + state->seq ||
+	      if(ir->ir_inner_udp_sport != ping->probe_sport ||
+		 ir->ir_inner_udp_dport > ping->probe_dport + state->seq ||
 		 ir->ir_inner_udp_dport < ping->probe_dport)
 		return;
 	      seq = ir->ir_inner_udp_dport - ping->probe_dport;
+	    }
+	  else if(ping->probe_method == SCAMPER_PING_METHOD_UDP_SPORT)
+	    {
+	      if(ir->ir_inner_udp_dport != ping->probe_dport)
+		return;
+	      for(s=0; s<state->seq; s++)
+		if(state->sports[s] == ir->ir_inner_udp_sport)
+		  break;
+	      if(s == state->seq)
+		return;
+	      seq = s;
 	    }
 	  else
 	    {
@@ -1509,15 +1545,26 @@ static void do_ping_probe(scamper_task_t *task)
   else if(SCAMPER_PING_METHOD_IS_UDP(ping))
     {
       probe.pr_ip_proto  = IPPROTO_UDP;
-      probe.pr_udp_sport = ping->probe_sport;
-
       if(ping->probe_method == SCAMPER_PING_METHOD_UDP)
-	probe.pr_udp_dport = ping->probe_dport;
+	{
+	  probe.pr_udp_sport = ping->probe_sport;
+	  probe.pr_udp_dport = ping->probe_dport;
+	}
       else if(ping->probe_method == SCAMPER_PING_METHOD_UDP_DPORT)
-	probe.pr_udp_dport = ping->probe_dport + state->seq;
+	{
+	  probe.pr_udp_sport = ping->probe_sport;
+	  probe.pr_udp_dport = ping->probe_dport + state->seq;
+	}
+      else if(ping->probe_method == SCAMPER_PING_METHOD_UDP_SPORT)
+	{
+	  probe.pr_udp_sport = state->sports[state->seq];
+	  probe.pr_udp_dport = ping->probe_dport;
+	}
 
       if(state->raw != NULL)
 	probe.pr_fd = scamper_fd_fd_get(state->raw);
+      else if(state->fdc > 1 && SCAMPER_ADDR_TYPE_IS_IPV6(ping->dst))
+	probe.pr_fd = scamper_fd_fd_get(state->fds[state->seq]);
     }
   else
     {
@@ -1595,6 +1642,7 @@ scamper_task_t *scamper_do_ping_alloctask(void *data, scamper_list_t *list,
   ping_state_t *state = NULL;
   scamper_task_sig_t *sig = NULL;
   scamper_task_t *task = NULL;
+  const char *typestr;
   size_t i;
 
   /* allocate a task structure and store the ping with it */
@@ -1679,11 +1727,12 @@ scamper_task_t *scamper_do_ping_alloctask(void *data, scamper_list_t *list,
       if(ping->probe_sport == 0 &&
 	 scamper_fd_sport(state->fds[0], &ping->probe_sport) != 0)
 	{
-	  snprintf(errbuf, errlen, "%s: could not get tcp sport", __func__);
+	  snprintf(errbuf, errlen, "%s: could not get udp sport", __func__);
 	  goto err;
 	}
 
-      if(ping->probe_method == SCAMPER_PING_METHOD_UDP)
+      if(ping->probe_method == SCAMPER_PING_METHOD_UDP ||
+	 ping->probe_method == SCAMPER_PING_METHOD_UDP_SPORT)
 	SCAMPER_TASK_SIG_UDP(sig, ping->probe_sport, ping->probe_dport);
       else if(ping->probe_method == SCAMPER_PING_METHOD_UDP_DPORT)
 	SCAMPER_TASK_SIG_UDP_DPORT(sig, ping->probe_sport, ping->probe_dport,
@@ -1769,27 +1818,52 @@ scamper_task_t *scamper_do_ping_alloctask(void *data, scamper_list_t *list,
       if(SCAMPER_PING_FLAG_IS_SPOOF(ping) == 0)
 	sig->sig_tx_ip_src = scamper_addr_use(ping->src);
 
-      if(SCAMPER_ADDR_TYPE_IS_IPV4(ping->dst))
-	state->fds[i] = scamper_fd_tcp4_dst(NULL, 0, state->sports, i,
-					    ping->dst->addr, ping->probe_dport);
+      if(SCAMPER_PING_METHOD_IS_TCP(ping))
+	{
+	  typestr = "tcp";
+	  if(SCAMPER_ADDR_TYPE_IS_IPV4(ping->dst))
+	    state->fds[i] = scamper_fd_tcp4_dst(NULL, 0, state->sports, i,
+						ping->dst->addr,
+						ping->probe_dport);
+	  else
+	    state->fds[i] = scamper_fd_tcp6_dst(NULL, 0, state->sports, i,
+						ping->dst->addr,
+						ping->probe_dport);
+	}
       else
-	state->fds[i] = scamper_fd_tcp6_dst(NULL, 0, state->sports, i,
-					    ping->dst->addr, ping->probe_dport);
+	{
+	  typestr = "udp";
+	  if(SCAMPER_ADDR_TYPE_IS_IPV4(ping->dst))
+	    state->fds[i] = scamper_fd_udp4dg_dst(NULL, 0, state->sports, i,
+						  ping->dst->addr,
+						  ping->probe_dport);
+	  else
+	    state->fds[i] = scamper_fd_udp6_dst(NULL, 0, state->sports, i,
+						ping->dst->addr,
+						ping->probe_dport);
+	}
       if(state->fds[i] == NULL)
 	{
-	  snprintf(errbuf, errlen, "%s: could not open tcp socket", __func__);
+	  snprintf(errbuf, errlen,
+		   "%s: could not open %s socket", __func__, typestr);
 	  goto err;
 	}
       if(scamper_fd_sport(state->fds[i], &state->sports[i]) != 0)
 	{
-	  snprintf(errbuf, errlen, "%s: could not get tcp sport", __func__);
+	  snprintf(errbuf, errlen,
+		   "%s: could not get %s sport",  __func__, typestr);
 	  goto err;
 	}
 
-      SCAMPER_TASK_SIG_TCP(sig, state->sports[i], ping->probe_dport);
+      if(SCAMPER_PING_METHOD_IS_TCP(ping))
+	SCAMPER_TASK_SIG_TCP(sig, state->sports[i], ping->probe_dport);
+      else
+	SCAMPER_TASK_SIG_UDP(sig, state->sports[i], ping->probe_dport);
+
       if(scamper_task_sig_add(task, sig) != 0)
 	{
-	  snprintf(errbuf, errlen, "%s: could not add signature to task", __func__);
+	  snprintf(errbuf, errlen,
+		   "%s: could not add signature to task", __func__);
 	  goto err;
 	}
       sig = NULL;
