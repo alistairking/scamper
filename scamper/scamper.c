@@ -2205,6 +2205,7 @@ static int scamper(int argc, char *argv[])
 
       if(scamper_queue_event_proc(&tv) != 0)
 	goto done;
+      scamper_task_sig_expiry_run(&tv);
 
       /* take any 'done' tasks and output them now */
       while((task = scamper_queue_getdone(&tv)) != NULL)
