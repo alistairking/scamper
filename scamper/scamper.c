@@ -800,6 +800,8 @@ static int check_options(int argc, char *argv[])
 #ifdef HAVE_STRUCT_TPACKET_REQ3
 	  else if(strcasecmp(optarg, "ring") == 0)
 	    flags |= FLAG_RING;
+	  else if(strcasecmp(optarg, "noring") == 0)
+	    flags &= (~FLAG_RING);
 	  else if(strncasecmp(optarg, "ring-blocks=", 12) == 0)
 	    opt_ring_blocks = optarg + 12;
 	  else if(strncasecmp(optarg, "ring-block-size=", 16) == 0)
