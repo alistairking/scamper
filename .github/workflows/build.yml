@@ -28,7 +28,7 @@ jobs:
 
       # STORE BINARIES
       - name: Archive compiled binaries
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v4
         with:
           name: scamper-build-multiarch
           path: build/**/scamper
@@ -50,7 +50,7 @@ jobs:
         run: |
           earthly +pkg-multiarch
       - name: Archive packages
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v4
         with:
           name: scamper-packages
           path: pkg/*
@@ -85,7 +85,7 @@ jobs:
 
       # STORE BINARIES
       - name: Archive compiled binaries
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v4
         with:
           name: scamper-build-${{ env.platform }}
           path: build/**/scamper
@@ -101,7 +101,7 @@ jobs:
       - name: Build Scamper docs
         run: earthly +docs
       - name: Archive rendered docs
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v4
         with:
           name: scamper-docs
           path: docs/*.pdf
@@ -116,7 +116,7 @@ jobs:
       - docs
     steps:
       - name: Download artifacts
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v4
       - name: Organize things
         run: |
           mkdir -p build/
@@ -136,7 +136,7 @@ jobs:
           echo "=== FINAL ASSETS ==="
           find ./
       - name: Archive release artifact
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v4
         with:
           name: scamper-release-artifacts
           path: ./*
@@ -148,7 +148,7 @@ jobs:
     if: startsWith(github.ref, 'refs/tags')
     steps:
       - name: Download artifacts
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v4
         with:
           name: scamper-release-artifacts
       - name: "Create release"
