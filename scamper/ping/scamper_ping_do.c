@@ -62,6 +62,7 @@ typedef struct ping_probe
   struct timeval     tx;
   uint16_t           ipid;
   uint8_t            dlts;
+  uint8_t            dltx;
 } ping_probe_t;
 
 typedef struct ping_state
@@ -525,6 +526,14 @@ static void do_ping_handle_dl(scamper_task_t *task, scamper_dl_rec_t *dl)
 
   if(direction == DIR_INBOUND)
     {
+      /*
+       * if we expect to see the packet outbound on the datalink
+       * socket (because we did not transmit it on the datalink) and
+       * we have not yet seen it, then don't match this packet.
+       */
+      if(probe->dlts == 0 && probe->dltx == 0)
+	return;
+
       /* allocate a reply structure for the response */
       if((reply = scamper_ping_reply_alloc()) == NULL)
 	{
@@ -1589,6 +1598,8 @@ static void do_ping_probe(scamper_task_t *task)
   /* fill out the details of the probe sent */
   timeval_cpy(&pp->tx, &probe.pr_tx);
   pp->ipid = ipid;
+  if(probe.pr_dl != NULL)
+    pp->dltx = 1;
   state->probes[state->seq] = pp;
   state->seq++;
   ping->ping_sent++;
