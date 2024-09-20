@@ -1247,7 +1247,7 @@ static scamper_fd_t *fd_tcpudp(int type, void *src, uint16_t sport,
       for(dn = dlist_head_node(fd_list); dn != NULL; dn = dlist_node_next(dn))
 	{
 	  exist = dlist_node_item(dn);
-	  if(exist->type != type)
+	  if(exist->type != type || fd_addr_cmp(type, exist->fd_addr, src) != 0)
 	    continue;
 
 	  /* has the caller asked to not provide specific sports? */

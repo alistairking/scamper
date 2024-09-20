@@ -1849,7 +1849,8 @@ scamper_task_t *scamper_do_ping_alloctask(void *data, scamper_list_t *list,
 						  ping->dst->addr,
 						  ping->probe_dport);
 	  else
-	    state->fds[i] = scamper_fd_udp6_dst(NULL, 0, state->sports, i,
+	    state->fds[i] = scamper_fd_udp6_dst(ping->src->addr, 0,
+						state->sports, i,
 						ping->dst->addr,
 						ping->probe_dport);
 	}
