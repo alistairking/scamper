@@ -1,7 +1,7 @@
 /*
  * scamper_task.c
  *
- * $Id: scamper_task.c,v 1.90 2024/08/13 06:07:01 mjl Exp $
+ * $Id: scamper_task.c,v 1.95 2024/08/28 01:52:23 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -93,19 +93,21 @@ struct scamper_task_anc
 };
 
 /*
- * trie_s2t_t
+ * trie_addr_t
  *
  * a mapping from an address being probed to all of the signatures
- * belonging to the task.  the list contains s2t_t entries.  the code
- * that uses this structure assumes that tasks the s2t_t entries point
- * to appear contiguously.
+ * belonging to the address.
+ *
+ * the s2t_list contains s2t_t entries.  the code that uses this list
+ * assumes that tasks the s2t_t entries point to appear contiguously.
  */
-typedef struct trie_s2t
+typedef struct trie_addr
 {
   scamper_addr_t     *addr;
-  dlist_t            *list;
+  dlist_t            *s2t_list;
+  dlist_t            *s2x_list;
   patricia_node_t    *node;
-} trie_s2t_t;
+} trie_addr_t;
 
 /*
  * s2t_t
@@ -119,6 +121,18 @@ typedef struct s2t
   scamper_task_t     *task;
   void               *node;
 } s2t_t;
+
+/*
+ * s2x_t
+ *
+ * a mapping of a signature to an expiry time.
+ */
+typedef struct s2x
+{
+  scamper_task_sig_t *sig;
+  struct timeval      expiry;
+  dlist_node_t       *node;
+} s2x_t;
 
 typedef struct task_onhold
 {
@@ -136,18 +150,19 @@ static dlist_t     *sniff = NULL;
 #ifndef DISABLE_SCAMPER_HOST
 static splaytree_t *host = NULL;
 #endif
+static slist_t     *expire = NULL;
 
-static int tx_ip_cmp(const trie_s2t_t *a, const trie_s2t_t *b)
+static int tx_ip_cmp(const trie_addr_t *a, const trie_addr_t *b)
 {
   return scamper_addr_cmp(a->addr, b->addr);
 }
 
-static int tx_ip_bit(const trie_s2t_t *ts2t, int bit)
+static int tx_ip_bit(const trie_addr_t *ta, int bit)
 {
-  return scamper_addr_bit(ts2t->addr, bit);
+  return scamper_addr_bit(ta->addr, bit);
 }
 
-static int tx_ip_fbd(const trie_s2t_t *a, const trie_s2t_t *b)
+static int tx_ip_fbd(const trie_addr_t *a, const trie_addr_t *b)
 {
   return scamper_addr_fbd(a->addr, b->addr);
 }
@@ -188,25 +203,53 @@ static int host_cmp(const s2t_t *a, const s2t_t *b)
 }
 #endif
 
-static void trie_s2t_free(trie_s2t_t *ts2t)
+static void trie_addr_free(trie_addr_t *ta)
 {
-  if(ts2t->list != NULL) dlist_free(ts2t->list);
-  if(ts2t->addr != NULL) scamper_addr_free(ts2t->addr);
-  free(ts2t);
+  if(ta->s2t_list != NULL) dlist_free(ta->s2t_list);
+  if(ta->s2x_list != NULL) dlist_free(ta->s2x_list);
+  if(ta->addr != NULL) scamper_addr_free(ta->addr);
+  free(ta);
   return;
 }
 
-static trie_s2t_t *trie_s2t_alloc(scamper_addr_t *addr)
+static trie_addr_t *trie_addr_alloc(scamper_addr_t *addr)
 {
-  trie_s2t_t *ts2t;
-  if((ts2t = malloc_zero(sizeof(trie_s2t_t))) == NULL ||
-     (ts2t->list = dlist_alloc()) == NULL)
+  trie_addr_t *ta;
+  if((ta = malloc_zero(sizeof(trie_addr_t))) == NULL ||
+     (ta->s2t_list = dlist_alloc()) == NULL ||
+     (ta->s2x_list = dlist_alloc()) == NULL)
     goto err;
-  ts2t->addr = scamper_addr_use(addr);
-  return ts2t;
+  ta->addr = scamper_addr_use(addr);
+  return ta;
  err:
-  if(ts2t != NULL) trie_s2t_free(ts2t);
+  if(ta != NULL) trie_addr_free(ta);
   return NULL;
+}
+
+static void trie_addr_remove(trie_addr_t *ta)
+{
+  if(SCAMPER_ADDR_TYPE_IS_IPV4(ta->addr))
+    patricia_remove_node(tx_ip4, ta->node);
+  else
+    patricia_remove_node(tx_ip6, ta->node);
+  ta->node = NULL;
+  return;
+}
+
+static trie_addr_t *trie_addr_find(scamper_addr_t *addr)
+{
+  trie_addr_t fm;
+  fm.addr = addr;
+  if(SCAMPER_ADDR_TYPE_IS_IPV4(addr))
+    return patricia_find(tx_ip4, &fm);
+  return patricia_find(tx_ip6, &fm);
+}
+
+static int trie_addr_isempty(const trie_addr_t *ta)
+{
+  if(dlist_count(ta->s2t_list) > 0 || dlist_count(ta->s2x_list) > 0)
+    return 0;
+  return 1;
 }
 
 static void tx_ip_check(scamper_dl_rec_t *dl)
@@ -214,7 +257,7 @@ static void tx_ip_check(scamper_dl_rec_t *dl)
   scamper_addr_t addr, addr2buf, *addr2 = NULL;
   scamper_task_t *last_task = NULL;
   patricia_t *pt;
-  trie_s2t_t fm, *ts2t;
+  trie_addr_t fm, *ta;
   dlist_node_t *dn;
   s2t_t *s2t;
   int i;
@@ -286,9 +329,10 @@ static void tx_ip_check(scamper_dl_rec_t *dl)
 	fm.addr = addr2;
       else
 	break;
-      if((ts2t = patricia_find(pt, &fm)) != NULL)
+      if((ta = patricia_find(pt, &fm)) != NULL)
 	{
-	  for(dn=dlist_head_node(ts2t->list);dn != NULL;dn=dlist_node_next(dn))
+	  for(dn=dlist_head_node(ta->s2t_list); dn != NULL;
+	      dn=dlist_node_next(dn))
 	    {
 	      s2t = dlist_node_item(dn);
 	      if(s2t->task == last_task)
@@ -387,59 +431,6 @@ static void sniff_check(scamper_dl_rec_t *dl)
   return;
 }
 #endif
-
-static void s2t_free(s2t_t *s2t)
-{
-  scamper_task_sig_t *sig = s2t->sig;
-  trie_s2t_t fm, *ts2t;
-  patricia_t *pt;
-
-  if(s2t == NULL)
-    return;
-
-  if(s2t->node != NULL)
-    {
-      if(sig->sig_type == SCAMPER_TASK_SIG_TYPE_TX_IP)
-	{
-	  /* get the trie_s2t node that manages this address */
-	  fm.addr = sig->sig_tx_ip_dst;
-	  if(SCAMPER_ADDR_TYPE_IS_IPV4(sig->sig_tx_ip_dst))
-	    pt = tx_ip4;
-	  else
-	    pt = tx_ip6;
-	  ts2t = patricia_find(pt, &fm);
-	  assert(ts2t != NULL);
-
-	  /* remove the s2t from the trie_s2t node */
-	  dlist_node_pop(ts2t->list, s2t->node);
-
-	  /* if the address no longer has any tasks, remove from trie */
-	  if(dlist_count(ts2t->list) == 0)
-	    {
-	      patricia_remove_node(pt, ts2t->node);
-	      trie_s2t_free(ts2t);
-	    }
-	}
-      else if(sig->sig_type == SCAMPER_TASK_SIG_TYPE_TX_ND)
-	{
-	  if(sig->sig_tx_nd_ip->type == SCAMPER_ADDR_TYPE_IPV4)
-	    patricia_remove_node(tx_nd4, s2t->node);
-	  else
-	    patricia_remove_node(tx_nd6, s2t->node);
-	}
-#ifndef DISABLE_SCAMPER_SNIFF
-      else if(sig->sig_type == SCAMPER_TASK_SIG_TYPE_SNIFF)
-	dlist_node_pop(sniff, s2t->node);
-#endif
-#ifndef DISABLE_SCAMPER_HOST
-      else if(sig->sig_type == SCAMPER_TASK_SIG_TYPE_HOST)
-	splaytree_remove_node(host, s2t->node);
-#endif
-    }
-
-  free(s2t);
-  return;
-}
 
 char *scamper_task_sig_tostr(scamper_task_sig_t *sig, char *buf, size_t len)
 {
@@ -603,7 +594,7 @@ static int overlap(uint16_t a, uint16_t b, uint16_t x, uint16_t y)
   return 0;
 }
 
-static int s2t_tx_ip_overlap(scamper_task_sig_t *a, scamper_task_sig_t *b)
+static int sig_tx_ip_overlap(scamper_task_sig_t *a, scamper_task_sig_t *b)
 {
   if(a->sig_tx_ip_proto != b->sig_tx_ip_proto)
     return 0;
@@ -642,9 +633,10 @@ int scamper_task_sig_sport_used(scamper_addr_t *dst, uint8_t proto,
 				uint16_t sport, uint16_t dport)
 {
   scamper_task_sig_t sig;
-  trie_s2t_t ts2t_fm, *ts2t;
+  trie_addr_t *ta;
   dlist_node_t *dn;
-  s2t_t *s2t = NULL;
+  s2t_t *s2t;
+  s2x_t *s2x;
 
   sig.sig_tx_ip_dst = dst;
   if(proto == IPPROTO_TCP)
@@ -661,19 +653,20 @@ int scamper_task_sig_sport_used(scamper_addr_t *dst, uint8_t proto,
    * if we don't have any measurement to that address, then the port
    * is clear
    */
-  ts2t_fm.addr = dst;
-  if(SCAMPER_ADDR_TYPE_IS_IPV4(dst))
-    ts2t = patricia_find(tx_ip4, &ts2t_fm);
-  else
-    ts2t = patricia_find(tx_ip6, &ts2t_fm);
-  if(ts2t == NULL)
+  if((ta = trie_addr_find(dst)) == NULL)
     return 0;
 
   /* check to see if there's an overlapping signature */
-  for(dn=dlist_head_node(ts2t->list); dn != NULL; dn=dlist_node_next(dn))
+  for(dn=dlist_head_node(ta->s2t_list); dn != NULL; dn=dlist_node_next(dn))
     {
       s2t = dlist_node_item(dn);
-      if(s2t_tx_ip_overlap(&sig, s2t->sig) != 0)
+      if(sig_tx_ip_overlap(&sig, s2t->sig) != 0)
+	return 1;
+    }
+  for(dn=dlist_head_node(ta->s2x_list); dn != NULL; dn=dlist_node_next(dn))
+    {
+      s2x = dlist_node_item(dn);
+      if(sig_tx_ip_overlap(&sig, s2x->sig) != 0)
 	return 1;
     }
 
@@ -682,23 +675,18 @@ int scamper_task_sig_sport_used(scamper_addr_t *dst, uint8_t proto,
 
 scamper_task_t *scamper_task_find(scamper_task_sig_t *sig)
 {
-  trie_s2t_t ts2t_fm, *ts2t;
+  trie_addr_t *ta;
   dlist_node_t *dn;
   s2t_t s2t_fm, *s2t = NULL;
 
   if(sig->sig_type == SCAMPER_TASK_SIG_TYPE_TX_IP)
     {
-      ts2t_fm.addr = sig->sig_tx_ip_dst;
-      if(SCAMPER_ADDR_TYPE_IS_IPV4(sig->sig_tx_ip_dst))
-	ts2t = patricia_find(tx_ip4, &ts2t_fm);
-      else
-	ts2t = patricia_find(tx_ip6, &ts2t_fm);
-      if(ts2t == NULL)
+      if((ta = trie_addr_find(sig->sig_tx_ip_dst)) == NULL)
 	return NULL;
-      for(dn=dlist_head_node(ts2t->list); dn != NULL; dn=dlist_node_next(dn))
+      for(dn=dlist_head_node(ta->s2t_list); dn != NULL; dn=dlist_node_next(dn))
 	{
 	  s2t = dlist_node_item(dn);
-	  if(s2t_tx_ip_overlap(sig, s2t->sig) != 0)
+	  if(sig_tx_ip_overlap(sig, s2t->sig) != 0)
 	    break;
 	}
       if(dn == NULL)
@@ -731,17 +719,99 @@ scamper_task_t *scamper_task_find(scamper_task_sig_t *sig)
   return NULL;
 }
 
-void scamper_task_sig_deinstall(scamper_task_t *task)
+static void s2t_tx_ip_deinstall(s2t_t *s2t, struct timeval *expiry)
 {
-  s2t_t *s2t;
-  scamper_task_sig_t *sig;
-  slist_node_t *n;
+  scamper_task_sig_t *sig = s2t->sig;
+  trie_addr_t *ta;
+  s2x_t *s2x;
 
-  for(n=slist_head_node(task->siglist); n != NULL; n = slist_node_next(n))
+  assert(s2t->node != NULL);
+
+  /* get the trie_addr node that manages this address */
+  ta = trie_addr_find(sig->sig_tx_ip_dst);
+  assert(ta != NULL);
+
+  /* remove the s2t from the trie_addr node */
+  dlist_node_pop(ta->s2t_list, s2t->node);
+
+  /*
+   * try to add an expiry entry for the signature.  if we fail,
+   * then check if we still need the trie_addr_t.
+   */
+  if((s2x = malloc_zero(sizeof(s2x_t))) != NULL &&
+     (s2x->node = dlist_tail_push(ta->s2x_list, s2x)) != NULL &&
+     slist_tail_push(expire, s2x) != NULL)
     {
-      s2t = slist_node_item(n); sig = s2t->sig;
-      s2t_free(s2t);
+      timeval_cpy(&s2x->expiry, expiry);
+      s2x->sig = sig;
+    }
+  else
+    {
+      /* clean up attempt to add expiry node */
+      if(s2x != NULL)
+	{
+	  if(s2x->node != NULL)
+	    dlist_node_pop(ta->s2x_list, s2x->node);
+	  free(s2x);
+	}
+
+      /* if the address no longer has any signatures, remove from trie */
+      if(trie_addr_isempty(ta))
+	{
+	  trie_addr_remove(ta);
+	  trie_addr_free(ta);
+	}
+
       scamper_task_sig_free(sig);
+    }
+
+  return;
+}
+
+static void scamper_task_sig_deinstall(scamper_task_t *task)
+{
+  scamper_task_sig_t *sig;
+  struct timeval expiry;
+  int exp_set = 0;
+  s2t_t *s2t;
+
+  while((s2t = slist_head_pop(task->siglist)) != NULL)
+    {
+      sig = s2t->sig;
+
+      if(s2t->node != NULL)
+	{
+	  if(sig->sig_type == SCAMPER_TASK_SIG_TYPE_TX_IP)
+	    {
+	      if(exp_set == 0)
+		{
+		  gettimeofday_wrap(&expiry);
+		  expiry.tv_sec += 5;
+		  exp_set = 1;
+		}
+	      s2t_tx_ip_deinstall(s2t, &expiry);
+	      sig = NULL;
+	    }
+	  else if(sig->sig_type == SCAMPER_TASK_SIG_TYPE_TX_ND)
+	    {
+	      if(sig->sig_tx_nd_ip->type == SCAMPER_ADDR_TYPE_IPV4)
+		patricia_remove_node(tx_nd4, s2t->node);
+	      else
+		patricia_remove_node(tx_nd6, s2t->node);
+	    }
+#ifndef DISABLE_SCAMPER_SNIFF
+	  else if(sig->sig_type == SCAMPER_TASK_SIG_TYPE_SNIFF)
+	    dlist_node_pop(sniff, s2t->node);
+#endif
+#ifndef DISABLE_SCAMPER_HOST
+	  else if(sig->sig_type == SCAMPER_TASK_SIG_TYPE_HOST)
+	    splaytree_remove_node(host, s2t->node);
+#endif
+	}
+      free(s2t);
+
+      if(sig != NULL)
+	scamper_task_sig_free(sig);
     }
 
   return;
@@ -751,18 +821,10 @@ int scamper_task_sig_install(scamper_task_t *task)
 {
   scamper_task_sig_t *sig;
   scamper_task_t *tf;
-  trie_s2t_t *ts2t, fm;
+  trie_addr_t *ta, fm;
   patricia_t *pt;
   s2t_t *s2t;
   slist_node_t *n;
-
-#if 0
-  if(slist_count(task->siglist) < 1)
-    {
-      printerror(__func__, "no signatures for task");
-      return -1;
-    }
-#endif
 
   for(n=slist_head_node(task->siglist); n != NULL; n = slist_node_next(n))
     {
@@ -783,27 +845,30 @@ int scamper_task_sig_install(scamper_task_t *task)
 	  else
 	    pt = tx_ip6;
 	  fm.addr = sig->sig_tx_ip_dst;
-	  if((ts2t = patricia_find(pt, &fm)) == NULL)
+	  if((ta = patricia_find(pt, &fm)) == NULL)
 	    {
-	      if((ts2t = trie_s2t_alloc(sig->sig_tx_ip_dst)) == NULL)
+	      if((ta = trie_addr_alloc(sig->sig_tx_ip_dst)) == NULL)
 		{
-		  scamper_debug(__func__, "could not alloc ts2t");
+		  scamper_debug(__func__, "could not alloc trie_addr");
 		  goto err;
 		}
-	      if((ts2t->node = patricia_insert(pt, ts2t)) == NULL)
+	      if((ta->node = patricia_insert(pt, ta)) == NULL)
 		{
-		  scamper_debug(__func__, "could not install ts2t");
-		  trie_s2t_free(ts2t);
+		  scamper_debug(__func__, "could not install trie_addr");
+		  trie_addr_free(ta);
 		  goto err;
 		}
 	    }
-	  s2t->node = dlist_head_push(ts2t->list, s2t);
+	  s2t->node = dlist_head_push(ta->s2t_list, s2t);
 
-	  /* if we weren't able to insert the s2t, free addr */
-	  if(s2t->node == NULL && dlist_count(ts2t->list) == 0)
+	  /*
+	   * if we weren't able to insert the s2t, and the trie_addr
+	   * is empty because we just created it, free trie_addr
+	   */
+	  if(s2t->node == NULL && trie_addr_isempty(ta))
 	    {
-	      patricia_remove_node(pt, ts2t->node);
-	      trie_s2t_free(ts2t);
+	      patricia_remove_node(pt, ta->node);
+	      trie_addr_free(ta);
 	    }
 	}
       else if(sig->sig_type == SCAMPER_TASK_SIG_TYPE_TX_ND)
@@ -858,6 +923,44 @@ scamper_task_t *scamper_task_sig_block(scamper_task_t *task)
     }
 
   return NULL;
+}
+
+static void s2x_expire(s2x_t *s2x)
+{
+  trie_addr_t *ta;
+
+  /* find the trie addr struct, remove expiry node from that */
+  ta = trie_addr_find(s2x->sig->sig_tx_ip_dst);
+  assert(ta != NULL);
+  dlist_node_pop(ta->s2x_list, s2x->node);
+
+  /* if the trie_addr struct now has no signatures, remove it */
+  if(trie_addr_isempty(ta))
+    {
+      trie_addr_remove(ta);
+      trie_addr_free(ta);
+    }
+
+  /* don't need the signature or the expire node anymore */
+  scamper_task_sig_free(s2x->sig);
+  free(s2x);
+  return;
+}
+
+void scamper_task_sig_expiry_run(const struct timeval *now)
+{
+  s2x_t *s2x;
+
+  while((s2x = slist_head_item(expire)) != NULL)
+    {
+      /* check if the item can be expired */
+      if(timeval_cmp(&s2x->expiry, now) > 0)
+	break;
+      slist_head_pop(expire);
+      s2x_expire(s2x);
+    }
+
+  return;
 }
 
 void *scamper_task_onhold(scamper_task_t *task, void *param,
@@ -1067,10 +1170,9 @@ void scamper_task_halt(scamper_task_t *task)
 void scamper_task_handleicmp(scamper_icmp_resp_t *resp)
 {
   scamper_task_t *last_task = NULL;
-  trie_s2t_t *ts2t, fm;
+  trie_addr_t *ta;
   scamper_addr_t addr;
   dlist_node_t *dn;
-  patricia_t *pt;
   s2t_t *s2t;
   int print = 0;
 
@@ -1097,15 +1199,10 @@ void scamper_task_handleicmp(scamper_icmp_resp_t *resp)
       return;
     }
 
-  fm.addr = &addr;
-  if(SCAMPER_ADDR_TYPE_IS_IPV4(&addr))
-    pt = tx_ip4;
-  else
-    pt = tx_ip6;
-  if((ts2t = patricia_find(pt, &fm)) == NULL)
+  if((ta = trie_addr_find(&addr)) == NULL)
     return;
 
-  for(dn=dlist_head_node(ts2t->list); dn != NULL; dn=dlist_node_next(dn))
+  for(dn=dlist_head_node(ta->s2t_list); dn != NULL; dn=dlist_node_next(dn))
     {
       s2t = dlist_node_item(dn);
       if(s2t->task == last_task)
@@ -1137,7 +1234,7 @@ void scamper_task_handledl(scamper_dl_rec_t *dl)
 void scamper_task_handleudp(scamper_udp_resp_t *ur)
 {
   scamper_task_t *last_task = NULL;
-  trie_s2t_t *ts2t, fm;
+  trie_addr_t *ta, fm;
   scamper_addr_t addr;
   dlist_node_t *dn;
   patricia_t *pt;
@@ -1155,10 +1252,10 @@ void scamper_task_handleudp(scamper_udp_resp_t *ur)
       addr.type = SCAMPER_ADDR_TYPE_IPV6;
       pt = tx_ip6;
     }
-  if((ts2t = patricia_find(pt, &fm)) == NULL)
+  if((ta = patricia_find(pt, &fm)) == NULL)
     return;
 
-  for(dn=dlist_head_node(ts2t->list); dn != NULL; dn=dlist_node_next(dn))
+  for(dn=dlist_head_node(ta->s2t_list); dn != NULL; dn=dlist_node_next(dn))
     {
       s2t = dlist_node_item(dn);
       if(s2t->task == last_task)
@@ -1331,20 +1428,35 @@ int scamper_task_init(void)
   if((sniff = dlist_alloc()) == NULL)
     return -1;
 #endif
+  if((expire = slist_alloc()) == NULL)
+    return -1;
   return 0;
 }
 
 void scamper_task_cleanup(void)
 {
+  s2x_t *s2x;
+
+  if(expire != NULL)
+    {
+      while((s2x = slist_head_pop(expire)) != NULL)
+	s2x_expire(s2x);
+      slist_free(expire);
+      expire = NULL;
+    }
+
   if(tx_ip4 != NULL) { patricia_free(tx_ip4); tx_ip4 = NULL; }
   if(tx_ip6 != NULL) { patricia_free(tx_ip6); tx_ip6 = NULL; }
   if(tx_nd4 != NULL) { patricia_free(tx_nd4); tx_nd4 = NULL; }
   if(tx_nd6 != NULL) { patricia_free(tx_nd6); tx_nd6 = NULL; }
+
 #ifndef DISABLE_SCAMPER_HOST
   if(host != NULL)   { splaytree_free(host, NULL); host = NULL; }
 #endif
+
 #ifndef DISABLE_SCAMPER_SNIFF
   if(sniff != NULL)  { dlist_free(sniff); sniff = NULL; }
 #endif
+
   return;
 }

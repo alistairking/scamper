@@ -1,7 +1,7 @@
 /*
  * scamper_ping.h
  *
- * $Id: scamper_ping.h,v 1.75 2024/06/26 20:05:29 mjl Exp $
+ * $Id: scamper_ping.h,v 1.76 2024/08/19 21:53:01 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -47,16 +47,17 @@ typedef struct scamper_ping_stats scamper_ping_stats_t;
 #define SCAMPER_PING_REPLY_FLAG_DLRX       0x10 /* datalink rx timestamp */
 #define SCAMPER_PING_REPLY_FLAG_REPLY_TOS  0x20 /* reply tos included */
 
-#define SCAMPER_PING_METHOD_ICMP_ECHO     0x00
-#define SCAMPER_PING_METHOD_TCP_ACK       0x01
-#define SCAMPER_PING_METHOD_TCP_ACK_SPORT 0x02
-#define SCAMPER_PING_METHOD_UDP           0x03
-#define SCAMPER_PING_METHOD_UDP_DPORT     0x04
-#define SCAMPER_PING_METHOD_ICMP_TIME     0x05
-#define SCAMPER_PING_METHOD_TCP_SYN       0x06
-#define SCAMPER_PING_METHOD_TCP_SYNACK    0x07
-#define SCAMPER_PING_METHOD_TCP_RST       0x08
-#define SCAMPER_PING_METHOD_TCP_SYN_SPORT 0x09
+#define SCAMPER_PING_METHOD_ICMP_ECHO     0
+#define SCAMPER_PING_METHOD_TCP_ACK       1
+#define SCAMPER_PING_METHOD_TCP_ACK_SPORT 2
+#define SCAMPER_PING_METHOD_UDP           3
+#define SCAMPER_PING_METHOD_UDP_DPORT     4
+#define SCAMPER_PING_METHOD_ICMP_TIME     5
+#define SCAMPER_PING_METHOD_TCP_SYN       6
+#define SCAMPER_PING_METHOD_TCP_SYNACK    7
+#define SCAMPER_PING_METHOD_TCP_RST       8
+#define SCAMPER_PING_METHOD_TCP_SYN_SPORT 9
+#define SCAMPER_PING_METHOD_UDP_SPORT     10
 
 #define SCAMPER_PING_FLAG_V4RR            0x01 /* -R: IPv4 record route */
 #define SCAMPER_PING_FLAG_SPOOF           0x02 /* -O spoof: spoof src */

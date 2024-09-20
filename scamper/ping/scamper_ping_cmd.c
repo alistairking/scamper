@@ -1,7 +1,7 @@
 /*
  * scamper_ping_cmd.c
  *
- * $Id: scamper_ping_cmd.c,v 1.26 2024/08/01 04:48:33 mjl Exp $
+ * $Id: scamper_ping_cmd.c,v 1.27 2024/08/19 21:53:01 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -198,6 +198,8 @@ static int ping_arg_param_validate(int optid, char *param, long long *out,
 	tmp = SCAMPER_PING_METHOD_UDP;
       else if(strcasecmp(param, "udp-dport") == 0)
 	tmp = SCAMPER_PING_METHOD_UDP_DPORT;
+      else if(strcasecmp(param, "udp-sport") == 0)
+	tmp = SCAMPER_PING_METHOD_UDP_SPORT;
       else if(strcasecmp(param, "icmp-time") == 0)
 	tmp = SCAMPER_PING_METHOD_ICMP_TIME;
       else if(strcasecmp(param, "tcp-syn") == 0)
