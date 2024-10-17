@@ -129,6 +129,9 @@ typedef struct scamper_task_funcs
   /* probe the destination */
   void (*probe)(struct scamper_task *task);
 
+  /* settle sigs just before probing commences */
+  void (*sigs)(struct scamper_task *task);
+
   /* handle some ICMP packet */
   void (*handle_icmp)(struct scamper_task *task,
 		      struct scamper_icmp_resp *icmp);
@@ -212,6 +215,7 @@ scamper_fd_t *scamper_task_fd_rtsock(scamper_task_t *task);
 scamper_task_sig_t *scamper_task_sig_alloc(uint8_t type);
 void scamper_task_sig_free(scamper_task_sig_t *sig);
 int scamper_task_sig_add(scamper_task_t *task, scamper_task_sig_t *sig);
+void scamper_task_sig_prepare(scamper_task_t *task);
 scamper_task_t *scamper_task_sig_block(scamper_task_t *task);
 int scamper_task_sig_install(scamper_task_t *task);
 void scamper_task_sig_expiry_run(const struct timeval *now);

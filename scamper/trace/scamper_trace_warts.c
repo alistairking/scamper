@@ -289,6 +289,7 @@ static int warts_trace_params(const scamper_trace_t *trace,
 	 (var->id == WARTS_TRACE_FLAGS8 && (trace->flags & 0xFF) == 0) ||
 	 (var->id == WARTS_TRACE_FLAGS && (trace->flags & ~0xFF) == 0) ||
 	 (var->id == WARTS_TRACE_ADDR_RTR && trace->rtr == NULL) ||
+	 (var->id == WARTS_TRACE_ADDR_SRC && trace->src == NULL) ||
 	 (var->id == WARTS_TRACE_SQUERIES && trace->squeries < 2) ||
 	 (var->id == WARTS_TRACE_STOP_HOP && trace->stop_hop == 0))
 	{

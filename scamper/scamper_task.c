@@ -925,6 +925,13 @@ scamper_task_t *scamper_task_sig_block(scamper_task_t *task)
   return NULL;
 }
 
+void scamper_task_sig_prepare(scamper_task_t *task)
+{
+  if(task->funcs->sigs != NULL)
+    task->funcs->sigs(task);
+  return;
+}
+
 static void s2x_expire(s2x_t *s2x)
 {
   trie_addr_t *ta;
