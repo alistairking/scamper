@@ -43,7 +43,7 @@ build:
              ./
         RUN ./set-version.sh "$(grep SCAMPER_VERSION scamper/scamper.h | cut -d \" -f 2)-${EARTHLY_TARGET_TAG}.${EARTHLY_GIT_SHORT_HASH}"
         RUN autoreconf -vfi
-        RUN ./configure
+        RUN ./configure --with-openssl=disabled --enable-scamper-ring
         RUN make
         RUN echo "Successfully built scamper version: $(./scamper/scamper -v)"
         LET baserelease="${base}"
@@ -57,19 +57,16 @@ build:
 build-multiarch:
         BUILD \
               --platform=linux/arm/v7 \
-              --platform=linux/arm/v6 \
               --platform=linux/arm64 \
               --platform=linux/amd64 \
               +build --base=debian --release=bullseye
         BUILD \
               --platform=linux/arm/v7 \
-              --platform=linux/arm/v6 \
               --platform=linux/arm64 \
               --platform=linux/amd64 \
               +build --base=debian --release=bookworm
         BUILD \
               --platform=linux/arm/v7 \
-              --platform=linux/arm/v6 \
               --platform=linux/arm64 \
               --platform=linux/amd64 \
               +build --base=alpine
@@ -118,19 +115,16 @@ docker:
 docker-multiarch:
         BUILD \
               --platform=linux/arm/v7 \
-              --platform=linux/arm/v6 \
               --platform=linux/arm64 \
               --platform=linux/amd64 \
               +docker --base=debian --release=bullseye
         BUILD \
               --platform=linux/arm/v7 \
-              --platform=linux/arm/v6 \
               --platform=linux/arm64 \
               --platform=linux/amd64 \
               +docker --base=debian --release=bookworm
         BUILD \
               --platform=linux/arm/v7 \
-              --platform=linux/arm/v6 \
               --platform=linux/arm64 \
               --platform=linux/amd64 \
               +docker --base=alpine
@@ -194,7 +188,7 @@ docs:
 bootstrap-native:
         LOCALLY
         RUN autoreconf -vfi
-        RUN ./configure
+        RUN ./configure --with-openssl=disabled --enable-scamper-ring
 
 build-native:
         LOCALLY

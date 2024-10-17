@@ -1,7 +1,7 @@
 /*
  * scamper_task.h
  *
- * $Id: scamper_task.h,v 1.52 2024/02/27 01:01:44 mjl Exp $
+ * $Id: scamper_task.h,v 1.53 2024/08/28 01:05:53 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -129,6 +129,9 @@ typedef struct scamper_task_funcs
   /* probe the destination */
   void (*probe)(struct scamper_task *task);
 
+  /* settle sigs just before probing commences */
+  void (*sigs)(struct scamper_task *task);
+
   /* handle some ICMP packet */
   void (*handle_icmp)(struct scamper_task *task,
 		      struct scamper_icmp_resp *icmp);
@@ -212,9 +215,10 @@ scamper_fd_t *scamper_task_fd_rtsock(scamper_task_t *task);
 scamper_task_sig_t *scamper_task_sig_alloc(uint8_t type);
 void scamper_task_sig_free(scamper_task_sig_t *sig);
 int scamper_task_sig_add(scamper_task_t *task, scamper_task_sig_t *sig);
+void scamper_task_sig_prepare(scamper_task_t *task);
 scamper_task_t *scamper_task_sig_block(scamper_task_t *task);
 int scamper_task_sig_install(scamper_task_t *task);
-void scamper_task_sig_deinstall(scamper_task_t *task);
+void scamper_task_sig_expiry_run(const struct timeval *now);
 scamper_task_t *scamper_task_find(scamper_task_sig_t *sig);
 char *scamper_task_sig_tostr(scamper_task_sig_t *sig, char *buf, size_t len);
 int scamper_task_sig_sport_used(struct scamper_addr *dst, uint8_t proto,

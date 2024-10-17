@@ -800,6 +800,8 @@ static int check_options(int argc, char *argv[])
 #ifdef HAVE_STRUCT_TPACKET_REQ3
 	  else if(strcasecmp(optarg, "ring") == 0)
 	    flags |= FLAG_RING;
+	  else if(strcasecmp(optarg, "noring") == 0)
+	    flags &= (~FLAG_RING);
 	  else if(strncasecmp(optarg, "ring-blocks=", 12) == 0)
 	    opt_ring_blocks = optarg + 12;
 	  else if(strncasecmp(optarg, "ring-block-size=", 16) == 0)
@@ -2205,6 +2207,7 @@ static int scamper(int argc, char *argv[])
 
       if(scamper_queue_event_proc(&tv) != 0)
 	goto done;
+      scamper_task_sig_expiry_run(&tv);
 
       /* take any 'done' tasks and output them now */
       while((task = scamper_queue_getdone(&tv)) != NULL)

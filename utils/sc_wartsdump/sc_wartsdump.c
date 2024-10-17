@@ -907,10 +907,13 @@ static void dump_ping(scamper_ping_t *ping)
   uint8_t u8, ipc;
 
   flags = scamper_ping_flags_get(ping);
-  scamper_addr_tostr(scamper_ping_src_get(ping), buf, sizeof(buf));
-  printf("ping from %s", buf);
-  if(flags & SCAMPER_PING_FLAG_SPOOF)
-    printf(" (spoofed)");
+  printf("ping");
+  if((addr = scamper_ping_src_get(ping)) != NULL)
+    {
+      printf(" from %s", scamper_addr_tostr(addr, buf, sizeof(buf)));
+      if(flags & SCAMPER_PING_FLAG_SPOOF)
+	printf(" (spoofed)");
+    }
   scamper_addr_tostr(scamper_ping_dst_get(ping), buf, sizeof(buf));
   printf(" to %s\n", buf);
 
