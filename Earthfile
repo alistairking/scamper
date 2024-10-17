@@ -57,19 +57,16 @@ build:
 build-multiarch:
         BUILD \
               --platform=linux/arm/v7 \
-              --platform=linux/arm/v6 \
               --platform=linux/arm64 \
               --platform=linux/amd64 \
               +build --base=debian --release=bullseye
         BUILD \
               --platform=linux/arm/v7 \
-              --platform=linux/arm/v6 \
               --platform=linux/arm64 \
               --platform=linux/amd64 \
               +build --base=debian --release=bookworm
         BUILD \
               --platform=linux/arm/v7 \
-              --platform=linux/arm/v6 \
               --platform=linux/arm64 \
               --platform=linux/amd64 \
               +build --base=alpine
@@ -118,19 +115,16 @@ docker:
 docker-multiarch:
         BUILD \
               --platform=linux/arm/v7 \
-              --platform=linux/arm/v6 \
               --platform=linux/arm64 \
               --platform=linux/amd64 \
               +docker --base=debian --release=bullseye
         BUILD \
               --platform=linux/arm/v7 \
-              --platform=linux/arm/v6 \
               --platform=linux/arm64 \
               --platform=linux/amd64 \
               +docker --base=debian --release=bookworm
         BUILD \
               --platform=linux/arm/v7 \
-              --platform=linux/arm/v6 \
               --platform=linux/arm64 \
               --platform=linux/amd64 \
               +docker --base=alpine
