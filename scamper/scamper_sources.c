@@ -760,6 +760,8 @@ static int source_task_install(scamper_source_t *source,
   scamper_task_t *task = st->task;
   scamper_task_t *block;
 
+  scamper_task_sig_prepare(task);
+
   if((block = scamper_task_sig_block(task)) == NULL)
     {
       if(scamper_task_sig_install(task) != 0)

@@ -723,7 +723,7 @@ static int warts_ping_params_read(scamper_ping_t *ping, warts_state_t *state,
 
   if((rc = warts_params_read(buf, off, len, handlers, handler_cnt)) != 0)
     return rc;
-  if(ping->src == NULL || ping->dst == NULL)
+  if(ping->dst == NULL)
     return -1;
 
   ping->wait_probe.tv_sec = wait_probe_sec;

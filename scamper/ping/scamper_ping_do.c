@@ -1360,7 +1360,12 @@ static void do_ping_probe(scamper_task_t *task)
   uint16_t         u16;
   struct timeval   tv;
 
-  assert(state != NULL);
+  if(state == NULL)
+    {
+      ping_handleerror(task, 0);
+      return;
+    }
+
   if(state->probes == NULL)
     {
       /* timestamp the start time of the ping */
@@ -1645,20 +1650,17 @@ static void do_ping_free(scamper_task_t *task)
   return;
 }
 
-scamper_task_t *scamper_do_ping_alloctask(void *data, scamper_list_t *list,
-					  scamper_cycle_t *cycle,
-					  char *errbuf, size_t errlen)
+static void do_ping_sigs(scamper_task_t *task)
 {
-  scamper_ping_t *ping = (scamper_ping_t *)data;
+  scamper_ping_t *ping = ping_getdata(task);
   ping_state_t *state = NULL;
   scamper_task_sig_t *sig = NULL;
-  scamper_task_t *task = NULL;
   const char *typestr;
+  char errbuf[256];
+  size_t errlen = sizeof(errbuf);
   size_t i;
 
-  /* allocate a task structure and store the ping with it */
-  if((task = scamper_task_alloc(ping, &ping_funcs)) == NULL ||
-     (state = malloc_zero(sizeof(ping_state_t))) == NULL)
+  if((state = malloc_zero(sizeof(ping_state_t))) == NULL)
     {
       snprintf(errbuf, errlen, "%s: could not malloc state", __func__);
       goto err;
@@ -1882,22 +1884,33 @@ scamper_task_t *scamper_do_ping_alloctask(void *data, scamper_list_t *list,
     }
 
   scamper_task_setstate(task, state);
+  return;
+
+ err:
+  if(sig != NULL) scamper_task_sig_free(sig);
+  if(state != NULL) ping_state_free(state);
+  return;
+}
+
+scamper_task_t *scamper_do_ping_alloctask(void *data, scamper_list_t *list,
+					  scamper_cycle_t *cycle,
+					  char *errbuf, size_t errlen)
+{
+  scamper_ping_t *ping = (scamper_ping_t *)data;
+  scamper_task_t *task = NULL;
+
+  /* allocate a task structure and store the ping with it */
+  if((task = scamper_task_alloc(ping, &ping_funcs)) == NULL)
+    {
+      snprintf(errbuf, errlen, "%s: could not alloc task", __func__);
+      return NULL;
+    }
 
   /* associate the list and cycle with the ping */
   ping->list  = scamper_list_use(list);
   ping->cycle = scamper_cycle_use(cycle);
 
   return task;
-
- err:
-  if(sig != NULL) scamper_task_sig_free(sig);
-  if(state != NULL) ping_state_free(state);
-  if(task != NULL)
-    {
-      scamper_task_setdatanull(task);
-      scamper_task_free(task);
-    }
-  return NULL;
 }
 
 void scamper_do_ping_free(void *data)
@@ -1925,5 +1938,7 @@ int scamper_do_ping_init()
   ping_funcs.write          = do_ping_write;
   ping_funcs.task_free      = do_ping_free;
   ping_funcs.halt           = do_ping_halt;
+  ping_funcs.sigs           = do_ping_sigs;
+
   return 0;
 }
