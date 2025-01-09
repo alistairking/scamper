@@ -1,7 +1,7 @@
 /*
  * scamper
  *
- * $Id: scamper.c,v 1.353 2024/08/29 00:33:53 mjl Exp $
+ * $Id: scamper.c,v 1.354 2024/09/17 20:00:03 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -809,6 +809,8 @@ static int check_options(int argc, char *argv[])
 #ifdef HAVE_STRUCT_TPACKET_REQ3
 	  else if(strcasecmp(optarg, "ring") == 0)
 	    flags |= FLAG_RING;
+	  else if(strcasecmp(optarg, "noring") == 0)
+	    flags &= (~FLAG_RING);
 	  else if(strncasecmp(optarg, "ring-blocks=", 12) == 0)
 	    opt_ring_blocks = optarg + 12;
 	  else if(strncasecmp(optarg, "ring-block-size=", 16) == 0)

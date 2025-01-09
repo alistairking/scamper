@@ -9669,11 +9669,11 @@ cdef class ScamperCtrl:
             raise RuntimeError("could not schedule command")
         return self._task(c, (<ScamperInst>inst)._c, sync)
 
-    def do_udpprobe(self, dst, dport, payload, attempts=None,
+    def do_udpprobe(self, dst, dport, payload, attempts=None, src=None,
                     stop_count=None, inst=None, userid=None, sync=False):
         """
-        do_udpprobe(dst, dport, payload, attempts=None, stop_count=None,\
-                    inst=None, userid=None, sync=False)
+        do_udpprobe(dst, dport, payload, attempts=None, src=None,\
+                    stop_count=None, inst=None, userid=None, sync=False)
         conduct a UDP probe specified destination, port, and payload.
         If this method could not queue the measurement,
         it will raise a :py:exc:`RuntimeError` exception.
@@ -9682,6 +9682,7 @@ cdef class ScamperCtrl:
         :param int dport: the destination port to send the probe to
         :param bytes payload: the payload to include in the probe
         :param int attempts: the number of probes to send
+        :param string src: The source IP address to use in probes.
         :param int stop_count: stop after receiving replies to this many probes
         :param ScamperInst inst: The specific instance to issue command over
         :param int userid: the userid value to tag with this measurement
@@ -9706,6 +9707,8 @@ cdef class ScamperCtrl:
             args.append(f"-c {attempts}")
         if stop_count is not None:
             args.append(f"-o {stop_count}")
+        if src is not None:
+            args.append(f"-S {src}")
         if userid is not None:
             args.append(f"-U {userid}")
         args.append(f"{dst}")

@@ -1,7 +1,7 @@
 /*
  * scamper_udpprobe_cmd.c
  *
- * $Id: scamper_udpprobe_cmd.c,v 1.13 2024/09/06 02:30:05 mjl Exp $
+ * $Id: scamper_udpprobe_cmd.c,v 1.14 2024/09/17 03:45:14 mjl Exp $
  *
  * Copyright (C) 2023-2024 The Regents of the University of California
  *
@@ -46,6 +46,7 @@
 #define UDPPROBE_OPT_PROBE_COUNT  6
 #define UDPPROBE_OPT_STOP_COUNT   7
 #define UDPPROBE_OPT_WAIT_PROBE   8
+#define UDPPROBE_OPT_SRCADDR      9
 
 static const scamper_option_in_t opts[] = {
   {'c', NULL, UDPPROBE_OPT_PROBE_COUNT,  SCAMPER_OPTION_TYPE_NUM},
@@ -53,6 +54,7 @@ static const scamper_option_in_t opts[] = {
   {'o', NULL, UDPPROBE_OPT_STOP_COUNT,   SCAMPER_OPTION_TYPE_NUM},
   {'O', NULL, UDPPROBE_OPT_OPTION,       SCAMPER_OPTION_TYPE_STR},
   {'p', NULL, UDPPROBE_OPT_PAYLOAD,      SCAMPER_OPTION_TYPE_STR},
+  {'S', NULL, UDPPROBE_OPT_SRCADDR,      SCAMPER_OPTION_TYPE_STR},
   {'U', NULL, UDPPROBE_OPT_USERID,       SCAMPER_OPTION_TYPE_NUM},
   {'w', NULL, UDPPROBE_OPT_WAIT_TIMEOUT, SCAMPER_OPTION_TYPE_STR},
   {'W', NULL, UDPPROBE_OPT_WAIT_PROBE,   SCAMPER_OPTION_TYPE_STR},
@@ -63,7 +65,8 @@ const char *scamper_do_udpprobe_usage(void)
 {
   return
     "udpprobe [-c probe-count] [-d dport] [-o stop-count] [-O option]\n"
-    "         [-p payload] [-U userid] [-w wait-timeout] [-W wait-probe]\n";
+    "         [-p payload] [-S srcaddr] [-U userid]\n"
+    "         [-w wait-timeout] [-W wait-probe]\n";
 }
 
 static int udpprobe_arg_param_validate(int optid, char *param, long long *out,
@@ -160,6 +163,9 @@ static int udpprobe_arg_param_validate(int optid, char *param, long long *out,
       tmp = (tv.tv_sec * 1000000) + tv.tv_usec;
       break;
 
+    case UDPPROBE_OPT_SRCADDR:
+      break;
+
     default:
       goto err;
     }
@@ -189,7 +195,7 @@ void *scamper_do_udpprobe_alloc(char *str, char *errbuf, size_t errlen)
   struct timeval wait_timeout, wait_probe;
   uint8_t *payload = NULL;
   uint32_t userid = 0;
-  char *addr = NULL;
+  char *src = NULL, *addr = NULL;
   long long j, tmp = 0;
   uint16_t dport = 0, payload_len = 0;
   uint8_t probe_count = 1, stop_count = 1;
@@ -270,6 +276,10 @@ void *scamper_do_udpprobe_alloc(char *str, char *errbuf, size_t errlen)
 	    payload[payload_len++] = hex2byte(opt->str[j], opt->str[j+1]);
 	  break;
 
+	case UDPPROBE_OPT_SRCADDR:
+	  src = opt->str;
+	  break;
+
 	case UDPPROBE_OPT_USERID:
 	  userid = (uint32_t)tmp;
 	  break;
@@ -313,6 +323,13 @@ void *scamper_do_udpprobe_alloc(char *str, char *errbuf, size_t errlen)
   if((up->dst = scamper_addr_fromstr_unspec(addr)) == NULL)
     {
       snprintf(errbuf, errlen, "invalid destination address");
+      goto err;
+    }
+
+  if(src != NULL &&
+     (up->src = scamper_addr_fromstr(up->dst->type, src)) == NULL)
+    {
+      snprintf(errbuf, errlen, "invalid source address");
       goto err;
     }
 

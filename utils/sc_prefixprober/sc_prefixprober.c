@@ -2,7 +2,7 @@
  * sc_prefixprober : scamper driver to probe addresses in specified
  *                   prefixes
  *
- * $Id: sc_prefixprober.c,v 1.38 2024/04/26 06:52:24 mjl Exp $
+ * $Id: sc_prefixprober.c,v 1.40 2024/09/19 08:08:58 mjl Exp $
  *
  * Copyright (C) 2023 The Regents of the University of California
  * Author: Matthew Luckie
@@ -53,6 +53,10 @@
 #define OPT_MOVE     0x1000
 #define OPT_LIMIT    0x2000
 #define OPT_DNPFILE  0x4000
+
+#ifdef PACKAGE_VERSION
+#define OPT_VERSION  0x8000
+#endif
 
 #define FLAG_FIRST     0x01
 #define FLAG_RANDOM    0x02
@@ -120,13 +124,19 @@ typedef struct sc_prefix_nest
 
 static void usage(uint32_t opt_mask)
 {
+  const char *v = "";
+
+#ifdef OPT_VERSION
+  v = "v";
+#endif
+
   fprintf(stderr,
-        "usage: sc_prefixprober [-D?]\n"
+        "usage: sc_prefixprober [-D%s?]\n"
         "                       [-a infile] [-o outfile] [-p port] [-R unix]\n"
 	"                       [-U unix] [-c cmd] [-d duration] [-l limit]\n"
 	"                       [-L list] [-m dir] [-O options] [-t logfile]\n"
         "                       [-x dnpfile]\n"
-        "\n");
+        "\n", v);
 
   if(opt_mask == 0)
     {
@@ -193,6 +203,11 @@ static void usage(uint32_t opt_mask)
   if(opt_mask & OPT_DNPFILE)
     fprintf(stderr, "     -x prefixes to do-not-probe\n");
 
+#ifdef OPT_VERSION
+  if(opt_mask & OPT_VERSION)
+    fprintf(stderr, "     -v display version and exit\n");
+#endif
+
   return;
 }
 
@@ -252,14 +267,19 @@ static int check_printf(const char *name)
 
 static int check_options(int argc, char *argv[])
 {
-  char *opts = "a:c:d:Dl:L:m:o:O:p:R:t:U:x:?";
-  char *opt_port = NULL, *opt_cmd = NULL, *opt_duration = NULL;
+  char opts[32], *opt_port = NULL, *opt_cmd = NULL, *opt_duration = NULL;
   char *opt_limit = NULL, *opt, *dup = NULL, *opt_outtype = NULL, *param;
   struct stat sb;
   slist_t *list = NULL;
   int ch, rc = -1;
   long long ll;
   long lo;
+  size_t off = 0;
+
+  string_concat(opts, sizeof(opts), &off, "a:c:d:Dl:L:m:o:O:p:R:t:U:x:?");
+#ifdef OPT_VERSION
+  string_concat(opts, sizeof(opts), &off, "v");
+#endif
 
   while((ch = getopt(argc, argv, opts)) != -1)
     {
@@ -353,6 +373,13 @@ static int check_options(int argc, char *argv[])
 	  options |= OPT_DNPFILE;
 	  dnpfile_name = optarg;
 	  break;
+
+#ifdef OPT_VERSION
+	case 'v':
+	  options |= OPT_VERSION;
+	  rc = 0;
+	  goto done;
+#endif
 
 	case '?':
 	  default:
@@ -808,6 +835,20 @@ static int sc_prefix_add(slist_t *list, char *str, uint8_t dnp,
 
   if(str[0] == '#' || str[0] == '\0')
     return 0;
+
+  /* if the line begins with a '-' then its a do-not-probe prefix */
+  if(str[0] == '-')
+    {
+      str++;
+      while(*str != '\0' && isspace((int)*str) != 0)
+	str++;
+      dnp = 1;
+      if(*str == '\0')
+	{
+	  print("%s: malformed line %d of %s", __func__, line, filename);
+	  return -1;
+	}
+    }
 
   string_nullterm_char(str, '/', &pf);
   if(pf == NULL)
@@ -1833,6 +1874,14 @@ int main(int argc, char *argv[])
 
   if(check_options(argc, argv) != 0)
     return -1;
+
+#ifdef OPT_VERSION
+  if(options & OPT_VERSION)
+    {
+      printf("sc_prefixprober version %s\n", PACKAGE_VERSION);
+      return 0;
+    }
+#endif
 
   return pp_data();
 }

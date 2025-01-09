@@ -3,11 +3,11 @@
 .\"
 .\" Author: Matthew Luckie <mjl@luckie.org.nz>
 .\"
-.\" Copyright (c) 2023 The Regents of the University of California
+.\" Copyright (c) 2023-2024 The Regents of the University of California
 .\"
-.\" $Id: sc_prefixprober.1,v 1.9 2023/08/07 22:01:24 mjl Exp $
+.\" $Id: sc_prefixprober.1,v 1.11 2024/09/19 08:08:58 mjl Exp $
 .\"
-.Dd June 16, 2023
+.Dd September 19, 2024
 .Dt SC_PREFIXPROBER 1
 .Os
 .Sh NAME
@@ -16,7 +16,7 @@
 .Sh SYNOPSIS
 .Nm
 .Bk -words
-.Op Fl ?D
+.Op Fl ?Dv
 .Op Fl a Ar in-file
 .Op Fl c Ar command
 .Op Fl d Ar duration
@@ -60,6 +60,10 @@ are as follows:
 .Bl -tag -width Ds
 .It Fl ?
 prints a list of command line options and a synopsis of each.
+.It Fl v
+prints the version of
+.Nm
+and exits.
 .It Fl D
 causes
 .Nm
@@ -67,6 +71,8 @@ to detach and become a daemon.
 .It Fl a Ar in-file
 specifies the name of the input file which consists of IPv4 and IPv6
 prefixes, one per line.
+The input file can contain do-not-probe entries inline if they are
+prefixed with a - character.
 .It Fl c Ar command
 specifies the command to use with each address.
 Valid commands are ping, trace, and tracelb.
@@ -171,6 +177,8 @@ specifies the unix domain socket on the local host where a local
 instance is accepting commands.
 .It Fl x Ar dnp-file
 specifies a file containing prefixes whose addresses must not be probed.
+Do-not-probe entries may also be specified in the target file, each prefix
+preceded by a - character.
 .El
 .Sh EXAMPLES
 Given a set of prefixes in a file named infile.txt:
@@ -179,6 +187,7 @@ Given a set of prefixes in a file named infile.txt:
 .nf
 192.0.30.0/23
 192.0.30.0/24
+- 192.0.30.0/25
 192.0.2.0/24
 .fi
 .in -.3i
@@ -193,10 +202,13 @@ as follows:
 .Pp
 In this scenario,
 .Nm
-may probe 192.0.30.1, 192.0.30.69, 192.0.31.1, 192.0.31.169, 192.0.2.1,
+may probe 192.0.30.129, 192.0.30.230, 192.0.31.1, 192.0.31.169, 192.0.2.1,
 and 192.0.2.233.
 These are addresses in the two specified /24s, and a /24 contained in
 the less-specific /23 that was not covered by a more-specific /24.
+.Nm
+did not probe any addresses in 192.0.30.0/25, as that is a do-not-probe
+entry.
 The output
 .Xr warts 5
 file will have the list's name recorded as foo.
