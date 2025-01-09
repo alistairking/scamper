@@ -21,7 +21,7 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
- * $Id: sc_attach.c,v 1.42 2024/03/04 19:36:41 mjl Exp $
+ * $Id: sc_attach.c,v 1.44 2024/09/06 22:15:40 mjl Exp $
  *
  */
 
@@ -41,18 +41,21 @@
 #define OPT_OUTFILE     0x0004
 #define OPT_PORT        0x0008
 #define OPT_STDOUT      0x0010
-#define OPT_VERSION     0x0020
 #define OPT_DEBUG       0x0040
-#define OPT_PRIORITY    0x0080
-#define OPT_COMMAND     0x0200
-#define OPT_OPTIONS     0x0800
+#define OPT_PRIORITY    0x0040
+#define OPT_COMMAND     0x0080
+#define OPT_OPTIONS     0x0100
 
 #ifdef HAVE_DAEMON
-#define OPT_DAEMON      0x0100
+#define OPT_DAEMON      0x0200
+#endif
+
+#ifdef PACKAGE_VERSION
+#define OPT_VERSION     0x0400
 #endif
 
 #ifdef HAVE_SOCKADDR_UN
-#define OPT_REMOTE      0x0400
+#define OPT_REMOTE      0x0800
 #define OPT_UNIX        0x1000
 #else
 #define OPT_REMOTE      0
@@ -176,8 +179,10 @@ static void usage(uint32_t opt_mask)
     fprintf(stderr, "     -D operate as a daemon\n");
 #endif
 
+#ifdef PACKAGE_VERSION
   if(opt_mask & OPT_VERSION)
     fprintf(stderr, "     -v give the version string of sc_attach\n");
+#endif
 
   if(opt_mask & OPT_COMMAND)
     fprintf(stderr, "     -c command to use with addresses in input file\n");
@@ -223,7 +228,7 @@ static int check_options(int argc, char *argv[])
   char     *opt_unix = NULL;
 #endif
 
-  string_concat(opts, sizeof(opts), &off, "c:d");
+  string_concat(opts, sizeof(opts), &off, "?c:d");
 #ifdef HAVE_DAEMON
   opts[off++] = 'D';
 #endif
@@ -231,7 +236,10 @@ static int check_options(int argc, char *argv[])
 #ifdef HAVE_SOCKADDR_UN
   string_concat(opts, sizeof(opts), &off, "R:U:");
 #endif
-  string_concat(opts, sizeof(opts), &off, "v?");
+
+#ifdef PACKAGE_VERSION
+  string_concat(opts, sizeof(opts), &off, "v");
+#endif
 
   while((ch = getopt(argc, argv, opts)) != -1)
     {
@@ -302,9 +310,11 @@ static int check_options(int argc, char *argv[])
 	  break;
 #endif
 
+#ifdef PACKAGE_VERSION
 	case 'v':
-	  printf("$Id: sc_attach.c,v 1.42 2024/03/04 19:36:41 mjl Exp $\n");
-	  return -1;
+	  options |= OPT_VERSION;
+	  return 0;
+#endif
 
 	case '?':
 	default:
@@ -801,6 +811,14 @@ int main(int argc, char *argv[])
 
   if(check_options(argc, argv) != 0)
     return -1;
+
+#ifdef PACKAGE_VERSION
+  if(options & OPT_VERSION)
+    {
+      printf("sc_attach version %s\n", PACKAGE_VERSION);
+      return 0;
+    }
+#endif
 
 #ifdef HAVE_DAEMON
   if((options & OPT_DAEMON) != 0 && daemon(1, 0) != 0)

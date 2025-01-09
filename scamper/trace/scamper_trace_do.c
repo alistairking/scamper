@@ -1,7 +1,7 @@
 /*
  * scamper_do_trace.c
  *
- * $Id: scamper_trace_do.c,v 1.376 2024/08/13 05:43:54 mjl Exp $
+ * $Id: scamper_trace_do.c,v 1.378 2024/08/27 22:08:22 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -112,7 +112,6 @@ typedef struct pmtud_L2
 {
   int   idx;            /* index into the L2 array where this node resides */
   int   mtu;            /* the MTU of the link */
-  char *descr;          /* some description of the L2 media */
 } pmtud_L2_t;
 
 typedef struct trace_lss
@@ -301,32 +300,32 @@ static splaytree_t *lsses = NULL;
  */
 static const pmtud_L2_t L2[] =
 {
-  { 0,    68, "RFC791 MTU"},    /* Official RFC 791 minimum MTU */
-  { 1,   296, "P2P low delay"}, /* Point-to-Point links, (low delay) */
-  { 2,   508, ""},
-  { 3,   512, "NetBIOS"},       /* NetBIOS */
-  { 4,   544, "DEC Portal"},    /* DEC IP Portal */
-  { 5,   552, ""},
-  { 6,   576, "v4 min MTU"},    /* X25 MTU, IPv4 Minimum MTU */
-  { 7,  1006, "SLIP"},          /* SLIP */
-  { 8,  1280, "v6 min MTU"},    /* IPv6 Minimum MTU */
-  { 9,  1454, "PPPoE ADSL"},    /* an optimally sized PPPoE frame in DSL */
-  {10,  1480, "v4tun Ether"},   /* Ethernet MTU with tunnel over IPv4 */
-  {11,  1492, "IEEE 802.3"},    /* IEEE 802.3 */
-  {12,  1500, "Ethernet"},      /* Ethernet MTU */
-  {13,  1514, "Ethernet Max"},  /* Ethernet Max MTU */
-  {14,  1536, "Exp. Ether"},    /* Exp. Ethernet Nets */
-  {15,  2002, "IEEE 802.5"},    /* IEEE 802.5, Recommended MTU */
-  {16,  2048, "Wideband"},      /* Wideband Network */
-  {17,  4352, "FDDI"},          /* FDDI */
-  {18,  4464, "IEEE 802.5"},    /* IEEE 802.5, Maximum MTU */
-  {19,  4470, "IP over ATM"},   /* ATM / T3 / SONET SDH */
-  {20,  8166, "IEEE 802.4"},    /* IEEE 802.4 */
-  {21,  9000, "Broadcom GigE"}, /* Broadcom GigE MTU */
-  {22,  9192, "OC-192"},        /* OC-192 and other really fast media */
-  {23, 16110, "Intel GigE"},    /* Intel Pro 1000 MTU */
-  {24, 17914, "Token Ring"},    /* 16Mb IBM Token Ring */
-  {25, 65535, "IPv[46] MTU"}    /* The IPv[46] Maximum MTU */
+  { 0,    68}, /* Official RFC 791 minimum MTU */
+  { 1,   296}, /* Point-to-Point links, (low delay) */
+  { 2,   508},
+  { 3,   512}, /* NetBIOS */
+  { 4,   544}, /* DEC IP Portal */
+  { 5,   552},
+  { 6,   576}, /* X25 MTU, IPv4 Minimum MTU */
+  { 7,  1006}, /* SLIP */
+  { 8,  1280}, /* IPv6 Minimum MTU */
+  { 9,  1454}, /* an optimally sized PPPoE frame in DSL */
+  {10,  1480}, /* Ethernet MTU with tunnel over IPv4 */
+  {11,  1492}, /* IEEE 802.3 */
+  {12,  1500}, /* Ethernet MTU */
+  {13,  1514}, /* Ethernet Max MTU */
+  {14,  1536}, /* Exp. Ethernet Nets */
+  {15,  2002}, /* IEEE 802.5, Recommended MTU */
+  {16,  2048}, /* Wideband Network */
+  {17,  4352}, /* FDDI */
+  {18,  4464}, /* IEEE 802.5, Maximum MTU */
+  {19,  4470}, /* ATM / T3 / SONET SDH */
+  {20,  8166}, /* IEEE 802.4 */
+  {21,  9000}, /* Broadcom GigE MTU */
+  {22,  9192}, /* OC-192 and other really fast media */
+  {23, 16110}, /* Intel Pro 1000 MTU */
+  {24, 17914}, /* 16Mb IBM Token Ring */
+  {25, 65535}  /* The IPv[46] Maximum MTU */
 };
 
 static const pmtud_L2_t *L2_1454 = &L2[9];
@@ -2494,7 +2493,7 @@ static void do_trace_handle_icmp(scamper_task_t *task, scamper_icmp_resp_t *ir)
   uint16_t         id;
   uint8_t          proto;
 
-  if(state == NULL)
+  if(state == NULL || trace->probec == 0)
     return;
 
   assert(state->mode <= MODE_MAX);
@@ -3323,7 +3322,7 @@ static void do_trace_handle_dl(scamper_task_t *task, scamper_dl_rec_t *dl)
   int              direction;
   struct timeval   diff;
 
-  if(state == NULL)
+  if(state == NULL || trace->probec == 0)
     return;
 
   assert(dl->dl_af == AF_INET || dl->dl_af == AF_INET6);

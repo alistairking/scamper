@@ -1,7 +1,7 @@
 /*
  * scamper_host
  *
- * $Id: scamper_host.h,v 1.25 2024/04/27 21:35:54 mjl Exp $
+ * $Id: scamper_host.h,v 1.29 2024/09/05 01:01:17 mjl Exp $
  *
  * Copyright (C) 2018-2024 Matthew Luckie
  *
@@ -29,6 +29,8 @@ typedef struct scamper_host_rr scamper_host_rr_t;
 typedef struct scamper_host_rr_soa scamper_host_rr_soa_t;
 typedef struct scamper_host_rr_mx scamper_host_rr_mx_t;
 typedef struct scamper_host_rr_txt scamper_host_rr_txt_t;
+typedef struct scamper_host_rr_opt scamper_host_rr_opt_t;
+typedef struct scamper_host_rr_opt_elem scamper_host_rr_opt_elem_t;
 
 void scamper_host_free(scamper_host_t *host);
 char *scamper_host_stop_tostr(const scamper_host_t *h, char *b, size_t l);
@@ -68,6 +70,7 @@ scamper_host_rr_t *scamper_host_query_ns_get(const scamper_host_query_t *q,
 					     uint16_t i);
 scamper_host_rr_t *scamper_host_query_ar_get(const scamper_host_query_t *q,
 					     uint16_t i);
+scamper_host_rr_t *scamper_host_query_ar_opt_get(const scamper_host_query_t *q);
 
 scamper_host_rr_t *scamper_host_rr_use(scamper_host_rr_t *rr);
 void scamper_host_rr_free(scamper_host_rr_t *rr);
@@ -83,6 +86,7 @@ const char *scamper_host_rr_str_get(const scamper_host_rr_t *rr);
 scamper_host_rr_soa_t *scamper_host_rr_soa_get(const scamper_host_rr_t *rr);
 scamper_host_rr_mx_t *scamper_host_rr_mx_get(const scamper_host_rr_t *rr);
 scamper_host_rr_txt_t *scamper_host_rr_txt_get(const scamper_host_rr_t *rr);
+scamper_host_rr_opt_t *scamper_host_rr_opt_get(const scamper_host_rr_t *rr);
 
 scamper_host_rr_mx_t *scamper_host_rr_mx_use(scamper_host_rr_mx_t *mx);
 void scamper_host_rr_mx_free(scamper_host_rr_mx_t *mx);
@@ -104,8 +108,20 @@ void scamper_host_rr_txt_free(scamper_host_rr_txt_t *txt);
 uint16_t scamper_host_rr_txt_strc_get(const scamper_host_rr_txt_t *txt);
 const char *scamper_host_rr_txt_str_get(const scamper_host_rr_txt_t *txt, uint16_t i);
 
+scamper_host_rr_opt_t *scamper_host_rr_opt_use(scamper_host_rr_opt_t *opt);
+void scamper_host_rr_opt_free(scamper_host_rr_opt_t *opt);
+uint16_t scamper_host_rr_opt_elemc_get(const scamper_host_rr_opt_t *opt);
+void scamper_host_rr_opt_elem_free(scamper_host_rr_opt_elem_t *elem);
+scamper_host_rr_opt_elem_t *scamper_host_rr_opt_elem_get(const scamper_host_rr_opt_t *opt, uint16_t i);
+scamper_host_rr_opt_elem_t *scamper_host_rr_opt_elem_use(scamper_host_rr_opt_elem_t *elem);
+uint16_t scamper_host_rr_opt_elem_code_get(const scamper_host_rr_opt_elem_t *elem);
+char *scamper_host_rr_opt_elem_code_tostr(uint16_t code, char *b, size_t l);
+uint16_t scamper_host_rr_opt_elem_len_get(const scamper_host_rr_opt_elem_t *elem);
+const uint8_t *scamper_host_rr_opt_elem_data_get(const scamper_host_rr_opt_elem_t *elem);
+
 #define SCAMPER_HOST_FLAG_NORECURSE 0x0001
 #define SCAMPER_HOST_FLAG_TCP       0x0002
+#define SCAMPER_HOST_FLAG_NSID      0x0004
 
 #define SCAMPER_HOST_CLASS_IN     1
 #define SCAMPER_HOST_CLASS_CH     3
@@ -155,5 +171,8 @@ const char *scamper_host_rr_txt_str_get(const scamper_host_rr_txt_t *txt, uint16
 #define SCAMPER_HOST_RR_DATA_TYPE_SOA  3
 #define SCAMPER_HOST_RR_DATA_TYPE_MX   4
 #define SCAMPER_HOST_RR_DATA_TYPE_TXT  5
+#define SCAMPER_HOST_RR_DATA_TYPE_OPT  6
+
+#define SCAMPER_HOST_RR_OPT_ELEM_CODE_NSID 3
 
 #endif /* __SCAMPER_HOST_H */

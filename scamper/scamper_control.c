@@ -1,7 +1,7 @@
 /*
  * scamper_control.c
  *
- * $Id: scamper_control.c,v 1.271 2024/06/25 06:03:55 mjl Exp $
+ * $Id: scamper_control.c,v 1.274 2024/08/17 22:11:05 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -2595,25 +2595,7 @@ static void remote_free(control_remote_t *rm, int mode)
 #endif
 
 #ifdef HAVE_OPENSSL
-  /*
-   * SSL_free() also calls the free()ing procedures for indirectly
-   * affected items, if applicable: the buffering BIO, the read and
-   * write BIOs, cipher lists specially created for this ssl, the
-   * SSL_SESSION. Do not explicitly free these indirectly freed up
-   * items before or after calling SSL_free(), as trying to free
-   * things twice may lead to program failure.
-   */
-  if(rm->ssl != NULL)
-    {
-      SSL_free(rm->ssl);
-    }
-  else
-    {
-      if(rm->ssl_wbio != NULL)
-	BIO_free(rm->ssl_wbio);
-      if(rm->ssl_rbio != NULL)
-	BIO_free(rm->ssl_rbio);
-    }
+  tls_bio_free(rm->ssl, rm->ssl_rbio, rm->ssl_wbio);
   rm->ssl = NULL;
   rm->ssl_wbio = NULL;
   rm->ssl_rbio = NULL;
@@ -2720,6 +2702,12 @@ static int remote_retry(control_remote_t *rm, int now)
 }
 
 #ifdef HAVE_OPENSSL
+static int remote_sock_ssl_want_read_cb(void *param, uint8_t *buf, int len)
+{
+  scamper_writebuf_send(param, buf, len);
+  return 0;
+}
+
 /*
  * remote_sock_ssl_want_read
  *
@@ -2727,39 +2715,19 @@ static int remote_retry(control_remote_t *rm, int now)
  */
 static int remote_sock_ssl_want_read(control_remote_t *rm)
 {
-  uint8_t buf[1024];
-  int pending, rc, size, off = 0;
+  char errbuf[64];
+  int rc;
 
-  if((pending = BIO_pending(rm->ssl_wbio)) < 0)
+  if((rc = tls_want_read(rm->ssl_wbio, rm->wb, errbuf, sizeof(errbuf),
+			 remote_sock_ssl_want_read_cb)) < 0)
     {
-      scamper_debug(__func__, "BIO_pending returns %d", pending);
+      scamper_debug(__func__, "%s", errbuf);
       return -1;
     }
-
-  while(off < pending)
-    {
-      if((size_t)(pending - off) > sizeof(buf))
-	size = sizeof(buf);
-      else
-	size = pending - off;
-
-      if((rc = BIO_read(rm->ssl_wbio, buf, size)) <= 0)
-	{
-	  if(BIO_should_retry(rm->ssl_wbio) == 0)
-	    scamper_debug(__func__, "BIO_read should not retry");
-	  else
-	    scamper_debug(__func__, "BIO_read returned %d", rc);
-	  return -1;
-	}
-      off += rc;
-
-      scamper_writebuf_send(rm->wb, buf, rc);
-    }
-
-  if(pending != 0)
+  if(rc > 0)
     scamper_fd_write_unpause(rm->fd);
 
-  return pending;
+  return rc;
 }
 
 /*
@@ -2771,18 +2739,12 @@ static int remote_sock_ssl_init(control_remote_t *rm)
 {
   int rc;
 
-  /*
-   * the order is important because once the BIOs are associated with
-   * the ssl structure, SSL_free will clean them up.
-   */
-  if((rm->ssl_wbio = BIO_new(BIO_s_mem())) == NULL ||
-     (rm->ssl_rbio = BIO_new(BIO_s_mem())) == NULL ||
-     (rm->ssl = SSL_new(remote_tls_ctx)) == NULL)
+  if(tls_bio_alloc(remote_tls_ctx, &rm->ssl, &rm->ssl_rbio, &rm->ssl_wbio) != 0)
     {
       scamper_debug(__func__, "could not create bios / ssl");
       return -1;
     }
-  SSL_set_bio(rm->ssl, rm->ssl_rbio, rm->ssl_wbio);
+
   SSL_set_connect_state(rm->ssl);
   ERR_clear_error();
   rc = SSL_do_handshake(rm->ssl);

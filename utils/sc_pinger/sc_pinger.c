@@ -2,7 +2,7 @@
  * sc_pinger : scamper driver to probe destinations with various ping
  *             methods
  *
- * $Id: sc_pinger.c,v 1.32.2.1 2024/08/13 08:47:13 mjl Exp $
+ * $Id: sc_pinger.c,v 1.34 2024/09/07 02:33:17 mjl Exp $
  *
  * Copyright (C) 2020      The University of Waikato
  * Copyright (C) 2022-2023 Matthew Luckie
@@ -86,6 +86,10 @@ static int                    error         = 0;
 #define OPT_BATCH       0x0800
 #define OPT_METHOD      0x1000
 
+#ifdef PACKAGE_VERSION
+#define OPT_VERSION     0x2000
+#endif
+
 /*
  * sc_pingtest
  *
@@ -110,11 +114,17 @@ typedef struct sc_cmdstate
 
 static void usage(uint32_t opt_mask)
 {
+  const char *v = "";
+
+#ifdef OPT_VERSION
+  v = "v";
+#endif
+
   fprintf(stderr,
-	  "usage: sc_pinger [-D?]\n"
+	  "usage: sc_pinger [-D%s?]\n"
 	  "                 [-a infile] [-o outfile] [-p port] [-R unix]\n"
 	  "                 [-U unix] [-b batch-count] [-c probe-count]\n"
-	  "                 [-l limit] [-m method] [-M dir] [-t logfile]\n");
+	  "                 [-l limit] [-m method] [-M dir] [-t logfile]\n",v);
 
   if(opt_mask == 0)
     {
@@ -160,6 +170,11 @@ static void usage(uint32_t opt_mask)
 
   if(opt_mask & OPT_LOG)
     fprintf(stderr, "     -t logfile\n");
+
+#ifdef OPT_VERSION
+  if(opt_mask & OPT_VERSION)
+    fprintf(stderr, "     -v display version and exit\n");
+#endif
 
   return;
 }
@@ -260,13 +275,19 @@ static int parse_count(const char *opt)
 
 static int check_options(int argc, char *argv[])
 {
+  char opts[32], *ptr, *dup = NULL;
   char *opt_count = NULL, *opt_port = NULL, *opt_limit = NULL;
   char *opt_batch = NULL;
-  char *opts = "a:b:c:Dl:m:M:o:p:R:t:U:?", *ptr, *dup = NULL;
   struct stat sb;
   slist_t *list = NULL;
+  size_t off = 0;
   long lo;
   int i, ch, rc = -1;
+
+  string_concat(opts, sizeof(opts), &off, "a:b:c:Dl:m:M:o:p:R:t:U:?");
+#ifdef OPT_VERSION
+  string_concat(opts, sizeof(opts), &off, "v");
+#endif
 
   if((list = slist_alloc()) == NULL)
     goto done;
@@ -330,6 +351,13 @@ static int check_options(int argc, char *argv[])
 	  options |= OPT_UNIX;
 	  scamper_unix = optarg;
 	  break;
+
+#ifdef OPT_VERSION
+	case 'v':
+	  options |= OPT_VERSION;
+	  rc = 0;
+	  goto done;
+#endif
 
 	case '?':
 	default:
@@ -1312,6 +1340,14 @@ int main(int argc, char *argv[])
 
   if(check_options(argc, argv) != 0)
     return -1;
+
+#ifdef OPT_VERSION
+  if(options & OPT_VERSION)
+    {
+      printf("sc_pinger version %s\n", PACKAGE_VERSION);
+      return 0;
+    }
+#endif
 
   return pinger_data();
 }

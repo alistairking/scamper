@@ -1,12 +1,13 @@
 /*
  * utils_tls : functions for TLS
  *
- * $Id: utils_tls.h,v 1.1 2024/01/03 00:39:00 mjl Exp $
+ * $Id: utils_tls.h,v 1.5 2024/08/19 02:59:36 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
  *
- * Copyright (C) 2014-2023 Matthew Luckie
+ * Copyright (C) 2014-2024 Matthew Luckie
+ * Copyright (C) 2024      The Regents of the University of California
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -23,4 +24,18 @@
  *
  */
 
+#ifndef __UTILS_TLS_H
+#define __UTILS_TLS_H
+
+int tls_bio_alloc(SSL_CTX *ctx, SSL **ssl, BIO **rbio, BIO **wbio);
+void tls_bio_free(SSL *ssl, BIO *rbio, BIO *wbio);
+
 int tls_is_valid_cert(SSL *ssl, const char *hostname);
+
+int tls_want_read(BIO *wbio, void *param, char *errbuf, size_t errlen,
+		  int (*cb)(void *param, uint8_t *buf, int len));
+
+int tls_load_certchain(SSL_CTX *ctx, int fd);
+int tls_load_key(SSL_CTX *ctx, int fd);
+
+#endif /* __UTILS_TLS_H */

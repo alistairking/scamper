@@ -1,7 +1,7 @@
 /*
  * scamper_icmp_resp.h
  *
- * $Id: scamper_udp_resp.h,v 1.1 2024/02/21 04:58:05 mjl Exp $
+ * $Id: scamper_udp_resp.h,v 1.2 2024/09/06 01:34:54 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -27,6 +27,8 @@
 #ifndef __SCAMPER_UDP_RESP_H
 #define __SCAMPER_UDP_RESP_H
 
+#define SCAMPER_UDP_RESP_FLAG_IFINDEX 0x01
+
 typedef struct scamper_udp_resp
 {
   int              af;
@@ -37,6 +39,8 @@ typedef struct scamper_udp_resp
   int              ttl;
   uint8_t         *data;
   uint16_t         datalen;
+  unsigned int     ifindex;
+  uint8_t          flags;
 } scamper_udp_resp_t;
 
 #endif /* __SCAMPER_UDP_RESP_H */

@@ -1,7 +1,7 @@
 /*
  * scamper
  *
- * $Id: scamper.c,v 1.346 2024/08/13 06:04:22 mjl Exp $
+ * $Id: scamper.c,v 1.353 2024/08/29 00:33:53 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -11,7 +11,7 @@
  * Copyright (C) 2012      Matthew Luckie
  * Copyright (C) 2014      The Regents of the University of California
  * Copyright (C) 2014-2023 Matthew Luckie
- * Copyright (C) 2023      The Regents of the University of California
+ * Copyright (C) 2023-2024 The Regents of the University of California
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -107,6 +107,10 @@
 #endif
 
 #include "utils.h"
+
+#ifdef HAVE_OPENSSL
+#include "utils_tls.h"
+#endif
 
 #define OPT_PPS             0x00000001 /* p: */
 #define OPT_OUTFILE         0x00000002 /* o: */
@@ -224,10 +228,15 @@ static int    wait_between   = 1000000 / SCAMPER_OPTION_PPS_DEF;
 static int    probe_window   = 250000;
 static int    exit_when_done = 1;
 
-#if !defined(DISABLE_PRIVSEP) || \
-     defined(HAVE_SIGACTION)
+#if defined(HAVE_SIGACTION)
 #define HAVE_EXIT_NOW
+#if defined(DISABLE_PRIVSEP)
 static int    exit_now = 0;
+static int    sighup_rx = 0;
+#else
+int           exit_now = 0;
+int           sighup_rx = 0;
+#endif
 #endif
 
 #ifndef DISABLE_PRIVSEP
@@ -321,7 +330,7 @@ static void usage(uint32_t opt_mask)
 
 #ifdef HAVE_DAEMON
   if((opt_mask & OPT_DAEMON) != 0)
-    usage_str('D', "start as a daemon listening for commands on a port");
+    usage_str('D', "run as a daemon");
 #endif
 
   if((opt_mask & OPT_PIDFILE) != 0)
@@ -1052,11 +1061,35 @@ static int check_options(int argc, char *argv[])
     }
 
 #ifdef HAVE_DAEMON
-  if((options & OPT_DAEMON) &&
-     (options & (OPT_CTRL_INET|OPT_CTRL_UNIX|OPT_CTRL_REMOTE)) == 0)
+  if((options & OPT_DAEMON))
     {
-      usage(OPT_DAEMON | OPT_CTRL_INET | OPT_CTRL_UNIX | OPT_CTRL_REMOTE);
-      return -1;
+      /*
+       * when running in daemon mode, scamper should either make
+       * itself available for instruction (inet / unix / remote) or be
+       * writing measurement results to a file.
+       */
+      o = OPT_CTRL_INET | OPT_CTRL_UNIX | OPT_CTRL_REMOTE | OPT_OUTFILE;
+      if((options & o) == 0)
+	{
+	  usage(OPT_DAEMON | o);
+	  return -1;
+	}
+      if((options & OPT_OUTFILE) != 0)
+	{
+	  if(strcmp(outfile, "-") == 0)
+	    {
+	      usage(OPT_DAEMON | OPT_OUTFILE);
+	      fprintf(stderr, "cannot output to stdout with daemon\n");
+	      return -1;
+	    }
+	  o = OPT_CTRL_INET | OPT_CTRL_UNIX | OPT_CTRL_REMOTE;
+	  if((options & o) != 0)
+	    {
+	      usage(OPT_DAEMON | OPT_OUTFILE | (options & o));
+	      fprintf(stderr, "outfile does not make sense with options\n");
+	      return -1;
+	    }
+	}
     }
 #endif
 
@@ -1478,20 +1511,13 @@ int scamper_pidfile(void)
   return -1;
 }
 
-#ifndef DISABLE_PRIVSEP
-static void privsep_read(const int fd, void *param)
-{
-  scamper_debug(__func__, "exit now");
-  exit_now = 1;
-  return;
-}
-#endif
-
 #ifdef HAVE_SIGACTION
 static void scamper_sigaction(int sig)
 {
   if(sig == SIGINT || sig == SIGTERM)
     exit_now = 1;
+  else if(sig == SIGHUP)
+    sighup_rx = 1;
   return;
 }
 #endif
@@ -1507,7 +1533,8 @@ static SSL_CTX *scamper_ssl_ctx(void)
       goto err;
     }
   SSL_CTX_set_options(ctx,
-		      SSL_OP_NO_SSLv2 | SSL_OP_NO_SSLv3 | SSL_OP_NO_TLSv1);
+		      SSL_OP_NO_SSLv2 | SSL_OP_NO_SSLv3 |
+		      SSL_OP_NO_TLSv1 | SSL_OP_NO_TLSv1_1);
   SSL_CTX_set_verify(ctx, SSL_VERIFY_NONE, NULL);
 
   if(cafile == NULL)
@@ -1533,6 +1560,74 @@ static SSL_CTX *scamper_ssl_ctx(void)
  err:
   if(ctx != NULL) SSL_CTX_free(ctx);
   return NULL;
+}
+
+static int scamper_loadcerts(void)
+{
+#ifndef DISABLE_PRIVSEP
+  int fd = -1;
+#endif
+
+  if(remote_client_certfile == NULL)
+    return 0;
+
+  /*
+   * this is checked in options handling code -- if certfile
+   * is not NULL, then privfile will not be null
+   */
+  assert(remote_client_privfile != NULL);
+
+  /* we should already have a remote_tlx_ctx */
+  assert(remote_tls_ctx != NULL);
+
+#ifndef DISABLE_PRIVSEP
+  if(privsep_fdn != NULL)
+    {
+      fd = scamper_privsep_open_file(remote_client_certfile, O_RDONLY, 0);
+      if(fd == -1)
+	goto err;
+      if(tls_load_certchain(remote_tls_ctx, fd) != 0)
+	{
+	  printerror_msg(__func__, "could not load client cert");
+	  goto err;
+	}
+      close(fd);
+      fd = scamper_privsep_open_file(remote_client_privfile, O_RDONLY, 0);
+      if(fd == -1)
+	goto err;
+      if(tls_load_key(remote_tls_ctx, fd) != 0)
+	{
+	  printerror_msg(__func__, "could not load client key");
+	  goto err;
+	}
+      close(fd);
+      return 0;
+    }
+#endif /* !defined DISABLE_PRIVSEP */
+
+  /* load the client key materials */
+  if(SSL_CTX_use_certificate_chain_file(remote_tls_ctx,
+					remote_client_certfile) != 1)
+    {
+      printerror_ssl(__func__, "could load client cert from %s",
+		     remote_client_certfile);
+      goto err;
+    }
+  if(SSL_CTX_use_PrivateKey_file(remote_tls_ctx, remote_client_privfile,
+				 SSL_FILETYPE_PEM) != 1)
+    {
+      printerror_ssl(__func__, "could not load client privkey from %s",
+		     remote_client_privfile);
+      goto err;
+    }
+
+  return 0;
+
+ err:
+#ifndef DISABLE_PRIVSEP
+  if(fd != -1) close(fd);
+#endif
+  return -1;
 }
 #endif
 
@@ -1874,6 +1969,14 @@ static int scamper(int argc, char *argv[])
       printerror(__func__, "could not set sigaction for SIGTERM");
       goto done;
     }
+  sigemptyset(&si_sa.sa_mask);
+  si_sa.sa_flags   = 0;
+  si_sa.sa_handler = scamper_sigaction;
+  if(sigaction(SIGHUP, &si_sa, 0) == -1)
+    {
+      printerror(__func__, "could not set sigaction for SIGHUP");
+      goto done;
+    }
 #endif
 
   if(check_options(argc, argv) == -1)
@@ -1935,29 +2038,10 @@ static int scamper(int argc, char *argv[])
        */
       if(remote_client_certfile != NULL)
 	{
-	  /*
-	   * this is checked in options handling code -- if certfile
-	   * is not NULL, then privfile will not be null
-	   */
-	  assert(remote_client_privfile != NULL);
 	  if((remote_tls_ctx = scamper_ssl_ctx()) == NULL)
 	    goto done;
-
-	  /* load the client key materials */
-	  if(SSL_CTX_use_certificate_chain_file(remote_tls_ctx,
-						remote_client_certfile) != 1)
-	    {
-	      printerror_ssl(__func__, "could load client cert from %s",
-			     remote_client_certfile);
-	      goto done;
-	    }
-	  if(SSL_CTX_use_PrivateKey_file(remote_tls_ctx, remote_client_privfile,
-					 SSL_FILETYPE_PEM) != 1)
-	    {
-	      printerror_ssl(__func__, "could not load client privkey from %s",
-			     remote_client_privfile);
-	      goto done;
-	    }
+	  if(scamper_loadcerts() != 0)
+	    goto done;
 	}
       else
 	{
@@ -2024,11 +2108,16 @@ static int scamper(int argc, char *argv[])
   if(scamper_getsrc_init() == -1)
     goto done;
 
-  /* initialise the subsystem responsible for recording mac addresses */
-  if(scamper_addr2mac_init() == -1)
+  /*
+   * initialise the subsystem responsible for processing route messages.
+   * this needs to be done before scamper_addr2mac_init, which depends
+   * on scamper_rtsock_roundup on BSD platforms.
+   */
+  if(scamper_rtsock_init() == -1)
     goto done;
 
-  if(scamper_rtsock_init() == -1)
+  /* initialise the subsystem responsible for recording mac addresses */
+  if(scamper_addr2mac_init() == -1)
     goto done;
 
   /* initialise the structures necessary to keep track of addresses to probe */
@@ -2164,7 +2253,8 @@ static int scamper(int argc, char *argv[])
     }
 
 #ifndef DISABLE_PRIVSEP
-  privsep_fdn = scamper_fd_private(privsep_fd, NULL, privsep_read, NULL);
+  privsep_fdn = scamper_fd_private(privsep_fd, NULL,
+				   scamper_privsep_read_cb, NULL);
   if(privsep_fdn == NULL)
     goto done;
 #endif
@@ -2196,6 +2286,14 @@ static int scamper(int argc, char *argv[])
 	  break;
 	}
 
+#if defined(HAVE_OPENSSL) && defined(HAVE_SIGACTION)
+      if(sighup_rx != 0)
+	{
+	  scamper_loadcerts();
+	  sighup_rx = 0;
+	}
+#endif
+
       /* listen until it is time to send the next probe */
       if(scamper_fds_poll(timeout_ptr) == -1)
 	goto done;
@@ -2205,6 +2303,7 @@ static int scamper(int argc, char *argv[])
 
       if(scamper_queue_event_proc(&tv) != 0)
 	goto done;
+      scamper_task_sig_expiry_run(&tv);
 
       /* take any 'done' tasks and output them now */
       while((task = scamper_queue_getdone(&tv)) != NULL)

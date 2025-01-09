@@ -1,7 +1,7 @@
 /*
  * scamper_icmp4.c
  *
- * $Id: scamper_icmp4.c,v 1.143 2024/08/13 05:14:13 mjl Exp $
+ * $Id: scamper_icmp4.c,v 1.144 2024/09/05 22:44:09 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -1180,7 +1180,7 @@ SOCKET scamper_icmp4_open(const void *addr)
 #endif
 
   /*
-   * ask the icmp6 socket to supply the interface on which it receives
+   * ask the icmp4 socket to supply the interface on which it receives
    * a packet.
    */
 #if defined(IP_RECVPKTINFO)

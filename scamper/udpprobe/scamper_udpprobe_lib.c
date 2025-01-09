@@ -1,7 +1,7 @@
 /*
  * scamper_udpprobe_lib.c
  *
- * $Id: scamper_udpprobe_lib.c,v 1.5 2024/04/04 22:57:01 mjl Exp $
+ * $Id: scamper_udpprobe_lib.c,v 1.6 2024/09/06 01:34:54 mjl Exp $
  *
  * Copyright (C) 2023 The Regents of the University of California
  *
@@ -29,6 +29,8 @@
 
 #include "scamper_addr.h"
 #include "scamper_list.h"
+#include "scamper_ifname.h"
+#include "scamper_ifname_int.h"
 #include "scamper_udpprobe.h"
 #include "scamper_udpprobe_int.h"
 #include "utils.h"
@@ -119,6 +121,13 @@ uint16_t scamper_udpprobe_reply_len_get(const scamper_udpprobe_reply_t *ur)
 const struct timeval *scamper_udpprobe_reply_rx_get(const scamper_udpprobe_reply_t *ur)
 {
   return &ur->rx;
+}
+
+const char *scamper_udpprobe_reply_ifname_get(const scamper_udpprobe_reply_t *ur)
+{
+  if(ur->ifname == NULL)
+    return NULL;
+  return ur->ifname->ifname;
 }
 
 uint8_t scamper_udpprobe_probe_count_get(const scamper_udpprobe_t *up)

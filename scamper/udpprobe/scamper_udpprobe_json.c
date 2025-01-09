@@ -3,7 +3,7 @@
  *
  * Author: Matthew Luckie
  *
- * $Id: scamper_udpprobe_json.c,v 1.3 2024/04/13 01:25:58 mjl Exp $
+ * $Id: scamper_udpprobe_json.c,v 1.4 2024/09/06 01:34:54 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -27,6 +27,8 @@
 
 #include "scamper_addr.h"
 #include "scamper_list.h"
+#include "scamper_ifname.h"
+#include "scamper_ifname_int.h"
 #include "scamper_udpprobe.h"
 #include "scamper_udpprobe_int.h"
 #include "scamper_file.h"
@@ -58,7 +60,11 @@ static char *reply_tostr(const scamper_udpprobe_probe_t *probe,
 		(long)rtt.tv_sec, (int)rtt.tv_usec,
 		reply->len);
   string_byte2hex(buf, sizeof(buf), &off, reply->data, reply->len);
-  string_concat(buf, sizeof(buf), &off, "\"}");
+  string_concat(buf, sizeof(buf), &off, "\"");
+  if(reply->ifname != NULL && reply->ifname->ifname != NULL)
+    string_concat(buf, sizeof(buf), &off, ", \"ifname\":\"%s\"",
+		  reply->ifname->ifname);
+  string_concat(buf, sizeof(buf), &off, "}");
 
   *len = off;
   return strdup(buf);

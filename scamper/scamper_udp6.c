@@ -1,7 +1,7 @@
 /*
  * scamper_udp6.c
  *
- * $Id: scamper_udp6.c,v 1.80 2024/08/13 05:14:13 mjl Exp $
+ * $Id: scamper_udp6.c,v 1.81 2024/09/06 01:34:54 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2010 The University of Waikato
@@ -234,6 +234,10 @@ void scamper_udp6_read_cb(SOCKET fd, void *param)
   ssize_t rrc;
   int v;
 
+#ifdef IP_PKTINFO
+  struct in_pktinfo *pi;
+#endif
+
   memset(&iov, 0, sizeof(iov));
   iov.iov_base = (caddr_t)buf;
   iov.iov_len  = sizeof(buf);
@@ -264,6 +268,15 @@ void scamper_udp6_read_cb(SOCKET fd, void *param)
 	    {
 	      v = *((int *)CMSG_DATA(cmsg));
 	      ur.ttl = (uint8_t)v;
+	    }
+#endif
+#if defined(IP_PKTINFO)
+	  else if(cmsg->cmsg_level == IPPROTO_IPV6 &&
+		  cmsg->cmsg_type == IP_PKTINFO)
+	    {
+	      pi = (struct in_pktinfo *)CMSG_DATA(cmsg);
+	      ur.ifindex = pi->ipi_ifindex;
+	      ur.flags |= SCAMPER_UDP_RESP_FLAG_IFINDEX;
 	    }
 #endif
 	  cmsg = (struct cmsghdr *)CMSG_NXTHDR(&msg, cmsg);
@@ -462,6 +475,19 @@ SOCKET scamper_udp6_open(const void *addr, int sport)
 #if defined(SO_TIMESTAMP)
   if(setsockopt_int(fd, SOL_SOCKET, SO_TIMESTAMP, 1) != 0)
     printerror(__func__, "could not set SO_TIMESTAMP");
+#endif
+
+  /*
+   * ask the udp6 socket to supply the interface on which it receives
+   * a packet.
+   */
+#if defined(IPV6_RECVPKTINFO)
+  if(setsockopt_int(fd, IPPROTO_IPV6, IPV6_RECVPKTINFO, 1) != 0)
+    printerror(__func__, "could not set IPV6_RECVPKTINFO");
+#elif defined(IPV6_PKTINFO)
+  opt = 1;
+  if(setsockopt_int(fd, IPPROTO_IPV6, IPV6_PKTINFO, 1) != 0)
+    printerror(__func__, "could not set IPV6_PKTINFO");
 #endif
 
   return fd;

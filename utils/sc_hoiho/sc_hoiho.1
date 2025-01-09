@@ -6,9 +6,9 @@
 .\" Copyright (c) 2019-2020 Matthew Luckie
 .\"               All rights reserved
 .\"
-.\" $Id: sc_hoiho.1,v 1.10 2023/05/08 15:51:22 mjl Exp $
+.\" $Id: sc_hoiho.1,v 1.11 2024/09/07 03:34:44 mjl Exp $
 .\"
-.Dd May 8, 2023
+.Dd September 7, 2024
 .Dt SC_HOIHO 1
 .Os
 .Sh NAME
@@ -17,7 +17,7 @@
 .Sh SYNOPSIS
 .Nm
 .Bk -words
-.Op Fl 6
+.Op Fl ?6v
 .Op Fl d Ar dump
 .Op Fl D Ar domain
 .Op Fl f Ar rtt-fudge
@@ -67,6 +67,12 @@ The supported options to
 .Nm
 are as follows:
 .Bl -tag -width Ds
+.It Fl ?
+prints a list of command line options and a synopsis of each.
+.It Fl v
+prints the version of
+.Nm
+and exits.
 .It Fl 6
 specifies that the input training set contains IPv6 addresses, and not
 IPv4 addresses.

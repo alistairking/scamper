@@ -1,7 +1,7 @@
 /*
  * scamper_udpprobe_cmd.c
  *
- * $Id: scamper_udpprobe_cmd.c,v 1.12 2024/05/02 02:33:38 mjl Exp $
+ * $Id: scamper_udpprobe_cmd.c,v 1.13 2024/09/06 02:30:05 mjl Exp $
  *
  * Copyright (C) 2023-2024 The Regents of the University of California
  *
@@ -124,9 +124,9 @@ static int udpprobe_arg_param_validate(int optid, char *param, long long *out,
 	  snprintf(errbuf, errlen, "expected even number of hex characters");
 	  goto err;
 	}
-      if(i/2 > 1000)
+      if(i/2 > 1400)
 	{
-	  snprintf(errbuf, errlen, "payload limit is 1000 bytes");
+	  snprintf(errbuf, errlen, "payload limit is 1400 bytes");
 	  goto err;
 	}
       assert(i > 0);

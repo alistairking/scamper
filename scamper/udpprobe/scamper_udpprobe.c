@@ -1,9 +1,9 @@
 /*
  * scamper_udpprobe.c
  *
- * $Id: scamper_udpprobe.c,v 1.2 2024/04/04 06:55:33 mjl Exp $
+ * $Id: scamper_udpprobe.c,v 1.3 2024/09/16 07:53:14 mjl Exp $
  *
- * Copyright (C) 2023 The Regents of the University of California
+ * Copyright (C) 2023-2024 The Regents of the University of California
  *
  * Authors: Matthew Luckie
  *
@@ -31,6 +31,7 @@
 #include "scamper_list.h"
 #include "scamper_udpprobe.h"
 #include "scamper_udpprobe_int.h"
+#include "scamper_ifname.h"
 #include "utils.h"
 
 void scamper_udpprobe_reply_free(scamper_udpprobe_reply_t *ur)
@@ -39,6 +40,7 @@ void scamper_udpprobe_reply_free(scamper_udpprobe_reply_t *ur)
   if(--ur->refcnt > 0)
     return;
 #endif
+  if(ur->ifname != NULL) scamper_ifname_free(ur->ifname);
   if(ur->data != NULL) free(ur->data);
   free(ur);
   return;

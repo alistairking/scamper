@@ -70,3 +70,4 @@ cdef extern from "scamper_udpprobe.h":
  const uint8_t *scamper_udpprobe_reply_data_get(const scamper_udpprobe_reply_t *ur)
  uint16_t scamper_udpprobe_reply_len_get(const scamper_udpprobe_reply_t *ur)
  const timeval *scamper_udpprobe_reply_rx_get(const scamper_udpprobe_reply_t *ur)
+ const char *scamper_udpprobe_reply_ifname_get(const scamper_udpprobe_reply_t *ur)
