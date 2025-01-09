@@ -10,9 +10,9 @@
 .\" Copyright (c) 2024      The Regents of the University of California
 .\"                         All rights reserved
 .\"
-.\" $Id: scamper.1,v 1.140 2024/07/15 23:12:44 mjl Exp $
+.\" $Id: scamper.1,v 1.141 2024/08/19 22:44:23 mjl Exp $
 .\"
-.Dd July 16, 2024
+.Dd August 20, 2024
 .Dt SCAMPER 1
 .Os
 .\""""""""""""
@@ -661,7 +661,7 @@ specified.  By default, each probe's bytes are zeroed.
 specifies the type of ping packets to send.
 By default, ICMP echo requests are sent.
 Choices are: ICMP-echo, ICMP-time, TCP-syn, TCP-ack, TCP-ack-sport,
-TCP-synack, TCP-rst, TCP-syn-sport, UDP, and UDP-dport,
+TCP-synack, TCP-rst, TCP-syn-sport, UDP, UDP-dport, and UDP-sport,
 and these options are case insensitive.
 .It Fl r Ar rtraddr
 specifies the IP address of the router to use.

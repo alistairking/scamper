@@ -2,7 +2,7 @@
 #
 # process source code looking for #ifdef-related bugs.
 #
-# $Id: check-ifdef.pl,v 1.6 2024/08/13 05:32:08 mjl Exp $
+# $Id: check-ifdef.pl,v 1.7 2024/08/17 03:34:57 mjl Exp $
 
 use strict;
 use warnings;
@@ -37,6 +37,7 @@ $defs{$_} = 0 foreach (
     "_IPFW2_H", "_IP_FW_H",
     "__linux__", "__sun__", "__ANDROID__", "__APPLE__", "_WIN32",
     "__FreeBSD__", "__NetBSD__", "__OpenBSD__", "__DragonFly__",
+    "__NetBSD_Version__",
     "COMMON_CHECK_ADDR",
     "FUZZ_CHUNKED", "FUZZ_DEALIAS", "FUZZ_HDRS", "FUZZ_HOST",
     "FUZZ_HTTP", "FUZZ_NEIGHBOURDISC", "FUZZ_PING", "FUZZ_SNIFF",

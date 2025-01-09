@@ -1,7 +1,7 @@
 /*
  * sc_hoiho: Holistic Orthography of Internet Hostname Observations
  *
- * $Id: sc_hoiho.c,v 1.30 2024/07/19 05:46:26 mjl Exp $
+ * $Id: sc_hoiho.c,v 1.31 2024/09/07 02:44:17 mjl Exp $
  *
  *         Matthew Luckie
  *         mjl@luckie.org.nz
@@ -656,6 +656,23 @@ typedef struct sc_dump
 		      REFINE_SETS | REFINE_IP | REFINE_FP | REFINE_MERGE | \
 		      REFINE_DICT)
 
+#define OPT_THREADC   0x0001
+#define OPT_DUMPID    0x0002
+#define OPT_DOMAIN    0x0004
+#define OPT_REGEX     0x0008
+#define OPT_OPTION    0x0010
+#define OPT_IPV6      0x0020
+#define OPT_STOPID    0x0040
+#define OPT_SIBLINGS  0x0080
+#define OPT_DICT      0x0100
+#define OPT_RTTS      0x0200
+#define OPT_FUDGE     0x0400
+#define OPT_LIGHTSPEED 0x0800
+
+#ifdef PACKAGE_VERSION
+#define OPT_VERSION     0x1000
+#endif
+
 static int dump_1(void);
 static int dump_2(void);
 static int dump_3(void);
@@ -722,6 +739,9 @@ static int              do_splitlocode = 0;
 static int              no_clli      = 0;
 static int              ip_v         = 4;
 static int              stop_id      = 0;
+#ifdef OPT_VERSION
+static int              do_version   = 0;
+#endif
 static long             threadc      = -1;
 static threadpool_t    *threadp      = NULL;
 static long             dump_id      = 1;
@@ -734,36 +754,21 @@ static const sc_dump_t  dump_funcs[] = {
 };
 static int              dump_funcc = sizeof(dump_funcs) / sizeof(sc_dump_t);
 
-#define OPT_THREADC   0x0001
-#define OPT_DUMPID    0x0002
-#define OPT_DOMAIN    0x0004
-#define OPT_REGEX     0x0008
-#define OPT_OPTION    0x0010
-#define OPT_IPV6      0x0020
-#define OPT_STOPID    0x0040
-#define OPT_SIBLINGS  0x0080
-#define OPT_DICT      0x0100
-#define OPT_RTTS      0x0200
-#define OPT_FUDGE     0x0400
-#define OPT_LIGHTSPEED 0x0800
-
 static void usage(uint32_t opts)
 {
+  const char *v = "";
   int i;
 
+#ifdef OPT_VERSION
+  v = "v";
+#endif
+
   fprintf(stderr,
-	  "usage: sc_hoiho [-6] [-d dumpid] [-D domain] [-f rtt-fudge]\n"
+	  "usage: sc_hoiho [-?6%s] [-d dumpid] [-D domain] [-f rtt-fudge]\n"
 	  "                [-g dict] [-l light-speed] [-O options]\n"
 	  "                [-r regex] [-R rtts] [-s stopid] [-S siblings]\n"
 	  "                [-t threadc]\n"
-	  "                <public-suffix-list> <router-file>\n");
-
-  if(opts == 0)
-    {
-      fprintf(stderr, "\n       sc_hoiho -?\n\n");
-      return;
-    }
-  fprintf(stderr, "\n");
+	  "                <public-suffix-list> <router-file>\n\n", v);
 
   if(opts & OPT_IPV6)
     fprintf(stderr, "       -6: input files are IPv6\n");
@@ -850,18 +855,29 @@ static void usage(uint32_t opts)
   if(opts & OPT_THREADC)
     fprintf(stderr, "       -t: the number of threads to use\n");
 
+#ifdef OPT_VERSION
+  if(opts & OPT_VERSION)
+    fprintf(stderr, "       -v: display version and exit\n");
+#endif
+
   return;
 }
 
 static int check_options(int argc, char *argv[])
 {
-  char *opts = "6d:D:f:g:l:O:r:R:s:S:t:?";
+  char  opts[32];
   char *opt_threadc = NULL, *opt_dumpid = NULL, *opt_stopid = NULL;
   char *opt_fudge = NULL, *opt_lightspeed = NULL;
   uint16_t refine = 0, norefine = 0;
   struct stat sb;
+  size_t off = 0;
   long lo;
   int ch, x;
+
+  string_concat(opts, sizeof(opts), &off, "6d:D:f:g:l:O:r:R:s:S:t:?");
+#ifdef OPT_VERSION
+  string_concat(opts, sizeof(opts), &off, "v");
+#endif
 
   while((ch = getopt(argc, argv, opts)) != -1)
     {
@@ -1017,6 +1033,12 @@ static int check_options(int argc, char *argv[])
 	case '?':
 	  usage(0xffffffff);
 	  return -1;
+
+#ifdef OPT_VERSION
+	case 'v':
+	  do_version = 1;
+	  return 0;
+#endif
 
 	default:
 	  usage(0);
@@ -22392,6 +22414,14 @@ int main(int argc, char *argv[])
     {
       return -1;
     }
+
+#ifdef OPT_VERSION
+  if(do_version)
+    {
+      printf("sc_hoiho version %s\n", PACKAGE_VERSION);
+      return 0;
+    }
+#endif
 
 #ifdef HAVE_PTHREAD
   if(threadc == -1)

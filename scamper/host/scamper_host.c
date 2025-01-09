@@ -1,7 +1,7 @@
 /*
  * scamper_host
  *
- * $Id: scamper_host.c,v 1.19 2024/04/27 21:11:55 mjl Exp $
+ * $Id: scamper_host.c,v 1.25 2024/09/05 01:29:26 mjl Exp $
  *
  * Copyright (C) 2018-2024 Matthew Luckie
  *
@@ -47,6 +47,94 @@ int scamper_host_query_counts(scamper_host_query_t *q,
     return -1;
 
   return 0;
+}
+
+scamper_host_rr_opt_elem_t *scamper_host_rr_opt_elem_alloc(uint16_t code,
+                                                           uint16_t len,
+                                                           const uint8_t *data)
+{
+  scamper_host_rr_opt_elem_t *elem;
+
+  if((elem = malloc_zero(sizeof(scamper_host_rr_opt_elem_t))) == NULL)
+    return NULL;
+
+#ifdef BUILDING_LIBSCAMPERFILE
+  elem->refcnt = 1;
+#endif
+
+  if(len > 0 && (elem->data = malloc(len)) == NULL)
+    {
+      free(elem);
+      return NULL;
+    }
+
+  memcpy(elem->data, data, len);
+  elem->code = code;
+  elem->len = len;
+  return elem;
+}
+
+void scamper_host_rr_opt_elem_free(scamper_host_rr_opt_elem_t *elem)
+{
+  if(elem == NULL)
+    return;
+
+#ifdef BUILDING_LIBSCAMPERFILE
+  if(--elem->refcnt > 0)
+    return;
+#endif
+
+  if(elem->data != NULL)
+    free(elem->data);
+  free(elem);
+    return;
+}
+
+void scamper_host_rr_opt_free(scamper_host_rr_opt_t *opt)
+{
+  uint16_t i;
+
+  if(opt == NULL)
+    return;
+
+#ifdef BUILDING_LIBSCAMPERFILE
+  if(--opt->refcnt > 0)
+    return;
+#endif
+
+  if(opt->elems != NULL)
+    {
+      for(i=0; i<opt->elemc; i++)
+        if(opt->elems[i] != NULL)
+	  scamper_host_rr_opt_elem_free(opt->elems[i]);
+      free(opt->elems);
+    }
+
+  free(opt);
+  return;
+}
+
+scamper_host_rr_opt_t *scamper_host_rr_opt_alloc(uint16_t elemc)
+{
+  scamper_host_rr_opt_t *opt;
+  size_t len;
+
+  if((opt = malloc_zero(sizeof(scamper_host_rr_opt_t))) == NULL)
+    return NULL;
+
+#ifdef BUILDING_LIBSCAMPERFILE
+  opt->refcnt = 1;
+#endif
+
+  len = sizeof(scamper_host_rr_opt_elem_t *) * elemc;
+  if(len > 0 && (opt->elems = malloc_zero(len)) == NULL)
+    {
+      scamper_host_rr_opt_free(opt);
+      return NULL;
+    }
+
+  opt->elemc = elemc;
+  return opt;
 }
 
 void scamper_host_rr_txt_free(scamper_host_rr_txt_t *txt)
@@ -193,6 +281,9 @@ int scamper_host_rr_data_type(uint16_t class, uint16_t type)
 	}
     }
 
+  if(type == SCAMPER_HOST_TYPE_OPT)
+    return SCAMPER_HOST_RR_DATA_TYPE_OPT;
+
   return -1;
 }
 
@@ -229,6 +320,10 @@ void scamper_host_rr_free(scamper_host_rr_t *rr)
 
     case SCAMPER_HOST_RR_DATA_TYPE_TXT:
       if(rr->un.txt != NULL) scamper_host_rr_txt_free(rr->un.txt);
+      break;
+
+    case SCAMPER_HOST_RR_DATA_TYPE_OPT:
+      if(rr->un.opt != NULL) scamper_host_rr_opt_free(rr->un.opt);
       break;
     }
 
@@ -291,35 +386,33 @@ void scamper_host_query_free(scamper_host_query_t *query)
   return;
 }
 
-int scamper_host_queries_alloc(scamper_host_t *host, int n)
+int scamper_host_queries_alloc(scamper_host_t *host, uint8_t n)
 {
   size_t len = n * sizeof(scamper_host_query_t *);
-  if((host->queries = malloc_zero(len)) == NULL)
+  if(host->queries != NULL ||
+     (host->queries = malloc_zero(len)) == NULL)
     return -1;
+  host->qcount = n;
   return 0;
 }
 
-int scamper_host_query_rr_alloc(scamper_host_query_t *query)
+int scamper_host_query_rr_alloc(scamper_host_query_t *query,
+				uint16_t an_c, uint16_t ns_c, uint16_t ar_c)
 {
-  size_t len;
-  if(query->ancount > 0)
-    {
-      len = query->ancount * sizeof(scamper_host_rr_t *);
-      if((query->an = malloc_zero(len)) == NULL)
-	return -1;
-    }
-  if(query->nscount > 0)
-    {
-      len = query->nscount * sizeof(scamper_host_rr_t *);
-      if((query->ns = malloc_zero(len)) == NULL)
-	return -1;
-    }
-  if(query->arcount > 0)
-    {
-      len = query->arcount * sizeof(scamper_host_rr_t *);
-      if((query->ar = malloc_zero(len)) == NULL)
-	return -1;
-    }
+  if(query->an != NULL || query->ns != NULL || query->ar != NULL)
+    return -1;
+  query->ancount = an_c;
+  query->nscount = ns_c;
+  query->arcount = ar_c;
+  if(an_c > 0 &&
+     (query->an = malloc_zero(an_c * sizeof(scamper_host_rr_t *))) == NULL)
+    return -1;
+  if(ns_c > 0 &&
+     (query->ns = malloc_zero(ns_c * sizeof(scamper_host_rr_t *))) == NULL)
+    return -1;
+  if(ar_c > 0 &&
+     (query->ar = malloc_zero(ar_c * sizeof(scamper_host_rr_t *))) == NULL)
+    return -1;
   return 0;
 }
 
@@ -336,22 +429,18 @@ scamper_host_query_t *scamper_host_query_alloc(void)
 
 char *scamper_host_rcode_tostr(uint8_t rcode, char *b, size_t l)
 {
-  switch(rcode)
-    {
-    case SCAMPER_HOST_QUERY_RCODE_NOERROR:  snprintf(b, l, "NoError");  break;
-    case SCAMPER_HOST_QUERY_RCODE_FORMERR:  snprintf(b, l, "FormErr");  break;
-    case SCAMPER_HOST_QUERY_RCODE_SERVFAIL: snprintf(b, l, "ServFail"); break;
-    case SCAMPER_HOST_QUERY_RCODE_NXDOMAIN: snprintf(b, l, "NXDomain"); break;
-    case SCAMPER_HOST_QUERY_RCODE_NOTIMP:   snprintf(b, l, "NotImp");   break;
-    case SCAMPER_HOST_QUERY_RCODE_REFUSED:  snprintf(b, l, "Refused");  break;
-    case SCAMPER_HOST_QUERY_RCODE_YXDOMAIN: snprintf(b, l, "YXDomain"); break;
-    case SCAMPER_HOST_QUERY_RCODE_YXRRSET:  snprintf(b, l, "YXRRSet");  break;
-    case SCAMPER_HOST_QUERY_RCODE_NXRRSET:  snprintf(b, l, "NXRRSet");  break;
-    case SCAMPER_HOST_QUERY_RCODE_NOTAUTH:  snprintf(b, l, "NotAuth");  break;
-    case SCAMPER_HOST_QUERY_RCODE_NOTZONE:  snprintf(b, l, "NotZone");  break;
-    default: snprintf(b, l, "%u", rcode); break;
-    }
-
+  static const char *r[] = {
+    "NoError", "FormErr", "ServFail", "NXDomain", /*  0 -  3 */
+    "NotImp", "Refused", "YXDomain", "YXRRSet",   /*  4 -  7 */
+    "NXRRSet", "NotAuth", "NotZone", "DSOTYPENI", /*  8 - 11 */
+    NULL, NULL, NULL, NULL,                       /* 12 - 15 */
+    "BADVERS", "BADKEY", "BADTIME", "BADMODE"     /* 16 - 19 */
+    "BADNAME", "BADALG", "BADTRUNC", "BADCOOKIE", /* 20 - 23 */
+  };
+  if(rcode >= sizeof(r) / sizeof(char *))
+    snprintf(b, l, "%u", rcode);
+  else
+    snprintf(b, l, "%s", r[rcode]);
   return b;
 }
 
@@ -404,7 +493,6 @@ char *scamper_host_stop_tostr(const scamper_host_t *h, char *b, size_t l)
   else
     snprintf(b, l, "%s", r[h->stop]);
   return b;
-
 }
 
 void scamper_host_free(scamper_host_t *host)

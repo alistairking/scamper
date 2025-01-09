@@ -13,7 +13,8 @@ sc_minrtt_SOURCES = \
 	../../utils.c \
 	../../mjl_list.c \
 	../../mjl_splaytree.c \
-	../../mjl_threadpool.c
+	../../mjl_threadpool.c \
+	../../mjl_heap.c
 
 sc_minrtt_CFLAGS = @PTHREAD_CFLAGS@ @PCRE_CFLAGS@
 sc_minrtt_LDFLAGS = @PTHREAD_CFLAGS@ @PCRE_CFLAGS@

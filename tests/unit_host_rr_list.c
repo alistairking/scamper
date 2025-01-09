@@ -1,7 +1,7 @@
 /*
  * unit_host_rr_list : unit tests for host_rr_list function
  *
- * $Id: unit_host_rr_list.c,v 1.5 2024/04/20 00:15:02 mjl Exp $
+ * $Id: unit_host_rr_list.c,v 1.6 2024/09/04 08:17:55 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -50,6 +50,9 @@ typedef struct sc_test
 
 static int com_soa(const slist_t *rr_list)
 {
+  const uint16_t types[2] = {
+    SCAMPER_HOST_RR_DATA_TYPE_SOA,
+    SCAMPER_HOST_RR_DATA_TYPE_OPT};
   scamper_host_rr_t *rr;
   scamper_host_rr_soa_t *soa;
   slist_node_t *sn;
@@ -60,10 +63,12 @@ static int com_soa(const slist_t *rr_list)
   for(sn=slist_head_node(rr_list); sn != NULL; sn=slist_node_next(sn))
     {
       rr = slist_node_item(sn);
+      if(scamper_host_rr_data_type(rr->class, rr->type) != types[i])
+	return -1;
+
       if(i == 0)
 	{
-	  if(scamper_host_rr_data_type(rr->class, rr->type) != SCAMPER_HOST_RR_DATA_TYPE_SOA ||
-	     rr->class != SCAMPER_HOST_CLASS_IN ||
+	  if(rr->class != SCAMPER_HOST_CLASS_IN ||
 	     rr->type != SCAMPER_HOST_TYPE_SOA ||
 	     rr->ttl != 509 ||
 	     strcmp(rr->name, "com") != 0 ||
@@ -86,6 +91,10 @@ static int com_soa(const slist_t *rr_list)
 
 static int example_org_txt(const slist_t *rr_list)
 {
+  const uint16_t types[3] = {
+    SCAMPER_HOST_RR_DATA_TYPE_TXT,
+    SCAMPER_HOST_RR_DATA_TYPE_TXT,
+    SCAMPER_HOST_RR_DATA_TYPE_OPT};
   scamper_host_rr_t *rr;
   scamper_host_rr_txt_t *txt;
   slist_node_t *sn;
@@ -97,10 +106,12 @@ static int example_org_txt(const slist_t *rr_list)
   for(sn=slist_head_node(rr_list); sn != NULL; sn=slist_node_next(sn))
     {
       rr = slist_node_item(sn);
+      if(scamper_host_rr_data_type(rr->class, rr->type) != types[i])
+	return -1;
+
       if(i == 0)
 	{
-	  if(scamper_host_rr_data_type(rr->class, rr->type) != SCAMPER_HOST_RR_DATA_TYPE_TXT ||
-	     rr->class != SCAMPER_HOST_CLASS_IN ||
+	  if(rr->class != SCAMPER_HOST_CLASS_IN ||
 	     rr->type != SCAMPER_HOST_TYPE_TXT ||
 	     rr->ttl != 86368 ||
 	     strcmp(rr->name, "example.org") != 0 ||
@@ -112,8 +123,7 @@ static int example_org_txt(const slist_t *rr_list)
 	}
       else if(i == 1)
 	{
-	  if(scamper_host_rr_data_type(rr->class, rr->type) != SCAMPER_HOST_RR_DATA_TYPE_TXT ||
-	     rr->class != SCAMPER_HOST_CLASS_IN ||
+	  if(rr->class != SCAMPER_HOST_CLASS_IN ||
 	     rr->type != SCAMPER_HOST_TYPE_TXT ||
 	     rr->ttl != 86368 ||
 	     strcmp(rr->name, "example.org") != 0 ||
@@ -134,6 +144,58 @@ static int example_org_txt(const slist_t *rr_list)
       else return -1;
       i++;
     }
+  return 0;
+}
+
+static int doesnotexist_nsid(const slist_t *rr_list)
+{
+  const uint8_t nsid[14] = {
+    0x61, 0x38, 0x2e, 0x75, 0x73, 0x2d, 0x73, 0x6a, 0x63,
+    0x2e, 0x72, 0x6f, 0x6f, 0x74};
+  const uint16_t types[2] = {
+    SCAMPER_HOST_RR_DATA_TYPE_SOA,
+    SCAMPER_HOST_RR_DATA_TYPE_OPT};
+  scamper_host_rr_t *rr;
+  scamper_host_rr_opt_t *opt;
+  scamper_host_rr_opt_elem_t *elem;
+  slist_node_t *sn;
+  int i = 0;
+
+  if(rr_list == NULL)
+    return -1;
+
+  for(sn=slist_head_node(rr_list); sn != NULL; sn=slist_node_next(sn))
+    {
+      rr = slist_node_item(sn);
+      if(scamper_host_rr_data_type(rr->class, rr->type) != types[i])
+	return -1;
+
+      if(i == 0)
+	{
+	  if(rr->class != SCAMPER_HOST_CLASS_IN ||
+	     rr->type != SCAMPER_HOST_TYPE_SOA ||
+	     rr->ttl != 86400 ||
+	     strcmp(rr->name, "") != 0)
+	    return -1;
+	}
+      else if(i == 1)
+	{
+	  if(rr->class != 4096 ||
+	     rr->type != SCAMPER_HOST_TYPE_OPT ||
+	     rr->ttl != 0 ||
+	     strcmp(rr->name, "") != 0 ||
+	     (opt = scamper_host_rr_opt_get(rr)) == NULL ||
+	     scamper_host_rr_opt_elemc_get(opt) != 1 ||
+	     (elem = scamper_host_rr_opt_elem_get(opt, 0)) == NULL ||
+	     elem->code != SCAMPER_HOST_RR_OPT_ELEM_CODE_NSID ||
+	     elem->len != 14 ||
+	     memcmp(elem->data, nsid, 14) != 0)
+	    return -1;
+	}
+      else return -1;
+      i++;
+    }
+
   return 0;
 }
 
@@ -219,6 +281,15 @@ int main(int argc, char *argv[])
      "00002904d0000000000000", /* . OPT 1232 ttl=0, rdlength=0 */
      12 + 13 + 4,
      example_org_txt},
+    {"dc2f85030001000000010001" /* 12 byte header */
+     "0e646f65732d6e6f742d657869737400" /* does-not-exist (16 bytes) */
+     "00010001" /* A IN (4 bytes) */
+     "000006000100015180004001610c726f6f742d73657276657273036e657400056e73"
+     "746c640c766572697369676e2d67727303636f6d0078a52a5900000708000003"
+     "8400093a8000015180"
+     "00002910000000000000120003000e61382e75732d736a632e726f6f74",
+     12 + 16 + 4,
+     doesnotexist_nsid},
   };
   size_t i, testc = sizeof(tests) / sizeof(sc_test_t);
   char filename[128];

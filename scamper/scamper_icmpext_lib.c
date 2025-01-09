@@ -1,7 +1,7 @@
 /*
  * scamper_icmpext_lib.c
  *
- * $Id: scamper_icmpext_lib.c,v 1.4 2023/07/29 21:22:22 mjl Exp $
+ * $Id: scamper_icmpext_lib.c,v 1.5 2024/09/05 23:17:18 mjl Exp $
  *
  * Copyright (C) 2023 Matthew Luckie
  * Author: Matthew Luckie
@@ -95,8 +95,10 @@ uint8_t scamper_icmpext_mpls_s_get(const scamper_icmpext_t *ie, uint16_t i)
   return SCAMPER_ICMPEXT_MPLS_S(ie, i);
 }
 
+#ifdef BUILDING_LIBSCAMPERFILE
 scamper_icmpext_t *scamper_icmpext_use(scamper_icmpext_t *ie)
 {
   ie->refcnt++;
   return ie;
 }
+#endif

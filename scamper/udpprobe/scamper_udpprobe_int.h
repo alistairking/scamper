@@ -1,7 +1,7 @@
 /*
  * scamper_udpprobe_int.h
  *
- * $Id: scamper_udpprobe_int.h,v 1.3 2024/04/04 06:55:33 mjl Exp $
+ * $Id: scamper_udpprobe_int.h,v 1.4 2024/09/06 01:34:54 mjl Exp $
  *
  * Copyright (C) 2023 The Regents of the University of California
  *
@@ -37,11 +37,17 @@ scamper_udpprobe_reply_t *scamper_udpprobe_reply_alloc(void);
 #define SCAMPER_UDPPROBE_STOP_HALTED   2
 #define SCAMPER_UDPPROBE_STOP_ERROR    3
 
+struct scamper_ifname;
+
 struct scamper_udpprobe_reply
 {
   uint8_t                   *data;
   uint16_t                   len;
   struct timeval             rx;
+
+  /* the name of the interface that received the response */
+  struct scamper_ifname     *ifname;
+
 #ifdef BUILDING_LIBSCAMPERFILE
   int                        refcnt;
 #endif

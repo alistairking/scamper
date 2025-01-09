@@ -1,7 +1,7 @@
 /*
  * scamper_privsep.h
  *
- * $Id: scamper_privsep.h,v 1.26 2023/08/26 21:25:08 mjl Exp $
+ * $Id: scamper_privsep.h,v 1.28 2024/08/27 02:37:32 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -28,16 +28,15 @@
 
 #ifndef DISABLE_PRIVSEP
 
-int scamper_privsep_open_datalink(const int ifindex);
+int scamper_privsep_open_datalink(int ifindex);
 
-int scamper_privsep_open_file(const char *file,
-			      const int flags, const mode_t mode);
+int scamper_privsep_open_file(const char *file, int flags, mode_t mode);
 
 int scamper_privsep_open_rtsock(void);
 
-int scamper_privsep_open_icmp(const int domain);
-int scamper_privsep_open_udp(const int domain, const int port);
-int scamper_privsep_open_tcp(const int domain, const int port);
+int scamper_privsep_open_icmp(int domain);
+int scamper_privsep_open_udp(int domain, int port);
+int scamper_privsep_open_tcp(int domain, int port);
 int scamper_privsep_open_rawudp(const void *addr);
 int scamper_privsep_open_rawip(void);
 int scamper_privsep_open_unix(const char *file);
@@ -54,9 +53,11 @@ int scamper_privsep_pf_del(int n);
 
 int scamper_privsep_unlink(const char *file);
 
+void scamper_privsep_read_cb(int fd, void *param);
+
 int scamper_privsep_init(void);
 void scamper_privsep_cleanup(void);
 
-#endif
+#endif /* !defined(DISABLE_PRIVSEP) */
 
-#endif
+#endif /* __SCAMPER_PRIVSEP_H */

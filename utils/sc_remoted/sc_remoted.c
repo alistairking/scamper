@@ -1,7 +1,7 @@
 /*
  * sc_remoted
  *
- * $Id: sc_remoted.c,v 1.115 2024/06/26 22:08:27 mjl Exp $
+ * $Id: sc_remoted.c,v 1.119 2024/09/07 02:55:38 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -314,6 +314,11 @@ typedef struct sc_message
 #define OPT_ZOMBIE  0x0200
 #define OPT_PIDFILE 0x0400
 #define OPT_TLSCA   0x0800
+
+#ifdef PACKAGE_VERSION
+#define OPT_VERSION 0x1000
+#endif
+
 #define OPT_ALL     0xffff
 
 #define FLAG_DEBUG      0x0001 /* verbose debugging */
@@ -406,13 +411,18 @@ static const sc_fd_cb_t write_cb[] = {
 
 static void usage(uint32_t opt_mask)
 {
+  const char *v = "";
+
+#ifdef OPT_VERSION
+  v = "v";
+#endif
+
   fprintf(stderr,
-	  "usage: sc_remoted [-?46D] [-O option] -P [ip:]port -U unix\n"
+	  "usage: sc_remoted [-?46D%s] [-O option] -P [ip:]port -U unix\n"
 #ifdef HAVE_OPENSSL
 	  "                  [-c certfile] [-p privfile] [-C CAfile]\n"
 #endif
-	  "                  [-e pidfile] [-Z zombie-time]\n"
-	  );
+	  "                  [-e pidfile] [-Z zombie-time]\n", v);
 
   if(opt_mask == 0)
     {
@@ -457,6 +467,11 @@ static void usage(uint32_t opt_mask)
     fprintf(stderr, "     -C require client authentication using this CA\n");
 #endif
 
+#ifdef OPT_VERSION
+  if(opt_mask & OPT_VERSION)
+    fprintf(stderr, "     -v display version and exit\n");
+#endif
+
   if(opt_mask & OPT_ZOMBIE)
     fprintf(stderr, "     -Z time to retain state for disconnected scamper\n");
 
@@ -466,10 +481,15 @@ static void usage(uint32_t opt_mask)
 static int check_options(int argc, char *argv[])
 {
   struct sockaddr_storage sas;
-  char *opts = "?46DO:c:C:e:p:P:U:Z:", *opt_addrport = NULL, *opt_zombie = NULL;
-  char *opt_pidfile = NULL;
+  char opts[32], *opt_addrport = NULL, *opt_zombie = NULL, *opt_pidfile = NULL;
+  size_t off = 0;
   long lo;
   int ch;
+
+  string_concat(opts, sizeof(opts), &off, "?46DO:c:C:e:p:P:U:Z:");
+#ifdef OPT_VERSION
+  string_concat(opts, sizeof(opts), &off, "v");
+#endif
 
   while((ch = getopt(argc, argv, opts)) != -1)
     {
@@ -534,6 +554,12 @@ static int check_options(int argc, char *argv[])
 	case 'U':
 	  unix_name = optarg;
 	  break;
+
+#ifdef OPT_VERSION
+	case 'v':
+	  options |= OPT_VERSION;
+	  return 0;
+#endif
 
 	case 'Z':
 	  opt_zombie = optarg;
@@ -813,39 +839,27 @@ static int sc_fd_write_del(sc_fd_t *fd)
 }
 
 #ifdef HAVE_OPENSSL
+static int ssl_want_read_cb(void *param, uint8_t *buf, int len)
+{
+  sc_master_t *ms = param;
+  scamper_writebuf_send(ms->inet_wb, buf, len);
+  sc_fd_write_add(&ms->inet_fd);
+  return 0;
+}
+
 static int ssl_want_read(sc_master_t *ms)
 {
-  uint8_t buf[1024];
-  int pending, rc, size, off = 0;
+  char errbuf[64];
+  int rc;
 
-  if((pending = BIO_pending(ms->inet_wbio)) < 0)
+  if((rc = tls_want_read(ms->inet_wbio, ms, errbuf, sizeof(errbuf),
+			 ssl_want_read_cb)) < 0)
     {
-      remote_debug(__func__, "BIO_pending returned %d", pending);
+      remote_debug(__func__, "%s", errbuf);
       return -1;
     }
 
-  while(off < pending)
-    {
-      if((size_t)(pending - off) > sizeof(buf))
-	size = sizeof(buf);
-      else
-	size = pending - off;
-
-      if((rc = BIO_read(ms->inet_wbio, buf, size)) <= 0)
-	{
-	  if(BIO_should_retry(ms->inet_wbio) == 0)
-	    remote_debug(__func__, "BIO_read should not retry");
-	  else
-	    remote_debug(__func__, "BIO_read returned %d", rc);
-	  return -1;
-	}
-      off += rc;
-
-      scamper_writebuf_send(ms->inet_wb, buf, rc);
-      sc_fd_write_add(&ms->inet_fd);
-    }
-
-  return pending;
+  return rc;
 }
 #endif
 
@@ -1069,17 +1083,7 @@ static void sc_master_inet_free(sc_master_t *ms)
     }
 
 #ifdef HAVE_OPENSSL
-  if(ms->inet_ssl != NULL)
-    {
-      SSL_free(ms->inet_ssl);
-    }
-  else
-    {
-      if(ms->inet_wbio != NULL)
-	BIO_free(ms->inet_wbio);
-      if(ms->inet_rbio != NULL)
-	BIO_free(ms->inet_rbio);
-    }
+  tls_bio_free(ms->inet_ssl, ms->inet_rbio, ms->inet_wbio);
   ms->inet_ssl = NULL;
   ms->inet_wbio = NULL;
   ms->inet_rbio = NULL;
@@ -2095,14 +2099,12 @@ static sc_master_t *sc_master_alloc(int fd)
 #ifdef HAVE_OPENSSL
   if(tls_certfile != NULL)
     {
-      if((ms->inet_wbio = BIO_new(BIO_s_mem())) == NULL ||
-	 (ms->inet_rbio = BIO_new(BIO_s_mem())) == NULL ||
-	 (ms->inet_ssl = SSL_new(tls_ctx)) == NULL)
+      if(tls_bio_alloc(tls_ctx, &ms->inet_ssl,
+		       &ms->inet_rbio, &ms->inet_wbio) != 0)
 	{
 	  remote_debug(__func__, "could not alloc SSL");
 	  goto err;
 	}
-      SSL_set_bio(ms->inet_ssl, ms->inet_rbio, ms->inet_wbio);
       SSL_set_accept_state(ms->inet_ssl);
       rc = SSL_accept(ms->inet_ssl);
       assert(rc == -1);
@@ -2999,6 +3001,14 @@ int main(int argc, char *argv[])
 
   if(check_options(argc, argv) != 0)
     return -1;
+
+#ifdef OPT_VERSION
+  if(options & OPT_VERSION)
+    {
+      printf("sc_remoted version %s\n", PACKAGE_VERSION);
+      return 0;
+    }
+#endif
 
   if(pidfile != NULL && remoted_pidfile() != 0)
     return -1;

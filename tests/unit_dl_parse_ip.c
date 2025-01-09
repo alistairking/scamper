@@ -1,12 +1,12 @@
 /*
  * unit_dl_parse_ip : unit tests for dl_parse_ip function
  *
- * $Id: unit_dl_parse_ip.c,v 1.8 2024/07/02 00:50:12 mjl Exp $
+ * $Id: unit_dl_parse_ip.c,v 1.10 2024/08/26 10:53:11 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
  *
- * Copyright (C) 2023 Matthew Luckie
+ * Copyright (C) 2023-2024 Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -197,6 +197,28 @@ static int icmp6_echo_req(uint8_t *pkt, size_t len)
   return 0;
 }
 
+static int icmp6_ttlexp(uint8_t *pkt, size_t len)
+{
+  scamper_dl_rec_t dl;
+
+  memset(&dl, 0, sizeof(dl));
+  if(dl_parse_ip(&dl, pkt, len) == 0 ||
+     SCAMPER_DL_IS_IPV6(&dl) == 0 ||
+     dl.dl_ip_hl != 40 || dl.dl_ip_data != pkt + 40 ||
+     SCAMPER_DL_IS_ICMP(&dl) == 0 ||
+     SCAMPER_DL_IS_ICMP_ECHO_REPLY(&dl) != 0 ||
+     SCAMPER_DL_IS_ICMP_TIME_REPLY(&dl) != 0 ||
+     SCAMPER_DL_IS_ICMP_ECHO_REQUEST(&dl) != 0 ||
+     SCAMPER_DL_IS_ICMP_TTL_EXP(&dl) == 0 ||
+     SCAMPER_DL_IS_ICMP_UNREACH(&dl) != 0 ||
+     SCAMPER_DL_IS_ICMP_PACKET_TOO_BIG(&dl) != 0 ||
+     SCAMPER_DL_IS_ICMP_PARAMPROB(&dl) != 0 ||
+     SCAMPER_DL_IS_ICMP_Q_UDP(&dl) == 0)
+    return -1;
+
+  return 0;
+}
+
 static int check(const char *pkt, int (*func)(uint8_t *pkt, size_t len))
 {
   size_t len;
@@ -254,6 +276,17 @@ int main(int argc, char *argv[])
      "202122232425262728292a2b2c2d2e2f"
      "3031323334353637",
      icmp6_echo_req},
+    {"6000000000583a40"
+     "20010DB8000000000000000000000001"
+     "20010DB8000000000000000000000002"
+     "0300e3a400000000"
+     "600c9ad000281101"
+     "20010DB8000000000000000000000002"
+     "20010DB8000000000000000000000003"
+     "8275829a00282036"
+     "404142434445464748494a4b4c4d4e4f"
+     "505152535455565758595a5b5c5d5e5f",
+     icmp6_ttlexp},
   };
   size_t i, testc = sizeof(tests) / sizeof(sc_test_t);
   char filename[128];

@@ -1,7 +1,7 @@
 /*
  * scamper_http_do.c
  *
- * $Id: scamper_http_do.c,v 1.14 2024/02/27 03:34:02 mjl Exp $
+ * $Id: scamper_http_do.c,v 1.17 2024/08/17 22:11:05 mjl Exp $
  *
  * Copyright (C) 2023-2024 The Regents of the University of California
  *
@@ -66,6 +66,7 @@ typedef struct http_state
   slist_t            *htbs;
   struct timeval      finish;
 #ifdef HAVE_OPENSSL
+  struct timeval      now;
   SSL                *ssl;
   BIO                *ssl_rbio;
   BIO                *ssl_wbio;
@@ -153,25 +154,7 @@ static void http_state_free(http_state_t *state)
 #endif
 
 #ifdef HAVE_OPENSSL
-  /*
-   * SSL_free() also calls the free()ing procedures for indirectly
-   * affected items, if applicable: the buffering BIO, the read and
-   * write BIOs, cipher lists specially created for this ssl, the
-   * SSL_SESSION. Do not explicitly free these indirectly freed up
-   * items before or after calling SSL_free(), as trying to free
-   * things twice may lead to program failure.
-   */
-  if(state->ssl != NULL)
-    {
-      SSL_free(state->ssl);
-    }
-  else
-    {
-      if(state->ssl_wbio != NULL)
-	BIO_free(state->ssl_wbio);
-      if(state->ssl_rbio != NULL)
-	BIO_free(state->ssl_rbio);
-    }
+  tls_bio_free(state->ssl, state->ssl_rbio, state->ssl_wbio);
 #endif
   if(state->htbs != NULL)
     slist_free_cb(state->htbs, (slist_free_t)scamper_http_buf_free);
@@ -268,40 +251,30 @@ static int http_read_payload(http_state_t *state, uint8_t *buf, size_t len)
 }
 
 #ifdef HAVE_OPENSSL
-static int tls_want_read(http_state_t *state)
+static int http_tls_want_read_cb(void *param, uint8_t *buf, int len)
 {
-  uint8_t buf[1024];
-  int pending, rc, size, off = 0;
-  struct timeval tv;
-
-  if((pending = BIO_pending(state->ssl_wbio)) < 0)
+  http_state_t *state = param;
+  if(state->mode == STATE_MODE_TLS_HS &&
+     http_buf_add(state, SCAMPER_HTTP_BUF_DIR_TX,
+		  SCAMPER_HTTP_BUF_TYPE_TLS, &state->now, buf, len) != 0)
     return -1;
+  scamper_writebuf_send(state->wb, buf, len);
+  return 0;
+}
 
-  gettimeofday_wrap(&tv);
+static int http_tls_want_read(http_state_t *state)
+{
+  char errbuf[64];
+  int rc;
 
-  while(off < pending)
+  if(state->mode == STATE_MODE_TLS_HS)
+    gettimeofday_wrap(&state->now);
+
+  if((rc = tls_want_read(state->ssl_wbio, state, errbuf, sizeof(errbuf),
+			 http_tls_want_read_cb)) < 0)
     {
-      if((size_t)(pending - off) > sizeof(buf))
-	size = sizeof(buf);
-      else
-	size = pending - off;
-
-      if((rc = BIO_read(state->ssl_wbio, buf, size)) <= 0)
-	{
-	  if(BIO_should_retry(state->ssl_wbio) == 0)
-	    scamper_debug(__func__, "BIO_read should not retry");
-	  else
-	    scamper_debug(__func__, "BIO_read returned %d", rc);
-	  return -1;
-	}
-      off += rc;
-
-      if(state->mode == STATE_MODE_TLS_HS &&
-	 http_buf_add(state, SCAMPER_HTTP_BUF_DIR_TX,
-		      SCAMPER_HTTP_BUF_TYPE_TLS, &tv, buf, rc) != 0)
-	return -1;
-
-      scamper_writebuf_send(state->wb, buf, rc);
+      scamper_debug(__func__, "%s", errbuf);
+      return -1;
     }
 
   return 0;
@@ -313,16 +286,10 @@ static int tls_handshake(scamper_task_t *task)
   http_state_t *state = http_getstate(task);
   int rc;
 
-  /*
-   * the order is important because once the BIOs are associated with
-   * the ssl structure, SSL_free will clean them up.
-   */
-  if((state->ssl_wbio = BIO_new(BIO_s_mem())) == NULL ||
-     (state->ssl_rbio = BIO_new(BIO_s_mem())) == NULL ||
-     (state->ssl = SSL_new(default_tls_ctx)) == NULL)
+  if(tls_bio_alloc(default_tls_ctx, &state->ssl,
+		   &state->ssl_rbio, &state->ssl_wbio) != 0)
     return -1;
 
-  SSL_set_bio(state->ssl, state->ssl_rbio, state->ssl_wbio);
 #ifdef SSL_CTRL_SET_TLSEXT_HOSTNAME
   if(http->host != NULL) SSL_set_tlsext_host_name(state->ssl, http->host);
 #endif
@@ -338,7 +305,7 @@ static int tls_handshake(scamper_task_t *task)
     }
 
   state->mode = STATE_MODE_TLS_HS;
-  return tls_want_read(state);
+  return http_tls_want_read(state);
 }
 #endif /* HAVE_OPENSSL */
 
@@ -426,7 +393,7 @@ static int http_read_sock(scamper_task_t *task)
 
       if((ecode = SSL_get_error(state->ssl, ret)) == SSL_ERROR_WANT_READ)
 	{
-	  if(tls_want_read(state) < 0)
+	  if(http_tls_want_read(state) < 0)
 	    return -1;
 	}
       else if(ecode == SSL_ERROR_ZERO_RETURN)
@@ -536,7 +503,7 @@ static int http_req(scamper_task_t *task)
   if(state->ssl != NULL)
     {
       SSL_write(state->ssl, buf, len-1);
-      tls_want_read(state);
+      http_tls_want_read(state);
       rc = 0;
       goto done;
     }

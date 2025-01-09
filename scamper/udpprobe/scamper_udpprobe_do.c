@@ -1,7 +1,7 @@
 /*
  * scamper_udpprobe_do.c
  *
- * $Id: scamper_udpprobe_do.c,v 1.12 2024/06/25 06:03:55 mjl Exp $
+ * $Id: scamper_udpprobe_do.c,v 1.13 2024/09/06 01:34:54 mjl Exp $
  *
  * Copyright (C) 2023-2024 The Regents of the University of California
  *
@@ -30,6 +30,8 @@
 #include "scamper.h"
 #include "scamper_addr.h"
 #include "scamper_addr_int.h"
+#include "scamper_ifname.h"
+#include "scamper_ifname_int.h"
 #include "scamper_list.h"
 #include "scamper_task.h"
 #include "scamper_getsrc.h"
@@ -160,6 +162,9 @@ static void do_udpprobe_handle_udp(scamper_task_t *task, scamper_udp_resp_t *ur)
   else
     gettimeofday_wrap(&reply->rx);
   reply->len = ur->datalen;
+
+  if(ur->flags & SCAMPER_UDP_RESP_FLAG_IFINDEX)
+    reply->ifname = scamper_ifname_int_get(ur->ifindex, &reply->rx);
 
   if(slist_tail_push(state->replies[i], reply) == NULL)
     goto err;

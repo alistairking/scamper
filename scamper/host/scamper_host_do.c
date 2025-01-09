@@ -1,7 +1,7 @@
 /*
  * scamper_host_do
  *
- * $Id: scamper_host_do.c,v 1.80 2024/08/13 06:16:30 mjl Exp $
+ * $Id: scamper_host_do.c,v 1.84 2024/09/05 01:29:26 mjl Exp $
  *
  * Copyright (C) 2018-2024 Matthew Luckie
  *
@@ -641,6 +641,61 @@ static int extract_txt(scamper_host_rr_t *rr, const uint8_t *pbuf,
   return -1;
 }
 
+static int extract_opt(scamper_host_rr_t *rr, const uint8_t *pbuf,
+		       size_t plen, size_t off, size_t rdlength)
+{
+  scamper_host_rr_opt_t *opt;
+  scamper_host_rr_opt_elem_t *elem = NULL;
+  slist_t *list = NULL;
+  size_t i = 0;
+  uint16_t code, len;
+
+  if(rdlength == 0 || plen - off < rdlength)
+    return 0;
+
+  if((list = slist_alloc()) == NULL)
+    return -1;
+
+  while(i < rdlength)
+    {
+      if(rdlength - i < 4)
+	break;
+
+      code = bytes_ntohs(pbuf+off); off += 2;
+      len  = bytes_ntohs(pbuf+off); off += 2;
+
+      if(rdlength - i < (size_t)(4 + len))
+	break;
+
+      elem = scamper_host_rr_opt_elem_alloc(code, len, pbuf + off);
+      if(elem == NULL || slist_tail_push(list, elem) == NULL)
+	goto err;
+      elem = NULL;
+
+      i += 4 + len;
+      off += len;
+    }
+
+  if(slist_count(list) > 0)
+    {
+      if((opt = scamper_host_rr_opt_alloc(slist_count(list))) == NULL)
+	goto err;
+      i = 0;
+      while((elem = slist_head_pop(list)) != NULL)
+	opt->elems[i++] = elem;
+      rr->un.opt = opt;
+    }
+
+  slist_free(list);
+  return 0;
+
+ err:
+  if(elem != NULL) scamper_host_rr_opt_elem_free(elem);
+  if(list != NULL) slist_free_cb(list,
+				 (slist_free_t)scamper_host_rr_opt_elem_free);
+  return -1;
+}
+
 #ifdef TEST_HOST_RR_LIST
 slist_t *host_rr_list(const uint8_t *buf, size_t off, size_t len)
 #else
@@ -681,6 +736,7 @@ static slist_t *host_rr_list(const uint8_t *buf, size_t off, size_t len)
 	  class = bytes_ntohs(buf+off); off += 2;
 	  ttl = bytes_ntohl(buf+off); off += 4;
 	  rdlength = bytes_ntohs(buf+off); off += 2;
+
 	  if((rr = scamper_host_rr_alloc(name, class, type, ttl)) == NULL)
 	    {
 	      printerror(__func__, "could not alloc rr");
@@ -734,6 +790,11 @@ static slist_t *host_rr_list(const uint8_t *buf, size_t off, size_t len)
 		  type == SCAMPER_HOST_TYPE_TXT)
 	    {
 	      if(extract_txt(rr, buf, len, off, rdlength) != 0)
+		goto err;
+	    }
+	  else if(type == SCAMPER_HOST_TYPE_OPT)
+	    {
+	      if(extract_opt(rr, buf, len, off, rdlength) != 0)
 		goto err;
 	    }
 
@@ -800,7 +861,6 @@ static int process_2(const uint8_t *buf, size_t len, size_t off,
 		     scamper_host_query_t *q)
 {
   slist_t *rr_list = NULL;
-  scamper_host_rr_t **an = NULL, **ns = NULL, **ar = NULL;
   uint8_t flags[2];
   uint16_t ancount, nscount, arcount;
   int i, rc = -1;
@@ -810,37 +870,26 @@ static int process_2(const uint8_t *buf, size_t len, size_t off,
   nscount = bytes_ntohs(buf+8);
   arcount = bytes_ntohs(buf+10);
   if((rr_list = host_rr_list(buf, off, len)) == NULL ||
-     (ancount > 0 &&
-      (an = malloc_zero(sizeof(scamper_host_rr_t *) * ancount)) == NULL) ||
-     (nscount > 0 &&
-      (ns = malloc_zero(sizeof(scamper_host_rr_t *) * nscount)) == NULL) ||
-     (arcount > 0 &&
-      (ar = malloc_zero(sizeof(scamper_host_rr_t *) * arcount)) == NULL))
+     scamper_host_query_rr_alloc(q, ancount, nscount, arcount) != 0)
     goto done;
 
   /* put each RR in the appropriate section */
   for(i=0; i<ancount; i++)
-    an[i] = slist_head_pop(rr_list);
+    q->an[i] = slist_head_pop(rr_list);
   for(i=0; i<nscount; i++)
-    ns[i] = slist_head_pop(rr_list);
+    q->ns[i] = slist_head_pop(rr_list);
   for(i=0; i<arcount; i++)
-    ar[i] = slist_head_pop(rr_list);
+    q->ar[i] = slist_head_pop(rr_list);
 
   /* finalize the scamper_host_rr_t structure */
   flags[0] = buf[2];
   flags[1] = buf[3];
-  q->ancount = ancount; q->an = an; an = NULL;
-  q->nscount = nscount; q->ns = ns; ns = NULL;
-  q->arcount = arcount; q->ar = ar; ar = NULL;
   q->rcode   = flags[1] & 0x0f;
   q->flags   = ((flags[0] & 0x0f) << 4) | ((flags[1] & 0xf0) >> 4);
 
   rc = 0;
 
  done:
-  if(an != NULL) free(an);
-  if(ns != NULL) free(ns);
-  if(ar != NULL) free(ar);
   if(rr_list != NULL)
     slist_free_cb(rr_list, (slist_free_t)scamper_host_rr_free);
   return rc;
@@ -1001,21 +1050,25 @@ static int do_host_probe_query(const scamper_host_t *host,
 			       uint8_t *buf, size_t *len)
 {
   const char *ptr, *dot;
+  uint16_t arcount = 0;
   size_t off;
 
   if(*len < 12)
     return -1;
 
+  if(host->flags & SCAMPER_HOST_FLAG_NSID)
+    arcount = 1;
+
   /* 12 bytes of DNS header */
-  bytes_htons(buf, id);       /* DNS ID, 16 bits */
+  bytes_htons(buf, id);         /* DNS ID, 16 bits */
   if((host->flags & SCAMPER_HOST_FLAG_NORECURSE) == 0)
     bytes_htons(buf+2, 0x0100); /* recursion desired */
   else
-    bytes_htons(buf+2, 0); /* recursion not desired */
-  bytes_htons(buf+4, 1);      /* QDCOUNT */
-  bytes_htons(buf+6, 0);      /* ANCOUNT */
-  bytes_htons(buf+8, 0);      /* NSCOUNT */
-  bytes_htons(buf+10, 0);     /* ARCOUNT */
+    bytes_htons(buf+2, 0);      /* recursion not desired */
+  bytes_htons(buf+4, 1);        /* QDCOUNT */
+  bytes_htons(buf+6, 0);        /* ANCOUNT */
+  bytes_htons(buf+8, 0);        /* NSCOUNT */
+  bytes_htons(buf+10, arcount); /* ARCOUNT */
   off = 12;
 
   ptr = state->qname;
@@ -1051,6 +1104,17 @@ static int do_host_probe_query(const scamper_host_t *host,
   buf[off++] = 0;
   bytes_htons(buf+off, host->qtype); off += 2;
   bytes_htons(buf+off, host->qclass); off += 2;
+
+  if(host->flags & SCAMPER_HOST_FLAG_NSID)
+    {
+      buf[off++] = 0;                       /* qname: root */
+      bytes_htons(buf+off, SCAMPER_HOST_TYPE_OPT); off += 2;
+      bytes_htons(buf+off, 1232); off += 2; /* udp option size: 1232 */
+      bytes_htonl(buf+off, 0); off += 4;    /* extended rcode + flags: 0 */
+      bytes_htons(buf+off, 4); off += 2;    /* rdlength: 4 */
+      bytes_htons(buf+off, SCAMPER_HOST_RR_OPT_ELEM_CODE_NSID); off += 2;
+      bytes_htons(buf+off, 0); off += 2;
+    }
 
   *len = off;
   return 0;
@@ -1387,6 +1451,7 @@ static void do_host_probe(scamper_task_t *task)
     {
       if(scamper_host_queries_alloc(host, host->retries + 1) != 0)
 	goto done;
+      host->qcount = 0;
       gettimeofday_wrap(&host->start);
     }
 

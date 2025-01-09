@@ -1,7 +1,7 @@
 /*
  * scamper_dl: manage BPF/PF_PACKET datalink instances for scamper
  *
- * $Id: scamper_dl.c,v 1.227 2024/08/13 07:13:23 mjl Exp $
+ * $Id: scamper_dl.c,v 1.229 2024/08/26 03:44:04 mjl Exp $
  *
  *          Matthew Luckie
  *          Ben Stasiewicz added fragmentation support.
@@ -405,7 +405,7 @@ static int dl_parse_ip(scamper_dl_rec_t *dl, uint8_t *pktbuf, size_t pktlen)
 	    dl->dl_tcp_data = pkt + dl->dl_tcp_hl;
 	}
     }
-  else if(dl->dl_ip_proto == IPPROTO_ICMP)
+  else if(dl->dl_ip_proto == IPPROTO_ICMP && dl->dl_af == AF_INET)
     {
       /* the absolute minimum ICMP header size is 8 bytes */
       if(ICMP_MINLEN > len)
@@ -497,7 +497,7 @@ static int dl_parse_ip(scamper_dl_rec_t *dl, uint8_t *pktbuf, size_t pktlen)
 
       dl->dl_flags |= SCAMPER_DL_REC_FLAG_TRANS;
     }
-  else if(dl->dl_ip_proto == IPPROTO_ICMPV6)
+  else if(dl->dl_ip_proto == IPPROTO_ICMPV6 && dl->dl_af == AF_INET6)
     {
       /* the absolute minimum ICMP header size is 8 bytes */
       if(sizeof(struct icmp6_hdr) > len)
@@ -1678,6 +1678,7 @@ static int dl_linux_node_init(const scamper_fd_t *fdn, scamper_dl_t *node)
   struct ifreq ifreq;
   char ifname[IFNAMSIZ];
   int fd;
+  int using_ring = 0;
 
   if((fd = scamper_fd_fd_get(fdn)) < 0)
     {
@@ -1751,12 +1752,21 @@ static int dl_linux_node_init(const scamper_fd_t *fdn, scamper_dl_t *node)
  finish:
 
 #ifdef HAVE_STRUCT_TPACKET_REQ3
-  if(scamper_option_ring() && ring_init(node) != 0)
+  if(scamper_option_ring())
     {
-      printerror(__func__, "failed to initialize ring");
-      goto err;
+      if(ring_init(node) != 0)
+	{
+	  printerror(__func__, "failed to initialize ring");
+	  goto err;
+	}
+      using_ring = 1;
     }
 #endif
+  if(using_ring == 0 && setsockopt_int(fd, SOL_SOCKET, SO_TIMESTAMP, 1) != 0)
+    {
+      printerror(__func__, "could not set SO_TIMESTAMP");
+      goto err;
+    }
 
   return 0;
 
@@ -1769,29 +1779,27 @@ static int linux_read(int fd, scamper_dl_t *node)
   scamper_dl_rec_t   dl;
   ssize_t            len;
   struct sockaddr_ll sll;
-  socklen_t          fromlen;
   size_t             s;
+  uint8_t            ctrlbuf[256];
+  struct msghdr      msg;
+  struct cmsghdr    *cmsg;
+  struct iovec       iov;
 
-  fromlen = sizeof(sll);
-  while((len = recvfrom(fd, readbuf, readbuf_len, MSG_TRUNC,
-			(struct sockaddr *)&sll, &fromlen)) == -1)
-    {
-      if(errno == EINTR)
-	{
-	  fromlen = sizeof(sll);
-	  continue;
-	}
-      if(errno == EAGAIN)
-	{
-	  return 0;
-	}
-      printerror(__func__,
-		 "read %d bytes from fd %d failed", (int)readbuf_len, fd);
-      return -1;
-    }
+  memset(&iov, 0, sizeof(iov));
+  iov.iov_base = (caddr_t)readbuf;
+  iov.iov_len  = readbuf_len;
+
+  msg.msg_name       = (caddr_t)&sll;
+  msg.msg_namelen    = sizeof(sll);
+  msg.msg_iov        = &iov;
+  msg.msg_iovlen     = 1;
+  msg.msg_control    = (caddr_t)ctrlbuf;
+  msg.msg_controllen = sizeof(ctrlbuf);
+
+  if((len = recvmsg(fd, &msg, 0)) <= 0)
+    return 0;
 
   /* sanity check the packet length */
-  assert(len >= 0);
   if((size_t)len > readbuf_len)
     s = readbuf_len;
   else
@@ -1815,10 +1823,22 @@ static int linux_read(int fd, scamper_dl_t *node)
    * if the packet passes the filter, we need to get the time it was rx'd.
    * scamper treats the failure of this ioctl as non-fatal
    */
-  if(ioctl(fd, SIOCGSTAMP, &dl.dl_tv) == 0)
-    dl.dl_flags |= SCAMPER_DL_REC_FLAG_TIMESTAMP;
-  scamper_task_handledl(&dl);
+  if(msg.msg_controllen >= sizeof(struct cmsghdr))
+    {
+      cmsg = (struct cmsghdr *)CMSG_FIRSTHDR(&msg);
+      while(cmsg != NULL)
+	{
+	  if(cmsg->cmsg_level == SOL_SOCKET && cmsg->cmsg_type == SCM_TIMESTAMP)
+	    {
+	      dl.dl_flags |= SCAMPER_DL_REC_FLAG_TIMESTAMP;
+	      timeval_cpy(&dl.dl_tv, (struct timeval *)CMSG_DATA(cmsg));
+	      break;
+	    }
+	  cmsg = (struct cmsghdr *)CMSG_NXTHDR(&msg, cmsg);
+	}
+    }
 
+  scamper_task_handledl(&dl);
   return 0;
 }
 
@@ -1887,7 +1907,7 @@ static int dl_linux_init(void)
   uid_t uid, euid;
 #endif
 
-  readbuf_len = 128;
+  readbuf_len = 8192;
   if((readbuf = malloc_zero(readbuf_len)) == NULL)
     {
       printerror(__func__, "could not malloc readbuf");

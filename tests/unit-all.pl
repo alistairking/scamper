@@ -15,6 +15,7 @@ my @tests = (
     "unit_cmd_sting",
     "unit_cmd_tbit",
     "unit_cmd_trace",
+    "unit_cmd_tracelb",
     "unit_cmd_udpprobe",
     "unit_dl_filter_compile",
     "unit_dl_parse_arp",
@@ -24,6 +25,7 @@ my @tests = (
     "unit_http_lib",
     "unit_options",
     "unit_osinfo",
+    "unit_ping_lib",
     "unit_string",
     "unit_timeval",
     );

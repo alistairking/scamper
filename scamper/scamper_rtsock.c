@@ -1,7 +1,7 @@
 /*
  * scamper_rtsock: code to deal with a route socket or equivalent
  *
- * $Id: scamper_rtsock.c,v 1.98 2024/07/18 22:26:44 mjl Exp $
+ * $Id: scamper_rtsock.c,v 1.100 2024/08/23 04:32:00 mjl Exp $
  *
  *          Matthew Luckie
  *
@@ -46,10 +46,6 @@
 #include "config.h"
 #endif
 #include "internal.h"
-
-#if defined(__APPLE__)
-static int broken = -1;
-#endif
 
 /* include support for the netlink socket in linux */
 #if defined(__linux__)
@@ -118,6 +114,10 @@ struct rtmsg
 #include "mjl_list.h"
 
 extern scamper_addrcache_t *addrcache;
+
+#ifdef HAVE_BSD_ROUTE_SOCKET
+static size_t               roundup_v = 0;
+#endif
 
 #ifndef _WIN32 /* windows does not have a routing socket */
 typedef struct rtsock_pair
@@ -207,29 +207,8 @@ static void rtmsg_dump(const uint8_t *buf, size_t len)
 
 size_t scamper_rtsock_roundup(size_t len)
 {
-#ifdef __APPLE__
-  const scamper_osinfo_t *osinfo;
-
-  if(broken == -1)
-    {
-      osinfo = scamper_osinfo_get();
-      if(osinfo->os_id == SCAMPER_OSINFO_OS_DARWIN &&
-	 osinfo->os_rel_dots > 0 && osinfo->os_rel[0] >= 10)
-	broken = 1;
-      else
-	broken = 0;
-    }
-
-  if(broken != 0)
-    {
-      if(len > 0)
-	return (1 + ((len - 1) | (sizeof(uint32_t) - 1)));
-      else
-	return sizeof(uint32_t);
-    }
-#endif
-
-  return ((len > 0) ? (1 + ((len - 1) | (sizeof(long) - 1))) : sizeof(long));
+  assert(roundup_v > 0);
+  return ((len > 0) ? (1 + ((len - 1) | (roundup_v - 1))) : roundup_v);
 }
 
 /*
@@ -798,6 +777,10 @@ scamper_route_t *scamper_route_alloc(scamper_addr_t *dst, void *param,
 
 int scamper_rtsock_init()
 {
+#ifdef __APPLE__
+  const scamper_osinfo_t *osinfo;
+#endif
+
 #ifndef _WIN32 /* windows does not have a routing socket */
   if((pairs = dlist_alloc()) == NULL)
     {
@@ -805,6 +788,19 @@ int scamper_rtsock_init()
       return -1;
     }
   pid = getpid();
+#endif
+
+#ifdef __APPLE__
+  osinfo = scamper_osinfo_get();
+  if(osinfo->os_id == SCAMPER_OSINFO_OS_DARWIN &&
+     osinfo->os_rel_dots > 0 && osinfo->os_rel[0] >= 10)
+    roundup_v = sizeof(uint32_t);
+  else
+    roundup_v = sizeof(long);
+#elif defined(__NetBSD_Version__) && __NetBSD_Version__ >= 599004500
+  roundup_v = sizeof(uint64_t);
+#elif defined(HAVE_BSD_ROUTE_SOCKET)
+  roundup_v = sizeof(long);
 #endif
 
   return 0;

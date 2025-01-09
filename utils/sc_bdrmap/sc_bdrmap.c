@@ -1,7 +1,7 @@
 /*
  * sc_bdrmap: driver to map first hop border routers of networks
  *
- * $Id: sc_bdrmap.c,v 1.50 2024/04/26 06:52:24 mjl Exp $
+ * $Id: sc_bdrmap.c,v 1.52 2024/09/07 03:19:42 mjl Exp $
  *
  *         Matthew Luckie
  *         mjl@caida.org / mjl@wand.net.nz
@@ -631,6 +631,10 @@ typedef void (*sc_stree_free_t)(void *ptr);
 #define OPT_IPMAP       0x200000
 #define OPT_SRCADDR     0x400000
 
+#ifdef PACKAGE_VERSION
+#define OPT_VERSION     0x800000
+#endif
+
 #define TEST_TRACE      0x00
 #define TEST_LINK       0x01
 #define TEST_PING       0x02
@@ -682,18 +686,21 @@ static void usage(uint32_t opts)
     "usage: sc_bdrmap [-6Di] [-a ip2as] [-A targetases] [-c allyconf]\n"
     "                 [-C flowid] [-f firsthop] [-l log] [-M ipmap]\n"
     "                 [-o warts] [-O option] [-p port] [-U unix] [-R unix]\n"
-    "                 [-S srcaddr] [-v vpases] [-x ixps]\n"
+    "                 [-S srcaddr] [-V vpases] [-x ixps]\n"
     "\n"
     "       sc_bdrmap [-6] [-a ip2as] [-A targetases] [-d dump]\n"
     "                 [-g delegated] [-M ipmap] [-n names] [-r rels]\n"
-    "                 [-v vpases] [-x ixps] file1 .. fileN\n");
+    "                 [-V vpases] [-x ixps] file1 .. fileN\n");
 
   if(opts == 0)
     {
-      fprintf(stderr, "\n       sc_bdrmap -?\n\n");
+      fprintf(stderr, "\n       sc_bdrmap -?"
+#ifdef OPT_VERSION
+	      "v"
+#endif
+	      "\n\n");
       return;
     }
-  fprintf(stderr, "\n");
 
   if(opts & OPT_DAEMON)
     fprintf(stderr, "       -D: become a daemon\n");
@@ -757,7 +764,11 @@ static void usage(uint32_t opts)
   if(opts & OPT_UNIX)
     fprintf(stderr, "       -U: find local scamper process on unix socket\n");
   if(opts & OPT_VPASES)
-    fprintf(stderr, "       -v: ASNs that represent local network\n");
+    fprintf(stderr, "       -V: ASNs that represent local network\n");
+#ifdef OPT_VERSION
+  if(opts & OPT_VERSION)
+    fprintf(stderr, "       -v: display version and exit\n");
+#endif
   if(opts & OPT_IXPFILE)
     fprintf(stderr, "       -x: ixp prefix file\n");
 
@@ -895,11 +906,18 @@ static int check_options_targetases(slist_t *list)
 static int check_options(int argc, char *argv[])
 {
   int rc = -1, x = 0, ch; long lo;
-  char *opts = "?6a:A:c:C:d:Df:g:il:M:n:o:O:p:r:R:S:U:v:x:";
+  char opts[64];
   char *opt_port = NULL, *opt_firsthop = NULL, *opt_dumpid = NULL;
   char *opt_unix = NULL, *opt_allyconf = NULL, *opt_vpases = NULL;
   char *opt_flowid = NULL, *opt_srcaddr = NULL;
   slist_t *opt_targetases = NULL;
+  size_t off = 0;
+
+  string_concat(opts, sizeof(opts), &off,
+		"?6a:A:c:C:d:Df:g:il:M:n:o:O:p:r:R:S:U:V:x:");
+#ifdef OPT_VERSION
+  string_concat(opts, sizeof(opts), &off, "v");
+#endif
 
   while((ch = getopt(argc, argv, opts)) != -1)
     {
@@ -1085,7 +1103,14 @@ static int check_options(int argc, char *argv[])
 	  ixp_fn = optarg;
 	  break;
 
+#ifdef OPT_VERSION
 	case 'v':
+	  options |= OPT_VERSION;
+	  rc = 0;
+	  goto done;
+#endif
+
+	case 'V':
 	  if(check_options_once(ch, OPT_VPASES) != 0)
 	    goto done;
 	  options |= OPT_VPASES;
@@ -8691,6 +8716,14 @@ int main(int argc, char *argv[])
 
   if(check_options(argc, argv) != 0)
     return -1;
+
+#ifdef OPT_VERSION
+  if(options & OPT_VERSION)
+    {
+      printf("sc_bdrmap version %s\n", PACKAGE_VERSION);
+      return 0;
+    }
+#endif
 
   /* if we were asked to print usage information, stop now */
   if(options & OPT_HELP)

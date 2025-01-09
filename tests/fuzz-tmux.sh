@@ -29,7 +29,7 @@ fuzz_tmux()
     ARG_WINDOW=$2
 
     tmux set-window-option -t ${ARG_WINDOW} remain-on-exit on
-    tmux send-keys -t ${ARG_WINDOW} "AFL_TMPDIR=${FUZZDIR}/${ARG_TYPE} AFL_SKIP_CPUFREQ=1 afl-fuzz -i ${FUZZDIR}/${ARG_TYPE}/testcases -o ${FUZZDIR}/${ARG_TYPE}/findings -- ./fuzz_${ARG_TYPE} @@" C-m
+    tmux send-keys -t ${ARG_WINDOW} "AFL_TMPDIR=${FUZZDIR}/${ARG_TYPE} AFL_SKIP_CPUFREQ=1 AFL_NO_AFFINITY=1 afl-fuzz -i ${FUZZDIR}/${ARG_TYPE}/testcases -o ${FUZZDIR}/${ARG_TYPE}/findings -- ./fuzz_${ARG_TYPE} @@" C-m
 }
 
 prepare cmd_dealias
@@ -40,6 +40,7 @@ prepare cmd_sniff
 prepare cmd_sting
 prepare cmd_tbit
 prepare cmd_trace
+prepare cmd_tracelb
 prepare cmd_udpprobe
 prepare dl_parse_arp
 prepare dl_parse_ip
@@ -77,6 +78,10 @@ fuzz_tmux cmd_tbit fuzz-scamper:${WIN}
 WIN=`expr ${WIN} + 1`
 tmux new-window -t fuzz-scamper:${WIN} -n 'fuzz-cmd-trace'
 fuzz_tmux cmd_trace fuzz-scamper:${WIN}
+
+WIN=`expr ${WIN} + 1`
+tmux new-window -t fuzz-scamper:${WIN} -n 'fuzz-cmd-tracelb'
+fuzz_tmux cmd_tracelb fuzz-scamper:${WIN}
 
 WIN=`expr ${WIN} + 1`
 tmux new-window -t fuzz-scamper:${WIN} -n 'fuzz-cmd-udpprobe'
