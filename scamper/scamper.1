@@ -10,9 +10,9 @@
 .\" Copyright (c) 2024      The Regents of the University of California
 .\"                         All rights reserved
 .\"
-.\" $Id: scamper.1,v 1.141 2024/08/19 22:44:23 mjl Exp $
+.\" $Id: scamper.1,v 1.143 2024/09/17 20:01:16 mjl Exp $
 .\"
-.Dd August 20, 2024
+.Dd September 18, 2024
 .Dt SCAMPER 1
 .Os
 .\""""""""""""
@@ -148,7 +148,7 @@ use techniques from the TCP behavior inference tool (TBIT) to infer
 properties of a TCP receiver.
 .It
 .Sy udpprobe:
-sends a single UDP probe and waits for a response.
+sends UDP probes and waits for responses.
 .El
 .Nm
 uses trace by default.
@@ -300,6 +300,10 @@ responses. This significantly improves scamper performance and
 accuracy on Linux systems with other non-scamper traffic. See
 .Xr packet 7
 for further details.
+.It
+.Sy noring:
+tell scamper to not create a memory-mapped ring buffer to receive datalink
+responses.
 .It
 .Sy dl-any:
 tell scamper to use a single socket to receive datalink responses on
@@ -1254,25 +1258,35 @@ of http.
 .El
 .\""""""""""""
 .Sh UDPPROBE OPTIONS
-The udpprobe command is used to send a single UDP packet and wait for
-a response.
+The udpprobe command is used to send UDP packets and wait for UDP
+responses.
 The following options are available for the
 .Nm
 udpprobe command:
 .Pp
 udpprobe
-.\"udpprobe [-d dport] [-O option] [-p payload] [-U userid] [-w wait-timeout]"
+.\"udpprobe [-c probe-count] [-d dport] [-o stop-count] [-O option] [-p payload] [-S srcaddr] [-U userid] [-w wait-timeout] [-W wait-probe]"
 .Bk -words
+.Op Fl c Ar probec
 .Op Fl d Ar dport
+.Op Fl o Ar stopc
 .Op Fl O Ar option
 .Op Fl p Ar payload
+.Op Fl S Ar srcaddr
 .Op Fl U Ar userid
 .Op Fl w Ar wait-timeout
+.Op Fl W Ar wait-probe
 .Ek
 .Bl -tag -width Ds
+.It Fl c Ar probec
+specifies the number of probes to send before exiting.  By default,
+one probe is sent.
 .It Fl d Ar dport
 specifies the destination port to send the probe to.
 This is a mandatory parameter.
+.It Fl o Ar stopc
+specifies the number of replies required at which time probing may cease.  By
+default, probing stops after the first reply.
 .It Fl O Ar option
 specifies optional arguments to use.
 The current choices for this option are:
@@ -1286,6 +1300,9 @@ rather than when the wait-timeout period is over.
 specifies the payload of the probe to include.
 This is a mandatory parameter.
 The payload is specified in hexadecimal.
+.It Fl S Ar srcaddr
+specifies the source address to use in probes.
+The address cannot be spoofed.
 .It Fl U Ar userid
 specifies an unsigned integer to include with the data collected; the meaning
 of the user-id is entirely up to the user and has no effect on the behaviour
@@ -1293,6 +1310,10 @@ of udpprobe.
 .It Fl w Ar wait-timeout
 specifies how long to wait, in seconds, for responses.
 By default, a value of 2 seconds is used.
+.It Fl W Ar wait-probe
+specifies the minimum time to wait, in seconds, between sending
+consecutive probes.
+By default, a value of 1 second is used.
 .El
 .\""""""""""""
 .Sh DATA COLLECTION FEATURES

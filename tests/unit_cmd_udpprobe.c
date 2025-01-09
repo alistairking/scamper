@@ -1,7 +1,7 @@
 /*
  * unit_cmd_udpprobe : unit tests for udpprobe commands
  *
- * $Id: unit_cmd_udpprobe.c,v 1.7 2024/02/13 04:59:48 mjl Exp $
+ * $Id: unit_cmd_udpprobe.c,v 1.8 2024/09/19 08:14:01 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -81,6 +81,14 @@ static int snmpv3(const scamper_udpprobe_t *in)
   return 0;
 }
 
+static int srcaddr(const scamper_udpprobe_t *in)
+{
+  if(check_defaults(in, "192.0.2.1") != 0 ||
+     check_addr(scamper_udpprobe_src_get(in), "192.0.2.2") != 0)
+    return -1;
+  return 0;
+}
+
 static int timeout_3(const scamper_udpprobe_t *in)
 {
   const struct timeval *tv;
@@ -135,6 +143,7 @@ int main(int argc, char *argv[])
 {
   sc_test_t tests[] = {
     {"-d 161 -p 303a020103300f02024a69020300ffe30401040201030410300e0400020100020100040004000400301204000400a00c020237f00201000201003000 192.0.2.1", snmpv3},
+    {"-S 192.0.2.2 -p 69 -d 70 192.0.2.1", srcaddr},
     {"-w 3 -d 70 -p 69 192.0.2.1", timeout_3},
     {"-w 3s -d 70 -p 69 192.0.2.1", timeout_3},
     {"-w 6 -d 70 -p 69 192.0.2.1", isnull},
