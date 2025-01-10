@@ -1,7 +1,7 @@
 /*
  * utils.c
  *
- * $Id: utils.c,v 1.245 2024/08/01 04:16:39 mjl Exp $
+ * $Id: utils.c,v 1.246 2024/10/13 08:58:53 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -444,16 +444,23 @@ const char *addr_tostr(int af, const void *addr, char *buf, size_t len)
  */
 #ifndef DMALLOC
 void *memdup(const void *ptr, size_t len)
+#else
+void *memdup_dm(const void *ptr, size_t len, const char *file, int line)
+#endif
 {
   void *d;
   assert(ptr != NULL);
-  if((d = malloc(len)) != NULL)
-    {
-      memcpy(d, ptr, len);
-    }
+
+#ifndef DMALLOC
+  d = malloc(len);
+#else
+  d = dmalloc_malloc(file, line, len, DMALLOC_FUNC_MALLOC, 0, 0);
+#endif
+
+  if(d != NULL)
+    memcpy(d, ptr, len);
   return d;
 }
-#endif
 
 /*
  * malloc_zero

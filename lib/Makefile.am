@@ -1,5 +1,6 @@
 SUBDIRS = \
-	libscamperctrl
+	libscamperctrl \
+	libscamperfile
 
 if ENABLE_PYTHON
 SUBDIRS += python

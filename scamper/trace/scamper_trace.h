@@ -1,7 +1,7 @@
 /*
  * scamper_trace.h
  *
- * $Id: scamper_trace.h,v 1.161 2024/03/04 06:59:23 mjl Exp $
+ * $Id: scamper_trace.h,v 1.162 2024/11/07 18:15:39 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -43,6 +43,8 @@ typedef struct scamper_trace_hop scamper_trace_hop_t;
 typedef struct scamper_trace_pmtud_n scamper_trace_pmtud_n_t;
 typedef struct scamper_trace_pmtud scamper_trace_pmtud_t;
 typedef struct scamper_trace_dtree scamper_trace_dtree_t;
+
+char *scamper_trace_tojson(const scamper_trace_t *trace, size_t *len);
 
 void scamper_trace_free(scamper_trace_t *trace);
 scamper_addr_t *scamper_trace_src_get(const scamper_trace_t *trace);

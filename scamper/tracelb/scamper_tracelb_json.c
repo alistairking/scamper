@@ -1,11 +1,11 @@
 /*
  * scamper_tracelb_json.c
  *
- * Copyright (C) 2018-2023 Matthew Luckie
+ * Copyright (C) 2018-2024 Matthew Luckie
  *
  * Authors: Matthew Luckie
  *
- * $Id: scamper_tracelb_json.c,v 1.19 2023/12/21 06:11:32 mjl Exp $
+ * $Id: scamper_tracelb_json.c,v 1.20 2024/11/07 18:15:39 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -453,8 +453,7 @@ static char *node_tostr(const scamper_tracelb_node_t *node)
   return NULL;
 }
 
-int scamper_file_json_tracelb_write(const scamper_file_t *sf,
-				    const scamper_tracelb_t *trace, void *p)
+char *scamper_tracelb_tojson(const scamper_tracelb_t *trace, size_t *len_out)
 {
   char *str = NULL, *header = NULL, **nodes = NULL;
   size_t len, off = 0;
@@ -483,7 +482,7 @@ int scamper_file_json_tracelb_write(const scamper_file_t *sf,
 	}
     }
 
-  len += 4; /* {}\n\0 */
+  len += 3; /* {}\0 */
   if((str = malloc_zero(len)) == NULL)
     goto cleanup;
 
@@ -498,10 +497,9 @@ int scamper_file_json_tracelb_write(const scamper_file_t *sf,
 	}
       string_concat(str, len, &off, "]");
     }
-  string_concat(str, len, &off, "}\n");
+  string_concat(str, len, &off, "}");
   assert(off+1 == len);
-
-  rc = json_write(sf, str, off, p);
+  rc = 0;
 
  cleanup:
   if(nodes != NULL)
@@ -512,6 +510,31 @@ int scamper_file_json_tracelb_write(const scamper_file_t *sf,
       free(nodes);
     }
   if(header != NULL) free(header);
-  if(str != NULL) free(str);
+
+  if(rc != 0)
+    {
+      if(str != NULL)
+	free(str);
+      return NULL;
+    }
+
+  if(len_out != NULL)
+    *len_out = len;
+  return str;
+}
+
+int scamper_file_json_tracelb_write(const scamper_file_t *sf,
+				    const scamper_tracelb_t *trace, void *p)
+{
+  char *str;
+  size_t len;
+  int rc;
+
+  if((str = scamper_tracelb_tojson(trace, &len)) == NULL)
+    return -1;
+  str[len-1] = '\n';
+  rc = json_write(sf, str, len, p);
+  free(str);
+
   return rc;
 }

@@ -1,10 +1,10 @@
 /*
  * scamper_tracelb.h
  *
- * $Id: scamper_tracelb.h,v 1.81 2023/12/21 06:11:32 mjl Exp $
+ * $Id: scamper_tracelb.h,v 1.82 2024/11/07 18:15:39 mjl Exp $
  *
  * Copyright (C) 2008-2009 The University of Waikato
- * Copyright (C) 2018-2023 Matthew Luckie
+ * Copyright (C) 2018-2024 Matthew Luckie
  * Author: Matthew Luckie
  *
  * Load-balancer traceroute technique authored by
@@ -37,6 +37,8 @@ typedef struct scamper_tracelb_probe scamper_tracelb_probe_t;
 typedef struct scamper_tracelb_reply scamper_tracelb_reply_t;
 typedef struct scamper_tracelb_probeset scamper_tracelb_probeset_t;
 typedef struct scamper_tracelb_probeset_summary scamper_tracelb_probeset_summary_t;
+
+char *scamper_tracelb_tojson(const scamper_tracelb_t *trace, size_t *len);
 
 void scamper_tracelb_free(scamper_tracelb_t *trace);
 char *scamper_tracelb_type_tostr(const scamper_tracelb_t *trace,

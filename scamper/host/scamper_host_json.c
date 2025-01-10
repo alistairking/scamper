@@ -1,10 +1,10 @@
 /*
  * scamper_host_json.c
  *
- * Copyright (c) 2023 Matthew Luckie
+ * Copyright (c) 2023-2024 Matthew Luckie
  * Author: Matthew Luckie
  *
- * $Id: scamper_host_json.c,v 1.11 2024/04/25 01:17:25 mjl Exp $
+ * $Id: scamper_host_json.c,v 1.12 2024/11/07 18:15:39 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -324,14 +324,12 @@ static char *query_tostr(const scamper_host_query_t *query)
   return str;
 }
 
-int scamper_file_json_host_write(const scamper_file_t *sf,
-				 const scamper_host_t *host, void *p)
+char *scamper_host_tojson(const scamper_host_t *host, size_t *len_out)
 {
   char *header = NULL, *str = NULL;
   char **queries = NULL; size_t *query_lens = NULL;
-  size_t len = 0, header_len = 0;
-  size_t wc = 0;
-  int ret = -1;
+  size_t len = 0, header_len = 0, wc = 0;
+  int rc = -1;
   uint8_t i;
 
   /* get the header string */
@@ -355,7 +353,7 @@ int scamper_file_json_host_write(const scamper_file_t *sf,
 	}
     }
 
-  len += 3; /* ]}\n */
+  len += 3; /* ]}\0 */
 
   if((str = malloc_zero(len)) == NULL)
     goto cleanup;
@@ -368,14 +366,13 @@ int scamper_file_json_host_write(const scamper_file_t *sf,
       memcpy(str+wc, queries[i], query_lens[i]);
       wc += query_lens[i];
     }
-  memcpy(str+wc, "]}\n", 3); wc += 3;
+  memcpy(str+wc, "]}\0", 3); wc += 3;
 
   assert(wc == len);
-  ret = json_write(sf, str, len, p);
+  rc = 0;
 
  cleanup:
   if(header != NULL) free(header);
-  if(str != NULL) free(str);
   if(queries != NULL)
     {
       for(i=0; i<host->qcount; i++)
@@ -384,5 +381,31 @@ int scamper_file_json_host_write(const scamper_file_t *sf,
       free(queries);
     }
   if(query_lens != NULL) free(query_lens);
-  return ret;
+
+  if(rc != 0)
+    {
+      if(str != NULL)
+	free(str);
+      return NULL;
+    }
+
+  if(len_out != NULL)
+    *len_out = len;
+  return str;
+}
+
+int scamper_file_json_host_write(const scamper_file_t *sf,
+				 const scamper_host_t *host, void *p)
+{
+  char *str;
+  size_t len;
+  int rc;
+
+  if((str = scamper_host_tojson(host, &len)) == NULL)
+    return -1;
+  str[len-1] = '\n';
+  rc = json_write(sf, str, len, p);
+  free(str);
+
+  return rc;
 }

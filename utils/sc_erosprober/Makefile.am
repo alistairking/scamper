@@ -6,14 +6,14 @@ bin_PROGRAMS = sc_erosprober
 
 sc_erosprober_SOURCES = \
 	sc_erosprober.c \
-	../../utils.c \
-	../../mjl_heap.c \
-	../../mjl_list.c \
-	../../mjl_patricia.c \
-	../../scamper/scamper_linepoll.c \
-	../../scamper/scamper_writebuf.c
+	$(top_srcdir)/utils.c \
+	$(top_srcdir)/mjl_heap.c \
+	$(top_srcdir)/mjl_list.c \
+	$(top_srcdir)/mjl_patricia.c \
+	$(top_srcdir)/scamper/scamper_linepoll.c \
+	$(top_srcdir)/scamper/scamper_writebuf.c
 
-sc_erosprober_LDADD = ../../scamper/libscamperfile.la
+sc_erosprober_LDADD = $(top_srcdir)/lib/libscamperfile/libscamperfile.la
 
 man_MANS = sc_erosprober.1
 

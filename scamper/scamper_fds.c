@@ -1,7 +1,7 @@
 /*
  * scamper_fds: manage events and file descriptors
  *
- * $Id: scamper_fds.c,v 1.131 2024/07/30 09:19:09 mjl Exp $
+ * $Id: scamper_fds.c,v 1.132 2024/10/17 00:12:36 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -1247,7 +1247,7 @@ static scamper_fd_t *fd_tcpudp(int type, void *src, uint16_t sport,
       for(dn = dlist_head_node(fd_list); dn != NULL; dn = dlist_node_next(dn))
 	{
 	  exist = dlist_node_item(dn);
-	  if(exist->type != type)
+	  if(exist->type != type || fd_addr_cmp(type, exist->fd_addr, src) != 0)
 	    continue;
 
 	  /* has the caller asked to not provide specific sports? */

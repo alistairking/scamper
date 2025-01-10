@@ -1,11 +1,11 @@
 /*
  * scamper_dealias.c
  *
- * $Id: scamper_dealias.c,v 1.74 2024/03/04 19:36:41 mjl Exp $
+ * $Id: scamper_dealias.c,v 1.76 2024/09/23 09:45:14 mjl Exp $
  *
  * Copyright (C) 2008-2010 The University of Waikato
  * Copyright (C) 2012-2013 The Regents of the University of California
- * Copyright (C) 2021-2023 Matthew Luckie
+ * Copyright (C) 2021-2024 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This code implements alias resolution techniques published by others
@@ -157,6 +157,8 @@ void scamper_dealias_reply_free(scamper_dealias_reply_t *reply)
 #endif
   if(reply->src != NULL)
     scamper_addr_free(reply->src);
+  if(reply->icmp_ext != NULL)
+    scamper_icmpext_free(reply->icmp_ext);
   free(reply);
   return;
 }
@@ -895,9 +897,10 @@ int scamper_dealias_prefixscan_xs_in(scamper_dealias_t *dealias,
 int scamper_dealias_prefixscan_xs_alloc(scamper_dealias_prefixscan_t *p,
 					uint16_t xc)
 {
-  if((p->xs = malloc_zero(sizeof(scamper_addr_t *) * xc)) != NULL)
-    return 0;
-  return -1;
+  if((p->xs = malloc_zero(sizeof(scamper_addr_t *) * xc)) == NULL)
+    return -1;
+  p->xc = xc;
+  return 0;
 }
 
 int scamper_dealias_prefixscan_probedefs_alloc(scamper_dealias_prefixscan_t *p,

@@ -7,7 +7,7 @@
  *
  * Author: Matthew Luckie
  *
- * $Id: scamper_tbit_json.c,v 1.33 2024/04/13 01:25:58 mjl Exp $
+ * $Id: scamper_tbit_json.c,v 1.34 2024/11/07 18:15:39 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -440,8 +440,7 @@ static char *tbit_pkt_tostr(const scamper_tbit_t *tbit,
   return strdup(buf);
 }
 
-int scamper_file_json_tbit_write(const scamper_file_t *sf,
-				 const scamper_tbit_t *tbit, void *p)
+char *scamper_tbit_tojson(const scamper_tbit_t *tbit, size_t *len_out)
 {
   tbit_state_t state;
   char *str = NULL, *header = NULL, **pkts = NULL;
@@ -470,7 +469,7 @@ int scamper_file_json_tbit_write(const scamper_file_t *sf,
   if((header = tbit_header_tostr(tbit, &state)) == NULL)
     goto cleanup;
   len += (header_len = strlen(header));
-  len += 2; /* }\n" */
+  len += 2; /* }\0" */
 
   if((str = malloc_zero(len)) == NULL)
     goto cleanup;
@@ -486,14 +485,12 @@ int scamper_file_json_tbit_write(const scamper_file_t *sf,
       memcpy(str+wc, pkts[i], pkt_lens[i]);
       wc += pkt_lens[i];
     }
-  memcpy(str+wc, "]}\n", 3); wc += 3;
+  memcpy(str+wc, "]}\0", 3); wc += 3;
 
   assert(wc == len);
-
-  rc = json_write(sf, str, len, p);
+  rc = 0;
 
  cleanup:
-  if(str != NULL) free(str);
   if(header != NULL) free(header);
   if(pkt_lens != NULL) free(pkt_lens);
   if(pkts != NULL)
@@ -503,5 +500,31 @@ int scamper_file_json_tbit_write(const scamper_file_t *sf,
 	  free(pkts[i]);
       free(pkts);
     }
+
+  if(rc != 0)
+    {
+      if(str != NULL)
+	free(str);
+      return NULL;
+    }
+
+  if(len_out != NULL)
+    *len_out = len;
+  return str;
+}
+
+int scamper_file_json_tbit_write(const scamper_file_t *sf,
+				 const scamper_tbit_t *tbit, void *p)
+{
+  char *str;
+  size_t len;
+  int rc;
+
+  if((str = scamper_tbit_tojson(tbit, &len)) == NULL)
+    return -1;
+  str[len-1] = '\n';
+  rc = json_write(sf, str, len, p);
+  free(str);
+
   return rc;
 }

@@ -9,7 +9,7 @@
  * Copyright (c) 2019-2024 Matthew Luckie
  * Authors: Brian Hammond, Matthew Luckie
  *
- * $Id: scamper_ping_json.c,v 1.40 2024/06/26 20:05:29 mjl Exp $
+ * $Id: scamper_ping_json.c,v 1.41 2024/11/07 18:15:39 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -351,8 +351,7 @@ static char *ping_stats(const scamper_ping_t *ping)
   return dup;
 }
 
-int scamper_file_json_ping_write(const scamper_file_t *sf,
-				 const scamper_ping_t *ping, void *p)
+char *scamper_ping_tojson(const scamper_ping_t *ping, size_t *len_out)
 {
   scamper_ping_reply_t *reply;
   uint32_t  reply_count = scamper_ping_reply_total(ping);
@@ -365,7 +364,7 @@ int scamper_file_json_ping_write(const scamper_file_t *sf,
   char     *str         = NULL;
   size_t    len         = 0;
   size_t    wc          = 0;
-  int       ret         = -1;
+  int       rc          = -1;
   uint32_t  i,j;
 
   /* get the header string */
@@ -401,7 +400,7 @@ int scamper_file_json_ping_write(const scamper_file_t *sf,
   len += 2; /* ], */
   if((stats = ping_stats(ping)) != NULL)
     len += (stats_len = strlen(stats));
-  len += 2; /* }\n */
+  len += 2; /* }\0 */
 
   if((str = malloc_zero(len)) == NULL)
     goto cleanup;
@@ -420,13 +419,12 @@ int scamper_file_json_ping_write(const scamper_file_t *sf,
       memcpy(str+wc, stats, stats_len);
       wc += stats_len;
     }
-  memcpy(str+wc, "}\n", 2); wc += 2;
+  memcpy(str+wc, "}\0", 2); wc += 2;
 
   assert(wc == len);
-  ret = json_write(sf, str, len, p);
+  rc = 0;
 
  cleanup:
-  if(str != NULL) free(str);
   if(header != NULL) free(header);
   if(stats != NULL) free(stats);
   if(reply_lens != NULL) free(reply_lens);
@@ -438,5 +436,30 @@ int scamper_file_json_ping_write(const scamper_file_t *sf,
       free(replies);
     }
 
-  return ret;
+  if(rc != 0)
+    {
+      if(str != NULL)
+	free(str);
+      return NULL;
+    }
+
+  if(len_out != NULL)
+    *len_out = len;
+  return str;
+}
+
+int scamper_file_json_ping_write(const scamper_file_t *sf,
+				 const scamper_ping_t *ping, void *p)
+{
+  char *str;
+  size_t len;
+  int rc;
+
+  if((str = scamper_ping_tojson(ping, &len)) == NULL)
+    return -1;
+  str[len-1] = '\n';
+  rc = json_write(sf, str, len, p);
+  free(str);
+
+  return rc;
 }

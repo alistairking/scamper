@@ -6,9 +6,9 @@
 .\" Copyright (c) 2013 The Regents of the University of California
 .\"                    All rights reserved
 .\"
-.\" $Id: sc_speedtrap.1,v 1.5 2016/12/03 20:47:55 mjl Exp $
+.\" $Id: sc_speedtrap.1,v 1.7 2024/11/12 06:34:29 mjl Exp $
 .\"
-.Dd August 18, 2013
+.Dd November 12, 2024
 .Dt SC_SPEEDTRAP 1
 .Os
 .Sh NAME
@@ -17,15 +17,16 @@
 .Sh SYNOPSIS
 .Nm
 .Bk -words
-.Op Fl I
+.Op Fl ?Iv
 .Op Fl a Ar addressfile
 .Op Fl A Ar aliasfile
 .Op Fl l Ar logfile
 .Op Fl o Ar outfile
 .Op Fl p Ar port
+.Op Fl R Ar unix-remote
 .Op Fl s Ar stop
 .Op Fl S Ar skipfile
-.Op Fl U Ar unix-socket
+.Op Fl U Ar unix-local
 .Ek
 .Pp
 .Nm
@@ -54,6 +55,12 @@ The supported options to
 .Nm
 are as follows:
 .Bl -tag -width Ds
+.It Fl ?
+prints a list of command line options and a synopsis of each.
+.It Fl v
+prints the version of
+.Nm
+and exits.
 .It Fl a Ar addressfile
 specifies the name of the input file which consists of a sequence of IPv6 addresses
 to resolve for aliases, one address per line.
@@ -77,6 +84,10 @@ The output file will use the warts format.
 specifies the port on the local host where
 .Xr scamper 1
 is accepting control socket connections.
+.It Fl R Ar unix-remote
+specifies the name of a unix domain socket on the local host where a remote
+.Xr scamper 1
+instance is accepting commands.
 .It Fl s Ar stop
 specifies the step at which
 .Nm
@@ -86,10 +97,10 @@ and "ally".
 .It Fl S Ar skipfile
 specifies the name of an input file which contains known aliases that do not need
 to be resolved, one address-pair per line.
-.It Fl U Ar unix-socket
-specifies the name of a unix domain socket where
+.It Fl U Ar unix-local
+specifies the name of a unix domain socket on the local host where a local
 .Xr scamper 1
-is accepting control socket connections.
+instance is accepting commands.
 .El
 .\""""""""""""
 .Sh EXAMPLES
@@ -137,9 +148,10 @@ the stage takes:
 .Xr scamper 1 ,
 .Xr sc_ally 1 ,
 .Xr sc_ipiddump 1 ,
+.Xr sc_remoted 1 ,
 .Xr sc_wartsdump 1 ,
 .Xr sc_warts2text 1 ,
-.Xr sc_warts2json 1 ,
+.Xr sc_warts2json 1
 .Sh AUTHORS
 .Nm
 was written by Matthew Luckie <mjl@luckie.org.nz>.

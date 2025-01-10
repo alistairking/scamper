@@ -1,7 +1,7 @@
 /*
  * scamper_do_trace.c
  *
- * $Id: scamper_trace_do.c,v 1.378 2024/08/27 22:08:22 mjl Exp $
+ * $Id: scamper_trace_do.c,v 1.380 2024/11/10 03:12:51 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -3751,9 +3751,8 @@ static void do_trace_write(scamper_file_t *sf, scamper_task_t *task)
   uint16_t i;
   uint8_t stop_reason, stop_data;
 
-  if(trace->squeries > 1)
+  if(trace->squeries > 1 && (state = trace_getstate(task)) != NULL)
     {
-      state = trace_getstate(task);
       state->loopc = 0;
       for(i=trace->firsthop-1; i < trace->hop_count; i++)
 	{
@@ -4035,6 +4034,12 @@ static void do_trace_probe(scamper_task_t *task)
   assert(trace->dst != NULL);
   assert(trace->dst->type == SCAMPER_ADDR_TYPE_IPV4 ||
 	 trace->dst->type == SCAMPER_ADDR_TYPE_IPV6);
+
+  if(state == NULL)
+    {
+      trace_handleerror(task, 0);
+      return;
+    }
 
   if(state->icmp != NULL)
     {
@@ -4407,39 +4412,35 @@ int scamper_do_trace_dtree_lss_clear(char *name)
   return 0;
 }
 
-/*
- * scamper_do_trace_alloctask
- *
- */
-scamper_task_t *scamper_do_trace_alloctask(void *data,
-					   scamper_list_t *list,
-					   scamper_cycle_t *cycle,
-					   char *errbuf, size_t errlen)
+static void do_trace_sigs(scamper_task_t *task)
 {
-  scamper_trace_t *trace = (scamper_trace_t *)data;
+  scamper_trace_t *trace = trace_getdata(task);
   trace_state_t *state = NULL;
-  scamper_task_t *task = NULL;
   scamper_task_sig_t *sig = NULL;
+  char errbuf[256];
+  size_t errlen = sizeof(errbuf);
   int i;
 
-  /* allocate a task structure and store the trace with it */
-  if((task = scamper_task_alloc(trace, &trace_funcs)) == NULL ||
-     (state = malloc_zero(sizeof(trace_state_t))) == NULL)
+  /* allocate state for storing fds in */
+  if((state = malloc_zero(sizeof(trace_state_t))) == NULL)
     {
-      snprintf(errbuf, errlen, "%s: could not malloc state", __func__);
+      scamper_debug(__func__, "could not malloc state");
       goto err;
     }
 
   /* declare the signature of the task's probes */
   if((sig = scamper_task_sig_alloc(SCAMPER_TASK_SIG_TYPE_TX_IP)) == NULL)
     {
-      snprintf(errbuf, errlen, "%s: could not alloc task signature", __func__);
+      scamper_debug(__func__, "could not alloc task signature");
       goto err;
     }
   sig->sig_tx_ip_dst = scamper_addr_use(trace->dst);
   if(trace->src == NULL &&
      (trace->src = scamper_getsrc(trace->dst, 0, errbuf, errlen)) == NULL)
-    goto err;
+    {
+      scamper_debug(__func__, "%s", errbuf);
+      goto err;
+    }
   sig->sig_tx_ip_src = scamper_addr_use(trace->src);
 
   /*
@@ -4492,7 +4493,7 @@ scamper_task_t *scamper_do_trace_alloctask(void *data,
 
   if(state->probe == NULL)
     {
-      snprintf(errbuf, errlen, "%s: could not open probe socket", __func__);
+      scamper_debug(__func__, "could not open probe socket");
       goto err;
     }
 
@@ -4503,7 +4504,7 @@ scamper_task_t *scamper_do_trace_alloctask(void *data,
 	{
 	  if(scamper_fd_sport(state->probe, &trace->sport) != 0)
 	    {
-	      snprintf(errbuf, errlen, "%s: could not get sport", __func__);
+	      scamper_debug(__func__, "could not get sport");
 	      goto err;
 	    }
 	}
@@ -4552,34 +4553,50 @@ scamper_task_t *scamper_do_trace_alloctask(void *data,
       break;
 
     default:
-      snprintf(errbuf, errlen, "%s: unhandled type %d", __func__, trace->type);
+      scamper_debug(__func__, "unhandled type %d", trace->type);
       goto err;
     }
 
   if(scamper_task_sig_add(task, sig) != 0)
     {
-      snprintf(errbuf, errlen, "%s: could not add signature to task", __func__);
+      scamper_debug(__func__, "could not add signature to task");
       goto err;
     }
   sig = NULL;
 
   scamper_task_setstate(task, state);
+  return;
+
+ err:
+  if(sig != NULL) scamper_task_sig_free(sig);
+  if(state != NULL) trace_state_free(state);
+  return;
+}
+
+/*
+ * scamper_do_trace_alloctask
+ *
+ */
+scamper_task_t *scamper_do_trace_alloctask(void *data,
+					   scamper_list_t *list,
+					   scamper_cycle_t *cycle,
+					   char *errbuf, size_t errlen)
+{
+  scamper_trace_t *trace = (scamper_trace_t *)data;
+  scamper_task_t *task = NULL;
+
+  /* allocate a task structure and store the trace with it */
+  if((task = scamper_task_alloc(trace, &trace_funcs)) == NULL)
+    {
+      snprintf(errbuf, errlen, "%s: could not alloc task", __func__);
+      return NULL;
+    }
 
   /* associate the list and cycle with the trace */
   trace->list = scamper_list_use(list);
   trace->cycle = scamper_cycle_use(cycle);
 
   return task;
-
- err:
-  if(sig != NULL) scamper_task_sig_free(sig);
-  if(state != NULL) trace_state_free(state);
-  if(task != NULL)
-    {
-      scamper_task_setdatanull(task);
-      scamper_task_free(task);
-    }
-  return NULL;
 }
 
 uint32_t scamper_do_trace_userid(void *data)
@@ -4613,6 +4630,7 @@ int scamper_do_trace_init(void)
   trace_funcs.write          = do_trace_write;
   trace_funcs.task_free      = do_trace_free;
   trace_funcs.halt           = do_trace_halt;
+  trace_funcs.sigs           = do_trace_sigs;
 
   return 0;
 }

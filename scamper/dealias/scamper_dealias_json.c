@@ -3,10 +3,10 @@
  *
  * Copyright (c) 2013      Matthew Luckie
  * Copyright (c) 2013-2014 The Regents of the University of California
- * Copyright (c) 2022-2023 Matthew Luckie
+ * Copyright (c) 2022-2024 Matthew Luckie
  * Author: Matthew Luckie
  *
- * $Id: scamper_dealias_json.c,v 1.24 2024/01/16 06:55:18 mjl Exp $
+ * $Id: scamper_dealias_json.c,v 1.26 2024/11/10 03:47:15 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -173,13 +173,17 @@ static char *dealias_probedef_tostr(const scamper_dealias_probedef_t *def)
 {
   char buf[256], tmp[64];
   size_t off = 0;
-  string_concat(buf, sizeof(buf), &off, "{\"id\":%u, \"src\":\"%s\"",
-		def->id, scamper_addr_tostr(def->src, tmp, sizeof(tmp)));
+  string_concat(buf, sizeof(buf), &off, "{\"id\":%u", def->id);
+  if(def->src != NULL)
+    string_concat(buf, sizeof(buf), &off, ", \"src\":\"%s\"",
+		  scamper_addr_tostr(def->src, tmp, sizeof(tmp)));
+  if(def->dst != NULL)
+    string_concat(buf, sizeof(buf), &off,
+		  ", \"dst\":\"%s\"",
+		  scamper_addr_tostr(def->dst, tmp, sizeof(tmp)));
   string_concat(buf, sizeof(buf), &off,
-		", \"dst\":\"%s\", \"ttl\":%u, \"size\":%u",
-		scamper_addr_tostr(def->dst, tmp, sizeof(tmp)), def->ttl,
-		def->size);
-  string_concat(buf, sizeof(buf), &off, ", \"method\":\"%s\"",
+		", \"ttl\":%u, \"size\":%u, \"method\":\"%s\"",
+		def->ttl, def->size,
 		scamper_dealias_probedef_method_tostr(def, tmp, sizeof(tmp)));
   if(SCAMPER_DEALIAS_PROBEDEF_PROTO_IS_ICMP(def))
     string_concat(buf, sizeof(buf), &off, ", \"icmp_id\":%u, \"icmp_csum\":%u",
@@ -345,8 +349,7 @@ static char *dealias_probe_tostr(const scamper_dealias_probe_t *probe)
   return rc;
 }
 
-int scamper_file_json_dealias_write(const scamper_file_t *sf,
-				    const scamper_dealias_t *dealias, void *p)
+char *scamper_dealias_tojson(const scamper_dealias_t *dealias, size_t *len_out)
 {
   char     *str         = NULL;
   size_t    len         = 0;
@@ -366,7 +369,7 @@ int scamper_file_json_dealias_write(const scamper_file_t *sf,
   if((header = dealias_header_tostr(dealias)) == NULL)
     goto cleanup;
   len = (header_len = strlen(header));
-  len += 2; /* }\n" */
+  len += 2; /* }\0" */
 
   /* get the probedef strings */
   if(dealias_probedefs_get(dealias, &defs, &defc) != 0 ||
@@ -429,15 +432,12 @@ int scamper_file_json_dealias_write(const scamper_file_t *sf,
 	  wc += pr_lens[j];
 	}
     }
-  memcpy(str+wc, "]", 1); wc++;
-  memcpy(str+wc, "}\n", 2); wc += 2;
+  memcpy(str+wc, "]}\0", 3); wc += 3;
 
   assert(wc == len);
-
-  rc = json_write(sf, str, len, p);
+  rc = 0;
 
  cleanup:
-  if(str != NULL) free(str);
   if(header != NULL) free(header);
   if(pd_lens != NULL) free(pd_lens);
   if(pr_lens != NULL) free(pr_lens);
@@ -455,5 +455,31 @@ int scamper_file_json_dealias_write(const scamper_file_t *sf,
 	  free(prs[j]);
       free(prs);
     }
+
+  if(rc != 0)
+    {
+      if(str != NULL)
+	free(str);
+      return NULL;
+    }
+
+  if(len_out != NULL)
+    *len_out = len;
+  return str;
+}
+
+int scamper_file_json_dealias_write(const scamper_file_t *sf,
+				    const scamper_dealias_t *dealias, void *p)
+{
+  char *str;
+  size_t len;
+  int rc;
+
+  if((str = scamper_dealias_tojson(dealias, &len)) == NULL)
+    return -1;
+  str[len-1] = '\n';
+  rc = json_write(sf, str, len, p);
+  free(str);
+
   return rc;
 }

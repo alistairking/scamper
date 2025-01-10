@@ -38,6 +38,8 @@ cdef extern from "scamper_udpprobe.h":
  ctypedef struct scamper_udpprobe_reply_t:
   pass
 
+ char *scamper_udpprobe_tojson(const scamper_udpprobe_t *up, size_t *l)
+
  void scamper_udpprobe_free(scamper_udpprobe_t *up)
 
  scamper_list_t *scamper_udpprobe_list_get(const scamper_udpprobe_t *up)

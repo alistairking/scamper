@@ -6,11 +6,11 @@
  * Copyright (C) 2011-2013 Internap Network Services Corporation
  * Copyright (C) 2013-2014 The Regents of the University of California
  * Copyright (C) 2015      The University of Waikato
- * Copyright (C) 2016-2023 Matthew Luckie
+ * Copyright (C) 2016-2024 Matthew Luckie
  *
  * Authors: Brian Hammond, Matthew Luckie
  *
- * $Id: scamper_trace_json.c,v 1.33 2024/08/13 05:54:41 mjl Exp $
+ * $Id: scamper_trace_json.c,v 1.34 2024/11/07 18:15:39 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -201,8 +201,7 @@ static char *header_tostr(const scamper_trace_t *trace)
   return strdup(buf);
 }
 
-int scamper_file_json_trace_write(const scamper_file_t *sf,
-				  const scamper_trace_t *trace, void *p)
+char *scamper_trace_tojson(const scamper_trace_t *trace, size_t *len_out)
 {
   scamper_trace_hop_t *hop;
   size_t len, off = 0;
@@ -261,7 +260,7 @@ int scamper_file_json_trace_write(const scamper_file_t *sf,
   if(extra_hopc > 1)
     len += (extra_hopc - 1); /* , */
 
-  len += 4; /* {}\n\0 */
+  len += 3; /* {}\0 */
 
   if((str = malloc_zero(len)) == NULL)
     goto cleanup;
@@ -289,10 +288,10 @@ int scamper_file_json_trace_write(const scamper_file_t *sf,
       string_concat(str, len, &off, "]");
     }
 
-  string_concat(str, len, &off, "}\n");
+  string_concat(str, len, &off, "}");
   assert(off+1 == len);
 
-  rc = json_write(sf, str, off, p);
+  rc = 0;
 
  cleanup:
   if(hops != NULL)
@@ -302,8 +301,33 @@ int scamper_file_json_trace_write(const scamper_file_t *sf,
 	  free(hops[j]);
       free(hops);
     }
-  if(header != NULL) free(header);
-  if(str != NULL) free(str);
+  if(header != NULL)
+    free(header);
+
+  if(rc != 0)
+    {
+      if(str != NULL)
+	free(str);
+      return NULL;
+    }
+
+  if(len_out != NULL)
+    *len_out = len;
+  return str;
+}
+
+int scamper_file_json_trace_write(const scamper_file_t *sf,
+				  const scamper_trace_t *trace, void *p)
+{
+  char *str;
+  size_t len;
+  int rc;
+
+  if((str = scamper_trace_tojson(trace, &len)) == NULL)
+    return -1;
+  str[len-1] = '\n';
+  rc = json_write(sf, str, len, p);
+  free(str);
 
   return rc;
 }

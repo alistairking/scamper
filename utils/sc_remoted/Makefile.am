@@ -6,15 +6,15 @@ bin_PROGRAMS = sc_remoted
 
 sc_remoted_SOURCES = \
 	sc_remoted.c \
-	../../utils.c \
-	../../mjl_heap.c \
-	../../mjl_list.c \
-	../../mjl_splaytree.c \
-	../../scamper/scamper_linepoll.c \
-	../../scamper/scamper_writebuf.c
+	$(top_srcdir)/utils.c \
+	$(top_srcdir)/mjl_heap.c \
+	$(top_srcdir)/mjl_list.c \
+	$(top_srcdir)/mjl_splaytree.c \
+	$(top_srcdir)/scamper/scamper_linepoll.c \
+	$(top_srcdir)/scamper/scamper_writebuf.c
 if HAVE_OPENSSL
 sc_remoted_SOURCES += \
-	../../utils_tls.c
+	$(top_srcdir)/utils_tls.c
 endif
 
 sc_remoted_LDADD = @OPENSSL_LIBS@

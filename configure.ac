@@ -1,6 +1,6 @@
 # Process this file with autoconf to produce a configure script.
 
-AC_INIT([scamper],[20240920],[mjl@luckie.org.nz])
+AC_INIT([scamper],[20241112],[mjl@luckie.org.nz])
 
 AC_CONFIG_SRCDIR([scamper/scamper.c])
 AC_CONFIG_AUX_DIR([.])
@@ -18,9 +18,17 @@ AC_LANG(C)
 
 # Whether all the debugging output should be spewed out
 AC_ARG_ENABLE([debug],
-  [AS_HELP_STRING([--enable-debug], [build with debugging symbols])])
+  [AS_HELP_STRING([--enable-debug], [build with debug output and asserts])])
 if test "x$enable_debug" != "xyes"; then
   AC_DEFINE([NDEBUG],[1],[Define to 1 if we don't want to do any debugging])
+fi
+
+# Debug file support
+AC_ARG_ENABLE([debug-file],
+  [AS_HELP_STRING([--disable-debug-file],
+		  [remove support for generating a debug file])])
+if test "x$enable_debug_file" = xno; then
+  AC_DEFINE([WITHOUT_DEBUGFILE], [1], [Defined to 1 if we don't want to be able generate a debugfile])
 fi
 
 # --disable-privsep
@@ -196,14 +204,6 @@ if test "x$enable_scamper_udpprobe" = xno; then
 fi
 AM_CONDITIONAL([ENABLE_SCAMPER_UDPPROBE], [test x$enable_scamper_udpprobe = xyes])
 
-# Debug file support
-AC_ARG_ENABLE([debug-file],
-  [AS_HELP_STRING([--disable-debug-file],
-		  [remove support for generating a debug file])])
-if test "x$enable_debug_file" = xno; then
-  AC_DEFINE([WITHOUT_DEBUGFILE], [1], [Defined to 1 if we don't want to be able generate a debugfile])
-fi
-
 # dmalloc support
 AC_ARG_WITH([dmalloc],
   [AS_HELP_STRING([--with-dmalloc], [enable support for dmalloc])])
@@ -243,37 +243,22 @@ fi
 AC_SUBST(PCRE_CFLAGS)
 AC_SUBST(PCRE_LIBS)
 
+# build libraries
+AC_ARG_ENABLE([libs],
+  [AS_HELP_STRING([--disable-libs], [do not build scamper libraries])],
+  [enable_libs=$enableval],
+  [enable_libs=yes]
+)
+AM_CONDITIONAL([ENABLE_LIBS], [test x$enable_libs = xyes])
+
 # python bindings
 AC_ARG_WITH([python],
   [AS_HELP_STRING([--with-python], [build python interface to scamper])])
 if test "x$with_python" = xyes; then
    AX_PYTHON_DEVEL([>='3.0'])
 fi
-AM_CONDITIONAL([ENABLE_PYTHON], [test x$with_python = xyes])
-
-# sc_hoiho utility
-AC_ARG_ENABLE([sc_hoiho],
-  [AS_HELP_STRING([--enable-sc_hoiho], [enable support for sc_hoiho])],
-  [enable_sc_hoiho=$enableval],
-  [enable_sc_hoiho=no]
-)
-AM_CONDITIONAL([ENABLE_SC_HOIHO], [test x$enable_sc_hoiho = xyes])
-
-# sc_minrtt utility
-AC_ARG_ENABLE([sc_minrtt],
-  [AS_HELP_STRING([--enable-sc_minrtt], [enable support for sc_minrtt])],
-  [enable_sc_minrtt=$enableval],
-  [enable_sc_minrtt=no]
-)
-AM_CONDITIONAL([ENABLE_SC_MINRTT], [test x$enable_sc_minrtt = xyes])
-
-# sc_uptime prober support
-AC_ARG_ENABLE([sc_uptime],
-  [AS_HELP_STRING([--enable-sc_uptime], [enable support for sc_uptime])],
-  [enable_sc_uptime=$enableval],
-  [enable_sc_uptime=no]
-)
-AM_CONDITIONAL([ENABLE_SC_UPTIME], [test x$enable_sc_uptime = xyes])
+AM_CONDITIONAL([ENABLE_PYTHON],
+	[test x$enable_libs = xyes && test x$with_python = xyes])
 
 # build tests
 AC_ARG_ENABLE([tests],
@@ -282,6 +267,41 @@ AC_ARG_ENABLE([tests],
   [enable_tests=no]
 )
 AM_CONDITIONAL([ENABLE_TESTS], [test x$enable_tests = xyes])
+
+# build utils
+AC_ARG_ENABLE([utils],
+  [AS_HELP_STRING([--disable-utils], [do not build utils])],
+  [enable_utils=$enableval],
+  [enable_utils=yes]
+)
+AM_CONDITIONAL([ENABLE_UTILS], [test x$enable_utils = xyes])
+
+# sc_hoiho utility
+AC_ARG_ENABLE([sc_hoiho],
+  [AS_HELP_STRING([--enable-sc_hoiho], [enable support for sc_hoiho])],
+  [enable_sc_hoiho=$enableval],
+  [enable_sc_hoiho=no]
+)
+AM_CONDITIONAL([ENABLE_SC_HOIHO],
+	[test x$enable_utils = xyes && test x$enable_sc_hoiho = xyes])
+
+# sc_minrtt utility
+AC_ARG_ENABLE([sc_minrtt],
+  [AS_HELP_STRING([--enable-sc_minrtt], [enable support for sc_minrtt])],
+  [enable_sc_minrtt=$enableval],
+  [enable_sc_minrtt=no]
+)
+AM_CONDITIONAL([ENABLE_SC_MINRTT],
+	[test x$enable_utils = xyes && test x$enable_sc_minrtt = xyes])
+
+# sc_uptime prober support
+AC_ARG_ENABLE([sc_uptime],
+  [AS_HELP_STRING([--enable-sc_uptime], [enable support for sc_uptime])],
+  [enable_sc_uptime=$enableval],
+  [enable_sc_uptime=no]
+)
+AM_CONDITIONAL([ENABLE_SC_UPTIME],
+	[test x$enable_utils = xyes && test x$enable_sc_uptime = xyes])
 
 # Checks for header files.
 AC_HEADER_SYS_WAIT
@@ -864,9 +884,14 @@ AX_GCC_FUNC_ATTRIBUTE(pure)
 
 AC_CONFIG_FILES([
 	Makefile
-	scamper/Makefile
+	scamper/Makefile])
+
+AM_COND_IF([ENABLE_LIBS],
+	[AC_CONFIG_FILES([
 	lib/Makefile
-	lib/libscamperctrl/Makefile])
+	lib/libscamperctrl/Makefile
+	lib/libscamperfile/Makefile
+	])])
 
 AM_COND_IF([ENABLE_PYTHON],
 	[AC_CONFIG_FILES([
@@ -878,29 +903,34 @@ AM_COND_IF([ENABLE_TESTS],
 	tests/Makefile
 	])])
 
-AC_CONFIG_FILES([
+AM_COND_IF([ENABLE_UTILS],
+	[AC_CONFIG_FILES([
 	utils/Makefile
 	utils/sc_ally/Makefile
 	utils/sc_analysis_dump/Makefile
 	utils/sc_attach/Makefile
 	utils/sc_bdrmap/Makefile
 	utils/sc_erosprober/Makefile
-	utils/sc_filterpolicy/Makefile])
+	utils/sc_filterpolicy/Makefile
+	])])
 
 AM_COND_IF([ENABLE_SC_HOIHO],
 	[AC_CONFIG_FILES([
 	utils/sc_hoiho/Makefile
 	])])
 
-AC_CONFIG_FILES([
-	utils/sc_ipiddump/Makefile])
+AM_COND_IF([ENABLE_UTILS],
+	[AC_CONFIG_FILES([
+	utils/sc_ipiddump/Makefile
+	])])
 
 AM_COND_IF([ENABLE_SC_MINRTT],
 	[AC_CONFIG_FILES([
 	utils/sc_minrtt/Makefile
 	])])
 
-AC_CONFIG_FILES([
+AM_COND_IF([ENABLE_UTILS],
+	[AC_CONFIG_FILES([
 	utils/sc_pinger/Makefile
 	utils/sc_prefixprober/Makefile
 	utils/sc_prefixscan/Makefile
@@ -911,14 +941,15 @@ AC_CONFIG_FILES([
 	utils/sc_tbitpmtud/Makefile
 	utils/sc_tracediff/Makefile
 	utils/sc_ttlexp/Makefile
-])
+	])])
 
 AM_COND_IF([ENABLE_SC_UPTIME],
 	[AC_CONFIG_FILES([
 	utils/sc_uptime/Makefile
 	])])
 
-AC_CONFIG_FILES([
+AM_COND_IF([ENABLE_UTILS],
+	[AC_CONFIG_FILES([
 	utils/sc_warts2csv/Makefile
 	utils/sc_warts2json/Makefile
 	utils/sc_warts2pcap/Makefile
@@ -927,6 +958,6 @@ AC_CONFIG_FILES([
 	utils/sc_wartsdump/Makefile
 	utils/sc_wartsfilter/Makefile
 	utils/sc_wartsfix/Makefile
-])
+	])])
 
 AC_OUTPUT
