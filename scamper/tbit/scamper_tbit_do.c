@@ -1,7 +1,7 @@
 /*
  * scamper_do_tbit.c
  *
- * $Id: scamper_tbit_do.c,v 1.207 2024/08/13 05:43:54 mjl Exp $
+ * $Id: scamper_tbit_do.c,v 1.213 2024/12/31 04:17:31 mjl Exp $
  *
  * Copyright (C) 2009-2010 Ben Stasiewicz
  * Copyright (C) 2009-2010 Stephen Eichler
@@ -9,7 +9,7 @@
  * Copyright (C) 2012      Matthew Luckie
  * Copyright (C) 2012-2015 The Regents of the University of California
  * Copyright (C) 2017      University of Waikato
- * Copyright (C) 2022-2023 Matthew Luckie
+ * Copyright (C) 2022-2024 Matthew Luckie
  *
  * Authors: Matthew Luckie, Ben Stasiewicz, Stephen Eichler, Tiange Wu,
  *          Robert Beverly
@@ -60,11 +60,15 @@
 #include "scamper_tcp6.h"
 #include "scamper_queue.h"
 #include "scamper_file.h"
-#include "utils.h"
-#include "mjl_list.h"
 #include "scamper_tbit.h"
 #include "scamper_tbit_int.h"
 #include "scamper_tbit_do.h"
+#include "mjl_list.h"
+#include "utils.h"
+
+#ifdef HAVE_OPENSSL
+#include "utils_tls.h"
+#endif
 
 /* Default test parameters */
 #define TBIT_RETX_DEFAULT         3
@@ -958,36 +962,24 @@ static int tbit_rxq(tbit_state_t *state, const scamper_dl_rec_t *dl)
 }
 
 #if defined(HAVE_OPENSSL)
+static int tbit_ssl_wbio_write_cb(void *param, uint8_t *buf, int len)
+{
+  return tbit_segment(param, buf, len);
+}
+
 static int tbit_ssl_wbio_write(tbit_state_t *state)
 {
-  uint8_t buf[1024];
-  int pending, rc, size, off = 0;
+  char errbuf[64];
+  int rc;
 
-  if((pending = BIO_pending(state->wbio)) < 0)
-    return -1;
-
-  while(off < pending)
+  if((rc = tls_want_read(state->wbio, state, errbuf, sizeof(errbuf),
+			 tbit_ssl_wbio_write_cb)) < 0)
     {
-      if((size_t)(pending - off) > sizeof(buf))
-	size = sizeof(buf);
-      else
-	size = pending - off;
-
-      if((rc = BIO_read(state->wbio, buf, size)) <= 0)
-	{
-	  if(BIO_should_retry(state->wbio) == 0)
-	    scamper_debug(__func__, "BIO_read should not retry");
-	  else
-	    scamper_debug(__func__, "BIO_read returned %d", rc);
-	  return -1;
-	}
-      off += rc;
-
-      if(tbit_segment(state, buf, rc) != 0)
-	return -1;
+      scamper_debug(__func__, "%s", errbuf);
+      return -1;
     }
 
-  return pending;
+  return rc;
 }
 
 static ssize_t tbit_ssl_write(tbit_state_t *state, uint8_t *buf, size_t len)
@@ -1000,16 +992,9 @@ static ssize_t tbit_ssl_init(tbit_state_t *state, char *name)
 {
   int rc;
 
-  /*
-   * the order is important because once the BIOs are associated with
-   * the ssl structure, SSL_free will clean them up.
-   */
-  if((state->wbio = BIO_new(BIO_s_mem())) == NULL ||
-     (state->rbio = BIO_new(BIO_s_mem())) == NULL ||
-     (state->ssl = SSL_new(ssl_ctx)) == NULL)
+  if(tls_bio_alloc(ssl_ctx, &state->ssl, &state->rbio, &state->wbio) != 0)
     return -1;
 
-  SSL_set_bio(state->ssl, state->rbio, state->wbio);
 #ifdef SSL_CTRL_SET_TLSEXT_HOSTNAME
   if(name != NULL) SSL_set_tlsext_host_name(state->ssl, name);
 #endif
@@ -1037,13 +1022,13 @@ static int tbit_app_http_req(scamper_task_t *task)
   char buf[512];
   size_t off = 0;
 
-  string_concat(buf, sizeof(buf), &off, "GET %s HTTP/1.0\r\n", http->file);
+  string_concat3(buf, sizeof(buf), &off, "GET ", http->file, " HTTP/1.0\r\n");
   if(http->host != NULL)
-    string_concat(buf, sizeof(buf), &off, "Host: %s\r\n", http->host);
-  string_concat(buf, sizeof(buf), &off,
-		"Connection: Keep-Alive\r\n"
-		"Accept: */*\r\n"
-		"User-Agent: %s\r\n\r\n", http_ua);
+    string_concat3(buf, sizeof(buf), &off, "Host: ", http->host, "\r\n");
+  string_concat3(buf, sizeof(buf), &off,
+		 "Connection: Keep-Alive\r\n"
+		 "Accept: */*\r\n"
+		 "User-Agent: ", http_ua, "\r\n\r\n");
 
 #if defined(HAVE_OPENSSL)
   if(state->ssl != NULL)
@@ -3415,25 +3400,7 @@ static void tbit_state_free(scamper_task_t *task)
     }
 
 #if defined(HAVE_OPENSSL)
-  /*
-   * SSL_free() also calls the free()ing procedures for indirectly
-   * affected items, if applicable: the buffering BIO, the read and
-   * write BIOs, cipher lists specially created for this ssl, the
-   * SSL_SESSION. Do not explicitly free these indirectly freed up
-   * items before or after calling SSL_free(), as trying to free
-   * things twice may lead to program failure.
-   */
-  if(state->ssl != NULL)
-    {
-      SSL_free(state->ssl);
-    }
-  else
-    {
-      if(state->wbio != NULL)
-	BIO_free(state->wbio);
-      if(state->rbio != NULL)
-	BIO_free(state->rbio);
-    }
+  tls_bio_free(state->ssl, state->rbio, state->wbio);
 #endif
 
   free(state);
@@ -3864,7 +3831,6 @@ scamper_task_t *scamper_do_tbit_alloctask(void *data, scamper_list_t *list,
   if(tbit->src == NULL &&
      (tbit->src = scamper_getsrc(tbit->dst, 0, errbuf, errlen)) == NULL)
     goto err;
-  sig->sig_tx_ip_src = scamper_addr_use(tbit->src);
   SCAMPER_TASK_SIG_TCP(sig, tbit->sport, tbit->dport);
   if(scamper_task_sig_add(task, sig) != 0)
     {

@@ -1,7 +1,7 @@
 /*
  * scamper_host_do
  *
- * $Id: scamper_host_do.c,v 1.80 2024/08/13 06:16:30 mjl Exp $
+ * $Id: scamper_host_do.c,v 1.86 2024/12/30 03:59:35 mjl Exp $
  *
  * Copyright (C) 2018-2024 Matthew Luckie
  *
@@ -47,8 +47,6 @@
 #ifndef TEST_HOST_RR_LIST
 static scamper_task_funcs_t host_funcs;
 static splaytree_t *queries = NULL;
-static uint8_t *pktbuf = NULL;
-static size_t pktbuf_len = 0;
 static scamper_fd_t *dns4_fd = NULL;
 static scamper_queue_t *dns4_sq = NULL;
 static scamper_fd_t *dns6_fd = NULL;
@@ -427,7 +425,7 @@ static host_state_t *host_state_alloc(scamper_task_t *task)
 	  for(i=3; i>=0; i--)
 	    {
 	      u32 = ntohl(in6->s6_addr32[i]);
-	      string_concat(qname, sizeof(qname), &off,
+	      string_concaf(qname, sizeof(qname), &off,
 			    "%x.%x.%x.%x.%x.%x.%x.%x.", u32 & 0xf,
 			    (u32 >>  4) & 0xf, (u32 >>  8) & 0xf,
 			    (u32 >> 12) & 0xf, (u32 >> 16) & 0xf,
@@ -438,7 +436,7 @@ static host_state_t *host_state_alloc(scamper_task_t *task)
   	  for(i=7; i>=0; i--)
 	    {
 	      u16 = ntohs(in6->u.Word[i]);
-	      string_concat(qname, sizeof(qname), &off,
+	      string_concaf(qname, sizeof(qname), &off,
 			    "%x.%x.%x.%x.", u16 & 0xf, (u16 >>  4) & 0xf,
 			    (u16 >> 8) & 0xf, (u16 >> 12) & 0xf);
 	    }
@@ -641,6 +639,61 @@ static int extract_txt(scamper_host_rr_t *rr, const uint8_t *pbuf,
   return -1;
 }
 
+static int extract_opt(scamper_host_rr_t *rr, const uint8_t *pbuf,
+		       size_t plen, size_t off, size_t rdlength)
+{
+  scamper_host_rr_opt_t *opt;
+  scamper_host_rr_opt_elem_t *elem = NULL;
+  slist_t *list = NULL;
+  size_t i = 0;
+  uint16_t code, len;
+
+  if(rdlength == 0 || plen - off < rdlength)
+    return 0;
+
+  if((list = slist_alloc()) == NULL)
+    return -1;
+
+  while(i < rdlength)
+    {
+      if(rdlength - i < 4)
+	break;
+
+      code = bytes_ntohs(pbuf+off); off += 2;
+      len  = bytes_ntohs(pbuf+off); off += 2;
+
+      if(rdlength - i < (size_t)(4 + len))
+	break;
+
+      elem = scamper_host_rr_opt_elem_alloc(code, len, pbuf + off);
+      if(elem == NULL || slist_tail_push(list, elem) == NULL)
+	goto err;
+      elem = NULL;
+
+      i += 4 + len;
+      off += len;
+    }
+
+  if(slist_count(list) > 0)
+    {
+      if((opt = scamper_host_rr_opt_alloc(slist_count(list))) == NULL)
+	goto err;
+      i = 0;
+      while((elem = slist_head_pop(list)) != NULL)
+	opt->elems[i++] = elem;
+      rr->un.opt = opt;
+    }
+
+  slist_free(list);
+  return 0;
+
+ err:
+  if(elem != NULL) scamper_host_rr_opt_elem_free(elem);
+  if(list != NULL) slist_free_cb(list,
+				 (slist_free_t)scamper_host_rr_opt_elem_free);
+  return -1;
+}
+
 #ifdef TEST_HOST_RR_LIST
 slist_t *host_rr_list(const uint8_t *buf, size_t off, size_t len)
 #else
@@ -681,6 +734,7 @@ static slist_t *host_rr_list(const uint8_t *buf, size_t off, size_t len)
 	  class = bytes_ntohs(buf+off); off += 2;
 	  ttl = bytes_ntohl(buf+off); off += 4;
 	  rdlength = bytes_ntohs(buf+off); off += 2;
+
 	  if((rr = scamper_host_rr_alloc(name, class, type, ttl)) == NULL)
 	    {
 	      printerror(__func__, "could not alloc rr");
@@ -734,6 +788,11 @@ static slist_t *host_rr_list(const uint8_t *buf, size_t off, size_t len)
 		  type == SCAMPER_HOST_TYPE_TXT)
 	    {
 	      if(extract_txt(rr, buf, len, off, rdlength) != 0)
+		goto err;
+	    }
+	  else if(type == SCAMPER_HOST_TYPE_OPT)
+	    {
+	      if(extract_opt(rr, buf, len, off, rdlength) != 0)
 		goto err;
 	    }
 
@@ -800,7 +859,6 @@ static int process_2(const uint8_t *buf, size_t len, size_t off,
 		     scamper_host_query_t *q)
 {
   slist_t *rr_list = NULL;
-  scamper_host_rr_t **an = NULL, **ns = NULL, **ar = NULL;
   uint8_t flags[2];
   uint16_t ancount, nscount, arcount;
   int i, rc = -1;
@@ -810,37 +868,26 @@ static int process_2(const uint8_t *buf, size_t len, size_t off,
   nscount = bytes_ntohs(buf+8);
   arcount = bytes_ntohs(buf+10);
   if((rr_list = host_rr_list(buf, off, len)) == NULL ||
-     (ancount > 0 &&
-      (an = malloc_zero(sizeof(scamper_host_rr_t *) * ancount)) == NULL) ||
-     (nscount > 0 &&
-      (ns = malloc_zero(sizeof(scamper_host_rr_t *) * nscount)) == NULL) ||
-     (arcount > 0 &&
-      (ar = malloc_zero(sizeof(scamper_host_rr_t *) * arcount)) == NULL))
+     scamper_host_query_rr_alloc(q, ancount, nscount, arcount) != 0)
     goto done;
 
   /* put each RR in the appropriate section */
   for(i=0; i<ancount; i++)
-    an[i] = slist_head_pop(rr_list);
+    q->an[i] = slist_head_pop(rr_list);
   for(i=0; i<nscount; i++)
-    ns[i] = slist_head_pop(rr_list);
+    q->ns[i] = slist_head_pop(rr_list);
   for(i=0; i<arcount; i++)
-    ar[i] = slist_head_pop(rr_list);
+    q->ar[i] = slist_head_pop(rr_list);
 
   /* finalize the scamper_host_rr_t structure */
   flags[0] = buf[2];
   flags[1] = buf[3];
-  q->ancount = ancount; q->an = an; an = NULL;
-  q->nscount = nscount; q->ns = ns; ns = NULL;
-  q->arcount = arcount; q->ar = ar; ar = NULL;
   q->rcode   = flags[1] & 0x0f;
   q->flags   = ((flags[0] & 0x0f) << 4) | ((flags[1] & 0xf0) >> 4);
 
   rc = 0;
 
  done:
-  if(an != NULL) free(an);
-  if(ns != NULL) free(ns);
-  if(ar != NULL) free(ar);
   if(rr_list != NULL)
     slist_free_cb(rr_list, (slist_free_t)scamper_host_rr_free);
   return rc;
@@ -877,10 +924,11 @@ static void host_tcp_read(SOCKET fd, void *param)
 {
   scamper_task_t *task = (scamper_task_t *)param;
   host_state_t *state = host_getstate(task);
+  uint8_t pktbuf[1024];
   ssize_t rc;
   size_t s;
 
-  if((rc = recv(fd, pktbuf, pktbuf_len, 0)) < 0)
+  if((rc = recv(fd, pktbuf, sizeof(pktbuf), 0)) < 0)
     {
       host_stop(task, SCAMPER_HOST_STOP_ERROR);
       state->mode = STATE_MODE_DONE;
@@ -947,10 +995,11 @@ static void host_udp_read(SOCKET fd, void *param)
   uint16_t id, qtype, qclass;
   size_t off, len;
   ssize_t rc;
+  uint8_t pktbuf[1024];
   char name[256];
   int i;
 
-  if((rc = recv(fd, pktbuf, pktbuf_len, 0)) < 0)
+  if((rc = recv(fd, pktbuf, sizeof(pktbuf), 0)) < 0)
     return;
   len = (size_t)rc;
 
@@ -1001,21 +1050,25 @@ static int do_host_probe_query(const scamper_host_t *host,
 			       uint8_t *buf, size_t *len)
 {
   const char *ptr, *dot;
+  uint16_t arcount = 0;
   size_t off;
 
   if(*len < 12)
     return -1;
 
+  if(host->flags & SCAMPER_HOST_FLAG_NSID)
+    arcount = 1;
+
   /* 12 bytes of DNS header */
-  bytes_htons(buf, id);       /* DNS ID, 16 bits */
+  bytes_htons(buf, id);         /* DNS ID, 16 bits */
   if((host->flags & SCAMPER_HOST_FLAG_NORECURSE) == 0)
     bytes_htons(buf+2, 0x0100); /* recursion desired */
   else
-    bytes_htons(buf+2, 0); /* recursion not desired */
-  bytes_htons(buf+4, 1);      /* QDCOUNT */
-  bytes_htons(buf+6, 0);      /* ANCOUNT */
-  bytes_htons(buf+8, 0);      /* NSCOUNT */
-  bytes_htons(buf+10, 0);     /* ARCOUNT */
+    bytes_htons(buf+2, 0);      /* recursion not desired */
+  bytes_htons(buf+4, 1);        /* QDCOUNT */
+  bytes_htons(buf+6, 0);        /* ANCOUNT */
+  bytes_htons(buf+8, 0);        /* NSCOUNT */
+  bytes_htons(buf+10, arcount); /* ARCOUNT */
   off = 12;
 
   ptr = state->qname;
@@ -1052,6 +1105,17 @@ static int do_host_probe_query(const scamper_host_t *host,
   bytes_htons(buf+off, host->qtype); off += 2;
   bytes_htons(buf+off, host->qclass); off += 2;
 
+  if(host->flags & SCAMPER_HOST_FLAG_NSID)
+    {
+      buf[off++] = 0;                       /* qname: root */
+      bytes_htons(buf+off, SCAMPER_HOST_TYPE_OPT); off += 2;
+      bytes_htons(buf+off, 1232); off += 2; /* udp option size: 1232 */
+      bytes_htonl(buf+off, 0); off += 4;    /* extended rcode + flags: 0 */
+      bytes_htons(buf+off, 4); off += 2;    /* rdlength: 4 */
+      bytes_htons(buf+off, SCAMPER_HOST_RR_OPT_ELEM_CODE_NSID); off += 2;
+      bytes_htons(buf+off, 0); off += 2;
+    }
+
   *len = off;
   return 0;
 }
@@ -1066,6 +1130,7 @@ static int do_host_probe_udp(scamper_task_t *task)
   struct sockaddr_storage ss;
   struct sockaddr *sa;
   struct timeval tv;
+  uint8_t pktbuf[1024];
   uint16_t id;
   size_t len;
   int af;
@@ -1150,13 +1215,12 @@ static int do_host_probe_udp(scamper_task_t *task)
 	}
     }
 
-  len = pktbuf_len;
-  id = dns_id;
-
   /* handle wraps with the query id */
+  id = dns_id;
   if(++dns_id == 0)
     dns_id = 1;
 
+  len = sizeof(pktbuf);
   if(do_host_probe_query(host, state, id, pktbuf, &len) != 0)
     goto err;
 
@@ -1256,6 +1320,7 @@ static int do_host_probe_tcp(scamper_task_t *task)
   struct sockaddr_storage ss;
   struct sockaddr *sa;
   uint16_t id;
+  uint8_t pktbuf[1024];
   size_t len;
   int af;
 
@@ -1322,7 +1387,7 @@ static int do_host_probe_tcp(scamper_task_t *task)
 	  goto err;
 	}
 
-      len = pktbuf_len-2;
+      len = sizeof(pktbuf) - 2;
       id = dns_id;
 
       /* handle wraps with the query id */
@@ -1370,16 +1435,6 @@ static void do_host_probe(scamper_task_t *task)
   scamper_host_t *host = host_getdata(task);
   int rc = -1;
 
-  if(pktbuf == NULL)
-    {
-      pktbuf_len = 1024;
-      if((pktbuf = malloc(pktbuf_len)) == NULL)
-	{
-	  printerror(__func__, "could not malloc pktbuf");
-	  goto done;
-	}
-    }
-
   if(host_getstate(task) == NULL && host_state_alloc(task) == NULL)
     goto done;
 
@@ -1387,6 +1442,7 @@ static void do_host_probe(scamper_task_t *task)
     {
       if(scamper_host_queries_alloc(host, host->retries + 1) != 0)
 	goto done;
+      host->qcount = 0;
       gettimeofday_wrap(&host->start);
     }
 
@@ -1699,12 +1755,6 @@ void scamper_do_host_cleanup()
     {
       scamper_queue_free(dns6_sq);
       dns6_sq = NULL;
-    }
-
-  if(pktbuf != NULL)
-    {
-      free(pktbuf);
-      pktbuf = NULL;
     }
 
   if(default_ns != NULL)

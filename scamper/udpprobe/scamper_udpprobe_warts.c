@@ -5,7 +5,7 @@
  *
  * Author: Matthew Luckie
  *
- * $Id: scamper_udpprobe_warts.c,v 1.5 2024/04/04 06:55:33 mjl Exp $
+ * $Id: scamper_udpprobe_warts.c,v 1.6 2024/09/06 01:34:54 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -86,12 +86,14 @@ static const warts_var_t udpprobe_vars[] =
 #define WARTS_UDPPROBE_REPLY_RX        1
 #define WARTS_UDPPROBE_REPLY_LEN       2
 #define WARTS_UDPPROBE_REPLY_DATA      3
+#define WARTS_UDPPROBE_REPLY_IFNAME    4
 
 static const warts_var_t udpprobe_reply_vars[] =
 {
-  {WARTS_UDPPROBE_REPLY_RX,     8},
-  {WARTS_UDPPROBE_REPLY_LEN,    2},
-  {WARTS_UDPPROBE_REPLY_DATA,  -1},
+  {WARTS_UDPPROBE_REPLY_RX,      8},
+  {WARTS_UDPPROBE_REPLY_LEN,     2},
+  {WARTS_UDPPROBE_REPLY_DATA,   -1},
+  {WARTS_UDPPROBE_REPLY_IFNAME, -1},
 };
 #define udpprobe_reply_vars_mfb WARTS_VAR_MFB(udpprobe_reply_vars)
 
@@ -183,6 +185,7 @@ static void warts_udpprobe_probe_write(const scamper_udpprobe_probe_t *probe,
 }
 
 static int warts_udpprobe_reply_params(const scamper_udpprobe_reply_t *ur,
+				       warts_ifnametable_t *ifntable,
 				       warts_udpprobe_reply_t *state)
 {
   const warts_var_t *var;
@@ -197,6 +200,7 @@ static int warts_udpprobe_reply_params(const scamper_udpprobe_reply_t *ur,
     {
       var = &udpprobe_reply_vars[i];
       if((var->id == WARTS_UDPPROBE_REPLY_RX && timeval_iszero(&ur->rx)) ||
+	 (var->id == WARTS_UDPPROBE_REPLY_IFNAME && ur->ifname == NULL) ||
 	 ((var->id == WARTS_UDPPROBE_REPLY_LEN ||
 	   var->id == WARTS_UDPPROBE_REPLY_DATA) &&
 	  (ur->data == NULL || ur->len == 0)))
@@ -206,6 +210,13 @@ static int warts_udpprobe_reply_params(const scamper_udpprobe_reply_t *ur,
       if(var->id == WARTS_UDPPROBE_REPLY_DATA)
 	{
 	  u16 = ur->len;
+	}
+      else if(var->id == WARTS_UDPPROBE_REPLY_IFNAME)
+	{
+	  assert(ur->ifname != NULL);
+	  u16 = 0;
+	  if(warts_ifname_size(ifntable, ur->ifname, &u16) != 0)
+	    return -1;
 	}
       else
 	{
@@ -226,28 +237,32 @@ static int warts_udpprobe_reply_params(const scamper_udpprobe_reply_t *ur,
 }
 
 static int warts_udpprobe_reply_read(scamper_udpprobe_reply_t *ur,
+				     warts_ifnametable_t *ifntable,
 				     const uint8_t *buf,
 				     uint32_t *off, uint32_t len)
 {
   warts_param_reader_t handlers[] = {
-    {&ur->rx,   (wpr_t)extract_timeval,       NULL},
-    {&ur->len,  (wpr_t)extract_uint16,        NULL},
-    {&ur->data, (wpr_t)extract_bytes_alloc,   &ur->len},
+    {&ur->rx,     (wpr_t)extract_timeval,       NULL},
+    {&ur->len,    (wpr_t)extract_uint16,        NULL},
+    {&ur->data,   (wpr_t)extract_bytes_alloc,   &ur->len},
+    {&ur->ifname, (wpr_t)extract_ifname,        ifntable},
   };
   const int handler_cnt = sizeof(handlers)/sizeof(warts_param_reader_t);
   return warts_params_read(buf, off, len, handlers, handler_cnt);
 }
 
 static void warts_udpprobe_reply_write(const scamper_udpprobe_reply_t *ur,
+				       warts_ifnametable_t *ifntable,
 				       uint8_t *buf,
 				       uint32_t *off, uint32_t len,
 				       warts_udpprobe_reply_t *state)
 {
   uint16_t ur_len = ur->len;
   warts_param_writer_t handlers[] = {
-    {&ur->rx,   (wpw_t)insert_timeval,       NULL},
-    {&ur->len,  (wpw_t)insert_uint16,        NULL},
-    {ur->data,  (wpw_t)insert_bytes_uint16, &ur_len},
+    {&ur->rx,    (wpw_t)insert_timeval,       NULL},
+    {&ur->len,   (wpw_t)insert_uint16,        NULL},
+    {ur->data,   (wpw_t)insert_bytes_uint16, &ur_len},
+    {ur->ifname, (wpw_t)insert_ifname,        ifntable},
   };
   const int handler_cnt = sizeof(handlers)/sizeof(warts_param_reader_t);
   warts_params_write(buf, off, len, state->flags, state->flags_len,
@@ -426,6 +441,7 @@ int scamper_file_warts_udpprobe_read(scamper_file_t *sf,
   uint16_t p0_sport = 0;
   int rc = -1;
   size_t x;
+  warts_ifnametable_t *ifntable = NULL;
 
   if(warts_read(sf, &buf, hdr->len) != 0)
     goto done;
@@ -437,6 +453,9 @@ int scamper_file_warts_udpprobe_read(scamper_file_t *sf,
     }
 
   if((up = scamper_udpprobe_alloc()) == NULL)
+    goto done;
+
+  if((ifntable = warts_ifnametable_alloc_byid()) == NULL)
     goto done;
 
   if(warts_udpprobe_params_read(up, &p0_replyc, &p0_sport, state, buf, &off, hdr->len) != 0)
@@ -464,7 +483,7 @@ int scamper_file_warts_udpprobe_read(scamper_file_t *sf,
       for(i=0; i<p0_replyc; i++)
 	{
 	  if((probe->replies[i] = scamper_udpprobe_reply_alloc()) == NULL ||
-	     warts_udpprobe_reply_read(probe->replies[i], buf,
+	     warts_udpprobe_reply_read(probe->replies[i], ifntable, buf,
 				       &off, hdr->len) != 0)
 	    goto done;
 	}
@@ -504,7 +523,7 @@ int scamper_file_warts_udpprobe_read(scamper_file_t *sf,
 
 	      probe = up->probes[i];
 	      if((probe->replies[j] = scamper_udpprobe_reply_alloc()) == NULL ||
-		 warts_udpprobe_reply_read(probe->replies[j], buf,
+		 warts_udpprobe_reply_read(probe->replies[j], ifntable, buf,
 					   &off, hdr->len) != 0)
 		goto done;
 	      j++;
@@ -517,6 +536,7 @@ int scamper_file_warts_udpprobe_read(scamper_file_t *sf,
 
  done:
   if(buf != NULL) free(buf);
+  if(ifntable != NULL) warts_ifnametable_free(ifntable);
   if(up != NULL) scamper_udpprobe_free(up);
   return rc;
 }
@@ -528,12 +548,16 @@ int scamper_file_warts_udpprobe_write(const scamper_file_t *sf,
   warts_udpprobe_reply_t *p0_urs = NULL;
   warts_udpprobe_probe_t *pN_ups = NULL;
   warts_udpprobe_reply_t *pN_urs = NULL;
+  warts_ifnametable_t *ifntable = NULL;
   uint8_t *buf = NULL;
   uint8_t  flags[udpprobe_vars_mfb];
   uint16_t flags_len, params_len;
   uint32_t j, x, pN_urc = 0, len, off = 0;
   uint8_t i;
   int rc = -1;
+
+  if((ifntable = warts_ifnametable_alloc_byname()) == NULL)
+    goto done;
 
   if(warts_udpprobe_params(up, flags, &flags_len, &params_len) != 0)
     goto done;
@@ -552,7 +576,8 @@ int scamper_file_warts_udpprobe_write(const scamper_file_t *sf,
 	goto done;
       for(i=0; i<p0->replyc; i++)
 	{
-	  if(warts_udpprobe_reply_params(p0->replies[i], &p0_urs[i]) != 0)
+	  if(warts_udpprobe_reply_params(p0->replies[i], ifntable,
+					 &p0_urs[i]) != 0)
 	    goto done;
 	  len += p0_urs[i].len;
 	}
@@ -582,7 +607,7 @@ int scamper_file_warts_udpprobe_write(const scamper_file_t *sf,
 	      probe = up->probes[i];
 	      for(j=0; j<probe->replyc; j++)
 		{
-		  if(warts_udpprobe_reply_params(probe->replies[j],
+		  if(warts_udpprobe_reply_params(probe->replies[j], ifntable,
 						 &pN_urs[x]) != 0)
 		    goto done;
 		  len += pN_urs[x].len;
@@ -606,7 +631,8 @@ int scamper_file_warts_udpprobe_write(const scamper_file_t *sf,
   if(p0 != NULL)
     {
       for(i=0; i<p0->replyc; i++)
-	warts_udpprobe_reply_write(p0->replies[i], buf, &off, len, &p0_urs[i]);
+	warts_udpprobe_reply_write(p0->replies[i], ifntable,
+				   buf, &off, len, &p0_urs[i]);
     }
 
   if(up->probe_sent > 1)
@@ -621,7 +647,7 @@ int scamper_file_warts_udpprobe_write(const scamper_file_t *sf,
 	      probe = up->probes[i];
 	      for(j=0; j<probe->replyc; j++)
 		{
-		  warts_udpprobe_reply_write(probe->replies[j],
+		  warts_udpprobe_reply_write(probe->replies[j], ifntable,
 					     buf, &off, len, &pN_urs[x]);
 		  x++;
 		}
@@ -637,6 +663,7 @@ int scamper_file_warts_udpprobe_write(const scamper_file_t *sf,
   rc = 0;
 
  done:
+  if(ifntable != NULL) warts_ifnametable_free(ifntable);
   if(p0_urs != NULL) free(p0_urs);
   if(pN_urs != NULL) free(pN_urs);
   if(pN_ups != NULL) free(pN_ups);

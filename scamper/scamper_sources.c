@@ -1,13 +1,13 @@
 /*
  * scamper_source
  *
- * $Id: scamper_sources.c,v 1.81 2024/06/10 03:28:08 mjl Exp $
+ * $Id: scamper_sources.c,v 1.84 2024/12/31 04:17:31 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2012      Matthew Luckie
  * Copyright (C) 2012      The Regents of the University of California
- * Copyright (C) 2018-2023 Matthew Luckie
+ * Copyright (C) 2018-2024 Matthew Luckie
  * Copyright (C) 2023      The Regents of the University of California
  * Author: Matthew Luckie
  *
@@ -1280,9 +1280,12 @@ char *scamper_source_tostr(const scamper_source_t *src, char *buf, size_t len)
   if(src->list == NULL || src->list->name == NULL)
     return NULL;
 
-  string_concat(buf, len, &off, "name %s", src->list->name);
+  string_concat2(buf, len, &off, "name ", src->list->name);
   if(src->tostr != NULL && src->tostr(src->data, tmp, sizeof(tmp)) != NULL)
-    string_concat(buf, len, &off, " %s", tmp);
+    {
+      string_concat(buf, len, &off, " ");
+      string_concat(buf, len, &off, tmp);
+    }
 
   return buf;
 }

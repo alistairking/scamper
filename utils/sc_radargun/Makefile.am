@@ -6,12 +6,13 @@ bin_PROGRAMS = sc_radargun
 
 sc_radargun_SOURCES = \
 	sc_radargun.c \
-	../../utils.c \
-	../../mjl_heap.c \
-	../../mjl_list.c \
-	../../mjl_splaytree.c
+	$(top_srcdir)/utils.c \
+	$(top_srcdir)/mjl_heap.c \
+	$(top_srcdir)/mjl_list.c \
+	$(top_srcdir)/mjl_splaytree.c
 
-sc_radargun_LDADD = ../../scamper/libscamperfile.la
+sc_radargun_LDADD = \
+	$(top_srcdir)/lib/libscamperfile/libscamperfile.la
 
 man_MANS = sc_radargun.1
 

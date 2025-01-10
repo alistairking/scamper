@@ -1,7 +1,7 @@
 /*
  * scamper_host_lib.c
  *
- * $Id: scamper_host_lib.c,v 1.9 2024/04/20 00:15:02 mjl Exp $
+ * $Id: scamper_host_lib.c,v 1.11 2024/09/04 08:50:06 mjl Exp $
  *
  * Copyright (C) 2023-2024 Matthew Luckie
  *
@@ -114,6 +114,15 @@ scamper_host_query_t *scamper_host_query_use(scamper_host_query_t *q)
   return q;
 }
 #endif
+
+scamper_host_rr_t *scamper_host_query_ar_opt_get(const scamper_host_query_t *q)
+{
+  uint16_t i;
+  for(i=0; i<q->arcount; i++)
+    if(q->ar[i] != NULL && q->ar[i]->type == SCAMPER_HOST_TYPE_OPT)
+      return q->ar[i];
+  return NULL;
+}
 
 const struct timeval *scamper_host_query_tx_get(const scamper_host_query_t *q)
 {
@@ -247,6 +256,92 @@ scamper_host_rr_txt_t *scamper_host_rr_txt_get(const scamper_host_rr_t *rr)
      SCAMPER_HOST_RR_DATA_TYPE_TXT)
     return NULL;
   return rr->un.txt;
+}
+
+scamper_host_rr_opt_t *scamper_host_rr_opt_get(const scamper_host_rr_t *rr)
+{
+  if(scamper_host_rr_data_type(rr->class, rr->type) !=
+     SCAMPER_HOST_RR_DATA_TYPE_OPT)
+    return NULL;
+  return rr->un.opt;
+}
+
+#ifdef BUILDING_LIBSCAMPERFILE
+scamper_host_rr_opt_t *scamper_host_rr_opt_use(scamper_host_rr_opt_t *opt)
+{
+  opt->refcnt++;
+  return opt;
+}
+#endif
+
+uint16_t scamper_host_rr_opt_elemc_get(const scamper_host_rr_opt_t *opt)
+{
+  return opt->elemc;
+}
+
+scamper_host_rr_opt_elem_t *scamper_host_rr_opt_elem_get(const scamper_host_rr_opt_t *opt,
+							 uint16_t i)
+{
+  if(opt != NULL && opt->elems != NULL && i < opt->elemc)
+    return opt->elems[i];
+  return NULL;
+}
+
+#ifdef BUILDING_LIBSCAMPERFILE
+scamper_host_rr_opt_elem_t *scamper_host_rr_opt_elem_use(scamper_host_rr_opt_elem_t *elem)
+{
+  elem->refcnt++;
+  return elem;
+}
+#endif
+
+uint16_t scamper_host_rr_opt_elem_code_get(const scamper_host_rr_opt_elem_t *elem)
+{
+  return elem->code;
+}
+
+/*
+ * scamper_host_rr_opt_elem_code_tostr
+ *
+ * convert 16-bit OPT code to name.
+ *
+ * https://www.iana.org/assignments/dns-parameters/dns-parameters.xhtml
+ */
+char *scamper_host_rr_opt_elem_code_tostr(uint16_t code, char *b, size_t l)
+{
+  switch(code)
+    {
+    case 1:  snprintf(b, l, "LLQ"); break;
+    case 3:  snprintf(b, l, "NSID"); break;
+    case 5:  snprintf(b, l, "DAU"); break;
+    case 6:  snprintf(b, l, "DHU"); break;
+    case 7:  snprintf(b, l, "N3U"); break;
+    case 8:  snprintf(b, l, "edns-client-subnet"); break;
+    case 9:  snprintf(b, l, "EDNS-EXPIRE"); break;
+    case 10: snprintf(b, l, "COOKIE"); break;
+    case 11: snprintf(b, l, "edns-tcp-keepalive"); break;
+    case 12: snprintf(b, l, "Padding"); break;
+    case 13: snprintf(b, l, "CHAIN"); break;
+    case 14: snprintf(b, l, "edns-key-tag"); break;
+    case 15: snprintf(b, l, "Extended DNS Error"); break;
+    case 16: snprintf(b, l, "EDNS-Client-Tag"); break;
+    case 17: snprintf(b, l, "EDNS-Server-Tag"); break;
+    case 18: snprintf(b, l, "Report-Channel"); break;
+    case 19: snprintf(b, l, "ZONEVERSION"); break;
+    default: snprintf(b, l, "%u", code); break;
+    }
+
+  return b;
+}
+
+uint16_t scamper_host_rr_opt_elem_len_get(const scamper_host_rr_opt_elem_t *elem)
+{
+  return elem->len;
+}
+
+const uint8_t *scamper_host_rr_opt_elem_data_get(const scamper_host_rr_opt_elem_t *elem)
+{
+  return elem->data;
 }
 
 #ifdef BUILDING_LIBSCAMPERFILE

@@ -10,9 +10,9 @@
 .\" Copyright (c) 2024      The Regents of the University of California
 .\"                         All rights reserved
 .\"
-.\" $Id: scamper.1,v 1.140 2024/07/15 23:12:44 mjl Exp $
+.\" $Id: scamper.1,v 1.145 2024/12/05 23:59:22 mjl Exp $
 .\"
-.Dd July 16, 2024
+.Dd December 6, 2024
 .Dt SCAMPER 1
 .Os
 .\""""""""""""
@@ -32,6 +32,7 @@
 .Op Fl C Ar cycleid
 .Op Fl o Ar outfile
 .Op Fl F Ar firewall
+.Op Fl H Ar holdtime
 .Op Fl n Ar nameserver
 .Op Fl d Ar debugfile
 .Op Fl e Ar pidfile
@@ -148,7 +149,7 @@ use techniques from the TCP behavior inference tool (TBIT) to infer
 properties of a TCP receiver.
 .It
 .Sy udpprobe:
-sends a single UDP probe and waits for a response.
+sends UDP probes and waits for responses.
 .El
 .Nm
 uses trace by default.
@@ -196,6 +197,10 @@ anchor for
 to use, and <num> specifies the number of rules
 .Nm
 is allowed to use.
+.It Fl H Ar holdtime
+specifies the length of time, in seconds, to prevent a followup task
+from using the same probe signature as a previous task.
+The default is five seconds, and can be disabled by passing zero.
 .It Fl n Ar nameserver
 specifies the nameserver for
 .Nm
@@ -300,6 +305,10 @@ responses. This significantly improves scamper performance and
 accuracy on Linux systems with other non-scamper traffic. See
 .Xr packet 7
 for further details.
+.It
+.Sy noring:
+tell scamper to not create a memory-mapped ring buffer to receive datalink
+responses.
 .It
 .Sy dl-any:
 tell scamper to use a single socket to receive datalink responses on
@@ -661,7 +670,7 @@ specified.  By default, each probe's bytes are zeroed.
 specifies the type of ping packets to send.
 By default, ICMP echo requests are sent.
 Choices are: ICMP-echo, ICMP-time, TCP-syn, TCP-ack, TCP-ack-sport,
-TCP-synack, TCP-rst, TCP-syn-sport, UDP, and UDP-dport,
+TCP-synack, TCP-rst, TCP-syn-sport, UDP, UDP-dport, and UDP-sport,
 and these options are case insensitive.
 .It Fl r Ar rtraddr
 specifies the IP address of the router to use.
@@ -1254,25 +1263,35 @@ of http.
 .El
 .\""""""""""""
 .Sh UDPPROBE OPTIONS
-The udpprobe command is used to send a single UDP packet and wait for
-a response.
+The udpprobe command is used to send UDP packets and wait for UDP
+responses.
 The following options are available for the
 .Nm
 udpprobe command:
 .Pp
 udpprobe
-.\"udpprobe [-d dport] [-O option] [-p payload] [-U userid] [-w wait-timeout]"
+.\"udpprobe [-c probe-count] [-d dport] [-o stop-count] [-O option] [-p payload] [-S srcaddr] [-U userid] [-w wait-timeout] [-W wait-probe]"
 .Bk -words
+.Op Fl c Ar probec
 .Op Fl d Ar dport
+.Op Fl o Ar stopc
 .Op Fl O Ar option
 .Op Fl p Ar payload
+.Op Fl S Ar srcaddr
 .Op Fl U Ar userid
 .Op Fl w Ar wait-timeout
+.Op Fl W Ar wait-probe
 .Ek
 .Bl -tag -width Ds
+.It Fl c Ar probec
+specifies the number of probes to send before exiting.  By default,
+one probe is sent.
 .It Fl d Ar dport
 specifies the destination port to send the probe to.
 This is a mandatory parameter.
+.It Fl o Ar stopc
+specifies the number of replies required at which time probing may cease.  By
+default, probing stops after the first reply.
 .It Fl O Ar option
 specifies optional arguments to use.
 The current choices for this option are:
@@ -1286,6 +1305,9 @@ rather than when the wait-timeout period is over.
 specifies the payload of the probe to include.
 This is a mandatory parameter.
 The payload is specified in hexadecimal.
+.It Fl S Ar srcaddr
+specifies the source address to use in probes.
+The address cannot be spoofed.
 .It Fl U Ar userid
 specifies an unsigned integer to include with the data collected; the meaning
 of the user-id is entirely up to the user and has no effect on the behaviour
@@ -1293,6 +1315,10 @@ of udpprobe.
 .It Fl w Ar wait-timeout
 specifies how long to wait, in seconds, for responses.
 By default, a value of 2 seconds is used.
+.It Fl W Ar wait-probe
+specifies the minimum time to wait, in seconds, between sending
+consecutive probes.
+By default, a value of 1 second is used.
 .El
 .\""""""""""""
 .Sh DATA COLLECTION FEATURES
@@ -1328,8 +1354,6 @@ are supplied for probing.
 .Nm
 has the ability to probe multiple lists simultaneously, with each having a
 mix rate that specifies the priority of the list.
-.Nm
-can also make multiple cycles over a list of addresses.
 .Pp
 When writing output to a
 .Xr warts 5
@@ -1454,19 +1478,6 @@ If not supplied, the default output file is used.
 .It Ic file Ar string
 The name of the input file to read target addresses from.
 This parameter is mandatory if the source is a managed source.
-.It Ic cycles Ar integer
-The number of cycles to make over the target address file.
-If zero,
-.Nm
-will loop indefinitely over the file.
-This parameter is ignored unless a managed source is defined.
-.It Ic autoreload Xo
-.Op Cm on | off
-.Xc
-This parameter specifies if the target address file should be re-read whenever
-a cycle is completed, or if the same set of target addresses as the previous
-cycle should be used.
-If not specified, the file is not automatically reloaded at cycle time.
 .El
 .It Ic update Ar name arguments
 The
@@ -1475,7 +1486,7 @@ command allows some properties of an existing source to be modified.
 The source to update is specified with the
 .Ar name
 parameter.
-Valid parameters are: autoreload, cycles, and priority.
+Valid parameters are: priority.
 .It Ic list Ar ...
 The
 .Ic source list
@@ -1546,8 +1557,7 @@ The
 .Ic shutdown done
 command requests that
 .Nm
-shuts down when the current tasks, as well as all remaining cycles, have
-completed.
+shuts down when the current tasks have completed.
 .It Ic flush
 The
 .Ic shutdown flush

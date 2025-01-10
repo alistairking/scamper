@@ -6,11 +6,11 @@ bin_PROGRAMS = sc_hoiho
 
 sc_hoiho_SOURCES = \
 	sc_hoiho.c \
-	../../utils.c \
-	../../mjl_list.c \
-	../../mjl_splaytree.c \
-	../../mjl_threadpool.c \
-	../../scamper/scamper_addr.c
+	$(top_srcdir)/utils.c \
+	$(top_srcdir)/mjl_list.c \
+	$(top_srcdir)/mjl_splaytree.c \
+	$(top_srcdir)/mjl_threadpool.c \
+	$(top_srcdir)/scamper/scamper_addr.c
 
 sc_hoiho_CFLAGS = @PTHREAD_CFLAGS@ @PCRE_CFLAGS@
 sc_hoiho_LDFLAGS = @PTHREAD_CFLAGS@ @PCRE_CFLAGS@

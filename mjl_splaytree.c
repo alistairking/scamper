@@ -3,7 +3,7 @@
  * By Matthew Luckie
  * U of Waikato 0657.317b 1999
  *
- * Copyright (C) 1999-2018 Matthew Luckie. All rights reserved.
+ * Copyright (C) 1999-2024 Matthew Luckie. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -28,15 +28,19 @@
  *
  */
 
+#ifdef HAVE_CONFIG_H
+#include "config.h"
+#endif
+
+#ifdef MJLSPLAYTREE_DEBUG
+#undef NDEBUG
+#endif
+
 #include <stdlib.h>
 #include <assert.h>
 
-#if defined(DMALLOC)
+#ifdef DMALLOC
 #include <dmalloc.h>
-#endif
-
-#if defined(HAVE_CONFIG_H)
-#include "config.h"
 #endif
 
 #include "mjl_splaytree.h"
@@ -46,12 +50,16 @@
  * the implementations of these functions is found at the bottom of this
  * file.
  */
-typedef struct splaytree_stack
+#ifndef SPLAYTREE_STACK_NODEC
+#define SPLAYTREE_STACK_NODEC 512
+#endif
+typedef struct splaytree_stack splaytree_stack_t;
+struct splaytree_stack
 {
-  splaytree_node_t **nodes;
-  int i;
-  int c;
-} splaytree_stack_t;
+  splaytree_node_t  *nodes[SPLAYTREE_STACK_NODEC];
+  splaytree_stack_t *next;
+  int                i;
+};
 
 /*
  * splay tree node data structure
@@ -66,32 +74,23 @@ struct splaytree_node
 
 struct splaytree
 {
-  splaytree_node_t     *head;
-  int                   size;
-  splaytree_cmp_t       cmp;
-  splaytree_stack_t    *stack;
-  splaytree_onremove_t  onremove;
+  splaytree_node_t  *head;
+  int                size;
+  splaytree_cmp_t    cmp;
 };
 
-static splaytree_stack_t *stack_create(void);
-
 #ifdef HAVE_FUNC_ATTRIBUTE_NONNULL
-static splaytree_node_t *stack_pop(splaytree_stack_t *stack)
+static splaytree_node_t *stack_pop(splaytree_stack_t **stack)
   __attribute__ ((nonnull));
-static void  stack_destroy(splaytree_stack_t *stack)
-  __attribute__ ((nonnull));
-static int   stack_push(splaytree_stack_t *stack, splaytree_node_t *node)
-  __attribute__ ((nonnull));
-static void  stack_clean(splaytree_stack_t *stack)
+static int stack_push(splaytree_stack_t **stack, splaytree_node_t *node)
   __attribute__ ((nonnull));
 #else
-static splaytree_node_t *stack_pop(splaytree_stack_t *stack);
-static void  stack_destroy(splaytree_stack_t *stack);
-static int   stack_push(splaytree_stack_t *stack, splaytree_node_t *node);
-static void  stack_clean(splaytree_stack_t *stack);
+static splaytree_node_t *stack_pop(splaytree_stack_t **stack);
+static int stack_push(splaytree_stack_t **stack, splaytree_node_t *node);
 #endif
+static void stack_free(splaytree_stack_t *stack);
 
-#if !defined(NDEBUG) && defined(MJLSPLAYTREE_DEBUG)
+#ifdef MJLSPLAYTREE_DEBUG
 static void splaytree_assert2(const splaytree_t *tree,
 			      const splaytree_node_t *node)
 {
@@ -233,16 +232,17 @@ static void splaytree_splay2(splaytree_node_t *child,
  * be splayed.
  */
 #ifdef HAVE_FUNC_ATTRIBUTE_NONNULL
-static void splaytree_splay(splaytree_t *tree) __attribute__ ((nonnull));
+static void splaytree_splay(splaytree_t *tree, splaytree_stack_t **stack)
+  __attribute__ ((nonnull));
 #endif
 
-static void splaytree_splay(splaytree_t *tree)
+static void splaytree_splay(splaytree_t *tree, splaytree_stack_t **stack)
 {
   splaytree_node_t *child, *parent, *grandparent, *keep;
 
-  child       = stack_pop(tree->stack);
-  parent      = stack_pop(tree->stack);
-  grandparent = stack_pop(tree->stack);
+  child       = stack_pop(stack);
+  parent      = stack_pop(stack);
+  grandparent = stack_pop(stack);
 
   /* there has to be at least one entry in the stack */
   assert(child != NULL);
@@ -274,8 +274,8 @@ static void splaytree_splay(splaytree_t *tree)
   for(;;)
     {
       /* get the parent nodes to the child */
-      parent      = stack_pop(tree->stack);
-      grandparent = stack_pop(tree->stack);
+      parent      = stack_pop(stack);
+      grandparent = stack_pop(stack);
 
       /*
        * if the child node is now at the root, break out as the splay is
@@ -349,9 +349,11 @@ static splaytree_node_t *splaytree_node_alloc(const void *item,
  * returns 0 if inserted, -1 on error.
  */
 #ifndef DMALLOC
-static int splaytree_insert2(splaytree_t *tree, const void *item)
+static int splaytree_insert2(splaytree_t *tree, const void *item,
+			     splaytree_stack_t **stack)
 #else
 static int splaytree_insert2(splaytree_t *tree, const void *item,
+			     splaytree_stack_t **stack,
 			     const char *file, const int line)
 #endif
 {
@@ -363,7 +365,7 @@ static int splaytree_insert2(splaytree_t *tree, const void *item,
   for(;;)
     {
       /* put the node into the insert path and try the next level */
-      if(stack_push(tree->stack, tn) != 0)
+      if(stack_push(stack, tn) != 0)
 	return -1;
 
       /* see whether the data belongs to the left, right, or is a duplicate */
@@ -384,7 +386,7 @@ static int splaytree_insert2(splaytree_t *tree, const void *item,
 #endif
 	    return -1;
 
-	  if(stack_push(tree->stack, node) != 0)
+	  if(stack_push(stack, node) != 0)
 	    {
 	      free(node);
 	      return -1;
@@ -408,7 +410,7 @@ static int splaytree_insert2(splaytree_t *tree, const void *item,
 #endif
 	    return -1;
 
-	  if(stack_push(tree->stack, node) != 0)
+	  if(stack_push(stack, node) != 0)
 	    {
 	      free(node);
 	      return -1;
@@ -441,6 +443,8 @@ splaytree_node_t *splaytree_insert_dm(splaytree_t *tree, const void *item,
 				      const char *file, const int line)
 #endif
 {
+  splaytree_stack_t *stack = NULL;
+
   assert(tree != NULL);
 
   splaytree_assert(tree);
@@ -451,22 +455,18 @@ splaytree_node_t *splaytree_insert_dm(splaytree_t *tree, const void *item,
    */
   if(tree->head != NULL)
     {
-      stack_clean(tree->stack);
-
       /*
        * try and insert the item.  can't insert it if an item matching this
        * one is already there
        */
 #ifndef DMALLOC
-      if(splaytree_insert2(tree, item) != 0)
+      if(splaytree_insert2(tree, item, &stack) != 0)
 #else
-      if(splaytree_insert2(tree, item, file, line) != 0)
+      if(splaytree_insert2(tree, item, &stack, file, line) != 0)
 #endif
-	{
-	  return NULL;
-	}
+	goto err;
 
-      splaytree_splay(tree);
+      splaytree_splay(tree, &stack);
     }
   else
     {
@@ -475,16 +475,19 @@ splaytree_node_t *splaytree_insert_dm(splaytree_t *tree, const void *item,
 #else
       if((tree->head = splaytree_node_alloc(item, file, line)) == NULL)
 #endif
-	{
-	  return NULL;
-	}
+	goto err;
     }
 
   tree->size++;
 
   splaytree_assert(tree);
+  assert(stack == NULL);
 
   return tree->head;
+
+ err:
+  stack_free(stack);
+  return NULL;
 }
 
 /*
@@ -492,12 +495,11 @@ splaytree_node_t *splaytree_insert_dm(splaytree_t *tree, const void *item,
  *
  * find the node with the data item matching.  returns the node, if found.
  */
-static splaytree_node_t *splaytree_find2(splaytree_t *tree, const void *item)
+static int splaytree_find2(splaytree_t *tree, const void *item,
+			   splaytree_node_t **node, splaytree_stack_t **stack)
 {
   splaytree_node_t *tn;
   int i;
-
-  stack_clean(tree->stack);
 
   tn = tree->head;
   while(tn != NULL)
@@ -507,8 +509,8 @@ static splaytree_node_t *splaytree_find2(splaytree_t *tree, const void *item)
        * if we don't then we can't splay the node to the top of the tree, so
        * we fail.
        */
-      if(stack_push(tree->stack, tn) != 0)
-	return NULL;
+      if(stack_push(stack, tn) != 0)
+	return -1;
 
       /* determine the next node to visit */
       i = tree->cmp(item, tn->item);
@@ -520,8 +522,8 @@ static splaytree_node_t *splaytree_find2(splaytree_t *tree, const void *item)
 	break;
     }
 
-  /* we found it ! */
-  return tn;
+  *node = tn;
+  return 0;
 }
 
 /*
@@ -531,20 +533,24 @@ static splaytree_node_t *splaytree_find2(splaytree_t *tree, const void *item)
  */
 void *splaytree_find(splaytree_t *tree, const void *item)
 {
+  splaytree_stack_t *stack = NULL;
+  splaytree_node_t *node;
+
   if(tree == NULL || tree->head == NULL)
+    return NULL;
+
+  splaytree_assert(tree);
+  if(splaytree_find2(tree, item, &node, &stack) != 0 || node == NULL)
     {
+      stack_free(stack);
       return NULL;
     }
 
+  splaytree_splay(tree, &stack);
   splaytree_assert(tree);
-  if(splaytree_find2(tree, item) == NULL)
-    {
-      return NULL;
-    }
-
-  splaytree_splay(tree);
-  splaytree_assert(tree);
-  return tree->head->item;
+  assert(stack == NULL);
+  assert(tree->head == node);
+  return node->item;
 }
 
 /*
@@ -584,6 +590,7 @@ void *splaytree_find_ro(const splaytree_t *tree, const void *item)
  */
 static int splaytree_remove(splaytree_t *tree)
 {
+  splaytree_stack_t *stack = NULL;
   splaytree_node_t *node;
   splaytree_node_t *l, *r;
   splaytree_node_t *temp;
@@ -600,24 +607,19 @@ static int splaytree_remove(splaytree_t *tree)
    */
   if(l != NULL)
     {
-      stack_clean(tree->stack);
-      if(stack_push(tree->stack, l) != 0)
-	{
-	  return -1;
-	}
+      if(stack_push(&stack, l) != 0)
+	goto err;
 
       temp = l;
       while(temp->right != NULL)
 	{
-	  if(stack_push(tree->stack, temp->right) != 0)
-	    {
-	      return -1;
-	    }
+	  if(stack_push(&stack, temp->right) != 0)
+	    goto err;
 	  temp = temp->right;
 	}
 
       /* bring this node to the top of the tree with a splay operation */
-      splaytree_splay(tree);
+      splaytree_splay(tree, &stack);
 
       /*
        * as the right most node on the left branch has no nodes on the right
@@ -631,12 +633,14 @@ static int splaytree_remove(splaytree_t *tree)
     }
 
   tree->size--;
-
-  if(tree->onremove != NULL)
-    tree->onremove(node->item);
-
   free(node);
+  assert(stack == NULL);
+
   return 0;
+
+ err:
+  stack_free(stack);
+  return -1;
 }
 
 /*
@@ -646,12 +650,16 @@ static int splaytree_remove(splaytree_t *tree)
  */
 int splaytree_remove_item(splaytree_t *tree, const void *item)
 {
+  splaytree_stack_t *stack = NULL;
+  splaytree_node_t *node;
+
   /*
    * find the node that we are supposed to delete.
    * if we can't find it, then the remove operation has failed.
    */
-  if(splaytree_find2(tree, item) == NULL)
+  if(splaytree_find2(tree, item, &node, &stack) != 0 || node == NULL)
     {
+      stack_free(stack);
       return -1;
     }
 
@@ -659,7 +667,9 @@ int splaytree_remove_item(splaytree_t *tree, const void *item)
    * now that we've found it, splay the tree to bring the node we are to
    * delete to the top of the tree and then delete it.
    */
-  splaytree_splay(tree);
+  splaytree_splay(tree, &stack);
+  assert(stack == NULL);
+  assert(tree->head == node);
   return splaytree_remove(tree);
 }
 
@@ -670,12 +680,17 @@ int splaytree_remove_item(splaytree_t *tree, const void *item)
  */
 int splaytree_remove_node(splaytree_t *tree, splaytree_node_t *node)
 {
+  splaytree_stack_t *stack = NULL;
+  splaytree_node_t *found_node;
+
   /*
    * find the path to the node that we are supposed to delete.  the node
    * that we find has to match what was passed in
    */
-  if(splaytree_find2(tree, node->item) != node)
+  if(splaytree_find2(tree, node->item, &found_node, &stack) != 0 ||
+     found_node != node)
     {
+      stack_free(stack);
       return -1;
     }
 
@@ -683,7 +698,9 @@ int splaytree_remove_node(splaytree_t *tree, splaytree_node_t *node)
    * now that we've found it, splay the tree to bring the node we are to
    * delete to the top of the tree and then delete it.
    */
-  splaytree_splay(tree);
+  splaytree_splay(tree, &stack);
+  assert(stack == NULL);
+  assert(tree->head == node);
   return splaytree_remove(tree);
 }
 
@@ -695,17 +712,26 @@ int splaytree_remove_node(splaytree_t *tree, splaytree_node_t *node)
 void *splaytree_findclosest(splaytree_t *tree, const void *item,
 			    splaytree_diff_t diff)
 {
+  splaytree_stack_t *stack = NULL;
   splaytree_node_t *ret;
   splaytree_node_t *first, *second;
   int               first_diff, second_diff;
 
-  if(tree == NULL || tree->head == NULL) return NULL;
+  if(tree == NULL || tree->head == NULL)
+    return NULL;
+
+  if(splaytree_find2(tree, item, &ret, &stack) != 0)
+    {
+      stack_free(stack);
+      return NULL;
+    }
 
   /* wow, the value we are looking for is actually in the tree! */
-  if((ret = splaytree_find2(tree, item)) != NULL)
+  if(ret != NULL)
     {
-      splaytree_splay(tree);
+      splaytree_splay(tree, &stack);
       assert(ret == tree->head);
+      assert(stack == NULL);
       return tree->head->item;
     }
 
@@ -713,8 +739,8 @@ void *splaytree_findclosest(splaytree_t *tree, const void *item,
    * we need to get the last two items off the stack and figure out which
    * one of the two is the closest to the one we are looking for
    */
-  first  = stack_pop(tree->stack);
-  second = stack_pop(tree->stack);
+  first  = stack_pop(&stack);
+  second = stack_pop(&stack);
 
   /* need at least one item in the stack if tree->head != NULL */
   assert(first != NULL);
@@ -722,11 +748,10 @@ void *splaytree_findclosest(splaytree_t *tree, const void *item,
   /* if there is only one item in the stack, splay? on it and return it */
   if(second == NULL)
     {
-      if(stack_push(tree->stack, first) != 0)
-	{
-	  return NULL;
-	}
-      splaytree_splay(tree);
+      if(stack_push(&stack, first) != 0)
+	return NULL;
+      splaytree_splay(tree, &stack);
+      assert(stack == NULL);
       return tree->head->item;
     }
 
@@ -739,23 +764,15 @@ void *splaytree_findclosest(splaytree_t *tree, const void *item,
    * stack and the splay on that
    * else put them both back on and splay on that
    */
-  if(second_diff > first_diff)
+  if(stack_push(&stack, second) != 0 ||
+     (second_diff > first_diff && stack_push(&stack, first) != 0))
     {
-      if(stack_push(tree->stack, second) != 0)
-	{
-	  return NULL;
-	}
-    }
-  else
-    {
-      if(stack_push(tree->stack, second) != 0 ||
-	 stack_push(tree->stack, first) != 0)
-	{
-	  return NULL;
-	}
+      stack_free(stack);
+      return NULL;
     }
 
-  splaytree_splay(tree);
+  splaytree_splay(tree, &stack);
+  assert(stack == NULL);
   return tree->head->item;
 }
 
@@ -798,16 +815,15 @@ int splaytree_depth(const splaytree_t *tree)
  */
 static void splaytree_free2(splaytree_t *tree, splaytree_free_t free_ptr)
 {
+  splaytree_stack_t *stack = NULL;
   splaytree_node_t *tn = tree->head, *tn2;
-
-  stack_clean(tree->stack);
 
   while(tn != NULL)
     {
       if(tn->left != NULL)
 	{
 	  tn2 = tn->left; tn->left = NULL;
-	  stack_push(tree->stack, tn);
+	  stack_push(&stack, tn);
 	  tn = tn2;
 	  continue;
 	}
@@ -815,16 +831,15 @@ static void splaytree_free2(splaytree_t *tree, splaytree_free_t free_ptr)
       if(tn->right != NULL)
 	{
 	  tn2 = tn->right; tn->right = NULL;
-	  stack_push(tree->stack, tn);
+	  stack_push(&stack, tn);
 	  tn = tn2;
 	  continue;
 	}
 
-      if(tree->onremove != NULL) tree->onremove(tn->item);
       if(free_ptr != NULL) free_ptr(tn->item);
       free(tn);
 
-      tn = stack_pop(tree->stack);
+      tn = stack_pop(&stack);
     }
 
   return;
@@ -839,7 +854,6 @@ void splaytree_free(splaytree_t *tree, splaytree_free_t free_ptr)
 {
   if(tree == NULL) return;
   splaytree_free2(tree, free_ptr);
-  stack_destroy(tree->stack);
   free(tree);
   return;
 }
@@ -850,12 +864,6 @@ void splaytree_empty(splaytree_t *tree, splaytree_free_t free_ptr)
   splaytree_free2(tree, free_ptr);
   tree->head = NULL;
   tree->size = 0;
-  return;
-}
-
-void splaytree_onremove(splaytree_t *tree, splaytree_onremove_t onremove)
-{
-  tree->onremove = onremove;
   return;
 }
 
@@ -967,22 +975,22 @@ void splaytree_display(splaytree_t *tree, splaytree_display_t disp)
  */
 void splaytree_inorder(splaytree_t *tree, splaytree_inorder_t func, void *in)
 {
+  splaytree_stack_t *stack = NULL;
   splaytree_node_t *tn;
 
   if(tree == NULL || func == NULL)
     return;
 
-  stack_clean(tree->stack);
   tn = tree->head;
 
   for(;;)
     {
       if(tn != NULL)
 	{
-	  stack_push(tree->stack, tn);
+	  stack_push(&stack, tn);
 	  tn = tn->left;
 	}
-      else if((tn = stack_pop(tree->stack)) != NULL)
+      else if((tn = stack_pop(&stack)) != NULL)
 	{
 	  func(in, tn->item);
 	  tn = tn->right;
@@ -1014,11 +1022,10 @@ splaytree_t *splaytree_alloc_dm(splaytree_cmp_t cmp,
   tree = (splaytree_t *)dmalloc_malloc(file,line,len,DMALLOC_FUNC_MALLOC,0,0);
 #endif
 
-  if(tree == NULL || (tree->stack = stack_create()) == NULL)
+  if(tree == NULL)
     goto err;
 
   tree->head     = NULL;
-  tree->onremove = NULL;
   tree->size     = 0;
   tree->cmp      = cmp;
   return tree;
@@ -1040,87 +1047,56 @@ int splaytree_count(const splaytree_t *tree)
   return tree->size;
 }
 
-/*
- * stack_create
- *
- * create a stack that is optimised for dealing with splaytree processing
- */
-static splaytree_stack_t *stack_create(void)
+static int stack_push(splaytree_stack_t **s, splaytree_node_t *node)
 {
-  splaytree_stack_t *s;
+  splaytree_stack_t *p = *s;
 
-  if((s = (splaytree_stack_t *)malloc(sizeof(splaytree_stack_t))) == NULL)
+  if(p == NULL || p->i == SPLAYTREE_STACK_NODEC)
     {
-      return NULL;
+      if((p = malloc(sizeof(splaytree_stack_t))) == NULL)
+	return -1;
+      p->next = *s;
+      p->i = 0;
+      *s = p;
     }
 
-  s->i = -1;
-  s->c = 128;
-  if((s->nodes = malloc(sizeof(splaytree_node_t *) * s->c)) == NULL)
-    {
-      free(s);
-      return NULL;
-    }
+  assert(p->i >= 0);
+  assert(p->i < SPLAYTREE_STACK_NODEC);
+  p->nodes[p->i++] = node;
 
-  return s;
-}
-
-/*
- * stack_clean
- *
- * reset the splaytree stack so it is emptied.
- */
-static void stack_clean(splaytree_stack_t *s)
-{
-  s->i = -1;
-  return;
-}
-
-/*
- * stack_destroy
- *
- * free the memory allocated to the splaytree stack.
- */
-static void stack_destroy(splaytree_stack_t *s)
-{
-  free(s->nodes);
-  free(s);
-  return;
-}
-
-/*
- * stack_push
- *
- * put the node on the splaytree stack, growing the array if necessary.
- */
-static int stack_push(splaytree_stack_t *s, splaytree_node_t *node)
-{
-  splaytree_node_t **nodes;
-  size_t size;
-
-  if(s->i+1 == s->c)
-    {
-      size = sizeof(splaytree_node_t *) * (s->c + 128);
-      if((nodes = (splaytree_node_t **)realloc(s->nodes, size)) == NULL)
-	{
-	  return -1;
-	}
-
-      s->c += 128;
-      s->nodes = nodes;
-    }
-
-  s->nodes[++s->i] = node;
   return 0;
 }
 
-/*
- * stack_pop
- *
- * remove the splaytree node at the top of the stack.
- */
-static splaytree_node_t *stack_pop(splaytree_stack_t *s)
+static splaytree_node_t *stack_pop(splaytree_stack_t **s)
 {
-  if(s->i == -1) return NULL;
-  return s->nodes[s->i--];
+  splaytree_stack_t *p;
+  splaytree_node_t *n;
+
+  if(*s == NULL)
+    return NULL;
+
+  p = *s;
+  assert(p->i > 0);
+  assert(p->i <= SPLAYTREE_STACK_NODEC);
+  n = p->nodes[--p->i];
+
+  if(p->i == 0)
+    {
+      *s = p->next;
+      free(p);
+    }
+
+  return n;
+}
+
+static void stack_free(splaytree_stack_t *stack)
+{
+  splaytree_stack_t *next;
+  while(stack != NULL)
+    {
+      next = stack->next;
+      free(stack);
+      stack = next;
+    }
+  return;
 }

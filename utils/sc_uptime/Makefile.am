@@ -6,15 +6,17 @@ bin_PROGRAMS = sc_uptime
 
 sc_uptime_SOURCES = \
 	sc_uptime.c \
-	../../utils.c \
-	../../mjl_heap.c \
-	../../mjl_list.c \
-	../../mjl_splaytree.c \
-	../../mjl_prefixtree.c \
-	../../scamper/scamper_linepoll.c \
-	../../scamper/scamper_writebuf.c
+	$(top_srcdir)/utils.c \
+	$(top_srcdir)/mjl_heap.c \
+	$(top_srcdir)/mjl_list.c \
+	$(top_srcdir)/mjl_splaytree.c \
+	$(top_srcdir)/mjl_prefixtree.c \
+	$(top_srcdir)/scamper/scamper_linepoll.c \
+	$(top_srcdir)/scamper/scamper_writebuf.c
 
-sc_uptime_LDADD = ../../scamper/libscamperfile.la -lsqlite3
+sc_uptime_LDADD = \
+	$(top_srcdir)/lib/libscamperfile/libscamperfile.la \
+	-lsqlite3
 
 man_MANS = sc_uptime.1
 

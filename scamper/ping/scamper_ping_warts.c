@@ -4,10 +4,10 @@
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2012-2014 The Regents of the University of California
- * Copyright (C) 2016-2023 Matthew Luckie
+ * Copyright (C) 2016-2024 Matthew Luckie
  * Author: Matthew Luckie
  *
- * $Id: scamper_ping_warts.c,v 1.33 2024/05/01 07:46:20 mjl Exp $
+ * $Id: scamper_ping_warts.c,v 1.35 2024/10/17 07:57:25 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -806,13 +806,12 @@ int scamper_file_warts_ping_read(scamper_file_t *sf, const warts_hdr_t *hdr,
 {
   warts_state_t *state = scamper_file_getstate(sf);
   scamper_ping_t *ping = NULL;
-  uint8_t *buf = NULL;
-  uint32_t off = 0;
-  uint16_t i;
-  scamper_ping_reply_t *reply;
-  uint16_t reply_count;
+  scamper_ping_reply_t *reply = NULL;
   warts_addrtable_t *table = NULL;
   warts_ifnametable_t *ifntable = NULL;
+  uint8_t *buf = NULL;
+  uint32_t off = 0;
+  uint16_t i, reply_count;
 
   if(warts_read(sf, &buf, hdr->len) != 0)
     {
@@ -860,20 +859,16 @@ int scamper_file_warts_ping_read(scamper_file_t *sf, const warts_hdr_t *hdr,
   for(i=0; i<reply_count; i++)
     {
       if((reply = scamper_ping_reply_alloc()) == NULL)
-	{
-	  goto err;
-	}
+	goto err;
 
       if(warts_ping_reply_read(ping, reply, state, table, ifntable,
 			       buf, &off, hdr->len) != 0)
-	{
-	  goto err;
-	}
+	goto err;
 
       if(scamper_ping_reply_append(ping, reply) != 0)
-	{
-	  goto err;
-	}
+	goto err;
+
+      reply = NULL;
     }
 
  done:
@@ -888,6 +883,7 @@ int scamper_file_warts_ping_read(scamper_file_t *sf, const warts_hdr_t *hdr,
   if(ifntable != NULL) warts_ifnametable_free(ifntable);
   if(buf != NULL) free(buf);
   if(ping != NULL) scamper_ping_free(ping);
+  if(reply != NULL) scamper_ping_reply_free(reply);
   return -1;
 }
 

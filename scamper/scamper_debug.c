@@ -1,13 +1,13 @@
 /*
  * scamper_debug.c
  *
- * $Id: scamper_debug.c,v 1.48 2024/07/19 06:59:03 mjl Exp $
+ * $Id: scamper_debug.c,v 1.51 2024/12/31 04:17:31 mjl Exp $
  *
  * routines to reduce the impact of debugging cruft in scamper's code.
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2010 The University of Waikato
- * Copyright (C) 2012-2022 Matthew Luckie
+ * Copyright (C) 2012-2024 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -104,43 +104,6 @@ void printerror(const char *func, const char *format, ...)
   return;
 }
 
-void printerror_gai(const char *func, int ecode, const char *format, ...)
-{
-  char msg[512], ts[16];
-  va_list ap;
-
-  if(isdaemon != 0)
-    {
-#ifndef WITHOUT_DEBUGFILE
-      if(debugfile == NULL)
-	return;
-#else
-      return;
-#endif
-    }
-
-  va_start(ap, format);
-  vsnprintf(msg, sizeof(msg), format, ap);
-  va_end(ap);
-  timestamp_str(ts, sizeof(ts));
-
-  if(isdaemon == 0)
-    {
-      fprintf(stderr, "%s %s: %s: %s\n", ts, func, msg, gai_strerror(ecode));
-      fflush(stderr);
-    }
-
-#ifndef WITHOUT_DEBUGFILE
-  if(debugfile != NULL)
-    {
-      fprintf(debugfile, "%s %s: %s: %s\n", ts, func, msg, gai_strerror(ecode));
-      fflush(debugfile);
-    }
-#endif
-
-  return;
-}
-
 void printerror_msg(const char *func, const char *format, ...)
 {
   char msg[512], ts[16];
@@ -207,8 +170,7 @@ void printerror_ssl(const char *func, const char *format, ...)
       if((ecode = ERR_get_error()) == 0)
 	break;
       ERR_error_string_n(ecode, buf, sizeof(buf));
-      string_concat(sslbuf, sizeof(sslbuf), &off, "%s%s",
-		    off > 0 ? " " : "", buf);
+      string_concat2(sslbuf, sizeof(sslbuf), &off, off > 0 ? " " : "", buf);
     }
 
   if(isdaemon == 0)

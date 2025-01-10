@@ -1,7 +1,7 @@
 /*
  * scamper_host_cmd
  *
- * $Id: scamper_host_cmd.c,v 1.14 2024/05/02 02:33:38 mjl Exp $
+ * $Id: scamper_host_cmd.c,v 1.15 2024/09/04 07:36:24 mjl Exp $
  *
  * Copyright (C) 2018-2024 Matthew Luckie
  *
@@ -42,9 +42,11 @@
 #define HOST_OPT_WAIT      6
 #define HOST_OPT_CLASS     7
 #define HOST_OPT_TCP       8
+#define HOST_OPT_OPTION    9
 
 static const scamper_option_in_t opts[] = {
   {'c', NULL, HOST_OPT_CLASS,     SCAMPER_OPTION_TYPE_STR},
+  {'O', NULL, HOST_OPT_OPTION,    SCAMPER_OPTION_TYPE_STR},
   {'r', NULL, HOST_OPT_NORECURSE, SCAMPER_OPTION_TYPE_NULL},
   {'R', NULL, HOST_OPT_RETRIES,   SCAMPER_OPTION_TYPE_NUM},
   {'s', NULL, HOST_OPT_SERVER,    SCAMPER_OPTION_TYPE_STR},
@@ -63,7 +65,8 @@ void etc_resolv(void);
 const char *scamper_do_host_usage(void)
 {
   return
-    "host [-rT] [-c class] [-R number] [-s server] [-t type] [-U userid] [-W wait] name\n";
+    "host [-rT] [-c class] [-O options] [-R number] [-s server]\n"
+    "     [-t type] [-U userid] [-W wait] name\n";
 }
 
 static int host_arg_param_validate(int optid, char *param, long long *out,
@@ -159,6 +162,16 @@ static int host_arg_param_validate(int optid, char *param, long long *out,
 	{
 	  snprintf(errbuf, errlen, "userid must be within %u - %u", 0,
 		   UINT32_MAX);
+	  goto err;
+	}
+      break;
+
+    case HOST_OPT_OPTION:
+      if(strcasecmp(param, "NSID") == 0)
+	tmp = SCAMPER_HOST_FLAG_NSID;
+      else
+	{
+	  snprintf(errbuf, errlen, "unknown option");
 	  goto err;
 	}
       break;
@@ -273,6 +286,10 @@ void *scamper_do_host_alloc(char *str, char *errbuf, size_t errlen)
 
 	case HOST_OPT_USERID:
 	  userid = (uint32_t)tmp;
+	  break;
+
+	case HOST_OPT_OPTION:
+	  flags |= (uint16_t)tmp;
 	  break;
 
 	case HOST_OPT_WAIT:

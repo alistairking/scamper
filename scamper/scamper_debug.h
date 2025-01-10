@@ -1,7 +1,7 @@
 /*
  * scamper_debug.h
  *
- * $Id: scamper_debug.h,v 1.24 2024/07/19 06:59:03 mjl Exp $
+ * $Id: scamper_debug.h,v 1.25 2024/12/15 18:59:20 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2009 The University of Waikato
@@ -29,13 +29,10 @@
 #ifdef HAVE_FUNC_ATTRIBUTE_FORMAT
 void printerror(const char *func, const char *format, ...)
   __attribute__((format(printf, 2, 3)));
-void printerror_gai(const char *func, int ecode, const char *format, ...)
-  __attribute__((format(printf, 3, 4)));
 void printerror_msg(const char *func, const char *format, ...)
   __attribute__((format(printf, 2, 3)));
 #else
 void printerror(const char *func, const char *format, ...);
-void printerror_gai(const char *func, int ecode, const char *format, ...);
 void printerror_msg(const char *func, const char *format, ...);
 #endif
 

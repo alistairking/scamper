@@ -1,12 +1,12 @@
 /*
  * scamper_task.c
  *
- * $Id: scamper_task.c,v 1.95 2024/08/28 01:52:23 mjl Exp $
+ * $Id: scamper_task.c,v 1.104 2024/12/31 04:17:31 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2012-2015 The Regents of the University of California
- * Copyright (C) 2016-2023 Matthew Luckie
+ * Copyright (C) 2016-2024 Matthew Luckie
  * Copyright (C) 2024      The Regents of the University of California
  * Author: Matthew Luckie
  *
@@ -151,6 +151,8 @@ static dlist_t     *sniff = NULL;
 static splaytree_t *host = NULL;
 #endif
 static slist_t     *expire = NULL;
+
+extern int          holdtime;
 
 static int tx_ip_cmp(const trie_addr_t *a, const trie_addr_t *b)
 {
@@ -439,8 +441,8 @@ char *scamper_task_sig_tostr(scamper_task_sig_t *sig, char *buf, size_t len)
 
   if(sig->sig_type == SCAMPER_TASK_SIG_TYPE_TX_IP)
     {
-      string_concat(buf, len, &off, "ip %s",
-		    scamper_addr_tostr(sig->sig_tx_ip_dst, tmp, sizeof(tmp)));
+      string_concat2(buf, len, &off, "ip ",
+		     scamper_addr_tostr(sig->sig_tx_ip_dst, tmp, sizeof(tmp)));
       if(sig->sig_tx_ip_proto == IPPROTO_ICMP)
 	{
 	  if(sig->sig_tx_ip_icmp_type == ICMP_ECHO)
@@ -449,7 +451,7 @@ char *scamper_task_sig_tostr(scamper_task_sig_t *sig, char *buf, size_t len)
 	    string_concat(buf, len, &off, " icmp time");
 	  else
 	    string_concat(buf, len, &off, " icmp");
-	  string_concat(buf, len, &off, " id %d", sig->sig_tx_ip_icmp_id);
+	  string_concaf(buf, len, &off, " id %d", sig->sig_tx_ip_icmp_id);
 	}
       else if(sig->sig_tx_ip_proto == IPPROTO_ICMPV6)
 	{
@@ -457,43 +459,43 @@ char *scamper_task_sig_tostr(scamper_task_sig_t *sig, char *buf, size_t len)
 	    string_concat(buf, len, &off, " icmp echo");
 	  else
 	    string_concat(buf, len, &off, " icmp");
-	  string_concat(buf, len, &off, " id %d", sig->sig_tx_ip_icmp_id);
+	  string_concaf(buf, len, &off, " id %d", sig->sig_tx_ip_icmp_id);
 	}
       else if(sig->sig_tx_ip_proto == IPPROTO_UDP)
 	{
-	  string_concat(buf, len, &off, " udp sport %d",
+	  string_concaf(buf, len, &off, " udp sport %d",
 			sig->sig_tx_ip_udp_sport_x);
 	  if(sig->sig_tx_ip_udp_sport_x != sig->sig_tx_ip_udp_sport_y)
-	    string_concat(buf, len, &off, "-%d", sig->sig_tx_ip_udp_sport_y);
-	  string_concat(buf, len, &off, " dport %d",
+	    string_concaf(buf, len, &off, "-%d", sig->sig_tx_ip_udp_sport_y);
+	  string_concaf(buf, len, &off, " dport %d",
 			sig->sig_tx_ip_udp_dport_x);
 	  if(sig->sig_tx_ip_udp_dport_x != sig->sig_tx_ip_udp_dport_y)
-	    string_concat(buf, len, &off, "-%d", sig->sig_tx_ip_udp_dport_y);
+	    string_concaf(buf, len, &off, "-%d", sig->sig_tx_ip_udp_dport_y);
 	}
       else if(sig->sig_tx_ip_proto == IPPROTO_TCP)
 	{
-	  string_concat(buf, len, &off, " tcp sport %d",
+	  string_concaf(buf, len, &off, " tcp sport %d",
 			sig->sig_tx_ip_tcp_sport_x);
 	  if(sig->sig_tx_ip_tcp_sport_x != sig->sig_tx_ip_tcp_sport_y)
-	    string_concat(buf, len, &off, "-%d", sig->sig_tx_ip_tcp_sport_y);
-	  string_concat(buf, len, &off, " dport %d",
+	    string_concaf(buf, len, &off, "-%d", sig->sig_tx_ip_tcp_sport_y);
+	  string_concaf(buf, len, &off, " dport %d",
 			sig->sig_tx_ip_tcp_dport_x);
 	  if(sig->sig_tx_ip_tcp_dport_x != sig->sig_tx_ip_tcp_dport_y)
-	    string_concat(buf, len, &off, "-%d", sig->sig_tx_ip_tcp_dport_y);
+	    string_concaf(buf, len, &off, "-%d", sig->sig_tx_ip_tcp_dport_y);
 	}
     }
   else if(sig->sig_type == SCAMPER_TASK_SIG_TYPE_TX_ND)
-    string_concat(buf, len, &off, "nd %s",
-		  scamper_addr_tostr(sig->sig_tx_nd_ip, tmp, sizeof(tmp)));
+    string_concat2(buf, len, &off, "nd ",
+		   scamper_addr_tostr(sig->sig_tx_nd_ip, tmp, sizeof(tmp)));
 #ifndef DISABLE_SCAMPER_SNIFF
   else if(sig->sig_type == SCAMPER_TASK_SIG_TYPE_SNIFF)
-    string_concat(buf, len, &off, "sniff %s icmp-id %04x",
+    string_concaf(buf, len, &off, "sniff %s icmp-id %04x",
 		  scamper_addr_tostr(sig->sig_sniff_src, tmp, sizeof(tmp)),
 		  sig->sig_sniff_icmp_id);
 #endif
 #ifndef DISABLE_SCAMPER_HOST
   else if(sig->sig_type == SCAMPER_TASK_SIG_TYPE_HOST)
-    string_concat(buf, len, &off, "host %s %u",
+    string_concaf(buf, len, &off, "host %s %u",
 		  sig->sig_host_name, sig->sig_host_type);
 #endif
   else
@@ -519,7 +521,6 @@ void scamper_task_sig_free(scamper_task_sig_t *sig)
     {
     case SCAMPER_TASK_SIG_TYPE_TX_IP:
       if(sig->sig_tx_ip_dst != NULL) scamper_addr_free(sig->sig_tx_ip_dst);
-      if(sig->sig_tx_ip_src != NULL) scamper_addr_free(sig->sig_tx_ip_src);
       break;
 
     case SCAMPER_TASK_SIG_TYPE_TX_ND:
@@ -629,14 +630,33 @@ static int sig_tx_ip_overlap(scamper_task_sig_t *a, scamper_task_sig_t *b)
   return 1;
 }
 
+static int trie_addr_sig_tx_ip_overlap(trie_addr_t *ta, scamper_task_sig_t *sig)
+{
+  dlist_node_t *dn;
+  s2t_t *s2t;
+  s2x_t *s2x;
+
+  for(dn=dlist_head_node(ta->s2t_list); dn != NULL; dn=dlist_node_next(dn))
+    {
+      s2t = dlist_node_item(dn);
+      if(sig_tx_ip_overlap(sig, s2t->sig) != 0)
+	return 1;
+    }
+  for(dn=dlist_head_node(ta->s2x_list); dn != NULL; dn=dlist_node_next(dn))
+    {
+      s2x = dlist_node_item(dn);
+      if(sig_tx_ip_overlap(sig, s2x->sig) != 0)
+	return 1;
+    }
+
+  return 0;
+}
+
 int scamper_task_sig_sport_used(scamper_addr_t *dst, uint8_t proto,
 				uint16_t sport, uint16_t dport)
 {
   scamper_task_sig_t sig;
   trie_addr_t *ta;
-  dlist_node_t *dn;
-  s2t_t *s2t;
-  s2x_t *s2x;
 
   sig.sig_tx_ip_dst = dst;
   if(proto == IPPROTO_TCP)
@@ -657,20 +677,7 @@ int scamper_task_sig_sport_used(scamper_addr_t *dst, uint8_t proto,
     return 0;
 
   /* check to see if there's an overlapping signature */
-  for(dn=dlist_head_node(ta->s2t_list); dn != NULL; dn=dlist_node_next(dn))
-    {
-      s2t = dlist_node_item(dn);
-      if(sig_tx_ip_overlap(&sig, s2t->sig) != 0)
-	return 1;
-    }
-  for(dn=dlist_head_node(ta->s2x_list); dn != NULL; dn=dlist_node_next(dn))
-    {
-      s2x = dlist_node_item(dn);
-      if(sig_tx_ip_overlap(&sig, s2x->sig) != 0)
-	return 1;
-    }
-
-  return 0;
+  return trie_addr_sig_tx_ip_overlap(ta, &sig);
 }
 
 scamper_task_t *scamper_task_find(scamper_task_sig_t *sig)
@@ -723,7 +730,7 @@ static void s2t_tx_ip_deinstall(s2t_t *s2t, struct timeval *expiry)
 {
   scamper_task_sig_t *sig = s2t->sig;
   trie_addr_t *ta;
-  s2x_t *s2x;
+  s2x_t *s2x = NULL;
 
   assert(s2t->node != NULL);
 
@@ -738,33 +745,32 @@ static void s2t_tx_ip_deinstall(s2t_t *s2t, struct timeval *expiry)
    * try to add an expiry entry for the signature.  if we fail,
    * then check if we still need the trie_addr_t.
    */
-  if((s2x = malloc_zero(sizeof(s2x_t))) != NULL &&
+  if(expiry != NULL &&
+     (s2x = malloc_zero(sizeof(s2x_t))) != NULL &&
      (s2x->node = dlist_tail_push(ta->s2x_list, s2x)) != NULL &&
      slist_tail_push(expire, s2x) != NULL)
     {
       timeval_cpy(&s2x->expiry, expiry);
       s2x->sig = sig;
+      return;
     }
-  else
+
+  /* clean up any attempt to add expiry node */
+  if(s2x != NULL)
     {
-      /* clean up attempt to add expiry node */
-      if(s2x != NULL)
-	{
-	  if(s2x->node != NULL)
-	    dlist_node_pop(ta->s2x_list, s2x->node);
-	  free(s2x);
-	}
-
-      /* if the address no longer has any signatures, remove from trie */
-      if(trie_addr_isempty(ta))
-	{
-	  trie_addr_remove(ta);
-	  trie_addr_free(ta);
-	}
-
-      scamper_task_sig_free(sig);
+      if(s2x->node != NULL)
+	dlist_node_pop(ta->s2x_list, s2x->node);
+      free(s2x);
     }
 
+  /* if the address no longer has any signatures, remove from trie */
+  if(trie_addr_isempty(ta))
+    {
+      trie_addr_remove(ta);
+      trie_addr_free(ta);
+    }
+
+  scamper_task_sig_free(sig);
   return;
 }
 
@@ -783,13 +789,13 @@ static void scamper_task_sig_deinstall(scamper_task_t *task)
 	{
 	  if(sig->sig_type == SCAMPER_TASK_SIG_TYPE_TX_IP)
 	    {
-	      if(exp_set == 0)
+	      if(exp_set == 0 && holdtime > 0)
 		{
 		  gettimeofday_wrap(&expiry);
-		  expiry.tv_sec += 5;
+		  expiry.tv_sec += holdtime;
 		  exp_set = 1;
 		}
-	      s2t_tx_ip_deinstall(s2t, &expiry);
+	      s2t_tx_ip_deinstall(s2t, holdtime > 0 ? &expiry : NULL);
 	      sig = NULL;
 	    }
 	  else if(sig->sig_type == SCAMPER_TASK_SIG_TYPE_TX_ND)

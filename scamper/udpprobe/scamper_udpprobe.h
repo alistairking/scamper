@@ -1,7 +1,7 @@
 /*
  * scamper_udpprobe.h
  *
- * $Id: scamper_udpprobe.h,v 1.5 2024/04/04 22:57:01 mjl Exp $
+ * $Id: scamper_udpprobe.h,v 1.7 2024/11/07 18:15:39 mjl Exp $
  *
  * Copyright (C) 2023 The Regents of the University of California
  *
@@ -26,6 +26,8 @@
 typedef struct scamper_udpprobe scamper_udpprobe_t;
 typedef struct scamper_udpprobe_probe scamper_udpprobe_probe_t;
 typedef struct scamper_udpprobe_reply scamper_udpprobe_reply_t;
+
+char *scamper_udpprobe_tojson(const scamper_udpprobe_t *up, size_t *len);
 
 /* scamper_udpprobe_t functions */
 void scamper_udpprobe_free(scamper_udpprobe_t *up);
@@ -61,5 +63,6 @@ scamper_udpprobe_reply_t *scamper_udpprobe_reply_use(scamper_udpprobe_reply_t *u
 const uint8_t *scamper_udpprobe_reply_data_get(const scamper_udpprobe_reply_t *ur);
 uint16_t scamper_udpprobe_reply_len_get(const scamper_udpprobe_reply_t *ur);
 const struct timeval *scamper_udpprobe_reply_rx_get(const scamper_udpprobe_reply_t *ur);
+const char *scamper_udpprobe_reply_ifname_get(const scamper_udpprobe_reply_t *ur);
 
 #endif /* __SCAMPER_UDPPROBE_H */

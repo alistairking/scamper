@@ -1,12 +1,12 @@
 /*
  * scamper_writebuf.c: use in combination with select to send without blocking
  *
- * $Id: scamper_writebuf.c,v 1.51 2023/08/20 01:21:17 mjl Exp $
+ * $Id: scamper_writebuf.c,v 1.52 2024/12/30 03:16:57 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2010 The University of Waikato
  * Copyright (C) 2014      The Regents of the University of California
- * Copyright (C) 2014-2023 Matthew Luckie
+ * Copyright (C) 2014-2024 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -276,11 +276,11 @@ size_t scamper_writebuf_len2(const scamper_writebuf_t *wb,char *str,size_t len)
       c++;
     }
 
-  string_concat(str, len, &off, "%d,%d%s", (int)k, c, (k != 0) ? ":" : "");
+  string_concaf(str, len, &off, "%d,%d%s", (int)k, c, (k != 0) ? ":" : "");
   for(node=slist_head_node(wb->iovs); node != NULL; node=slist_node_next(node))
     {
       iov = slist_node_item(node);
-      string_concat(str, len, &off, " %d", (int)iov->iov_len);
+      string_concaf(str, len, &off, " %d", (int)iov->iov_len);
     }
 
   return k;

@@ -1,7 +1,7 @@
 /*
  * scamper_tracelb_cmd.c
  *
- * $Id: scamper_tracelb_cmd.c,v 1.8 2024/05/02 02:33:38 mjl Exp $
+ * $Id: scamper_tracelb_cmd.c,v 1.9 2024/08/26 09:14:21 mjl Exp $
  *
  * Copyright (C) 2008-2011 The University of Waikato
  * Copyright (C) 2012      The Regents of the University of California
@@ -95,12 +95,12 @@ static const opt_limit_t limits[] = {
   {NULL, 0, 0}, /* -P method */
   {"attempts", 1, 5},
   {"max-probec", 50, 65535},
-  {NULL, 0, 0}, /* -r rtr */
   {"sport", 1, 65535},
   {"tos", 0, 255},
   {"userid", 0, UINT32_MAX},
   {NULL, 0, 0}, /* -w wait-timeout */
   {NULL, 0, 0}, /* -W wait-probe */
+  {NULL, 0, 0}, /* -r rtr */
 };
 
 const char *scamper_do_tracelb_usage(void)
@@ -314,6 +314,10 @@ void *scamper_do_tracelb_alloc(char *str, char *errbuf, size_t errlen)
 
 	case TRACE_OPT_DPORT:
 	  dport = (uint16_t)tmp;
+	  break;
+
+	case TRACE_OPT_SPORT:
+	  sport = (uint16_t)tmp;
 	  break;
 
 	case TRACE_OPT_FIRSTHOP:

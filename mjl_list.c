@@ -1,12 +1,12 @@
 /*
  * linked list routines
  *
- * $Id: mjl_list.c,v 1.83 2024/03/23 07:55:43 mjl Exp $
+ * $Id: mjl_list.c,v 1.89 2024/12/30 04:19:00 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
  *
- * Copyright (C) 2004-2023 Matthew Luckie. All rights reserved.
+ * Copyright (C) 2004-2024 Matthew Luckie. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -35,15 +35,19 @@
 #define _CRT_RAND_S
 #endif
 
+#if defined(HAVE_CONFIG_H)
+#include "config.h"
+#endif
+
+#ifdef MJLLIST_DEBUG
+#undef NDEBUG
+#endif
+
 #include <stdlib.h>
 #include <assert.h>
 
 #if defined(DMALLOC)
 #include <dmalloc.h>
-#endif
-
-#if defined(HAVE_CONFIG_H)
-#include "config.h"
 #endif
 
 #include "mjl_list.h"
@@ -59,7 +63,9 @@ struct dlist_node
   void              *item;
   struct dlist_node *prev;
   struct dlist_node *next;
+#ifndef NDEBUG
   struct dlist      *list;
+#endif
 };
 
 struct clist_node
@@ -75,7 +81,6 @@ struct slist
   slist_node_t     *tail;
   int               length;
   unsigned int      lock;
-  slist_onremove_t  onremove;
 };
 
 struct dlist
@@ -84,7 +89,6 @@ struct dlist
   dlist_node_t     *tail;
   int               length;
   unsigned int      lock;
-  dlist_onremove_t  onremove;
 };
 
 struct clist
@@ -92,7 +96,6 @@ struct clist
   clist_node_t     *head;
   int               length;
   unsigned int      lock;
-  clist_onremove_t  onremove;
 };
 
 static int random_u32(unsigned int *r)
@@ -131,7 +134,7 @@ static int shuffle_array(void **array, int len)
   return 0;
 }
 
-#if !defined(NDEBUG) && defined(MJLLIST_DEBUG)
+#ifdef MJLLIST_DEBUG
 static void slist_assert_sort(const slist_t *list, slist_cmp_t cmp)
 {
   slist_node_t *n;
@@ -208,7 +211,6 @@ static void slist_init(slist_t *list)
   list->tail     = NULL;
   list->length   = 0;
   list->lock     = 0;
-  list->onremove = NULL;
   return;
 }
 
@@ -233,13 +235,6 @@ slist_t *slist_alloc_dm(const char *file, const int line)
     }
 
   return list;
-}
-
-void slist_onremove(slist_t *list, slist_onremove_t onremove)
-{
-  assert(list != NULL);
-  list->onremove = onremove;
-  return;
 }
 
 #ifndef DMALLOC
@@ -390,8 +385,6 @@ static void slist_flush(slist_t *list, slist_free_t free_func)
   while(node != NULL)
     {
       next = node->next;
-      if(list->onremove != NULL)
-	list->onremove(node->item);
       if(free_func != NULL)
 	free_func(node->item);
       free(node);
@@ -520,9 +513,6 @@ void *slist_head_pop(slist_t *list)
 
   free(node);
   list->length--;
-
-  if(list->onremove != NULL)
-    list->onremove(item);
 
   slist_assert(list);
 
@@ -705,7 +695,7 @@ int slist_shuffle(slist_t *list)
   return 0;
 }
 
-#if !defined(NDEBUG) && defined(MJLLIST_DEBUG)
+#ifdef MJLLIST_DEBUG
 static void dlist_assert_sort(const dlist_t *list, dlist_cmp_t cmp)
 {
   dlist_node_t *n;
@@ -791,7 +781,6 @@ static void dlist_init(dlist_t *list)
   list->tail     = NULL;
   list->length   = 0;
   list->lock     = 0;
-  list->onremove = NULL;
   return;
 }
 
@@ -818,13 +807,6 @@ dlist_t *dlist_alloc_dm(const char *file, const int line)
   return list;
 }
 
-void dlist_onremove(dlist_t *list, dlist_onremove_t onremove)
-{
-  assert(list != NULL);
-  list->onremove = onremove;
-  return;
-}
-
 #ifndef DMALLOC
 static dlist_node_t *dlist_node(void *i, dlist_node_t *p, dlist_node_t *n)
 #else
@@ -846,7 +828,9 @@ static dlist_node_t *dlist_node(void *i, dlist_node_t *p, dlist_node_t *n,
       node->item = i;
       node->prev = p;
       node->next = n;
+#ifndef NDEBUG
       node->list = NULL;
+#endif
     }
 
   return node;
@@ -950,8 +934,6 @@ static void dlist_flush(dlist_t *list, dlist_free_t free_func)
   while(node != NULL)
     {
       next = node->next;
-      if(list->onremove != NULL)
-	list->onremove(node->item);
       if(free_func != NULL)
 	free_func(node->item);
       free(node);
@@ -990,7 +972,9 @@ void dlist_free_cb(dlist_t *list, dlist_free_t func)
 
 void dlist_concat(dlist_t *first, dlist_t *second)
 {
+#ifndef NDEBUG
   dlist_node_t *p;
+#endif
 
   assert(first != NULL);
   assert(first->lock == 0);
@@ -1003,9 +987,11 @@ void dlist_concat(dlist_t *first, dlist_t *second)
   if(second->head == NULL)
     return;
 
+#ifndef NDEBUG
   /* update the nodes in the second list to say they are now in the first */
   for(p = second->head; p != NULL; p = p->next)
     p->list = first;
+#endif
 
   /* shift the second list's nodes into the first */
   if(first->tail != NULL)
@@ -1032,21 +1018,11 @@ void dlist_concat(dlist_t *first, dlist_t *second)
 
 void dlist_node_head_push(dlist_t *list, dlist_node_t *node)
 {
-  dlist_onremove_t onremove = NULL;
-
   assert(list != NULL);
   assert(list->lock == 0);
   assert(node != NULL);
+  assert(node->list == NULL);
   dlist_assert(list);
-
-  if(node->list != NULL)
-    onremove = node->list->onremove;
-
-  /* eject the node from whatever list it is currently on */
-  dlist_node_eject(node->list, node);
-
-  if(onremove != NULL)
-    onremove(node->item);
 
   /* if we don't have a head node, we don't have a tail node set either */
   if(list->head == NULL)
@@ -1056,7 +1032,10 @@ void dlist_node_head_push(dlist_t *list, dlist_node_t *node)
 
   /* the current head node will be second on the list */
   node->next = list->head;
+
+#ifndef NDEBUG
   node->list = list;
+#endif
 
   list->head = node;
   list->length++;
@@ -1068,21 +1047,11 @@ void dlist_node_head_push(dlist_t *list, dlist_node_t *node)
 
 void dlist_node_tail_push(dlist_t *list, dlist_node_t *node)
 {
-  dlist_onremove_t onremove = NULL;
-
   assert(list != NULL);
   assert(list->lock == 0);
   assert(node != NULL);
+  assert(node->list == NULL);
   dlist_assert(list);
-
-  if(node->list != NULL)
-    onremove = node->list->onremove;
-
-  /* eject the node from whatever list it is currently on */
-  dlist_node_eject(node->list, node);
-
-  if(onremove != NULL)
-    onremove(node->item);
 
   /* if we don't have a tail node, we don't have a head node set either */
   if(list->tail == NULL)
@@ -1092,7 +1061,10 @@ void dlist_node_tail_push(dlist_t *list, dlist_node_t *node)
 
   /* the current tail node will be second to last on the list */
   node->prev = list->tail;
+
+#ifndef NDEBUG
   node->list = list;
+#endif
 
   list->tail = node;
   list->length++;
@@ -1132,7 +1104,10 @@ dlist_node_t *dlist_head_push_dm(dlist_t *list, void *item,
 
   /* the current head node will be second on the list */
   node->next = list->head;
+
+#ifndef NDEBUG
   node->list = list;
+#endif
 
   list->head = node;
   list->length++;
@@ -1172,7 +1147,10 @@ dlist_node_t *dlist_tail_push_dm(dlist_t *list, void *item,
 
   /* the current tail node will be second to last on the list */
   node->prev = list->tail;
+
+#ifndef NDEBUG
   node->list = list;
+#endif
 
   list->tail = node;
   list->length++;
@@ -1216,9 +1194,6 @@ void *dlist_head_pop(dlist_t *list)
   free(node);
   list->length--;
 
-  if(list->onremove != NULL)
-    list->onremove(item);
-
   dlist_assert(list);
 
   return item;
@@ -1256,9 +1231,6 @@ void *dlist_tail_pop(dlist_t *list)
   free(node);
   list->length--;
 
-  if(list->onremove != NULL)
-    list->onremove(item);
-
   dlist_assert(list);
 
   return item;
@@ -1295,7 +1267,10 @@ static void dlist_node_detach(dlist_t *list, dlist_node_t *node)
       /* node has been detached, reset its pointers */
       node->next = NULL;
       node->prev = NULL;
+
+#ifndef NDEBUG
       node->list = NULL;
+#endif
     }
 
   return;
@@ -1317,9 +1292,6 @@ void *dlist_node_pop(dlist_t *list, dlist_node_t *node)
   dlist_node_detach(list, node);
   item = node->item;
   free(node);
-
-  if(list != NULL && list->onremove != NULL)
-    list->onremove(item);
 
   dlist_assert(list);
 
@@ -1532,7 +1504,7 @@ int dlist_shuffle(dlist_t *list)
   return 0;
 }
 
-#if !defined(NDEBUG) && defined(MJLLIST_DEBUG)
+#ifdef MJLLIST_DEBUG
 static void clist_assert(const clist_t *list)
 {
   clist_node_t *node;
@@ -1580,7 +1552,6 @@ static void clist_init(clist_t *list)
   list->head     = NULL;
   list->length   = 0;
   list->lock     = 0;
-  list->onremove = NULL;
   return;
 }
 
@@ -1605,13 +1576,6 @@ clist_t *clist_alloc_dm(const char *file, const int line)
     }
 
   return list;
-}
-
-void clist_onremove(clist_t *list, clist_onremove_t onremove)
-{
-  assert(list != NULL);
-  list->onremove = onremove;
-  return;
 }
 
 void clist_lock(clist_t *list)
@@ -1653,8 +1617,6 @@ static void clist_flush(clist_t *list, clist_free_t free_func)
   while(node != NULL)
     {
       next = node->next;
-      if(list->onremove)
-	list->onremove(node->item);
       if(free_func != NULL)
 	free_func(node->item);
       free(node);
@@ -1785,9 +1747,6 @@ void *clist_node_pop(clist_t *list, clist_node_t *node)
 
   free(node);
   list->length--;
-
-  if(list->onremove != NULL)
-    list->onremove(item);
 
   clist_assert(list);
 

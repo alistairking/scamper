@@ -1,4 +1,4 @@
-$Id: TODO,v 1.33 2024/01/03 04:40:56 mjl Exp $
+$Id: TODO,v 1.40 2024/12/30 04:01:25 mjl Exp $
 
 * compile without warnings when the following is passed in CFLAGS
   -Wall -Wno-unneeded-internal-declaration -Wno-unused-const-variable
@@ -48,3 +48,11 @@ $Id: TODO,v 1.33 2024/01/03 04:40:56 mjl Exp $
    what is the maximum supported length of source and outfile names and aliases
    how does the cycles value of a source change as cycles are finished
    when does source update take effect
+
+* reduce memory consumption
+  - reorg scamper_task_sig_t to pack into smaller structure
+  - expire queue should just use time_t, and be organized by time_t
+    rather than have a timeval in each expire node
+
+* doubletree with probe backwards when -O dtree-noback is passed if the
+  first hop times out.  this is probably incorrect behavior.

@@ -5,7 +5,7 @@
  *
  * Author: Matthew Luckie
  *
- * $Id: scamper_http_warts.c,v 1.4 2024/01/03 03:51:42 mjl Exp $
+ * $Id: scamper_http_warts.c,v 1.5 2024/09/22 05:27:49 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -328,7 +328,7 @@ static int warts_http_params_read(scamper_http_t *http, warts_state_t *state,
     {&http->type,         (wpr_t)extract_byte,         NULL},
     {&http->host,         (wpr_t)extract_string,       NULL},
     {&http->file,         (wpr_t)extract_string,       NULL},
-    {&http,               (wpr_t)extract_http_headers, NULL},
+    {http,                (wpr_t)extract_http_headers, NULL},
     {&http->bufc,         (wpr_t)extract_uint32,       NULL},
     {&http->hsrtt,        (wpr_t)extract_rtt,          NULL},
     {&http->flags,        (wpr_t)extract_uint32,       NULL},

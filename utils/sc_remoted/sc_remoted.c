@@ -1,7 +1,7 @@
 /*
  * sc_remoted
  *
- * $Id: sc_remoted.c,v 1.115 2024/06/26 22:08:27 mjl Exp $
+ * $Id: sc_remoted.c,v 1.122 2024/12/15 09:11:07 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -192,8 +192,7 @@
 typedef struct sc_unit
 {
   void               *data;
-  dlist_t            *list; /* list == gclist if on that list */
-  dlist_node_t       *node;
+  dlist_node_t       *unode;
   uint8_t             type;
   uint8_t             gc;
 } sc_unit_t;
@@ -262,7 +261,7 @@ typedef struct sc_master
 
   dlist_t            *channels;
   uint32_t            next_channel;
-  dlist_node_t       *node;
+  dlist_node_t       *mnode;
   splaytree_node_t   *tree_node;
   uint8_t             buf[65536 + SC_MESSAGE_HDRLEN];
   size_t              buf_offset;
@@ -283,7 +282,7 @@ typedef struct sc_channel
   scamper_linepoll_t *unix_lp;
   scamper_writebuf_t *unix_wb;
   sc_master_t        *master;  /* corresponding master */
-  dlist_node_t       *node;    /* node in master->channels */
+  dlist_node_t       *cnode;   /* node in master->channels */
   uint8_t             flags;   /* channel flags: eof tx/rx */
 } sc_channel_t;
 
@@ -314,6 +313,11 @@ typedef struct sc_message
 #define OPT_ZOMBIE  0x0200
 #define OPT_PIDFILE 0x0400
 #define OPT_TLSCA   0x0800
+
+#ifdef PACKAGE_VERSION
+#define OPT_VERSION 0x1000
+#endif
+
 #define OPT_ALL     0xffff
 
 #define FLAG_DEBUG      0x0001 /* verbose debugging */
@@ -406,13 +410,18 @@ static const sc_fd_cb_t write_cb[] = {
 
 static void usage(uint32_t opt_mask)
 {
+  const char *v = "";
+
+#ifdef OPT_VERSION
+  v = "v";
+#endif
+
   fprintf(stderr,
-	  "usage: sc_remoted [-?46D] [-O option] -P [ip:]port -U unix\n"
+	  "usage: sc_remoted [-?46D%s] [-O option] -P [ip:]port -U unix\n"
 #ifdef HAVE_OPENSSL
 	  "                  [-c certfile] [-p privfile] [-C CAfile]\n"
 #endif
-	  "                  [-e pidfile] [-Z zombie-time]\n"
-	  );
+	  "                  [-e pidfile] [-Z zombie-time]\n", v);
 
   if(opt_mask == 0)
     {
@@ -457,6 +466,11 @@ static void usage(uint32_t opt_mask)
     fprintf(stderr, "     -C require client authentication using this CA\n");
 #endif
 
+#ifdef OPT_VERSION
+  if(opt_mask & OPT_VERSION)
+    fprintf(stderr, "     -v display version and exit\n");
+#endif
+
   if(opt_mask & OPT_ZOMBIE)
     fprintf(stderr, "     -Z time to retain state for disconnected scamper\n");
 
@@ -466,10 +480,15 @@ static void usage(uint32_t opt_mask)
 static int check_options(int argc, char *argv[])
 {
   struct sockaddr_storage sas;
-  char *opts = "?46DO:c:C:e:p:P:U:Z:", *opt_addrport = NULL, *opt_zombie = NULL;
-  char *opt_pidfile = NULL;
+  char opts[32], *opt_addrport = NULL, *opt_zombie = NULL, *opt_pidfile = NULL;
+  size_t off = 0;
   long lo;
   int ch;
+
+  string_concat(opts, sizeof(opts), &off, "?46DO:c:C:e:p:P:U:Z:");
+#ifdef OPT_VERSION
+  string_concat(opts, sizeof(opts), &off, "v");
+#endif
 
   while((ch = getopt(argc, argv, opts)) != -1)
     {
@@ -535,6 +554,12 @@ static int check_options(int argc, char *argv[])
 	  unix_name = optarg;
 	  break;
 
+#ifdef OPT_VERSION
+	case 'v':
+	  options |= OPT_VERSION;
+	  return 0;
+#endif
+
 	case 'Z':
 	  opt_zombie = optarg;
 	  break;
@@ -587,7 +612,8 @@ static int check_options(int argc, char *argv[])
    * ensure the address at least matches the specified address family
    */
   if(ss_addr != NULL && (options & (OPT_IPV4|OPT_IPV6)) != 0 &&
-     (sockaddr_compose_str((struct sockaddr *)&sas, ss_addr, ss_port) != 0 ||
+     (sockaddr_compose_str((struct sockaddr *)&sas, AF_UNSPEC,
+			   ss_addr, ss_port) != 0 ||
       ((options & OPT_IPV4) != 0 && sas.ss_family == AF_INET6) ||
       ((options & OPT_IPV6) != 0 && sas.ss_family == AF_INET)))
     {
@@ -813,39 +839,27 @@ static int sc_fd_write_del(sc_fd_t *fd)
 }
 
 #ifdef HAVE_OPENSSL
+static int ssl_want_read_cb(void *param, uint8_t *buf, int len)
+{
+  sc_master_t *ms = param;
+  scamper_writebuf_send(ms->inet_wb, buf, len);
+  sc_fd_write_add(&ms->inet_fd);
+  return 0;
+}
+
 static int ssl_want_read(sc_master_t *ms)
 {
-  uint8_t buf[1024];
-  int pending, rc, size, off = 0;
+  char errbuf[64];
+  int rc;
 
-  if((pending = BIO_pending(ms->inet_wbio)) < 0)
+  if((rc = tls_want_read(ms->inet_wbio, ms, errbuf, sizeof(errbuf),
+			 ssl_want_read_cb)) < 0)
     {
-      remote_debug(__func__, "BIO_pending returned %d", pending);
+      remote_debug(__func__, "%s", errbuf);
       return -1;
     }
 
-  while(off < pending)
-    {
-      if((size_t)(pending - off) > sizeof(buf))
-	size = sizeof(buf);
-      else
-	size = pending - off;
-
-      if((rc = BIO_read(ms->inet_wbio, buf, size)) <= 0)
-	{
-	  if(BIO_should_retry(ms->inet_wbio) == 0)
-	    remote_debug(__func__, "BIO_read should not retry");
-	  else
-	    remote_debug(__func__, "BIO_read returned %d", rc);
-	  return -1;
-	}
-      off += rc;
-
-      scamper_writebuf_send(ms->inet_wb, buf, rc);
-      sc_fd_write_add(&ms->inet_fd);
-    }
-
-  return pending;
+  return rc;
 }
 #endif
 
@@ -870,20 +884,12 @@ static sc_fd_t *sc_fd_alloc(int fd, uint8_t type, sc_unit_t *unit)
   return sfd;
 }
 
-static void sc_unit_onremove(sc_unit_t *scu)
-{
-  scu->node = NULL;
-  scu->list = NULL;
-  return;
-}
-
 static void sc_unit_gc(sc_unit_t *scu)
 {
   if(scu->gc != 0)
     return;
   scu->gc = 1;
-  dlist_node_tail_push(gclist, scu->node);
-  scu->list = gclist;
+  dlist_node_tail_push(gclist, scu->unode);
   return;
 }
 
@@ -891,8 +897,8 @@ static void sc_unit_free(sc_unit_t *scu)
 {
   if(scu == NULL)
     return;
-  if(scu->node != NULL)
-    dlist_node_pop(scu->list, scu->node);
+  if(scu->gc != 0 && scu->unode != NULL)
+    dlist_node_pop(gclist, scu->unode);
   free(scu);
   return;
 }
@@ -901,7 +907,7 @@ static sc_unit_t *sc_unit_alloc(uint8_t type, void *data)
 {
   sc_unit_t *scu;
   if((scu = malloc_zero(sizeof(sc_unit_t))) == NULL ||
-     (scu->node = dlist_node_alloc(scu)) == NULL)
+     (scu->unode = dlist_node_alloc(scu)) == NULL)
     {
       if(scu != NULL) sc_unit_free(scu);
       return NULL;
@@ -925,12 +931,6 @@ static int sc_master_cmp(const sc_master_t *a, const sc_master_t *b)
   return memcmp(a->magic, b->magic, a->magic_len);
 }
 
-static void sc_master_onremove(sc_master_t *ms)
-{
-  ms->node = NULL;
-  return;
-}
-
 static sc_channel_t *sc_master_channel_find(sc_master_t *ms, uint32_t id)
 {
   dlist_node_t *dn;
@@ -942,12 +942,6 @@ static sc_channel_t *sc_master_channel_find(sc_master_t *ms, uint32_t id)
 	return cn;
     }
   return NULL;
-}
-
-static void sc_master_channels_onremove(sc_channel_t *cn)
-{
-  cn->node = NULL;
-  return;
 }
 
 static int sc_master_inet_write(sc_master_t *ms, void *ptr, uint16_t len,
@@ -1069,17 +1063,7 @@ static void sc_master_inet_free(sc_master_t *ms)
     }
 
 #ifdef HAVE_OPENSSL
-  if(ms->inet_ssl != NULL)
-    {
-      SSL_free(ms->inet_ssl);
-    }
-  else
-    {
-      if(ms->inet_wbio != NULL)
-	BIO_free(ms->inet_wbio);
-      if(ms->inet_rbio != NULL)
-	BIO_free(ms->inet_rbio);
-    }
+  tls_bio_free(ms->inet_ssl, ms->inet_rbio, ms->inet_wbio);
   ms->inet_ssl = NULL;
   ms->inet_wbio = NULL;
   ms->inet_rbio = NULL;
@@ -2003,7 +1987,7 @@ static void sc_master_unix_accept_do(sc_master_t *ms)
 
   if((cn->unix_wb = scamper_writebuf_alloc()) == NULL)
     goto err;
-  if((cn->node = dlist_tail_push(ms->channels, cn)) == NULL)
+  if((cn->cnode = dlist_tail_push(ms->channels, cn)) == NULL)
     goto err;
   cn->master = ms;
 
@@ -2028,13 +2012,22 @@ static void sc_master_unix_accept_do(sc_master_t *ms)
  */
 static void sc_master_free(sc_master_t *ms)
 {
+  sc_channel_t *cn;
+
   if(ms == NULL)
     return;
 
   sc_master_unix_free(ms);
 
   if(ms->channels != NULL)
-    dlist_free_cb(ms->channels, (dlist_free_t)sc_channel_free);
+    {
+      while((cn = dlist_head_pop(ms->channels)) != NULL)
+	{
+	  cn->cnode = NULL;
+	  sc_channel_free(cn);
+	}
+      dlist_free(ms->channels);
+    }
   if(ms->messages != NULL)
     slist_free_cb(ms->messages, (slist_free_t)sc_message_free);
 
@@ -2046,7 +2039,7 @@ static void sc_master_free(sc_master_t *ms)
   if(ms->name != NULL) free(ms->name);
   if(ms->monitorname != NULL) free(ms->monitorname);
   if(ms->magic != NULL) free(ms->magic);
-  if(ms->node != NULL) dlist_node_pop(mslist, ms->node);
+  if(ms->mnode != NULL) dlist_node_pop(mslist, ms->mnode);
   free(ms);
   return;
 }
@@ -2069,7 +2062,6 @@ static sc_master_t *sc_master_alloc(int fd)
       remote_debug(__func__, "could not alloc channels: %s", strerror(errno));
       goto err;
     }
-  dlist_onremove(ms->channels, (dlist_onremove_t)sc_master_channels_onremove);
   ms->next_channel = 1;
 
   /* allocate a unit to describe this */
@@ -2095,14 +2087,12 @@ static sc_master_t *sc_master_alloc(int fd)
 #ifdef HAVE_OPENSSL
   if(tls_certfile != NULL)
     {
-      if((ms->inet_wbio = BIO_new(BIO_s_mem())) == NULL ||
-	 (ms->inet_rbio = BIO_new(BIO_s_mem())) == NULL ||
-	 (ms->inet_ssl = SSL_new(tls_ctx)) == NULL)
+      if(tls_bio_alloc(tls_ctx, &ms->inet_ssl,
+		       &ms->inet_rbio, &ms->inet_wbio) != 0)
 	{
 	  remote_debug(__func__, "could not alloc SSL");
 	  goto err;
 	}
-      SSL_set_bio(ms->inet_ssl, ms->inet_rbio, ms->inet_wbio);
       SSL_set_accept_state(ms->inet_ssl);
       rc = SSL_accept(ms->inet_ssl);
       assert(rc == -1);
@@ -2241,8 +2231,8 @@ static void sc_channel_free(sc_channel_t *cn)
 {
   if(cn == NULL)
     return;
-  if(cn->master != NULL && cn->node != NULL)
-    dlist_node_pop(cn->master->channels, cn->node);
+  if(cn->master != NULL && cn->cnode != NULL)
+    dlist_node_pop(cn->master->channels, cn->cnode);
   if(cn->unix_fd != NULL) sc_fd_free(cn->unix_fd);
   if(cn->unix_lp != NULL) scamper_linepoll_free(cn->unix_lp, 0);
   if(cn->unix_wb != NULL) scamper_writebuf_free(cn->unix_wb);
@@ -2291,7 +2281,7 @@ static int serversocket_accept(int ss)
   timeval_add_s(&ms->rx_abort, &now, 30);
   timeval_cpy(&ms->tx_ka, &ms->rx_abort);
 
-  if((ms->node = dlist_tail_push(mslist, ms)) == NULL)
+  if((ms->mnode = dlist_tail_push(mslist, ms)) == NULL)
     {
       remote_debug(__func__, "could not push to mslist: %s", strerror(errno));
       goto err;
@@ -2371,7 +2361,8 @@ static int serversocket_init(void)
 
   if(ss_addr != NULL)
     {
-      if(sockaddr_compose_str((struct sockaddr *)&sas, ss_addr, ss_port) != 0)
+      if(sockaddr_compose_str((struct sockaddr *)&sas, AF_UNSPEC,
+			      ss_addr, ss_port) != 0)
 	{
 	  remote_debug(__func__, "could not compose sockaddr");
 	  return -1;
@@ -2422,6 +2413,7 @@ static int unixdomain_direxists(void)
 
 static void cleanup(void)
 {
+  sc_master_t *ms;
   int i;
 
   for(i=0; i<2; i++)
@@ -2430,7 +2422,14 @@ static void cleanup(void)
   if(ss_addr != NULL)
     free(ss_addr);
   if(mslist != NULL)
-    dlist_free_cb(mslist, (dlist_free_t)sc_master_free);
+    {
+      while((ms = dlist_head_pop(mslist)) != NULL)
+	{
+	  ms->mnode = NULL;
+	  sc_master_free(ms);
+	}
+      dlist_free(mslist);
+    }
   if(mstree != NULL)
     splaytree_free(mstree, NULL);
 
@@ -2756,10 +2755,7 @@ static int kqueue_loop(void)
 	    write_cb[scfd->type](scu->data);
 #else
 	  if(scu->gc != 0)
-	    {
-	      assert(scu->list == gclist);
-	      continue;
-	    }
+	    continue;
 	  if(events[i].filter == EVFILT_READ)
 	    read_cb[scfd->type](scu->data);
 	  else if(events[i].filter == EVFILT_WRITE)
@@ -2768,7 +2764,10 @@ static int kqueue_loop(void)
 	}
 
       while((scu = dlist_head_pop(gclist)) != NULL)
-	unit_gc[scu->type](scu->data);
+	{
+	  scu->unode = NULL;
+	  unit_gc[scu->type](scu->data);
+	}
     }
 
   return 0;
@@ -2972,7 +2971,10 @@ static int select_loop(void)
 	}
 
       while((scu = dlist_head_pop(gclist)) != NULL)
-	unit_gc[scu->type](scu->data);
+	{
+	  scu->unode = NULL;
+	  unit_gc[scu->type](scu->data);
+	}
     }
 
   return 0;
@@ -2999,6 +3001,14 @@ int main(int argc, char *argv[])
 
   if(check_options(argc, argv) != 0)
     return -1;
+
+#ifdef OPT_VERSION
+  if(options & OPT_VERSION)
+    {
+      printf("sc_remoted version %s\n", PACKAGE_VERSION);
+      return 0;
+    }
+#endif
 
   if(pidfile != NULL && remoted_pidfile() != 0)
     return -1;
@@ -3053,8 +3063,6 @@ int main(int argc, char *argv[])
      (mstree = splaytree_alloc((splaytree_cmp_t)sc_master_cmp)) == NULL ||
      (gclist = dlist_alloc()) == NULL)
     return -1;
-  dlist_onremove(mslist, (dlist_onremove_t)sc_master_onremove);
-  dlist_onremove(gclist, (dlist_onremove_t)sc_unit_onremove);
 
 #if defined(HAVE_EPOLL)
   if((flags & FLAG_SELECT) == 0)

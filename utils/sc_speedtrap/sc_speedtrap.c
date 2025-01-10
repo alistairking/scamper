@@ -1,14 +1,14 @@
 /*
  * sc_speedtrap
  *
- * $Id: sc_speedtrap.c,v 1.86 2024/02/29 00:56:45 mjl Exp $
+ * $Id: sc_speedtrap.c,v 1.90 2024/12/31 04:17:31 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
  *
  * Copyright (C) 2013-2015 The Regents of the University of California
  * Copyright (C) 2016,2020 The University of Waikato
- * Copyright (C) 2022-2023 Matthew Luckie
+ * Copyright (C) 2022-2024 Matthew Luckie
  * Copyright (C) 2023-2024 The Regents of the University of California
  *
  * This program is free software; you can redistribute it and/or modify
@@ -54,10 +54,15 @@
 #define OPT_STOP        0x0010
 #define OPT_LOG         0x0020
 #define OPT_UNIX        0x0040
+#define OPT_REMOTE      0x0080
 #define OPT_DUMP        0x0200
 #define OPT_INCR        0x0400
 #define OPT_THREADC     0x0800
 #define OPT_ALL         0xffff
+
+#ifdef PACKAGE_VERSION
+#define OPT_VERSION     0x8000
+#endif
 
 typedef struct sc_targetipid sc_targetipid_t;
 typedef struct sc_targetset sc_targetset_t;
@@ -251,13 +256,17 @@ static void usage(uint32_t opt_mask)
   int i;
 
   fprintf(stderr,
-    "usage: sc_speedtrap [-a addr-file] [-o outfile] [-p [ip:]port] [-U unix]\n"
-    "                    [-I] [-l log] [-s stop]\n"
+    "usage: sc_speedtrap [-a addr-file] [-o outfile] [-p [ip:]port]\n"
+    "                    [-R unix] [-U unix] [-I] [-l log] [-s stop]\n"
 #ifdef HAVE_PTHREAD
     "                    [-t thread-count]\n"
 #endif
     "\n"
     "       sc_speedtrap [-d dump] file1.warts .. fileN.warts\n"
+#ifdef OPT_VERSION
+    "\n"
+    "       sc_speedtrap  -v\n"
+#endif
     "\n");
 
   if(opt_mask == 0)
@@ -288,6 +297,9 @@ static void usage(uint32_t opt_mask)
   if(opt_mask & OPT_PORT)
     fprintf(stderr, "     -p [ip:]port to find scamper on\n");
 
+  if(opt_mask & OPT_REMOTE)
+    fprintf(stderr, "     -R find remote scamper process on unix socket\n");
+
   if(opt_mask & OPT_STOP)
     {
       fprintf(stderr,
@@ -306,15 +318,23 @@ static void usage(uint32_t opt_mask)
   if(opt_mask & OPT_UNIX)
     fprintf(stderr, "     -U unix domain to find scamper on\n");
 
+#ifdef OPT_VERSION
+  if(opt_mask & OPT_VERSION)
+    fprintf(stderr, "     -v display version and exit\n");
+#endif
+
   return;
 }
 
 static int check_options(int argc, char *argv[])
 {
   long lo;
-  char *opts = "?a:d:Il:o:p:s:"
+  char *opts = "?a:d:Il:o:p:R:s:"
 #ifdef HAVE_PTHREAD
     "t:"
+#endif
+#ifdef OPT_VERSION
+    "v"
 #endif
     "U:w:";
   char *opt_port = NULL, *opt_unix = NULL, *opt_log = NULL, *opt_dump = NULL;
@@ -357,6 +377,11 @@ static int check_options(int argc, char *argv[])
 	  opt_port = optarg;
 	  break;
 
+	case 'R':
+	  options |= OPT_REMOTE;
+	  opt_unix = optarg;
+	  break;
+
 	case 's':
 	  options |= OPT_STOP;
 	  stop_stepname = optarg;
@@ -373,6 +398,12 @@ static int check_options(int argc, char *argv[])
 	  options |= OPT_UNIX;
 	  opt_unix = optarg;
 	  break;
+
+#ifdef OPT_VERSION
+	case 'v':
+	  options |= OPT_VERSION;
+	  return 0;
+#endif
 
 	case '?':
 	  usage(OPT_ALL);
@@ -393,11 +424,10 @@ static int check_options(int argc, char *argv[])
 
   if(options & (OPT_ADDRFILE|OPT_OUTFILE))
     {
-      if((options & (OPT_PORT|OPT_UNIX)) == 0 ||
-	 (options & (OPT_PORT|OPT_UNIX)) == (OPT_PORT|OPT_UNIX) ||
+      if(countbits32(options & (OPT_PORT|OPT_UNIX|OPT_REMOTE)) != 1 ||
 	 argc - optind > 0)
 	{
-	  usage(OPT_ADDRFILE|OPT_OUTFILE|OPT_PORT|OPT_UNIX);
+	  usage(OPT_ADDRFILE|OPT_OUTFILE|OPT_PORT|OPT_UNIX|OPT_REMOTE);
 	  return -1;
 	}
 
@@ -443,7 +473,7 @@ static int check_options(int argc, char *argv[])
               return -1;
             }
 	}
-      else if(options & OPT_UNIX)
+      else if(options & (OPT_UNIX|OPT_REMOTE))
 	{
 	  unix_name = opt_unix;
 	}
@@ -969,12 +999,12 @@ static void sc_targetset_logprint(const sc_targetset_t *ts)
   slist_node_t *ss;
   size_t off = 0;
   char a[64], buf[131072];
-  string_concat(buf, sizeof(buf), &off, "%p:", ts);
+  string_concaf(buf, sizeof(buf), &off, "%p:", ts);
   for(ss=slist_head_node(ts->targets); ss != NULL; ss=slist_node_next(ss))
     {
       tg = slist_node_item(ss);
-      string_concat(buf, sizeof(buf), &off, " %s",
-		    scamper_addr_tostr(tg->addr, a, sizeof(a)));
+      string_concat2(buf, sizeof(buf), &off, " ",
+		     scamper_addr_tostr(tg->addr, a, sizeof(a)));
     }
   logprint(0, "%s\n", buf);
   return;
@@ -1289,8 +1319,7 @@ static int test_ping6(sc_target_t *target, char *cmd, size_t len)
 {
   size_t off = 0;
   char buf[64];
-  string_concat(cmd, len, &off,
-		"ping -U %d -c 6 -s 1300 -M 1280 %s",
+  string_concaf(cmd, len, &off, "ping -U %d -c 6 -s 1300 -M 1280 %s",
 		mode, scamper_addr_tostr(target->addr, buf, sizeof(buf)));
   return off;
 }
@@ -1299,7 +1328,7 @@ static int test_ping1(sc_target_t *target, char *cmd, size_t len)
 {
   size_t off = 0;
   char buf[64];
-  string_concat(cmd, len, &off,
+  string_concaf(cmd, len, &off,
 		"ping -O tbt -U %d -c 2 -o 1 -s 1300 -M 1280 %s",
 		mode, scamper_addr_tostr(target->addr, buf, sizeof(buf)));
   return off;
@@ -1510,13 +1539,13 @@ static int do_method_ally(void)
     return 0;
 
   tg = slist_head_item(ts->targets);
-  string_concat(cmd, sizeof(cmd), &off,
+  string_concaf(cmd, sizeof(cmd), &off,
 		"dealias -U %d -m ally -f %u -w 2 -W 1000 -p '%s' %s",
 		mode, fudge, "-P icmp-echo -s 1300 -M 1280",
 		scamper_addr_tostr(tg->addr, addr, sizeof(addr)));
   tg = slist_node_item(ts->next);
-  string_concat(cmd, sizeof(cmd), &off, " %s",
-		scamper_addr_tostr(tg->addr, addr, sizeof(addr)));
+  string_concat2(cmd, sizeof(cmd), &off, " ",
+		 scamper_addr_tostr(tg->addr, addr, sizeof(addr)));
 
   if(scamper_inst_do(scamper_inst, cmd, NULL) == NULL)
     {
@@ -2195,6 +2224,11 @@ static int do_scamperconnect(void)
     {
       type = "unix";
       scamper_inst = scamper_inst_unix(scamper_ctrl, NULL, unix_name);
+    }
+  else if(options & OPT_REMOTE)
+    {
+      type = "remote";
+      scamper_inst = scamper_inst_remote(scamper_ctrl, unix_name);
     }
 #endif
 
@@ -2880,6 +2914,14 @@ int main(int argc, char *argv[])
 
   if(check_options(argc, argv) != 0)
     return -1;
+
+#ifdef OPT_VERSION
+  if(options & OPT_VERSION)
+    {
+      printf("sc_speedtrap version %s\n", PACKAGE_VERSION);
+      return 0;
+    }
+#endif
 
   if(speedtrap_init() != 0)
     return -1;

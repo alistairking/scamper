@@ -7,7 +7,7 @@
  *
  * Author: Matthew Luckie
  *
- * $Id: scamper_tbit_json.c,v 1.33 2024/04/13 01:25:58 mjl Exp $
+ * $Id: scamper_tbit_json.c,v 1.36 2024/12/31 04:17:31 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -63,9 +63,9 @@ static char *tbit_bits_encode(char *buf, size_t len, uint32_t flags, int bits,
       if((u32 = flags & (0x1 << i)) == 0) continue;
       if(f > 0) string_concat(buf, len, &off, ",");
       if(i < f2sc)
-	string_concat(buf, len, &off, "\"%s\"", f2s[i]);
+	string_concat3(buf, len, &off, "\"", f2s[i], "\"");
       else
-	string_concat(buf, len, &off, "%u", u32);
+	string_concaf(buf, len, &off, "%u", u32);
       f++;
     }
   return buf;
@@ -95,32 +95,33 @@ static char *tbit_header_tostr(const scamper_tbit_t *tbit,
   scamper_tbit_app_bgp_t *bgp;
   uint32_t u32;
 
-  string_concat(buf, sizeof(buf), &off,
+  string_concaf(buf, sizeof(buf), &off,
 		"{\"type\":\"tbit\", \"tbit_type\":\"%s\", \"userid\":%u",
 		scamper_tbit_type_tostr(tbit, tmp, sizeof(tmp)),
 		tbit->userid);
-  string_concat(buf, sizeof(buf), &off, ", \"src\":\"%s\"",
-		scamper_addr_tostr(tbit->src, tmp, sizeof(tmp)));
-  string_concat(buf, sizeof(buf), &off, ", \"dst\":\"%s\"",
-		scamper_addr_tostr(tbit->dst, tmp, sizeof(tmp)));
-  string_concat(buf, sizeof(buf), &off, ", \"sport\":%u, \"dport\":%u",
+  string_concat3(buf, sizeof(buf), &off, ", \"src\":\"",
+		 scamper_addr_tostr(tbit->src, tmp, sizeof(tmp)), "\"");
+  string_concat3(buf, sizeof(buf), &off, ", \"dst\":\"",
+		 scamper_addr_tostr(tbit->dst, tmp, sizeof(tmp)), "\"");
+  string_concaf(buf, sizeof(buf), &off, ", \"sport\":%u, \"dport\":%u",
 		tbit->sport, tbit->dport);
-  string_concat(buf, sizeof(buf), &off,
+  string_concaf(buf, sizeof(buf), &off,
 		", \"start\":{\"sec\":%ld,\"usec\":%d}",
 		(long)tbit->start.tv_sec, (int)tbit->start.tv_usec);
-  string_concat(buf, sizeof(buf), &off,
+  string_concaf(buf, sizeof(buf), &off,
 		", \"client_mss\":%u, \"server_mss\":%u, \"ttl\":%u",
 		tbit->client_mss, tbit->server_mss, tbit->client_ipttl);
-  string_concat(buf, sizeof(buf), &off, ", \"result\":\"%s\"",
-		scamper_tbit_result_tostr(tbit, tmp, sizeof(tmp)));
+  string_concat3(buf, sizeof(buf), &off, ", \"result\":\"",
+		 scamper_tbit_result_tostr(tbit, tmp, sizeof(tmp)), "\"");
   if(tbit->options != 0)
-    string_concat(buf, sizeof(buf), &off, ", \"options\":[%s]",
-		  tbit_bits_encode(tmp, sizeof(tmp), tbit->options, 16,
-				   tbit_options,
-				   sizeof(tbit_options) / sizeof(char *)));
+    string_concat3(buf, sizeof(buf), &off, ", \"options\":[",
+		   tbit_bits_encode(tmp, sizeof(tmp), tbit->options, 16,
+				    tbit_options,
+				    sizeof(tbit_options) / sizeof(char *)),
+		   "]");
 
   if(tbit->client_wscale > 0)
-    string_concat(buf, sizeof(buf), &off, ", \"wscale\":%u",
+    string_concaf(buf, sizeof(buf), &off, ", \"wscale\":%u",
 		  tbit->client_wscale);
 
   if(tbit->client_fo_cookielen > 0)
@@ -132,44 +133,46 @@ static char *tbit_header_tostr(const scamper_tbit_t *tbit,
     }
 
   if(state->flags & TBIT_STATE_FLAG_CISN)
-    string_concat(buf, sizeof(buf), &off,
-		  ", \"client_isn\":%u", state->client_isn);
+    string_concaf(buf, sizeof(buf), &off, ", \"client_isn\":%u",
+		  state->client_isn);
   if(state->flags & TBIT_STATE_FLAG_SISN)
-    string_concat(buf, sizeof(buf), &off,
-		  ", \"server_isn\":%u", state->server_isn);
+    string_concaf(buf, sizeof(buf), &off, ", \"server_isn\":%u",
+		  state->server_isn);
 
   if(tbit->type == SCAMPER_TBIT_TYPE_PMTUD)
     {
       pmtud = tbit->data;
-      string_concat(buf, sizeof(buf), &off,
-		    ", \"mtu\":%u, \"ptb_retx\":%u",
+      string_concaf(buf, sizeof(buf), &off, ", \"mtu\":%u, \"ptb_retx\":%u",
 		    pmtud->mtu, pmtud->ptb_retx);
       if(pmtud->ptbsrc != NULL)
-	string_concat(buf, sizeof(buf), &off,
-		      ", \"ptbsrc\":\"%s\"",
-		      scamper_addr_tostr(pmtud->ptbsrc, tmp, sizeof(tmp)));
-      string_concat(buf, sizeof(buf), &off, ", \"pmtud_options\":[%s]",
-		    tbit_bits_encode(tmp, sizeof(tmp), pmtud->options, 8,
-				     pmtud_options,
-				     sizeof(pmtud_options) / sizeof(char *)));
+	string_concat3(buf, sizeof(buf), &off, ", \"ptbsrc\":\"",
+		       scamper_addr_tostr(pmtud->ptbsrc, tmp, sizeof(tmp)),
+		       "\"");
+      string_concat3(buf, sizeof(buf), &off, ", \"pmtud_options\":[",
+		     tbit_bits_encode(tmp, sizeof(tmp), pmtud->options, 8,
+				      pmtud_options,
+				      sizeof(pmtud_options) / sizeof(char *)),
+		     "]");
     }
   else if(tbit->type == SCAMPER_TBIT_TYPE_NULL)
     {
       null = tbit->data;
-      string_concat(buf, sizeof(buf), &off, ", \"null_options\":[%s]",
-		    tbit_bits_encode(tmp, sizeof(tmp), null->options, 16,
-				     null_options,
-				     sizeof(null_options) / sizeof(char *)));
-      string_concat(buf, sizeof(buf), &off, ", \"null_results\":[%s]",
-		    tbit_bits_encode(tmp, sizeof(tmp), null->results, 16,
-				     null_results,
-				     sizeof(null_results) / sizeof(char *)));
+      string_concat3(buf, sizeof(buf), &off, ", \"null_options\":[",
+		     tbit_bits_encode(tmp, sizeof(tmp), null->options, 16,
+				      null_options,
+				      sizeof(null_options) / sizeof(char *)),
+		     "]");
+      string_concat3(buf, sizeof(buf), &off, ", \"null_results\":[",
+		     tbit_bits_encode(tmp, sizeof(tmp), null->results, 16,
+				      null_results,
+				      sizeof(null_results) / sizeof(char *)),
+		     "]");
     }
   else if(tbit->type == SCAMPER_TBIT_TYPE_ICW)
     {
       if(tbit->result == SCAMPER_TBIT_RESULT_ICW_SUCCESS &&
 	 scamper_tbit_server_icw_size_get(tbit, &u32) == 0)
-	string_concat(buf, sizeof(buf), &off, ", \"icw_bytes\":%u", u32);
+	string_concaf(buf, sizeof(buf), &off, ", \"icw_bytes\":%u", u32);
     }
   else if(tbit->type == SCAMPER_TBIT_TYPE_BLIND_RST ||
 	  tbit->type == SCAMPER_TBIT_TYPE_BLIND_SYN ||
@@ -177,7 +180,7 @@ static char *tbit_header_tostr(const scamper_tbit_t *tbit,
 	  tbit->type == SCAMPER_TBIT_TYPE_BLIND_FIN)
     {
       blind = tbit->data;
-      string_concat(buf, sizeof(buf), &off,
+      string_concaf(buf, sizeof(buf), &off,
 		    ", \"blind_off\":%d, \"blind_retx\":%u",
 		    blind->off, blind->retx);
     }
@@ -191,16 +194,16 @@ static char *tbit_header_tostr(const scamper_tbit_t *tbit,
       else
 	str = "http";
       if(http->host != NULL && http->file != NULL)
-	string_concat(buf, sizeof(buf), &off, ", \"http_url\":\"%s://%s%s\"",
+	string_concaf(buf, sizeof(buf), &off, ", \"http_url\":\"%s://%s%s\"",
 		      str, http->host, http->file);
       else if(http->host != NULL)
-	string_concat(buf, sizeof(buf), &off, ", \"http_url\":\"%s://%s\"",
+	string_concaf(buf, sizeof(buf), &off, ", \"http_url\":\"%s://%s\"",
 		      str, http->host);
     }
   else if(tbit->app_proto == SCAMPER_TBIT_APP_BGP && tbit->app_data != NULL)
     {
       bgp = tbit->app_data;
-      string_concat(buf, sizeof(buf), &off,
+      string_concaf(buf, sizeof(buf), &off,
 		    ", \"app\":\"bgp\", \"bgp_asn\":%u", bgp->asn);
     }
 
@@ -230,7 +233,7 @@ static char *tbit_pkt_tostr(const scamper_tbit_t *tbit,
     snprintf(tmp, sizeof(tmp), "%u", pkt->dir);
 
   timeval_diff_tv(&tv, &tbit->start, &pkt->tv);
-  string_concat(buf, sizeof(buf), &off,
+  string_concaf(buf, sizeof(buf), &off,
 		"{\"dir\":%s, \"tv_sec\":%ld, \"tv_usec\":%d, \"len\":%u",
 		tmp, (long)tv.tv_sec, (int)tv.tv_usec, pkt->len);
 
@@ -284,16 +287,16 @@ static char *tbit_pkt_tostr(const scamper_tbit_t *tbit,
     }
   else goto done; /* not v4 or v6 */
 
-  string_concat(buf, sizeof(buf), &off,
+  string_concaf(buf, sizeof(buf), &off,
 		", \"ip_hlen\":%u, \"ip_ecn\":%u, \"ip_ttl\":%u",
 		iphlen, ecn, ttl);
 
   if(v == 4 || (v == 6 && frag != 0))
-    string_concat(buf, sizeof(buf), &off,
+    string_concaf(buf, sizeof(buf), &off,
 		  ", \"frag_id\":%u, \"frag_off\":%u, \"frag_mf\":%u",
 		  frag_id, frag_off, frag_mf);
   if(v == 4)
-    string_concat(buf, sizeof(buf), &off, ", \"frag_df\":%u",
+    string_concaf(buf, sizeof(buf), &off, ", \"frag_df\":%u",
 		  (pkt->data[6] & 0x40) >> 7);
 
   if(frag_off != 0)
@@ -320,7 +323,7 @@ static char *tbit_pkt_tostr(const scamper_tbit_t *tbit,
 	  state->flags |= TBIT_STATE_FLAG_SISN;
 	}
 
-      string_concat(buf, sizeof(buf), &off,
+      string_concaf(buf, sizeof(buf), &off,
 		    ", \"tcp_hlen\": %u, \"tcp_flags\":[%s]", tcphlen,
 		    tbit_bits_encode(tmp, sizeof(tmp), tcpflags, 8,
 				     tcpflags_str,
@@ -334,14 +337,14 @@ static char *tbit_pkt_tostr(const scamper_tbit_t *tbit,
 	  pp = pkt->data + iphlen + u8;
 	  if(pp[0] == 0)
 	    {
-	      string_concat(buf, sizeof(buf), &off, "%s{\"kind\":\"eol\"}",
-			    tcpoptc > 0 ? ", " : "");
+	      string_concat2(buf, sizeof(buf), &off,
+			     tcpoptc > 0 ? ", " : "", "{\"kind\":\"eol\"}");
 	      break;
 	    }
 	  if(pp[0] == 1)
 	    {
-	      string_concat(buf, sizeof(buf), &off, "%s{\"kind\":\"nop\"}",
-			    tcpoptc > 0 ? ", " : "");
+	      string_concat2(buf, sizeof(buf), &off,
+			     tcpoptc > 0 ? ", " : "", "{\"kind\":\"nop\"}");
 	      tcpoptc++; u8++;
 	      continue;
 	    }
@@ -349,28 +352,27 @@ static char *tbit_pkt_tostr(const scamper_tbit_t *tbit,
 	    break;
 	  if(pp[0] == 3 && pp[1] == 3)
 	    {
-	      string_concat(buf, sizeof(buf), &off,
+	      string_concaf(buf, sizeof(buf), &off,
 			    "%s{\"kind\":\"wscale\", \"shift\":%u}",
 			    tcpoptc > 0 ? ", " : "", pp[2]);
 	      tcpoptc++;
 	    }
-	  if(pp[0] == 4 && pp[1] == 2)
+	  else if(pp[0] == 4 && pp[1] == 2)
 	    {
-	      string_concat(buf, sizeof(buf), &off, "%s{\"kind\":\"sack-ok\"}",
-			    tcpoptc > 0 ? ", " : "");
+	      string_concat2(buf, sizeof(buf), &off, tcpoptc > 0 ? ", " : "",
+			     "{\"kind\":\"sack-ok\"}");
 	      tcpoptc++;
 	    }
-	  if(pp[0] == 5 && (pp[1]==10 || pp[1]==18 || pp[1]==26 || pp[1]==34))
+	  else if(pp[0] == 5 && (pp[1]==10||pp[1]==18||pp[1]==26||pp[1]==34))
 	    {
 	      if(pkt->dir == SCAMPER_TBIT_PKT_DIR_TX)
 		u32 = state->server_isn;
 	      else
 		u32 = state->client_isn;
-	      string_concat(buf, sizeof(buf), &off,
-			    "%s{\"kind\":\"sack\", \"blocks\":[",
-			    tcpoptc > 0 ? ", " : "");
+	      string_concat2(buf, sizeof(buf), &off, tcpoptc > 0 ? ", " : "",
+			     "{\"kind\":\"sack\", \"blocks\":[");
 	      for(u16=0; u16<(pp[1]-2)/8; u16++)
-		string_concat(buf, sizeof(buf), &off,
+		string_concaf(buf, sizeof(buf), &off,
 			      "%s{\"left\":%u, \"right\":%u}",
 			      u16 != 0 ? ", " : "",
 			      bytes_ntohl(pp+2+(u16*8)) - u32,
@@ -378,18 +380,18 @@ static char *tbit_pkt_tostr(const scamper_tbit_t *tbit,
 	      string_concat(buf, sizeof(buf), &off, "]}");
 	      tcpoptc++;
 	    }
-	  if(pp[0] == 8 && pp[1] == 10)
+	  else if(pp[0] == 8 && pp[1] == 10)
 	    {
-	      string_concat(buf, sizeof(buf), &off,
+	      string_concaf(buf, sizeof(buf), &off,
 			    "%s{\"kind\":\"ts\", \"val\":%u, \"ecr\":%u}",
 			    tcpoptc > 0 ? ", " : "",
 			    bytes_ntohl(pp+2), bytes_ntohl(pp+6));
 	      tcpoptc++;
 	    }
-	  if(pp[0] == 34 && pp[1] >= 2)
+	  else if(pp[0] == 34 && pp[1] >= 2)
 	    {
-	      string_concat(buf, sizeof(buf), &off, "%s{\"kind\":\"fo\"",
-			    tcpoptc > 0 ? ", " : "");
+	      string_concat2(buf, sizeof(buf), &off, tcpoptc > 0 ? ", " : "",
+			     "{\"kind\":\"fo\"");
 	      if(pp[1] > 2)
 		{
 		  string_concat(buf, sizeof(buf), &off, ", \"cookie\":\"");
@@ -398,10 +400,10 @@ static char *tbit_pkt_tostr(const scamper_tbit_t *tbit,
 		}
 	      tcpoptc++;
 	    }
-	  if(pp[0] == 254 && pp[1] >= 4 && pp[2] == 0xF9 && pp[3] == 0x89)
+	  else if(pp[0] == 254 && pp[1] >= 4 && pp[2] == 0xF9 && pp[3] == 0x89)
 	    {
-	      string_concat(buf, sizeof(buf), &off, "%s{\"kind\":\"fo-exp\"",
-			    tcpoptc > 0 ? ", " : "");
+	      string_concat2(buf, sizeof(buf), &off, tcpoptc > 0 ? ", " : "",
+			     "{\"kind\":\"fo-exp\"");
 	      if(pp[1] > 4)
 		{
 		  string_concat(buf, sizeof(buf), &off, ", \"cookie\":\"");
@@ -427,12 +429,12 @@ static char *tbit_pkt_tostr(const scamper_tbit_t *tbit,
 	  ack = tbit_isnoff(state->client_isn, ack);
 	}
 
-      string_concat(buf, sizeof(buf), &off, ", \"tcp_seq\":%u", seq);
+      string_concaf(buf, sizeof(buf), &off, ", \"tcp_seq\":%u", seq);
       if(tcpflags & TH_ACK)
-	string_concat(buf, sizeof(buf), &off, ", \"tcp_ack\":%u", ack);
-      string_concat(buf, sizeof(buf), &off, ", \"tcp_datalen\":%u",
+	string_concaf(buf, sizeof(buf), &off, ", \"tcp_ack\":%u", ack);
+      string_concaf(buf, sizeof(buf), &off, ", \"tcp_datalen\":%u",
 		    len - iphlen - tcphlen);
-      string_concat(buf, sizeof(buf), &off, ", \"tcp_win\":%u", win);
+      string_concaf(buf, sizeof(buf), &off, ", \"tcp_win\":%u", win);
     }
 
  done:
@@ -440,8 +442,7 @@ static char *tbit_pkt_tostr(const scamper_tbit_t *tbit,
   return strdup(buf);
 }
 
-int scamper_file_json_tbit_write(const scamper_file_t *sf,
-				 const scamper_tbit_t *tbit, void *p)
+char *scamper_tbit_tojson(const scamper_tbit_t *tbit, size_t *len_out)
 {
   tbit_state_t state;
   char *str = NULL, *header = NULL, **pkts = NULL;
@@ -470,7 +471,7 @@ int scamper_file_json_tbit_write(const scamper_file_t *sf,
   if((header = tbit_header_tostr(tbit, &state)) == NULL)
     goto cleanup;
   len += (header_len = strlen(header));
-  len += 2; /* }\n" */
+  len += 2; /* }\0" */
 
   if((str = malloc_zero(len)) == NULL)
     goto cleanup;
@@ -486,14 +487,12 @@ int scamper_file_json_tbit_write(const scamper_file_t *sf,
       memcpy(str+wc, pkts[i], pkt_lens[i]);
       wc += pkt_lens[i];
     }
-  memcpy(str+wc, "]}\n", 3); wc += 3;
+  memcpy(str+wc, "]}\0", 3); wc += 3;
 
   assert(wc == len);
-
-  rc = json_write(sf, str, len, p);
+  rc = 0;
 
  cleanup:
-  if(str != NULL) free(str);
   if(header != NULL) free(header);
   if(pkt_lens != NULL) free(pkt_lens);
   if(pkts != NULL)
@@ -503,5 +502,31 @@ int scamper_file_json_tbit_write(const scamper_file_t *sf,
 	  free(pkts[i]);
       free(pkts);
     }
+
+  if(rc != 0)
+    {
+      if(str != NULL)
+	free(str);
+      return NULL;
+    }
+
+  if(len_out != NULL)
+    *len_out = len;
+  return str;
+}
+
+int scamper_file_json_tbit_write(const scamper_file_t *sf,
+				 const scamper_tbit_t *tbit, void *p)
+{
+  char *str;
+  size_t len;
+  int rc;
+
+  if((str = scamper_tbit_tojson(tbit, &len)) == NULL)
+    return -1;
+  str[len-1] = '\n';
+  rc = json_write(sf, str, len, p);
+  free(str);
+
   return rc;
 }

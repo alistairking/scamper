@@ -1,7 +1,7 @@
 /*
  * scamper_do_sting.c
  *
- * $Id: scamper_sting_do.c,v 1.61 2024/08/13 05:14:13 mjl Exp $
+ * $Id: scamper_sting_do.c,v 1.62 2024/11/30 01:43:32 mjl Exp $
  *
  * Copyright (C) 2008-2011 The University of Waikato
  * Copyright (C) 2012      The Regents of the University of California
@@ -788,7 +788,6 @@ scamper_task_t *scamper_do_sting_alloctask(void *data,
   if(sting->src == NULL &&
      (sting->src = scamper_getsrc(sting->dst, 0, errbuf, errlen)) == NULL)
     goto err;
-  sig->sig_tx_ip_src = scamper_addr_use(sting->src);
   SCAMPER_TASK_SIG_TCP(sig, sting->sport, sting->dport);
   if(scamper_task_sig_add(task, sig) != 0)
     {

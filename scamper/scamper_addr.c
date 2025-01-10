@@ -1,12 +1,12 @@
 /*
  * scamper_addr.c
  *
- * $Id: scamper_addr.c,v 1.85 2024/03/27 07:10:16 mjl Exp $
+ * $Id: scamper_addr.c,v 1.86 2024/12/15 19:07:43 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2013-2014 The Regents of the University of California
- * Copyright (C) 2016-2023 Matthew Luckie
+ * Copyright (C) 2016-2024 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -970,36 +970,25 @@ scamper_addr_t *scamper_addrcache_resolve_dm(scamper_addrcache_t *addrcache,
 					     const char *file, const int line)
 #endif
 {
-  struct addrinfo hints, *res, *res0;
+  struct sockaddr_storage sas;
   scamper_addr_t *sa = NULL;
   void *va = NULL;
   int at = 0;
 
-  memset(&hints, 0, sizeof(struct addrinfo));
-  hints.ai_flags    = AI_NUMERICHOST;
-  hints.ai_socktype = SOCK_DGRAM;
-  hints.ai_protocol = IPPROTO_UDP;
-  hints.ai_family   = af;
-
-  if(getaddrinfo(addr, NULL, &hints, &res0) != 0 || res0 == NULL)
+  if(sockaddr_compose_str((struct sockaddr *)&sas, af, addr, 0) != 0)
     {
       return NULL;
     }
 
-  for(res = res0; res != NULL; res = res->ai_next)
+  if(sas.ss_family == AF_INET)
     {
-      if(res->ai_family == PF_INET)
-	{
-	  va = &((struct sockaddr_in *)res->ai_addr)->sin_addr;
-	  at = SCAMPER_ADDR_TYPE_IPV4;
-	  break;
-	}
-      else if(res->ai_family == PF_INET6)
-	{
-	  va = &((struct sockaddr_in6 *)res->ai_addr)->sin6_addr;
-	  at = SCAMPER_ADDR_TYPE_IPV6;
-	  break;
-	}
+      va = &((struct sockaddr_in *)&sas)->sin_addr;
+      at = SCAMPER_ADDR_TYPE_IPV4;
+    }
+  else if(sas.ss_family == AF_INET6)
+    {
+      va = &((struct sockaddr_in6 *)&sas)->sin6_addr;
+      at = SCAMPER_ADDR_TYPE_IPV6;
     }
 
   if(va != NULL)
@@ -1010,8 +999,6 @@ scamper_addr_t *scamper_addrcache_resolve_dm(scamper_addrcache_t *addrcache,
       sa = scamper_addrcache_get_dm(addrcache, at, va, file, line);
 #endif
     }
-
-  freeaddrinfo(res0);
 
   return sa;
 }
@@ -1099,44 +1086,34 @@ scamper_addr_t *scamper_addr_fromstr_dm(int type, const char *addr,
 					const char *file, const int line)
 #endif
 {
-  struct addrinfo hints, *res, *res0;
+  struct sockaddr_storage sas;
   scamper_addr_t *sa = NULL;
   void *va = NULL;
-  int at = 0;
-
-  memset(&hints, 0, sizeof(struct addrinfo));
-  hints.ai_flags    = AI_NUMERICHOST;
-  hints.ai_socktype = SOCK_DGRAM;
-  hints.ai_protocol = IPPROTO_UDP;
+  int at = 0, af;
 
   if(type == SCAMPER_ADDR_TYPE_UNSPEC)
-    hints.ai_family = AF_UNSPEC;
+    af = AF_UNSPEC;
   else if(type == SCAMPER_ADDR_TYPE_IPV4)
-    hints.ai_family = AF_INET;
+    af = AF_INET;
   else if(type == SCAMPER_ADDR_TYPE_IPV6)
-    hints.ai_family = AF_INET6;
+    af = AF_INET6;
   else
     return NULL;
 
-  if(getaddrinfo(addr, NULL, &hints, &res0) != 0 || res0 == NULL)
+  if(sockaddr_compose_str((struct sockaddr *)&sas, af, addr, 0) != 0)
     {
       return NULL;
     }
 
-  for(res = res0; res != NULL; res = res->ai_next)
+  if(sas.ss_family == AF_INET)
     {
-      if(res->ai_family == PF_INET)
-	{
-	  va = &((struct sockaddr_in *)res->ai_addr)->sin_addr;
-	  at = SCAMPER_ADDR_TYPE_IPV4;
-	  break;
-	}
-      else if(res->ai_family == PF_INET6)
-	{
-	  va = &((struct sockaddr_in6 *)res->ai_addr)->sin6_addr;
-	  at = SCAMPER_ADDR_TYPE_IPV6;
-	  break;
-	}
+      va = &((struct sockaddr_in *)&sas)->sin_addr;
+      at = SCAMPER_ADDR_TYPE_IPV4;
+    }
+  else if(sas.ss_family == AF_INET6)
+    {
+      va = &((struct sockaddr_in6 *)&sas)->sin6_addr;
+      at = SCAMPER_ADDR_TYPE_IPV6;
     }
 
   if(va != NULL)
@@ -1147,8 +1124,6 @@ scamper_addr_t *scamper_addr_fromstr_dm(int type, const char *addr,
       sa = scamper_addr_alloc_dm(at, va, file, line);
 #endif
     }
-
-  freeaddrinfo(res0);
 
   return sa;
 }

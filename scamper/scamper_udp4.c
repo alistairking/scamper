@@ -1,11 +1,11 @@
 /*
  * scamper_udp4.c
  *
- * $Id: scamper_udp4.c,v 1.91 2024/08/13 05:57:36 mjl Exp $
+ * $Id: scamper_udp4.c,v 1.93 2024/11/28 09:04:48 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2010 The University of Waikato
- * Copyright (C) 2022-2023 Matthew Luckie
+ * Copyright (C) 2022-2024 Matthew Luckie
  * Copyright (C) 2023-2024 The Regents of the University of California
  * Author: Matthew Luckie
  *
@@ -217,6 +217,12 @@ void scamper_udp4_read_cb(SOCKET fd, void *param)
   struct iovec iov;
   ssize_t rrc;
 
+#if defined(IP_PKTINFO)
+  struct in_pktinfo *pi;
+#elif defined(IP_RECVIF)
+  struct sockaddr_dl *sdl;
+#endif
+
   memset(&iov, 0, sizeof(iov));
   iov.iov_base = (caddr_t)buf;
   iov.iov_len  = sizeof(buf);
@@ -240,9 +246,36 @@ void scamper_udp4_read_cb(SOCKET fd, void *param)
       while(cmsg != NULL)
 	{
 	  if(cmsg->cmsg_level == SOL_SOCKET && cmsg->cmsg_type == SCM_TIMESTAMP)
-	    timeval_cpy(&ur.rx, (struct timeval *)CMSG_DATA(cmsg));
-	  else if(cmsg->cmsg_level == IPPROTO_IP && cmsg->cmsg_type == IP_TTL)
-	    ur.ttl = *((int *)CMSG_DATA(cmsg));
+	    {
+	      timeval_cpy(&ur.rx, (struct timeval *)CMSG_DATA(cmsg));
+	      goto next;
+	    }
+
+	  if(cmsg->cmsg_level == IPPROTO_IP && cmsg->cmsg_type == IP_TTL)
+	    {
+	      ur.ttl = *((int *)CMSG_DATA(cmsg));
+	      goto next;
+	    }
+
+#if defined(IP_PKTINFO)
+	  if(cmsg->cmsg_level == IPPROTO_IP && cmsg->cmsg_type == IP_PKTINFO)
+	    {
+	      pi = (struct in_pktinfo *)CMSG_DATA(cmsg);
+	      ur.ifindex = pi->ipi_ifindex;
+	      ur.flags |= SCAMPER_UDP_RESP_FLAG_IFINDEX;
+	      goto next;
+	    }
+#elif defined(IP_RECVIF)
+	  if(cmsg->cmsg_level == IPPROTO_IP && cmsg->cmsg_type == IP_RECVIF)
+	    {
+	      sdl = (struct sockaddr_dl *)CMSG_DATA(cmsg);
+	      ur.ifindex = sdl->sdl_index;
+	      ur.flags |= SCAMPER_UDP_RESP_FLAG_IFINDEX;
+	      goto next;
+	    }
+#endif
+
+	next:
 	  cmsg = (struct cmsghdr *)CMSG_NXTHDR(&msg, cmsg);
 	}
     }
@@ -305,6 +338,21 @@ SOCKET scamper_udp4_opendgram(const void *addr, int sport)
 
   if(setsockopt_int(fd, IPPROTO_IP, IP_RECVTTL, 1) != 0)
     printerror(__func__, "could not set IP_RECVTTL");
+
+  /*
+   * ask the udp4 socket to supply the interface on which it receives
+   * a packet.
+   */
+#if defined(IP_RECVPKTINFO)
+  if(setsockopt_int(fd, IPPROTO_IP, IP_RECVPKTINFO, 1) != 0)
+    printerror(__func__, "could not set IP_RECVPKTINFO");
+#elif defined(IP_PKTINFO)
+  if(setsockopt_int(fd, IPPROTO_IP, IP_PKTINFO, 1) != 0)
+    printerror(__func__, "could not set IP_PKTINFO");
+#elif defined(IP_RECVIF)
+  if(setsockopt_int(fd, IPPROTO_IP, IP_RECVIF, 1) != 0)
+    printerror(__func__, "could not set IP_RECVIF");
+#endif
 
   sockaddr_compose((struct sockaddr *)&sin4, AF_INET, addr, sport);
   if(bind(fd, (struct sockaddr *)&sin4, sizeof(sin4)) == -1)

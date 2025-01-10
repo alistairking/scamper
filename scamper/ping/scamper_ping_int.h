@@ -1,7 +1,7 @@
 /*
  * scamper_ping_int.h
  *
- * $Id: scamper_ping_int.h,v 1.13 2024/08/19 21:53:01 mjl Exp $
+ * $Id: scamper_ping_int.h,v 1.14 2024/08/26 09:15:54 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -83,8 +83,8 @@ uint32_t scamper_ping_reply_total(const scamper_ping_t *ping);
   (reply)->reply_proto == 1 && (reply)->icmp_type == 14))
 
 #define SCAMPER_PING_METHOD_IS_ICMP(ping) (\
- ((ping)->probe_method == SCAMPER_PING_METHOD_ICMP_ECHO) || \
-  (ping)->probe_method == SCAMPER_PING_METHOD_ICMP_TIME)
+ (ping)->probe_method == SCAMPER_PING_METHOD_ICMP_ECHO || \
+ (ping)->probe_method == SCAMPER_PING_METHOD_ICMP_TIME)
 
 #define SCAMPER_PING_METHOD_IS_TCP(ping) (                    \
  ((ping)->probe_method == SCAMPER_PING_METHOD_TCP_ACK ||      \

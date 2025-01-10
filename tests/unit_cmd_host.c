@@ -1,7 +1,7 @@
 /*
  * unit_cmd_host : unit tests for host commands
  *
- * $Id: unit_cmd_host.c,v 1.5 2024/04/28 20:10:19 mjl Exp $
+ * $Id: unit_cmd_host.c,v 1.6 2024/09/04 07:36:24 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -166,6 +166,20 @@ static int x192_0_2_55_ptr(const scamper_host_t *in)
   return 0;
 }
 
+static int doesnotexist_nsid(const scamper_host_t *in)
+{
+  const char *qname;
+
+  if(in == NULL ||
+     check_addr(scamper_host_dst_get(in), "192.0.2.3") != 0 ||
+     (qname = scamper_host_qname_get(in)) == NULL ||
+     strcmp(qname, "does-not-exist") != 0 ||
+     scamper_host_flags_get(in) != SCAMPER_HOST_FLAG_NSID)
+    return -1;
+
+  return 0;
+}
+
 static int check(const char *cmd, int (*func)(const scamper_host_t *in))
 {
   scamper_host_t *host;
@@ -224,6 +238,7 @@ int main(int argc, char *argv[])
     {"-s 192.0.2.2 -t aaaa -r example.com", example_com_aaaa_r},
     {"-s 192.0.2.2 192.0.2.55", x192_0_2_55_ptr},
     {"-s 192.0.2.2 -t ptr 192.0.2.55", x192_0_2_55_ptr},
+    {"-s 192.0.2.3 -O nsid does-not-exist", doesnotexist_nsid},
   };
   size_t i, testc = sizeof(tests) / sizeof(sc_test_t);
   char filename[128];

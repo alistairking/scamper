@@ -4,10 +4,10 @@
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2014      The Regents of the University of California
- * Copyright (C) 2020-2023 Matthew Luckie
+ * Copyright (C) 2020-2024 Matthew Luckie
  * Author: Matthew Luckie
  *
- * $Id: scamper_trace_text.c,v 1.34 2024/03/04 19:36:41 mjl Exp $
+ * $Id: scamper_trace_text.c,v 1.36 2024/12/31 04:17:31 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -199,13 +199,13 @@ static char *header_tostr(const scamper_trace_t *trace)
 
   string_concat(header, sizeof(header), &off, "traceroute");
   if(trace->src != NULL)
-    string_concat(header, sizeof(header), &off, " from %s",
-		  scamper_addr_tostr(trace->src, addr, sizeof(addr)));
-  string_concat(header, sizeof(header), &off, " to %s",
-		scamper_addr_tostr(trace->dst, addr, sizeof(addr)));
+    string_concat2(header, sizeof(header), &off, " from ",
+		   scamper_addr_tostr(trace->src, addr, sizeof(addr)));
+  string_concat2(header, sizeof(header), &off, " to ",
+		 scamper_addr_tostr(trace->dst, addr, sizeof(addr)));
   if(trace->rtr != NULL)
-    string_concat(header, sizeof(header), &off, " via %s",
-		  scamper_addr_tostr(trace->rtr, addr, sizeof(addr)));
+    string_concat2(header, sizeof(header), &off, " via ",
+		   scamper_addr_tostr(trace->rtr, addr, sizeof(addr)));
 
   return strdup(header);
 }
@@ -603,11 +603,11 @@ static int pmtud_ver2(const scamper_trace_t *trace, char **mtus)
 	  if(addr[0] != '\0' || note->nhmtu != hop->hop_icmp_nhmtu)
 	    {
 	      off = 0;
-	      string_concat(buf, sizeof(buf), &off, "%s", mtus[i]);
+	      string_concat(buf, sizeof(buf), &off, mtus[i]);
 	      if(addr[0] != '\0')
-		string_concat(buf, sizeof(buf), &off, " ptb %s", addr);
+		string_concat2(buf, sizeof(buf), &off, " ptb ", addr);
 	      if(note->nhmtu != hop->hop_icmp_nhmtu)
-		string_concat(buf, sizeof(buf), &off, " nhmtu %d!",
+		string_concaf(buf, sizeof(buf), &off, " nhmtu %d!",
 			      hop->hop_icmp_nhmtu);
 
 	      free(mtus[i]);
@@ -709,7 +709,8 @@ int scamper_file_text_trace_write(const scamper_file_t *sf,
     goto cleanup;
 
   off = 0;
-  string_concat(str, len, &off, "%s\n", header);
+  string_concat(str, len, &off, header);
+  str[off++] = '\n';
 
   if(hops != NULL)
     {
@@ -719,10 +720,10 @@ int scamper_file_text_trace_write(const scamper_file_t *sf,
 	hop_count = trace->stop_hop;
       for(i=0; i < hop_count; i++)
 	{
-	  string_concat(str, len, &off, "%s", hops[i]);
+	  string_concat(str, len, &off, hops[i]);
 	  if(mtus != NULL && mtus[i] != NULL)
-	    string_concat(str, len, &off, "%s", mtus[i]);
-	  string_concat(str, len, &off, "\n");
+	    string_concat(str, len, &off, mtus[i]);
+	  str[off++] = '\n';
 	}
     }
 

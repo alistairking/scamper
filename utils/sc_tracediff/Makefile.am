@@ -6,10 +6,11 @@ bin_PROGRAMS = sc_tracediff
 
 sc_tracediff_SOURCES = \
 	sc_tracediff.c \
-	../../utils.c \
-	../../mjl_splaytree.c
+	$(top_srcdir)/utils.c \
+	$(top_srcdir)/mjl_splaytree.c
 
-sc_tracediff_LDADD = ../../scamper/libscamperfile.la
+sc_tracediff_LDADD = \
+	$(top_srcdir)/lib/libscamperfile/libscamperfile.la
 
 man_MANS = sc_tracediff.1
 

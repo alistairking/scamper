@@ -8,7 +8,7 @@
  * Copyright (C) 2023      The Regents of the University of California
  * Author: Matthew Luckie
  *
- * $Id: scamper_dealias_warts.c,v 1.41 2024/01/16 06:55:18 mjl Exp $
+ * $Id: scamper_dealias_warts.c,v 1.45 2024/11/10 04:09:12 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -394,6 +394,7 @@ static int warts_dealias_probedef_params(const scamper_file_t *sf,
 	 (var->id == WARTS_DEALIAS_PROBEDEF_MTU && p->mtu == 0)   ||
 	 (var->id == WARTS_DEALIAS_PROBEDEF_TOS && p->tos == 0)   ||
 	 (var->id == WARTS_DEALIAS_PROBEDEF_ID  && p->id == 0)    ||
+	 (var->id == WARTS_DEALIAS_PROBEDEF_SRC && p->src == NULL) ||
 	 (var->id == WARTS_DEALIAS_PROBEDEF_4BYTES &&
 	  SCAMPER_DEALIAS_PROBEDEF_PROTO_IS_TCP(p) == 0 &&
 	  SCAMPER_DEALIAS_PROBEDEF_PROTO_IS_UDP(p) == 0)          ||
@@ -464,7 +465,7 @@ static int warts_dealias_probedef_read(scamper_dealias_probedef_t *p,
   if(warts_params_read(buf, off, len, handlers, handler_cnt) != 0)
     return -1;
 
-  if(p->src == NULL || p->dst == NULL)
+  if(p->dst == NULL)
     return -1;
 
   if(SCAMPER_DEALIAS_PROBEDEF_PROTO_IS_ICMP(p))
@@ -555,19 +556,15 @@ static void warts_dealias_probedef_write(const scamper_dealias_probedef_t *p,
 static int extract_pfs_xs(const uint8_t *buf, uint32_t *off, const uint32_t len,
 			  scamper_dealias_prefixscan_t *pfs, void *param)
 {
-  scamper_addr_t **xs;
   uint16_t xc, i;
 
   if(extract_uint16(buf, off, len, &xc, NULL) != 0 ||
      scamper_dealias_prefixscan_xs_alloc(pfs, xc) != 0)
     return -1;
 
-  xs = pfs->xs;
   for(i=0; i<xc; i++)
-    if(extract_addr(buf, off, len, &xs[i], param) != 0)
+    if(extract_addr(buf, off, len, &pfs->xs[i], param) != 0)
       return -1;
-  pfs->xs = xs;
-  pfs->xc = xc;
 
   return 0;
 }
@@ -695,41 +692,47 @@ static int warts_dealias_prefixscan_read(scamper_dealias_t *dealias,
 					 uint8_t *buf, uint32_t *off,
 					 uint32_t len)
 {
-  scamper_dealias_prefixscan_t pfs, *p = NULL;
+  scamper_dealias_prefixscan_t *p = NULL;
   uint16_t wait_probe;
   uint8_t wait_timeout;
   warts_param_reader_t handlers[] = {
-    {&pfs.a,            (wpr_t)extract_addr,                  table},
-    {&pfs.b,            (wpr_t)extract_addr,                  table},
-    {&pfs.ab,           (wpr_t)extract_addr,                  table},
-    {&pfs,              (wpr_t)extract_pfs_xs,                table},
-    {&pfs.prefix,       (wpr_t)extract_byte,                  NULL},
-    {&pfs.attempts,     (wpr_t)extract_byte,                  NULL},
-    {&pfs.fudge,        (wpr_t)extract_uint16,                NULL},
-    {&wait_probe,       (wpr_t)extract_uint16,                NULL},
-    {&wait_timeout,     (wpr_t)extract_byte,                  NULL},
-    {&pfs.probedefc,    (wpr_t)extract_uint16,                NULL},
-    {&pfs.flags,        (wpr_t)extract_byte,                  NULL},
-    {&pfs.replyc,       (wpr_t)extract_byte,                  NULL},
+    {NULL,          (wpr_t)extract_addr,                  table},
+    {NULL,          (wpr_t)extract_addr,                  table},
+    {NULL,          (wpr_t)extract_addr,                  table},
+    {NULL,          (wpr_t)extract_pfs_xs,                table},
+    {NULL,          (wpr_t)extract_byte,                  NULL},
+    {NULL,          (wpr_t)extract_byte,                  NULL},
+    {NULL,          (wpr_t)extract_uint16,                NULL},
+    {&wait_probe,   (wpr_t)extract_uint16,                NULL},
+    {&wait_timeout, (wpr_t)extract_byte,                  NULL},
+    {NULL,          (wpr_t)extract_uint16,                NULL},
+    {NULL,          (wpr_t)extract_byte,                  NULL},
+    {NULL,          (wpr_t)extract_byte,                  NULL},
   };
   const int handler_cnt = sizeof(handlers)/sizeof(warts_param_reader_t);
   uint32_t o = *off;
   uint16_t i;
 
-  memset(&pfs, 0, sizeof(pfs));
-  if(warts_params_read(buf, off, len, handlers, handler_cnt) != 0)
-    return -1;
-  if(pfs.a == NULL || pfs.b == NULL)
-    return -1;
-
   if((p = scamper_dealias_prefixscan_alloc()) == NULL)
-    return -1;
-  pfs.wait_probe.tv_sec = wait_probe / 1000;
-  pfs.wait_probe.tv_usec = (wait_probe % 1000) * 1000;
-  pfs.wait_timeout.tv_sec = wait_timeout;
+    goto err;
 
-  memcpy(p, &pfs, sizeof(pfs));
-  pfs.a = NULL; pfs.b = NULL;
+  handlers[0].data  = &p->a;
+  handlers[1].data  = &p->b;
+  handlers[2].data  = &p->ab;
+  handlers[3].data  = p;     /* extract_pfs_xs */
+  handlers[4].data  = &p->prefix;
+  handlers[5].data  = &p->attempts;
+  handlers[6].data  = &p->fudge;
+  handlers[9].data  = &p->probedefc;
+  handlers[10].data = &p->flags;
+  handlers[11].data = &p->replyc;
+
+  if(warts_params_read(buf, off, len, handlers, handler_cnt) != 0)
+    goto err;
+
+  p->wait_probe.tv_sec = wait_probe / 1000;
+  p->wait_probe.tv_usec = (wait_probe % 1000) * 1000;
+  p->wait_timeout.tv_sec = wait_timeout;
 
   /* by default we require five replies before inferring an alias */
   if(flag_isset(&buf[o], WARTS_DEALIAS_PREFIXSCAN_REPLYC) == 0)
@@ -1877,8 +1880,8 @@ int scamper_file_warts_dealias_read(scamper_file_t *sf, const warts_hdr_t *hdr,
   if(dealias->method > SCAMPER_DEALIAS_METHOD_MAX)
     {
       scamper_dealias_free(dealias);
-      *dealias_out = NULL;
-      return 0;
+      dealias = NULL;
+      goto done;
     }
 
   if((table = warts_addrtable_alloc_byid()) == NULL)

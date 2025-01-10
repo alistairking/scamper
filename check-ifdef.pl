@@ -2,7 +2,7 @@
 #
 # process source code looking for #ifdef-related bugs.
 #
-# $Id: check-ifdef.pl,v 1.6 2024/08/13 05:32:08 mjl Exp $
+# $Id: check-ifdef.pl,v 1.8 2024/11/30 06:50:38 mjl Exp $
 
 use strict;
 use warnings;
@@ -21,7 +21,7 @@ $defs{$_} = 0 foreach (
     "IPV6_DONTFRAG", "IPV6_HOPLIMIT",
     "IPV6_PKTINFO", "IPV6_RECVERR", "IPV6_RECVHOPLIMIT",
     "IPV6_RECVPKTINFO", "IPV6_RECVTCLASS", "IPV6_TCLASS", "IPV6_V6ONLY",
-    "IP_PKTINFO", "IP_RECVERR", "IP_RECVOPTS", "IP_RECVPKTINFO",
+    "IP_PKTINFO", "IP_RECVERR", "IP_RECVOPTS", "IP_RECVPKTINFO", "IP_RECVIF",
     "MJLHEAP_DEBUG", "MJLLIST_DEBUG", "MJLSPLAYTREE_DEBUG",
     "O_NONBLOCK", "PCRE_STUDY_JIT_COMPILE", "RTF_LLINFO",
     "SIGCHLD", "SIGPIPE",
@@ -37,6 +37,7 @@ $defs{$_} = 0 foreach (
     "_IPFW2_H", "_IP_FW_H",
     "__linux__", "__sun__", "__ANDROID__", "__APPLE__", "_WIN32",
     "__FreeBSD__", "__NetBSD__", "__OpenBSD__", "__DragonFly__",
+    "__NetBSD_Version__",
     "COMMON_CHECK_ADDR",
     "FUZZ_CHUNKED", "FUZZ_DEALIAS", "FUZZ_HDRS", "FUZZ_HOST",
     "FUZZ_HTTP", "FUZZ_NEIGHBOURDISC", "FUZZ_PING", "FUZZ_SNIFF",

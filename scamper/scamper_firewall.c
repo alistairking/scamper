@@ -1,10 +1,10 @@
 /*
  * scamper_firewall.c
  *
- * $Id: scamper_firewall.c,v 1.59 2024/07/14 10:55:43 mjl Exp $
+ * $Id: scamper_firewall.c,v 1.60 2024/12/30 03:16:57 mjl Exp $
  *
  * Copyright (C) 2008-2011 The University of Waikato
- * Copyright (C) 2016-2023 Matthew Luckie
+ * Copyright (C) 2016-2024 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -925,7 +925,7 @@ int scamper_firewall_pf_add(int n,int af,int p,void *s,void *d,int sp,int dp)
   size_t off;
 
   off = 0;
-  string_concat(anchor, sizeof(anchor), &off, "%s/%d.%d", pf_name, pf_pid, n);
+  string_concaf(anchor, sizeof(anchor), &off, "%s/%d.%d", pf_name, pf_pid, n);
 
   memset(&pft, 0, sizeof(pft));
   pft.size = 1;
@@ -1014,7 +1014,7 @@ int scamper_firewall_pf_del(int ruleno)
   memset(&pfte, 0, sizeof(pfte));
 
   off = 0;
-  string_concat(pfte.anchor, sizeof(pfte.anchor), &off,
+  string_concaf(pfte.anchor, sizeof(pfte.anchor), &off,
 		"%s/%d.%d", pf_name,pf_pid,ruleno);
 
 #if defined(HAVE_STRUCT_PFIOC_TRANS_E_TYPE)

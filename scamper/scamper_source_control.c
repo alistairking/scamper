@@ -1,9 +1,10 @@
 /*
  * scamper_source_control.c
  *
- * $Id: scamper_source_control.c,v 1.16 2023/08/10 00:06:14 mjl Exp $
+ * $Id: scamper_source_control.c,v 1.18 2024/12/31 04:17:31 mjl Exp $
  *
  * Copyright (C) 2007-2011 The University of Waikato
+ * Copyright (C) 2024      Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -84,7 +85,7 @@ static char *ssc_tostr(void *data, char *str, size_t len)
   string_concat(str, len, &off, "type control ");
 
   if(ssc->tostr(ssc->param, buf, sizeof(buf)) != NULL)
-    string_concat(str, len, &off, "%s ", buf);
+    string_concat2(str, len, &off, buf, " ");
 
   if(ssc->isfinished == 0)
     string_concat(str, len, &off, "more");

@@ -58,6 +58,8 @@ cdef extern from "scamper_dealias.h":
  ctypedef struct scamper_dealias_reply_t:
   pass
 
+ char *scamper_dealias_tojson(const scamper_dealias_t *dealias, size_t *l)
+
  void scamper_dealias_free(scamper_dealias_t *dealias)
 
  scamper_list_t *scamper_dealias_list_get(const scamper_dealias_t *dealias)

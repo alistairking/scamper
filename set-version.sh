@@ -12,7 +12,11 @@ fi
 VERSION=${1?}
 CHANGELOG=`mktemp`
 
-sed -i "s/^AC_INIT(\[scamper\],\[.*\],\[mjl@luckie.org.nz\])$/AC_INIT(\[scamper\],\[${VERSION}\],\[mjl@luckie.org.nz\])/w ${CHANGELOG}" configure.ac
+if [ -z "${SED}" ]; then
+    SED=sed
+fi
+
+${SED} -i "s/^AC_INIT(\[scamper\],\[.*\],\[mjl@luckie.org.nz\])$/AC_INIT(\[scamper\],\[${VERSION}\],\[mjl@luckie.org.nz\])/w ${CHANGELOG}" configure.ac
 if [ ! -s "${CHANGELOG}" ]; then
     echo "configure.ac unchanged"
     rm "${CHANGELOG}"
@@ -20,7 +24,7 @@ if [ ! -s "${CHANGELOG}" ]; then
 fi
 rm "${CHANGELOG}"
 
-sed -i "s/^#define SCAMPER_VERSION .*/#define SCAMPER_VERSION \"${VERSION}\"/w ${CHANGELOG}" scamper/scamper.h
+${SED} -i "s/^#define SCAMPER_VERSION .*/#define SCAMPER_VERSION \"${VERSION}\"/w ${CHANGELOG}" scamper/scamper.h
 if [ ! -s "${CHANGELOG}" ]; then
     echo "scamper/scamper.h unchanged"
     rm "${CHANGELOG}"

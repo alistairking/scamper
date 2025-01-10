@@ -1,6 +1,6 @@
 #!/usr/bin/env perl
 #
-# $Id: bootstrap.pl,v 1.24 2024/01/20 19:13:37 mjl Exp $
+# $Id: bootstrap.pl,v 1.26 2024/11/11 02:40:18 mjl Exp $
 #
 # script to ship scamper with generated configure script ready to build.
 
@@ -33,13 +33,13 @@ my %ax;
 $ax{"ax_check_openssl.m4"} =
     "b00c3b76d7d5ea81f77d75c0f0284b0a960480c1eed1b8a7edc63ba988ba988b";
 $ax{"ax_gcc_builtin.m4"} =
-    "7e18d94162058a321464fe0f8f565b9a009ef6bd4d584ec6e8591b20b902c78b";
+    "a90f7d81b3c1eddbacb1a3a9b85bbf8cdd5c4b90b91de0b3f6549b49a6d085b2";
 $ax{"ax_gcc_func_attribute.m4"} =
     "53f89342aa3f01310b204dac1db33e4c73410814bdeccb1876f0102a024d4b44";
 $ax{"ax_pthread.m4"} =
     "4fa6c352f1fb33147947ead61f9b12537f3d146ce068c003552d3b9582a7a406";
 $ax{"ax_python_devel.m4"} =
-    "e51ef667c88bbcb759ec60cc3fdf9b8d6dfb510e397bdea9da388f501b2402e3";
+    "ab7f0ea87fd29de0d7abc503c16a219fa4814ab30056f92dff2f89e7cd861f35";
 
 sub which($)
 {

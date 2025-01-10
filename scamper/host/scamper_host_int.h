@@ -1,7 +1,7 @@
 /*
  * scamper_host_int.h
  *
- * $Id: scamper_host_int.h,v 1.6 2024/04/20 00:15:02 mjl Exp $
+ * $Id: scamper_host_int.h,v 1.9 2024/09/05 01:29:26 mjl Exp $
  *
  * Copyright (C) 2018-2023 Matthew Luckie
  *
@@ -24,14 +24,40 @@
 #define __SCAMPER_HOST_INT_H
 
 scamper_host_t *scamper_host_alloc(void);
-int scamper_host_queries_alloc(scamper_host_t *host, int n);
+int scamper_host_queries_alloc(scamper_host_t *host, uint8_t n);
 scamper_host_query_t *scamper_host_query_alloc(void);
-int scamper_host_query_rr_alloc(scamper_host_query_t *q);
+int scamper_host_query_rr_alloc(scamper_host_query_t *q,
+				uint16_t an_c, uint16_t ns_c, uint16_t ar_c);
 scamper_host_rr_t *scamper_host_rr_alloc(const char *,
 					 uint16_t, uint16_t, uint32_t);
 scamper_host_rr_mx_t *scamper_host_rr_mx_alloc(uint16_t, const char *);
 scamper_host_rr_soa_t *scamper_host_rr_soa_alloc(const char *, const char *);
 scamper_host_rr_txt_t *scamper_host_rr_txt_alloc(uint16_t strc);
+scamper_host_rr_opt_t *scamper_host_rr_opt_alloc(uint16_t optc);
+scamper_host_rr_opt_elem_t *scamper_host_rr_opt_elem_alloc(uint16_t code,
+                                                           uint16_t len,
+                                                           const uint8_t *data);
+
+struct scamper_host_rr_opt_elem
+{
+  uint16_t                 code;
+  uint16_t                 len;
+  uint8_t                 *data;
+
+#ifdef BUILDING_LIBSCAMPERFILE
+  int                      refcnt;
+#endif
+};
+
+struct scamper_host_rr_opt
+{
+  scamper_host_rr_opt_elem_t **elems;
+  uint16_t                     elemc;
+
+#ifdef BUILDING_LIBSCAMPERFILE
+  int                          refcnt;
+#endif
+};
 
 struct scamper_host_rr_mx
 {
@@ -82,6 +108,7 @@ struct scamper_host_rr
     scamper_host_rr_soa_t *soa;
     scamper_host_rr_mx_t  *mx;
     scamper_host_rr_txt_t *txt;
+    scamper_host_rr_opt_t *opt;
   } un;
 
 #ifdef BUILDING_LIBSCAMPERFILE
