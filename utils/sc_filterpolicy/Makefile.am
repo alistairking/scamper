@@ -6,14 +6,14 @@ bin_PROGRAMS = sc_filterpolicy
 
 sc_filterpolicy_SOURCES = \
 	sc_filterpolicy.c \
-	../../utils.c \
-	../../mjl_heap.c \
-	../../mjl_list.c \
-	../../mjl_splaytree.c
+	$(top_srcdir)/utils.c \
+	$(top_srcdir)/mjl_heap.c \
+	$(top_srcdir)/mjl_list.c \
+	$(top_srcdir)/mjl_splaytree.c
 
 sc_filterpolicy_LDADD = \
-	../../scamper/libscamperfile.la \
-	../../lib/libscamperctrl/libscamperctrl.la
+	$(top_srcdir)/lib/libscamperfile/libscamperfile.la \
+	$(top_srcdir)/lib/libscamperctrl/libscamperctrl.la
 
 man_MANS = sc_filterpolicy.1
 

@@ -1,13 +1,13 @@
 /*
  * scamper_trace.c
  *
- * $Id: scamper_trace.c,v 1.118 2024/04/22 08:56:38 mjl Exp $
+ * $Id: scamper_trace.c,v 1.120 2024/10/16 07:01:29 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2003-2011 The University of Waikato
  * Copyright (C) 2008      Alistair King
  * Copyright (C) 2012-2015 The Regents of the University of California
- * Copyright (C) 2019-2023 Matthew Luckie
+ * Copyright (C) 2019-2024 Matthew Luckie
  *
  * Authors: Matthew Luckie
  *          Doubletree implementation by Alistair King
@@ -52,7 +52,6 @@ scamper_trace_pmtud_t *scamper_trace_pmtud_alloc(void)
 
 void scamper_trace_pmtud_free(scamper_trace_pmtud_t *pmtud)
 {
-  scamper_trace_hop_t *hop, *hop_next;
   uint8_t u8;
 
 #ifdef BUILDING_LIBSCAMPERFILE
@@ -60,13 +59,7 @@ void scamper_trace_pmtud_free(scamper_trace_pmtud_t *pmtud)
     return;
 #endif
 
-  hop = pmtud->hops;
-  while(hop != NULL)
-    {
-      hop_next = hop->hop_next;
-      scamper_trace_hop_free(hop);
-      hop = hop_next;
-    }
+  scamper_trace_hops_free(pmtud->hops);
 
   if(pmtud->notes != NULL)
     {
@@ -189,6 +182,18 @@ void scamper_trace_dtree_gss_sort(const scamper_trace_dtree_t *dtree)
   return;
 }
 
+void scamper_trace_hops_free(scamper_trace_hop_t *head)
+{
+  scamper_trace_hop_t *hop = head;
+  while(hop != NULL)
+    {
+      head = hop->hop_next;
+      scamper_trace_hop_free(hop);
+      hop = head;
+    }
+  return;
+}
+
 int scamper_trace_hops_alloc(scamper_trace_t *trace, uint16_t hops)
 {
   size_t size = sizeof(scamper_trace_hop_t *) * hops;
@@ -224,15 +229,33 @@ void scamper_trace_hop_free(scamper_trace_hop_t *hop)
   return;
 }
 
+#ifndef DMALLOC
 scamper_trace_hop_t *scamper_trace_hop_alloc(void)
+#else
+scamper_trace_hop_t *scamper_trace_hop_alloc_dm(const char *file, int line)
+#endif
 {
-  scamper_trace_hop_t *hop = malloc_zero(sizeof(scamper_trace_hop_t));
+  scamper_trace_hop_t *hop;
+
+#ifndef DMALLOC
+  hop = malloc_zero(sizeof(scamper_trace_hop_t));
+#else
+  hop = malloc_zero_dm(sizeof(scamper_trace_hop_t), file, line);
+#endif
 #ifdef BUILDING_LIBSCAMPERFILE
   if(hop != NULL)
     hop->refcnt = 1;
 #endif
   return hop;
 }
+
+#ifdef DMALLOC
+#undef scamper_trace_hop_alloc
+scamper_trace_hop_t *scamper_trace_hop_alloc(void)
+{
+  return scamper_trace_hop_alloc_dm(__FILE__, __LINE__);
+}
+#endif
 
 int scamper_trace_hop_addr_cmp(const scamper_trace_hop_t *a,
 			       const scamper_trace_hop_t *b)
@@ -304,7 +327,6 @@ char *scamper_trace_gapaction_tostr(const scamper_trace_t *trace,
  */
 void scamper_trace_free(scamper_trace_t *trace)
 {
-  scamper_trace_hop_t *hop, *hop_next;
   uint8_t i;
 
   if(trace == NULL) return;
@@ -313,26 +335,12 @@ void scamper_trace_free(scamper_trace_t *trace)
   if(trace->hops != NULL)
     {
       for(i=0; i<trace->hop_count; i++)
-	{
-	  hop = trace->hops[i];
-	  while(hop != NULL)
-	    {
-	      hop_next = hop->hop_next;
-	      scamper_trace_hop_free(hop);
-	      hop = hop_next;
-	    }
-	}
+	scamper_trace_hops_free(trace->hops[i]);
       free(trace->hops);
     }
 
   /* free lastditch hop records */
-  hop = trace->lastditch;
-  while(hop != NULL)
-    {
-      hop_next = hop->hop_next;
-      scamper_trace_hop_free(hop);
-      hop = hop_next;
-    }
+  scamper_trace_hops_free(trace->lastditch);
 
   if(trace->payload != NULL) free(trace->payload);
 
@@ -355,7 +363,19 @@ void scamper_trace_free(scamper_trace_t *trace)
  *
  * allocate the trace and all the possibly necessary data fields
  */
-scamper_trace_t *scamper_trace_alloc()
+#ifndef DMALLOC
+scamper_trace_t *scamper_trace_alloc(void)
 {
   return malloc_zero(sizeof(scamper_trace_t));
 }
+#else
+scamper_trace_t *scamper_trace_alloc_dm(const char *file, int line)
+{
+  return malloc_zero_dm(sizeof(scamper_trace_t), file, line);
+}
+#undef scamper_trace_alloc
+scamper_trace_t *scamper_trace_alloc(void)
+{
+  return scamper_trace_alloc_dm(__FILE__, __LINE__);
+}
+#endif

@@ -1,7 +1,7 @@
 /*
  * scamper_udpprobe.h
  *
- * $Id: scamper_udpprobe.h,v 1.6 2024/09/06 01:34:54 mjl Exp $
+ * $Id: scamper_udpprobe.h,v 1.7 2024/11/07 18:15:39 mjl Exp $
  *
  * Copyright (C) 2023 The Regents of the University of California
  *
@@ -26,6 +26,8 @@
 typedef struct scamper_udpprobe scamper_udpprobe_t;
 typedef struct scamper_udpprobe_probe scamper_udpprobe_probe_t;
 typedef struct scamper_udpprobe_reply scamper_udpprobe_reply_t;
+
+char *scamper_udpprobe_tojson(const scamper_udpprobe_t *up, size_t *len);
 
 /* scamper_udpprobe_t functions */
 void scamper_udpprobe_free(scamper_udpprobe_t *up);

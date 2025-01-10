@@ -1,7 +1,7 @@
 /*
  * sc_wartsdump
  *
- * $Id: sc_wartsdump.c,v 1.301 2024/09/06 01:35:15 mjl Exp $
+ * $Id: sc_wartsdump.c,v 1.303 2024/11/10 04:08:30 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -907,10 +907,13 @@ static void dump_ping(scamper_ping_t *ping)
   uint8_t u8, ipc;
 
   flags = scamper_ping_flags_get(ping);
-  scamper_addr_tostr(scamper_ping_src_get(ping), buf, sizeof(buf));
-  printf("ping from %s", buf);
-  if(flags & SCAMPER_PING_FLAG_SPOOF)
-    printf(" (spoofed)");
+  printf("ping");
+  if((addr = scamper_ping_src_get(ping)) != NULL)
+    {
+      printf(" from %s", scamper_addr_tostr(addr, buf, sizeof(buf)));
+      if(flags & SCAMPER_PING_FLAG_SPOOF)
+	printf(" (spoofed)");
+    }
   scamper_addr_tostr(scamper_ping_dst_get(ping), buf, sizeof(buf));
   printf(" to %s\n", buf);
 
@@ -1066,10 +1069,15 @@ static void dump_dealias_probedef(const scamper_dealias_probedef_t *def)
   uint16_t u16;
   uint8_t method;
 
-  addr = scamper_dealias_probedef_dst_get(def);
-  scamper_addr_tostr(addr, dst, sizeof(dst));
-  addr = scamper_dealias_probedef_src_get(def);
-  scamper_addr_tostr(addr, src, sizeof(src));
+  if((addr = scamper_dealias_probedef_dst_get(def)) != NULL)
+    scamper_addr_tostr(addr, dst, sizeof(dst));
+  else
+    snprintf(dst, sizeof(dst), "<null>");
+
+  if((addr = scamper_dealias_probedef_src_get(def)) != NULL)
+    scamper_addr_tostr(addr, src, sizeof(src));
+  else
+    snprintf(src, sizeof(src), "<null>");
 
   printf(" probedef %d: dst: %s, ttl: %d, tos: 0x%02x\n  src: %s",
 	 scamper_dealias_probedef_id_get(def), dst,

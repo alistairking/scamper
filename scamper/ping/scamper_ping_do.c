@@ -1,7 +1,7 @@
 /*
  * scamper_do_ping.c
  *
- * $Id: scamper_ping_do.c,v 1.194 2024/08/19 22:50:41 mjl Exp $
+ * $Id: scamper_ping_do.c,v 1.198 2024/11/10 22:39:12 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -1351,7 +1351,12 @@ static void do_ping_probe(scamper_task_t *task)
   uint16_t         u16;
   struct timeval   tv;
 
-  assert(state != NULL);
+  if(state == NULL)
+    {
+      ping_handleerror(task, 0);
+      return;
+    }
+
   if(state->probes == NULL)
     {
       /* timestamp the start time of the ping */
@@ -1634,35 +1639,38 @@ static void do_ping_free(scamper_task_t *task)
   return;
 }
 
-scamper_task_t *scamper_do_ping_alloctask(void *data, scamper_list_t *list,
-					  scamper_cycle_t *cycle,
-					  char *errbuf, size_t errlen)
+static void do_ping_sigs(scamper_task_t *task)
 {
-  scamper_ping_t *ping = (scamper_ping_t *)data;
+  scamper_ping_t *ping = ping_getdata(task);
   ping_state_t *state = NULL;
   scamper_task_sig_t *sig = NULL;
-  scamper_task_t *task = NULL;
-  const char *typestr;
+  char errbuf[256];
+  size_t errlen = sizeof(errbuf);
   size_t i;
 
-  /* allocate a task structure and store the ping with it */
-  if((task = scamper_task_alloc(ping, &ping_funcs)) == NULL ||
-     (state = malloc_zero(sizeof(ping_state_t))) == NULL)
+#ifdef HAVE_SCAMPER_DEBUG
+  const char *typestr;
+#endif
+
+  if((state = malloc_zero(sizeof(ping_state_t))) == NULL)
     {
-      snprintf(errbuf, errlen, "%s: could not malloc state", __func__);
+      scamper_debug(__func__, "could not malloc state");
       goto err;
     }
 
   /* declare the signature of the task */
   if((sig = scamper_task_sig_alloc(SCAMPER_TASK_SIG_TYPE_TX_IP)) == NULL)
     {
-      snprintf(errbuf, errlen, "%s: could not alloc task signature", __func__);
+      scamper_debug(__func__, "could not alloc task signature");
       goto err;
     }
   sig->sig_tx_ip_dst = scamper_addr_use(ping->dst);
   if(ping->src == NULL &&
      (ping->src = scamper_getsrc(ping->dst, 0, errbuf, errlen)) == NULL)
-    goto err;
+    {
+      scamper_debug(__func__, "%s", errbuf);
+      goto err;
+    }
   if(SCAMPER_PING_FLAG_IS_SPOOF(ping) == 0)
     sig->sig_tx_ip_src = scamper_addr_use(ping->src);
 
@@ -1675,7 +1683,7 @@ scamper_task_t *scamper_do_ping_alloctask(void *data, scamper_list_t *list,
      (SCAMPER_PING_METHOD_IS_VARY_SPORT(ping) &&
       (state->sports = malloc_zero(sizeof(uint16_t) * state->fdc)) == NULL))
     {
-      snprintf(errbuf, errlen, "%s: could not malloc fds", __func__);
+      scamper_debug(__func__, "could not malloc fds");
       goto err;
     }
 
@@ -1696,13 +1704,13 @@ scamper_task_t *scamper_do_ping_alloctask(void *data, scamper_list_t *list,
 					    ping->dst->addr, ping->probe_dport);
       if(state->fds[0] == NULL)
 	{
-	  snprintf(errbuf, errlen, "%s: could not open tcp socket", __func__);
+	  scamper_debug(__func__, "could not open tcp socket");
 	  goto err;
 	}
       if(ping->probe_sport == 0 &&
 	 scamper_fd_sport(state->fds[0], &ping->probe_sport) != 0)
 	{
-	  snprintf(errbuf, errlen, "%s: could not get tcp sport", __func__);
+	  scamper_debug(__func__, "could not get tcp sport");
 	  goto err;
 	}
       SCAMPER_TASK_SIG_TCP(sig, ping->probe_sport, ping->probe_dport);
@@ -1721,13 +1729,13 @@ scamper_task_t *scamper_do_ping_alloctask(void *data, scamper_list_t *list,
 					    ping->dst->addr, ping->probe_dport);
       if(state->fds[0] == NULL)
 	{
-	  snprintf(errbuf, errlen, "%s: could not open udp socket", __func__);
+	  scamper_debug(__func__, "could not open udp socket");
 	  goto err;
 	}
       if(ping->probe_sport == 0 &&
 	 scamper_fd_sport(state->fds[0], &ping->probe_sport) != 0)
 	{
-	  snprintf(errbuf, errlen, "%s: could not get udp sport", __func__);
+	  scamper_debug(__func__, "could not get udp sport");
 	  goto err;
 	}
 
@@ -1739,7 +1747,7 @@ scamper_task_t *scamper_do_ping_alloctask(void *data, scamper_list_t *list,
 				   ping->probe_dport + ping->probe_count - 1);
       else
 	{
-	  snprintf(errbuf, errlen, "%s: unhandled udp probe method", __func__);
+	  scamper_debug(__func__, "unhandled udp probe method");
 	  goto err;
 	}
     }
@@ -1751,7 +1759,7 @@ scamper_task_t *scamper_do_ping_alloctask(void *data, scamper_list_t *list,
 	SCAMPER_TASK_SIG_ICMP_TIME(sig, ping->probe_sport);
       else
 	{
-	  snprintf(errbuf, errlen, "%s: unhandled icmp probe method", __func__);
+	  scamper_debug(__func__, "unhandled icmp probe method");
 	  goto err;
 	}
 
@@ -1802,7 +1810,7 @@ scamper_task_t *scamper_do_ping_alloctask(void *data, scamper_list_t *list,
 
   if(scamper_task_sig_add(task, sig) != 0)
     {
-      snprintf(errbuf, errlen, "%s: could not add signature to task", __func__);
+      scamper_debug(__func__, "could not add signature to task");
       goto err;
     }
   sig = NULL;
@@ -1811,7 +1819,7 @@ scamper_task_t *scamper_do_ping_alloctask(void *data, scamper_list_t *list,
     {
       if((sig = scamper_task_sig_alloc(SCAMPER_TASK_SIG_TYPE_TX_IP)) == NULL)
 	{
-	  snprintf(errbuf, errlen, "could not alloc task signature");
+	  scamper_debug(__func__, "could not alloc task signature");
 	  goto err;
 	}
       sig->sig_tx_ip_dst = scamper_addr_use(ping->dst);
@@ -1820,7 +1828,9 @@ scamper_task_t *scamper_do_ping_alloctask(void *data, scamper_list_t *list,
 
       if(SCAMPER_PING_METHOD_IS_TCP(ping))
 	{
+#ifdef HAVE_SCAMPER_DEBUG
 	  typestr = "tcp";
+#endif
 	  if(SCAMPER_ADDR_TYPE_IS_IPV4(ping->dst))
 	    state->fds[i] = scamper_fd_tcp4_dst(NULL, 0, state->sports, i,
 						ping->dst->addr,
@@ -1832,26 +1842,27 @@ scamper_task_t *scamper_do_ping_alloctask(void *data, scamper_list_t *list,
 	}
       else
 	{
+#ifdef HAVE_SCAMPER_DEBUG
 	  typestr = "udp";
+#endif
 	  if(SCAMPER_ADDR_TYPE_IS_IPV4(ping->dst))
 	    state->fds[i] = scamper_fd_udp4dg_dst(NULL, 0, state->sports, i,
 						  ping->dst->addr,
 						  ping->probe_dport);
 	  else
-	    state->fds[i] = scamper_fd_udp6_dst(NULL, 0, state->sports, i,
+	    state->fds[i] = scamper_fd_udp6_dst(ping->src->addr, 0,
+						state->sports, i,
 						ping->dst->addr,
 						ping->probe_dport);
 	}
       if(state->fds[i] == NULL)
 	{
-	  snprintf(errbuf, errlen,
-		   "%s: could not open %s socket", __func__, typestr);
+	  scamper_debug(__func__, "could not open %s socket", typestr);
 	  goto err;
 	}
       if(scamper_fd_sport(state->fds[i], &state->sports[i]) != 0)
 	{
-	  snprintf(errbuf, errlen,
-		   "%s: could not get %s sport",  __func__, typestr);
+	  scamper_debug(__func__, "could not get %s sport", typestr);
 	  goto err;
 	}
 
@@ -1862,30 +1873,40 @@ scamper_task_t *scamper_do_ping_alloctask(void *data, scamper_list_t *list,
 
       if(scamper_task_sig_add(task, sig) != 0)
 	{
-	  snprintf(errbuf, errlen,
-		   "%s: could not add signature to task", __func__);
+	  scamper_debug(__func__, "could not add signature to task");
 	  goto err;
 	}
       sig = NULL;
     }
 
   scamper_task_setstate(task, state);
+  return;
+
+ err:
+  if(sig != NULL) scamper_task_sig_free(sig);
+  if(state != NULL) ping_state_free(state);
+  return;
+}
+
+scamper_task_t *scamper_do_ping_alloctask(void *data, scamper_list_t *list,
+					  scamper_cycle_t *cycle,
+					  char *errbuf, size_t errlen)
+{
+  scamper_ping_t *ping = (scamper_ping_t *)data;
+  scamper_task_t *task = NULL;
+
+  /* allocate a task structure and store the ping with it */
+  if((task = scamper_task_alloc(ping, &ping_funcs)) == NULL)
+    {
+      snprintf(errbuf, errlen, "%s: could not alloc task", __func__);
+      return NULL;
+    }
 
   /* associate the list and cycle with the ping */
   ping->list  = scamper_list_use(list);
   ping->cycle = scamper_cycle_use(cycle);
 
   return task;
-
- err:
-  if(sig != NULL) scamper_task_sig_free(sig);
-  if(state != NULL) ping_state_free(state);
-  if(task != NULL)
-    {
-      scamper_task_setdatanull(task);
-      scamper_task_free(task);
-    }
-  return NULL;
 }
 
 void scamper_do_ping_free(void *data)
@@ -1913,5 +1934,7 @@ int scamper_do_ping_init()
   ping_funcs.write          = do_ping_write;
   ping_funcs.task_free      = do_ping_free;
   ping_funcs.halt           = do_ping_halt;
+  ping_funcs.sigs           = do_ping_sigs;
+
   return 0;
 }

@@ -6,10 +6,11 @@ bin_PROGRAMS = sc_ttlexp
 
 sc_ttlexp_SOURCES = \
 	sc_ttlexp.c \
-	../../mjl_splaytree.c \
-	../../mjl_prefixtree.c
+	$(top_srcdir)/mjl_splaytree.c \
+	$(top_srcdir)/mjl_prefixtree.c
 
-sc_ttlexp_LDADD = ../../scamper/libscamperfile.la
+sc_ttlexp_LDADD = \
+	$(top_srcdir)/lib/libscamperfile/libscamperfile.la
 
 man_MANS = sc_ttlexp.1
 

@@ -3,7 +3,7 @@
  *
  * Author: Matthew Luckie
  *
- * $Id: scamper_udpprobe_json.c,v 1.4 2024/09/06 01:34:54 mjl Exp $
+ * $Id: scamper_udpprobe_json.c,v 1.5 2024/11/07 18:15:39 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -180,14 +180,12 @@ static char *header_tostr(const scamper_udpprobe_t *up)
   return strdup(buf);
 }
 
-int scamper_file_json_udpprobe_write(const scamper_file_t *sf,
-				     const scamper_udpprobe_t *up, void *p)
+char *scamper_udpprobe_tojson(const scamper_udpprobe_t *up, size_t *len_out)
 {
   char *header = NULL, *str = NULL;
   char **probes = NULL; size_t *probe_lens = NULL;
-  size_t len = 0, header_len = 0;
-  size_t wc = 0;
-  int ret = -1;
+  size_t len = 0, header_len = 0, wc = 0;
+  int rc = -1;
   uint8_t i;
 
   /* get the header string */
@@ -211,7 +209,7 @@ int scamper_file_json_udpprobe_write(const scamper_file_t *sf,
 	}
     }
 
-  len += 3; /* ]}\n */
+  len += 3; /* ]}\0 */
 
   if((str = malloc_zero(len)) == NULL)
     goto cleanup;
@@ -226,14 +224,13 @@ int scamper_file_json_udpprobe_write(const scamper_file_t *sf,
       wc += probe_lens[i];
     }
 
-  memcpy(str+wc, "]}\n", 3); wc += 3;
+  memcpy(str+wc, "]}\0", 3); wc += 3;
 
   assert(wc == len);
-  ret = json_write(sf, str, len, p);
+  rc = 0;
 
  cleanup:
   if(header != NULL) free(header);
-  if(str != NULL) free(str);
   if(probes != NULL)
     {
       for(i=0; i<up->probe_sent; i++)
@@ -242,5 +239,31 @@ int scamper_file_json_udpprobe_write(const scamper_file_t *sf,
       free(probes);
     }
   if(probe_lens != NULL) free(probe_lens);
-  return ret;
+
+  if(rc != 0)
+    {
+      if(str != NULL)
+	free(str);
+      return NULL;
+    }
+
+  if(len_out != NULL)
+    *len_out = len;
+  return str;
+}
+
+int scamper_file_json_udpprobe_write(const scamper_file_t *sf,
+				     const scamper_udpprobe_t *up, void *p)
+{
+  char *str;
+  size_t len;
+  int rc;
+
+  if((str = scamper_udpprobe_tojson(up, &len)) == NULL)
+    return -1;
+  str[len-1] = '\n';
+  rc = json_write(sf, str, len, p);
+  free(str);
+
+  return rc;
 }

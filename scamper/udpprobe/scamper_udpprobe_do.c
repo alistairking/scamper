@@ -1,7 +1,7 @@
 /*
  * scamper_udpprobe_do.c
  *
- * $Id: scamper_udpprobe_do.c,v 1.13 2024/09/06 01:34:54 mjl Exp $
+ * $Id: scamper_udpprobe_do.c,v 1.15 2024/11/10 03:12:51 mjl Exp $
  *
  * Copyright (C) 2023-2024 The Regents of the University of California
  *
@@ -216,6 +216,12 @@ static void do_udpprobe_probe(scamper_task_t *task)
   socklen_t sl;
   int fd;
 
+  if(state == NULL)
+    {
+      udpprobe_stop(task, SCAMPER_UDPPROBE_STOP_ERROR);
+      return;
+    }
+
   if(state->probec == 0 && udpprobe_state_alloc(task) != 0)
     goto err;
 
@@ -316,31 +322,31 @@ void scamper_do_udpprobe_free(void *data)
   return;
 }
 
-scamper_task_t *scamper_do_udpprobe_alloctask(void *data,
-					      scamper_list_t *list,
-					      scamper_cycle_t *cycle,
-					      char *errbuf, size_t errlen)
+static void do_udpprobe_sigs(scamper_task_t *task)
 {
-  scamper_udpprobe_t *up = (scamper_udpprobe_t *)data;
-  scamper_task_t *task = NULL;
+  scamper_udpprobe_t *up = (scamper_udpprobe_t *)udpprobe_getdata(task);
   scamper_task_sig_t *sig = NULL;
   udpprobe_state_t *state = NULL;
+  char errbuf[256];
+  size_t errlen = sizeof(errbuf);
   uint16_t *sports = NULL;
   uint8_t i, probec = up->probe_count;
 
-  /* allocate a task structure and store the udpprobe with it */
-  if((task = scamper_task_alloc(up, &udpprobe_funcs)) == NULL ||
-     (state = malloc_zero(sizeof(udpprobe_state_t))) == NULL ||
+  /* allocate state for storing fds in */
+  if((state = malloc_zero(sizeof(udpprobe_state_t))) == NULL ||
      (state->fds = malloc_zero(sizeof(scamper_fd_t *) * probec)) == NULL ||
      (sports = malloc_zero(sizeof(uint16_t) * probec)) == NULL)
     {
-      snprintf(errbuf, errlen, "%s: could not malloc state", __func__);
+      scamper_debug(__func__, "could not malloc state");
       goto err;
     }
 
   if(up->src == NULL &&
      (up->src = scamper_getsrc(up->dst, 0, errbuf, errlen)) == NULL)
-    goto err;
+    {
+      scamper_debug(__func__, "%s", errbuf);
+      goto err;
+    }
 
   /* declare the signature of the task's probes */
   for(i=0; i<up->probe_count; i++)
@@ -355,18 +361,18 @@ scamper_task_t *scamper_do_udpprobe_alloctask(void *data,
 					    up->dst->addr, up->dport);
       if(state->fds[i] == NULL)
 	{
-	  snprintf(errbuf, errlen, "%s: could not open udp socket", __func__);
+	  scamper_debug(__func__, "could not open udp socket");
 	  goto err;
 	}
       if(scamper_fd_sport(state->fds[i], &sports[i]) != 0)
 	{
-	  snprintf(errbuf, errlen, "%s: could not get udp sport", __func__);
+	  scamper_debug(__func__, "could not get udp sport");
 	  goto err;
 	}
 
       if((sig = scamper_task_sig_alloc(SCAMPER_TASK_SIG_TYPE_TX_IP)) == NULL)
 	{
-	  snprintf(errbuf, errlen, "%s: could not alloc task signature", __func__);
+	  scamper_debug(__func__, "could not alloc task signature");
 	  goto err;
 	}
       sig->sig_tx_ip_dst = scamper_addr_use(up->dst);
@@ -374,7 +380,7 @@ scamper_task_t *scamper_do_udpprobe_alloctask(void *data,
       SCAMPER_TASK_SIG_UDP(sig, sports[i], up->dport);
       if(scamper_task_sig_add(task, sig) != 0)
 	{
-	  snprintf(errbuf, errlen, "%s: could not add signature to task", __func__);
+	  scamper_debug(__func__, "could not add signature to task");
 	  goto err;
 	}
       sig = NULL;
@@ -383,23 +389,34 @@ scamper_task_t *scamper_do_udpprobe_alloctask(void *data,
   free(sports);
 
   scamper_task_setstate(task, state);
-
-  /* associate the list and cycle with the http structure */
-  up->list = scamper_list_use(list);
-  up->cycle = scamper_cycle_use(cycle);
-
-  return task;
+  return;
 
  err:
   if(sig != NULL) scamper_task_sig_free(sig);
   if(state != NULL) udpprobe_state_free(up, state);
   if(sports != NULL) free(sports);
-  if(task != NULL)
+  return;
+}
+
+scamper_task_t *scamper_do_udpprobe_alloctask(void *data,
+					      scamper_list_t *list,
+					      scamper_cycle_t *cycle,
+					      char *errbuf, size_t errlen)
+{
+  scamper_udpprobe_t *up = (scamper_udpprobe_t *)data;
+  scamper_task_t *task = NULL;
+
+  if((task = scamper_task_alloc(up, &udpprobe_funcs)) == NULL)
     {
-      scamper_task_setdatanull(task);
-      scamper_task_free(task);
+      snprintf(errbuf, errlen, "%s: could not alloc task", __func__);
+      return NULL;
     }
-  return NULL;
+
+  /* associate the list and cycle with the udpprobe structure */
+  up->list = scamper_list_use(list);
+  up->cycle = scamper_cycle_use(cycle);
+
+  return task;
 }
 
 uint32_t scamper_do_udpprobe_userid(void *data)
@@ -420,6 +437,7 @@ int scamper_do_udpprobe_init(void)
   udpprobe_funcs.write          = do_udpprobe_write;
   udpprobe_funcs.task_free      = do_udpprobe_free;
   udpprobe_funcs.halt           = do_udpprobe_halt;
+  udpprobe_funcs.sigs           = do_udpprobe_sigs;
 
   return 0;
 }

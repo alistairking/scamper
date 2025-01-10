@@ -219,8 +219,8 @@ The following code illustrates the overall approach:
   for o in file:
     if isinstance(o, ScamperTrace):
       for hop in o.hops():
-        if hop.addr is not None:
-          addrs[hop.addr] = 1
+        if hop.src is not None:
+          addrs[hop.src] = 1
 
   for o in sorted(list(addrs)):
     print(o)
@@ -1556,6 +1556,20 @@ cdef class ScamperTrace:
         return datetime.datetime(t[0], t[1], t[2], t[3], t[4], t[5], c.tv_usec,
                                  tzinfo=datetime.timezone.utc)
 
+    def to_json(self):
+        """
+        get method to obtain a JSON rendering of this traceroute measurement.
+
+        :returns: json representation
+        :rtype: str
+        """
+        c = cscamper_trace.scamper_trace_tojson(self._c, NULL);
+        if c == NULL:
+            return None
+        out = c.decode('UTF-8', 'strict')
+        free(c);
+        return out;
+
     @property
     def stop_reason(self):
         """
@@ -2496,6 +2510,20 @@ cdef class ScamperPing:
         t = time.gmtime(c.tv_sec)
         return datetime.datetime(t[0], t[1], t[2], t[3], t[4], t[5], c.tv_usec,
                                  tzinfo=datetime.timezone.utc)
+
+    def to_json(self):
+        """
+        get method to obtain a JSON rendering of this ping measurement.
+
+        :returns: json representation
+        :rtype: str
+        """
+        c = cscamper_ping.scamper_ping_tojson(self._c, NULL);
+        if c == NULL:
+            return None
+        out = c.decode('UTF-8', 'strict')
+        free(c);
+        return out;
 
     @property
     def attempts(self):
@@ -3506,6 +3534,21 @@ cdef class ScamperTracelb:
         t = time.gmtime(c.tv_sec)
         return datetime.datetime(t[0], t[1], t[2], t[3], t[4], t[5], c.tv_usec,
                                  tzinfo=datetime.timezone.utc)
+
+    def to_json(self):
+        """
+        get method to obtain a JSON rendering of this MDA traceroute
+        measurement.
+
+        :returns: json representation
+        :rtype: str
+        """
+        c = cscamper_tracelb.scamper_tracelb_tojson(self._c, NULL);
+        if c == NULL:
+            return None
+        out = c.decode('UTF-8', 'strict')
+        free(c);
+        return out;
 
     @property
     def src(self):
@@ -4629,6 +4672,21 @@ cdef class ScamperDealias:
         return datetime.datetime(t[0], t[1], t[2], t[3], t[4], t[5], c.tv_usec,
                                  tzinfo=datetime.timezone.utc)
 
+    def to_json(self):
+        """
+        get method to obtain a JSON rendering of this alias resolution
+        measurement.
+
+        :returns: json representation
+        :rtype: str
+        """
+        c = cscamper_dealias.scamper_dealias_tojson(self._c, NULL);
+        if c == NULL:
+            return None
+        out = c.decode('UTF-8', 'strict')
+        free(c);
+        return out;
+
     def is_ally(self):
         """
         get method to determine if the alias resolution method was ally
@@ -5216,6 +5274,20 @@ cdef class ScamperTbit:
         t = time.gmtime(c.tv_sec)
         return datetime.datetime(t[0], t[1], t[2], t[3], t[4], t[5], c.tv_usec,
                                  tzinfo=datetime.timezone.utc)
+
+    def to_json(self):
+        """
+        get method to obtain a JSON rendering of this TBIT measurement.
+
+        :returns: json representation
+        :rtype: str
+        """
+        c = cscamper_tbit.scamper_tbit_tojson(self._c, NULL);
+        if c == NULL:
+            return None
+        out = c.decode('UTF-8', 'strict')
+        free(c);
+        return out;
 
     @property
     def result(self):
@@ -6595,6 +6667,20 @@ cdef class ScamperHost:
         return datetime.datetime(t[0], t[1], t[2], t[3], t[4], t[5], c.tv_usec,
                                  tzinfo=datetime.timezone.utc)
 
+    def to_json(self):
+        """
+        get method to obtain a JSON rendering of this DNS measurement.
+
+        :returns: json representation
+        :rtype: str
+        """
+        c = cscamper_host.scamper_host_tojson(self._c, NULL);
+        if c == NULL:
+            return None
+        out = c.decode('UTF-8', 'strict')
+        free(c);
+        return out;
+
     @property
     def qtype_num(self):
         """
@@ -7651,6 +7737,20 @@ cdef class ScamperUdpprobe:
         t = time.gmtime(c.tv_sec)
         return datetime.datetime(t[0], t[1], t[2], t[3], t[4], t[5], c.tv_usec,
                                  tzinfo=datetime.timezone.utc)
+
+    def to_json(self):
+        """
+        get method to obtain a JSON rendering of this UDP probe measurement.
+
+        :returns: json representation
+        :rtype: str
+        """
+        c = cscamper_udpprobe.scamper_udpprobe_tojson(self._c, NULL);
+        if c == NULL:
+            return None
+        out = c.decode('UTF-8', 'strict')
+        free(c);
+        return out;
 
     @property
     def src(self):

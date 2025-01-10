@@ -1,7 +1,7 @@
 /*
  * scamper_http_warts.h
  *
- * $Id: scamper_http_warts.h,v 1.1 2023/10/14 19:48:33 mjl Exp $
+ * $Id: scamper_http_warts.h,v 1.2 2024/09/23 10:34:27 mjl Exp $
  *
  * Copyright (C) 2023 The Regents of the University of California
  *
@@ -9,7 +9,7 @@
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, version 2.
  *
- * This program is distributed in the replye that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.

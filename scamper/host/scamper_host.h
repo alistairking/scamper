@@ -1,7 +1,7 @@
 /*
  * scamper_host
  *
- * $Id: scamper_host.h,v 1.29 2024/09/05 01:01:17 mjl Exp $
+ * $Id: scamper_host.h,v 1.30 2024/11/07 18:15:39 mjl Exp $
  *
  * Copyright (C) 2018-2024 Matthew Luckie
  *
@@ -31,6 +31,8 @@ typedef struct scamper_host_rr_mx scamper_host_rr_mx_t;
 typedef struct scamper_host_rr_txt scamper_host_rr_txt_t;
 typedef struct scamper_host_rr_opt scamper_host_rr_opt_t;
 typedef struct scamper_host_rr_opt_elem scamper_host_rr_opt_elem_t;
+
+char *scamper_host_tojson(const scamper_host_t *host, size_t *len);
 
 void scamper_host_free(scamper_host_t *host);
 char *scamper_host_stop_tostr(const scamper_host_t *h, char *b, size_t l);

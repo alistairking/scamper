@@ -1,7 +1,7 @@
 /*
  * scamper_do_dealias.c
  *
- * $Id: scamper_dealias_do.c,v 1.201 2024/08/13 05:14:13 mjl Exp $
+ * $Id: scamper_dealias_do.c,v 1.202 2024/11/10 03:44:44 mjl Exp $
  *
  * Copyright (C) 2008-2011 The University of Waikato
  * Copyright (C) 2012-2013 Matthew Luckie
@@ -2416,6 +2416,12 @@ static void do_dealias_probe(scamper_task_t *task)
   struct timeval tv;
   uint16_t u16;
 
+  if(state == NULL)
+    {
+      dealias_handleerror(task, 0);
+      return;
+    }
+
   if(dealias->probec == 0)
     {
       gettimeofday_wrap(&tv);
@@ -2805,10 +2811,7 @@ static int dealias_midardisc_init(scamper_task_t *task, dealias_state_t *state,
   return 0;
 }
 
-scamper_task_t *scamper_do_dealias_alloctask(void *data,
-					     scamper_list_t *list,
-					     scamper_cycle_t *cycle,
-					     char *errbuf, size_t errlen)
+static void do_dealias_sigs(scamper_task_t *task)
 {
   static int (*const func[])(scamper_task_t *, dealias_state_t *,
 			     char *, size_t) = {
@@ -2820,27 +2823,30 @@ scamper_task_t *scamper_do_dealias_alloctask(void *data,
     dealias_midarest_init,
     dealias_midardisc_init,
   };
-  scamper_dealias_t             *dealias = (scamper_dealias_t *)data;
+  scamper_dealias_t             *dealias = dealias_getdata(task);
   dealias_state_t               *state = NULL;
-  scamper_task_t                *task = NULL;
   scamper_dealias_probedef_t    *def;
+  char errbuf[256];
+  size_t errlen = sizeof(errbuf);
   uint32_t p;
 
   /* allocate a state for the task */
-  if((task = scamper_task_alloc(dealias, &funcs)) == NULL ||
-     (state = malloc_zero(sizeof(dealias_state_t))) == NULL ||
+  if((state = malloc_zero(sizeof(dealias_state_t))) == NULL ||
      (state->recent_probes = dlist_alloc()) == NULL ||
      (state->ptbq = slist_alloc()) == NULL ||
      (state->discard = slist_alloc()) == NULL ||
      (state->targets = splaytree_alloc((splaytree_cmp_t)dealias_target_cmp)) == NULL)
     {
-      snprintf(errbuf, errlen, "%s: could not malloc state", __func__);
+      scamper_debug(__func__, "could not malloc state");
       goto err;
     }
   state->id = 255;
 
   if(func[dealias->method-1](task, state, errbuf, errlen) != 0)
-    goto err;
+    {
+      scamper_debug(__func__, "%s", errbuf);
+      goto err;
+    }
 
   for(p=0; p<state->probedefc; p++)
     {
@@ -2848,24 +2854,40 @@ scamper_task_t *scamper_do_dealias_alloctask(void *data,
       if(def->mtu != 0)
 	state->flags |= DEALIAS_STATE_FLAG_DL;
       if(dealias_probedef_add(state, def, errbuf, errlen) != 0)
-	goto err;
+	{
+	  scamper_debug(__func__, "%s", errbuf);
+	  goto err;
+	}
+    }
+
+  scamper_task_setstate(task, state);
+  return;
+
+ err:
+  if(state != NULL) dealias_state_free(dealias, state);
+  return;
+}
+
+scamper_task_t *scamper_do_dealias_alloctask(void *data,
+					     scamper_list_t *list,
+					     scamper_cycle_t *cycle,
+					     char *errbuf, size_t errlen)
+{
+  scamper_dealias_t *dealias = (scamper_dealias_t *)data;
+  scamper_task_t *task = NULL;
+
+  /* allocate a state for the task */
+  if((task = scamper_task_alloc(dealias, &funcs)) == NULL)
+    {
+      snprintf(errbuf, errlen, "%s: could not alloc task", __func__);
+      return NULL;
     }
 
   /* associate the list and cycle with the trace */
   dealias->list  = scamper_list_use(list);
   dealias->cycle = scamper_cycle_use(cycle);
 
-  scamper_task_setstate(task, state);
   return task;
-
- err:
-  if(task != NULL)
-    {
-      scamper_task_setdatanull(task);
-      scamper_task_free(task);
-    }
-  if(state != NULL) dealias_state_free(dealias, state);
-  return NULL;
 }
 
 uint32_t scamper_do_dealias_userid(void *data)
@@ -2893,6 +2915,7 @@ int scamper_do_dealias_init(void)
   funcs.write                  = do_dealias_write;
   funcs.task_free              = do_dealias_free;
   funcs.halt                   = do_dealias_halt;
+  funcs.sigs                   = do_dealias_sigs;
 
   return 0;
 }

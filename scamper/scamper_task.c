@@ -1,7 +1,7 @@
 /*
  * scamper_task.c
  *
- * $Id: scamper_task.c,v 1.97 2024/08/29 00:33:53 mjl Exp $
+ * $Id: scamper_task.c,v 1.98 2024/10/17 07:58:43 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -923,6 +923,13 @@ scamper_task_t *scamper_task_sig_block(scamper_task_t *task)
     }
 
   return NULL;
+}
+
+void scamper_task_sig_prepare(scamper_task_t *task)
+{
+  if(task->funcs->sigs != NULL)
+    task->funcs->sigs(task);
+  return;
 }
 
 static void s2x_expire(s2x_t *s2x)

@@ -26,7 +26,7 @@ scamper_la_LDFLAGS = \
 	$(PYTHON_LIBS)
 
 scamper_la_LIBADD = \
-	../../scamper/libscamperfile.la \
+	../libscamperfile/libscamperfile.la \
 	../libscamperctrl/libscamperctrl.la
 
 CLEANFILES = *~

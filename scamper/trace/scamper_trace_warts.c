@@ -5,10 +5,10 @@
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2014      The Regents of the University of California
  * Copyright (C) 2015      The University of Waikato
- * Copyright (C) 2015-2023 Matthew Luckie
+ * Copyright (C) 2015-2024 Matthew Luckie
  * Author: Matthew Luckie
  *
- * $Id: scamper_trace_warts.c,v 1.44 2024/04/13 22:31:04 mjl Exp $
+ * $Id: scamper_trace_warts.c,v 1.49 2024/10/17 07:56:45 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -289,6 +289,7 @@ static int warts_trace_params(const scamper_trace_t *trace,
 	 (var->id == WARTS_TRACE_FLAGS8 && (trace->flags & 0xFF) == 0) ||
 	 (var->id == WARTS_TRACE_FLAGS && (trace->flags & ~0xFF) == 0) ||
 	 (var->id == WARTS_TRACE_ADDR_RTR && trace->rtr == NULL) ||
+	 (var->id == WARTS_TRACE_ADDR_SRC && trace->src == NULL) ||
 	 (var->id == WARTS_TRACE_SQUERIES && trace->squeries < 2) ||
 	 (var->id == WARTS_TRACE_STOP_HOP && trace->stop_hop == 0))
 	{
@@ -767,12 +768,7 @@ static int warts_trace_hops_read(scamper_trace_hop_t **hops,
   return 0;
 
  err:
-  while(head != NULL)
-    {
-      hop = head;
-      head = head->hop_next;
-      scamper_trace_hop_free(hop);
-    }
+  scamper_trace_hops_free(head);
   return -1;
 }
 
@@ -998,7 +994,8 @@ static int warts_trace_pmtud_read(scamper_trace_t *trace, warts_state_t *state,
   uint16_t count;
   uint8_t u8;
 
-  if((trace->pmtud = scamper_trace_pmtud_alloc()) == NULL)
+  if(trace->pmtud != NULL ||
+     (trace->pmtud = scamper_trace_pmtud_alloc()) == NULL)
     goto err;
 
   if(warts_params_read(buf, off, len, handlers, handler_cnt) != 0)
@@ -1102,7 +1099,8 @@ static int warts_trace_lastditch_read(scamper_trace_t *trace,
 
   if(count != 0)
     {
-      if(warts_trace_hops_read(&hops,state,table,buf,off,len,count) != 0)
+      if(trace->lastditch != NULL ||
+	 warts_trace_hops_read(&hops,state,table,buf,off,len,count) != 0)
 	goto err;
       trace->lastditch = hops;
     }
@@ -1218,7 +1216,8 @@ static int warts_trace_dtree_read(scamper_trace_t *trace, warts_state_t *state,
   };
   const int handler_cnt = sizeof(handlers)/sizeof(warts_param_reader_t);
 
-  if((trace->dtree = scamper_trace_dtree_alloc()) == NULL ||
+  if(trace->dtree != NULL ||
+     (trace->dtree = scamper_trace_dtree_alloc()) == NULL ||
      warts_params_read(buf, off, len, handlers, handler_cnt) != 0)
     {
       if(lss_stop != NULL) scamper_addr_free(lss_stop);
@@ -1294,12 +1293,9 @@ int scamper_file_warts_trace_read(scamper_file_t *sf, const warts_hdr_t *hdr,
 
   /* work out the maximum ttl probed with that got a response */
   max_ttl = 0;
-  for(i=0, hop = hops; i < count; i++)
-    {
-      if(hop->hop_probe_ttl > max_ttl)
-	max_ttl = hop->hop_probe_ttl;
-      hop = hop->hop_next;
-    }
+  for(hop = hops; hop != NULL; hop = hop->hop_next)
+    if(hop->hop_probe_ttl > max_ttl)
+      max_ttl = hop->hop_probe_ttl;
 
   /*
    * if the hop_count field was provided in the file, then
@@ -1328,6 +1324,11 @@ int scamper_file_warts_trace_read(scamper_file_t *sf, const warts_hdr_t *hdr,
       assert(count == 0);
       goto done;
     }
+
+  /* make sure that the probe_ttls are sorted in order */
+  for(hop = hops; hop->hop_next != NULL; hop=hop->hop_next)
+    if(hop->hop_next->hop_probe_ttl < hop->hop_probe_ttl)
+      goto err;
 
   /*
    * now loop through the hops array stored in this procedure
@@ -1388,7 +1389,7 @@ int scamper_file_warts_trace_read(scamper_file_t *sf, const warts_hdr_t *hdr,
 
  err:
   if(table != NULL) warts_addrtable_free(table);
-  if(hops != NULL) free(hops);
+  scamper_trace_hops_free(hops);
   if(buf != NULL) free(buf);
   if(trace != NULL) scamper_trace_free(trace);
   return -1;

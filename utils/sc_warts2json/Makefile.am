@@ -6,9 +6,10 @@ bin_PROGRAMS = sc_warts2json
 
 sc_warts2json_SOURCES = \
 	sc_warts2json.c \
-	../../utils.c
+	$(top_srcdir)/utils.c
 
-sc_warts2json_LDADD = ../../scamper/libscamperfile.la
+sc_warts2json_LDADD = \
+	$(top_srcdir)/lib/libscamperfile/libscamperfile.la
 
 man_MANS = sc_warts2json.1
 

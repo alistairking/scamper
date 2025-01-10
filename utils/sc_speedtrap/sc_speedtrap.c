@@ -1,7 +1,7 @@
 /*
  * sc_speedtrap
  *
- * $Id: sc_speedtrap.c,v 1.86 2024/02/29 00:56:45 mjl Exp $
+ * $Id: sc_speedtrap.c,v 1.88 2024/11/12 06:34:04 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -54,10 +54,15 @@
 #define OPT_STOP        0x0010
 #define OPT_LOG         0x0020
 #define OPT_UNIX        0x0040
+#define OPT_REMOTE      0x0080
 #define OPT_DUMP        0x0200
 #define OPT_INCR        0x0400
 #define OPT_THREADC     0x0800
 #define OPT_ALL         0xffff
+
+#ifdef PACKAGE_VERSION
+#define OPT_VERSION     0x8000
+#endif
 
 typedef struct sc_targetipid sc_targetipid_t;
 typedef struct sc_targetset sc_targetset_t;
@@ -251,13 +256,17 @@ static void usage(uint32_t opt_mask)
   int i;
 
   fprintf(stderr,
-    "usage: sc_speedtrap [-a addr-file] [-o outfile] [-p [ip:]port] [-U unix]\n"
-    "                    [-I] [-l log] [-s stop]\n"
+    "usage: sc_speedtrap [-a addr-file] [-o outfile] [-p [ip:]port]\n"
+    "                    [-R unix] [-U unix] [-I] [-l log] [-s stop]\n"
 #ifdef HAVE_PTHREAD
     "                    [-t thread-count]\n"
 #endif
     "\n"
     "       sc_speedtrap [-d dump] file1.warts .. fileN.warts\n"
+#ifdef OPT_VERSION
+    "\n"
+    "       sc_speedtrap  -v\n"
+#endif
     "\n");
 
   if(opt_mask == 0)
@@ -288,6 +297,9 @@ static void usage(uint32_t opt_mask)
   if(opt_mask & OPT_PORT)
     fprintf(stderr, "     -p [ip:]port to find scamper on\n");
 
+  if(opt_mask & OPT_REMOTE)
+    fprintf(stderr, "     -R find remote scamper process on unix socket\n");
+
   if(opt_mask & OPT_STOP)
     {
       fprintf(stderr,
@@ -306,15 +318,23 @@ static void usage(uint32_t opt_mask)
   if(opt_mask & OPT_UNIX)
     fprintf(stderr, "     -U unix domain to find scamper on\n");
 
+#ifdef OPT_VERSION
+  if(opt_mask & OPT_VERSION)
+    fprintf(stderr, "     -v display version and exit\n");
+#endif
+
   return;
 }
 
 static int check_options(int argc, char *argv[])
 {
   long lo;
-  char *opts = "?a:d:Il:o:p:s:"
+  char *opts = "?a:d:Il:o:p:R:s:"
 #ifdef HAVE_PTHREAD
     "t:"
+#endif
+#ifdef OPT_VERSION
+    "v"
 #endif
     "U:w:";
   char *opt_port = NULL, *opt_unix = NULL, *opt_log = NULL, *opt_dump = NULL;
@@ -357,6 +377,11 @@ static int check_options(int argc, char *argv[])
 	  opt_port = optarg;
 	  break;
 
+	case 'R':
+	  options |= OPT_REMOTE;
+	  opt_unix = optarg;
+	  break;
+
 	case 's':
 	  options |= OPT_STOP;
 	  stop_stepname = optarg;
@@ -373,6 +398,12 @@ static int check_options(int argc, char *argv[])
 	  options |= OPT_UNIX;
 	  opt_unix = optarg;
 	  break;
+
+#ifdef OPT_VERSION
+	case 'v':
+	  options |= OPT_VERSION;
+	  return 0;
+#endif
 
 	case '?':
 	  usage(OPT_ALL);
@@ -393,11 +424,10 @@ static int check_options(int argc, char *argv[])
 
   if(options & (OPT_ADDRFILE|OPT_OUTFILE))
     {
-      if((options & (OPT_PORT|OPT_UNIX)) == 0 ||
-	 (options & (OPT_PORT|OPT_UNIX)) == (OPT_PORT|OPT_UNIX) ||
+      if(countbits32(options & (OPT_PORT|OPT_UNIX|OPT_REMOTE)) != 1 ||
 	 argc - optind > 0)
 	{
-	  usage(OPT_ADDRFILE|OPT_OUTFILE|OPT_PORT|OPT_UNIX);
+	  usage(OPT_ADDRFILE|OPT_OUTFILE|OPT_PORT|OPT_UNIX|OPT_REMOTE);
 	  return -1;
 	}
 
@@ -443,7 +473,7 @@ static int check_options(int argc, char *argv[])
               return -1;
             }
 	}
-      else if(options & OPT_UNIX)
+      else if(options & (OPT_UNIX|OPT_REMOTE))
 	{
 	  unix_name = opt_unix;
 	}
@@ -2196,6 +2226,11 @@ static int do_scamperconnect(void)
       type = "unix";
       scamper_inst = scamper_inst_unix(scamper_ctrl, NULL, unix_name);
     }
+  else if(options & OPT_REMOTE)
+    {
+      type = "remote";
+      scamper_inst = scamper_inst_remote(scamper_ctrl, unix_name);
+    }
 #endif
 
   if(scamper_inst == NULL)
@@ -2880,6 +2915,14 @@ int main(int argc, char *argv[])
 
   if(check_options(argc, argv) != 0)
     return -1;
+
+#ifdef OPT_VERSION
+  if(options & OPT_VERSION)
+    {
+      printf("sc_speedtrap version %s\n", PACKAGE_VERSION);
+      return 0;
+    }
+#endif
 
   if(speedtrap_init() != 0)
     return -1;

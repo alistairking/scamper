@@ -6,9 +6,10 @@ bin_PROGRAMS = sc_warts2csv
 
 sc_warts2csv_SOURCES = \
 	sc_warts2csv.c \
-	../../utils.c
+	$(top_srcdir)/utils.c
 
-sc_warts2csv_LDADD = ../../scamper/libscamperfile.la
+sc_warts2csv_LDADD = \
+	$(top_srcdir)/lib/libscamperfile/libscamperfile.la
 
 man_MANS = sc_warts2csv.1
 

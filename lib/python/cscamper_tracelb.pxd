@@ -2,7 +2,7 @@
 #
 # Author: Matthew Luckie
 #
-# Copyright (C) 2023 The Regents of the University of California
+# Copyright (C) 2023-2024 The Regents of the University of California
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -49,6 +49,8 @@ cdef extern from "scamper_tracelb.h":
   pass
  ctypedef struct scamper_tracelb_probeset_summary_t:
   pass
+
+ char *scamper_tracelb_tojson(const scamper_tracelb_t *tracelb, size_t *l)
 
  void scamper_tracelb_free(scamper_tracelb_t *tracelb)
  char *scamper_tracelb_type_tostr(const scamper_tracelb_t *trace, char *buf, size_t len)

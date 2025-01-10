@@ -1,7 +1,7 @@
 /*
  * scamper_sting_warts.h
  *
- * $Id: scamper_sting_warts.h,v 1.2 2022/02/13 08:48:15 mjl Exp $
+ * $Id: scamper_sting_warts.h,v 1.3 2024/09/23 10:34:27 mjl Exp $
  *
  * Copyright (C) 2010 University of Waikato
  * Copyright (C) 2022 Matthew Luckie
@@ -10,7 +10,7 @@
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, version 2.
  *
- * This program is distributed in the replye that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.

@@ -10,15 +10,17 @@ bin_PROGRAMS = sc_minrtt
 
 sc_minrtt_SOURCES = \
 	sc_minrtt.c \
-	../../utils.c \
-	../../mjl_list.c \
-	../../mjl_splaytree.c \
-	../../mjl_threadpool.c \
-	../../mjl_heap.c
+	$(top_srcdir)/utils.c \
+	$(top_srcdir)/mjl_list.c \
+	$(top_srcdir)/mjl_splaytree.c \
+	$(top_srcdir)/mjl_threadpool.c \
+	$(top_srcdir)/mjl_heap.c
 
 sc_minrtt_CFLAGS = @PTHREAD_CFLAGS@ @PCRE_CFLAGS@
 sc_minrtt_LDFLAGS = @PTHREAD_CFLAGS@ @PCRE_CFLAGS@
-sc_minrtt_LDADD = @PTHREAD_LIBS@ @PCRE_LIBS@ ../../scamper/libscamperfile.la -lsqlite3
+sc_minrtt_LDADD = @PTHREAD_LIBS@ @PCRE_LIBS@ \
+	$(top_srcdir)/lib/libscamperfile/libscamperfile.la \
+	-lsqlite3
 
 man_MANS = sc_minrtt.1
 

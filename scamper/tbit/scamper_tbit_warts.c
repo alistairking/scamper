@@ -7,7 +7,7 @@
  * Copyright (C) 2016-2023 Matthew Luckie
  * Authors: Matthew Luckie, Ben Stasiewicz
  *
- * $Id: scamper_tbit_warts.c,v 1.40 2024/03/04 19:36:41 mjl Exp $
+ * $Id: scamper_tbit_warts.c,v 1.41 2024/10/16 05:57:46 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -1034,6 +1034,8 @@ int scamper_file_warts_tbit_read(scamper_file_t *sf, const warts_hdr_t *hdr,
       i = off;
       if(junk16 == WARTS_TBIT_STRUCT_TYPE)
 	{
+	  if(tbit->data != NULL)
+	    goto err;
 	  switch(tbit->type)
 	    {
 	    case SCAMPER_TBIT_TYPE_PMTUD:
@@ -1062,6 +1064,8 @@ int scamper_file_warts_tbit_read(scamper_file_t *sf, const warts_hdr_t *hdr,
 	}
       else if(junk16 == WARTS_TBIT_STRUCT_APP)
 	{
+	  if(tbit->app_data != NULL)
+	    goto err;
 	  if(tbit->app_proto == SCAMPER_TBIT_APP_HTTP)
 	    {
 	      if(warts_tbit_app_http_read(tbit, buf, &i, hdr->len) != 0)

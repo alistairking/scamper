@@ -2,7 +2,7 @@
 #
 # Author: Matthew Luckie
 #
-# Copyright (C) 2023 The Regents of the University of California
+# Copyright (C) 2023-2024 The Regents of the University of California
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -45,6 +45,8 @@ cdef extern from "scamper_ping.h":
   pass
  ctypedef struct scamper_ping_stats_t:
   pass
+
+ char *scamper_ping_tojson(const scamper_ping_t *ping, size_t *l)
 
  void scamper_ping_free(scamper_ping_t *ping)
 

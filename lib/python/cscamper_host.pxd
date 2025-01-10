@@ -48,6 +48,8 @@ cdef extern from "scamper_host.h":
  ctypedef struct scamper_host_rr_opt_elem_t:
   pass
 
+ char *scamper_host_tojson(const scamper_host_t *host, size_t *l)
+
  void scamper_host_free(scamper_host_t *host)
 
  char *scamper_host_stop_tostr(const scamper_host_t *h, char *b, size_t l)

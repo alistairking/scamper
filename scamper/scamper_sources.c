@@ -1,7 +1,7 @@
 /*
  * scamper_source
  *
- * $Id: scamper_sources.c,v 1.81 2024/06/10 03:28:08 mjl Exp $
+ * $Id: scamper_sources.c,v 1.82 2024/10/17 07:58:43 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -759,6 +759,8 @@ static int source_task_install(scamper_source_t *source,
 {
   scamper_task_t *task = st->task;
   scamper_task_t *block;
+
+  scamper_task_sig_prepare(task);
 
   if((block = scamper_task_sig_block(task)) == NULL)
     {
