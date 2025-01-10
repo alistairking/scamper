@@ -6,9 +6,9 @@
 .\" Copyright (c) 2014-2024 Matthew Luckie
 .\"               All rights reserved
 .\"
-.\" $Id: sc_remoted.1,v 1.17 2024/01/22 06:34:22 mjl Exp $
+.\" $Id: sc_remoted.1,v 1.18 2024/09/07 03:34:44 mjl Exp $
 .\"
-.Dd January 21, 2024
+.Dd September 7, 2024
 .Dt SC_REMOTED 1
 .Os
 .Sh NAME
@@ -17,7 +17,7 @@
 .Sh SYNOPSIS
 .Nm
 .Bk -words
-.Op Fl ?46D
+.Op Fl ?46Dv
 .Op Fl O Ar options
 .Op Fl P Ar [ip:]port
 .Op Fl U Ar directory
@@ -39,6 +39,10 @@ The options are as follows:
 .Bl -tag -width Ds
 .It Fl ?
 prints a list of command line options and a synopsis of each.
+.It Fl v
+prints the version of
+.Nm
+and exits.
 .It Fl D
 causes
 .Nm

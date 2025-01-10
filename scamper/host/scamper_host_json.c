@@ -1,10 +1,10 @@
 /*
  * scamper_host_json.c
  *
- * Copyright (c) 2023 Matthew Luckie
+ * Copyright (c) 2023-2024 Matthew Luckie
  * Author: Matthew Luckie
  *
- * $Id: scamper_host_json.c,v 1.11 2024/04/25 01:17:25 mjl Exp $
+ * $Id: scamper_host_json.c,v 1.14 2024/12/31 04:17:31 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -45,12 +45,12 @@ static char *header_tostr(const scamper_host_t *host)
   string_concat(buf, sizeof(buf), &off,
 		"{\"type\":\"host\", \"version\":\"0.1\"");
   if(host->src != NULL)
-    string_concat(buf, sizeof(buf), &off, ", \"src\":\"%s\"",
-		  scamper_addr_tostr(host->src, tmp, sizeof(tmp)));
+    string_concat3(buf, sizeof(buf), &off, ", \"src\":\"",
+		   scamper_addr_tostr(host->src, tmp, sizeof(tmp)), "\"");
   if(host->dst != NULL)
-    string_concat(buf, sizeof(buf), &off, ", \"dst\":\"%s\"",
-		  scamper_addr_tostr(host->dst, tmp, sizeof(tmp)));
-  string_concat(buf, sizeof(buf), &off,
+    string_concat3(buf, sizeof(buf), &off, ", \"dst\":\"",
+		   scamper_addr_tostr(host->dst, tmp, sizeof(tmp)), "\"");
+  string_concaf(buf, sizeof(buf), &off,
 		", \"userid\":%u, \"start\":{\"sec\":%ld,\"usec\":%d}",
 		host->userid,
 		(long)host->start.tv_sec, (int)host->start.tv_usec);
@@ -59,16 +59,16 @@ static char *header_tostr(const scamper_host_t *host)
     string_concat(buf, sizeof(buf), &off, ", \"flags\":[\"norecurse\"]");
 
   ms = (host->wait_timeout.tv_sec * 1000) + (host->wait_timeout.tv_usec / 1000);
-  string_concat(buf, sizeof(buf), &off,
+  string_concaf(buf, sizeof(buf), &off,
 		", \"wait\":%u, \"retries\":%u, \"stop\":\"%s\"", ms,
 		host->retries, scamper_host_stop_tostr(host, tmp, sizeof(tmp)));
-  string_concat(buf, sizeof(buf), &off, ", \"qname\":\"%s\"",
-		json_esc(host->qname, tmp, sizeof(tmp)));
-  string_concat(buf, sizeof(buf), &off, ", \"qclass\":\"%s\"",
-		scamper_host_qclass_tostr(host->qclass, tmp, sizeof(tmp)));
-  string_concat(buf, sizeof(buf), &off, ", \"qtype\":\"%s\"",
-		scamper_host_qtype_tostr(host->qtype, tmp, sizeof(tmp)));
-  string_concat(buf, sizeof(buf), &off, ", \"qcount\":%u", host->qcount);
+  string_concat3(buf, sizeof(buf), &off, ", \"qname\":\"",
+		 json_esc(host->qname, tmp, sizeof(tmp)), "\"");
+  string_concat3(buf, sizeof(buf), &off, ", \"qclass\":\"",
+		 scamper_host_qclass_tostr(host->qclass,tmp,sizeof(tmp)),"\"");
+  string_concat3(buf, sizeof(buf), &off, ", \"qtype\":\"",
+		 scamper_host_qtype_tostr(host->qtype,tmp,sizeof(tmp)), "\"");
+  string_concaf(buf, sizeof(buf), &off, ", \"qcount\":%u", host->qcount);
 
   return strdup(buf);
 }
@@ -79,37 +79,39 @@ static char *rr_tostr(const scamper_host_rr_t *rr)
   size_t off = 0, len, *lens = NULL;
   uint16_t i;
 
-  string_concat(buf, sizeof(buf), &off, "{\"class\":\"%s\"",
-		scamper_host_qclass_tostr(rr->class, tmp, sizeof(tmp)));
-  string_concat(buf, sizeof(buf), &off, ", \"type\":\"%s\", \"ttl\":%u",
+  string_concat3(buf, sizeof(buf), &off, "{\"class\":\"",
+		 scamper_host_qclass_tostr(rr->class, tmp, sizeof(tmp)), "\"");
+  string_concaf(buf, sizeof(buf), &off, ", \"type\":\"%s\", \"ttl\":%u",
 		scamper_host_qtype_tostr(rr->type, tmp, sizeof(tmp)),
 		rr->ttl);
   if(rr->name != NULL)
-    string_concat(buf, sizeof(buf), &off, ", \"name\":\"%s\"",
-		  json_esc(rr->name, tmp, sizeof(tmp)));
+    string_concat3(buf, sizeof(buf), &off, ", \"name\":\"",
+		   json_esc(rr->name, tmp, sizeof(tmp)), "\"");
 
   switch(scamper_host_rr_data_type(rr->class, rr->type))
     {
     case SCAMPER_HOST_RR_DATA_TYPE_ADDR:
-      string_concat(buf, sizeof(buf), &off, ", \"address\":\"%s\"",
-		    scamper_addr_tostr(rr->un.addr, tmp, sizeof(tmp)));
+      string_concat3(buf, sizeof(buf), &off, ", \"address\":\"",
+		     scamper_addr_tostr(rr->un.addr, tmp, sizeof(tmp)), "\"");
       break;
 
     case SCAMPER_HOST_RR_DATA_TYPE_STR:
-      string_concat(buf, sizeof(buf), &off, ", \"%s\":\"%s\"",
-		    scamper_host_rr_data_str_typestr(rr->class, rr->type),
-		    json_esc(rr->un.str, tmp, sizeof(tmp)));
+      string_concat3(buf, sizeof(buf), &off, ", \"",
+		     scamper_host_rr_data_str_typestr(rr->class, rr->type),
+		     "\":\"");
+      string_concat2(buf, sizeof(buf), &off,
+		     json_esc(rr->un.str, tmp, sizeof(tmp)), "\"");
       break;
 
     case SCAMPER_HOST_RR_DATA_TYPE_MX:
-      string_concat(buf, sizeof(buf), &off,
+      string_concaf(buf, sizeof(buf), &off,
 		    ", \"preference\":%u, \"exchange\":\"%s\"",
 		    rr->un.mx->preference,
 		    json_esc(rr->un.mx->exchange, tmp, sizeof(tmp)));
       break;
 
     case SCAMPER_HOST_RR_DATA_TYPE_SOA:
-      string_concat(buf, sizeof(buf), &off,
+      string_concaf(buf, sizeof(buf), &off,
 		    ", \"mname\":\"%s\", \"rname\":\"%s\""
 		    ", \"serial\":%u, \"refresh\":%u, \"retry\":%u"
 		    ", \"expire\":%u, \"minimum\":%u",
@@ -121,7 +123,7 @@ static char *rr_tostr(const scamper_host_rr_t *rr)
       break;
 
     case SCAMPER_HOST_RR_DATA_TYPE_TXT:
-      string_concat(buf, sizeof(buf), &off, ", \"strc\":%u, \"strs\":[",
+      string_concaf(buf, sizeof(buf), &off, ", \"strc\":%u, \"strs\":[",
 		    rr->un.txt->strc);
 
       /*
@@ -180,27 +182,27 @@ static char *query_tostr(const scamper_host_query_t *query)
   uint32_t x, c = 0;
   uint16_t i;
 
-  string_concat(header, sizeof(header), &off,
+  string_concaf(header, sizeof(header), &off,
 		"{\"id\":%u, \"ancount\":%u, \"nscount\":%u, \"arcount\":%u",
 		query->id, query->ancount, query->nscount, query->arcount);
-  string_concat(header, sizeof(header), &off,
+  string_concaf(header, sizeof(header), &off,
 		", \"tx\":{\"sec\":%ld,\"usec\":%d}",
 		(long)query->tx.tv_sec, (int)query->tx.tv_usec);
   if(query->rx.tv_sec != 0 || query->rx.tv_usec != 0)
     {
-      string_concat(header, sizeof(header), &off,
+      string_concaf(header, sizeof(header), &off,
 		    ", \"rx\":{\"sec\":%ld,\"usec\":%d}",
 		    (long)query->rx.tv_sec, (int)query->rx.tv_usec);
-      string_concat(header, sizeof(header), &off,
-		    ", \"rcode\":\"%s\", \"flags\":[",
-		    scamper_host_rcode_tostr(query->rcode, tmp, sizeof(tmp)));
+      string_concat3(header, sizeof(header), &off, ", \"rcode\":\"",
+		     scamper_host_rcode_tostr(query->rcode, tmp, sizeof(tmp)),
+		     "\", \"flags\":[");
       x = 0;
       for(i=0; i<8; i++)
 	{
 	  if((query->flags & (0x1 << i)) == 0)
 	    continue;
 	  if(x > 0) string_concat(header, sizeof(header), &off, ",");
-	  string_concat(header, sizeof(header), &off, "\"%s\"", flags[i]);
+	  string_concat3(header, sizeof(header), &off, "\"", flags[i], "\"");
 	  x++;
 	}
       string_concat(header, sizeof(header), &off, "]");
@@ -324,14 +326,12 @@ static char *query_tostr(const scamper_host_query_t *query)
   return str;
 }
 
-int scamper_file_json_host_write(const scamper_file_t *sf,
-				 const scamper_host_t *host, void *p)
+char *scamper_host_tojson(const scamper_host_t *host, size_t *len_out)
 {
   char *header = NULL, *str = NULL;
   char **queries = NULL; size_t *query_lens = NULL;
-  size_t len = 0, header_len = 0;
-  size_t wc = 0;
-  int ret = -1;
+  size_t len = 0, header_len = 0, wc = 0;
+  int rc = -1;
   uint8_t i;
 
   /* get the header string */
@@ -355,7 +355,7 @@ int scamper_file_json_host_write(const scamper_file_t *sf,
 	}
     }
 
-  len += 3; /* ]}\n */
+  len += 3; /* ]}\0 */
 
   if((str = malloc_zero(len)) == NULL)
     goto cleanup;
@@ -368,14 +368,13 @@ int scamper_file_json_host_write(const scamper_file_t *sf,
       memcpy(str+wc, queries[i], query_lens[i]);
       wc += query_lens[i];
     }
-  memcpy(str+wc, "]}\n", 3); wc += 3;
+  memcpy(str+wc, "]}\0", 3); wc += 3;
 
   assert(wc == len);
-  ret = json_write(sf, str, len, p);
+  rc = 0;
 
  cleanup:
   if(header != NULL) free(header);
-  if(str != NULL) free(str);
   if(queries != NULL)
     {
       for(i=0; i<host->qcount; i++)
@@ -384,5 +383,31 @@ int scamper_file_json_host_write(const scamper_file_t *sf,
       free(queries);
     }
   if(query_lens != NULL) free(query_lens);
-  return ret;
+
+  if(rc != 0)
+    {
+      if(str != NULL)
+	free(str);
+      return NULL;
+    }
+
+  if(len_out != NULL)
+    *len_out = len;
+  return str;
+}
+
+int scamper_file_json_host_write(const scamper_file_t *sf,
+				 const scamper_host_t *host, void *p)
+{
+  char *str;
+  size_t len;
+  int rc;
+
+  if((str = scamper_host_tojson(host, &len)) == NULL)
+    return -1;
+  str[len-1] = '\n';
+  rc = json_write(sf, str, len, p);
+  free(str);
+
+  return rc;
 }

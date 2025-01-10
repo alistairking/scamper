@@ -6,9 +6,9 @@
 .\" Copyright (c) 2016 The University of Waikato
 .\"                    All rights reserved
 .\"
-.\" $Id: sc_bdrmap.1,v 1.10 2020/02/23 06:37:20 mjl Exp $
+.\" $Id: sc_bdrmap.1,v 1.13 2024/09/16 08:55:36 mjl Exp $
 .\"
-.Dd September 24, 2019
+.Dd September 16, 2024
 .Dt SC_BDRMAP 1
 .Os
 .Sh NAME
@@ -30,7 +30,7 @@
 .Op Fl U Ar unix
 .Op Fl R Ar unix
 .Op Fl S Ar srcaddr
-.Op Fl v Ar vpases
+.Op Fl V Ar vpases
 .Op Fl x Ar ixp-file
 .Ek
 .Pp
@@ -43,9 +43,14 @@
 .Op Fl M Ar ipmap-file
 .Op Fl n Ar names-file
 .Op Fl r Ar relationships-file
-.Op Fl v Ar vpases
+.Op Fl V Ar vpases
 .Op Fl x Ar ixp-file
 .Op Ar
+.Ek
+.Pp
+.Nm
+.Bk -words
+.Op Fl ?v
 .Ek
 .\""""""""""""
 .Sh DESCRIPTION
@@ -86,6 +91,12 @@ The supported options to
 .Nm
 are as follows:
 .Bl -tag -width Ds
+.It Fl ?
+prints a list of command line options and a synopsis of each.
+.It Fl v
+prints the version of
+.Nm
+and exits.
 .It Fl 6
 specifies that
 .Nm
@@ -217,7 +228,7 @@ should use in probes.
 specifies the name of a unix domain socket where a local
 .Xr scamper 1
 instance is accepting control socket connections.
-.It Fl v Ar vpases
+.It Fl V Ar vpases
 specifies the name of a file, or a list of ASes, that represent the
 network hosting the vantage point.
 .It Fl x Ar ixp-file
@@ -237,19 +248,19 @@ the following command will collect raw topology data to support inference
 of border routers for the network hosting the vantage point, storing raw
 data into bdrmap.warts, and logging run-time information into logfile1.txt:
 .Pp
-.Dl sc_bdrmap -p 31337 -o bdrmap.warts -l logfile1.txt -a ip2as.txt -v vpases.txt -x ixp.txt
+.Dl sc_bdrmap -p 31337 -o bdrmap.warts -l logfile1.txt -a ip2as.txt -V vpases.txt -x ixp.txt
 .Pp
 To infer border routers from the collected data, using the same input files
 as above, with a set of AS relationships contained in asrel.txt, and a
 set of prefix delegations assembled from the Regional Internet Registry (RIR)
 Statistics files in delegated.txt:
 .Pp
-.Dl sc_bdrmap -d routers -a ip2as.txt -g delegated.txt -r asrel.txt -v vpases.txt -x ixp.txt bdrmap.warts >bdrmap.routers.txt
+.Dl sc_bdrmap -d routers -a ip2as.txt -g delegated.txt -r asrel.txt -V vpases.txt -x ixp.txt bdrmap.warts >bdrmap.routers.txt
 .Pp
 To view annotated traceroutes stored in bdrmap.warts with IP to DNS names
 information stored in names.txt:
 .Pp
-.Dl sc_bdrmap -d traces -a ip2as.txt -v vpases.txt -x ixp.txt -n names.txt bdrmap.wart >bdrmap.traces.txt
+.Dl sc_bdrmap -d traces -a ip2as.txt -V vpases.txt -x ixp.txt -n names.txt bdrmap.wart >bdrmap.traces.txt
 .Pp
 .\""""""""""""
 .Sh SEE ALSO

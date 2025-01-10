@@ -1,14 +1,14 @@
 /*
  * scamper_trace_int.h
  *
- * $Id: scamper_trace_int.h,v 1.8 2024/03/04 05:10:28 mjl Exp $
+ * $Id: scamper_trace_int.h,v 1.10 2024/10/16 07:01:29 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2008      Alistair King
  * Copyright (C) 2015      The Regents of the University of California
  * Copyright (C) 2015      The University of Waikato
- * Copyright (C) 2019-2023 Matthew Luckie
+ * Copyright (C) 2019-2024 Matthew Luckie
  * Authors: Matthew Luckie
  *          Doubletree implementation by Alistair King
  *
@@ -34,14 +34,26 @@
  * scamper_trace_alloc:
  *  allocate a brand new scamper trace object, empty of any data
  */
+#ifndef DMALLOC
 scamper_trace_t *scamper_trace_alloc(void);
 scamper_trace_hop_t *scamper_trace_hop_alloc(void);
+#else
+scamper_trace_t *scamper_trace_alloc_dm(const char *file, int line);
+scamper_trace_hop_t *scamper_trace_hop_alloc_dm(const char *file, int line);
+#define scamper_trace_alloc() \
+  scamper_trace_alloc_dm(__FILE__, __LINE__)
+#define scamper_trace_hop_alloc() \
+  scamper_trace_hop_alloc_dm(__FILE__, __LINE__)
+#endif
 
 /*
  * scamper_trace_hops_alloc:
  *  allocate an array of hop records to the trace object
+ * scamper_trace_hops_free:
+ *  free all hop records in the linked list
  */
 int scamper_trace_hops_alloc(scamper_trace_t *trace, uint16_t hops);
+void scamper_trace_hops_free(scamper_trace_hop_t *hops);
 
 /*
  * scamper_trace_pmtud_alloc:

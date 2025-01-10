@@ -1,7 +1,7 @@
 /*
  * scamper_udpprobe_do.c
  *
- * $Id: scamper_udpprobe_do.c,v 1.12 2024/06/25 06:03:55 mjl Exp $
+ * $Id: scamper_udpprobe_do.c,v 1.16 2024/11/30 01:43:32 mjl Exp $
  *
  * Copyright (C) 2023-2024 The Regents of the University of California
  *
@@ -30,6 +30,8 @@
 #include "scamper.h"
 #include "scamper_addr.h"
 #include "scamper_addr_int.h"
+#include "scamper_ifname.h"
+#include "scamper_ifname_int.h"
 #include "scamper_list.h"
 #include "scamper_task.h"
 #include "scamper_getsrc.h"
@@ -160,6 +162,9 @@ static void do_udpprobe_handle_udp(scamper_task_t *task, scamper_udp_resp_t *ur)
   else
     gettimeofday_wrap(&reply->rx);
   reply->len = ur->datalen;
+
+  if(ur->flags & SCAMPER_UDP_RESP_FLAG_IFINDEX)
+    reply->ifname = scamper_ifname_int_get(ur->ifindex, &reply->rx);
 
   if(slist_tail_push(state->replies[i], reply) == NULL)
     goto err;
@@ -332,13 +337,16 @@ static void do_udpprobe_sigs(scamper_task_t *task)
      (state->fds = malloc_zero(sizeof(scamper_fd_t *) * probec)) == NULL ||
      (sports = malloc_zero(sizeof(uint16_t) * probec)) == NULL)
     {
-      snprintf(errbuf, errlen, "%s: could not malloc state", __func__);
+      scamper_debug(__func__, "could not malloc state");
       goto err;
     }
 
   if(up->src == NULL &&
      (up->src = scamper_getsrc(up->dst, 0, errbuf, errlen)) == NULL)
-    goto err;
+    {
+      scamper_debug(__func__, "%s", errbuf);
+      goto err;
+    }
 
   /* declare the signature of the task's probes */
   for(i=0; i<up->probe_count; i++)
@@ -353,26 +361,25 @@ static void do_udpprobe_sigs(scamper_task_t *task)
 					    up->dst->addr, up->dport);
       if(state->fds[i] == NULL)
 	{
-	  snprintf(errbuf, errlen, "%s: could not open udp socket", __func__);
+	  scamper_debug(__func__, "could not open udp socket");
 	  goto err;
 	}
       if(scamper_fd_sport(state->fds[i], &sports[i]) != 0)
 	{
-	  snprintf(errbuf, errlen, "%s: could not get udp sport", __func__);
+	  scamper_debug(__func__, "could not get udp sport");
 	  goto err;
 	}
 
       if((sig = scamper_task_sig_alloc(SCAMPER_TASK_SIG_TYPE_TX_IP)) == NULL)
 	{
-	  snprintf(errbuf, errlen, "%s: could not alloc task signature", __func__);
+	  scamper_debug(__func__, "could not alloc task signature");
 	  goto err;
 	}
       sig->sig_tx_ip_dst = scamper_addr_use(up->dst);
-      sig->sig_tx_ip_src = scamper_addr_use(up->src);
       SCAMPER_TASK_SIG_UDP(sig, sports[i], up->dport);
       if(scamper_task_sig_add(task, sig) != 0)
 	{
-	  snprintf(errbuf, errlen, "%s: could not add signature to task", __func__);
+	  scamper_debug(__func__, "could not add signature to task");
 	  goto err;
 	}
       sig = NULL;

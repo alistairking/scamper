@@ -1,78 +1,10 @@
-# $Id: Makefile.am,v 1.76 2024/05/02 21:21:47 mjl Exp $
+# $Id: Makefile.am,v 1.80 2024/11/10 20:41:44 mjl Exp $
 
 AUTOMAKE_OPTIONS = subdir-objects
 
 AM_CPPFLAGS = -I$(top_srcdir) -I$(top_srcdir)/scamper
 
 bin_PROGRAMS = scamper
-
-lib_LTLIBRARIES = libscamperfile.la
-
-libscamperfile_la_CFLAGS = -DBUILDING_LIBSCAMPERFILE
-
-libscamperfile_la_LDFLAGS = -version-info 9:0:0 \
-	-export-symbols-regex '^scamper_'
-
-libscamperfile_la_LIBADD = @ZLIB_LIBS@ @LIBBZ2_LIBS@ @LIBLZMA_LIBS@ @WINSOCK_LIBS@
-
-libscamperfile_la_SOURCES = \
-	../mjl_splaytree.c \
-	../utils.c \
-	scamper_file.c \
-	scamper_file_arts.c \
-	scamper_file_warts.c \
-	scamper_file_json.c \
-	scamper_addr.c \
-	scamper_list.c \
-	scamper_icmpext.c \
-	scamper_icmpext_lib.c \
-	scamper_ifname.c \
-	trace/scamper_trace.c \
-	trace/scamper_trace_warts.c \
-	trace/scamper_trace_text.c \
-	trace/scamper_trace_json.c \
-	trace/scamper_trace_lib.c \
-	ping/scamper_ping.c \
-	ping/scamper_ping_warts.c \
-	ping/scamper_ping_text.c \
-	ping/scamper_ping_json.c \
-	ping/scamper_ping_lib.c \
-	tracelb/scamper_tracelb.c \
-	tracelb/scamper_tracelb_warts.c \
-	tracelb/scamper_tracelb_text.c \
-	tracelb/scamper_tracelb_json.c \
-	tracelb/scamper_tracelb_lib.c \
-	dealias/scamper_dealias.c \
-	dealias/scamper_dealias_warts.c \
-	dealias/scamper_dealias_text.c \
-	dealias/scamper_dealias_json.c \
-	dealias/scamper_dealias_lib.c \
-	sting/scamper_sting.c \
-	sting/scamper_sting_warts.c \
-	sting/scamper_sting_text.c \
-	sting/scamper_sting_lib.c \
-	neighbourdisc/scamper_neighbourdisc.c \
-	neighbourdisc/scamper_neighbourdisc_warts.c \
-	neighbourdisc/scamper_neighbourdisc_lib.c \
-	tbit/scamper_tbit.c \
-	tbit/scamper_tbit_warts.c \
-	tbit/scamper_tbit_text.c \
-	tbit/scamper_tbit_json.c \
-	tbit/scamper_tbit_lib.c \
-	sniff/scamper_sniff.c \
-	sniff/scamper_sniff_warts.c \
-	sniff/scamper_sniff_lib.c \
-	host/scamper_host.c \
-	host/scamper_host_warts.c \
-	host/scamper_host_json.c \
-	host/scamper_host_lib.c \
-	http/scamper_http.c \
-	http/scamper_http_warts.c \
-	http/scamper_http_lib.c \
-	udpprobe/scamper_udpprobe.c \
-	udpprobe/scamper_udpprobe_warts.c \
-	udpprobe/scamper_udpprobe_json.c \
-	udpprobe/scamper_udpprobe_lib.c
 
 scamper_SOURCES = \
 	../mjl_list.c \
@@ -227,27 +159,8 @@ scamper_LDADD = @OPENSSL_LIBS@ @LIBNV_LIBS@ \
 
 scamper_LDFLAGS = @OPENSSL_LDFLAGS@
 
-include_HEADERS = \
-	scamper_file.h \
-	scamper_addr.h \
-	scamper_list.h \
-	scamper_icmpext.h \
-	trace/scamper_trace.h \
-	ping/scamper_ping.h \
-	tracelb/scamper_tracelb.h \
-	dealias/scamper_dealias.h \
-	sting/scamper_sting.h \
-	neighbourdisc/scamper_neighbourdisc.h \
-	tbit/scamper_tbit.h \
-	sniff/scamper_sniff.h \
-	host/scamper_host.h \
-	http/scamper_http.h \
-	udpprobe/scamper_udpprobe.h
-
 man_MANS = \
-	scamper.1 \
-	libscamperfile.3 \
-	warts.5
+	scamper.1
 
 CLEANFILES = *~ *.core \
 	trace/*~ ping/*~ tracelb/*~ dealias/*~ sting/*~ \

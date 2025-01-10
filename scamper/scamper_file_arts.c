@@ -1,14 +1,14 @@
 /*
  * scamper_file_arts.c
  *
- * $Id: scamper_file_arts.c,v 1.71 2023/08/19 03:34:53 mjl Exp $
+ * $Id: scamper_file_arts.c,v 1.74 2024/12/15 21:19:48 mjl Exp $
  *
  * code to read the legacy arts data file format into scamper_hop structures.
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2014      The Regents of the University of California
- * Copyright (C) 2022-2023 Matthew Luckie
+ * Copyright (C) 2022-2024 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -186,20 +186,6 @@ static int arts_read_hdr(const scamper_file_t *sf, arts_header_t *ah)
   return -1;
 }
 
-static void arts_hop_list_free(scamper_trace_hop_t *head)
-{
-  scamper_trace_hop_t *hop = head;
-
-  while(hop != NULL)
-    {
-      head = hop->hop_next;
-      scamper_trace_hop_free(hop);
-      hop = head;
-    }
-
-  return;
-}
-
 static scamper_trace_hop_t *arts_hop_reply(scamper_addr_t *addr,
 					   uint32_t rtt, uint8_t distance)
 {
@@ -271,7 +257,7 @@ static scamper_trace_hop_t *arts_hops_read(const arts_header_t *ah,
 					   const uint8_t *buf,
 					   uint8_t count, uint32_t *off)
 {
-  scamper_trace_hop_t *head = NULL, *hop = NULL;
+  scamper_trace_hop_t *head = NULL, *hop = NULL, *prev = NULL;
   int i = 0;
   int rc;
 
@@ -284,6 +270,7 @@ static scamper_trace_hop_t *arts_hops_read(const arts_header_t *ah,
     {
       if(hop != NULL)
 	{
+	  prev = hop;
 	  hop->hop_next = scamper_trace_hop_alloc();
 	  hop = hop->hop_next;
 	}
@@ -293,9 +280,11 @@ static scamper_trace_hop_t *arts_hops_read(const arts_header_t *ah,
 	}
 
       if(hop == NULL)
-	  goto err;
+	goto err;
 
       if((rc = arts_hop_read(hop, buf+i, ah)) <= 0)
+	goto err;
+      if(prev != NULL && prev->hop_probe_ttl > hop->hop_probe_ttl)
 	goto err;
       i += rc;
     }
@@ -305,7 +294,7 @@ static scamper_trace_hop_t *arts_hops_read(const arts_header_t *ah,
   return head;
 
  err:
-  arts_hop_list_free(head);
+  scamper_trace_hops_free(head);
   return NULL;
 }
 
@@ -587,7 +576,7 @@ static scamper_trace_t *arts_read_trace(const scamper_file_t *sf,
       hops = NULL;
     }
 
-  if(destination_replied != 0)
+  if(destination_replied != 0 && hop_distance > 0)
     {
       if((hop = arts_hop_reply(trace->dst, rtt, hop_distance)) == NULL)
 	goto err;
@@ -605,7 +594,7 @@ static scamper_trace_t *arts_read_trace(const scamper_file_t *sf,
   return trace;
 
  err:
-  if(hops != NULL) arts_hop_list_free(hops);
+  scamper_trace_hops_free(hops);
   if(trace != NULL) scamper_trace_free(trace);
   if(buf != NULL) free(buf);
   return NULL;

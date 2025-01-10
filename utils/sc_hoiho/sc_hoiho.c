@@ -1,7 +1,7 @@
 /*
  * sc_hoiho: Holistic Orthography of Internet Hostname Observations
  *
- * $Id: sc_hoiho.c,v 1.30 2024/07/19 05:46:26 mjl Exp $
+ * $Id: sc_hoiho.c,v 1.33 2024/12/31 04:17:31 mjl Exp $
  *
  *         Matthew Luckie
  *         mjl@luckie.org.nz
@@ -9,7 +9,7 @@
  *         Marianne Fletcher added code to infer ASN and geo regexes.
  *
  * Copyright (C) 2017-2021 The University of Waikato
- * Copyright (C) 2022-2023 Matthew Luckie
+ * Copyright (C) 2022-2024 Matthew Luckie
  * Copyright (C) 2023      The Regents of the University of California
  *
  * This program is free software; you can redistribute it and/or modify
@@ -656,6 +656,23 @@ typedef struct sc_dump
 		      REFINE_SETS | REFINE_IP | REFINE_FP | REFINE_MERGE | \
 		      REFINE_DICT)
 
+#define OPT_THREADC   0x0001
+#define OPT_DUMPID    0x0002
+#define OPT_DOMAIN    0x0004
+#define OPT_REGEX     0x0008
+#define OPT_OPTION    0x0010
+#define OPT_IPV6      0x0020
+#define OPT_STOPID    0x0040
+#define OPT_SIBLINGS  0x0080
+#define OPT_DICT      0x0100
+#define OPT_RTTS      0x0200
+#define OPT_FUDGE     0x0400
+#define OPT_LIGHTSPEED 0x0800
+
+#ifdef PACKAGE_VERSION
+#define OPT_VERSION     0x1000
+#endif
+
 static int dump_1(void);
 static int dump_2(void);
 static int dump_3(void);
@@ -722,6 +739,9 @@ static int              do_splitlocode = 0;
 static int              no_clli      = 0;
 static int              ip_v         = 4;
 static int              stop_id      = 0;
+#ifdef OPT_VERSION
+static int              do_version   = 0;
+#endif
 static long             threadc      = -1;
 static threadpool_t    *threadp      = NULL;
 static long             dump_id      = 1;
@@ -734,36 +754,21 @@ static const sc_dump_t  dump_funcs[] = {
 };
 static int              dump_funcc = sizeof(dump_funcs) / sizeof(sc_dump_t);
 
-#define OPT_THREADC   0x0001
-#define OPT_DUMPID    0x0002
-#define OPT_DOMAIN    0x0004
-#define OPT_REGEX     0x0008
-#define OPT_OPTION    0x0010
-#define OPT_IPV6      0x0020
-#define OPT_STOPID    0x0040
-#define OPT_SIBLINGS  0x0080
-#define OPT_DICT      0x0100
-#define OPT_RTTS      0x0200
-#define OPT_FUDGE     0x0400
-#define OPT_LIGHTSPEED 0x0800
-
 static void usage(uint32_t opts)
 {
+  const char *v = "";
   int i;
 
+#ifdef OPT_VERSION
+  v = "v";
+#endif
+
   fprintf(stderr,
-	  "usage: sc_hoiho [-6] [-d dumpid] [-D domain] [-f rtt-fudge]\n"
+	  "usage: sc_hoiho [-?6%s] [-d dumpid] [-D domain] [-f rtt-fudge]\n"
 	  "                [-g dict] [-l light-speed] [-O options]\n"
 	  "                [-r regex] [-R rtts] [-s stopid] [-S siblings]\n"
 	  "                [-t threadc]\n"
-	  "                <public-suffix-list> <router-file>\n");
-
-  if(opts == 0)
-    {
-      fprintf(stderr, "\n       sc_hoiho -?\n\n");
-      return;
-    }
-  fprintf(stderr, "\n");
+	  "                <public-suffix-list> <router-file>\n\n", v);
 
   if(opts & OPT_IPV6)
     fprintf(stderr, "       -6: input files are IPv6\n");
@@ -850,18 +855,29 @@ static void usage(uint32_t opts)
   if(opts & OPT_THREADC)
     fprintf(stderr, "       -t: the number of threads to use\n");
 
+#ifdef OPT_VERSION
+  if(opts & OPT_VERSION)
+    fprintf(stderr, "       -v: display version and exit\n");
+#endif
+
   return;
 }
 
 static int check_options(int argc, char *argv[])
 {
-  char *opts = "6d:D:f:g:l:O:r:R:s:S:t:?";
+  char  opts[32];
   char *opt_threadc = NULL, *opt_dumpid = NULL, *opt_stopid = NULL;
   char *opt_fudge = NULL, *opt_lightspeed = NULL;
   uint16_t refine = 0, norefine = 0;
   struct stat sb;
+  size_t off = 0;
   long lo;
   int ch, x;
+
+  string_concat(opts, sizeof(opts), &off, "6d:D:f:g:l:O:r:R:s:S:t:?");
+#ifdef OPT_VERSION
+  string_concat(opts, sizeof(opts), &off, "v");
+#endif
 
   while((ch = getopt(argc, argv, opts)) != -1)
     {
@@ -1017,6 +1033,12 @@ static int check_options(int argc, char *argv[])
 	case '?':
 	  usage(0xffffffff);
 	  return -1;
+
+#ifdef OPT_VERSION
+	case 'v':
+	  do_version = 1;
+	  return 0;
+#endif
 
 	default:
 	  usage(0);
@@ -2571,11 +2593,11 @@ static int sc_geomap_code(sc_geomap_t *map, sc_ptrc_t *x, size_t xc)
 static char *sc_geomap_tostr(const sc_geomap_t *map, char *buf, size_t len)
 {
   size_t off = 0;
-  string_concat(buf, len, &off, "%s", map->code);
+  string_concat(buf, len, &off, map->code);
   if(map->st[0] != '\0')
-    string_concat(buf, len, &off, "|%s", map->st);
+    string_concat2(buf, len, &off, "|", map->st);
   if(map->cc[0] != '\0')
-    string_concat(buf, len, &off, "|%s", map->cc);
+    string_concat2(buf, len, &off, "|", map->cc);
   return buf;
 }
 
@@ -2892,7 +2914,7 @@ static int sc_geohint_street_tostr2(const char *in, char *out, size_t len)
     return -1;
   lo = strtol(in, &endptr, 10);
   if(lo > 0 && lo < 10)
-    string_concat(out, len, &off, "%s ", digit2string[lo-1]);
+    string_concat2(out, len, &off, digit2string[lo-1], " ");
   else
     return -1;
 
@@ -2908,7 +2930,7 @@ static int sc_geohint_street_tostr2(const char *in, char *out, size_t len)
   if(*in == '\0')
     return -1;
 
-  string_concat(out, len, &off, "%s", in);
+  string_concat(out, len, &off, in);
   return 0;
 }
 
@@ -2970,20 +2992,17 @@ static char *sc_geohint_place_tostr(const sc_geohint_t *hint,
   char uc[8];
 
   if(hint->facname != NULL)
-    string_concat(buf, len, &off, "%s%s", off != 0 ? ", " : "",
-		  hint->facname);
+    string_concat2(buf, len, &off, off != 0 ? ", " : "", hint->facname);
   if(hint->street != NULL)
-    string_concat(buf, len, &off, "%s%s", off != 0 ? ", " : "",
-		  hint->street);
+    string_concat2(buf, len, &off, off != 0 ? ", " : "", hint->street);
   if(hint->place != NULL)
-    string_concat(buf, len, &off, "%s%s", off != 0 ? ", " : "",
-		  hint->place);
+    string_concat2(buf, len, &off, off != 0 ? ", " : "", hint->place);
   if(hint->st[0] != '\0')
-    string_concat(buf, len, &off, "%s%s", off != 0 ? ", " : "",
-		  string_toupper(uc, sizeof(uc), hint->st));
+    string_concat2(buf, len, &off, off != 0 ? ", " : "",
+		   string_toupper(uc, sizeof(uc), hint->st));
   if(hint->cc[0] != '\0')
-    string_concat(buf, len, &off, "%s%s", off != 0 ? ", " : "",
-		  string_toupper(uc, sizeof(uc), hint->cc));
+    string_concat2(buf, len, &off, off != 0 ? ", " : "",
+		   string_toupper(uc, sizeof(uc), hint->cc));
   return buf;
 }
 
@@ -2991,40 +3010,44 @@ static int sc_geohint_place_tojson(const sc_geohint_t *hint,
 				   char *buf, size_t len)
 {
   size_t off = 0;
-  char tmp[512], *comma = "";
+  char tmp[512];
 
   string_concat(buf, len, &off, "{");
   if(hint->facname != NULL)
     {
       if(str_tojson(hint->facname, tmp, sizeof(tmp)) != 0)
 	return -1;
-      string_concat(buf, len, &off, "\"facname\":\"%s\"", tmp);
-      comma = ", ";
+      string_concat3(buf, len, &off, "\"facname\":\"", tmp, "\"");
     }
   if(hint->street != NULL)
     {
       if(str_tojson(hint->street, tmp, sizeof(tmp)) != 0)
 	return -1;
-      string_concat(buf, len, &off, "%s\"street\":\"%s\"", comma, tmp);
-      comma = ", ";
+      if(off > 1)
+	string_concat(buf, len, &off, ", ");
+      string_concat3(buf, len, &off, "\"street\":\"", tmp, "\"");
     }
   if(hint->place != NULL)
     {
       if(str_tojson(hint->place, tmp, sizeof(tmp)) != 0)
 	return -1;
-      string_concat(buf, len, &off, "%s\"place\":\"%s\"", comma, tmp);
-      comma = ", ";
+      if(off > 1)
+	string_concat(buf, len, &off, ", ");
+      string_concat3(buf, len, &off, "\"place\":\"", tmp, "\"");
     }
   if(hint->st[0] != '\0')
     {
-      string_concat(buf, len, &off, "%s\"st\":\"%s\"", comma,
-		    string_toupper(tmp, sizeof(tmp), hint->st));
-      comma = ", ";
+      if(off > 1)
+	string_concat(buf, len, &off, ", ");
+      string_concat3(buf, len, &off, "\"st\":\"",
+		     string_toupper(tmp, sizeof(tmp), hint->st), "\"");
     }
   if(hint->cc[0] != '\0')
     {
-      string_concat(buf, len, &off, "%s\"cc\":\"%s\"", comma,
-		    string_toupper(tmp, sizeof(tmp), hint->cc));
+      if(off > 1)
+	string_concat(buf, len, &off, ", ");
+      string_concat3(buf, len, &off, "\"cc\":\"",
+		     string_toupper(tmp, sizeof(tmp), hint->cc), "\"");
     }
   string_concat(buf, len, &off, "}");
 
@@ -5093,13 +5116,13 @@ static int sc_geomap2hint_tojson(const sc_geomap2hint_t *m2h,
   sc_geohint_t *gh;
   size_t off = 0;
 
-  string_concat(buf, len, &off,
+  string_concaf(buf, len, &off,
 		"{\"code\":\"%s\", \"type\":\"%s\"",
 		m2h->map.code, geotype_tostr(m2h->map.type));
   if(m2h->map.st[0] != '\0')
-    string_concat(buf, len, &off, ", \"st\":\"%s\"", m2h->map.st);
+    string_concat3(buf, len, &off, ", \"st\":\"", m2h->map.st, "\"");
   if(m2h->map.cc[0] != '\0')
-    string_concat(buf, len, &off, ", \"cc\":\"%s\"", m2h->map.cc);
+    string_concat3(buf, len, &off, ", \"cc\":\"", m2h->map.cc, "\"");
 
   if(m2h->hint != NULL)
     {
@@ -5107,11 +5130,11 @@ static int sc_geomap2hint_tojson(const sc_geomap2hint_t *m2h,
       if(sc_geohint_place_tojson(gh, place, sizeof(place)) != 0)
 	return -1;
 
-      string_concat(buf, len, &off, ", \"learned\":%u, \"tp\":%u, \"fp\":%u",
+      string_concaf(buf, len, &off, ", \"learned\":%u, \"tp\":%u, \"fp\":%u",
 		    gh->learned, m2h->tp_c, m2h->fp_c);
 
       if(gh->type != GEOHINT_TYPE_CLLI || no_clli == 0)
-	string_concat(buf, len, &off,
+	string_concaf(buf, len, &off,
 		      ", \"location\":%s, \"lat\":\"%.6f\", \"lng\":\"%.6f\"",
 		      place, gh->lat, gh->lng);
     }
@@ -6715,9 +6738,9 @@ static char *sc_regex_tostr(const sc_regex_t *re, char *buf, size_t len)
 {
   size_t off = 0;
   int i;
-  string_concat(buf, len, &off, "%s", re->regexes[0]->str);
+  string_concat(buf, len, &off, re->regexes[0]->str);
   for(i=1; i<re->regexc; i++)
-    string_concat(buf, len, &off, " %s", re->regexes[i]->str);
+    string_concat2(buf, len, &off, " ", re->regexes[i]->str);
   return buf;
 }
 
@@ -6731,13 +6754,12 @@ static char *sc_regex_plan_tostr(const sc_regex_t *re, char *buf, size_t len)
   for(i=0; i<re->regexc; i++)
     {
       ren = re->regexes[i];
-      string_concat(buf, len, &off, "%s[", (i > 0) ? ", " : "");
+      string_concat2(buf, len, &off, (i > 0) ? ", " : "", "[");
       for(j=0; j<ren->capc; j++)
-	string_concat(buf, len, &off, "%s%s", (j > 0) ? ", " : "",
-		      geotype_tostr(ren->plan[j]));
+	string_concat2(buf, len, &off, (j > 0) ? ", " : "",
+		       geotype_tostr(ren->plan[j]));
       string_concat(buf, len, &off, "]");
     }
-
   string_concat(buf, len, &off, "]");
   return buf;
 }
@@ -6752,9 +6774,9 @@ static char *sc_regex_plan_tojson(const sc_regex_t *re, char *buf, size_t len)
   for(i=0; i<re->regexc; i++)
     {
       ren = re->regexes[i];
-      string_concat(buf, len, &off, "%s[", (i > 0) ? ", " : "");
+      string_concat2(buf, len, &off, (i > 0) ? ", " : "", "[");
       for(j=0; j<ren->capc; j++)
-	string_concat(buf, len, &off, "%s\"%s\"", (j > 0) ? ", " : "",
+	string_concaf(buf, len, &off, "%s\"%s\"", (j > 0) ? ", " : "",
 		      geotype_tostr(ren->plan[j]));
       string_concat(buf, len, &off, "]");
     }
@@ -6778,35 +6800,35 @@ static char *sc_regex_score_tostr(const sc_regex_t *re, char *buf, size_t len)
   tp = re->tp_c;
   fp = sc_regex_score_fp(re);
 
-  string_concat(buf, len, &off, "ppv %.3f,", ((float)tp) / (tp+fp));
+  string_concaf(buf, len, &off, "ppv %.3f,", ((float)tp) / (tp+fp));
   if(do_learnalias != 0)
-    string_concat(buf, len, &off, " rt %u", re->rt_c);
+    string_concaf(buf, len, &off, " rt %u", re->rt_c);
   else if(do_learnasn != 0 || do_learnasnames != 0)
-    string_concat(buf, len, &off, " asn %u", re->rt_c);
+    string_concaf(buf, len, &off, " asn %u", re->rt_c);
   else if(do_learngeo != 0)
-    string_concat(buf, len, &off, " geo %u", re->rt_c);
-  string_concat(buf, len, &off, " tp %u fp %u", re->tp_c, re->fp_c);
+    string_concaf(buf, len, &off, " geo %u", re->rt_c);
+  string_concaf(buf, len, &off, " tp %u fp %u", re->tp_c, re->fp_c);
 
   if(re->fne_c > 0)
-    string_concat(buf, len, &off, " fne %u", re->fne_c);
+    string_concaf(buf, len, &off, " fne %u", re->fne_c);
   if(re->fnu_c > 0)
-    string_concat(buf, len, &off, " fnu %u", re->fnu_c);
+    string_concaf(buf, len, &off, " fnu %u", re->fnu_c);
   if(re->unk_c > 0)
-    string_concat(buf, len, &off, " unk %u", re->unk_c);
+    string_concaf(buf, len, &off, " unk %u", re->unk_c);
   if(re->sp_c > 0)
-    string_concat(buf, len, &off, " sp %u", re->sp_c);
+    string_concaf(buf, len, &off, " sp %u", re->sp_c);
   if(re->sn_c > 0)
-    string_concat(buf, len, &off, " sn %u", re->sn_c);
+    string_concaf(buf, len, &off, " sn %u", re->sn_c);
   if(re->ip_c > 0)
-    string_concat(buf, len, &off, " ip %u", re->ip_c);
+    string_concaf(buf, len, &off, " ip %u", re->ip_c);
 
-  string_concat(buf, len, &off, " tpr %.1f atp %d",
+  string_concaf(buf, len, &off, " tpr %.1f atp %d",
 		sc_regex_score_tpr(re), sc_regex_score_atp(re));
 
   assert(re->class >= 0 && re->class <= 3);
-  string_concat(buf, len, &off, " class %s", class[re->class]);
+  string_concat2(buf, len, &off, " class ", class[re->class]);
 
-  string_concat(buf, len, &off, ", score %u matches %u", re->score, re->matchc);
+  string_concaf(buf, len, &off, ", score %u matches %u", re->score, re->matchc);
 
   return buf;
 }
@@ -6821,33 +6843,33 @@ static char *sc_regex_score_tojson(const sc_regex_t *re, char *buf, size_t len)
   if(fp == 0 && re->tp_c == 0)
     string_concat(buf, len, &off, "\"ppv\":\"none\", ");
   else
-    string_concat(buf, len, &off, "\"ppv\":\"%.3f\",",
+    string_concaf(buf, len, &off, "\"ppv\":\"%.3f\",",
 		  ((float)re->tp_c) / (re->tp_c + fp));
 
   if(do_learnalias != 0)
-    string_concat(buf, len, &off, "\"rt\":%u, ", re->rt_c);
+    string_concaf(buf, len, &off, "\"rt\":%u, ", re->rt_c);
   else if(do_learnasn != 0 || do_learnasnames != 0)
-    string_concat(buf, len, &off, "\"asn\": %u, ", re->rt_c);
+    string_concaf(buf, len, &off, "\"asn\":%u, ", re->rt_c);
   else if(do_learngeo != 0)
-    string_concat(buf, len, &off, "\"geo\": %u, ", re->rt_c);
+    string_concaf(buf, len, &off, "\"geo\":%u, ", re->rt_c);
 
-  string_concat(buf, len, &off, "\"tp\":%d, \"fp\":%d, \"ip\":%d, \"fnu\":%d",
+  string_concaf(buf, len, &off, "\"tp\":%d, \"fp\":%d, \"ip\":%d, \"fnu\":%d",
 		re->tp_c, re->fp_c, re->ip_c, re->fnu_c);
 
   if(do_learnalias != 0)
-    string_concat(buf, len, &off, ", \"fne\":%d, \"sp\":%d, \"sn\":%d",
+    string_concaf(buf, len, &off, ", \"fne\":%d, \"sp\":%d, \"sn\":%d",
 		  re->fne_c, re->sp_c, re->sn_c);
 
   if(do_learngeo != 0 || do_learnasnames != 0)
-    string_concat(buf, len, &off, ", \"unk\":%d", re->unk_c);
+    string_concaf(buf, len, &off, ", \"unk\":%d", re->unk_c);
 
-  string_concat(buf, len, &off, ", \"tpr\":\"%.1f\", \"atp\":%d",
+  string_concaf(buf, len, &off, ", \"tpr\":\"%.1f\", \"atp\":%d",
 		sc_regex_score_tpr(re), sc_regex_score_atp(re));
 
   assert(re->class >= 0 && re->class <= 3);
-  string_concat(buf, len, &off, ", \"class\":\"%s\"", class[re->class]);
+  string_concat3(buf, len, &off, ", \"class\":\"", class[re->class], "\"");
 
-  string_concat(buf, len, &off,
+  string_concaf(buf, len, &off,
 		", \"score\":%u, \"matches\":%u, \"routers\":%u",
 		re->score, re->matchc, slist_count(re->dom->routers));
 
@@ -8732,29 +8754,29 @@ static void sc_iface_geo_find_print(const sc_ifacedom_t *ifd, const char *code,
 	}
     }
 
-  string_concat(tmp, sizeof(tmp), &off, "%s", code);
+  string_concat(tmp, sizeof(tmp), &off, code);
   if(st[0] != -1)
     {
       memcpy(buf, ifd->label + st[0], st[1] - st[0] + 1);
       buf[st[1] - st[0] + 1] = '\0';
-      string_concat(tmp, sizeof(tmp), &off, "|%s", buf);
+      string_concat2(tmp, sizeof(tmp), &off, "|", buf);
     }
   if(cc[0] != -1)
     {
       memcpy(buf, ifd->label + cc[0], cc[1] - cc[0] + 1);
       buf[cc[1] - cc[0] + 1] = '\0';
-      string_concat(tmp, sizeof(tmp), &off, "|%s", buf);
+      string_concat2(tmp, sizeof(tmp), &off, "|", buf);
     }
 
   off = 0;
-  string_concat(buf, sizeof(buf), &off,
+  string_concaf(buf, sizeof(buf), &off,
 		"found %s %s",
 		geotype_tostr(tag->hint->type), tmp);
-  string_concat(buf, sizeof(buf), &off, " \"%s\" in %s bytes",
+  string_concaf(buf, sizeof(buf), &off, " \"%s\" in %s bytes",
 		sc_geohint_place_tostr(tag->hint, tmp, sizeof(tmp)),
 		ifd->iface->name);
   for(i=0; i<tag->tagc; i++)
-    string_concat(buf, sizeof(buf), &off, " %d %d",
+    string_concaf(buf, sizeof(buf), &off, " %d %d",
 		  tag->tags[i].start, tag->tags[i].end);
   printf("%s\n", buf);
 
@@ -18440,14 +18462,15 @@ static sc_regex_t *sc_regex_refine_merge_do(sc_remerge_t *rem)
   /* assemble the regex from its component parts */
   off = 0;
   if(rem->css->cssc == 2)
-    string_concat(str, len, &off, "%s", rem->css->css);
+    string_concat(str, len, &off, rem->css->css);
   string_concat(str, len, &off, "(?:");
   i = 0;
   for(sn=slist_head_node(rem->list); sn != NULL; sn=slist_node_next(sn))
     {
       ptr = slist_node_item(sn);
-      if(i > 0) string_concat(str, len, &off, "|%s", ptr);
-      else string_concat(str, len, &off, "%s", ptr);
+      if(i > 0)
+	string_concat(str, len, &off, "|");
+      string_concat(str, len, &off, ptr);
       i++;
     }
   if(rem->css->cssc == 2)
@@ -18459,9 +18482,9 @@ static sc_regex_t *sc_regex_refine_merge_do(sc_remerge_t *rem)
     }
   else ptr = rem->css->css;
   if(rem->opt != 0)
-    string_concat(str, len, &off, ")?%s", ptr);
+    string_concat2(str, len, &off, ")?", ptr);
   else
-    string_concat(str, len, &off, ")%s", ptr);
+    string_concat2(str, len, &off, ")", ptr);
 
   /* build a new regex */
   if((re = sc_regex_alloc(str)) != NULL)
@@ -22392,6 +22415,14 @@ int main(int argc, char *argv[])
     {
       return -1;
     }
+
+#ifdef OPT_VERSION
+  if(do_version)
+    {
+      printf("sc_hoiho version %s\n", PACKAGE_VERSION);
+      return 0;
+    }
+#endif
 
 #ifdef HAVE_PTHREAD
   if(threadc == -1)

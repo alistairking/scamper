@@ -219,8 +219,8 @@ The following code illustrates the overall approach:
   for o in file:
     if isinstance(o, ScamperTrace):
       for hop in o.hops():
-        if hop.addr is not None:
-          addrs[hop.addr] = 1
+        if hop.src is not None:
+          addrs[hop.src] = 1
 
   for o in sorted(list(addrs)):
     print(o)
@@ -1556,6 +1556,20 @@ cdef class ScamperTrace:
         return datetime.datetime(t[0], t[1], t[2], t[3], t[4], t[5], c.tv_usec,
                                  tzinfo=datetime.timezone.utc)
 
+    def to_json(self):
+        """
+        get method to obtain a JSON rendering of this traceroute measurement.
+
+        :returns: json representation
+        :rtype: str
+        """
+        c = cscamper_trace.scamper_trace_tojson(self._c, NULL);
+        if c == NULL:
+            return None
+        out = c.decode('UTF-8', 'strict')
+        free(c);
+        return out;
+
     @property
     def stop_reason(self):
         """
@@ -2496,6 +2510,20 @@ cdef class ScamperPing:
         t = time.gmtime(c.tv_sec)
         return datetime.datetime(t[0], t[1], t[2], t[3], t[4], t[5], c.tv_usec,
                                  tzinfo=datetime.timezone.utc)
+
+    def to_json(self):
+        """
+        get method to obtain a JSON rendering of this ping measurement.
+
+        :returns: json representation
+        :rtype: str
+        """
+        c = cscamper_ping.scamper_ping_tojson(self._c, NULL);
+        if c == NULL:
+            return None
+        out = c.decode('UTF-8', 'strict')
+        free(c);
+        return out;
 
     @property
     def attempts(self):
@@ -3507,6 +3535,21 @@ cdef class ScamperTracelb:
         return datetime.datetime(t[0], t[1], t[2], t[3], t[4], t[5], c.tv_usec,
                                  tzinfo=datetime.timezone.utc)
 
+    def to_json(self):
+        """
+        get method to obtain a JSON rendering of this MDA traceroute
+        measurement.
+
+        :returns: json representation
+        :rtype: str
+        """
+        c = cscamper_tracelb.scamper_tracelb_tojson(self._c, NULL);
+        if c == NULL:
+            return None
+        out = c.decode('UTF-8', 'strict')
+        free(c);
+        return out;
+
     @property
     def src(self):
         """
@@ -4314,7 +4357,7 @@ cdef class ScamperDealiasProbedef:
         get method to obtain the packet size for this probedef
 
         :returns: the packet size
-        :type: int
+        :rtype: int
         """
         return cscamper_dealias.scamper_dealias_probedef_size_get(self._c)
 
@@ -4628,6 +4671,21 @@ cdef class ScamperDealias:
         t = time.gmtime(c.tv_sec)
         return datetime.datetime(t[0], t[1], t[2], t[3], t[4], t[5], c.tv_usec,
                                  tzinfo=datetime.timezone.utc)
+
+    def to_json(self):
+        """
+        get method to obtain a JSON rendering of this alias resolution
+        measurement.
+
+        :returns: json representation
+        :rtype: str
+        """
+        c = cscamper_dealias.scamper_dealias_tojson(self._c, NULL);
+        if c == NULL:
+            return None
+        out = c.decode('UTF-8', 'strict')
+        free(c);
+        return out;
 
     def is_ally(self):
         """
@@ -5217,6 +5275,20 @@ cdef class ScamperTbit:
         return datetime.datetime(t[0], t[1], t[2], t[3], t[4], t[5], c.tv_usec,
                                  tzinfo=datetime.timezone.utc)
 
+    def to_json(self):
+        """
+        get method to obtain a JSON rendering of this TBIT measurement.
+
+        :returns: json representation
+        :rtype: str
+        """
+        c = cscamper_tbit.scamper_tbit_tojson(self._c, NULL);
+        if c == NULL:
+            return None
+        out = c.decode('UTF-8', 'strict')
+        free(c);
+        return out;
+
     @property
     def result(self):
         """
@@ -5755,7 +5827,7 @@ cdef class ScamperHostTXT:
 
     def str(self, i):
         """
-        get method to obtain the number of strings in this TXT record.
+        get method to obtain a string from this TXT record.
 
         :param int i: The string of interest
         :returns: the string
@@ -5765,6 +5837,133 @@ cdef class ScamperHostTXT:
         if txt == NULL:
             return None
         return txt.decode('UTF-8', 'strict')
+
+cdef class ScamperHostOPTElem:
+    """
+    The :class:`ScamperHostOPTElem` object stores an element from the OPT
+    resource record.
+    """
+    cdef cscamper_host.scamper_host_rr_opt_elem_t *_c
+
+    def __init__(self):
+        raise TypeError("This class cannot be instantiated directly.")
+
+    def __dealloc__(self):
+        if self._c != NULL:
+            cscamper_host.scamper_host_rr_opt_elem_free(self._c)
+
+    @staticmethod
+    cdef ScamperHostOPTElem from_ptr(cscamper_host.scamper_host_rr_opt_elem_t *ptr):
+        cdef ScamperHostOPTElem elem
+        if ptr == NULL:
+            return None
+        elem = ScamperHostOPTElem.__new__(ScamperHostOPTElem)
+        elem._c = cscamper_host.scamper_host_rr_opt_elem_use(ptr)
+        return elem
+
+    def __len__(self):
+        return cscamper_host.scamper_host_rr_opt_elem_len_get(self._c)
+
+    @property
+    def code_num(self):
+        """
+        get method to obtain the code of the OPT element, as a number
+
+        :returns: the code
+        :rtype: int
+        """
+        return cscamper_host.scamper_host_rr_opt_elem_code_get(self._c)
+
+    @property
+    def code(self):
+        """
+        get method to obtain the code of the OPT element, as a string
+
+        :returns: the code
+        :rtype: string
+        """
+        cdef char buf[128]
+        v = cscamper_host.scamper_host_rr_opt_elem_code_get(self._c)
+        cscamper_host.scamper_host_rr_opt_elem_code_tostr(v, buf, sizeof(buf))
+        return buf.decode('UTF-8', 'strict')
+
+    @property
+    def data(self):
+        """
+        get method to obtain any data in the OPT element.
+
+        :returns: data
+        :rtype: bytes
+        """
+        cdef const uint8_t *data
+        data = cscamper_host.scamper_host_rr_opt_elem_data_get(self._c)
+        length = cscamper_host.scamper_host_rr_opt_elem_len_get(self._c)
+        if data == NULL or length == 0:
+            return None
+        return data[:length]
+
+cdef class ScamperHostOPT:
+    """
+    The :class:`ScamperHostOPT` object stores fields from the OPT resource
+    record.
+    """
+    cdef cscamper_host.scamper_host_rr_opt_t *_c
+    cdef uint16_t _i, _elemc
+
+    def __init__(self):
+        raise TypeError("This class cannot be instantiated directly.")
+
+    def __dealloc__(self):
+        if self._c != NULL:
+            cscamper_host.scamper_host_rr_opt_free(self._c)
+
+    @staticmethod
+    cdef ScamperHostOPT from_ptr(cscamper_host.scamper_host_rr_opt_t *ptr):
+        cdef ScamperHostOPT opt
+        opt = ScamperHostOPT.__new__(ScamperHostOPT)
+        if ptr != NULL:
+            opt._c = cscamper_host.scamper_host_rr_opt_use(ptr)
+            opt._elemc = cscamper_host.scamper_host_rr_opt_elemc_get(ptr)
+        return opt
+
+    def __iter__(self):
+        self._i = 0
+        return self
+
+    def __next__(self):
+        while self._i < self._elemc:
+            elem = cscamper_host.scamper_host_rr_opt_elem_get(self._c, self._i)
+            self._i += 1
+            if elem != NULL:
+                return ScamperHostOPTElem.from_ptr(elem)
+        raise StopIteration
+
+    @property
+    def elemc(self):
+        """
+        get method to obtain the number of elements in this OPT record.
+
+        :returns: the number of elements
+        :rtype: int
+        """
+        if self._c == NULL:
+            return 0
+        return cscamper_host.scamper_host_rr_opt_elemc_get(self._c)
+
+    def elem(self, i):
+        """
+        get method to obtain a specific element from this OPT record.
+
+        :param int i: The element of interest
+        :returns: the element
+        :rtype: ScamperHostOPTElem
+        """
+        if self._c == NULL:
+            return None
+        elem = cscamper_host.scamper_host_rr_opt_elem_get(self._c, i)
+        if elem == NULL:
+            return None
+        return ScamperHostOPTElem.from_ptr(elem)
 
 cdef class ScamperHostRR:
     """
@@ -5981,6 +6180,60 @@ cdef class ScamperHostRR:
         txt = cscamper_host.scamper_host_rr_txt_get(self._c)
         return ScamperHostTXT.from_ptr(txt)
 
+    @property
+    def opt(self):
+        """
+        get method to obtain an object that contains the OPT record.
+
+        :returns: the OPT record
+        :rtype: ScamperHostOPT
+        """
+        opt = cscamper_host.scamper_host_rr_opt_get(self._c)
+        return ScamperHostOPT.from_ptr(opt)
+
+    @property
+    def udpsize(self):
+        """
+        get method to obtain the UDP payload size reported in the
+        OPT record.
+
+        :returns: the reported UDP buffer size
+        :rtype: int
+        """
+        if cscamper_host.scamper_host_rr_opt_get(self._c) == NULL:
+            return None
+        return cscamper_host.scamper_host_rr_class_get(self._c)
+
+    @property
+    def edns_version(self):
+        """
+        get method to obtain the EDNS version reported in the
+        OPT record.
+
+        :returns: the reported EDNS version
+        :rtype: int
+        """
+        if cscamper_host.scamper_host_rr_opt_get(self._c) == NULL:
+            return None
+        ttl = cscamper_host.scamper_host_rr_ttl_get(self._c)
+        return ((ttl >> 16) & 0xFF)
+
+    @property
+    def edns_do(self):
+        """
+        get method to obtain the value of the EDNS DO flag reported in the
+        OPT record.
+
+        :returns: the reported EDNS DO flag
+        :rtype: bool
+        """
+        if cscamper_host.scamper_host_rr_opt_get(self._c) == NULL:
+            return None
+        ttl = cscamper_host.scamper_host_rr_ttl_get(self._c)
+        if ((ttl >> 15) & 0x1):
+            return True
+        return False
+
 class _ScamperHostRRIterator:
     """
     The :class:`_ScamperHostRRIterator` class provides a convenient
@@ -6027,6 +6280,8 @@ class _ScamperHostRRIterator:
                     self._rrtypes[6] = 1
                 elif rrtl == 'txt':
                     self._rrtypes[16] = 1
+                elif rrtl == 'opt':
+                    self._rrtypes[41] = 1
                 else:
                     raise ValueError(f"cannot filter {rrtype}")
 
@@ -6115,14 +6370,64 @@ cdef class ScamperHostQuery:
         return rx - tx
 
     @property
-    def rcode(self):
+    def rcode_num(self):
         """
-        get method that returns the rcode of the response
+        get method that returns the rcode of the response, as a number
 
         :returns: the rcode
         :rtype: int
         """
         return cscamper_host.scamper_host_query_rcode_get(self._c)
+
+    @property
+    def rcode(self):
+        """
+        get method that returns the rcode of the response, as a string
+
+        :returns: the rcode
+        :rtype: string
+        """
+        cdef char buf[128]
+        v = cscamper_host.scamper_host_query_rcode_get(self._c)
+        cscamper_host.scamper_host_rcode_tostr(v, buf, sizeof(buf))
+        return buf.decode('UTF-8', 'strict')
+
+    @property
+    def extended_rcode_num(self):
+        """
+        get method that returns an extended rcode from the response.
+        if the response does not include an extended rcode, then this
+        will be the same as calling rcode_num.
+
+        :returns: the extended rcode
+        :rtype: int
+        """
+        rcode = cscamper_host.scamper_host_query_rcode_get(self._c)
+        rr = cscamper_host.scamper_host_query_ar_opt_get(self._c)
+        if rr == NULL:
+            return rcode
+        ttl = cscamper_host.scamper_host_rr_ttl_get(rr)
+        return ((ttl >> (24-4)) | rcode)
+
+    @property
+    def extended_rcode(self):
+        """
+        get method that returns an extended rcode from the response.
+        if the response does not include an extended rcode, then this
+        will be the same as calling rcode.
+
+        :returns: the extended rcode
+        :rtype: int
+        """
+        cdef char buf[128]
+        cdef uint16_t v
+        v = cscamper_host.scamper_host_query_rcode_get(self._c)
+        rr = cscamper_host.scamper_host_query_ar_opt_get(self._c)
+        if rr != NULL:
+            ttl = cscamper_host.scamper_host_rr_ttl_get(rr)
+            v = ((ttl >> (24-4)) | v)
+        cscamper_host.scamper_host_rcode_tostr(v, buf, sizeof(buf))
+        return buf.decode('UTF-8', 'strict')
 
     @property
     def flags(self):
@@ -6206,6 +6511,52 @@ cdef class ScamperHostQuery:
         """
         c = cscamper_host.scamper_host_query_ar_get(self._c, i)
         return ScamperHostRR.from_ptr(c)
+
+    @property
+    def udpsize(self):
+        """
+        get method to obtain the UDP payload size reported in the
+        OPT record found in the AR section of the response, if any.
+
+        :returns: the reported UDP buffer size
+        :rtype: int
+        """
+        rr = cscamper_host.scamper_host_query_ar_opt_get(self._c)
+        if rr == NULL:
+            return None
+        return cscamper_host.scamper_host_rr_class_get(rr)
+
+    @property
+    def edns_version(self):
+        """
+        get method to obtain the EDNS version reported in the
+        OPT record found in the AR section of the response, if any.
+
+        :returns: the reported EDNS version
+        :rtype: int
+        """
+        rr = cscamper_host.scamper_host_query_ar_opt_get(self._c)
+        if rr == NULL:
+            return None
+        ttl = cscamper_host.scamper_host_rr_ttl_get(rr)
+        return ((ttl >> 16) & 0xFF)
+
+    @property
+    def edns_do(self):
+        """
+        get method to obtain the value of the EDNS DO flag reported in the
+        OPT record found in the AR section of the response, if any.
+
+        :returns: the reported EDNS DO flag
+        :rtype: bool
+        """
+        rr = cscamper_host.scamper_host_query_ar_opt_get(self._c)
+        if rr == NULL:
+            return None
+        ttl = cscamper_host.scamper_host_rr_ttl_get(rr)
+        if ((ttl >> 15) & 0x1):
+            return True
+        return False
 
 cdef class ScamperHost:
     """
@@ -6316,6 +6667,20 @@ cdef class ScamperHost:
         return datetime.datetime(t[0], t[1], t[2], t[3], t[4], t[5], c.tv_usec,
                                  tzinfo=datetime.timezone.utc)
 
+    def to_json(self):
+        """
+        get method to obtain a JSON rendering of this DNS measurement.
+
+        :returns: json representation
+        :rtype: str
+        """
+        c = cscamper_host.scamper_host_tojson(self._c, NULL);
+        if c == NULL:
+            return None
+        out = c.decode('UTF-8', 'strict')
+        free(c);
+        return out;
+
     @property
     def qtype_num(self):
         """
@@ -6364,16 +6729,59 @@ cdef class ScamperHost:
         return qname.decode('UTF-8', 'strict')
 
     @property
+    def rcode_num(self):
+        """
+        get method that returns the rcode from the first query with a
+        response, as a number
+
+        :returns: the rcode
+        :rtype: int
+        """
+        if self._q is None:
+            return None
+        return self._q.rcode_num
+
+    @property
     def rcode(self):
         """
         get method to obtain the rcode from the first query with a response
 
         :returns: the rcode
-        :type: int
+        :rtype: string
         """
         if self._q is None:
             return None
         return self._q.rcode
+
+    @property
+    def extended_rcode_num(self):
+        """
+        get method that returns an extended rcode from the first query
+        with a response, as a number.
+        if the response does not include an extended rcode, then this
+        will be the same as calling rcode_num.
+
+        :returns: the extended rcode
+        :rtype: int
+        """
+        if self._q is None:
+            return None
+        return self._q.extended_rcode_num
+
+    @property
+    def extended_rcode(self):
+        """
+        get method that returns an extended rcode from the first query
+        with a response.
+        if the response does not include an extended rcode, then this
+        will be the same as calling rcode.
+
+        :returns: the extended rcode
+        :rtype: string
+        """
+        if self._q is None:
+            return None
+        return self._q.extended_rcode
 
     @property
     def tx(self):
@@ -6573,6 +6981,48 @@ cdef class ScamperHost:
             if rec.txt is not None:
                 txts.append(rec)
         return txts
+
+    @property
+    def udpsize(self):
+        """
+        get method to obtain the UDP payload size reported in the
+        OPT record found in the AR section of the first query with a
+        response, if any.
+
+        :returns: the reported UDP buffer size
+        :rtype: int
+        """
+        if self._q is None:
+            return None
+        return self._q.udpsize
+
+    @property
+    def edns_version(self):
+        """
+        get method to obtain the EDNS version reported in the
+        OPT record found in the AR section of the first query with a
+        response, if any.
+
+        :returns: the reported EDNS version
+        :rtype: int
+        """
+        if self._q is None:
+            return None
+        return self._q.edns_version
+
+    @property
+    def edns_do(self):
+        """
+        get method to obtain the value of the EDNS DO flag reported in the
+        OPT record found in the AR section of the first query with a
+        response, if any.
+
+        :returns: the reported EDNS DO flag
+        :rtype: bool
+        """
+        if self._q is None:
+            return None
+        return self._q.edns_do
 
 ####
 #### Scamper HTTP Object
@@ -6817,7 +7267,7 @@ cdef class ScamperHttp:
         get method to obtain the URL for this measurement.
 
         :returns: the URL
-        :rtype: str
+        :rtype: string
         """
         cdef size_t s
         cdef char *buf
@@ -6880,7 +7330,7 @@ cdef class ScamperHttp:
         a single string.
 
         :returns: the response
-        :rtype: str
+        :rtype: string
         """
         cdef size_t s
         cdef char *buf
@@ -6905,7 +7355,7 @@ cdef class ScamperHttp:
         a single string.
 
         :returns: the response
-        :rtype: str
+        :rtype: string
         """
         cdef size_t s
         cdef char *buf
@@ -6984,7 +7434,7 @@ cdef class ScamperHttp:
 
         :param string name: the name of the response header to fetch
         :returns: the value for the header, if present.
-        :rtype: str
+        :rtype: string
         """
         cdef char *value
         if name is None or not isinstance(name, str):
@@ -7010,7 +7460,7 @@ cdef class ScamperHttp:
 
         :param string name: the name of the transmit header to fetch
         :returns: the value for the header, if present.
-        :rtype: str
+        :rtype: string
         """
         cdef char *value
         if name is None or not isinstance(name, str):
@@ -7100,6 +7550,20 @@ cdef class ScamperUdpprobeReply:
         if s == 0 or buf == NULL:
             return None
         return buf[:s]
+
+    @property
+    def ifname(self):
+        """
+        get method to obtain the name of the interface that received the
+        reply, if recorded.
+
+        :return: the name of the interface.
+        :rtype: string
+        """
+        c = cscamper_udpprobe.scamper_udpprobe_reply_ifname_get(self._c)
+        if c == NULL:
+            return None
+        return c.decode('UTF-8', 'strict')
 
 cdef class ScamperUdpprobeProbe:
     """
@@ -7274,6 +7738,20 @@ cdef class ScamperUdpprobe:
         return datetime.datetime(t[0], t[1], t[2], t[3], t[4], t[5], c.tv_usec,
                                  tzinfo=datetime.timezone.utc)
 
+    def to_json(self):
+        """
+        get method to obtain a JSON rendering of this UDP probe measurement.
+
+        :returns: json representation
+        :rtype: str
+        """
+        c = cscamper_udpprobe.scamper_udpprobe_tojson(self._c, NULL);
+        if c == NULL:
+            return None
+        out = c.decode('UTF-8', 'strict')
+        free(c);
+        return out;
+
     @property
     def src(self):
         """
@@ -7443,6 +7921,12 @@ cdef class ScamperFile:
         if o is None:
             raise StopIteration
         return o
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        pass
 
     @property
     def filetype(self):
@@ -7904,6 +8388,12 @@ cdef class ScamperCtrl:
         # free the control structure
         if self._c != NULL:
             clibscamperctrl.scamper_ctrl_free(self._c)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        pass
 
     def add_unix(self, path):
         """
@@ -8617,11 +9107,11 @@ cdef class ScamperCtrl:
 
     def do_dns(self, qname, server=None, qclass=None, qtype=None,
                attempts=None, rd=None, wait_timeout=None, tcp=None,
-               userid=None, inst=None, sync=False):
+               nsid=None, userid=None, inst=None, sync=False):
         """
         do_dns(qname, server=None, qclass=None, qtype=None,
                attempts=None, rd=None, wait_timeout=None, tcp=None,
-               userid=None, inst=None, sync=False)
+               nsid=None, userid=None, inst=None, sync=False)
         conduct a DNS measurement guided by the assembled parameters.
         Only the qname is required; scamper will use built-in defaults
         for the other optional parameters if they are not provided.
@@ -8638,6 +9128,7 @@ cdef class ScamperCtrl:
         :param int attempts: The number of queries to make before giving up
         :param timedelta wait_timeout: The length of time to wait for a response
         :param bool tcp: Use TCP instead of UDP for queries
+        :param bool nsid: include EDNS name-server ID request in queries
         :param int userid: The userid value to tag with the DNS measurement
         :param bool rd: The recursion desired value to use
         :param bool sync: operate the measurement synchronously
@@ -8671,6 +9162,8 @@ cdef class ScamperCtrl:
             args.append("-r")
         if tcp is not None and tcp:
             args.append("-T")
+        if nsid is not None and nsid:
+            args.append("-O nsid")
         args.append(f"{qname}")
 
         cmd = ' '.join(args)
@@ -9276,11 +9769,11 @@ cdef class ScamperCtrl:
             raise RuntimeError("could not schedule command")
         return self._task(c, (<ScamperInst>inst)._c, sync)
 
-    def do_udpprobe(self, dst, dport, payload, attempts=None,
+    def do_udpprobe(self, dst, dport, payload, attempts=None, src=None,
                     stop_count=None, inst=None, userid=None, sync=False):
         """
-        do_udpprobe(dst, dport, payload, attempts=None, stop_count=None,\
-                    inst=None, userid=None, sync=False)
+        do_udpprobe(dst, dport, payload, attempts=None, src=None,\
+                    stop_count=None, inst=None, userid=None, sync=False)
         conduct a UDP probe specified destination, port, and payload.
         If this method could not queue the measurement,
         it will raise a :py:exc:`RuntimeError` exception.
@@ -9289,6 +9782,7 @@ cdef class ScamperCtrl:
         :param int dport: the destination port to send the probe to
         :param bytes payload: the payload to include in the probe
         :param int attempts: the number of probes to send
+        :param string src: The source IP address to use in probes.
         :param int stop_count: stop after receiving replies to this many probes
         :param ScamperInst inst: The specific instance to issue command over
         :param int userid: the userid value to tag with this measurement
@@ -9313,6 +9807,8 @@ cdef class ScamperCtrl:
             args.append(f"-c {attempts}")
         if stop_count is not None:
             args.append(f"-o {stop_count}")
+        if src is not None:
+            args.append(f"-S {src}")
         if userid is not None:
             args.append(f"-U {userid}")
         args.append(f"{dst}")

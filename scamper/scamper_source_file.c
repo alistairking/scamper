@@ -1,12 +1,12 @@
 /*
  * scamper_source_file.c
  *
- * $Id: scamper_source_file.c,v 1.33 2024/06/10 03:28:08 mjl Exp $
+ * $Id: scamper_source_file.c,v 1.36 2024/12/31 04:17:31 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2014      The Regents of the University of California
- * Copyright (C) 2017-2023 Matthew Luckie
+ * Copyright (C) 2017-2024 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -50,12 +50,8 @@ typedef struct scamper_source_file
   char               *filename;
   char               *command;
   size_t              command_len;
-  int                 cycles;
-  int                 autoreload;
 
   /* run-time state */
-  int                 reload;
-  time_t              mtime;
   scamper_fd_t       *fdn;
   int                 fd;
   scamper_linepoll_t *lp;
@@ -78,9 +74,9 @@ static void ssf_free(scamper_source_file_t *ssf)
   if(ssf->command != NULL)
     free(ssf->command);
 
-  if(ssf->fdn != NULL)
+  if(ssf->fdn != NULL) /* reading from stdin */
     scamper_fd_free(ssf->fdn);
-  else if(ssf->fd != -1)
+  else if(ssf->fd != -1) /* reading from file */
     close(ssf->fd);
 
   free(ssf);
@@ -189,8 +185,6 @@ static void ssf_read_stdin(int fd, void *param)
   uint8_t buf[1024];
   ssize_t rc;
 
-  assert(ssf->cycles != 0);
-
   if((rc = read(fd, buf, sizeof(buf))) > 0)
     {
       /* got data to read. parse the buffer for addresses, one per line. */
@@ -207,7 +201,7 @@ static void ssf_read_stdin(int fd, void *param)
     {
       /* got EOF; this is the last cycle over an input file */
       scamper_linepoll_flush(ssf->lp);
-      ssf->cycles = 0;
+      ssf->fd = -1; /* do not close */
       scamper_fd_read_pause(ssf->fdn);
       if(scamper_source_isfinished(source) != 0)
 	scamper_source_finished(source);
@@ -226,11 +220,11 @@ static void ssf_read_stdin(int fd, void *param)
 
  err:
   /*
-   * an error occurred.  the simplest way to cause the source to disappear
-   * gracefully is to set the cycles parameter to zero, which will signal
-   * to the sources code that there are no more commands to come
+   * an error occurred.  the simplest way to cause the source to
+   * disappear gracefully is to set the fd to -1, which will signal to
+   * the sources code that there are no more commands to come
    */
-  ssf->cycles = 0;
+  ssf->fd = -1;
   return;
 }
 #endif
@@ -240,75 +234,19 @@ static void ssf_read_file(scamper_source_file_t *ssf)
   scamper_source_t *source = ssf->source;
   uint8_t buf[1024];
   ssize_t rc;
-  time_t mtime;
-  int reload = 0;
-  int newfd;
-
-  assert(ssf->cycles != 0);
 
   if((rc = read(ssf->fd, buf, sizeof(buf))) > 0)
     {
       /* got data to read. parse the buffer for addresses, one per line. */
       scamper_linepoll_handle(ssf->lp, buf, (size_t)rc);
     }
-  else if(rc == 0 && ssf->cycles == 1)
-    {
-      /* got EOF; this is the last cycle over an input file */
-      scamper_linepoll_flush(ssf->lp);
-      ssf->cycles = 0;
-      if(scamper_source_isfinished(source) != 0)
-	scamper_source_finished(source);
-    }
   else if(rc == 0)
     {
+      /* got EOF */
       scamper_linepoll_flush(ssf->lp);
-
-      /* a cycle value of -1 means cycle indefinitely */
-      if(ssf->cycles != -1)
-	ssf->cycles--;
-
-      /* decide if we should reload the file at this point */
-      if(ssf->reload == 1)
-	{
-	  /* stat the file so we have an mtime value for later */
-	  if(stat_mtime(ssf->filename, &mtime) == 0)
-	    reload = 1;
-	}
-      else if(ssf->autoreload == 1)
-	{
-	  /*
-	   * reload is conditional on being able to stat the file, and the
-	   * mtime being different to whatever our record of the mtime is
-	   */
-	  if(stat_mtime(ssf->filename, &mtime) == 0 && ssf->mtime != mtime)
-	    reload = 1;
-	}
-
-      /* we have to reload the file (if we can open it) */
-      if(reload == 1 && (newfd = ssf_open(ssf->filename)) != -1)
-	{
-	  /* close the existing file */
-	  close(ssf->fd);
-
-	  /* update file details; ensure reload is reset to zero */
-	  ssf->fd = newfd;
-	  ssf->mtime = mtime;
-	  ssf->reload = 0;
-	}
-      else
-	{
-	  /* rewind the current file position */
-	  if(lseek(ssf->fd, 0, SEEK_SET) == -1)
-	    {
-	      goto err;
-	    }
-	}
-
-      /* create a new cycle record, etc */
-      if(scamper_source_cycle(source) != 0)
-	{
-	  goto err;
-	}
+      close(ssf->fd); ssf->fd = -1;
+      if(scamper_source_isfinished(source) != 0)
+	scamper_source_finished(source);
     }
   else
     {
@@ -324,11 +262,12 @@ static void ssf_read_file(scamper_source_file_t *ssf)
 
  err:
   /*
-   * an error occurred.  the simplest way to cause the source to disappear
-   * gracefully is to set the cycles parameter to zero, which will signal
-   * to the sources code that there are no more commands to come
+   * an error occurred.  the simplest way to cause the source to
+   * disappear gracefully is to set the fd to -1, which will signal to
+   * the sources code that there are no more commands to come
    */
-  ssf->cycles = 0;
+  close(ssf->fd);
+  ssf->fd = -1;
   return;
 }
 
@@ -345,20 +284,19 @@ static char *ssf_tostr(void *data, char *str, size_t len)
   if(len < 1)
     return NULL;
 
-  string_concat(str, len, &off, "type file ");
+  string_concat(str, len, &off, "type file");
 
   if(ssf->fdn != NULL)
-    string_concat(str, len, &off, "fd %d ", scamper_fd_fd_get(ssf->fdn));
+    string_concaf(str, len, &off, " fd %d", scamper_fd_fd_get(ssf->fdn));
   else
-    string_concat(str, len, &off, "fd %d ", ssf->fd);
+    string_concaf(str, len, &off, " fd %d", ssf->fd);
 
   if(ssf->filename != NULL)
-    string_concat(str, len, &off, "file \"%s\" ", ssf->filename);
+    string_concat3(str, len, &off, " file \"", ssf->filename, "\"");
 
   if(ssf->command != NULL)
-    string_concat(str, len, &off, "cmd \"%s\" ", ssf->command);
+    string_concat3(str, len, &off, " cmd \"", ssf->command, "\"");
 
-  string_concat(str, len, &off, "cycles %d", ssf->cycles);
   return str;
 }
 
@@ -371,13 +309,14 @@ static int ssf_take(void *data)
 {
   scamper_source_file_t *ssf = (scamper_source_file_t *)data;
 
-  if(scamper_source_getcyclecount(ssf->source) < 2 &&
-     scamper_source_getcommandcount(ssf->source) < scamper_option_pps_get() &&
-     ssf->cycles != 0)
+  if(ssf->fd == -1)
+    return 0;
+
+  if(scamper_source_getcommandcount(ssf->source) < scamper_option_pps_get())
     {
       if(ssf->fdn != NULL)
 	scamper_fd_read_unpause(ssf->fdn);
-      else if(ssf->fd != -1)
+      else
 	ssf_read_file(ssf);
     }
 
@@ -394,31 +333,14 @@ static void ssf_freedata(void *data)
  * ssf_isfinished
  *
  * advise the caller if the source may be supplying more commands or not.
- * in the address-list-file case, more addresses will be supplied until
- * the cycles count reaches zero.
+ * this is true so long as the file descriptor is not -1.
  */
 static int ssf_isfinished(void *data)
 {
   scamper_source_file_t *ssf = (scamper_source_file_t *)data;
-  if(ssf->cycles != 0)
+  if(ssf->fd != -1)
     return 0;
   return 1;
-}
-
-int scamper_source_file_getcycles(const scamper_source_t *source)
-{
-  scamper_source_file_t *ssf;
-  if((ssf = (scamper_source_file_t *)scamper_source_getdata(source)) != NULL)
-    return ssf->cycles;
-  return -1;
-}
-
-int scamper_source_file_getautoreload(const scamper_source_t *source)
-{
-  scamper_source_file_t *ssf;
-  if((ssf = (scamper_source_file_t *)scamper_source_getdata(source)) != NULL)
-    return ssf->autoreload;
-  return -1;
 }
 
 const char *scamper_source_file_getfilename(const scamper_source_t *source)
@@ -429,30 +351,9 @@ const char *scamper_source_file_getfilename(const scamper_source_t *source)
   return NULL;
 }
 
-int scamper_source_file_update(scamper_source_t *source,
-			       const int *autoreload, const int *cycles)
-{
-  scamper_source_file_t *ssf;
-
-  if(scamper_source_gettype(source) != SCAMPER_SOURCE_TYPE_FILE ||
-     (ssf = (scamper_source_file_t *)scamper_source_getdata(source)) == NULL)
-    {
-      return -1;
-    }
-
-  if(autoreload != NULL)
-    ssf->autoreload = *autoreload;
-
-  if(cycles != NULL)
-    ssf->cycles = *cycles;
-
-  return 0;
-}
-
 scamper_source_t *scamper_source_file_alloc(scamper_source_params_t *ssp,
 					    const char *filename,
-					    const char *command,
-					    int cycles, int autoreload)
+					    const char *command)
 {
   scamper_source_file_t *ssf = NULL;
   int fd = -1;
@@ -467,8 +368,6 @@ scamper_source_t *scamper_source_file_alloc(scamper_source_params_t *ssp,
   ssf->fd = -1;
   if((ssf->filename = strdup(filename)) == NULL)
     goto err;
-  ssf->cycles     = cycles;
-  ssf->autoreload = autoreload;
 
   /* addresses are matched with a command to execute */
   if(command != NULL)
@@ -498,9 +397,9 @@ scamper_source_t *scamper_source_file_alloc(scamper_source_params_t *ssp,
     {
       if((fd = ssf_open(filename)) == -1)
 	goto err;
-      ssf->fd = fd;
     }
 
+  ssf->fd = fd;
   if((ssf->lp = scamper_linepoll_alloc(ssf_read_line, ssf)) == NULL)
     goto err;
 

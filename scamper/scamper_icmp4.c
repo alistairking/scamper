@@ -1,12 +1,12 @@
 /*
  * scamper_icmp4.c
  *
- * $Id: scamper_icmp4.c,v 1.143 2024/08/13 05:14:13 mjl Exp $
+ * $Id: scamper_icmp4.c,v 1.145 2024/11/28 08:57:30 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2013-2014 The Regents of the University of California
- * Copyright (C) 2020-2023 Matthew Luckie
+ * Copyright (C) 2020-2024 Matthew Luckie
  * Copyright (C) 2023      The Regents of the University of California
  * Author: Matthew Luckie
  *
@@ -525,15 +525,13 @@ static void icmp4_recv_ip(SOCKET fd,
   const struct ip *ip = (const struct ip *)buf;
   const struct icmp *icmp = (const struct icmp *)(buf + iphl);
 
-  /*
-   * to start with, get a timestamp from the kernel if we can, otherwise
-   * just get one from user-space.
-   */
-#if defined(SO_TIMESTAMP)
+#ifndef _WIN32 /* windows does not have msghdr struct */
   struct cmsghdr *cmsg;
 
-#ifdef IP_PKTINFO
+#if defined(IP_PKTINFO)
   struct in_pktinfo *pi;
+#elif defined(IP_RECVIF)
+  struct sockaddr_dl *sdl;
 #endif
 
   /*
@@ -560,13 +558,21 @@ static void icmp4_recv_ip(SOCKET fd,
 	      ir->ir_flags |= SCAMPER_ICMP_RESP_FLAG_IFINDEX;
 	      goto next;
 	    }
+#elif defined(IP_RECVIF)
+	  if(cmsg->cmsg_level == IPPROTO_IP && cmsg->cmsg_type == IP_RECVIF)
+	    {
+	      sdl = (struct sockaddr_dl *)CMSG_DATA(cmsg);
+	      ir->ir_ifindex = sdl->sdl_index;
+	      ir->ir_flags |= SCAMPER_ICMP_RESP_FLAG_IFINDEX;
+	      goto next;
+	    }
 #endif
 
 	next:
 	  cmsg = (struct cmsghdr *)CMSG_NXTHDR(msg, cmsg);
 	}
     }
-#endif
+#endif /* not _WIN32 */
 
 #if defined(SIOCGSTAMP)
   if((ir->ir_flags & SCAMPER_ICMP_RESP_FLAG_KERNRX) == 0)
@@ -764,7 +770,7 @@ int scamper_icmp4_recv(SOCKET fd, scamper_icmp_resp_t *resp)
 
 #ifndef _WIN32 /* windows does not have msghdr or iovec */
   struct sockaddr_in   from;
-  uint8_t              ctrlbuf[256];
+  uint8_t              ctrlbuf[512];
   struct msghdr        msg;
   struct iovec         iov;
 
@@ -1180,7 +1186,7 @@ SOCKET scamper_icmp4_open(const void *addr)
 #endif
 
   /*
-   * ask the icmp6 socket to supply the interface on which it receives
+   * ask the icmp4 socket to supply the interface on which it receives
    * a packet.
    */
 #if defined(IP_RECVPKTINFO)
@@ -1189,6 +1195,9 @@ SOCKET scamper_icmp4_open(const void *addr)
 #elif defined(IP_PKTINFO)
   if(setsockopt_int(fd, IPPROTO_IP, IP_PKTINFO, 1) != 0)
     printerror(__func__, "could not set IP_PKTINFO");
+#elif defined(IP_RECVIF)
+  if(setsockopt_int(fd, IPPROTO_IP, IP_RECVIF, 1) != 0)
+    printerror(__func__, "could not set IP_RECVIF");
 #endif
 
   /*

@@ -1,13 +1,13 @@
 /*
  * scamper_probe.c
  *
- * $Id: scamper_probe.c,v 1.87 2024/08/13 05:14:13 mjl Exp $
+ * $Id: scamper_probe.c,v 1.88 2024/12/30 03:16:57 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2012      Matthew Luckie
  * Copyright (C) 2013      The Regents of the University of California
- * Copyright (C) 2020-2023 Matthew Luckie
+ * Copyright (C) 2020-2024 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -135,11 +135,11 @@ static char *tcp_flags(char *buf, size_t len, scamper_probe_t *probe)
 static char *tcp_pos(char *buf, size_t len, scamper_probe_t *probe)
 {
   size_t off = 0;
-  string_concat(buf, len, &off, "%u", probe->pr_tcp_seq);
+  string_concaf(buf, len, &off, "%u", probe->pr_tcp_seq);
   if(probe->pr_tcp_flags & TH_ACK)
-    string_concat(buf, len, &off, ":%u", probe->pr_tcp_ack);
+    string_concaf(buf, len, &off, ":%u", probe->pr_tcp_ack);
   if(probe->pr_len > 0)
-    string_concat(buf, len, &off, "(%u)", probe->pr_len);
+    string_concaf(buf, len, &off, "(%u)", probe->pr_len);
   return buf;
 }
 

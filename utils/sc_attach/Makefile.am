@@ -6,10 +6,10 @@ bin_PROGRAMS = sc_attach
 
 sc_attach_SOURCES = \
 	sc_attach.c \
-	../../utils.c \
-	../../mjl_list.c \
-	../../scamper/scamper_writebuf.c \
-	../../scamper/scamper_linepoll.c
+	$(top_srcdir)/utils.c \
+	$(top_srcdir)/mjl_list.c \
+	$(top_srcdir)/scamper/scamper_writebuf.c \
+	$(top_srcdir)/scamper/scamper_linepoll.c
 
 sc_attach_LDADD = @WINSOCK_LIBS@
 

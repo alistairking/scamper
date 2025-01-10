@@ -1,7 +1,7 @@
 /*
  * scamper
  *
- * $Id: scamper.c,v 1.346 2024/08/13 06:04:22 mjl Exp $
+ * $Id: scamper.c,v 1.361 2024/12/30 03:59:35 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -10,8 +10,8 @@
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2012      Matthew Luckie
  * Copyright (C) 2014      The Regents of the University of California
- * Copyright (C) 2014-2023 Matthew Luckie
- * Copyright (C) 2023      The Regents of the University of California
+ * Copyright (C) 2014-2024 Matthew Luckie
+ * Copyright (C) 2023-2024 The Regents of the University of California
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -108,11 +108,16 @@
 
 #include "utils.h"
 
+#ifdef HAVE_OPENSSL
+#include "utils_tls.h"
+#endif
+
 #define OPT_PPS             0x00000001 /* p: */
 #define OPT_OUTFILE         0x00000002 /* o: */
 #define OPT_OPTION          0x00000004 /* O: */
 #define OPT_PIDFILE         0x00000010 /* e: */
 #define OPT_VERSION         0x00000020 /* v: */
+#define OPT_HOLDTIME        0x00000100 /* H: */
 #define OPT_DAEMON          0x00000200 /* D: */
 #define OPT_IP              0x00000400 /* i: */
 #define OPT_MONITORNAME     0x00002000 /* M: */
@@ -155,6 +160,12 @@
 #define FLAG_DYNFILTER       0x00004000
 #endif
 
+#define SCAMPER_OPTION_HOLDTIME_MIN  0
+#define SCAMPER_OPTION_HOLDTIME_DEF  5
+#define SCAMPER_OPTION_HOLDTIME_MAX  10
+
+#define SCAMPER_OPTION_COMMAND_DEF   "trace"
+
 /*
  * parameters configurable by the command line:
  *
@@ -162,6 +173,7 @@
  * command:     default command to use with scamper
  * pps:         how many probe packets to send per second
  * window:      maximum number of concurrent tasks to actively probe
+ * holdtime:    how long to wait after a task finishes before expiring sigs
  * outfile:     where to send results by default
  * outtype:     format to use when writing results to outfile
  * intype:      format of input file
@@ -186,6 +198,7 @@ static uint32_t flags      = 0;
 static char  *command      = NULL;
 static int    pps          = SCAMPER_OPTION_PPS_DEF;
 static int    window       = SCAMPER_OPTION_WINDOW_DEF;
+int           holdtime     = SCAMPER_OPTION_HOLDTIME_DEF;
 static char  *outfile      = "-";
 static char  *outtype      = NULL;
 static char  *intype       = NULL;
@@ -203,6 +216,10 @@ static char **arglist      = NULL;
 static int    arglist_len  = 0;
 static char  *firewall     = NULL;
 static char  *pidfile      = NULL;
+
+/* temporary tx buffer shared amongst measurements */
+uint8_t      *txbuf        = NULL;
+size_t        txbuf_len    = 0;
 
 #ifndef WITHOUT_DEBUGFILE
 static char  *debugfile    = NULL;
@@ -224,10 +241,15 @@ static int    wait_between   = 1000000 / SCAMPER_OPTION_PPS_DEF;
 static int    probe_window   = 250000;
 static int    exit_when_done = 1;
 
-#if !defined(DISABLE_PRIVSEP) || \
-     defined(HAVE_SIGACTION)
+#if defined(HAVE_SIGACTION)
 #define HAVE_EXIT_NOW
+#if defined(DISABLE_PRIVSEP)
 static int    exit_now = 0;
+static int    sighup_rx = 0;
+#else
+int           exit_now = 0;
+int           sighup_rx = 0;
+#endif
 #endif
 
 #ifndef DISABLE_PRIVSEP
@@ -285,8 +307,8 @@ static void usage(uint32_t opt_mask)
   fprintf(stderr,
     "usage: scamper [-?Dv] [-c command] [-p pps] [-w window]\n"
     "               [-M monitorname] [-l listname] [-L listid] [-C cycleid]\n"
-    "               [-o outfile] [-O options] [-F firewall] [-e pidfile]\n"
-    "               [-n nameserver]\n"
+    "               [-o outfile] [-O options] [-H holdtime] [-F firewall]\n"
+    "               [-e pidfile] [-n nameserver]\n"
 #ifndef WITHOUT_DEBUGFILE
     "               [-d debugfile]\n"
 #endif
@@ -321,7 +343,7 @@ static void usage(uint32_t opt_mask)
 
 #ifdef HAVE_DAEMON
   if((opt_mask & OPT_DAEMON) != 0)
-    usage_str('D', "start as a daemon listening for commands on a port");
+    usage_str('D', "run as a daemon");
 #endif
 
   if((opt_mask & OPT_PIDFILE) != 0)
@@ -332,6 +354,9 @@ static void usage(uint32_t opt_mask)
 
   if((opt_mask & OPT_FIREWALL) != 0)
     usage_str('F', "use the system firewall to install rules as necessary");
+
+  if((opt_mask & OPT_HOLDTIME) != 0)
+    usage_str('H', "how long to hold task signature for after completion");
 
   if((opt_mask & OPT_IP) != 0)
     usage_str('i', "list of IP addresses provided on the command line");
@@ -381,7 +406,7 @@ static void usage(uint32_t opt_mask)
       usage_line("client-certfile=file: use cert in file for remote auth");
       usage_line("client-privfile=file: use privkey in file for remote auth");
 #endif
-#ifndef _WIN32 /* windows only has select, so not using it is not an option */
+#ifndef DISABLE_SCAMPER_SELECT
       usage_line("select: use select(2)");
 #endif
 #ifdef HAVE_KQUEUE
@@ -602,17 +627,16 @@ static int check_options(int argc, char *argv[])
 #endif
   };
   int   i;
-  long  lo_w = window, lo_p = pps;
+  long  lo_w = window, lo_p = pps, lo;
   char  opts[64];
   char *opt_cycleid = NULL, *opt_listid = NULL, *opt_listname = NULL;
   char *opt_ctrl_inet = NULL, *opt_ctrl_unix = NULL, *opt_monitorname = NULL;
   char *opt_pps = NULL, *opt_command = NULL, *opt_window = NULL;
   char *opt_firewall = NULL, *opt_pidfile = NULL, *opt_ctrl_remote = NULL;
-  char *opt_nameserver = NULL;
+  char *opt_holdtime = NULL, *opt_nameserver = NULL;
 
 #ifdef HAVE_STRUCT_TPACKET_REQ3
   char *opt_ring_blocks = NULL, *opt_ring_block_size = NULL;
-  long  lo;
 #endif
 
 #ifndef WITHOUT_DEBUGFILE
@@ -638,7 +662,8 @@ static int check_options(int argc, char *argv[])
     }
 
   off = 0;
-  string_concat(opts, sizeof(opts), &off, "c:C:e:fF:iIl:L:M:n:o:O:p:P:R:vw:?");
+  string_concat(opts, sizeof(opts), &off,
+		"c:C:e:fF:H:iIl:L:M:n:o:O:p:P:R:vw:?");
 #ifndef WITHOUT_DEBUGFILE
   string_concat(opts, sizeof(opts), &off, "d:");
 #endif
@@ -688,6 +713,11 @@ static int check_options(int argc, char *argv[])
 	case 'F':
 	  options |= OPT_FIREWALL;
 	  opt_firewall = optarg;
+	  break;
+
+	case 'H':
+	  options |= OPT_HOLDTIME;
+	  opt_holdtime = optarg;
 	  break;
 
 	case 'i':
@@ -761,7 +791,7 @@ static int check_options(int argc, char *argv[])
 	    flags |= FLAG_NOTLS_REMOTE;
 	  else if(strcasecmp(optarg, "notls") == 0)
 	    flags |= FLAG_NOTLS;
-#ifndef _WIN32 /* windows only has select, so not using it is not an option */
+#ifndef DISABLE_SCAMPER_SELECT
 	  else if(strcasecmp(optarg, "select") == 0)
 	    flags |= FLAG_SELECT;
 #endif
@@ -909,6 +939,18 @@ static int check_options(int argc, char *argv[])
       return -1;
     }
 
+  if(options & OPT_HOLDTIME)
+    {
+      if(string_tolong(opt_holdtime, &lo) != 0 ||
+	 lo < SCAMPER_OPTION_HOLDTIME_MIN || lo > SCAMPER_OPTION_HOLDTIME_MAX)
+	{
+	  usage(OPT_HOLDTIME);
+	  fprintf(stderr, "invalid holdtime\n");
+	  return -1;
+	}
+      holdtime = (int)lo;
+    }
+
   if(options & OPT_MONITORNAME &&
      (monitorname = strdup(opt_monitorname)) == NULL)
     {
@@ -1054,11 +1096,35 @@ static int check_options(int argc, char *argv[])
     }
 
 #ifdef HAVE_DAEMON
-  if((options & OPT_DAEMON) &&
-     (options & (OPT_CTRL_INET|OPT_CTRL_UNIX|OPT_CTRL_REMOTE)) == 0)
+  if((options & OPT_DAEMON))
     {
-      usage(OPT_DAEMON | OPT_CTRL_INET | OPT_CTRL_UNIX | OPT_CTRL_REMOTE);
-      return -1;
+      /*
+       * when running in daemon mode, scamper should either make
+       * itself available for instruction (inet / unix / remote) or be
+       * writing measurement results to a file.
+       */
+      o = OPT_CTRL_INET | OPT_CTRL_UNIX | OPT_CTRL_REMOTE | OPT_OUTFILE;
+      if((options & o) == 0)
+	{
+	  usage(OPT_DAEMON | o);
+	  return -1;
+	}
+      if((options & OPT_OUTFILE) != 0)
+	{
+	  if(strcmp(outfile, "-") == 0)
+	    {
+	      usage(OPT_DAEMON | OPT_OUTFILE);
+	      fprintf(stderr, "cannot output to stdout with daemon\n");
+	      return -1;
+	    }
+	  o = OPT_CTRL_INET | OPT_CTRL_UNIX | OPT_CTRL_REMOTE;
+	  if((options & o) != 0)
+	    {
+	      usage(OPT_DAEMON | OPT_OUTFILE | (options & o));
+	      fprintf(stderr, "outfile does not make sense with options\n");
+	      return -1;
+	    }
+	}
     }
 #endif
 
@@ -1206,12 +1272,25 @@ void scamper_exitwhendone(int on)
   return;
 }
 
+int scamper_option_holdtime_get()
+{
+  return holdtime;
+}
+
+int scamper_option_holdtime_set(int h)
+{
+  if(h < SCAMPER_OPTION_HOLDTIME_MIN || h > SCAMPER_OPTION_HOLDTIME_MAX)
+    return -1;
+  holdtime = h;
+  return 0;
+}
+
 int scamper_option_pps_get()
 {
   return pps;
 }
 
-int scamper_option_pps_set(const int p)
+int scamper_option_pps_set(int p)
 {
   return ppswindow_set(p, window);
 }
@@ -1221,7 +1300,7 @@ int scamper_option_window_get()
   return window;
 }
 
-int scamper_option_window_set(const int w)
+int scamper_option_window_set(int w)
 {
   return ppswindow_set(pps, w);
 }
@@ -1291,8 +1370,10 @@ int scamper_option_pollfunc_get(void)
   return SCAMPER_OPTION_POLLFUNC_EPOLL;
 #elif defined(HAVE_POLL)
   return SCAMPER_OPTION_POLLFUNC_POLL;
-#else
+#elif !defined(DISABLE_SCAMPER_SELECT)
   return SCAMPER_OPTION_POLLFUNC_SELECT;
+#else
+  return -1;
 #endif
 }
 
@@ -1480,20 +1561,13 @@ int scamper_pidfile(void)
   return -1;
 }
 
-#ifndef DISABLE_PRIVSEP
-static void privsep_read(const int fd, void *param)
-{
-  scamper_debug(__func__, "exit now");
-  exit_now = 1;
-  return;
-}
-#endif
-
 #ifdef HAVE_SIGACTION
 static void scamper_sigaction(int sig)
 {
   if(sig == SIGINT || sig == SIGTERM)
     exit_now = 1;
+  else if(sig == SIGHUP)
+    sighup_rx = 1;
   return;
 }
 #endif
@@ -1509,7 +1583,8 @@ static SSL_CTX *scamper_ssl_ctx(void)
       goto err;
     }
   SSL_CTX_set_options(ctx,
-		      SSL_OP_NO_SSLv2 | SSL_OP_NO_SSLv3 | SSL_OP_NO_TLSv1);
+		      SSL_OP_NO_SSLv2 | SSL_OP_NO_SSLv3 |
+		      SSL_OP_NO_TLSv1 | SSL_OP_NO_TLSv1_1);
   SSL_CTX_set_verify(ctx, SSL_VERIFY_NONE, NULL);
 
   if(cafile == NULL)
@@ -1536,6 +1611,74 @@ static SSL_CTX *scamper_ssl_ctx(void)
   if(ctx != NULL) SSL_CTX_free(ctx);
   return NULL;
 }
+
+static int scamper_loadcerts(void)
+{
+#ifndef DISABLE_PRIVSEP
+  int fd = -1;
+#endif
+
+  if(remote_client_certfile == NULL)
+    return 0;
+
+  /*
+   * this is checked in options handling code -- if certfile
+   * is not NULL, then privfile will not be null
+   */
+  assert(remote_client_privfile != NULL);
+
+  /* we should already have a remote_tlx_ctx */
+  assert(remote_tls_ctx != NULL);
+
+#ifndef DISABLE_PRIVSEP
+  if(privsep_fdn != NULL)
+    {
+      fd = scamper_privsep_open_file(remote_client_certfile, O_RDONLY, 0);
+      if(fd == -1)
+	goto err;
+      if(tls_load_certchain(remote_tls_ctx, fd) != 0)
+	{
+	  printerror_msg(__func__, "could not load client cert");
+	  goto err;
+	}
+      close(fd);
+      fd = scamper_privsep_open_file(remote_client_privfile, O_RDONLY, 0);
+      if(fd == -1)
+	goto err;
+      if(tls_load_key(remote_tls_ctx, fd) != 0)
+	{
+	  printerror_msg(__func__, "could not load client key");
+	  goto err;
+	}
+      close(fd);
+      return 0;
+    }
+#endif /* !defined DISABLE_PRIVSEP */
+
+  /* load the client key materials */
+  if(SSL_CTX_use_certificate_chain_file(remote_tls_ctx,
+					remote_client_certfile) != 1)
+    {
+      printerror_ssl(__func__, "could load client cert from %s",
+		     remote_client_certfile);
+      goto err;
+    }
+  if(SSL_CTX_use_PrivateKey_file(remote_tls_ctx, remote_client_privfile,
+				 SSL_FILETYPE_PEM) != 1)
+    {
+      printerror_ssl(__func__, "could not load client privkey from %s",
+		     remote_client_privfile);
+      goto err;
+    }
+
+  return 0;
+
+ err:
+#ifndef DISABLE_PRIVSEP
+  if(fd != -1) close(fd);
+#endif
+  return -1;
+}
 #endif
 
 uint16_t scamper_sport_default(void)
@@ -1558,67 +1701,102 @@ uint16_t scamper_pid_u16(void)
  *  one  if there is no timeout value computed
  *  two  if scamper should exit because it is done.
  */
-static int scamper_timeout(struct timeval *timeout, struct timeval *nextprobe,
-			   struct timeval *lastprobe)
+static int scamper_timeout(struct timeval *timeout,
+			   const struct timeval *lastprobe)
 {
   struct timeval tv;
-  int probe = 0;
+  int set = 0;
 
 #ifdef HAVE_EXIT_NOW
   if(exit_now != 0)
-    {
-      return 2;
-    }
+    return 2;
 #endif
 
+  /*
+   * if there is something ready to be probed right now, then set the
+   * timeout to go off when it is time to send the next probe
+   */
   if(scamper_queue_readycount() > 0 ||
      ((window == 0 || scamper_queue_windowcount() < window) &&
       scamper_sources_isready() != 0))
     {
-      /*
-       * if there is something ready to be probed right now, then set the
-       * timeout to go off when it is time to send the next probe
-       */
-      timeval_add_us(nextprobe, lastprobe, wait_between);
-      probe = 1;
+      timeval_add_us(timeout, lastprobe, wait_between);
+      set++;
     }
-  else if(scamper_queue_count() > 0)
+
+  /*
+   * if we are waiting on a response from an earlier probe, then set
+   * the timer to go off when that probe expires.
+   */
+  if(scamper_queue_waittime(&tv) > 0)
     {
-      /*
-       * if there isn't anything ready to go right now, but we are
-       * waiting on a response from an earlier probe, then set the timer
-       * to go off when that probe expires.
-       */
-      scamper_queue_waittime(nextprobe);
-      probe = 1;
+      if(set == 0 || timeval_cmp(&tv, timeout) < 0)
+	timeval_cpy(timeout, &tv);
+      set++;
     }
-  else
-    {
-      if(exit_when_done != 0 && scamper_sources_isempty() == 1)
-	return 2;
-    }
+
+  /* nothing to probe, and been told to exit */
+  if(set == 0 && exit_when_done != 0 && scamper_sources_isempty() != 0)
+    return 2;
 
   /*
    * if there are no events to consider, then we only need to consider
    * if there are events in the future
    */
-  if(scamper_queue_event_waittime(&tv) == 0)
+  if(scamper_queue_event_waittime(&tv) > 0)
     {
-      if(probe == 0)
-	return 1;
-      timeval_cpy(timeout, nextprobe);
-      return 0;
+      if(set == 0 || timeval_cmp(&tv, timeout) < 0)
+	timeval_cpy(timeout, &tv);
+      set++;
     }
 
-  /*
-   * there is an event and (maybe) a probe timeout to consider.
-   * figure out which comes first: the event or the probe
-   */
-  if(probe != 0 && timeval_cmp(nextprobe, &tv) <= 0)
-    timeval_cpy(timeout, nextprobe);
-  else
-    timeval_cpy(timeout, &tv);
+  /* no timeout value computed */
+  if(set == 0)
+    return 1;
+
   return 0;
+}
+
+/*
+ * scamper_process_done:
+ *
+ * take any 'done' tasks and output them now
+ */
+static void scamper_process_done(void)
+{
+  scamper_outfile_t *sof, *sof2;
+  scamper_source_t *source;
+  scamper_task_t *task;
+  scamper_file_t *file;
+  const char *sofname;
+
+  while((task = scamper_queue_getdone()) != NULL)
+    {
+      /* write the data out */
+      if((source = scamper_task_getsource(task)) != NULL &&
+	 (sofname = scamper_source_getoutfile(source)) != NULL &&
+	 (sof = scamper_outfiles_get(sofname)) != NULL)
+	{
+	  file = scamper_outfile_getfile(sof);
+	  scamper_task_write(task, file);
+
+	  /*
+	   * write a copy of the data out if asked to, and it has not
+	   * already been written to this output file.
+	   */
+	  if((flags & FLAG_OUTCOPY) != 0 &&
+	     (sof2 = scamper_outfiles_get(NULL)) != NULL && sof != sof2)
+	    {
+	      file = scamper_outfile_getfile(sof2);
+	      scamper_task_write(task, file);
+	    }
+	}
+
+      /* cleanup the task */
+      scamper_task_free(task);
+    }
+
+  return;
 }
 
 /*
@@ -1781,6 +1959,12 @@ static void cleanup(void)
   WSACleanup();
 #endif
 
+  if(txbuf != NULL)
+    {
+      free(txbuf);
+      txbuf = NULL;
+    }
+
   return;
 }
 
@@ -1796,12 +1980,9 @@ static int scamper(int argc, char *argv[])
   struct timeval           lastprobe;
   struct timeval           nextprobe;
   struct timeval           timeout, *timeout_ptr;
-  const char              *sofname;
   scamper_source_params_t  ssp;
   scamper_source_t        *source = NULL;
   scamper_task_t          *task;
-  scamper_outfile_t       *sof, *sof2;
-  scamper_file_t          *file;
   int                      x, rc = -1;
 
 #ifndef DISABLE_PRIVSEP
@@ -1876,6 +2057,14 @@ static int scamper(int argc, char *argv[])
       printerror(__func__, "could not set sigaction for SIGTERM");
       goto done;
     }
+  sigemptyset(&si_sa.sa_mask);
+  si_sa.sa_flags   = 0;
+  si_sa.sa_handler = scamper_sigaction;
+  if(sigaction(SIGHUP, &si_sa, 0) == -1)
+    {
+      printerror(__func__, "could not set sigaction for SIGHUP");
+      goto done;
+    }
 #endif
 
   if(check_options(argc, argv) == -1)
@@ -1937,29 +2126,10 @@ static int scamper(int argc, char *argv[])
        */
       if(remote_client_certfile != NULL)
 	{
-	  /*
-	   * this is checked in options handling code -- if certfile
-	   * is not NULL, then privfile will not be null
-	   */
-	  assert(remote_client_privfile != NULL);
 	  if((remote_tls_ctx = scamper_ssl_ctx()) == NULL)
 	    goto done;
-
-	  /* load the client key materials */
-	  if(SSL_CTX_use_certificate_chain_file(remote_tls_ctx,
-						remote_client_certfile) != 1)
-	    {
-	      printerror_ssl(__func__, "could load client cert from %s",
-			     remote_client_certfile);
-	      goto done;
-	    }
-	  if(SSL_CTX_use_PrivateKey_file(remote_tls_ctx, remote_client_privfile,
-					 SSL_FILETYPE_PEM) != 1)
-	    {
-	      printerror_ssl(__func__, "could not load client privkey from %s",
-			     remote_client_privfile);
-	      goto done;
-	    }
+	  if(scamper_loadcerts() != 0)
+	    goto done;
 	}
       else
 	{
@@ -2026,11 +2196,16 @@ static int scamper(int argc, char *argv[])
   if(scamper_getsrc_init() == -1)
     goto done;
 
-  /* initialise the subsystem responsible for recording mac addresses */
-  if(scamper_addr2mac_init() == -1)
+  /*
+   * initialise the subsystem responsible for processing route messages.
+   * this needs to be done before scamper_addr2mac_init, which depends
+   * on scamper_rtsock_roundup on BSD platforms.
+   */
+  if(scamper_rtsock_init() == -1)
     goto done;
 
-  if(scamper_rtsock_init() == -1)
+  /* initialise the subsystem responsible for recording mac addresses */
+  if(scamper_addr2mac_init() == -1)
     goto done;
 
   /* initialise the structures necessary to keep track of addresses to probe */
@@ -2152,9 +2327,9 @@ static int scamper(int argc, char *argv[])
   else if((options & (OPT_CTRL_INET|OPT_CTRL_UNIX|OPT_CTRL_REMOTE)) == 0)
     {
       if(intype == NULL)
-	source = scamper_source_file_alloc(&ssp, arglist[0], command, 1, 0);
+	source = scamper_source_file_alloc(&ssp, arglist[0], command);
       else if(strcasecmp(intype, "cmdfile") == 0)
-	source = scamper_source_file_alloc(&ssp, arglist[0], NULL, 1, 0);
+	source = scamper_source_file_alloc(&ssp, arglist[0], NULL);
       if(source == NULL)
 	goto done;
     }
@@ -2166,7 +2341,8 @@ static int scamper(int argc, char *argv[])
     }
 
 #ifndef DISABLE_PRIVSEP
-  privsep_fdn = scamper_fd_private(privsep_fd, NULL, privsep_read, NULL);
+  privsep_fdn = scamper_fd_private(privsep_fd, NULL,
+				   scamper_privsep_read_cb, NULL);
   if(privsep_fdn == NULL)
     goto done;
 #endif
@@ -2175,7 +2351,9 @@ static int scamper(int argc, char *argv[])
 
   for(;;)
     {
-      if((x = scamper_timeout(&timeout, &nextprobe, &lastprobe)) == 0)
+      scamper_process_done();
+
+      if((x = scamper_timeout(&timeout, &lastprobe)) == 0)
 	{
 	  /*
 	   * we've been told to calculate a timeout value.  figure out what
@@ -2198,6 +2376,14 @@ static int scamper(int argc, char *argv[])
 	  break;
 	}
 
+#if defined(HAVE_OPENSSL) && defined(HAVE_SIGACTION)
+      if(sighup_rx != 0)
+	{
+	  scamper_loadcerts();
+	  sighup_rx = 0;
+	}
+#endif
+
       /* listen until it is time to send the next probe */
       if(scamper_fds_poll(timeout_ptr) == -1)
 	goto done;
@@ -2208,33 +2394,6 @@ static int scamper(int argc, char *argv[])
       if(scamper_queue_event_proc(&tv) != 0)
 	goto done;
       scamper_task_sig_expiry_run(&tv);
-
-      /* take any 'done' tasks and output them now */
-      while((task = scamper_queue_getdone(&tv)) != NULL)
-	{
-	  /* write the data out */
-	  if((source = scamper_task_getsource(task)) != NULL &&
-	     (sofname = scamper_source_getoutfile(source)) != NULL &&
-	     (sof = scamper_outfiles_get(sofname)) != NULL)
-	    {
-	      file = scamper_outfile_getfile(sof);
-	      scamper_task_write(task, file);
-
-	      /*
-	       * write a copy of the data out if asked to, and it has not
-	       * already been written to this output file.
-	       */
-	      if((flags & FLAG_OUTCOPY) != 0 &&
-		 (sof2 = scamper_outfiles_get(NULL)) != NULL && sof != sof2)
-		{
-		  file = scamper_outfile_getfile(sof2);
-		  scamper_task_write(task, file);
-		}
-	    }
-
-	  /* cleanup the task */
-	  scamper_task_free(task);
-	}
 
       /*
        * if there is something waiting to be probed, then find out if it is

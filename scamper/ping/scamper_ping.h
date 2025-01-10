@@ -1,12 +1,12 @@
 /*
  * scamper_ping.h
  *
- * $Id: scamper_ping.h,v 1.76 2024/08/19 21:53:01 mjl Exp $
+ * $Id: scamper_ping.h,v 1.77 2024/11/07 18:15:39 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2012-2015 The Regents of the University of California
- * Copyright (C) 2020-2023 Matthew Luckie
+ * Copyright (C) 2020-2024 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -70,6 +70,8 @@ typedef struct scamper_ping_stats scamper_ping_stats_t;
 #define SCAMPER_PING_FLAG_NOSRC           0x100 /* -O nosrc: do not embed src */
 #define SCAMPER_PING_FLAG_RAW             0x200 /* -O raw: tx with raw IPv4 */
 #define SCAMPER_PING_FLAG_SOCKRX          0x400 /* -O sockrx: rx from socket */
+
+char *scamper_ping_tojson(const scamper_ping_t *ping, size_t *len);
 
 /* basic routines to use and free scamper_ping structures */
 void scamper_ping_free(scamper_ping_t *ping);

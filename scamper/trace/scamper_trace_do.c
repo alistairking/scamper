@@ -1,7 +1,7 @@
 /*
  * scamper_do_trace.c
  *
- * $Id: scamper_trace_do.c,v 1.376 2024/08/13 05:43:54 mjl Exp $
+ * $Id: scamper_trace_do.c,v 1.388 2024/12/30 03:59:35 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -112,7 +112,6 @@ typedef struct pmtud_L2
 {
   int   idx;            /* index into the L2 array where this node resides */
   int   mtu;            /* the MTU of the link */
-  char *descr;          /* some description of the L2 media */
 } pmtud_L2_t;
 
 typedef struct trace_lss
@@ -170,15 +169,56 @@ typedef struct trace_pmtud_state
 } trace_pmtud_state_t;
 
 /*
+ * trace_dtree_state
+ *
+ * these fields are used for doubletree, when there's a local stop set
+ * involved.
+ * the lss contains the list of addresses visited when probing backwards.
+ * this is a subset of the global lss.
+ * it is used to probe backwards through a loop, where otherwise probing
+ * would be halted by the first address in the loop being added to the lss
+ * the first time it is seen.
+ */
+typedef struct trace_dtree_state
+{
+  scamper_addr_t     **lss;
+  size_t               lssc;
+  trace_lss_t         *lsst;
+} trace_dtree_state_t;
+
+/*
+ * trace_conf_state
+ *
+ * these fields are used when probing to enumerate all interfaces at a hop
+ */
+typedef struct trace_conf_state
+{
+  scamper_addr_t     **interfaces;    /* ifaces found so far at this ttl */
+  size_t               interfacec;    /* count of interfaces */
+  uint8_t              confidence;    /* index into k[] */
+  uint8_t              n;             /* index into k[] */
+} trace_conf_state_t;
+
+/*
+ * trace_para_state
+ *
+ * these fields are used when probing hops in parallel
+ */
+typedef struct trace_para_state
+{
+  dlist_t             *window;        /* current window of probes */
+  slist_t             *probeq;        /* probes to retry */
+  heap_t              *hopwait;       /* hops waiting to be re-probed */
+} trace_para_state_t;
+
+/*
  * trace_hop_state
  *
- *
+ * this structure is kept per-hop when squeries > 1
  */
 typedef struct trace_hop_state
 {
   struct timeval           last_tx;
-  struct timeval           next_tx;
-  struct timeval           timeout;
   uint8_t                  ttl;
   uint8_t                  attempt;
   uint16_t                 id;
@@ -202,9 +242,6 @@ typedef struct trace_state
   uint16_t             header_size;   /* size of headers */
   uint8_t              flags;         /* flags for keeping state */
   struct timeval       last_tx;       /* when the last probe was */
-  dlist_t             *window;        /* current window of probes */
-  slist_t             *probeq;        /* probes to retry */
-  heap_t              *hopwait;       /* hops waiting to be re-probed */
 
 #ifndef DISABLE_SCAMPER_HOST
   splaytree_t         *ths;           /* tree for host lookups */
@@ -226,25 +263,10 @@ typedef struct trace_state
   uint16_t             id_next;       /* next id to use in probes */
   uint16_t             id_max;        /* maximum id available */
 
-  /* these fields are used when probing to enumerate all interfaces at a hop */
-  uint8_t              confidence;    /* index into k[] */
-  uint8_t              n;             /* index into k[] */
-  scamper_addr_t     **interfaces;    /* ifaces found so far at this ttl */
-  size_t               interfacec;    /* count of interfaces */
-
-  trace_pmtud_state_t *pmtud;         /* pmtud state */
-
-  /*
-   * these fields are used for doubletree.
-   * the lss contains the list of addresses visited when probing backwards.
-   * this is a subset of the global lss.
-   * it is used to probe backwards through a loop, where otherwise probing
-   * would be halted by the first address in the loop being added to the lss
-   * the first time it is seen.
-   */
-  scamper_addr_t     **lss;
-  size_t               lssc;
-  trace_lss_t         *lsst;
+  trace_pmtud_state_t *pmtud;         /* pmtud probing state */
+  trace_dtree_state_t *dtree;         /* doubletree probing state */
+  trace_conf_state_t  *conf;          /* confidence probing state */
+  trace_para_state_t  *para;          /* parallel probing state */
 } trace_state_t;
 
 #define TRACE_STATE_FLAG_ICMP_ID 0x01
@@ -284,9 +306,9 @@ static scamper_task_funcs_t trace_funcs;
 /* address cache used to avoid reallocating the same address multiple times */
 extern scamper_addrcache_t *addrcache;
 
-/* temporary buffer shared amongst traceroutes */
-static uint8_t *pktbuf     = NULL;
-static size_t   pktbuf_len = 0;
+/* temporary tx buffer shared amongst measurements */
+extern uint8_t *txbuf;
+extern size_t   txbuf_len;
 
 /* local stop sets */
 static splaytree_t *lsses = NULL;
@@ -301,32 +323,32 @@ static splaytree_t *lsses = NULL;
  */
 static const pmtud_L2_t L2[] =
 {
-  { 0,    68, "RFC791 MTU"},    /* Official RFC 791 minimum MTU */
-  { 1,   296, "P2P low delay"}, /* Point-to-Point links, (low delay) */
-  { 2,   508, ""},
-  { 3,   512, "NetBIOS"},       /* NetBIOS */
-  { 4,   544, "DEC Portal"},    /* DEC IP Portal */
-  { 5,   552, ""},
-  { 6,   576, "v4 min MTU"},    /* X25 MTU, IPv4 Minimum MTU */
-  { 7,  1006, "SLIP"},          /* SLIP */
-  { 8,  1280, "v6 min MTU"},    /* IPv6 Minimum MTU */
-  { 9,  1454, "PPPoE ADSL"},    /* an optimally sized PPPoE frame in DSL */
-  {10,  1480, "v4tun Ether"},   /* Ethernet MTU with tunnel over IPv4 */
-  {11,  1492, "IEEE 802.3"},    /* IEEE 802.3 */
-  {12,  1500, "Ethernet"},      /* Ethernet MTU */
-  {13,  1514, "Ethernet Max"},  /* Ethernet Max MTU */
-  {14,  1536, "Exp. Ether"},    /* Exp. Ethernet Nets */
-  {15,  2002, "IEEE 802.5"},    /* IEEE 802.5, Recommended MTU */
-  {16,  2048, "Wideband"},      /* Wideband Network */
-  {17,  4352, "FDDI"},          /* FDDI */
-  {18,  4464, "IEEE 802.5"},    /* IEEE 802.5, Maximum MTU */
-  {19,  4470, "IP over ATM"},   /* ATM / T3 / SONET SDH */
-  {20,  8166, "IEEE 802.4"},    /* IEEE 802.4 */
-  {21,  9000, "Broadcom GigE"}, /* Broadcom GigE MTU */
-  {22,  9192, "OC-192"},        /* OC-192 and other really fast media */
-  {23, 16110, "Intel GigE"},    /* Intel Pro 1000 MTU */
-  {24, 17914, "Token Ring"},    /* 16Mb IBM Token Ring */
-  {25, 65535, "IPv[46] MTU"}    /* The IPv[46] Maximum MTU */
+  { 0,    68}, /* Official RFC 791 minimum MTU */
+  { 1,   296}, /* Point-to-Point links, (low delay) */
+  { 2,   508},
+  { 3,   512}, /* NetBIOS */
+  { 4,   544}, /* DEC IP Portal */
+  { 5,   552},
+  { 6,   576}, /* X25 MTU, IPv4 Minimum MTU */
+  { 7,  1006}, /* SLIP */
+  { 8,  1280}, /* IPv6 Minimum MTU */
+  { 9,  1454}, /* an optimally sized PPPoE frame in DSL */
+  {10,  1480}, /* Ethernet MTU with tunnel over IPv4 */
+  {11,  1492}, /* IEEE 802.3 */
+  {12,  1500}, /* Ethernet MTU */
+  {13,  1514}, /* Ethernet Max MTU */
+  {14,  1536}, /* Exp. Ethernet Nets */
+  {15,  2002}, /* IEEE 802.5, Recommended MTU */
+  {16,  2048}, /* Wideband Network */
+  {17,  4352}, /* FDDI */
+  {18,  4464}, /* IEEE 802.5, Maximum MTU */
+  {19,  4470}, /* ATM / T3 / SONET SDH */
+  {20,  8166}, /* IEEE 802.4 */
+  {21,  9000}, /* Broadcom GigE MTU */
+  {22,  9192}, /* OC-192 and other really fast media */
+  {23, 16110}, /* Intel Pro 1000 MTU */
+  {24, 17914}, /* 16Mb IBM Token Ring */
+  {25, 65535}  /* The IPv[46] Maximum MTU */
 };
 
 static const pmtud_L2_t *L2_1454 = &L2[9];
@@ -343,7 +365,7 @@ static trace_state_t *trace_getstate(const scamper_task_t *task)
   return scamper_task_getstate(task);
 }
 
-static int k(trace_state_t *state)
+static int k(trace_conf_state_t *conf)
 {
   /*
    * number of probes (k) to send to rule out a load-balancer having n hops;
@@ -382,10 +404,10 @@ static int k(trace_state_t *state)
 
 #define TRACE_CONFIDENCE_MAX_N 25
 
-  assert(state->confidence < 2);
-  assert(state->n >= 2);
-  assert(state->n <= TRACE_CONFIDENCE_MAX_N);
-  return k[state->n][state->confidence];
+  assert(conf->confidence < 2);
+  assert(conf->n >= 2);
+  assert(conf->n <= TRACE_CONFIDENCE_MAX_N);
+  return k[conf->n][conf->confidence];
 }
 
 /*
@@ -437,7 +459,7 @@ static void trace_stop_hoplimit(scamper_trace_t *trace)
 static int trace_hop_state_cmp(const trace_hop_state_t *a,
 			       const trace_hop_state_t *b)
 {
-  return timeval_cmp(&b->next_tx, &a->next_tx);
+  return timeval_cmp(&b->last_tx, &a->last_tx);
 }
 
 #ifndef DISABLE_SCAMPER_HOST
@@ -510,7 +532,7 @@ static int trace_queue_done(scamper_task_t *task)
  *
  * is the queue for parallel probing empty?
  */
-static int trace_parallel_isempty(const trace_state_t *state)
+static int trace_parallel_isempty(const trace_para_state_t *state)
 {
   if(slist_count(state->probeq) != 0 ||
      dlist_count(state->window) != 0 ||
@@ -523,27 +545,31 @@ static int trace_queue_parallel(scamper_task_t *task, const struct timeval *now)
 {
   scamper_trace_t *trace = trace_getdata(task);
   trace_state_t *state = trace_getstate(task);
+  trace_para_state_t *para = state->para;
   trace_hop_state_t *hs;
   trace_probe_t *probe;
-  struct timeval *next[2];
+  struct timeval next[2], tv;
   int nextc = 0;
   int i;
+
+  assert(para != NULL);
 
   /*
    * if we're enforcing a minimum time between probes to the same hop,
    * then check to see if time has elapsed
    */
-  if(state->hopwait != NULL)
+  if(para->hopwait != NULL)
     {
-      while((hs = heap_head_item(state->hopwait)) != NULL)
+      while((hs = heap_head_item(para->hopwait)) != NULL)
 	{
-	  if(timeval_cmp(&hs->next_tx, now) > 0)
+	  timeval_add_tv3(&tv, &hs->last_tx, &trace->wait_probe_hop);
+	  if(timeval_cmp(&tv, now) > 0)
 	    {
-	      next[nextc++] = &hs->next_tx;
+	      timeval_cpy(&next[nextc++], &tv);
 	      break;
 	    }
-	  heap_remove(state->hopwait);
-	  if(slist_tail_push(state->probeq, hs) == NULL)
+	  heap_remove(para->hopwait);
+	  if(slist_tail_push(para->probeq, hs) == NULL)
 	    {
 	      printerror(__func__, "could not push hs");
 	      free(hs);
@@ -553,20 +579,21 @@ static int trace_queue_parallel(scamper_task_t *task, const struct timeval *now)
     }
 
   /* expire probes whose attempts/timeout has elapsed */
-  while((hs = dlist_head_item(state->window)) != NULL)
+  while((hs = dlist_head_item(para->window)) != NULL)
     {
-      if(timeval_cmp(&hs->timeout, now) > 0)
+      timeval_add_tv3(&tv, &hs->last_tx, &trace->wait_timeout);
+      if(timeval_cmp(&tv, now) > 0)
 	{
-	  next[nextc++] = &hs->timeout;
+	  timeval_cpy(&next[nextc++], &tv);
 	  break;
 	}
-      dlist_head_pop(state->window);
+      dlist_head_pop(para->window);
 
       probe = state->probes[hs->id]; assert(probe->rx == 0);
       probe->flags |= TRACE_PROBE_FLAG_TIMEOUT;
       if(hs->attempt < trace->attempts)
 	{
-	  if(slist_tail_push(state->probeq, hs) == NULL)
+	  if(slist_tail_push(para->probeq, hs) == NULL)
 	    {
 	      printerror(__func__, "could not push hs");
 	      free(hs);
@@ -582,7 +609,7 @@ static int trace_queue_parallel(scamper_task_t *task, const struct timeval *now)
     }
 
   /* probe ready to go right now */
-  if(slist_count(state->probeq) > 0)
+  if(slist_count(para->probeq) > 0)
     return trace_queue_probe(task, now);
 
   /*
@@ -598,7 +625,7 @@ static int trace_queue_parallel(scamper_task_t *task, const struct timeval *now)
     }
   else if(state->mode == MODE_PARALLEL_FINISH)
     {
-      if(trace_parallel_isempty(state))
+      if(trace_parallel_isempty(para))
 	return trace_queue_done(task);
     }
 
@@ -615,7 +642,7 @@ static int trace_queue_parallel(scamper_task_t *task, const struct timeval *now)
    * the gaplimit is reached.
    */
   if(trace->hop_count - (trace->firsthop - 1) >= trace->gaplimit &&
-     trace_parallel_isempty(state))
+     trace_parallel_isempty(para))
     {
       /* see if there are any responses for the possible gaplimit hops */
       for(i=0; i<trace->gaplimit; i++)
@@ -632,11 +659,11 @@ static int trace_queue_parallel(scamper_task_t *task, const struct timeval *now)
 
   /* set timeout based on when to re-probe an outstanding hop */
   assert(nextc > 0 && nextc <= 2);
-  if(nextc == 2 && timeval_cmp(next[1], next[0]) < 0)
-    next[0] = next[1];
-  if(timeval_cmp(next[0], now) <= 0)
+  if(nextc == 2 && timeval_cmp(&next[1], &next[0]) < 0)
+    timeval_cpy(&next[0], &next[1]);
+  if(timeval_cmp(&next[0], now) <= 0)
     return trace_queue_probe(task, now);
-  return scamper_task_queue_wait_tv(task, next[0]);
+  return scamper_task_queue_wait_tv(task, &next[0]);
 }
 
 static int trace_queue_serial(scamper_task_t *task, const struct timeval *now)
@@ -1082,7 +1109,7 @@ static int pmtud_L2_search_end(scamper_task_t *task)
       if(!SCAMPER_TRACE_HOP_IS_ICMP_PTB(hop))
 	{
 	  trace->pmtud->pmtu = hop->hop_probe_size;
-	  scamper_task_queue_done(task, 0);
+	  trace_queue_done(task);
 	  return 1;
 	}
     }
@@ -1095,39 +1122,31 @@ static int pmtud_L2_search_end(scamper_task_t *task)
   return 0;
 }
 
-static int dtree_lss_add(trace_state_t *state, scamper_addr_t *iface)
+static int dtree_lss_add(trace_dtree_state_t *dtree, scamper_addr_t *iface)
 {
-  assert(state != NULL && state->lsst != NULL);
-  if(splaytree_insert(state->lsst->tree, iface) != NULL)
-    {
-      scamper_addr_use(iface);
-      return 0;
-    }
-  return -1;
+  if(splaytree_insert(dtree->lsst->tree, iface) == NULL)
+    return -1;
+  scamper_addr_use(iface);
+  if(array_insert((void ***)&dtree->lss, &dtree->lssc, iface,
+		  (array_cmp_t)scamper_addr_cmp) != 0)
+    return -1;
+  return 0;
 }
 
-static int dtree_lss_in(trace_state_t *state, scamper_addr_t *iface)
+static int dtree_lss_in(trace_lss_t *lsst, scamper_addr_t *iface)
 {
-  assert(state != NULL && state->lsst != NULL);
-  if(splaytree_find(state->lsst->tree, iface) != NULL)
+  if(splaytree_find(lsst->tree, iface) != NULL)
     return 1;
   return 0;
 }
 
 static int state_lss_in(trace_state_t *state, scamper_addr_t *iface)
 {
-  if(array_find((void **)state->lss, state->lssc, iface,
+  trace_dtree_state_t *dtree = state->dtree;
+  if(array_find((void **)dtree->lss, dtree->lssc, iface,
 		(array_cmp_t)scamper_addr_cmp) != NULL)
     return 1;
   return 0;
-}
-
-static int state_lss_add(trace_state_t *state, scamper_addr_t *iface)
-{
-  if(array_insert((void ***)&state->lss, &state->lssc, iface,
-		  (array_cmp_t)scamper_addr_cmp) == 0)
-    return 0;
-  return -1;
 }
 
 /*
@@ -1296,7 +1315,7 @@ static void trace_hopins(scamper_trace_hop_t **hops, scamper_trace_hop_t *hop)
 static int trace_handleerror(scamper_task_t *task, const int error)
 {
   trace_stop_error(trace_getdata(task), error);
-  scamper_task_queue_done(task, 0);
+  trace_queue_done(task);
   return 0;
 }
 
@@ -1583,7 +1602,7 @@ static void trace_next_mode(scamper_task_t *task, const struct timeval *now)
 
   if(trace->squeries > 1)
     {
-      if(trace_parallel_isempty(state) == 0)
+      if(trace_parallel_isempty(state->para) == 0)
 	{
 	  assert(state->mode == MODE_PARALLEL);
 	  state->mode = MODE_PARALLEL_FINISH;
@@ -1642,7 +1661,7 @@ static void trace_next_mode(scamper_task_t *task, const struct timeval *now)
     }
 
  done:
-  scamper_task_queue_done(task, 0);
+  trace_queue_done(task);
   return;
 }
 
@@ -1751,6 +1770,7 @@ static int handleicmp_trace(scamper_task_t *task,
 {
   scamper_trace_t *trace = trace_getdata(task);
   trace_state_t *state = trace_getstate(task);
+  trace_conf_state_t *conf;
   scamper_trace_hop_t *hop;
   struct timeval now;
   uint8_t stop_reason;
@@ -1818,24 +1838,24 @@ static int handleicmp_trace(scamper_task_t *task,
        * record details of the interface, if its details are not
        * currently held
        */
-      if(array_find((void **)state->interfaces, state->interfacec,
+      conf = state->conf;
+      if(array_find((void **)conf->interfaces, conf->interfacec,
 		    hop->hop_addr, (array_cmp_t)scamper_addr_cmp) == NULL)
 	{
-	  len = (state->interfacec + 1) * sizeof(scamper_addr_t *);
-	  if(realloc_wrap((void **)&state->interfaces, len) != 0)
+	  len = (conf->interfacec + 1) * sizeof(scamper_addr_t *);
+	  if(realloc_wrap((void **)&conf->interfaces, len) != 0)
 	    {
 	      printerror(__func__, "could not realloc interfaces");
 	      trace_handleerror(task, errno);
 	      return -1;
 	    }
 
-	  state->interfaces[state->interfacec++] = hop->hop_addr;
-
-	  if(state->interfacec > 1)
+	  conf->interfaces[conf->interfacec++] = hop->hop_addr;
+	  if(conf->interfacec > 1)
 	    {
-	      array_qsort((void **)state->interfaces, state->interfacec,
+	      array_qsort((void **)conf->interfaces, conf->interfacec,
 			  (array_cmp_t)scamper_addr_cmp);
-	      state->n++;
+	      conf->n++;
 	    }
 	}
 
@@ -1843,7 +1863,7 @@ static int handleicmp_trace(scamper_task_t *task,
        * make sure we know the required number of probes to send to reach
        * a particular confidence level
        */
-      if(state->n <= TRACE_CONFIDENCE_MAX_N)
+      if(conf->n <= TRACE_CONFIDENCE_MAX_N)
 	{
 	  /*
 	   * if we get an out of order reply, then we go back to waiting for
@@ -1856,14 +1876,14 @@ static int handleicmp_trace(scamper_task_t *task,
 	   * this response is for the last probe sent.  if there are still
 	   * probes to send for this hop, then send the next one
 	   */
-	  if(state->attempt < k(state))
+	  if(state->attempt < k(conf))
 	    goto probe;
 	}
 
-      free(state->interfaces);
-      state->interfaces = NULL;
-      state->interfacec = 0;
-      state->n = 2;
+      free(conf->interfaces);
+      conf->interfaces = NULL;
+      conf->interfacec = 0;
+      conf->n = 2;
     }
 
   state->attempt = 0;
@@ -1877,10 +1897,10 @@ static int handleicmp_trace(scamper_task_t *task,
        * consult the local stop set to see if we should stop backwards
        * probing yet.
        */
-      if(state->lsst != NULL && dtree_lss_in(state, hop->hop_addr) == 0)
+      if(state->dtree != NULL && state->dtree->lsst != NULL &&
+	 dtree_lss_in(state->dtree->lsst, hop->hop_addr) == 0)
 	{
-	  dtree_lss_add(state, hop->hop_addr);
-	  state_lss_add(state, hop->hop_addr);
+	  dtree_lss_add(state->dtree, hop->hop_addr);
 	  state->ttl--;
 	  trace->firsthop--;
 	  goto probe;
@@ -2024,7 +2044,7 @@ static int handleicmp_dtree_first(scamper_task_t *task,
       trace_stop_reason(trace, hop, state, &stop_reason, &stop_data);
       assert(stop_reason != SCAMPER_TRACE_STOP_NONE);
       trace_stop(trace, stop_reason, stop_data);
-      scamper_task_queue_done(task, 0);
+      trace_queue_done(task);
       return 0;
     }
 
@@ -2048,7 +2068,7 @@ static int handleicmp_dtree_first(scamper_task_t *task,
   if(trace->firsthop == 1 ||
      (trace->dtree->flags & SCAMPER_TRACE_DTREE_FLAG_NOBACK) != 0)
     {
-      scamper_task_queue_done(task, 0);
+      trace_queue_done(task);
       return 0;
     }
 
@@ -2088,7 +2108,7 @@ static int handleicmp_lastditch(scamper_task_t *task,
 	return -1;
       trace_hopins(&trace->lastditch, hop);
       trace_stop_gaplimit(trace);
-      scamper_task_queue_done(task, 0);
+      trace_queue_done(task);
     }
 
   return 0;
@@ -2143,7 +2163,7 @@ static int handleicmp_pmtud_default(scamper_task_t *task,
 	{
 	  /* stop if the PTB has an MTU that is too small to be probed */
 	  note->type = SCAMPER_TRACE_PMTUD_N_TYPE_PTB_BAD;
-	  scamper_task_queue_done(task, 0);
+	  trace_queue_done(task);
 	}
       else
 	{
@@ -2159,7 +2179,7 @@ static int handleicmp_pmtud_default(scamper_task_t *task,
 	  SCAMPER_ICMP_RESP_IS_ECHO_REPLY(ir))
     {
       trace->pmtud->pmtu = probe->size;
-      scamper_task_queue_done(task, 0);
+      trace_queue_done(task);
     }
 
   return 0;
@@ -2222,7 +2242,7 @@ static int handleicmp_pmtud_silent_L2(scamper_task_t *task,
 	}
       else
 	{
-	  scamper_task_queue_done(task, 0);
+	  trace_queue_done(task);
 	  return 0;
 	}
     }
@@ -2366,9 +2386,10 @@ static int handleicmp_parallel(scamper_task_t *task,
 {
   scamper_trace_t *trace = trace_getdata(task);
   trace_state_t *state = trace_getstate(task);
+  trace_para_state_t *para = state->para;
   scamper_trace_hop_t *hop = NULL;
   trace_hop_state_t *hs;
-  struct timeval now;
+  struct timeval now, next_tx;
   dlist_node_t *dn;
   uint8_t stop_reason, stop_data;
 
@@ -2394,7 +2415,7 @@ static int handleicmp_parallel(scamper_task_t *task,
    * find the hop state, which we will do if this response is the
    * first response for the probe.
    */
-  for(dn=dlist_head_node(state->window); dn != NULL; dn=dlist_node_next(dn))
+  for(dn=dlist_head_node(para->window); dn != NULL; dn=dlist_node_next(dn))
     {
       hs = dlist_node_item(dn);
       if(hs->id == probe->id)
@@ -2407,7 +2428,7 @@ static int handleicmp_parallel(scamper_task_t *task,
   if(dn != NULL)
     {
       /* remove the node from the probe window */
-      dlist_node_pop(state->window, dn);
+      dlist_node_pop(para->window, dn);
 
       /*
        * expire the hop state if we do not send all attempts per hop,
@@ -2421,10 +2442,11 @@ static int handleicmp_parallel(scamper_task_t *task,
 	   * length of time has elapsed, then probe it as soon as
 	   * possible.
 	   */
-	  if(state->hopwait == NULL ||
-	     timeval_cmp(&hs->next_tx, &now) <= 0)
+	  timeval_add_tv3(&next_tx, &hs->last_tx, &trace->wait_probe_hop);
+	  if(para->hopwait == NULL ||
+	     timeval_cmp(&next_tx, &now) <= 0)
 	    {
-	      if(slist_tail_push(state->probeq, hs) == NULL)
+	      if(slist_tail_push(para->probeq, hs) == NULL)
 		{
 		  printerror(__func__, "could not push hs");
 		  free(hs);
@@ -2433,7 +2455,7 @@ static int handleicmp_parallel(scamper_task_t *task,
 	    }
 	  else
 	    {
-	      if(heap_insert(state->hopwait, hs) == NULL)
+	      if(heap_insert(para->hopwait, hs) == NULL)
 		{
 		  printerror(__func__, "could not insert hs");
 		  free(hs);
@@ -2455,9 +2477,9 @@ static int handleicmp_parallel(scamper_task_t *task,
 	}
     }
 
-  if(state->mode == MODE_PARALLEL_FINISH && trace_parallel_isempty(state))
+  if(state->mode == MODE_PARALLEL_FINISH && trace_parallel_isempty(para))
     {
-      scamper_task_queue_done(task, 0);
+      trace_queue_done(task);
       return 0;
     }
 
@@ -2494,7 +2516,7 @@ static void do_trace_handle_icmp(scamper_task_t *task, scamper_icmp_resp_t *ir)
   uint16_t         id;
   uint8_t          proto;
 
-  if(state == NULL)
+  if(state == NULL || trace->probec == 0)
     return;
 
   assert(state->mode <= MODE_MAX);
@@ -2726,15 +2748,18 @@ static void timeout_trace(scamper_task_t *task)
   state->ttl++;
 
   /* tidy up after any confidence probing */
-  if(state->interfaces != NULL)
+  if(state->conf != NULL && state->conf->interfaces != NULL)
     {
-      free(state->interfaces);
-      state->interfaces = NULL;
-      state->interfacec = 0;
+      free(state->conf->interfaces);
+      state->conf->interfaces = NULL;
+      state->conf->interfacec = 0;
     }
-  assert(state->interfaces == NULL);
-  assert(state->interfacec == 0);
-  state->n = 2;
+  if(state->conf != NULL)
+    {
+      assert(state->conf->interfaces == NULL);
+      assert(state->conf->interfacec == 0);
+      state->conf->n = 2;
+    }
 
   /*
    * if we probed for all attempts on the hop, then check to see if we
@@ -2809,26 +2834,29 @@ static void timeout_dtree_back(scamper_task_t *task)
 {
   scamper_trace_t     *trace = trace_getdata(task);
   trace_state_t       *state = trace_getstate(task);
+  trace_dtree_state_t *dtree = state->dtree;
   scamper_trace_hop_t *hop;
   struct timeval       now;
 
+  assert(state->conf != NULL);
+
   /* tidy up after any confidence probing */
-  if(state->interfaces != NULL)
+  if(state->conf->interfaces != NULL)
     {
-      free(state->interfaces);
-      state->interfaces = NULL;
-      state->interfacec = 0;
+      free(state->conf->interfaces);
+      state->conf->interfaces = NULL;
+      state->conf->interfacec = 0;
     }
 
   if(state->ttl == 1)
     goto next_mode;
 
-  if(state->lsst != NULL &&
+  if(dtree != NULL && dtree->lsst != NULL &&
      (SCAMPER_TRACE_FLAG_IS_ALLATTEMPTS(trace) || trace->confidence != 0))
     {
       for(hop = trace->hops[state->ttl-1]; hop != NULL; hop = hop->hop_next)
 	{
-	  if(dtree_lss_in(state, hop->hop_addr) != 0)
+	  if(dtree_lss_in(dtree->lsst, hop->hop_addr) != 0)
 	    goto next_mode;
 	}
     }
@@ -2874,7 +2902,7 @@ static void timeout_lastditch(scamper_task_t *task)
 {
   /* we received no responses to any of the last-ditch probes */
   trace_stop_gaplimit(trace_getdata(task));
-  scamper_task_queue_done(task, 0);
+  trace_queue_done(task);
   return;
 }
 
@@ -2910,7 +2938,7 @@ static void timeout_pmtud_silent_L2(scamper_task_t *task)
    */
   if(state->pmtud->L2->idx == 0)
     {
-      scamper_task_queue_done(task, 0);
+      trace_queue_done(task);
       return;
     }
 
@@ -2930,7 +2958,7 @@ static void timeout_pmtud_silent_L2(scamper_task_t *task)
       if(pmtud_TTL_init(task) == 1)
 	state->mode = MODE_PMTUD_SILENT_TTL;
       else
-	scamper_task_queue_done(task, 0);
+	trace_queue_done(task);
     }
 
   return;
@@ -3045,7 +3073,7 @@ static void do_trace_handle_timeout(scamper_task_t *task)
    * handle this particular probe failing
    */
   if((trace->confidence == 0 && state->attempt == trace->attempts) ||
-     (trace->confidence != 0 && state->attempt == k(state)))
+     (trace->confidence != 0 && state->attempt == k(state->conf)))
     {
       /* we're probably going to send another probe, so reset the attempt # */
       state->attempt = 0;
@@ -3062,6 +3090,7 @@ static int handletp_trace(scamper_task_t *task, scamper_dl_rec_t *dl,
 {
   scamper_trace_t *trace = trace_getdata(task);
   trace_state_t *state = trace_getstate(task);
+  trace_conf_state_t *conf;
   scamper_trace_hop_t *hop;
   struct timeval now;
   size_t len;
@@ -3089,29 +3118,29 @@ static int handletp_trace(scamper_task_t *task, scamper_dl_rec_t *dl,
   else if(trace->confidence != 0)
     {
       /* record details of the interface */
-      if(array_find((void **)state->interfaces, state->interfacec,
+      conf = state->conf;
+      if(array_find((void **)conf->interfaces, conf->interfacec,
 		    hop->hop_addr, (array_cmp_t)scamper_addr_cmp) == NULL)
 	{
-	  len = (state->interfacec + 1) * sizeof(scamper_addr_t *);
-	  if(realloc_wrap((void **)&state->interfaces, len) != 0)
+	  len = (conf->interfacec + 1) * sizeof(scamper_addr_t *);
+	  if(realloc_wrap((void **)&conf->interfaces, len) != 0)
 	    {
 	      printerror(__func__, "could not realloc interfaces");
 	      trace_handleerror(task, errno);
 	      return -1;
 	    }
 
-	  state->interfaces[state->interfacec++] = hop->hop_addr;
-
-	  if(state->interfacec > 1)
+	  conf->interfaces[conf->interfacec++] = hop->hop_addr;
+	  if(conf->interfacec > 1)
 	    {
-	      array_qsort((void **)state->interfaces, state->interfacec,
+	      array_qsort((void **)conf->interfaces, conf->interfacec,
 			  (array_cmp_t)scamper_addr_cmp);
-	      state->n++;
+	      conf->n++;
 	    }
 	}
 
       /* if there are still probes to send for this hop, send the next one */
-      if(state->n <= TRACE_CONFIDENCE_MAX_N && state->attempt < k(state))
+      if(conf->n <= TRACE_CONFIDENCE_MAX_N && state->attempt < k(conf))
 	goto probe;
       trace->hop_count++;
     }
@@ -3122,7 +3151,7 @@ static int handletp_trace(scamper_task_t *task, scamper_dl_rec_t *dl,
     }
 
   trace_stop_completed(trace);
-  scamper_task_queue_done(task, 0);
+  trace_queue_done(task);
 
   return 0;
 
@@ -3160,7 +3189,7 @@ static int handletp_lastditch(scamper_task_t *task, scamper_dl_rec_t *dl,
       trace_stop_completed(trace);
     }
 
-  scamper_task_queue_done(task, 0);
+  trace_queue_done(task);
   return 0;
 }
 
@@ -3292,8 +3321,8 @@ static void do_trace_handle_dl(scamper_task_t *task, scamper_dl_rec_t *dl)
     NULL,            /* MODE_DTREE_FIRST */
     NULL,            /* MODE_DTREE_FWD */
     NULL,            /* MODE_DTREE_BACK */
-    NULL,            /* MODE_PARALLEL */
-    NULL,            /* MODE_PARALLEL_FINISH */
+    dlin_trace,      /* MODE_PARALLEL */
+    dlin_trace,      /* MODE_PARALLEL_FINISH */
   };
 
   static int (* const handletp_func[])(scamper_task_t *,
@@ -3323,7 +3352,7 @@ static void do_trace_handle_dl(scamper_task_t *task, scamper_dl_rec_t *dl)
   int              direction;
   struct timeval   diff;
 
-  if(state == NULL)
+  if(state == NULL || trace->probec == 0)
     return;
 
   assert(dl->dl_af == AF_INET || dl->dl_af == AF_INET6);
@@ -3549,21 +3578,18 @@ static void do_trace_handle_dl(scamper_task_t *task, scamper_dl_rec_t *dl)
   assert(probe->mode <= MODE_MAX);
 
   /* if this is an inbound packet with a timestamp attached */
-  if(direction == DIR_INBOUND)
+  if(direction == DIR_INBOUND && (probe->flags & TRACE_PROBE_FLAG_DL_RX) == 0)
     {
-      /* inbound TCP packets result in a hop record being created */
+      /* update the receive timestamp stored with the probe */
+      probe->flags |= TRACE_PROBE_FLAG_DL_RX;
+      timeval_cpy(&probe->rx_tv, &dl->dl_tv);
+
       if(dl->dl_ip_proto == IPPROTO_TCP || dl->dl_ip_proto == IPPROTO_UDP)
 	{
 	  /*
-	   * record the receive timestamp with the probe structure if it hasn't
-	   * been previously recorded
+	   * inbound TCP and UDP packets result in a hop record being
+	   * created
 	   */
-	  if((probe->flags & TRACE_PROBE_FLAG_DL_RX) != 0)
-	    {
-	      timeval_cpy(&probe->rx_tv, &dl->dl_tv);
-	      probe->flags |= TRACE_PROBE_FLAG_DL_RX;
-	    }
-
 	  if(handletp_func[probe->mode] != NULL)
 	    {
 	      if(dl->dl_ip_proto == IPPROTO_TCP)
@@ -3573,19 +3599,16 @@ static void do_trace_handle_dl(scamper_task_t *task, scamper_dl_rec_t *dl)
 	      handletp_func[probe->mode](task, dl, probe);
 	    }
 	}
-      /* other datalink records result in timestamps being adjusted */
-      else if((probe->flags & TRACE_PROBE_FLAG_DL_RX) == 0)
+      else
 	{
-	  /* update the receive timestamp stored with the probe */
-	  probe->flags |= TRACE_PROBE_FLAG_DL_RX;
-	  timeval_cpy(&probe->rx_tv, &dl->dl_tv);
-
-	  /* if at least one hop record is present then adjust */
+	  /*
+	   * other datalink records result in timestamps being adjusted
+	   */
 	  if(probe->rx > 0 && dlin_func[probe->mode] != NULL)
 	    dlin_func[probe->mode](trace, dl, probe);
 	}
     }
-  else
+  else if(direction == DIR_OUTBOUND)
     {
       scamper_debug(__func__, "probe %ld.%06d dl %ld.%06d diff %d",
 		    (long)probe->tx_tv.tv_sec, (int)probe->tx_tv.tv_usec,
@@ -3622,7 +3645,7 @@ static void trace_handle_dlhdr(scamper_dlhdr_t *dlhdr)
 
   if(dlhdr->error != 0)
     {
-      scamper_task_queue_done(task, 0);
+      trace_queue_done(task);
       return;
     }
 
@@ -3788,6 +3811,64 @@ static void trace_pmtud_state_free(trace_pmtud_state_t *state)
   return;
 }
 
+static void trace_dtree_state_free(trace_dtree_state_t *state)
+{
+  if(state->lss != NULL) free(state->lss);
+  free(state);
+  return;
+}
+
+static int trace_conf_state_alloc(const scamper_trace_t *trace,
+				  trace_state_t *state)
+{
+  if((state->conf = malloc_zero(sizeof(trace_conf_state_t))) == NULL)
+    return -1;
+  state->conf->n = 2;
+  if(trace->confidence == 99)
+    state->conf->confidence = 1;
+  return 0;
+}
+
+static void trace_conf_state_free(trace_conf_state_t *state)
+{
+  if(state->interfaces != NULL) free(state->interfaces);
+  free(state);
+  return;
+}
+
+static int trace_para_state_alloc(const scamper_trace_t *trace,
+				  trace_state_t *state)
+{
+  trace_para_state_t *para;
+
+  if((state->para = malloc_zero(sizeof(trace_para_state_t))) == NULL ||
+     (state->para->window = dlist_alloc()) == NULL ||
+     (state->para->probeq = slist_alloc()) == NULL)
+    {
+      printerror(__func__, "could not alloc state");
+      return -1;
+    }
+
+  para = state->para;
+  if(timeval_iszero(&trace->wait_probe_hop) == 0 &&
+     (para->hopwait = heap_alloc((heap_cmp_t)trace_hop_state_cmp)) == NULL)
+    {
+      printerror(__func__, "could not alloc waithop");
+      return -1;
+    }
+
+  return 0;
+}
+
+static void trace_para_state_free(trace_para_state_t *state)
+{
+  if(state->window != NULL) dlist_free_cb(state->window, free);
+  if(state->probeq != NULL) slist_free_cb(state->probeq, free);
+  if(state->hopwait != NULL) heap_free(state->hopwait, free);
+  free(state);
+  return;
+}
+
 static void trace_state_free(trace_state_t *state)
 {
   trace_probe_t *probe;
@@ -3814,12 +3895,10 @@ static void trace_state_free(trace_state_t *state)
   if(state->raw != NULL)        scamper_fd_free(state->raw);
   if(state->route != NULL)      scamper_route_free(state->route);
   if(state->dlhdr != NULL)      scamper_dlhdr_free(state->dlhdr);
-  if(state->interfaces != NULL) free(state->interfaces);
-  if(state->lss != NULL)        free(state->lss);
+  if(state->conf != NULL)       trace_conf_state_free(state->conf);
+  if(state->dtree != NULL)      trace_dtree_state_free(state->dtree);
   if(state->pmtud != NULL)      trace_pmtud_state_free(state->pmtud);
-  if(state->window != NULL)     dlist_free_cb(state->window, free);
-  if(state->probeq != NULL)     slist_free_cb(state->probeq, free);
-  if(state->hopwait != NULL)    heap_free(state->hopwait, free);
+  if(state->para != NULL)       trace_para_state_free(state->para);
 #ifndef DISABLE_SCAMPER_HOST
   if(state->ths != NULL)
     splaytree_free(state->ths, (splaytree_free_t)trace_host_free);
@@ -3867,29 +3946,12 @@ static int trace_state_alloc(scamper_task_t *task)
   int id_max;
 
   assert(trace != NULL);
-  state->n = 2;
-  if(trace->confidence == 99)
-    state->confidence = 1;
 
-  if(trace->squeries > 1)
-    {
-      if((state->window = dlist_alloc()) == NULL)
-	{
-	  printerror(__func__, "could not alloc window");
-	  goto err;
-	}
-      if((state->probeq = slist_alloc()) == NULL)
-	{
-	  printerror(__func__, "could not alloc probeq");
-	  goto err;
-	}
-      if(timeval_iszero(&trace->wait_probe_hop) == 0 &&
-	 (state->hopwait = heap_alloc((heap_cmp_t)trace_hop_state_cmp)) == NULL)
-	{
-	  printerror(__func__, "could not alloc waithop");
-	  goto err;
-	}
-    }
+  if(trace->confidence != 0 && trace_conf_state_alloc(trace, state) != 0)
+    goto err;
+
+  if(trace->squeries > 1 && trace_para_state_alloc(trace, state) != 0)
+    goto err;
 
   /* allocate memory to record hops */
   state->alloc_hops = TRACE_ALLOC_HOPS;
@@ -3901,9 +3963,13 @@ static int trace_state_alloc(scamper_task_t *task)
 	state->alloc_hops += trace->firsthop;
     }
 
-  if(trace->dtree != NULL && trace->dtree->lss != NULL)
+  /* if we're doing doubletree probing, then allocate state for that */
+  if(trace->dtree != NULL)
     {
-      if((state->lsst = trace_lss_get(trace->dtree->lss)) == NULL)
+      if((state->dtree = malloc_zero(sizeof(trace_dtree_state_t))) == NULL)
+	goto err;
+      if(trace->dtree->lss != NULL &&
+	 (state->dtree->lsst = trace_lss_get(trace->dtree->lss)) == NULL)
 	goto err;
     }
 
@@ -3997,7 +4063,7 @@ static void do_trace_halt(scamper_task_t *task)
 {
   scamper_trace_t *trace = trace_getdata(task);
   trace->stop_reason = SCAMPER_TRACE_STOP_HALTED;
-  scamper_task_queue_done(task, 0);
+  trace_queue_done(task);
   return;
 }
 
@@ -4105,15 +4171,15 @@ static void do_trace_probe(scamper_task_t *task)
       state->id_max = u16;
     }
 
-  /* allocate a larger global pktbuf if needed */
-  if(pktbuf_len < state->payload_size)
+  /* allocate a larger global txbuf if needed */
+  if(txbuf_len < state->payload_size)
     {
-      if(realloc_wrap((void **)&pktbuf, state->payload_size) != 0)
+      if(realloc_wrap((void **)&txbuf, state->payload_size) != 0)
 	{
 	  printerror(__func__, "could not realloc");
 	  goto err;
 	}
-      pktbuf_len = state->payload_size;
+      txbuf_len = state->payload_size;
     }
 
   memset(&probe, 0, sizeof(probe));
@@ -4124,16 +4190,16 @@ static void do_trace_probe(scamper_task_t *task)
   if(state->payload_size > 0)
     {
       probe.pr_len   = state->payload_size;
-      probe.pr_data  = pktbuf;
+      probe.pr_data  = txbuf;
     }
 
   if(MODE_IS_PARALLEL(state->mode))
     {
-      if((hs = slist_head_pop(state->probeq)) != NULL)
+      if((hs = slist_head_pop(state->para->probeq)) != NULL)
 	{
 	  /* re-probe an existing hop */
 	  assert(hs->attempt < trace->attempts);
-	  if(dlist_tail_push(state->window, hs) == NULL)
+	  if(dlist_tail_push(state->para->window, hs) == NULL)
 	    {
 	      free(hs);
 	      printerror(__func__, "could not push trace_hop_state_t");
@@ -4145,7 +4211,7 @@ static void do_trace_probe(scamper_task_t *task)
 	  /* probe a new hop */
 	  assert(state->mode == MODE_PARALLEL);
 	  if((hs = malloc_zero(sizeof(trace_hop_state_t))) == NULL ||
-	     dlist_tail_push(state->window, hs) == NULL)
+	     dlist_tail_push(state->para->window, hs) == NULL)
 	    {
 	      if(hs != NULL) free(hs);
 	      printerror(__func__, "could not push trace_hop_state_t");
@@ -4370,8 +4436,6 @@ static void do_trace_probe(scamper_task_t *task)
     {
       assert(hs != NULL);
       timeval_cpy(&hs->last_tx, &probe.pr_tx);
-      timeval_add_tv3(&hs->next_tx, &hs->last_tx, &trace->wait_probe_hop);
-      timeval_add_tv3(&hs->timeout, &hs->last_tx, &trace->wait_timeout);
       hs->attempt++;
       hs->id = state->id_next;
       tp->attempt = hs->attempt;
@@ -4425,21 +4489,23 @@ static void do_trace_sigs(scamper_task_t *task)
   /* allocate state for storing fds in */
   if((state = malloc_zero(sizeof(trace_state_t))) == NULL)
     {
-      snprintf(errbuf, errlen, "%s: could not malloc state", __func__);
+      scamper_debug(__func__, "could not malloc state");
       goto err;
     }
 
   /* declare the signature of the task's probes */
   if((sig = scamper_task_sig_alloc(SCAMPER_TASK_SIG_TYPE_TX_IP)) == NULL)
     {
-      snprintf(errbuf, errlen, "%s: could not alloc task signature", __func__);
+      scamper_debug(__func__, "could not alloc task signature");
       goto err;
     }
   sig->sig_tx_ip_dst = scamper_addr_use(trace->dst);
   if(trace->src == NULL &&
      (trace->src = scamper_getsrc(trace->dst, 0, errbuf, errlen)) == NULL)
-    goto err;
-  sig->sig_tx_ip_src = scamper_addr_use(trace->src);
+    {
+      scamper_debug(__func__, "%s", errbuf);
+      goto err;
+    }
 
   /*
    * get the probe socket so that we can get a task signature.  leave
@@ -4491,7 +4557,7 @@ static void do_trace_sigs(scamper_task_t *task)
 
   if(state->probe == NULL)
     {
-      snprintf(errbuf, errlen, "%s: could not open probe socket", __func__);
+      scamper_debug(__func__, "could not open probe socket");
       goto err;
     }
 
@@ -4502,7 +4568,7 @@ static void do_trace_sigs(scamper_task_t *task)
 	{
 	  if(scamper_fd_sport(state->probe, &trace->sport) != 0)
 	    {
-	      snprintf(errbuf, errlen, "%s: could not get sport", __func__);
+	      scamper_debug(__func__, "could not get sport");
 	      goto err;
 	    }
 	}
@@ -4551,13 +4617,13 @@ static void do_trace_sigs(scamper_task_t *task)
       break;
 
     default:
-      snprintf(errbuf, errlen, "%s: unhandled type %d", __func__, trace->type);
+      scamper_debug(__func__, "unhandled type %d", trace->type);
       goto err;
     }
 
   if(scamper_task_sig_add(task, sig) != 0)
     {
-      snprintf(errbuf, errlen, "%s: could not add signature to task", __func__);
+      scamper_debug(__func__, "could not add signature to task");
       goto err;
     }
   sig = NULL;
@@ -4604,12 +4670,6 @@ uint32_t scamper_do_trace_userid(void *data)
 
 void scamper_do_trace_cleanup(void)
 {
-  if(pktbuf != NULL)
-    {
-      free(pktbuf);
-      pktbuf = NULL;
-    }
-
   if(lsses != NULL)
     {
       splaytree_free(lsses, (splaytree_free_t)trace_lss_free);

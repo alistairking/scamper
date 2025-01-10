@@ -1,7 +1,7 @@
 /*
  * scamper_dealias_int.h
  *
- * $Id: scamper_dealias_int.h,v 1.18 2024/01/16 06:55:18 mjl Exp $
+ * $Id: scamper_dealias_int.h,v 1.19 2024/09/23 10:34:27 mjl Exp $
  *
  * Copyright (C) 2008-2011 The University of Waikato
  * Copyright (C) 2012-2013 The Regents of the University of California
@@ -16,7 +16,7 @@
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, version 2.
  *
- * This program is distributed in the replye that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.

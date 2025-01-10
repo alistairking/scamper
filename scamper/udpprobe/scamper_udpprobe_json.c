@@ -3,7 +3,7 @@
  *
  * Author: Matthew Luckie
  *
- * $Id: scamper_udpprobe_json.c,v 1.3 2024/04/13 01:25:58 mjl Exp $
+ * $Id: scamper_udpprobe_json.c,v 1.7 2024/12/31 04:17:31 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -27,6 +27,8 @@
 
 #include "scamper_addr.h"
 #include "scamper_list.h"
+#include "scamper_ifname.h"
+#include "scamper_ifname_int.h"
 #include "scamper_udpprobe.h"
 #include "scamper_udpprobe_int.h"
 #include "scamper_file.h"
@@ -50,7 +52,7 @@ static char *reply_tostr(const scamper_udpprobe_probe_t *probe,
     }
 
   timeval_diff_tv(&rtt, &probe->tx, &reply->rx);
-  string_concat(buf, sizeof(buf), &off,
+  string_concaf(buf, sizeof(buf), &off,
 		"{\"rx\":{\"sec\":%ld,\"usec\":%d}"
 		", \"rtt\":{\"sec\":%ld,\"usec\":%d}"
 		", \"len\":%u, \"data\":\"",
@@ -58,7 +60,11 @@ static char *reply_tostr(const scamper_udpprobe_probe_t *probe,
 		(long)rtt.tv_sec, (int)rtt.tv_usec,
 		reply->len);
   string_byte2hex(buf, sizeof(buf), &off, reply->data, reply->len);
-  string_concat(buf, sizeof(buf), &off, "\"}");
+  string_concat(buf, sizeof(buf), &off, "\"");
+  if(reply->ifname != NULL && reply->ifname->ifname != NULL)
+    string_concat3(buf, sizeof(buf), &off, ", \"ifname\":\"",
+		   reply->ifname->ifname, "\"");
+  string_concat(buf, sizeof(buf), &off, "}");
 
   *len = off;
   return strdup(buf);
@@ -73,7 +79,7 @@ static char *probe_tostr(const scamper_udpprobe_probe_t *probe)
   if(probe == NULL)
     return strdup("{}");
 
-  string_concat(header, sizeof(header), &header_len,
+  string_concaf(header, sizeof(header), &header_len,
 		"{\"tx\":{\"sec\":%ld,\"usec\":%d}, \"sport\":%u,"
 		" \"replyc\":%u, \"replies\":[",
 		(long)probe->tx.tv_sec, (int)probe->tx.tv_usec,
@@ -140,12 +146,12 @@ static char *header_tostr(const scamper_udpprobe_t *up)
   string_concat(buf, sizeof(buf), &off,
 		"{\"type\":\"udpprobe\", \"version\":\"0.1\"");
   if(up->src != NULL)
-    string_concat(buf, sizeof(buf), &off, ", \"src\":\"%s\"",
-		  scamper_addr_tostr(up->src, tmp, sizeof(tmp)));
+    string_concat3(buf, sizeof(buf), &off, ", \"src\":\"",
+		   scamper_addr_tostr(up->src, tmp, sizeof(tmp)), "\"");
   if(up->dst != NULL)
-    string_concat(buf, sizeof(buf), &off, ", \"dst\":\"%s\"",
-		  scamper_addr_tostr(up->dst, tmp, sizeof(tmp)));
-  string_concat(buf, sizeof(buf), &off,
+    string_concat3(buf, sizeof(buf), &off, ", \"dst\":\"",
+		   scamper_addr_tostr(up->dst, tmp, sizeof(tmp)), "\"");
+  string_concaf(buf, sizeof(buf), &off,
 		", \"userid\":%u, \"start\":{\"sec\":%ld,\"usec\":%d}"
 		", \"sport\":%u, \"dport\":%u"
 		", \"wait_timeout\":{\"sec\":%ld,\"usec\":%d}",
@@ -158,30 +164,28 @@ static char *header_tostr(const scamper_udpprobe_t *up)
 
   string_concat(buf, sizeof(buf), &off, ", \"stop_reason\":\"");
   if(up->stop >= sizeof(stop_m) / sizeof(char *))
-    string_concat(buf, sizeof(buf), &off, "%d", up->stop);
+    string_concaf(buf, sizeof(buf), &off, "%d", up->stop);
   else
-    string_concat(buf, sizeof(buf), &off, "%s", stop_m[up->stop]);
+    string_concat(buf, sizeof(buf), &off, stop_m[up->stop]);
   string_concat(buf, sizeof(buf), &off, "\"");
 
   string_concat(buf, sizeof(buf), &off, ", \"data\":\"");
   string_byte2hex(buf, sizeof(buf), &off, up->data, up->len);
-  string_concat(buf, sizeof(buf), &off, "\", \"len\":%u", up->len);
+  string_concaf(buf, sizeof(buf), &off, "\", \"len\":%u", up->len);
 
-  string_concat(buf, sizeof(buf), &off,
+  string_concaf(buf, sizeof(buf), &off,
 		", \"probe_count\":%u, \"probe_sent\":%u, \"stop_count\":%u",
 		up->probe_count, up->probe_sent, up->stop_count);
 
   return strdup(buf);
 }
 
-int scamper_file_json_udpprobe_write(const scamper_file_t *sf,
-				     const scamper_udpprobe_t *up, void *p)
+char *scamper_udpprobe_tojson(const scamper_udpprobe_t *up, size_t *len_out)
 {
   char *header = NULL, *str = NULL;
   char **probes = NULL; size_t *probe_lens = NULL;
-  size_t len = 0, header_len = 0;
-  size_t wc = 0;
-  int ret = -1;
+  size_t len = 0, header_len = 0, wc = 0;
+  int rc = -1;
   uint8_t i;
 
   /* get the header string */
@@ -205,7 +209,7 @@ int scamper_file_json_udpprobe_write(const scamper_file_t *sf,
 	}
     }
 
-  len += 3; /* ]}\n */
+  len += 3; /* ]}\0 */
 
   if((str = malloc_zero(len)) == NULL)
     goto cleanup;
@@ -220,14 +224,13 @@ int scamper_file_json_udpprobe_write(const scamper_file_t *sf,
       wc += probe_lens[i];
     }
 
-  memcpy(str+wc, "]}\n", 3); wc += 3;
+  memcpy(str+wc, "]}\0", 3); wc += 3;
 
   assert(wc == len);
-  ret = json_write(sf, str, len, p);
+  rc = 0;
 
  cleanup:
   if(header != NULL) free(header);
-  if(str != NULL) free(str);
   if(probes != NULL)
     {
       for(i=0; i<up->probe_sent; i++)
@@ -236,5 +239,31 @@ int scamper_file_json_udpprobe_write(const scamper_file_t *sf,
       free(probes);
     }
   if(probe_lens != NULL) free(probe_lens);
-  return ret;
+
+  if(rc != 0)
+    {
+      if(str != NULL)
+	free(str);
+      return NULL;
+    }
+
+  if(len_out != NULL)
+    *len_out = len;
+  return str;
+}
+
+int scamper_file_json_udpprobe_write(const scamper_file_t *sf,
+				     const scamper_udpprobe_t *up, void *p)
+{
+  char *str;
+  size_t len;
+  int rc;
+
+  if((str = scamper_udpprobe_tojson(up, &len)) == NULL)
+    return -1;
+  str[len-1] = '\n';
+  rc = json_write(sf, str, len, p);
+  free(str);
+
+  return rc;
 }

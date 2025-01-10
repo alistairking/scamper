@@ -8,7 +8,7 @@
  * mjl_patricia.  Note, we cannot use a generic Patricia Trie to do
  * longest matching prefix lookup, hence this tree.
  *
- * Copyright (C) 2016-2023 Matthew Luckie. All rights reserved.
+ * Copyright (C) 2016-2024 Matthew Luckie. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -31,9 +31,13 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  *
- * $Id: mjl_prefixtree.c,v 1.21 2024/03/04 19:36:41 mjl Exp $
+ * $Id: mjl_prefixtree.c,v 1.22 2024/12/29 18:34:16 mjl Exp $
  *
  */
+
+#ifdef HAVE_CONFIG_H
+#include "config.h"
+#endif
 
 #include <sys/types.h>
 
@@ -52,12 +56,8 @@ typedef unsigned __int32 uint32_t;
 #include <string.h>
 #include <assert.h>
 
-#if defined(DMALLOC)
+#ifdef DMALLOC
 #include <dmalloc.h>
-#endif
-
-#ifdef HAVE_CONFIG_H
-#include "config.h"
 #endif
 
 #if defined(__sun__)

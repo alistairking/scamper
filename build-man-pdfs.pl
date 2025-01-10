@@ -1,6 +1,6 @@
 #!/usr/bin/env perl
 #
-# $Id: build-man-pdfs.pl,v 1.23 2024/07/09 22:05:41 mjl Exp $
+# $Id: build-man-pdfs.pl,v 1.24 2024/11/12 23:55:47 mjl Exp $
 
 use strict;
 use warnings;
@@ -13,8 +13,8 @@ sub cmd($)
 }
 
 my @mans = ("scamper/scamper.1",
-	    "scamper/libscamperfile.3",
-	    "scamper/warts.5",
+	    "lib/libscamperfile/libscamperfile.3",
+	    "lib/libscamperfile/warts.5",
 	    "lib/libscamperctrl/libscamperctrl.3",
 	    "utils/sc_ally/sc_ally.1",
 	    "utils/sc_analysis_dump/sc_analysis_dump.1",

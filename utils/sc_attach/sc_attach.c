@@ -6,7 +6,7 @@
  *
  * Copyright (C) 2008-2011 The University of Waikato
  * Copyright (C) 2012-2015 Regents of the University of California
- * Copyright (C) 2015-2023 Matthew Luckie
+ * Copyright (C) 2015-2024 Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -21,7 +21,7 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
- * $Id: sc_attach.c,v 1.42 2024/03/04 19:36:41 mjl Exp $
+ * $Id: sc_attach.c,v 1.47 2024/12/31 04:17:31 mjl Exp $
  *
  */
 
@@ -41,18 +41,21 @@
 #define OPT_OUTFILE     0x0004
 #define OPT_PORT        0x0008
 #define OPT_STDOUT      0x0010
-#define OPT_VERSION     0x0020
 #define OPT_DEBUG       0x0040
-#define OPT_PRIORITY    0x0080
-#define OPT_COMMAND     0x0200
-#define OPT_OPTIONS     0x0800
+#define OPT_PRIORITY    0x0040
+#define OPT_COMMAND     0x0080
+#define OPT_OPTIONS     0x0100
 
 #ifdef HAVE_DAEMON
-#define OPT_DAEMON      0x0100
+#define OPT_DAEMON      0x0200
+#endif
+
+#ifdef PACKAGE_VERSION
+#define OPT_VERSION     0x0400
 #endif
 
 #ifdef HAVE_SOCKADDR_UN
-#define OPT_REMOTE      0x0400
+#define OPT_REMOTE      0x0800
 #define OPT_UNIX        0x1000
 #else
 #define OPT_REMOTE      0
@@ -176,8 +179,10 @@ static void usage(uint32_t opt_mask)
     fprintf(stderr, "     -D operate as a daemon\n");
 #endif
 
+#ifdef PACKAGE_VERSION
   if(opt_mask & OPT_VERSION)
     fprintf(stderr, "     -v give the version string of sc_attach\n");
+#endif
 
   if(opt_mask & OPT_COMMAND)
     fprintf(stderr, "     -c command to use with addresses in input file\n");
@@ -223,7 +228,7 @@ static int check_options(int argc, char *argv[])
   char     *opt_unix = NULL;
 #endif
 
-  string_concat(opts, sizeof(opts), &off, "c:d");
+  string_concat(opts, sizeof(opts), &off, "?c:d");
 #ifdef HAVE_DAEMON
   opts[off++] = 'D';
 #endif
@@ -231,7 +236,10 @@ static int check_options(int argc, char *argv[])
 #ifdef HAVE_SOCKADDR_UN
   string_concat(opts, sizeof(opts), &off, "R:U:");
 #endif
-  string_concat(opts, sizeof(opts), &off, "v?");
+
+#ifdef PACKAGE_VERSION
+  string_concat(opts, sizeof(opts), &off, "v");
+#endif
 
   while((ch = getopt(argc, argv, opts)) != -1)
     {
@@ -302,9 +310,11 @@ static int check_options(int argc, char *argv[])
 	  break;
 #endif
 
+#ifdef PACKAGE_VERSION
 	case 'v':
-	  printf("$Id: sc_attach.c,v 1.42 2024/03/04 19:36:41 mjl Exp $\n");
-	  return -1;
+	  options |= OPT_VERSION;
+	  return 0;
+#endif
 
 	case '?':
 	default:
@@ -387,15 +397,16 @@ static int command_new(char *line, void *param)
       len = strlen(opt_command) + strlen(line) + 3;
       if((buf = malloc(len)) == NULL)
 	return -1;
-      string_concat(buf, len, &off, "%s %s\n", opt_command, line);
+      string_concat3(buf, len, &off, opt_command, " ", line);
     }
   else
     {
       len = strlen(line) + 2;
       if((buf = malloc(len)) == NULL)
 	return -1;
-      string_concat(buf, len, &off, "%s\n", line);
+      string_concat(buf, len, &off, line);
     }
+  string_concat(buf, len, &off, "\n");
 
   if(slist_tail_push(commands, buf) == NULL)
     {
@@ -640,7 +651,7 @@ static int do_scamperconnect(void)
     {
       if(dst_addr != NULL)
 	{
-	  if(sockaddr_compose_str(sa, dst_addr, dst_port) != 0)
+	  if(sockaddr_compose_str(sa, AF_UNSPEC, dst_addr, dst_port) != 0)
 	    {
 	      fprintf(stderr, "%s: could not compose sockaddr from %s:%d\n",
 		      __func__, dst_addr, dst_port);
@@ -716,7 +727,7 @@ static int do_scamperconnect(void)
     {
       string_concat(buf, sizeof(buf), &off, "attach");
       if((options & OPT_PRIORITY) != 0)
-	string_concat(buf, sizeof(buf), &off, " priority %d", priority);
+	string_concaf(buf, sizeof(buf), &off, " priority %d", priority);
       string_concat(buf, sizeof(buf), &off, "\n");
       if(scamper_writebuf_send(scamper_wb, buf, off) != 0)
 	{
@@ -801,6 +812,14 @@ int main(int argc, char *argv[])
 
   if(check_options(argc, argv) != 0)
     return -1;
+
+#ifdef PACKAGE_VERSION
+  if(options & OPT_VERSION)
+    {
+      printf("sc_attach version %s\n", PACKAGE_VERSION);
+      return 0;
+    }
+#endif
 
 #ifdef HAVE_DAEMON
   if((options & OPT_DAEMON) != 0 && daemon(1, 0) != 0)

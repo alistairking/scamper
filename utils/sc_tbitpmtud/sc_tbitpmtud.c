@@ -5,7 +5,7 @@
  * Author       : Matthew Luckie.
  *
  * Copyright (C) 2010,2018 The University of Waikato
- * Copyright (C) 2022-2023 Matthew Luckie
+ * Copyright (C) 2022-2024 Matthew Luckie
  * Copyright (C) 2023      The Regents of the University of California
  *
  * This program is free software; you can redistribute it and/or modify
@@ -21,7 +21,7 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
- * $Id: sc_tbitpmtud.c,v 1.37 2024/04/26 06:52:24 mjl Exp $
+ * $Id: sc_tbitpmtud.c,v 1.40 2024/12/31 04:17:31 mjl Exp $
  */
 
 #ifdef HAVE_CONFIG_H
@@ -580,13 +580,6 @@ static int target_addr_cmp(const void *va, const void *vb)
   return scamper_addr_cmp(a->addr, b->addr);
 }
 
-static void target_onremove(void *ptr)
-{
-  target_t *target = ptr;
-  target->hn = NULL;
-  return;
-}
-
 static void target_free(target_t *target)
 {
   target_url_t *url;
@@ -618,9 +611,9 @@ static char *sc_asmap_tostr(const sc_asmap_t *asmap, char *buf, size_t len)
 {
   size_t off = 0;
   int i;
-  string_concat(buf, len, &off, "%u", asmap->ases[0]);
+  string_concaf(buf, len, &off, "%u", asmap->ases[0]);
   for(i=1; i<asmap->asc; i++)
-    string_concat(buf, len, &off, "_%u", asmap->ases[i]);
+    string_concaf(buf, len, &off, "_%u", asmap->ases[i]);
   return buf;
 }
 
@@ -688,6 +681,7 @@ static int do_method(void)
      timeval_cmp(&target->next, &now) <= 0)
     {
       target = heap_remove(heap);
+      target->hn = NULL;
     }
   else if((target = slist_head_pop(list)) == NULL)
     {
@@ -703,7 +697,7 @@ static int do_method(void)
 
   if(target->mode == MODE_PING)
     {
-      string_concat(command_buf, sizeof(command_buf), &off,
+      string_concaf(command_buf, sizeof(command_buf), &off,
 		    "ping -U %d -c 4 -o 1 %s\n", target->pos, addr);
     }
   else if(target->mode == MODE_TBIT)
@@ -714,15 +708,15 @@ static int do_method(void)
 	  return 0;
 	}
 
-      string_concat(command_buf, sizeof(command_buf), &off,
+      string_concaf(command_buf, sizeof(command_buf), &off,
 		    "tbit -t pmtud -U %d", target->pos);
       if(string_firstof_char(url->url, '\'') == NULL)
-	string_concat(command_buf, sizeof(command_buf), &off, " -u '%s'",
-		      url->url);
+	string_concat3(command_buf, sizeof(command_buf), &off, " -u '",
+		       url->url, "'");
       else
-	string_concat(command_buf, sizeof(command_buf), &off, " -u \"%s\"",
-		      url->url);
-      string_concat(command_buf, sizeof(command_buf), &off,
+	string_concat3(command_buf, sizeof(command_buf), &off, " -u \"",
+		       url->url, "\"");
+      string_concaf(command_buf, sizeof(command_buf), &off,
 		    " -s %d -m %d -M %d %s\n",
 		    target->sport, target->mss, target->mtu, addr);
 
@@ -1235,7 +1229,6 @@ static int pmtud_data(void)
     return -1;
   if((heap = heap_alloc(target_next_cmp)) == NULL)
     return -1;
-  heap_onremove(heap, target_onremove);
   if((list = slist_alloc()) == NULL)
     return -1;
   if(file_lines(addressfile, parse_list, NULL) != 0)
@@ -1542,8 +1535,8 @@ static char *percentage(char *buf, size_t len, uint32_t a, uint32_t x)
 {
   size_t off = 0;
   if(x == 0) string_concat(buf, len, &off, "-");
-  else if(a == x) string_concat(buf, len, &off, "100%%");
-  else string_concat(buf, len, &off, "%.1f%%", (float)(a * 100) / x);
+  else if(a == x) string_concat(buf, len, &off, "100%");
+  else string_concaf(buf, len, &off, "%.1f%%", (float)(a * 100) / x);
   return buf;
 }
 

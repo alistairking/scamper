@@ -1,10 +1,10 @@
 /*
  * scamper_tracelb_int.h
  *
- * $Id: scamper_tracelb_int.h,v 1.5 2023/12/21 06:11:32 mjl Exp $
+ * $Id: scamper_tracelb_int.h,v 1.6 2024/10/13 20:53:37 mjl Exp $
  *
  * Copyright (C) 2008-2009 The University of Waikato
- * Copyright (C) 2018-2023 Matthew Luckie
+ * Copyright (C) 2018-2024 Matthew Luckie
  * Author: Matthew Luckie
  *
  * Load-balancer traceroute technique authored by
@@ -119,34 +119,17 @@ struct scamper_tracelb_reply
   uint16_t               reply_ipid;       /* IP ID of reply packet */
   uint8_t                reply_ttl;        /* ttl of the reply packet */
   uint8_t                reply_flags;      /* reply flags */
-
-  union
-  {
-    struct scamper_tracelb_reply_icmp
-    {
-      uint8_t            reply_icmp_type;  /* icmp type of the reply */
-      uint8_t            reply_icmp_code;  /* icmp code of the reply */
-      uint8_t            reply_icmp_q_tos; /* tos byte in quote */
-      uint8_t            reply_icmp_q_ttl; /* ttl byte in quote */
-      scamper_icmpext_t *reply_icmp_ext;   /* icmp extensions included */
-    } icmp;
-    struct scamper_tracelb_reply_tcp
-    {
-      uint8_t            reply_tcp_flags;  /* tcp flags of the reply */
-    } tcp;
-  } reply_un;
+  uint8_t                reply_icmp_type;  /* icmp type of the reply */
+  uint8_t                reply_icmp_code;  /* icmp code of the reply */
+  uint8_t                reply_icmp_q_tos; /* tos byte in quote */
+  uint8_t                reply_icmp_q_ttl; /* ttl byte in quote */
+  scamper_icmpext_t     *reply_icmp_ext;   /* icmp extensions included */
+  uint8_t                reply_tcp_flags;  /* tcp flags of the reply */
 
 #ifdef BUILDING_LIBSCAMPERFILE
   int                    refcnt;
 #endif
 };
-
-#define reply_icmp_type  reply_un.icmp.reply_icmp_type
-#define reply_icmp_code  reply_un.icmp.reply_icmp_code
-#define reply_icmp_ext   reply_un.icmp.reply_icmp_ext
-#define reply_icmp_q_ttl reply_un.icmp.reply_icmp_q_ttl
-#define reply_icmp_q_tos reply_un.icmp.reply_icmp_q_tos
-#define reply_tcp_flags  reply_un.tcp.reply_tcp_flags
 
 /*
  * scamper_tracelb_probe_t

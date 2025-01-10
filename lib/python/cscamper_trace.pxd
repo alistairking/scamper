@@ -2,7 +2,7 @@
 #
 # Author: Matthew Luckie
 #
-# Copyright (C) 2023 The Regents of the University of California
+# Copyright (C) 2023-2024 The Regents of the University of California
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -43,6 +43,8 @@ cdef extern from "scamper_trace.h":
 
  ctypedef struct scamper_trace_pmtud_t:
   pass
+
+ char *scamper_trace_tojson(const scamper_trace_t *trace, size_t *l)
 
  void scamper_trace_free(scamper_trace_t *trace)
 

@@ -3,10 +3,10 @@
  *
  * Copyright (C) 2008-2011 The University of Waikato
  * Copyright (C) 2012      The Regents of the University of California
- * Copyright (C) 2022-2023 Matthew Luckie
+ * Copyright (C) 2022-2024 Matthew Luckie
  * Author: Matthew Luckie
  *
- * $Id: scamper_tracelb_text.c,v 1.9 2023/05/29 00:02:24 mjl Exp $
+ * $Id: scamper_tracelb_text.c,v 1.11 2024/12/31 04:17:31 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -50,11 +50,11 @@ static void probeset_summary_tostr(scamper_tracelb_probeset_summary_t *sum,
     }
 
   scamper_addr_tostr(sum->addrs[0], dst, sizeof(dst));
-  string_concat(buf, len, off, "(%s", dst);
+  string_concat2(buf, len, off, "(", dst);
   for(k=1; k<sum->addrc; k++)
     {
       scamper_addr_tostr(sum->addrs[k], dst, sizeof(dst));
-      string_concat(buf, len, off, ", %s", dst);
+      string_concat2(buf, len, off, ", ", dst);
     }
   if(sum->nullc > 0)
     string_concat(buf, len, off, ", *)");
@@ -110,7 +110,7 @@ int scamper_file_text_tracelb_write(const scamper_file_t *sf,
 	  link = node->links[0];
 	  off = 0;
 
-	  string_concat(buf, sizeof(buf), &off, "%s -> ", src);
+	  string_concat2(buf, sizeof(buf), &off, src, " -> ");
 	  for(j=0; j<link->hopc-1; j++)
 	    {
 	      set = link->sets[j];
@@ -124,7 +124,7 @@ int scamper_file_text_tracelb_write(const scamper_file_t *sf,
 	  if(link->to != NULL)
 	    {
 	      scamper_addr_tostr(link->to->addr, dst, sizeof(dst));
-	      string_concat(buf, sizeof(buf), &off, "%s", dst);
+	      string_concat(buf, sizeof(buf), &off, dst);
 	    }
 	  else
 	    {

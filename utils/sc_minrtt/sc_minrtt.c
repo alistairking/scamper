@@ -1,7 +1,7 @@
 /*
  * sc_minrtt: dump RTT values by node for use by sc_hoiho
  *
- * $Id: sc_minrtt.c,v 1.6 2024/08/01 04:49:47 mjl Exp $
+ * $Id: sc_minrtt.c,v 1.21 2024/09/15 20:39:25 mjl Exp $
  *
  *         Matthew Luckie
  *         mjl@luckie.org.nz
@@ -55,6 +55,7 @@
 #include "mjl_list.h"
 #include "mjl_splaytree.h"
 #include "mjl_threadpool.h"
+#include "mjl_heap.h"
 #include "utils.h"
 
 #define OPT_HELP        0x0001
@@ -66,6 +67,11 @@
 #define OPT_THREADC     0x0040
 #define OPT_VPLOCFILE   0x0080
 #define OPT_RTRFILE     0x0100
+#define OPT_BATCHC      0x0200
+
+#ifdef PACKAGE_VERSION
+#define OPT_VERSION     0x0400
+#endif
 
 /* this is the same order that sc_pinger uses */
 #define RTT_METHOD_ICMP_ECHO  1
@@ -150,6 +156,20 @@ typedef struct sc_routerload
   uint8_t         gotid;   /* is node id set */
 } sc_routerload_t;
 
+typedef struct sc_filedata
+{
+  slist_t        *samples;
+  sc_vp_t        *vp;
+  uint32_t        runlens[4][256];
+  char           *filename;
+} sc_filedata_t;
+
+typedef struct sc_fdheap
+{
+  scamper_addr_t *addr;
+  sc_filedata_t  *fd;
+} sc_fdheap_t;
+
 static uint32_t        options  = 0;
 static splaytree_t    *dst_tree = NULL;
 static slist_t        *dst_list = NULL;
@@ -163,9 +183,13 @@ static char          **opt_args = NULL;
 static int             opt_argc = 0;
 static threadpool_t   *tp       = NULL;
 static long            threadc  = -1;
+static long            batchc   = -1;
 static const char     *vplocfile = NULL;
 static int             proc_x   = 0;
 static const char     *rtrfile  = NULL;
+static int             import_ok = 1;
+static uint8_t        *blob_buf = NULL;
+static uint16_t        blob_buflen = 0;
 
 #ifdef HAVE_PTHREAD
 static pthread_mutex_t db_mutex;
@@ -192,35 +216,64 @@ static sqlite3_blob   *blob = NULL;
 
 static void usage(uint32_t opt_mask)
 {
+  const char *v = "";
+  const char *t = "";
+
+#ifdef OPT_VERSION
+  v = "v";
+#endif
+
+#ifdef HAVE_PTHREAD
+  t = " [-t threadc]";
+#endif
+  
   fprintf(stderr,
     "usage: sc_minrtt [-c] [-d dbfile]\n"
-    "\n"
-    "       sc_minrtt [-i] [-d dbfile] [-R regex] in1.warts .. inN.warts\n"
-    "\n"
-    "       sc_minrtt [-p mode] [-d dbfile] [-r rtrfile] [-t threadc] [-V vploc]\n"
     "\n");
+  fprintf(stderr,
+    "       sc_minrtt [-i] [-b batchc] [-d dbfile] [-R regex]%s\n"
+    "                 in1.warts .. inN.warts\n"
+    "\n", t);
+  fprintf(stderr,
+    "       sc_minrtt [-p mode] [-d dbfile] [-r rtrfile]%s\n"
+    "                 [-V vploc]\n"
+    "\n", t);
 
   if(opt_mask == 0)
-    {
-      fprintf(stderr, "       sc_minrtt -?\n\n");
-      return;
-    }
+    fprintf(stderr, "       sc_minrtt -?%s\n\n", v);
 
   return;
 }
 
 static int check_options(int argc, char *argv[])
 {
-  char *opts = "?cd:ip:r:R:t:V:";
-  char *opt_threadc = NULL;
+  char opts[32], *opt_batchc = NULL;
+  size_t off = 0;
   uint32_t u32;
   long lo;
   int ch;
+
+#ifdef HAVE_PTHREAD
+  char *opt_threadc = NULL;
+#endif
+
+  string_concat(opts, sizeof(opts), &off, "?b:cd:ip:r:R:V:");
+#ifdef HAVE_PTHREAD
+  string_concat(opts, sizeof(opts), &off, "t:");
+#endif
+#ifdef OPT_VERSION
+  string_concat(opts, sizeof(opts), &off, "v");
+#endif
 
   while((ch = getopt(argc, argv, opts)) != -1)
     {
       switch(ch)
 	{
+	case 'b':
+	  options |= OPT_BATCHC;
+	  opt_batchc = optarg;
+	  break;
+
 	case 'c':
 	  options |= OPT_CREATE;
 	  break;
@@ -254,10 +307,18 @@ static int check_options(int argc, char *argv[])
 	  vp_regex = optarg;
 	  break;
 
+#ifdef HAVE_PTHREAD
 	case 't':
 	  options |= OPT_THREADC;
 	  opt_threadc = optarg;
 	  break;
+#endif
+
+#ifdef OPT_VERSION
+	case 'v':
+	  options |= OPT_VERSION;
+	  return 0;
+#endif
 
 	case 'V':
 	  options |= OPT_VPLOCFILE;
@@ -311,6 +372,7 @@ static int check_options(int argc, char *argv[])
 	}
     }
 
+#ifdef HAVE_PTHREAD
   if(opt_threadc != NULL)
     {
       if(string_tolong(opt_threadc, &lo) != 0 || lo < 0)
@@ -318,14 +380,26 @@ static int check_options(int argc, char *argv[])
 	  usage(OPT_THREADC);
 	  return -1;
 	}
-#ifndef HAVE_PTHREAD
-      if(lo > 1)
+      threadc = lo;
+    }
+#endif
+
+  if(opt_batchc != NULL)
+    {
+      if(string_tolong(opt_batchc, &lo) != 0 || lo < 1)
 	{
-	  usage(OPT_THREADC);
+	  usage(OPT_BATCHC);
+	  return -1;
+	}
+#ifdef HAVE_PTHREAD
+      if(threadc != -1 && threadc > batchc)
+	{
+	  usage(OPT_BATCHC | OPT_THREADC);
+	  fprintf(stderr, "batch size should not be smaller than thread count");
 	  return -1;
 	}
 #endif
-      threadc = lo;
+      batchc = lo;
     }
 
   return 0;
@@ -391,6 +465,66 @@ static char *percentage(char *buf, size_t len, uint32_t x, uint32_t y)
   else
     snprintf(buf, len, "%.1f%%", (float)(x * 100) / y);
   return buf;
+}
+
+static char *filename_nopath(char *filename)
+{
+  char *ptr;
+  if((ptr = string_lastof_char(filename, '/')) == NULL)
+    return filename;
+  else if(ptr[1] != '\0')
+    return ptr + 1;
+  return NULL;
+}
+
+static char *filename_vpname(const char *filename)
+{
+  #ifdef HAVE_PCRE2
+  pcre2_match_data *md = NULL;
+  PCRE2_SIZE *ovector = NULL;
+#else
+  int ovector[6];
+#endif
+
+  size_t len = strlen(filename);
+  char *vp_name = NULL;
+  int x;
+
+#ifdef HAVE_PCRE2
+  if((md = pcre2_match_data_create(2, NULL)) == NULL)
+    goto done;
+  if(pcre2_match(vp_pcre, (PCRE2_SPTR)filename, len, 0, 0, md, NULL) <= 0)
+    {
+      fprintf(stderr, "%s: regex %s did not match %s\n",
+	      __func__, vp_regex, filename);
+      goto done;
+    }
+  ovector = pcre2_get_ovector_pointer(md);
+#else
+  if(pcre_exec(vp_pcre, NULL, filename, len, 0, 0, ovector, 6) <= 0)
+    {
+      fprintf(stderr, "%s: regex %s did not match %s\n",
+	      __func__, vp_regex, filename);
+      goto done;
+    }
+#endif
+
+  len = ovector[2+1] - ovector[2] + 1;
+  if((vp_name = malloc(len)) == NULL)
+    {
+      fprintf(stderr, "%s: could not malloc %d bytes\n", __func__,
+	      (int)len);
+      goto done;
+    }
+  x = ovector[2+1] - ovector[2];
+  memcpy(vp_name, filename + ovector[2], x);
+  vp_name[x] = '\0';
+
+ done:
+#ifdef HAVE_PCRE2
+  if(md != NULL) pcre2_match_data_free(md);
+#endif
+  return vp_name;
 }
 
 static void sc_router_free(sc_router_t *rtr)
@@ -607,6 +741,8 @@ static sc_sample_t *sc_sample_add(slist_t *list, sc_vp_t *vp,
 
 static int sc_sample_ins_cmp(const sc_sample_t *a, const sc_sample_t *b)
 {
+  if(a->vp->id < b->vp->id) return -1;
+  if(a->vp->id > b->vp->id) return  1;
   if(a->method < b->method) return -1;
   if(a->method > b->method) return  1;
   if(a->rx_ttl < b->rx_ttl) return -1;
@@ -693,6 +829,38 @@ static int sc_sample_intersect(sc_sample_t *a, sc_sample_t *b)
   return 1;
 }
 
+/*
+ * sc_fdheap_cmp
+ *
+ * order entries in a heap by their address.  note inverted parameters
+ * to scamper_addr_cmp.
+ */
+static int sc_fdheap_cmp(const sc_fdheap_t *a, const sc_fdheap_t *b)
+{
+  return scamper_addr_cmp(b->addr, a->addr);
+}
+
+static void sc_filedata_free(sc_filedata_t *fd)
+{
+  if(fd->samples != NULL)
+    slist_free_cb(fd->samples, (slist_free_t)sc_sample_free);
+  free(fd);
+  return;
+}
+
+static sc_filedata_t *sc_filedata_alloc(void)
+{
+  sc_filedata_t *fd;
+  if((fd = malloc_zero(sizeof(sc_filedata_t))) == NULL ||
+     (fd->samples = slist_alloc()) == NULL)
+    goto err;
+  return fd;
+
+ err:
+  if(fd != NULL) sc_filedata_free(fd);
+  return NULL;
+}
+
 static void sc_dstlist_free(sc_dstlist_t *dst)
 {
   if(dst->addr != NULL) scamper_addr_free(dst->addr);
@@ -706,27 +874,25 @@ static int sc_dstlist_cmp(const sc_dstlist_t *a, const sc_dstlist_t *b)
   return scamper_addr_cmp(a->addr, b->addr);
 }
 
-static int sc_dstlist_add(splaytree_t *tree, sc_sample_t *sample)
+static sc_dstlist_t *sc_dstlist_get(splaytree_t *tree, scamper_addr_t *addr)
 {
   sc_dstlist_t fm, *dst;
 
-  fm.addr = sample->addr;
+  fm.addr = addr;
   if((dst = splaytree_find(tree, &fm)) == NULL)
     {
       if((dst = malloc_zero(sizeof(sc_dstlist_t))) == NULL)
-	return -1;
-      dst->addr = scamper_addr_use(sample->addr);
-      if(splaytree_insert(tree, dst) == NULL ||
-	 (dst->list = slist_alloc()) == NULL)
+	return NULL;
+      dst->addr = scamper_addr_use(addr);
+      if((dst->list = slist_alloc()) == NULL ||
+	 splaytree_insert(tree, dst) == NULL)
 	{
 	  sc_dstlist_free(dst);
-	  return -1;
+	  return NULL;
 	}
     }
 
-  if(slist_tail_push(dst->list, sample) == NULL)
-    return -1;
-  return 0;
+  return dst;
 }
 
 static void sc_rxsec_free(sc_rxsec_t *rxs)
@@ -1056,7 +1222,41 @@ static int do_create(void)
   return 0;
 }
 
-static int do_import_blob(sc_dst_t *dst)
+/*
+ * do_import_samplemin
+ *
+ * iterate through the samples for each destination, only keeping
+ * the shortest RTT value for each vp/method/reply_ttl tuple
+ */
+static int do_import_samplemin(slist_t *samples, slist_t *out)
+{
+  sc_sample_t *ins = NULL, *sample;
+
+  slist_qsort(samples, (slist_cmp_t)sc_sample_ins_cmp);
+  while((sample = slist_head_pop(samples)) != NULL)
+    {
+      if(ins != NULL &&
+	 sample->method == ins->method &&
+	 sample->rx_ttl == ins->rx_ttl &&
+	 sample->vp->id == ins->vp->id)
+	{
+	  sc_sample_free(sample);
+	}
+      else
+	{
+	  if(slist_tail_push(out, sample) == NULL)
+	    {
+	      sc_sample_free(sample);
+	      return -1;
+	    }
+	  ins = sample;
+	}
+    }
+
+  return 0;
+}
+
+static int do_import_emptyblob(sc_dst_t *dst)
 {
   int x;
 
@@ -1123,141 +1323,139 @@ static int do_import_dst(sc_dst_t *dst)
   sqlite3_clear_bindings(st_dst_ins);
   sqlite3_reset(st_dst_ins);
 
-  return do_import_blob(dst);
+  return do_import_emptyblob(dst);
+}
+
+static int do_import_blobleft(sc_dst_t *dst, uint16_t *b_off, uint16_t *b_size)
+{
+  uint8_t buf[2];
+  uint16_t blob_off;
+  int x, blob_size;
+
+  /* get the blob */
+  if(blob != NULL)
+    x = sqlite3_blob_reopen(blob, dst->samples_rowid);
+  else
+    x = sqlite3_blob_open(db, "main", "samples", "data",
+			  dst->samples_rowid, 1, &blob);
+  if(x != SQLITE_OK)
+    {
+      fprintf(stderr, "%s: could not open blob: %s\n",
+	      __func__, sqlite3_errstr(x));
+      return -1;
+    }
+
+  /* find out how much space is left */
+  blob_size = sqlite3_blob_bytes(blob);
+  if((x = sqlite3_blob_read(blob, buf, 2, 0)) != SQLITE_OK)
+    {
+      fprintf(stderr, "%s: could not read 2 bytes at offset 0: %s\n",
+	      __func__, sqlite3_errstr(x));
+      return -1;
+    }
+
+  if((blob_off = bytes_ntohs(buf)) == 0)
+    blob_off = 2;
+
+  if(blob_off > blob_size)
+    {
+      fprintf(stderr, "%s: blob_off > blob_size : %u > %d\n",
+	      __func__, blob_off, blob_size);
+      return -1;
+    }
+
+  *b_off = blob_off;
+  *b_size = (uint16_t)blob_size;
+  return 0;
 }
 
 /*
- * do_import_sample
+ * do_import_dst_samples
  *
  * uint8_t  method
  * uint16_t vp_id
  * uint8_t  reply_ttl
  * uint32_t rtt
  */
-static int do_import_sample(sc_dst_t *dst, sc_sample_t *sample)
+static int do_import_dst_samples(scamper_addr_t *addr, slist_t *samples)
 {
-  uint8_t buf[SAMPLE_SIZE];
-  uint16_t blob_off;
-  int blob_size;
-  int i, x;
+  sc_dst_t *dst;
+  sc_sample_t *sample;
+  uint16_t b_off, b_size, b_x;
+  int x;
 
-  for(i=0; i<2; i++)
+  /* get dst record from database */
+  if((dst = sc_dst_find(addr)) == NULL)
     {
-      /* get the blob */
-      if(blob != NULL)
-	x = sqlite3_blob_reopen(blob, dst->samples_rowid);
-      else
-	x = sqlite3_blob_open(db, "main", "samples", "data",
-			      dst->samples_rowid, 1, &blob);
-      if(x != SQLITE_OK)
+      if((dst = sc_dst_alloc(0, addr)) == NULL)
 	{
-	  fprintf(stderr, "%s: could not open blob: %s\n",
-		  __func__, sqlite3_errstr(x));
+	  fprintf(stderr, "%s: could not malloc dst\n", __func__);
+	  return -1;
+	}
+      scamper_addr_use(dst->addr);
+      if(splaytree_insert(dst_tree, dst) == NULL)
+	{
+	  fprintf(stderr, "%s: could not insert dst\n", __func__);
+	  sc_dst_free(dst);
 	  return -1;
 	}
 
-      /* find out how much space is left */
-      blob_size = sqlite3_blob_bytes(blob);
-      if((x = sqlite3_blob_read(blob, buf, 2, 0)) != SQLITE_OK)
-	{
-	  fprintf(stderr, "%s: could not read 2 bytes at offset 0: %s\n",
-		  __func__, sqlite3_errstr(x));
-	  return -1;
-	}
-      blob_off = bytes_ntohs(buf);
-      if(blob_off == 0)
-	blob_off = 2;
-
-      if(blob_off > blob_size)
-	{
-	  fprintf(stderr, "%s: blob_off > blob_size : %u > %d\n",
-		  __func__, blob_off, blob_size);
-	  return -1;
-	}
-
-      if(blob_size - blob_off >= SAMPLE_SIZE)
-	break;
-
-      if(do_import_blob(dst) != 0)
+      if(do_import_dst(dst) != 0)
 	return -1;
     }
 
-  buf[0] = sample->method;
-  bytes_htons(buf + 1, sample->vp->id);
-  buf[3] = sample->rx_ttl;
-  bytes_htonl(buf + 4, sample->rtt);
+  while(slist_head_item(samples) != NULL)
+    {
+      if(do_import_blobleft(dst, &b_off, &b_size) != 0)
+	return -1;
+      if(b_size - b_off < SAMPLE_SIZE)
+	{
+	  if(do_import_emptyblob(dst) != 0)
+	    return -1;
+	  continue;
+	}
 
-  x = sqlite3_blob_write(blob, buf, SAMPLE_SIZE, blob_off);
-  if(x != SQLITE_OK)
-    {
-      fprintf(stderr, "%s: could not write %d bytes at %d: %s\n",
-	      __func__, SAMPLE_SIZE, blob_off, sqlite3_errstr(x));
-      return -1;
-    }
-  blob_off += SAMPLE_SIZE;
-  bytes_htons(buf, blob_off);
-  sqlite3_blob_write(blob, buf, 2, 0);
-  if(x != SQLITE_OK)
-    {
-      fprintf(stderr, "%s: could not update offset: %s\n",
-	      __func__, sqlite3_errstr(x));
-      return -1;
+      /* increase the size of the blob_buf if necessary */
+      if(b_size - b_off > blob_buflen)
+	{
+	  if(realloc_wrap((void **)&blob_buf, b_size - b_off) != 0)
+	    return -1;
+	  blob_buflen = b_size - b_off;
+	}
+
+      b_x = 0;
+      while(b_size - (b_off + b_x) >= SAMPLE_SIZE)
+	{
+	  if((sample = slist_head_pop(samples)) == NULL)
+	    break;
+	  blob_buf[b_x + 0] = sample->method;
+	  bytes_htons(blob_buf + b_x + 1, sample->vp->id);
+	  blob_buf[b_x + 3] = sample->rx_ttl;
+	  bytes_htonl(blob_buf + b_x + 4, sample->rtt);
+	  sc_sample_free(sample);
+	  b_x += SAMPLE_SIZE;
+	}
+
+      if((x = sqlite3_blob_write(blob, blob_buf, b_x, b_off)) != SQLITE_OK)
+	{
+	  fprintf(stderr, "%s: could not write %d bytes at %d: %s\n",
+		  __func__, b_x, b_off, sqlite3_errstr(x));
+	  return -1;
+	}
+
+      bytes_htons(blob_buf, b_off + b_x);
+      if((x = sqlite3_blob_write(blob, blob_buf, 2, 0)) != SQLITE_OK)
+	{
+	  fprintf(stderr, "%s: could not update offset: %s\n",
+		  __func__, sqlite3_errstr(x));
+	  return -1;
+	}
     }
 
   return 0;
 }
 
-static char *do_import_extract_vp(const char *filename)
-{
-#ifdef HAVE_PCRE2
-  pcre2_match_data *md = NULL;
-  PCRE2_SIZE *ovector = NULL;
-#else
-  int ovector[6];
-#endif
-
-  size_t len = strlen(filename);
-  char *vp_name = NULL;
-  int x;
-
-#ifdef HAVE_PCRE2
-  if((md = pcre2_match_data_create(2, NULL)) == NULL)
-    goto done;
-  if(pcre2_match(vp_pcre, (PCRE2_SPTR)filename, len, 0, 0, md, NULL) <= 0)
-    {
-      fprintf(stderr, "%s: regex %s did not match %s\n",
-	      __func__, vp_regex, filename);
-      goto done;
-    }
-  ovector = pcre2_get_ovector_pointer(md);
-#else
-  if(pcre_exec(vp_pcre, NULL, filename, len, 0, 0, ovector, 6) <= 0)
-    {
-      fprintf(stderr, "%s: regex %s did not match %s\n",
-	      __func__, vp_regex, filename);
-      goto done;
-    }
-#endif
-
-  len = ovector[2+1] - ovector[2] + 1;
-  if((vp_name = malloc(len)) == NULL)
-    {
-      fprintf(stderr, "%s: could not malloc %d bytes\n", __func__,
-	      (int)len);
-      goto done;
-    }
-  x = ovector[2+1] - ovector[2];
-  memcpy(vp_name, filename + ovector[2], x);
-  vp_name[x] = '\0';
-
- done:
-#ifdef HAVE_PCRE2
-  if(md != NULL) pcre2_match_data_free(md);
-#endif
-  return vp_name;
-}
-
-static int do_import_ping(scamper_ping_t *ping, sc_vp_t *vp, slist_t *out)
+static int do_file_read_ping(scamper_ping_t *ping, sc_filedata_t *fd)
 {
   scamper_ping_reply_t *reply;
   const struct timeval *reply_rtt, *reply_tx;
@@ -1300,9 +1498,9 @@ static int do_import_ping(scamper_ping_t *ping, sc_vp_t *vp, slist_t *out)
 	}
 
       rtt = (reply_rtt->tv_sec * 1000000) + reply_rtt->tv_usec;
-      if((sample = sc_sample_alloc(ping_dst, vp, method,
+      if((sample = sc_sample_alloc(ping_dst, fd->vp, method,
 				   reply_ttl, rtt)) == NULL ||
-	 slist_tail_push(out, sample) == NULL)
+	 slist_tail_push(fd->samples, sample) == NULL)
 	{
 	  if(sample != NULL) sc_sample_free(sample);
 	  goto done;
@@ -1317,8 +1515,7 @@ static int do_import_ping(scamper_ping_t *ping, sc_vp_t *vp, slist_t *out)
   return rc;
 }
 
-static int do_import_dealias(scamper_dealias_t *dealias, sc_vp_t *vp,
-			     slist_t *out)
+static int do_file_read_dealias(scamper_dealias_t *dealias, sc_filedata_t *fd)
 {
   scamper_dealias_probe_t *probe;
   scamper_dealias_reply_t *reply;
@@ -1367,12 +1564,14 @@ static int do_import_dealias(scamper_dealias_t *dealias, sc_vp_t *vp,
 	default:
 	  continue;
 	}
+
       reply_ttl = scamper_dealias_reply_ttl_get(reply);
       dst = scamper_dealias_probedef_dst_get(def);
       timeval_diff_tv(&tv, tx, rx);
       rtt = (tv.tv_sec * 1000000) + tv.tv_usec;
-      if((sample = sc_sample_alloc(dst, vp, method, reply_ttl, rtt)) == NULL ||
-	 slist_tail_push(out, sample) == NULL)
+      if((sample = sc_sample_alloc(dst, fd->vp, method,
+				   reply_ttl, rtt)) == NULL ||
+	 slist_tail_push(fd->samples, sample) == NULL)
 	{
 	  if(sample != NULL) sc_sample_free(sample);
 	  goto done;
@@ -1381,145 +1580,66 @@ static int do_import_dealias(scamper_dealias_t *dealias, sc_vp_t *vp,
     }
 
   rc = 0;
+
  done:
   scamper_dealias_free(dealias);
   return rc;
 }
 
-static void do_import_file(char *filename)
+/*
+ * do_file_read
+ *
+ * this function loads the samples out of a specified file, and does
+ * some basic run-length processing.  it does not import to the
+ * database.
+ */
+static void do_file_read(sc_filedata_t *fd)
 {
   scamper_file_t *file = NULL;
   scamper_file_filter_t *ffilter = NULL;
-  sc_sample_t *sample, *rxttl, *start, *ins;
-  char *vp_name = NULL;
-  sc_vp_t *vp = NULL;
-  int begun = 0;
-  splaytree_t *dl_tree = NULL, *rxs_trees[4], *addr_tree = NULL;
+  splaytree_t *rxs_trees[4], *dl_tree = NULL, *addr_tree = NULL;
+  slist_t *rxs_list = NULL, *dl_list = NULL;
   uint16_t filter_types[] = {
     SCAMPER_FILE_OBJ_PING,
     SCAMPER_FILE_OBJ_DEALIAS,
   };
-  uint16_t filter_cnt = sizeof(filter_types)/sizeof(uint16_t);
-  uint16_t type, i;
-  slist_t *samples = NULL;
+  uint16_t type, filter_cnt = sizeof(filter_types) / sizeof(uint16_t);
+  sc_sample_t *rxttl, *start, *sample = NULL;
+  sc_dstlist_t *dl;
   slist_node_t *sn;
-  sc_dstlist_t *dl = NULL;
-  slist_t *rxs_list = NULL, *dl_list = NULL;
   uint32_t runlen;
-  uint32_t runlens[4][256];
-  sc_dst_t *dst;
   void *data;
-  char *ptr;
-  int x, j;
+  int i, ok = 0;
 
-#ifdef HAVE_PTHREAD
-  int locked = 0;
-#endif
+  /* don't proceed further */
+  if(import_ok == 0)
+    return;
 
   memset(rxs_trees, 0, sizeof(rxs_trees));
 
-  if((samples = slist_alloc()) == NULL ||
-     (vp_name = do_import_extract_vp(filename)) == NULL ||
-     (ffilter = scamper_file_filter_alloc(filter_types, filter_cnt)) == NULL)
-    goto done;
-
-  /* check to see if we have already inserted this file */
-  if((ptr = string_lastof_char(filename, '/')) == NULL)
-    ptr = filename;
-  else if(ptr[1] != '\0')
-    ptr = ptr+1;
-  else
+  /* read the samples out of the file */
+  if((file = scamper_file_open(fd->filename, 'r', NULL)) == NULL)
     {
-      fprintf(stderr, "%s: invalid filename %s\n", __func__, filename);
+      fprintf(stderr, "%s: could not open %s\n", __func__, fd->filename);
       goto done;
     }
-
-#ifdef HAVE_PTHREAD
-  pthread_mutex_lock(&db_mutex);
-  locked = 1;
-#endif
-
-  sqlite3_clear_bindings(st_filename_sel);
-  sqlite3_reset(st_filename_sel);
-  sqlite3_bind_text(st_filename_sel, 1, ptr, strlen(ptr), SQLITE_STATIC);
-  if((x = sqlite3_step(st_filename_sel)) != SQLITE_DONE)
+  if((ffilter = scamper_file_filter_alloc(filter_types, filter_cnt)) == NULL)
     {
-      if(x == SQLITE_ROW)
-	{
-	  fprintf(stderr, "%s: %s already inserted\n", __func__, ptr);
-	  goto done;
-	}
-      fprintf(stderr, "%s: %s bad\n", __func__, ptr);
+      fprintf(stderr, "%s: could not alloc filter\n", __func__);
       goto done;
     }
-
-  if((vp = sc_vp_find(vp_name)) == NULL)
-    {
-      if((vp = sc_vp_alloc(0, vp_name)) == NULL)
-	{
-	  fprintf(stderr, "%s: could not malloc vp\n", __func__);
-	  goto done;
-	}
-      sqlite3_bind_text(st_vp_ins, 1, vp_name, strlen(vp_name), SQLITE_STATIC);
-      if((x = sqlite3_step(st_vp_ins)) != SQLITE_DONE)
-	{
-	  fprintf(stderr, "%s: could not insert vp %s: %s\n",
-		  __func__, vp_name, sqlite3_errstr(x));
-	  goto done;
-	}
-      vp->id = sqlite3_last_insert_rowid(db);
-      sqlite3_clear_bindings(st_vp_ins);
-      sqlite3_reset(st_vp_ins);
-      if(sc_vp_insert(vp) != 0)
-	{
-	  fprintf(stderr, "%s: could not insert vp\n", __func__);
-	  goto done;
-	}
-    }
-
-#ifdef HAVE_PTHREAD
-  pthread_mutex_unlock(&db_mutex);
-  locked = 0;
-#endif
-
-  printf("%s\n", vp_name);
-
-  if((file = scamper_file_open(filename, 'r', NULL)) == NULL)
-    {
-      fprintf(stderr, "%s: could not open %s\n", __func__, filename);
-      goto done;
-    }
-
-  if((dl_tree = splaytree_alloc((splaytree_cmp_t)sc_dstlist_cmp)) == NULL ||
-     (rxs_trees[1] = splaytree_alloc((splaytree_cmp_t)sc_rxsec_cmp)) == NULL ||
-     (rxs_trees[2] = splaytree_alloc((splaytree_cmp_t)sc_rxsec_cmp)) == NULL ||
-     (rxs_trees[3] = splaytree_alloc((splaytree_cmp_t)sc_rxsec_cmp)) == NULL)
-    goto done;
-
   while(scamper_file_read(file, ffilter, &type, &data) == 0)
     {
       if(data == NULL)
 	break;
-
       if(type == SCAMPER_FILE_OBJ_PING)
 	{
-	  if(do_import_ping(data, vp, samples) != 0)
+	  if(do_file_read_ping(data, fd) != 0)
 	    goto done;
 	}
       else if(type == SCAMPER_FILE_OBJ_DEALIAS)
 	{
-	  if(do_import_dealias(data, vp, samples) != 0)
-	    goto done;
-	}
-
-      while((sample = slist_head_pop(samples)) != NULL)
-	{
-	  if(sc_dstlist_add(dl_tree, sample) != 0)
-	    {
-	      sc_sample_free(sample);
-	      goto done;
-	    }
-	  if(sc_rxsec_add(rxs_trees, sample) != 0)
+	  if(do_file_read_dealias(data, fd) != 0)
 	    goto done;
 	}
     }
@@ -1531,7 +1651,13 @@ static void do_import_file(char *filename)
    * then look for runs of the same received TTL value.  identify the
    * longest run lengths for each received TTL value.
    */
-  memset(runlens, 0, sizeof(runlens));
+  if((rxs_trees[1] = splaytree_alloc((splaytree_cmp_t)sc_rxsec_cmp)) == NULL ||
+     (rxs_trees[2] = splaytree_alloc((splaytree_cmp_t)sc_rxsec_cmp)) == NULL ||
+     (rxs_trees[3] = splaytree_alloc((splaytree_cmp_t)sc_rxsec_cmp)) == NULL)
+    goto done;
+  for(sn=slist_head_node(fd->samples); sn != NULL; sn=slist_node_next(sn))
+    if(sc_rxsec_add(rxs_trees, slist_node_item(sn)) != 0)
+      goto done;
   if((addr_tree = splaytree_alloc((splaytree_cmp_t)scamper_addr_cmp)) == NULL)
     goto done;
   for(i=1; i<4; i++)
@@ -1546,8 +1672,8 @@ static void do_import_file(char *filename)
 	  if(start == NULL || start->rx_ttl != rxttl->rx_ttl)
 	    {
 	      runlen = splaytree_count(addr_tree);
-	      if(start != NULL && runlens[i][start->rx_ttl] < runlen)
-		runlens[i][start->rx_ttl] = runlen;
+	      if(start != NULL && fd->runlens[i][start->rx_ttl] < runlen)
+		fd->runlens[i][start->rx_ttl] = runlen;
 	      start = rxttl;
 	      splaytree_empty(addr_tree, NULL);
 	    }
@@ -1556,8 +1682,8 @@ static void do_import_file(char *filename)
 	    goto done;
 	}
       runlen = splaytree_count(addr_tree);
-      if(start != NULL && runlens[i][start->rx_ttl] < runlen)
-	runlens[i][start->rx_ttl] = runlen;
+      if(start != NULL && fd->runlens[i][start->rx_ttl] < runlen)
+	fd->runlens[i][start->rx_ttl] = runlen;
 
       /* cleanup this state */
       splaytree_empty(addr_tree, NULL);
@@ -1566,67 +1692,146 @@ static void do_import_file(char *filename)
       rxs_trees[i] = NULL;
     }
 
-#ifdef HAVE_PTHREAD
-  pthread_mutex_lock(&db_mutex);
-  locked = 1;
-#endif
-
-  sqlite3_exec(db, "begin", NULL, NULL, NULL); begun = 1;
-
-  for(i=1; i<4; i++)
-    {
-      for(j=0; j<256; j++)
-	{
-	  if(runlens[i][j] == 0)
-	    continue;
-	  if(do_import_runlen(vp, i, j, runlens[i][j]) != 0)
-	    goto done;
-	}
-    }
-
-  if((dl_list = slist_alloc()) == NULL)
+  /*
+   * order samples by destination address to make batch merging
+   * easier.
+   */
+  if((dl_tree = splaytree_alloc((splaytree_cmp_t)sc_dstlist_cmp)) == NULL ||
+     (dl_list = slist_alloc()) == NULL)
     goto done;
+  while((sample = slist_head_pop(fd->samples)) != NULL)
+    {
+      if((dl = sc_dstlist_get(dl_tree, sample->addr)) == NULL ||
+	 slist_tail_push(dl->list, sample) == NULL)
+	goto done;
+    }
   splaytree_inorder(dl_tree, tree_to_slist, dl_list);
   splaytree_free(dl_tree, NULL); dl_tree = NULL;
-  while((dl = slist_head_pop(dl_list)) != NULL)
+
+  /* minimize samples */
+  for(sn=slist_head_node(dl_list); sn != NULL; sn=slist_node_next(sn))
     {
-      /* get dst record from database */
-      if((dst = sc_dst_find(dl->addr)) == NULL)
-	{
-	  if((dst = sc_dst_alloc(0, dl->addr)) == NULL)
-	    {
-	      fprintf(stderr, "%s: could not malloc dst\n", __func__);
-	      goto done;
-	    }
-	  scamper_addr_use(dst->addr);
-	  if(splaytree_insert(dst_tree, dst) == NULL)
-	    {
-	      fprintf(stderr, "%s: could not insert dst\n", __func__);
-	      sc_dst_free(dst);
-	      goto done;
-	    }
-
-	  if(do_import_dst(dst) != 0)
-	    goto done;
-	}
-
-      /* insert the shortest RTT value for each method/reply_ttl tuple */
-      slist_qsort(dl->list, (slist_cmp_t)sc_sample_ins_cmp);
-      ins = NULL;
-      for(sn=slist_head_node(dl->list); sn != NULL; sn=slist_node_next(sn))
-	{
-	  sample = slist_node_item(sn);
-	  if(ins != NULL &&
-	     sample->method == ins->method &&
-	     sample->rx_ttl == ins->rx_ttl)
-	    continue;
-	  if(do_import_sample(dst, sample) != 0)
-	    goto done;
-	  ins = sample;
-	}
-
-      sc_dstlist_free(dl); dl = NULL;
+      dl = slist_node_item(sn);
+      if(do_import_samplemin(dl->list, fd->samples) != 0)
+	goto done;
     }
+
+  ok = 1;
+
+ done:
+  if(ok == 0) import_ok = 0;
+  if(sample != NULL) sc_sample_free(sample);
+  if(ffilter != NULL) scamper_file_filter_free(ffilter);
+  if(file != NULL) scamper_file_close(file);
+  if(addr_tree != NULL)
+    splaytree_free(addr_tree, NULL);
+  if(dl_tree != NULL)
+    splaytree_free(dl_tree, (splaytree_free_t)sc_dstlist_free);
+  for(i=1; i<4; i++)
+    if(rxs_trees[i] != NULL)
+      splaytree_free(rxs_trees[i], (splaytree_free_t)sc_rxsec_free);
+  if(dl_list != NULL)
+    slist_free_cb(dl_list, (slist_free_t)sc_dstlist_free);
+  if(rxs_list != NULL)
+    slist_free(rxs_list);
+  return;
+}
+
+static sc_vp_t *do_import_getvp(const char *filename)
+{
+  char *vp_name = NULL;
+  sc_vp_t *vp = NULL;
+  int ok = 0;
+  int x;
+
+  /* make sure we get a VP name out of the filename */
+  if((vp_name = filename_vpname(filename)) == NULL)
+    goto done;
+
+  /* if we already have a record, we're done */
+  if((vp = sc_vp_find(vp_name)) != NULL)
+    {
+      ok = 1;
+      goto done;
+    }
+  
+  /* import a new VP record into the database */
+  if((vp = sc_vp_alloc(0, vp_name)) == NULL)
+    {
+      fprintf(stderr, "%s: could not malloc vp\n", __func__);
+      goto done;
+    }
+  sqlite3_bind_text(st_vp_ins, 1, vp_name, strlen(vp_name), SQLITE_STATIC);
+  if((x = sqlite3_step(st_vp_ins)) != SQLITE_DONE)
+    {
+      fprintf(stderr, "%s: could not insert vp %s: %s\n",
+	      __func__, vp_name, sqlite3_errstr(x));
+      goto done;
+    }
+  vp->id = sqlite3_last_insert_rowid(db);
+  sqlite3_clear_bindings(st_vp_ins);
+  sqlite3_reset(st_vp_ins);
+  if(sc_vp_insert(vp) != 0)
+    {
+      fprintf(stderr, "%s: could not insert vp\n", __func__);
+      goto done;
+    }
+
+  ok = 1;
+
+ done:
+  if(vp_name != NULL) free(vp_name);
+  if(ok == 0)
+    {
+      if(vp != NULL)
+	sc_vp_free(vp);
+      vp = NULL;
+    }
+  return vp;
+}
+
+/*
+ * do_import_checkimport
+ *
+ * check to see if we have already inserted this file.  returns 1 if
+ * the file is already in the database.  return -1 if bad filename, or
+ * sqlite3 error.  returns zero otherwise
+ */
+static int do_import_checkimport(char *filename)
+{
+  char *ptr;
+  int x;
+
+  if((ptr = filename_nopath(filename)) == NULL)
+    {
+      fprintf(stderr, "%s: invalid filename %s\n", __func__, filename);
+      return -1;
+    }
+
+  sqlite3_clear_bindings(st_filename_sel);
+  sqlite3_reset(st_filename_sel);
+  sqlite3_bind_text(st_filename_sel, 1, ptr, strlen(ptr), SQLITE_STATIC);
+  if((x = sqlite3_step(st_filename_sel)) != SQLITE_DONE)
+    {
+      if(x == SQLITE_ROW)
+	{
+	  fprintf(stderr, "%s: %s already inserted\n", __func__, ptr);
+	  return 1;
+	}
+      fprintf(stderr, "%s: %s bad\n", __func__, ptr);
+      return -1;
+    }
+
+  return 0;
+}
+
+static int do_import_filename(char *filename)
+{
+  char *ptr;
+  int x;
+
+  if((ptr = filename_nopath(filename)) == NULL)
+    return -1;
 
   /* insert the filename */
   sqlite3_bind_text(st_filename_ins, 1, ptr, strlen(ptr), SQLITE_STATIC);
@@ -1634,49 +1839,150 @@ static void do_import_file(char *filename)
     {
       fprintf(stderr, "%s: could not insert filename %s: %s\n",
 	      __func__, ptr, sqlite3_errstr(x));
-      goto done;
+      return -1;
     }
   sqlite3_clear_bindings(st_filename_ins);
   sqlite3_reset(st_filename_ins);
 
-  sqlite3_blob_close(blob);
-  blob = NULL;
-
-  sqlite3_exec(db, "commit", NULL, NULL, NULL);
-  begun = 0;
-
- done:
-  if(begun != 0) sqlite3_exec(db, "rollback", NULL, NULL, NULL);
-#ifdef HAVE_PTHREAD
-  if(locked != 0) pthread_mutex_unlock(&db_mutex);
-#endif
-  if(ffilter != NULL) scamper_file_filter_free(ffilter);
-  if(file != NULL) scamper_file_close(file);
-  if(samples != NULL)
-    slist_free_cb(samples, (slist_free_t)sc_sample_free);
-  if(dl_list != NULL)
-    slist_free_cb(dl_list, (slist_free_t)sc_dstlist_free);
-  if(dl_tree != NULL)
-    splaytree_free(dl_tree, (splaytree_free_t)sc_dstlist_free);
-  if(dl != NULL)
-    sc_dstlist_free(dl);
-  if(addr_tree != NULL)
-    splaytree_free(addr_tree, NULL);
-  for(i=1; i<4; i++)
-    if(rxs_trees[i] != NULL)
-      splaytree_free(rxs_trees[i], (splaytree_free_t)sc_rxsec_free);
-  if(rxs_list != NULL) slist_free(rxs_list);
-  if(vp_name != NULL) free(vp_name);
-  return;
+  return 0;
 }
 
-static int do_import(void)
+static int do_import_filenames(slist_t *fd_list)
 {
-  const char *sql;
-  char buf[128];
-  int f, x;
+  slist_node_t *sn;
+  sc_filedata_t *fd;
+
+  for(sn=slist_head_node(fd_list); sn != NULL; sn=slist_node_next(sn))
+    {
+      fd = slist_node_item(sn);
+      if(do_import_filename(fd->filename) != 0)
+	return -1;
+    }
+
+  return 0;
+}
+
+static int do_import_samples(slist_t *fd_list)
+{
+  slist_t *samples_in = NULL, *samples_out = NULL;
+  sc_sample_t *sample = NULL;
+  scamper_addr_t *addr = NULL;
+  heap_t *fdheap = NULL;
+  sc_fdheap_t *fdh = NULL;
+  sc_filedata_t *fd;
+  slist_node_t *sn;
   int rc = -1;
 
+  /*
+   * the samples for each of the filedata structures are sorted by
+   * destination address before this function gets called.  set up a
+   * heap, sorted by the address of the next sample to process, that
+   * allows us to collate all samples by destination address and then
+   * import them in one go.
+   */
+  if((fdheap = heap_alloc((heap_cmp_t)sc_fdheap_cmp)) == NULL)
+    goto done;
+  for(sn=slist_head_node(fd_list); sn != NULL; sn=slist_node_next(sn))
+    {
+      /* skip over files with no samples */
+      fd = slist_node_item(sn);
+      if((sample = slist_head_item(fd->samples)) == NULL)
+	continue;
+
+      /*
+       * allocate a record for the file, with the next address to
+       * process from that file.
+       */
+      if((fdh = malloc(sizeof(sc_fdheap_t))) == NULL)
+	goto done;
+      fdh->fd = fd;
+      fdh->addr = sample->addr;
+      if(heap_insert(fdheap, fdh) == NULL)
+	goto done;
+      fdh = NULL;
+    }
+
+  /* collate samples per-address across all of the filedata structures */
+  if((samples_in = slist_alloc()) == NULL ||
+     (samples_out = slist_alloc()) == NULL)
+    goto done;
+  addr = NULL;
+  while((fdh = heap_remove(fdheap)) != NULL)
+    {
+      fd = fdh->fd; assert(fd != NULL);
+      sample = slist_head_pop(fd->samples); assert(sample != NULL);
+
+      /*
+       * if we're onto a new address, then finish up the samples for
+       * the previous address.
+       */
+      if(addr != NULL && scamper_addr_cmp(sample->addr, addr) != 0)
+	{
+	  if(do_import_samplemin(samples_in, samples_out) != 0 ||
+	     do_import_dst_samples(addr, samples_out) != 0)
+	    goto done;
+	}
+
+      /* add the samples to the list that we're collecting for this address */
+      addr = sample->addr;
+      if(slist_tail_push(samples_in, sample) == NULL)
+	goto done;
+
+      /*
+       * update the filedata structure with the address of the next
+       * sample, if there is one.
+       */
+      if((sample = slist_head_item(fd->samples)) != NULL)
+	{
+	  fdh->addr = sample->addr; sample = NULL;
+	  if(heap_insert(fdheap, fdh) == NULL)
+	    goto done;
+	}
+      else free(fdh);
+    }
+
+  if(slist_count(samples_in) > 0 && addr != NULL &&
+     (do_import_samplemin(samples_in, samples_out) != 0 ||
+      do_import_dst_samples(addr, samples_out) != 0))
+     goto done;
+
+  rc = 0;
+
+ done:
+  if(fdheap != NULL) heap_free(fdheap, free);
+  if(sample != NULL) sc_sample_free(sample);
+  if(samples_in != NULL)
+    slist_free_cb(samples_in, (slist_free_t)sc_sample_free);
+  if(samples_out != NULL)
+    slist_free_cb(samples_out, (slist_free_t)sc_sample_free);
+  return rc;
+}
+
+static int do_import_runlens(slist_t *fd_list)
+{
+  sc_filedata_t *fd;
+  slist_node_t *sn;
+  int i, j;
+
+  for(sn=slist_head_node(fd_list); sn != NULL; sn=slist_node_next(sn))
+    {
+      fd = slist_node_item(sn);
+      for(i=1; i<4; i++)
+	{
+	  for(j=0; j<256; j++)
+	    {
+	      if(fd->runlens[i][j] > 0 &&
+		 do_import_runlen(fd->vp, i, j, fd->runlens[i][j]) != 0)
+		return -1;
+	    }
+	}
+    }
+
+  return 0;
+}
+
+static int do_import_pcre(void)
+{
 #ifdef HAVE_PCRE2
   uint32_t n;
   PCRE2_SIZE erroffset;
@@ -1686,25 +1992,20 @@ static int do_import(void)
   int erroffset, n;
 #endif
 
-  if((dst_tree = splaytree_alloc((splaytree_cmp_t)sc_dst_cmp)) == NULL ||
-     (vp_tree = splaytree_alloc((splaytree_cmp_t)sc_vp_cmp)) == NULL ||
-     do_dsts_read() != 0 || do_vps_read() != 0)
-    goto done;
-
 #ifdef HAVE_PCRE2
   if((vp_pcre = pcre2_compile((PCRE2_SPTR)vp_regex, PCRE2_ZERO_TERMINATED, 0,
 			      &errnumber, &erroffset, NULL)) == NULL ||
      pcre2_pattern_info(vp_pcre, PCRE2_INFO_CAPTURECOUNT, &n) != 0)
     {
       fprintf(stderr, "could not compile regex\n");
-      goto done;
+      return -1;
     }
 #else
   if((vp_pcre = pcre_compile(vp_regex, 0, &error, &erroffset, NULL)) == NULL ||
      pcre_fullinfo(vp_pcre, NULL, PCRE_INFO_CAPTURECOUNT, &n) != 0)
     {
       fprintf(stderr, "could not compile regex\n");
-      goto done;
+      return -1;
     }
 #endif
 
@@ -1713,8 +2014,17 @@ static int do_import(void)
     {
       fprintf(stderr, "%s: regex has %d capture element, expect 1\n",
 	      __func__, n);
-      goto done;
+      return -1;
     }
+
+  return 0;
+}
+
+static int do_import_prepare(void)
+{
+  const char *sql;
+  char buf[128];
+  int x;
 
   sql = "insert into dsts(addr, samples_rowid) values(?, 0)";
   x = sqlite3_prepare_v2(db, sql, strlen(sql)+1, &st_dst_ins, NULL);
@@ -1722,7 +2032,7 @@ static int do_import(void)
     {
       fprintf(stderr, "%s: could not prepare dst_ins sql: %s\n",
 	      __func__, sqlite3_errstr(x));
-      goto done;
+      return -1;
     }
 
   sql = "update dsts set samples_rowid=? where id=?";
@@ -1731,7 +2041,7 @@ static int do_import(void)
     {
       fprintf(stderr, "%s: could not prepare sql: %s\n",
 	      __func__, sqlite3_errstr(x));
-      goto done;
+      return -1;
     }
 
   sql = "insert into vps(name) values(?)";
@@ -1740,7 +2050,7 @@ static int do_import(void)
     {
       fprintf(stderr, "%s: could not prepare vp_ins sql: %s\n",
 	      __func__, sqlite3_errstr(x));
-      goto done;
+      return -1;
     }
 
   snprintf(buf, sizeof(buf), "insert into samples(dst_id, data)"
@@ -1750,7 +2060,7 @@ static int do_import(void)
     {
       fprintf(stderr, "%s: could not prepare sample_ins sql: %s\n",
 	      __func__, sqlite3_errstr(x));
-      goto done;
+      return -1;
     }
 
   sql = "select filename from files where filename=?";
@@ -1759,7 +2069,7 @@ static int do_import(void)
     {
       fprintf(stderr, "%s: could not prepare sql: %s\n",
 	      __func__, sqlite3_errstr(x));
-      goto done;
+      return -1;
     }
 
   sql = "insert into files(filename) values(?)";
@@ -1768,7 +2078,7 @@ static int do_import(void)
     {
       fprintf(stderr, "%s: could not prepare sql: %s\n",
 	      __func__, sqlite3_errstr(x));
-      goto done;
+      return -1;
     }
 
   sql = "insert into runlens(vp_id, meth_id, reply_ttl, run_len)"
@@ -1778,24 +2088,113 @@ static int do_import(void)
     {
       fprintf(stderr, "%s: could not prepare sql: %s\n",
 	      __func__, sqlite3_errstr(x));
-      goto done;
+      return -1;
     }
 
+  return 0;
+}
+
+static int do_import_data(slist_t *fd_list)
+{
+  int begun = 0, rc = -1;
+
+  sqlite3_exec(db, "begin", NULL, NULL, NULL); begun = 1;
+
+  if(do_import_filenames(fd_list) != 0 ||
+     do_import_runlens(fd_list) != 0 ||
+     do_import_samples(fd_list) != 0)
+    goto done;
+
+  sqlite3_blob_close(blob);
+  blob = NULL;
+
+  sqlite3_exec(db, "commit", NULL, NULL, NULL); begun = 0;
+  rc = 0;
+
+ done:
+  if(begun != 0) sqlite3_exec(db, "rollback", NULL, NULL, NULL);
+  return rc;
+}
+
+static int do_import(void)
+{
+  char *filename;
+  slist_t *fd_list = NULL;
+  slist_node_t *sn;
+  sc_filedata_t *fd = NULL;
+  int f, x;
+  int rc = -1;
+
 #ifdef HAVE_PTHREAD
+  long onln = 1;
+
   if(threadc == -1)
-    threadc = 2;
+    {
+#ifdef _SC_NPROCESSORS_ONLN
+      if((onln = sysconf(_SC_NPROCESSORS_ONLN)) < 1)
+	onln = 1;
+#endif
+      if(batchc <= onln && batchc > 0)
+	threadc = batchc;
+      else
+	threadc = onln;
+    }
   fprintf(stderr, "using %ld threads\n", threadc);
 #else
   threadc = 0;
 #endif
 
-  tp = threadpool_alloc(threadc);
+  if(batchc == -1)
+    batchc = (threadc > 0 ? threadc : 1);
+
+  if((dst_tree = splaytree_alloc((splaytree_cmp_t)sc_dst_cmp)) == NULL ||
+     (vp_tree = splaytree_alloc((splaytree_cmp_t)sc_vp_cmp)) == NULL ||
+     (fd_list = slist_alloc()) == NULL ||
+     do_dsts_read() != 0 || do_vps_read() != 0 ||
+     do_import_pcre() != 0 || do_import_prepare() != 0)
+    goto done;
+
   for(f=0; f<opt_argc; f++)
-    threadpool_tail_push(tp, (threadpool_func_t)do_import_file, opt_args[f]);
-  threadpool_join(tp); tp = NULL;
+    {
+      filename = opt_args[f];
+      fprintf(stderr, "%s\n", filename);
+      if((x = do_import_checkimport(filename)) < 0)
+	goto done;
+      if(x == 1) /* already in database, skip over */
+	continue;
+
+      if((fd = sc_filedata_alloc()) == NULL ||
+	 slist_tail_push(fd_list, fd) == NULL ||
+	 (fd->vp = do_import_getvp(filename)) == NULL)
+	goto done;
+      fd->filename = filename;
+
+      /*
+       * if we have more space in batch, and there's more files to
+       * import, then get another one
+       */
+      if(slist_count(fd_list) < batchc && opt_argc - f > 1)
+	continue;
+
+      tp = threadpool_alloc(threadc);
+      for(sn=slist_head_node(fd_list); sn != NULL; sn=slist_node_next(sn))
+	threadpool_tail_push(tp, (threadpool_func_t)do_file_read,
+			     slist_node_item(sn));
+      threadpool_join(tp); tp = NULL;
+
+      /* check if its OK to continue */
+      fprintf(stderr, "importing\n");
+      if(import_ok == 0 || do_import_data(fd_list) != 0)
+	goto done;
+      slist_empty_cb(fd_list, (slist_free_t)sc_filedata_free);
+    }
+
+  rc = 0;
 
  done:
   do_stmt_final();
+  if(fd_list != NULL)
+    slist_free_cb(fd_list, (slist_free_t)sc_filedata_free);
   return rc;
 }
 
@@ -2479,6 +2878,12 @@ static void cleanup(void)
       db = NULL;
     }
 
+  if(blob_buf != NULL)
+    {
+      free(blob_buf);
+      blob_buf = NULL;
+    }
+
   return;
 }
 
@@ -2492,6 +2897,14 @@ int main(int argc, char *argv[])
 
   if(check_options(argc, argv) != 0)
     return -1;
+
+#ifdef OPT_VERSION
+  if(options & OPT_VERSION)
+    {
+      printf("sc_minrtt version %s\n", PACKAGE_VERSION);
+      return 0;
+    }
+#endif
 
   if(do_sqlite_open() != 0)
     return -1;

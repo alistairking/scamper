@@ -2,7 +2,7 @@
  * linked list routines
  * by Matthew Luckie
  *
- * Copyright (C) 2004-2023 Matthew Luckie. All rights reserved.
+ * Copyright (C) 2004-2024 Matthew Luckie. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -25,7 +25,7 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  *
- * $Id: mjl_list.h,v 1.44 2024/03/23 07:55:43 mjl Exp $
+ * $Id: mjl_list.h,v 1.47 2024/12/11 23:01:27 mjl Exp $
  *
  */
 
@@ -43,10 +43,6 @@ typedef struct clist_node clist_node_t;
 typedef int (*slist_foreach_t)(void *item, void *param);
 typedef int (*dlist_foreach_t)(void *item, void *param);
 typedef int (*clist_foreach_t)(void *item, void *param);
-
-typedef void (*slist_onremove_t)(void *item);
-typedef void (*dlist_onremove_t)(void *item);
-typedef void (*clist_onremove_t)(void *item);
 
 typedef int (*slist_cmp_t)(const void *a, const void *b);
 typedef int (*dlist_cmp_t)(const void *a, const void *b);
@@ -86,9 +82,6 @@ slist_node_t *slist_tail_push_dm(slist_t *list, void *item,
 #define slist_tail_push(list, item) slist_tail_push_dm((list), (item), \
 						       __FILE__, __LINE__)
 #endif
-
-/* set function to call when a node is removed from the list */
-void slist_onremove(slist_t *list, slist_onremove_t onremove);
 
 /* concatenate second list onto tail of first */
 void slist_concat(slist_t *first, slist_t *second);
@@ -175,9 +168,6 @@ dlist_node_t *dlist_tail_push_dm(dlist_t *list, void *item,
 						      __FILE__, __LINE__)
 #endif
 
-/* set function to call when a node is removed from the list */
-void dlist_onremove(dlist_t *list, dlist_onremove_t onremove);
-
 /* concatenate second list onto tail of first */
 void dlist_concat(dlist_t *first, dlist_t *second);
 
@@ -263,9 +253,6 @@ clist_node_t *clist_tail_push_dm(clist_t *list, void *item,
 #define clist_tail_push(list,item) clist_tail_push_dm((list), (item), \
 						      __FILE__, __LINE__)
 #endif
-
-/* set function to call when a node is removed from the list */
-void clist_onremove(clist_t *list, clist_onremove_t onremove);
 
 /* get the node at the head of the list */
 clist_node_t *clist_head_node(const clist_t *list);

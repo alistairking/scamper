@@ -2,11 +2,11 @@
  * scamper_tbit_text.c
  *
  * Copyright (C) 2009-2011 The University of Waikato
- * Copyright (C) 2021-2023 Matthew Luckie
+ * Copyright (C) 2021-2024 Matthew Luckie
  *
  * Authors: Ben Stasiewicz, Matthew Luckie
  *
- * $Id: scamper_tbit_text.c,v 1.22 2023/06/01 07:15:35 mjl Exp $
+ * $Id: scamper_tbit_text.c,v 1.24 2024/12/31 04:17:31 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -59,7 +59,7 @@ int scamper_file_text_tbit_write(const scamper_file_t *sf,
   int frag;
   int fd = scamper_file_getfd(sf);
 
-  string_concat(buf, sizeof(buf), &soff,
+  string_concaf(buf, sizeof(buf), &soff,
 		"tbit from %s to %s\n server-mss %d, result: %s\n",
 		scamper_addr_tostr(tbit->src, src, sizeof(src)),
 		scamper_addr_tostr(tbit->dst, dst, sizeof(dst)),
@@ -75,13 +75,13 @@ int scamper_file_text_tbit_write(const scamper_file_t *sf,
       else
 	str = "http";
       if(http->host != NULL && http->file != NULL)
-	string_concat(buf, sizeof(buf), &soff, ", url: %s://%s%s",
+	string_concaf(buf, sizeof(buf), &soff, ", url: %s://%s%s",
 		      str, http->host, http->file);
       else if(http->host != NULL)
-	string_concat(buf, sizeof(buf), &soff, ", url: %s://%s",
+	string_concaf(buf, sizeof(buf), &soff, ", url: %s://%s",
 		      str, http->host);
       else
-	string_concat(buf, sizeof(buf), &soff, ", file: %s", http->file);
+	string_concat2(buf, sizeof(buf), &soff, ", file: ", http->file);
       string_concat(buf, sizeof(buf), &soff, "\n");
     }
 
@@ -150,7 +150,7 @@ int scamper_file_text_tbit_write(const scamper_file_t *sf,
 	}
 
       timeval_diff_tv(&diff, &tbit->start, &pkt->tv);
-      string_concat(buf, sizeof(buf), &soff, " [%3d.%03d] %s ",
+      string_concaf(buf, sizeof(buf), &soff, " [%3d.%03d] %s ",
 		    (int)diff.tv_sec, (int)(diff.tv_usec / 1000),
 		    pkt->dir == SCAMPER_TBIT_PKT_DIR_TX ? "TX" : "RX");
 
@@ -161,8 +161,8 @@ int scamper_file_text_tbit_write(const scamper_file_t *sf,
 
       if(off != 0)
 	{
-	  string_concat(buf, sizeof(buf), &soff,
-			"%-13s %4dF%22s %s%s", "", len, "", ipid, fstr);
+	  string_concaf(buf, sizeof(buf), &soff, "%-13s %4dF%22s %s%s",
+			"", len, "", ipid, fstr);
 	}
       else if(proto == IPPROTO_TCP)
         {
@@ -190,11 +190,11 @@ int scamper_file_text_tbit_write(const scamper_file_t *sf,
 	  else if(flags & 0x4)
 	    string_concat(tfstr, sizeof(tfstr), &toff, "RST");
 	  if(flags & 0x40)
-	    string_concat(tfstr, sizeof(tfstr), &toff, "%sECE",
-			  toff != 0 ? "/" : "");
+	    string_concat2(tfstr, sizeof(tfstr), &toff,
+			   toff != 0 ? "/" : "", "ECE");
 	  if(flags & 0x80)
-	    string_concat(tfstr, sizeof(tfstr), &toff, "%sCWR",
-			  toff != 0 ? "/" : "");
+	    string_concat2(tfstr, sizeof(tfstr), &toff,
+			   toff != 0 ? "/" : "", "CWR");
 
 	  /* parse TCP options for sack blocks */
 	  u8 = 20; toff = 0; sack[0] = '\0';
@@ -225,7 +225,7 @@ int scamper_file_text_tbit_write(const scamper_file_t *sf,
 
 		  string_concat(sack, sizeof(sack), &toff, " {");
 		  for(u16=0; u16<(ptr[1]-2)/8; u16++)
-		    string_concat(sack, sizeof(sack), &toff, "%s%u:%u",
+		    string_concaf(sack, sizeof(sack), &toff, "%s%u:%u",
 				  u16 != 0 ? "," : "",
 				  bytes_ntohl(ptr+2+(u16*8)) - u32,
 				  bytes_ntohl(ptr+2+(u16*8)+4) - u32);
@@ -248,16 +248,16 @@ int scamper_file_text_tbit_write(const scamper_file_t *sf,
 
 	  datalen = len - iphlen - tcphlen;
 
-	  string_concat(buf, sizeof(buf), &soff, "%-13s %4d%s",
+	  string_concaf(buf, sizeof(buf), &soff, "%-13s %4d%s",
 			tfstr, len, frag != 0 ? "F" : " ");
 
 	  toff = 0;
-	  string_concat(tmp, sizeof(tmp), &toff, " seq = %u:%u", seq, ack);
+	  string_concaf(tmp, sizeof(tmp), &toff, " seq = %u:%u", seq, ack);
 	  if(datalen != 0)
-	    string_concat(tmp, sizeof(tmp), &toff, "(%d)", datalen);
-	  string_concat(tmp, sizeof(tmp), &toff, "%s", sack);
-	  string_concat(buf, sizeof(buf), &soff, "%-23s%s", tmp, ipid);
-	  if(frag != 0) string_concat(buf, sizeof(buf), &soff, "%s", fstr);
+	    string_concaf(tmp, sizeof(tmp), &toff, "(%d)", datalen);
+	  string_concat(tmp, sizeof(tmp), &toff, sack);
+	  string_concaf(buf, sizeof(buf), &soff, "%-23s%s", tmp, ipid);
+	  if(frag != 0) string_concat(buf, sizeof(buf), &soff, fstr);
 	  if(datalen > 0 && (pkt->data[0] >> 4) == 4 && pkt->data[6] & 0x40)
 	    string_concat(buf, sizeof(buf), &soff, " DF");
 	  if(ecn == 3)      string_concat(buf, sizeof(buf), &soff, " CE");
@@ -268,8 +268,8 @@ int scamper_file_text_tbit_write(const scamper_file_t *sf,
 	  if(pkt->data[iphlen+0] == 3 && pkt->data[iphlen+1] == 4)
 	    {
 	      u16 = bytes_ntohs(pkt->data+iphlen+6);
-	      string_concat(buf, sizeof(buf), &soff,
-			    "%-13s %4d  mtu = %d", "PTB", len, u16);
+	      string_concaf(buf, sizeof(buf), &soff, "%-13s %4d  mtu = %d",
+			    "PTB", len, u16);
 	    }
         }
       else if(proto == IPPROTO_ICMPV6)
@@ -277,8 +277,8 @@ int scamper_file_text_tbit_write(const scamper_file_t *sf,
 	  if(pkt->data[iphlen+0] == 2)
 	    {
 	      u32 = bytes_ntohl(pkt->data+iphlen+4);
-	      string_concat(buf, sizeof(buf), &soff,
-			    "%-13s %4d  mtu = %d", "PTB", len, u32);
+	      string_concaf(buf, sizeof(buf), &soff, "%-13s %4d  mtu = %d",
+			    "PTB", len, u32);
 	    }
 	}
 

@@ -1,7 +1,7 @@
 /*
  * utils.h
  *
- * $Id: utils.h,v 1.161 2024/06/25 06:03:55 mjl Exp $
+ * $Id: utils.h,v 1.165 2024/12/31 04:17:31 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -125,9 +125,12 @@ void *malloc_zero_dm(size_t size, const char *file, int line);
 void *memdup(const void *ptr, size_t len);
 int   realloc_wrap(void **ptr, size_t len);
 #else
-int   realloc_wrap_dm(void **ptr,size_t len, const char *file, int line);
-#define realloc_wrap(ptr, len) realloc_wrap_dm((ptr),(len), __FILE__,__LINE__)
-#define memdup(ptr, len) memcpy(malloc(len), ptr, len)
+void *memdup_dm(const void *ptr, size_t len, const char *file, int line);
+int   realloc_wrap_dm(void **ptr, size_t len, const char *file, int line);
+#define realloc_wrap(ptr, len) \
+  realloc_wrap_dm((ptr), (len), __FILE__, __LINE__)
+#define memdup(ptr, len) \
+  memdup_dm((ptr), (len), __FILE__, __LINE__)
 #endif
 
 void mem_concat(void *dst,const void *src,size_t len,size_t *off,size_t size)
@@ -196,7 +199,7 @@ const char *addr_tostr(int af, const void *addr, char *buf, size_t len)
 int sockaddr_compose(struct sockaddr *sa, int af, const void *addr, int port);
 int sockaddr_compose_un(struct sockaddr *sa, const char *name)
   ATTRIBUTE_NONNULL;
-int sockaddr_compose_str(struct sockaddr *sa, const char *ip, int port)
+int sockaddr_compose_str(struct sockaddr *sa, int af, const char *ip, int port)
   ATTRIBUTE_NONNULL;
 int sockaddr_len(const struct sockaddr *sa)
   ATTRIBUTE_NONNULL_PURE;
@@ -248,13 +251,19 @@ char *string_lastof(char *str, const char *delim) ATTRIBUTE_NONNULL;
 char *string_lastof_char(char *str, char delim) ATTRIBUTE_NONNULL;
 char *string_firstof_char(char *str, char delim) ATTRIBUTE_NONNULL;
 #ifdef HAVE_FUNC_ATTRIBUTE_FORMAT
-char *string_concat(char *str, size_t len, size_t *off, const char *fs, ...)
+void string_concaf(char *str, size_t len, size_t *off, const char *fs, ...)
   __attribute__((format(printf, 4, 5)));
 #else
-char *string_concat(char *str, size_t len, size_t *off, const char *fs, ...);
+void string_concaf(char *str, size_t len, size_t *off, const char *fs, ...);
 #endif
-char *string_byte2hex(char *str, size_t len, size_t *off,
-		      const uint8_t *b, size_t bl) ATTRIBUTE_NONNULL;
+void string_concat(char *str, size_t len, size_t *off, const char *in)
+  ATTRIBUTE_NONNULL;
+void string_concat2(char *str, size_t len, size_t *off,
+		    const char *a, const char *b) ATTRIBUTE_NONNULL;
+void string_concat3(char *str, size_t len, size_t *off, const char *a,
+		    const char *b, const char *c) ATTRIBUTE_NONNULL;
+void string_byte2hex(char *str, size_t len, size_t *off,
+		     const uint8_t *b, size_t bl) ATTRIBUTE_NONNULL;
 
 const char *string_findlc(const char *str, const char *find)
   ATTRIBUTE_NONNULL_PURE;

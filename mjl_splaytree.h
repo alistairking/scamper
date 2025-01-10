@@ -29,7 +29,7 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  *
- * $Id: mjl_splaytree.h,v 1.17 2022/12/18 03:46:38 mjl Exp $
+ * $Id: mjl_splaytree.h,v 1.18 2024/12/08 17:25:53 mjl Exp $
  *
  */
 
@@ -44,7 +44,6 @@ typedef int  (*splaytree_diff_t)(const void *a, const void *b);
 typedef void (*splaytree_display_t)(const void *ptr, int pad);
 typedef int  (*splaytree_inorder_t)(void *ptr, void *entry);
 typedef void (*splaytree_free_t)(void *ptr);
-typedef void (*splaytree_onremove_t)(void *ptr);
 
 #ifndef DMALLOC
 /*
@@ -68,7 +67,6 @@ splaytree_node_t *splaytree_insert_dm(splaytree_t *tree, const void *ptr,
 
 void splaytree_free(splaytree_t *tree, splaytree_free_t free_ptr);
 void splaytree_empty(splaytree_t *tree, splaytree_free_t free_ptr);
-void splaytree_onremove(splaytree_t *tree, splaytree_onremove_t onremove);
 
 /* remove a node from the tree */
 int splaytree_remove_item(splaytree_t *tree, const void *ptr);

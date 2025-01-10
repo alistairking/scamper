@@ -7,12 +7,12 @@
 .\"               2012 The Regents of the University of California
 .\"                    All rights reserved
 .\"
-.\" $Id: sc_attach.1,v 1.12 2023/04/10 07:39:57 mjl Exp $
+.\" $Id: sc_attach.1,v 1.13 2024/09/07 03:34:44 mjl Exp $
 .\"
 .\"  nroff -man sc_attach.1
 .\"  groff -man -Tascii sc_attach.1 | man2html -title sc_attach.1
 .\"
-.Dd April 10, 2023
+.Dd September 7, 2024
 .Dt SC_ATTACH 1
 .Os
 .Sh NAME
@@ -43,6 +43,10 @@ The options are as follows:
 .Bl -tag -width Ds
 .It Fl ?
 prints a list of command line options and a synopsis of each.
+.It Fl v
+prints the version of
+.Nm
+and exits.
 .It Fl d
 prints each command sent to
 .Xr scamper 1
@@ -51,10 +55,6 @@ on stderr.
 causes
 .Nm
 to operate as a daemon.
-.It Fl v
-prints the current revision of
-.Nm
-and exits.
 .It Fl c Ar command
 specifies the
 .Xr scamper 1

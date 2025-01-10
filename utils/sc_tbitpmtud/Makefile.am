@@ -6,13 +6,14 @@ bin_PROGRAMS = sc_tbitpmtud
 
 sc_tbitpmtud_SOURCES = \
 	sc_tbitpmtud.c \
-	../../utils.c \
-	../../mjl_heap.c \
-	../../mjl_list.c \
-	../../mjl_prefixtree.c \
-	../../mjl_splaytree.c
+	$(top_srcdir)/utils.c \
+	$(top_srcdir)/mjl_heap.c \
+	$(top_srcdir)/mjl_list.c \
+	$(top_srcdir)/mjl_prefixtree.c \
+	$(top_srcdir)/mjl_splaytree.c
 
-sc_tbitpmtud_LDADD = ../../scamper/libscamperfile.la
+sc_tbitpmtud_LDADD = \
+	$(top_srcdir)/lib/libscamperfile/libscamperfile.la
 
 man_MANS = sc_tbitpmtud.1
 

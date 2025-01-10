@@ -1,12 +1,12 @@
 /*
  * scamper_icmp_resp.c
  *
- * $Id: scamper_icmp_resp.c,v 1.38 2024/07/19 06:59:03 mjl Exp $
+ * $Id: scamper_icmp_resp.c,v 1.39 2024/12/30 03:16:57 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2012-2013 The Regents of the University of California
- * Copyright (C) 2023      Matthew Luckie
+ * Copyright (C) 2023-2024 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -60,13 +60,13 @@ void scamper_icmp_resp_print(const scamper_icmp_resp_t *ir)
       addr_tostr(AF_INET, &ir->ir_ip_src.v4, addr, sizeof(addr));
 
       off = 0;
-      string_concat(ip, sizeof(ip), &off,
+      string_concaf(ip, sizeof(ip), &off,
 		    "from %s size %d ttl %d tos 0x%02x ipid 0x%04x",
 		    addr, ir->ir_ip_size, ir->ir_ip_ttl, ir->ir_ip_tos,
 		    ir->ir_ip_id);
 
       if(ir->ir_ipopt_rrc > 0)
-	string_concat(ip, sizeof(ip), &off, " rr %d", ir->ir_ipopt_rrc);
+	string_concaf(ip, sizeof(ip), &off, " rr %d", ir->ir_ipopt_rrc);
 
       switch(ir->ir_icmp_type)
         {
@@ -223,12 +223,12 @@ void scamper_icmp_resp_print(const scamper_icmp_resp_t *ir)
 	  addr_tostr(AF_INET, &ir->ir_inner_ip_dst.v4, addr, sizeof(addr));
 
 	  off = 0;
-	  string_concat(inner_ip, sizeof(inner_ip), &off,
+	  string_concaf(inner_ip, sizeof(inner_ip), &off,
 			" to %s size %d ttl %d tos 0x%02x ipid 0x%04x",
 			addr, ir->ir_inner_ip_size, ir->ir_inner_ip_ttl,
 			ir->ir_inner_ip_tos, ir->ir_inner_ip_id);
 	  if(ir->ir_inner_ipopt_rrc > 0)
-	    string_concat(inner_ip, sizeof(inner_ip), &off, " rr %d",
+	    string_concaf(inner_ip, sizeof(inner_ip), &off, " rr %d",
 			  ir->ir_inner_ipopt_rrc);
 	}
       else /* if(ir->ir_af == AF_INET6) */

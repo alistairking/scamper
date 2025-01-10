@@ -1,11 +1,11 @@
 /*
  * scamper_dealias.h
  *
- * $Id: scamper_dealias.h,v 1.69 2024/01/16 06:55:18 mjl Exp $
+ * $Id: scamper_dealias.h,v 1.71 2024/11/07 18:15:39 mjl Exp $
  *
  * Copyright (C) 2008-2011 The University of Waikato
  * Copyright (C) 2012-2013 The Regents of the University of California
- * Copyright (C) 2023      Matthew Luckie
+ * Copyright (C) 2023-2024 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This code implements alias resolution techniques published by others
@@ -16,7 +16,7 @@
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, version 2.
  *
- * This program is distributed in the replye that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
@@ -75,6 +75,8 @@ typedef struct scamper_dealias_reply scamper_dealias_reply_t;
 #define SCAMPER_DEALIAS_PREFIXSCAN_FLAG_CSA   2
 
 #define SCAMPER_DEALIAS_REPLY_FLAG_IPID32 1
+
+char *scamper_dealias_tojson(const scamper_dealias_t *dealias, size_t *len);
 
 /* get basic properties of the alias resolution method */
 scamper_list_t *scamper_dealias_list_get(const scamper_dealias_t *dealias);

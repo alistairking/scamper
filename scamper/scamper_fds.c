@@ -1,13 +1,13 @@
 /*
  * scamper_fds: manage events and file descriptors
  *
- * $Id: scamper_fds.c,v 1.131 2024/07/30 09:19:09 mjl Exp $
+ * $Id: scamper_fds.c,v 1.134 2024/11/30 06:59:41 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2012-2014 Matthew Luckie
  * Copyright (C) 2012-2015 The Regents of the University of California
- * Copyright (C) 2016-2023 Matthew Luckie
+ * Copyright (C) 2016-2024 Matthew Luckie
  * Copyright (C) 2024      The Regents of the University of California
  *
  * This program is free software; you can redistribute it and/or modify
@@ -61,8 +61,10 @@ typedef struct scamper_fd_poll
   scamper_fd_t    *fdn;    /* back pointer to the fd struct */
   scamper_fd_cb_t  cb;     /* callback to use when event arises */
   void            *param;  /* user-defined parameter to pass to callback */
+#ifndef DISABLE_SCAMPER_SELECT
   dlist_t         *list;   /* which list the node is in */
   dlist_node_t    *node;   /* node in the poll list */
+#endif
   uint8_t          flags;  /* flags associated with structure */
 } scamper_fd_poll_t;
 
@@ -175,12 +177,15 @@ static SOCKET         fd_array_s  = 0;
 #endif
 static splaytree_t   *fd_tree     = NULL;
 static dlist_t       *fd_list     = NULL;
+static dlist_t       *refcnt_0    = NULL;
+static int          (*pollfunc)(struct timeval *timeout) = NULL;
+
+#ifndef DISABLE_SCAMPER_SELECT
 static dlist_t       *read_fds    = NULL;
 static dlist_t       *write_fds   = NULL;
 static dlist_t       *read_queue  = NULL;
 static dlist_t       *write_queue = NULL;
-static dlist_t       *refcnt_0    = NULL;
-static int          (*pollfunc)(struct timeval *timeout) = NULL;
+#endif
 
 #ifdef HAVE_SCAMPER_DEBUG
 
@@ -319,11 +324,12 @@ static void fd_free(scamper_fd_t *fdn)
   if(fdn->fd >= 0 && fdn->fd < fd_array_s && fd_array != NULL)
     fd_array[fdn->fd] = NULL;
 
+#ifndef DISABLE_SCAMPER_SELECT
   if(fdn->read.node != NULL)
     dlist_node_pop(fdn->read.list, fdn->read.node);
-
   if(fdn->write.node != NULL)
     dlist_node_pop(fdn->write.list, fdn->write.node);
+#endif
 
   if(fdn->rc0 != NULL)
     dlist_node_pop(refcnt_0, fdn->rc0);
@@ -362,12 +368,16 @@ static void fd_refcnt_0(scamper_fd_t *fdn)
    * if the fd is in a list that is currently locked, then it can't be
    * removed just yet
    */
-  if(dlist_islocked(fd_list) != 0 ||
-     (fdn->read.list  != NULL && dlist_islocked(fdn->read.list)  != 0) ||
+  if(dlist_islocked(fd_list) != 0)
+    return;
+
+#ifndef DISABLE_SCAMPER_SELECT
+  if((fdn->read.list  != NULL && dlist_islocked(fdn->read.list)  != 0) ||
      (fdn->write.list != NULL && dlist_islocked(fdn->write.list) != 0))
     {
       return;
     }
+#endif
 
   /*
    * if this is a private fd and the reference count has reached zero,
@@ -426,7 +436,30 @@ static void fd_dynfilter(void)
 }
 #endif
 
-static int fd_poll_setlist(void *item, void *param)
+#ifndef DISABLE_SCAMPER_SELECT
+/*
+ * fds_select_cleanup_list
+ *
+ * helper function to remove scamper_fd_poll structures from any lists.
+ */
+static void fds_select_cleanup_list(dlist_t *list)
+{
+  scamper_fd_poll_t *poll;
+
+  if(list == NULL) return;
+
+  while((poll = dlist_head_pop(list)) != NULL)
+    {
+      poll->list = NULL;
+      poll->node = NULL;
+    }
+
+  dlist_free(list);
+
+  return;
+}
+
+static int fds_select_setlist(void *item, void *param)
 {
   ((scamper_fd_poll_t *)item)->list = (dlist_t *)param;
   return 0;
@@ -539,9 +572,9 @@ static int fds_select(struct timeval *timeout)
   int count, nfds = -1;
 
   /* concat any new fds to monitor now */
-  dlist_foreach(read_queue, fd_poll_setlist, read_fds);
+  dlist_foreach(read_queue, fds_select_setlist, read_fds);
   dlist_concat(read_fds, read_queue);
-  dlist_foreach(write_queue, fd_poll_setlist, write_fds);
+  dlist_foreach(write_queue, fds_select_setlist, write_fds);
   dlist_concat(write_fds, write_queue);
 
   /* compose the sets of file descriptors to monitor */
@@ -580,6 +613,7 @@ static int fds_select(struct timeval *timeout)
  err:
   return -1;
 }
+#endif
 
 #ifdef HAVE_POLL
 static struct pollfd *poll_fds = NULL;
@@ -707,9 +741,9 @@ static int fds_poll(struct timeval *tv)
 #endif
 
 #ifdef HAVE_KQUEUE
-static struct kevent *kevlist = NULL;
-static int kevlistlen = 0;
-static int kq = -1;
+static struct kevent *kq_evs = NULL;
+static int            kq_evc = 0;
+static int            kq = -1;
 
 static int fds_kqueue_init(void)
 {
@@ -740,22 +774,22 @@ static int fds_kqueue(struct timeval *tv)
   int i, fd, c;
   scamper_fd_t *fdp;
   struct timespec ts, *tsp = NULL;
-  struct kevent *kev;
+  struct kevent *ev;
 
-  if((c = dlist_count(read_fds) + dlist_count(write_fds)) >= kevlistlen)
+  if((c = dlist_count(fd_list)) >= kq_evc)
     {
       c += 8;
-      if(realloc_wrap((void **)&kevlist, sizeof(struct kevent) * c) != 0)
+      if(realloc_wrap((void **)&kq_evs, sizeof(struct kevent) * c) != 0)
 	{
-	  if(kevlistlen == 0)
+	  if(kq_evc == 0)
 	    {
-	      printerror(__func__, "could not alloc kevlist");
+	      printerror(__func__, "could not alloc kq_evs");
 	      return -1;
 	    }
 	}
       else
 	{
-	  kevlistlen = c;
+	  kq_evc = c;
 	}
     }
 
@@ -766,7 +800,7 @@ static int fds_kqueue(struct timeval *tv)
       tsp = &ts;
     }
 
-  if((c = kevent(kq, NULL, 0, kevlist, kevlistlen, tsp)) == -1)
+  if((c = kevent(kq, NULL, 0, kq_evs, kq_evc, tsp)) == -1)
     {
       if(errno == EINTR)
 	return 0;
@@ -776,16 +810,16 @@ static int fds_kqueue(struct timeval *tv)
 
   for(i=0; i<c; i++)
     {
-      kev = &kevlist[i];
-      fd = kev->ident;
-
+      ev = &kq_evs[i];
+      fd = ev->ident;
       if(fd < 0 || fd >= fd_array_s)
 	continue;
+
       if((fdp = fd_array[fd]) == NULL)
 	continue;
-      if(kev->filter == EVFILT_READ)
+      if(ev->filter == EVFILT_READ)
 	fdp->read.cb(fd, fdp->read.param);
-      else if(kev->filter == EVFILT_WRITE)
+      else if(ev->filter == EVFILT_WRITE)
 	fdp->write.cb(fd, fdp->write.param);
     }
 
@@ -794,10 +828,9 @@ static int fds_kqueue(struct timeval *tv)
 #endif
 
 #ifdef HAVE_EPOLL
-static struct epoll_event *ep_events = NULL;
-static int ep_event_c = 0;
-static int ep = -1;
-static int ep_fdc = 0;
+static struct epoll_event *ep_evs = NULL;
+static int                 ep_evc = 0;
+static int                 ep = -1;
 
 static int fds_epoll_init(void)
 {
@@ -836,11 +869,6 @@ static void fds_epoll_ctl(scamper_fd_t *fd, uint32_t ev, int op)
       ev = EPOLLIN;
     }
 
-  if(op == EPOLL_CTL_ADD)
-    ep_fdc++;
-  else if(op == EPOLL_CTL_DEL)
-    ep_fdc--;
-
   epev.data.fd = fd->fd;
   epev.events = ev;
 
@@ -852,17 +880,16 @@ static void fds_epoll_ctl(scamper_fd_t *fd, uint32_t ev, int op)
 
 static int fds_epoll(struct timeval *tv)
 {
-  int i, fd, rc, timeout;
+  int i, fd, c, timeout;
   scamper_fd_t *fdp;
-  size_t size;
+  struct epoll_event *ev;
 
-  if(ep_fdc >= ep_event_c)
+  if((c = dlist_count(fd_list)) >= ep_evc)
     {
-      rc = ep_fdc + 8;
-      size = sizeof(struct epoll_event) * rc;
-      if(realloc_wrap((void **)&ep_events, size) != 0)
+      c += 8;
+      if(realloc_wrap((void **)&ep_evs, sizeof(struct epoll_event) * c) != 0)
 	{
-	  if(ep_event_c == 0)
+	  if(ep_evc == 0)
 	    {
 	      printerror(__func__, "could not alloc events");
 	      return -1;
@@ -870,7 +897,7 @@ static int fds_epoll(struct timeval *tv)
 	}
       else
 	{
-	  ep_event_c = rc;
+	  ep_evc = c;
 	}
     }
 
@@ -885,7 +912,7 @@ static int fds_epoll(struct timeval *tv)
       timeout = -1;
     }
 
-  if((rc = epoll_wait(ep, ep_events, ep_event_c, timeout)) == -1)
+  if((c = epoll_wait(ep, ep_evs, ep_evc, timeout)) == -1)
     {
       if(errno == EINTR)
 	return 0;
@@ -893,20 +920,21 @@ static int fds_epoll(struct timeval *tv)
       return -1;
     }
 
-  for(i=0; i<rc; i++)
+  for(i=0; i<c; i++)
     {
-      fd = ep_events[i].data.fd;
+      ev = &ep_evs[i];
+      fd = ev->data.fd;
       if(fd < 0 || fd >= fd_array_s)
 	continue;
 
-      if(ep_events[i].events & (EPOLLIN|EPOLLHUP|EPOLLERR))
+      if(ev->events & (EPOLLIN|EPOLLHUP|EPOLLERR))
 	{
 	  if((fdp = fd_array[fd]) == NULL)
 	    continue;
 	  fdp->read.cb(fd, fdp->read.param);
 	}
 
-      if(ep_events[i].events & EPOLLOUT)
+      if(ev->events & EPOLLOUT)
 	{
 	  if((fdp = fd_array[fd]) == NULL)
 	    continue;
@@ -1019,21 +1047,18 @@ static scamper_fd_t *fd_alloc_dm(int type, SOCKET fd, const char *file, int line
   fdn->fd     = fd;
   fdn->refcnt = 1;
 
-  /* set up to poll read ability */
-  if((fdn->read.node = dlist_node_alloc(&fdn->read)) == NULL)
-    {
-      goto err;
-    }
   fdn->read.fdn   = fdn;
   fdn->read.flags = SCAMPER_FD_POLL_FLAG_INACTIVE;
-
-  /* set up to poll write ability */
-  if((fdn->write.node = dlist_node_alloc(&fdn->write)) == NULL)
+  fdn->write.fdn   = fdn;
+  fdn->write.flags = SCAMPER_FD_POLL_FLAG_INACTIVE;
+  
+#ifndef DISABLE_SCAMPER_SELECT
+  if((fdn->read.node = dlist_node_alloc(&fdn->read)) == NULL ||
+     (fdn->write.node = dlist_node_alloc(&fdn->write)) == NULL)
     {
       goto err;
     }
-  fdn->write.fdn   = fdn;
-  fdn->write.flags = SCAMPER_FD_POLL_FLAG_INACTIVE;
+#endif
 
   /* store the fd in an array indexed by the fd number */
   if(fd+1 > fd_array_s)
@@ -1451,14 +1476,18 @@ void scamper_fd_read_unpause(scamper_fd_t *fdn)
 #endif
 
       /*
-       * the fd may still be on the read fds list, just with the inactive bit
-       * set.  if it isn't, then we have to put it on the queue.
+       * the fd may have been on the read_fds list with the inactive
+       * bit set, or already in the queue to go onto the read_fds
+       * list.
        */
-      if(fdn->read.list != read_fds)
+#ifndef DISABLE_SCAMPER_SELECT
+      if(fdn->read.list != read_fds && fdn->read.list != read_queue)
 	{
-	  dlist_node_head_push(read_queue, fdn->read.node);
+	  assert(fdn->read.list == NULL);
+	  dlist_node_tail_push(read_queue, fdn->read.node);
 	  fdn->read.list = read_queue;
 	}
+#endif
     }
 
   return;
@@ -1510,14 +1539,18 @@ void scamper_fd_write_unpause(scamper_fd_t *fdn)
 #endif
 
       /*
-       * the fd may still be on the write fds list, just with the inactive bit
-       * set.  if it isn't, then we have to put it on the queue.
+       * the fd may have been on the write_fds list with the inactive
+       * bit set, or already in the queue to go onto the write_fds
+       * list.
        */
-      if(fdn->write.list != write_fds)
+#ifndef DISABLE_SCAMPER_SELECT
+      if(fdn->write.list != write_fds && fdn->read.list != write_queue)
 	{
-	  dlist_node_head_push(write_queue, fdn->write.node);
+	  assert(fdn->write.list == NULL);
+	  dlist_node_tail_push(write_queue, fdn->write.node);
 	  fdn->write.list = write_queue;
 	}
+#endif
     }
 
   return;
@@ -1962,9 +1995,11 @@ int scamper_fds_init()
       break;
 #endif
 
+#ifndef DISABLE_SCAMPER_SELECT
     case SCAMPER_OPTION_POLLFUNC_SELECT:
       pollfunc = fds_select;
       break;
+#endif
 
     default:
       printerror(__func__, "did not select pollfunc");
@@ -1972,10 +2007,12 @@ int scamper_fds_init()
     }
 
   if((fd_list     = alloc_list("fd_list")) == NULL ||
+#ifndef DISABLE_SCAMPER_SELECT
      (read_fds    = alloc_list("read_fds"))   == NULL ||
      (read_queue  = alloc_list("read_queue"))  == NULL ||
      (write_fds   = alloc_list("write_fds"))  == NULL ||
      (write_queue = alloc_list("write_queue")) == NULL ||
+#endif
      (refcnt_0    = alloc_list("refcnt_0"))  == NULL)
     {
       return -1;
@@ -1988,28 +2025,6 @@ int scamper_fds_init()
     }
 
   return 0;
-}
-
-/*
- * cleanup_list
- *
- * helper function to remove scamper_fd_poll structures from any lists.
- */
-static void cleanup_list(dlist_t *list)
-{
-  scamper_fd_poll_t *poll;
-
-  if(list == NULL) return;
-
-  while((poll = dlist_head_pop(list)) != NULL)
-    {
-      poll->list = NULL;
-      poll->node = NULL;
-    }
-
-  dlist_free(list);
-
-  return;
 }
 
 /*
@@ -2091,11 +2106,13 @@ void scamper_fds_cleanup()
 {
   scamper_fd_t *fdn;
 
+#ifndef DISABLE_SCAMPER_SELECT
   /* clean up the lists */
-  cleanup_list(read_fds);    read_fds = NULL;
-  cleanup_list(write_fds);   write_fds = NULL;
-  cleanup_list(read_queue);  read_queue = NULL;
-  cleanup_list(write_queue); write_queue = NULL;
+  fds_select_cleanup_list(read_fds);    read_fds = NULL;
+  fds_select_cleanup_list(write_fds);   write_fds = NULL;
+  fds_select_cleanup_list(read_queue);  read_queue = NULL;
+  fds_select_cleanup_list(write_queue); write_queue = NULL;
+#endif
 
   /* reap anything on the reap list */
   if(refcnt_0 != NULL)
@@ -2145,10 +2162,10 @@ void scamper_fds_cleanup()
       close(kq);
       kq = -1;
     }
-  if(kevlist != NULL)
+  if(kq_evs != NULL)
     {
-      free(kevlist);
-      kevlist = NULL;
+      free(kq_evs);
+      kq_evs = NULL;
     }
 #endif
 
@@ -2158,10 +2175,10 @@ void scamper_fds_cleanup()
       close(ep);
       ep = -1;
     }
-  if(ep_events != NULL)
+  if(ep_evs != NULL)
     {
-      free(ep_events);
-      ep_events = NULL;
+      free(ep_evs);
+      ep_evs = NULL;
     }
 #endif
 

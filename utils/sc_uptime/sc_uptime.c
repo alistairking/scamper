@@ -3,13 +3,13 @@
  *
  * Authors   : Matthew Luckie, Marianne Fletcher
  *
- * Copyright (C) 2015 The Regents of the University of California
- * Copyright (C) 2017 Matthew Luckie
+ * Copyright (C) 2015      The Regents of the University of California
+ * Copyright (C) 2017      Matthew Luckie
  * Copyright (C) 2018-2019 The University of Waikato
- * Copyright (C) 2023 Matthew Luckie
- * Copyright (C) 2023 The Regents of the University of California
+ * Copyright (C) 2023      The Regents of the University of California
+ * Copyright (C) 2023-2024 Matthew Luckie
  *
- * $Id: sc_uptime.c,v 1.89 2024/03/04 19:36:41 mjl Exp $
+ * $Id: sc_uptime.c,v 1.91 2024/12/31 04:17:31 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -639,11 +639,11 @@ static int do_method(void)
   /* form the ping command */
   string_concat(cmd, sizeof(cmd), &off, "ping -O dl -s 1300 -M 1280");
   if(srcaddr != NULL)
-    string_concat(cmd, sizeof(cmd), &off, " -S %s", srcaddr);
+    string_concat2(cmd, sizeof(cmd), &off, " -S ", srcaddr);
   if(dst->class != CLASS_INCR)
-    string_concat(cmd, sizeof(cmd), &off, " -c 6 %s\n", buf);
+    string_concat3(cmd, sizeof(cmd), &off, " -c 6 ", buf, "\n");
   else
-    string_concat(cmd, sizeof(cmd), &off, " -c 2 -o 1 -O tbt %s\n", buf);
+    string_concat3(cmd, sizeof(cmd), &off, " -c 2 -o 1 -O tbt ", buf, "\n");
 
   if(scamper_writebuf_send(scamper_wb, cmd, off) != 0)
     {

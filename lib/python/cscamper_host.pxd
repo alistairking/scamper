@@ -2,7 +2,7 @@
 #
 # Author: Matthew Luckie
 #
-# Copyright (C) 2023 The Regents of the University of California
+# Copyright (C) 2023-2024 The Regents of the University of California
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -43,6 +43,12 @@ cdef extern from "scamper_host.h":
   pass
  ctypedef struct scamper_host_rr_txt_t:
   pass
+ ctypedef struct scamper_host_rr_opt_t:
+  pass
+ ctypedef struct scamper_host_rr_opt_elem_t:
+  pass
+
+ char *scamper_host_tojson(const scamper_host_t *host, size_t *l)
 
  void scamper_host_free(scamper_host_t *host)
 
@@ -80,6 +86,7 @@ cdef extern from "scamper_host.h":
  scamper_host_rr_t *scamper_host_query_an_get(const scamper_host_query_t *q, uint16_t i)
  scamper_host_rr_t *scamper_host_query_ns_get(const scamper_host_query_t *q, uint16_t i)
  scamper_host_rr_t *scamper_host_query_ar_get(const scamper_host_query_t *q, uint16_t i)
+ scamper_host_rr_t *scamper_host_query_ar_opt_get(const scamper_host_query_t *q)
 
  scamper_host_rr_t *scamper_host_rr_use(scamper_host_rr_t *rr)
  void scamper_host_rr_free(scamper_host_rr_t *rr)
@@ -95,6 +102,7 @@ cdef extern from "scamper_host.h":
  scamper_host_rr_soa_t *scamper_host_rr_soa_get(const scamper_host_rr_t *rr)
  scamper_host_rr_mx_t *scamper_host_rr_mx_get(const scamper_host_rr_t *rr)
  scamper_host_rr_txt_t *scamper_host_rr_txt_get(const scamper_host_rr_t *rr)
+ scamper_host_rr_opt_t *scamper_host_rr_opt_get(const scamper_host_rr_t *rr)
 
  scamper_host_rr_mx_t *scamper_host_rr_mx_use(scamper_host_rr_mx_t *mx)
  void scamper_host_rr_mx_free(scamper_host_rr_mx_t *mx)
@@ -115,3 +123,14 @@ cdef extern from "scamper_host.h":
  void scamper_host_rr_txt_free(scamper_host_rr_txt_t *txt)
  uint16_t scamper_host_rr_txt_strc_get(const scamper_host_rr_txt_t *txt)
  const char *scamper_host_rr_txt_str_get(const scamper_host_rr_txt_t *txt, uint16_t i)
+
+ scamper_host_rr_opt_t *scamper_host_rr_opt_use(scamper_host_rr_opt_t *opt)
+ void scamper_host_rr_opt_free(scamper_host_rr_opt_t *opt)
+ uint16_t scamper_host_rr_opt_elemc_get(const scamper_host_rr_opt_t *opt)
+ void scamper_host_rr_opt_elem_free(scamper_host_rr_opt_elem_t *elem)
+ scamper_host_rr_opt_elem_t *scamper_host_rr_opt_elem_get(const scamper_host_rr_opt_t *opt, uint16_t i)
+ scamper_host_rr_opt_elem_t *scamper_host_rr_opt_elem_use(scamper_host_rr_opt_elem_t *elem)
+ uint16_t scamper_host_rr_opt_elem_code_get(const scamper_host_rr_opt_elem_t *elem)
+ char *scamper_host_rr_opt_elem_code_tostr(uint16_t code, char *b, size_t l)
+ uint16_t scamper_host_rr_opt_elem_len_get(const scamper_host_rr_opt_elem_t *elem)
+ const uint8_t *scamper_host_rr_opt_elem_data_get(const scamper_host_rr_opt_elem_t *elem)
