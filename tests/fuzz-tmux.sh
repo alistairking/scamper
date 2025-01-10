@@ -23,12 +23,22 @@ prepare()
     afl-cmin -i ${FUZZDIR}/${ARG_TYPE}/input -o ${FUZZDIR}/${ARG_TYPE}/testcases -- ./fuzz_${ARG_TYPE} @@
 }
 
+prepare_warts()
+{
+    mkdir -p ${FUZZDIR}/warts/input
+    ./unit_host_warts dump ${FUZZDIR}/warts/input
+    ./unit_http_warts dump ${FUZZDIR}/warts/input
+    ./unit_ping_warts dump ${FUZZDIR}/warts/input
+    ./unit_trace_warts dump ${FUZZDIR}/warts/input
+    ./unit_udpprobe_warts dump ${FUZZDIR}/warts/input
+    afl-cmin -i ${FUZZDIR}/warts/input -o ${FUZZDIR}/warts/testcases -- ./fuzz_warts @@
+}
+
 fuzz_tmux()
 {
     ARG_TYPE=$1
     ARG_WINDOW=$2
 
-    tmux set-window-option -t ${ARG_WINDOW} remain-on-exit on
     tmux send-keys -t ${ARG_WINDOW} "AFL_TMPDIR=${FUZZDIR}/${ARG_TYPE} AFL_SKIP_CPUFREQ=1 AFL_NO_AFFINITY=1 afl-fuzz -i ${FUZZDIR}/${ARG_TYPE}/testcases -o ${FUZZDIR}/${ARG_TYPE}/findings -- ./fuzz_${ARG_TYPE} @@" C-m
 }
 
@@ -45,6 +55,7 @@ prepare cmd_udpprobe
 prepare dl_parse_arp
 prepare dl_parse_ip
 prepare host_rr_list
+prepare_warts
 
 WIN=0
 tmux new-session -d -s fuzz-scamper
@@ -98,3 +109,7 @@ fuzz_tmux dl_parse_ip fuzz-scamper:${WIN}
 WIN=`expr ${WIN} + 1`
 tmux new-window -t fuzz-scamper:${WIN} -n 'fuzz-host-rr-list'
 fuzz_tmux host_rr_list fuzz-scamper:${WIN}
+
+WIN=`expr ${WIN} + 1`
+tmux new-window -t fuzz-scamper:${WIN} -n 'fuzz-warts'
+fuzz_tmux warts fuzz-scamper:${WIN}

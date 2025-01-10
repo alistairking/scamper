@@ -4,7 +4,7 @@
  * Adapted from the patricia trie in "Robert Sedgewick's Algorithms in C++"
  * and from the Java implementation by Josh Hentosh and Robert Sedgewick.
  *
- * Copyright (C) 2016,2019 Matthew Luckie. All rights reserved.
+ * Copyright (C) 2016-2024 Matthew Luckie. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -27,14 +27,18 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  *
- * $Id: mjl_patricia.c,v 1.5 2020/03/17 07:32:15 mjl Exp $
+ * $Id: mjl_patricia.c,v 1.6 2024/12/29 18:34:16 mjl Exp $
  *
  */
+
+#ifdef HAVE_CONFIG_H
+#include "config.h"
+#endif
 
 #include <stdlib.h>
 #include <assert.h>
 
-#if defined(DMALLOC)
+#ifdef DMALLOC
 #include <dmalloc.h>
 #endif
 

@@ -1,14 +1,14 @@
 /*
  * heap routines
  *
- * $Id: mjl_heap.c,v 1.13 2024/08/13 04:58:16 mjl Exp $
+ * $Id: mjl_heap.c,v 1.19 2024/12/31 07:42:47 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
  *
  * Adapted from the priority queue in "Robert Sedgewick's Algorithms in C++"
  *
- * Copyright (C) 2006-2012 Matthew Luckie. All rights reserved
+ * Copyright (C) 2006-2024 Matthew Luckie. All rights reserved
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -33,20 +33,22 @@
  *
  */
 
-#include <stdlib.h>
-#include <assert.h>
-
-#if defined(DMALLOC)
-#include <dmalloc.h>
-#endif
-
-#if defined(HAVE_CONFIG_H)
+#ifdef HAVE_CONFIG_H
 #include "config.h"
 #endif
 
-#include "mjl_heap.h"
+#ifdef MJLHEAP_DEBUG
+#undef NDEBUG
+#endif
 
-#define HEAP_GROWBY 128
+#include <stdlib.h>
+#include <assert.h>
+
+#ifdef DMALLOC
+#include <dmalloc.h>
+#endif
+
+#include "mjl_heap.h"
 
 struct heap_node
 {
@@ -60,10 +62,9 @@ struct heap
   int             N;
   int             max;
   heap_cmp_t      cmp;
-  heap_onremove_t onremove;
 };
 
-#if !defined(NDEBUG) && defined(MJLHEAP_DEBUG)
+#ifdef MJLHEAP_DEBUG
 static void heap_assert(const heap_t *heap)
 {
   int i;
@@ -82,6 +83,33 @@ static void heap_assert(const heap_t *heap)
 #else
 #define heap_assert(heap)((void)0)
 #endif
+
+static int growby(heap_t *heap)
+{
+#ifdef HAVE___BUILTIN_CLZ
+  static const int out[] = {4, 4, 4, 4, 8, 16, 32, 64, 128};
+#endif
+
+  assert(heap->max >= 4);
+  if(heap->max >= 256)
+    return 256;
+
+#ifdef HAVE___BUILTIN_CLZ
+  return out[32 - __builtin_clz(heap->max)];
+#else
+  if(heap->max >= 128)
+    return 128;
+  if(heap->max >= 64)
+    return 64;
+  if(heap->max >= 32)
+    return 32;
+  if(heap->max >= 16)
+    return 16;
+  if(heap->max >= 8)
+    return 8;
+  return 4;
+#endif
+}
 
 static void upheap(heap_t *heap, int k)
 {
@@ -131,7 +159,7 @@ static void downheap(heap_t *heap, int k)
 #ifndef DMALLOC
 heap_t *heap_alloc(heap_cmp_t cmp)
 #else
-heap_t *heap_alloc_dm(heap_cmp_t cmp, const char *file, const int line)
+heap_t *heap_alloc_dm(heap_cmp_t cmp, const char *file, int line)
 #endif
 {
   heap_t *heap = NULL;
@@ -146,9 +174,8 @@ heap_t *heap_alloc_dm(heap_cmp_t cmp, const char *file, const int line)
     goto err;
 
   heap->N        = 0;
-  heap->max      = HEAP_GROWBY;
+  heap->max      = 4;
   heap->cmp      = cmp;
-  heap->onremove = NULL;
 
   if((heap->a = malloc(sizeof(heap_node_t *) * heap->max)) == NULL)
     goto err;
@@ -197,22 +224,16 @@ void heap_remake(heap_t *heap)
   return;
 }
 
-void heap_onremove(heap_t *heap, heap_onremove_t onremove)
-{
-  heap->onremove = onremove;
-  return;
-}
-
 #ifndef DMALLOC
 heap_node_t *heap_insert(heap_t *heap, void *ptr)
 #else
-heap_node_t *heap_insert_dm(heap_t *heap, void *ptr, const char *file,
-			    const int line)
+heap_node_t *heap_insert_dm(heap_t *heap, void *ptr, const char *file, int line)
 #endif
 {
   heap_node_t *node = NULL;
   void *tmp;
   size_t size;
+  int gb;
 
   heap_assert(heap);
   size = sizeof(heap_node_t);
@@ -233,11 +254,12 @@ heap_node_t *heap_insert_dm(heap_t *heap, void *ptr, const char *file,
   /* determine if we need to increase the size of the array for this node */
   if(node->id >= heap->max)
     {
-      size = (heap->max + HEAP_GROWBY) * sizeof(heap_node_t *);
+      gb = growby(heap);
+      size = (heap->max + gb) * sizeof(heap_node_t *);
       if((tmp = realloc(heap->a, size)) == NULL)
 	goto err;
 
-      heap->max += HEAP_GROWBY;
+      heap->max += gb;
       heap->a = (heap_node_t **)tmp;
     }
 
@@ -302,9 +324,6 @@ void *heap_remove(heap_t *heap)
   free(v);
 
   heap_assert(heap);
-
-  if(heap->onremove != NULL)
-    heap->onremove(item);
 
   return item;
 }
@@ -375,9 +394,6 @@ void heap_delete(heap_t *heap, heap_node_t *node)
 	  downheap(heap, node->id);
 	}
     }
-
-  if(heap->onremove != NULL)
-    heap->onremove(node->item);
 
   free(node);
 

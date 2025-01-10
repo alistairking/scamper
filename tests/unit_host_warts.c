@@ -1,7 +1,7 @@
 /*
  * unit_host_warts : unit tests for warts host storage
  *
- * $Id: unit_host_warts.c,v 1.2 2024/09/13 08:22:08 mjl Exp $
+ * $Id: unit_host_warts.c,v 1.4 2024/10/13 03:06:41 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -327,7 +327,10 @@ int main(int argc, char *argv[])
   if(argc != 3 ||
      (strcasecmp(argv[1], "dump") != 0 &&
       strcasecmp(argv[1], "check") != 0))
-    return -1;
+    {
+      fprintf(stderr, "usage: unit_host_warts dump|check dir\n");
+      return -1;
+    }
 
   if(strcasecmp(argv[1], "check") == 0)
     check = 1;
@@ -375,6 +378,7 @@ int main(int argc, char *argv[])
 #endif
     }
 
-  printf("OK\n");
+  if(check != 0)
+    printf("OK\n");
   return 0;
 }

@@ -1,9 +1,9 @@
 /*
  * scamper_do_neighbourdisc
  *
- * $Id: scamper_neighbourdisc_do.c,v 1.51 2024/08/13 06:00:48 mjl Exp $
+ * $Id: scamper_neighbourdisc_do.c,v 1.52 2024/12/30 03:59:35 mjl Exp $
  *
- * Copyright (C) 2009-2023 Matthew Luckie
+ * Copyright (C) 2009-2024 Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -47,8 +47,6 @@
 
 static scamper_task_funcs_t nd_funcs;
 extern scamper_addrcache_t *addrcache;
-static uint8_t *pktbuf;
-static size_t pktbuf_len;
 
 typedef struct nd_state
 {
@@ -182,7 +180,7 @@ static void do_nd_handle_timeout(scamper_task_t *task)
   return;
 }
 
-static void do_nd_probe_arp(scamper_task_t *task)
+static void do_nd_probe_arp(scamper_task_t *task, uint8_t *txbuf, size_t txlen)
 {
   scamper_neighbourdisc_t *nd = nd_getdata(task);
   size_t off;
@@ -204,24 +202,24 @@ static void do_nd_probe_arp(scamper_task_t *task)
    * 6 bytes: dst mac address: all zeros in request
    * 4 bytes: dst IP address
    */
-  memset(pktbuf, 0xff, 6); off = 6;
+  memset(txbuf, 0xff, 6); off = 6;
 
-  mem_concat(pktbuf, nd->src_mac->addr, 6, &off, pktbuf_len);
-  bytes_htons(pktbuf+off, ETHERTYPE_ARP); off += 2;
-  bytes_htons(pktbuf+off, 0x0001); off += 2;
-  bytes_htons(pktbuf+off, ETHERTYPE_IP); off += 2;
-  pktbuf[off++] = 6;
-  pktbuf[off++] = 4;
-  bytes_htons(pktbuf+off, 0x0001); off += 2;
-  mem_concat(pktbuf, nd->src_mac->addr, 6, &off, pktbuf_len);
-  mem_concat(pktbuf, nd->src_ip->addr, 4, &off, pktbuf_len);
-  memset(pktbuf+off, 0, 6); off += 6;
-  mem_concat(pktbuf, nd->dst_ip->addr, 4, &off, pktbuf_len);
+  mem_concat(txbuf, nd->src_mac->addr, 6, &off, txlen);
+  bytes_htons(txbuf+off, ETHERTYPE_ARP); off += 2;
+  bytes_htons(txbuf+off, 0x0001); off += 2;
+  bytes_htons(txbuf+off, ETHERTYPE_IP); off += 2;
+  txbuf[off++] = 6;
+  txbuf[off++] = 4;
+  bytes_htons(txbuf+off, 0x0001); off += 2;
+  mem_concat(txbuf, nd->src_mac->addr, 6, &off, txlen);
+  mem_concat(txbuf, nd->src_ip->addr, 4, &off, txlen);
+  memset(txbuf+off, 0, 6); off += 6;
+  mem_concat(txbuf, nd->dst_ip->addr, 4, &off, txlen);
 
   return;
 }
 
-static void do_nd_probe_nsol(scamper_task_t *task)
+static void do_nd_probe_nsol(scamper_task_t *task, uint8_t *txbuf, size_t txlen)
 {
   scamper_neighbourdisc_t *nd = nd_getdata(task);
   struct ip6_hdr *ip6;
@@ -245,14 +243,14 @@ static void do_nd_probe_nsol(scamper_task_t *task)
   memcpy(ip6_dst+12, sol, 4);
 
   /* ethernet header: 14 bytes */
-  pktbuf[off++] = 0x33;
-  pktbuf[off++] = 0x33;
-  mem_concat(pktbuf, sol, 4, &off, pktbuf_len);
-  mem_concat(pktbuf, nd->src_mac->addr, 6, &off, pktbuf_len);
-  bytes_htons(pktbuf+off, ETHERTYPE_IPV6); off += 2;
+  txbuf[off++] = 0x33;
+  txbuf[off++] = 0x33;
+  mem_concat(txbuf, sol, 4, &off, txlen);
+  mem_concat(txbuf, nd->src_mac->addr, 6, &off, txlen);
+  bytes_htons(txbuf+off, ETHERTYPE_IPV6); off += 2;
 
   /* IPv6 header: 40 bytes */
-  ip6 = (struct ip6_hdr *)(pktbuf+off); off += sizeof(struct ip6_hdr);
+  ip6 = (struct ip6_hdr *)(txbuf+off); off += sizeof(struct ip6_hdr);
   memset(ip6, 0, sizeof(struct ip6_hdr));
   ip6->ip6_vfc  = 0x60;
   ip6->ip6_plen = htons(32);
@@ -263,16 +261,16 @@ static void do_nd_probe_nsol(scamper_task_t *task)
 
   /* ICMP6 neighbour discovery: 32 bytes */
   icmp_off = off;
-  icmp6 = (struct icmp6_hdr *)(pktbuf+off); off += sizeof(struct icmp6_hdr);
+  icmp6 = (struct icmp6_hdr *)(txbuf+off); off += sizeof(struct icmp6_hdr);
   icmp6->icmp6_type = ND_NEIGHBOR_SOLICIT;
   icmp6->icmp6_code = 0;
   icmp6->icmp6_data32[0] = 0;
   icmp6->icmp6_cksum = 0;
 
-  mem_concat(pktbuf, nd->dst_ip->addr, 16, &off, pktbuf_len);
-  pktbuf[off++] = 0x01;
-  pktbuf[off++] = 0x01;
-  mem_concat(pktbuf, nd->src_mac->addr, 6, &off, pktbuf_len);
+  mem_concat(txbuf, nd->dst_ip->addr, 16, &off, txlen);
+  txbuf[off++] = 0x01;
+  txbuf[off++] = 0x01;
+  mem_concat(txbuf, nd->src_mac->addr, 6, &off, txlen);
 
   /* build up the ICMP6 checksum, which includes a psuedo header */
   memcpy(&a, &ip6->ip6_src, sizeof(struct in6_addr));
@@ -285,7 +283,7 @@ static void do_nd_probe_nsol(scamper_task_t *task)
   sum += *w++; sum += *w++; sum += *w++; sum += *w++;
   sum += ip6->ip6_plen;
   sum += htons(IPPROTO_ICMPV6);
-  w = (uint16_t *)(pktbuf + icmp_off);
+  w = (uint16_t *)(txbuf + icmp_off);
   for(i = ntohs(ip6->ip6_plen); i > 1; i -= 2)
     sum += *w++;
   if(i != 0)
@@ -409,6 +407,7 @@ static void do_nd_probe(scamper_task_t *task)
   scamper_dl_t *dl;
   size_t len;
   char ip[64], mac[32];
+  uint8_t txbuf[86];
 
   if(state == NULL)
     {
@@ -424,22 +423,11 @@ static void do_nd_probe(scamper_task_t *task)
     len = 86;
   else goto err;
 
-  /* make sure the pktbuf is at least that size */
-  if(pktbuf_len < len)
-    {
-      if(realloc_wrap((void **)&pktbuf, len) != 0)
-	{
-	  printerror(__func__, "could not realloc");
-	  goto err;
-	}
-      pktbuf_len = len;
-    }
-
   /* form the probe to send */
   if(nd->method == SCAMPER_NEIGHBOURDISC_METHOD_ARP)
-    do_nd_probe_arp(task);
+    do_nd_probe_arp(task, txbuf, sizeof(txbuf));
   else if(nd->method == SCAMPER_NEIGHBOURDISC_METHOD_ND_NSOL)
-    do_nd_probe_nsol(task);
+    do_nd_probe_nsol(task, txbuf, sizeof(txbuf));
   else goto err;
 
   /* allocate a probe record to store tx time and associated replies */
@@ -452,7 +440,7 @@ static void do_nd_probe(scamper_task_t *task)
   /* send the probe.  record the time it is sent */
   dl = scamper_fd_dl_get(state->fd);
   gettimeofday_wrap(&probe->tx);
-  if(scamper_dl_tx(dl, pktbuf, len) == -1)
+  if(scamper_dl_tx(dl, txbuf, len) == -1)
     {
       goto err;
     }
@@ -684,12 +672,6 @@ uint32_t scamper_do_neighbourdisc_userid(void *data)
 
 void scamper_do_neighbourdisc_cleanup()
 {
-  if(pktbuf != NULL)
-    {
-      free(pktbuf);
-      pktbuf = NULL;
-    }
-
   return;
 }
 

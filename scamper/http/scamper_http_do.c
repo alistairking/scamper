@@ -1,9 +1,10 @@
 /*
  * scamper_http_do.c
  *
- * $Id: scamper_http_do.c,v 1.17 2024/08/17 22:11:05 mjl Exp $
+ * $Id: scamper_http_do.c,v 1.19 2024/12/31 04:17:31 mjl Exp $
  *
  * Copyright (C) 2023-2024 The Regents of the University of California
+ * Copyright (C) 2024      Matthew Luckie
  *
  * Authors: Matthew Luckie
  *
@@ -476,19 +477,19 @@ static int http_req(scamper_task_t *task)
     goto done;
 
   /* form the headers */
-  string_concat(buf, len, &off, "GET %s HTTP/1.1\r\n", http->file);
+  string_concat3(buf, len, &off, "GET ", http->file, " HTTP/1.1\r\n");
   if(http->host != NULL)
-    string_concat(buf, len, &off, "Host: %s\r\n", http->host);
-  string_concat(buf, len, &off, "%s\r\n", h_ua);
+    string_concat3(buf, len, &off, "Host: ", http->host, "\r\n");
+  string_concat2(buf, len, &off, h_ua, "\r\n");
   if(h_acc != NULL)
-    string_concat(buf, len, &off, "%s\r\n", h_acc);
+    string_concat2(buf, len, &off, h_acc, "\r\n");
   else
     string_concat(buf, len, &off, "Accept: */*\r\n");
   for(h=0; h<http->headerc; h++)
     {
       if(strncasecmp(http->headers[h], "user-agent:", 11) != 0 &&
 	 strncasecmp(http->headers[h], "accept:", 7) != 0)
-	string_concat(buf, len, &off, "%s\r\n", http->headers[h]);
+	string_concat2(buf, len, &off, http->headers[h], "\r\n");
     }
   string_concat(buf, len, &off, "\r\n");
 

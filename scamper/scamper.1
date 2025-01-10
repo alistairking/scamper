@@ -10,9 +10,9 @@
 .\" Copyright (c) 2024      The Regents of the University of California
 .\"                         All rights reserved
 .\"
-.\" $Id: scamper.1,v 1.143 2024/09/17 20:01:16 mjl Exp $
+.\" $Id: scamper.1,v 1.145 2024/12/05 23:59:22 mjl Exp $
 .\"
-.Dd September 18, 2024
+.Dd December 6, 2024
 .Dt SCAMPER 1
 .Os
 .\""""""""""""
@@ -32,6 +32,7 @@
 .Op Fl C Ar cycleid
 .Op Fl o Ar outfile
 .Op Fl F Ar firewall
+.Op Fl H Ar holdtime
 .Op Fl n Ar nameserver
 .Op Fl d Ar debugfile
 .Op Fl e Ar pidfile
@@ -196,6 +197,10 @@ anchor for
 to use, and <num> specifies the number of rules
 .Nm
 is allowed to use.
+.It Fl H Ar holdtime
+specifies the length of time, in seconds, to prevent a followup task
+from using the same probe signature as a previous task.
+The default is five seconds, and can be disabled by passing zero.
 .It Fl n Ar nameserver
 specifies the nameserver for
 .Nm
@@ -1349,8 +1354,6 @@ are supplied for probing.
 .Nm
 has the ability to probe multiple lists simultaneously, with each having a
 mix rate that specifies the priority of the list.
-.Nm
-can also make multiple cycles over a list of addresses.
 .Pp
 When writing output to a
 .Xr warts 5
@@ -1475,19 +1478,6 @@ If not supplied, the default output file is used.
 .It Ic file Ar string
 The name of the input file to read target addresses from.
 This parameter is mandatory if the source is a managed source.
-.It Ic cycles Ar integer
-The number of cycles to make over the target address file.
-If zero,
-.Nm
-will loop indefinitely over the file.
-This parameter is ignored unless a managed source is defined.
-.It Ic autoreload Xo
-.Op Cm on | off
-.Xc
-This parameter specifies if the target address file should be re-read whenever
-a cycle is completed, or if the same set of target addresses as the previous
-cycle should be used.
-If not specified, the file is not automatically reloaded at cycle time.
 .El
 .It Ic update Ar name arguments
 The
@@ -1496,7 +1486,7 @@ command allows some properties of an existing source to be modified.
 The source to update is specified with the
 .Ar name
 parameter.
-Valid parameters are: autoreload, cycles, and priority.
+Valid parameters are: priority.
 .It Ic list Ar ...
 The
 .Ic source list
@@ -1567,8 +1557,7 @@ The
 .Ic shutdown done
 command requests that
 .Nm
-shuts down when the current tasks, as well as all remaining cycles, have
-completed.
+shuts down when the current tasks have completed.
 .It Ic flush
 The
 .Ic shutdown flush

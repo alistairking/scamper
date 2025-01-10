@@ -1,12 +1,12 @@
 /*
- * scamper_source_file.h
+ * common_warts.h : functions common to warts unit tests
  *
- * $Id: scamper_source_file.h,v 1.4 2024/11/28 03:33:15 mjl Exp $
+ * $Id: common_warts.h,v 1.1 2024/10/13 02:17:43 mjl Exp $
  *
- * Copyright (C) 2004-2006 Matthew Luckie
- * Copyright (C) 2006-2008 The University of Waikato
- * Copyright (C) 2024      Matthew Luckie
- * Author: Matthew Luckie
+ *        Matthew Luckie
+ *        mjl@luckie.org.nz
+ *
+ * Copyright (C) 2024 Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -23,13 +23,5 @@
  *
  */
 
-#ifndef __SCAMPER_SOURCE_FILE_H
-#define __SCAMPER_SOURCE_FILE_H
-
-scamper_source_t *scamper_source_file_alloc(scamper_source_params_t *ssp,
-					    const char *filename,
-					    const char *command);
-
-const char *scamper_source_file_getfilename(const scamper_source_t *source);
-
-#endif /* __SCAMPER_SOURCE_FILE_H */
+int addr_ok(const scamper_addr_t *in, const scamper_addr_t *out);
+int ifname_ok(const scamper_ifname_t *in, const scamper_ifname_t *out);

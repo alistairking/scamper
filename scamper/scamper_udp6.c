@@ -1,7 +1,7 @@
 /*
  * scamper_udp6.c
  *
- * $Id: scamper_udp6.c,v 1.81 2024/09/06 01:34:54 mjl Exp $
+ * $Id: scamper_udp6.c,v 1.82 2024/12/12 15:27:06 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2010 The University of Waikato
@@ -485,7 +485,6 @@ SOCKET scamper_udp6_open(const void *addr, int sport)
   if(setsockopt_int(fd, IPPROTO_IPV6, IPV6_RECVPKTINFO, 1) != 0)
     printerror(__func__, "could not set IPV6_RECVPKTINFO");
 #elif defined(IPV6_PKTINFO)
-  opt = 1;
   if(setsockopt_int(fd, IPPROTO_IPV6, IPV6_PKTINFO, 1) != 0)
     printerror(__func__, "could not set IPV6_PKTINFO");
 #endif

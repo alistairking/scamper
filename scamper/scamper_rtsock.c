@@ -1,7 +1,7 @@
 /*
  * scamper_rtsock: code to deal with a route socket or equivalent
  *
- * $Id: scamper_rtsock.c,v 1.100 2024/08/23 04:32:00 mjl Exp $
+ * $Id: scamper_rtsock.c,v 1.101 2024/12/30 03:16:57 mjl Exp $
  *
  *          Matthew Luckie
  *
@@ -24,7 +24,7 @@
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2010 The University of Waikato
  * Copyright (C) 2014      The Regents of the University of California
- * Copyright (C) 2016-2023 Matthew Luckie
+ * Copyright (C) 2016-2024 Matthew Luckie
  * Copyright (C) 2023      The Regents of the University of California
  *
  * This program is free software; you can redistribute it and/or modify
@@ -195,7 +195,7 @@ static void rtmsg_dump(const uint8_t *buf, size_t len)
 
       if(k != 0 && (k % 4) == 0)
 	string_concat(str, sizeof(str), &off, " ");
-      string_concat(str, sizeof(str), &off, "%02x", buf[i]);
+      string_concaf(str, sizeof(str), &off, "%02x", buf[i]);
       k++;
     }
 

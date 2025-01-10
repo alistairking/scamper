@@ -1,9 +1,10 @@
 /*
  * scamper_ifname_int.c
  *
- * $Id: scamper_ifname_int.c,v 1.2 2024/05/02 03:09:55 mjl Exp $
+ * $Id: scamper_ifname_int.c,v 1.3 2024/11/30 18:18:38 mjl Exp $
  *
  * Copyright (C) 2024 The Regents of the University of California
+ * Copyright (C) 2024 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -112,7 +113,10 @@ scamper_ifname_t *scamper_ifname_int_get(unsigned int ifindex,
 
  done:
   if(push != 0)
-    dlist_node_tail_push(ifni_list, ifni->list_node);
+    {
+      dlist_node_eject(ifni_list, ifni->list_node);
+      dlist_node_tail_push(ifni_list, ifni->list_node);
+    }
   if(now != NULL)
     timeval_cpy(&ifni->expire, now);
   else

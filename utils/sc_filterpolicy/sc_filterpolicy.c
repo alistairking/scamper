@@ -5,7 +5,7 @@
  * Authors         : Matthew Luckie, Jakub Czyz
  *
  * Copyright (C) 2014-2015 The Regents of the University of California
- * Copyright (C) 2015-2023 Matthew Luckie
+ * Copyright (C) 2015-2024 Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -1035,31 +1035,30 @@ static int do_method(void)
   pt = slist_head_pop(n2i->methods);
   if(flags & FLAG_TRACEROUTE)
     {
-      string_concat(cmd, sizeof(cmd), &off, "trace -q 1 -U %u", n2i->id);
+      string_concaf(cmd, sizeof(cmd), &off, "trace -q 1 -U %u", n2i->id);
       if(pt->flags & PT_FLAG_ICMP)
 	string_concat(cmd, sizeof(cmd), &off, " -P icmp-paris");
       else if(pt->flags & PT_FLAG_TCP)
-	string_concat(cmd, sizeof(cmd), &off, " -P tcp -d %u", pt->port);
+	string_concaf(cmd, sizeof(cmd), &off, " -P tcp -d %u", pt->port);
       else if(pt->flags & PT_FLAG_UDP)
-	string_concat(cmd, sizeof(cmd), &off,
+	string_concaf(cmd, sizeof(cmd), &off,
 		      " -P udp-paris -O dl -O const-payload -d %u -p %s",
 		      pt->port, pt->payload);
       else
 	return -1;
-      string_concat(cmd, sizeof(cmd), &off, " %s", buf);
+      string_concat2(cmd, sizeof(cmd), &off, " ", buf);
     }
   else
     {
-      string_concat(cmd, sizeof(cmd), &off, "ping -i 5 -U %u -c 1", n2i->id);
+      string_concaf(cmd, sizeof(cmd), &off, "ping -i 5 -U %u -c 1", n2i->id);
       if(pt->flags & PT_FLAG_ICMP)
 	string_concat(cmd, sizeof(cmd), &off, " -P icmp-echo");
       else if(pt->flags & PT_FLAG_TCP)
-	string_concat(cmd, sizeof(cmd), &off, " -P tcp-syn -d %u", pt->port);
+	string_concaf(cmd, sizeof(cmd), &off, " -P tcp-syn -d %u", pt->port);
       else if(pt->flags & PT_FLAG_UDP)
-	string_concat(cmd, sizeof(cmd), &off,
-		      " -P udp -O dl -d %u -B %s",
+	string_concaf(cmd, sizeof(cmd), &off, " -P udp -O dl -d %u -B %s",
 		      pt->port, pt->payload);
-      string_concat(cmd, sizeof(cmd), &off, " %s", buf);
+      string_concat2(cmd, sizeof(cmd), &off, " ", buf);
     }
 
   if(scamper_inst_do(scamper_inst, cmd, NULL) == NULL)

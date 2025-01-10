@@ -1,7 +1,7 @@
 /*
  * scamper_host_do
  *
- * $Id: scamper_host_do.c,v 1.84 2024/09/05 01:29:26 mjl Exp $
+ * $Id: scamper_host_do.c,v 1.86 2024/12/30 03:59:35 mjl Exp $
  *
  * Copyright (C) 2018-2024 Matthew Luckie
  *
@@ -47,8 +47,6 @@
 #ifndef TEST_HOST_RR_LIST
 static scamper_task_funcs_t host_funcs;
 static splaytree_t *queries = NULL;
-static uint8_t *pktbuf = NULL;
-static size_t pktbuf_len = 0;
 static scamper_fd_t *dns4_fd = NULL;
 static scamper_queue_t *dns4_sq = NULL;
 static scamper_fd_t *dns6_fd = NULL;
@@ -427,7 +425,7 @@ static host_state_t *host_state_alloc(scamper_task_t *task)
 	  for(i=3; i>=0; i--)
 	    {
 	      u32 = ntohl(in6->s6_addr32[i]);
-	      string_concat(qname, sizeof(qname), &off,
+	      string_concaf(qname, sizeof(qname), &off,
 			    "%x.%x.%x.%x.%x.%x.%x.%x.", u32 & 0xf,
 			    (u32 >>  4) & 0xf, (u32 >>  8) & 0xf,
 			    (u32 >> 12) & 0xf, (u32 >> 16) & 0xf,
@@ -438,7 +436,7 @@ static host_state_t *host_state_alloc(scamper_task_t *task)
   	  for(i=7; i>=0; i--)
 	    {
 	      u16 = ntohs(in6->u.Word[i]);
-	      string_concat(qname, sizeof(qname), &off,
+	      string_concaf(qname, sizeof(qname), &off,
 			    "%x.%x.%x.%x.", u16 & 0xf, (u16 >>  4) & 0xf,
 			    (u16 >> 8) & 0xf, (u16 >> 12) & 0xf);
 	    }
@@ -926,10 +924,11 @@ static void host_tcp_read(SOCKET fd, void *param)
 {
   scamper_task_t *task = (scamper_task_t *)param;
   host_state_t *state = host_getstate(task);
+  uint8_t pktbuf[1024];
   ssize_t rc;
   size_t s;
 
-  if((rc = recv(fd, pktbuf, pktbuf_len, 0)) < 0)
+  if((rc = recv(fd, pktbuf, sizeof(pktbuf), 0)) < 0)
     {
       host_stop(task, SCAMPER_HOST_STOP_ERROR);
       state->mode = STATE_MODE_DONE;
@@ -996,10 +995,11 @@ static void host_udp_read(SOCKET fd, void *param)
   uint16_t id, qtype, qclass;
   size_t off, len;
   ssize_t rc;
+  uint8_t pktbuf[1024];
   char name[256];
   int i;
 
-  if((rc = recv(fd, pktbuf, pktbuf_len, 0)) < 0)
+  if((rc = recv(fd, pktbuf, sizeof(pktbuf), 0)) < 0)
     return;
   len = (size_t)rc;
 
@@ -1130,6 +1130,7 @@ static int do_host_probe_udp(scamper_task_t *task)
   struct sockaddr_storage ss;
   struct sockaddr *sa;
   struct timeval tv;
+  uint8_t pktbuf[1024];
   uint16_t id;
   size_t len;
   int af;
@@ -1214,13 +1215,12 @@ static int do_host_probe_udp(scamper_task_t *task)
 	}
     }
 
-  len = pktbuf_len;
-  id = dns_id;
-
   /* handle wraps with the query id */
+  id = dns_id;
   if(++dns_id == 0)
     dns_id = 1;
 
+  len = sizeof(pktbuf);
   if(do_host_probe_query(host, state, id, pktbuf, &len) != 0)
     goto err;
 
@@ -1320,6 +1320,7 @@ static int do_host_probe_tcp(scamper_task_t *task)
   struct sockaddr_storage ss;
   struct sockaddr *sa;
   uint16_t id;
+  uint8_t pktbuf[1024];
   size_t len;
   int af;
 
@@ -1386,7 +1387,7 @@ static int do_host_probe_tcp(scamper_task_t *task)
 	  goto err;
 	}
 
-      len = pktbuf_len-2;
+      len = sizeof(pktbuf) - 2;
       id = dns_id;
 
       /* handle wraps with the query id */
@@ -1433,16 +1434,6 @@ static void do_host_probe(scamper_task_t *task)
 {
   scamper_host_t *host = host_getdata(task);
   int rc = -1;
-
-  if(pktbuf == NULL)
-    {
-      pktbuf_len = 1024;
-      if((pktbuf = malloc(pktbuf_len)) == NULL)
-	{
-	  printerror(__func__, "could not malloc pktbuf");
-	  goto done;
-	}
-    }
 
   if(host_getstate(task) == NULL && host_state_alloc(task) == NULL)
     goto done;
@@ -1764,12 +1755,6 @@ void scamper_do_host_cleanup()
     {
       scamper_queue_free(dns6_sq);
       dns6_sq = NULL;
-    }
-
-  if(pktbuf != NULL)
-    {
-      free(pktbuf);
-      pktbuf = NULL;
     }
 
   if(default_ns != NULL)

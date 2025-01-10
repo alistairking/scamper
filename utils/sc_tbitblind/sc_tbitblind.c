@@ -6,7 +6,7 @@
  * Authors      : Matthew Luckie, Robert Beverly.
  *
  * Copyright (C) 2015      The Regents of the University of California
- * Copyright (C) 2022-2023 Matthew Luckie
+ * Copyright (C) 2022-2024 Matthew Luckie
  * Copyright (C) 2023      The Regents of the University of California
  *
  * This program is free software; you can redistribute it and/or modify
@@ -378,13 +378,6 @@ static int target_addr_cmp(const void *va, const void *vb)
   return scamper_addr_cmp(a->addr, b->addr);
 }
 
-static void target_onremove(void *ptr)
-{
-  target_t *target = ptr;
-  target->hn = NULL;
-  return;
-}
-
 static void target_free(target_t *target)
 {
   if(target == NULL)
@@ -424,6 +417,7 @@ static int do_method(void)
      timeval_cmp(&target->next, &now) <= 0)
     {
       target = heap_remove(heap);
+      target->hn = NULL;
     }
   else if((target = slist_head_pop(list)) != NULL)
     {
@@ -457,20 +451,22 @@ static int do_method(void)
   if(tbit_app == SCAMPER_TBIT_APP_HTTP)
     {
       if(string_firstof_char(target->un.url, '\'') == NULL)
-	string_concat(cmd,sizeof(cmd),&off, "tbit -u '%s'", target->un.url);
+	string_concat3(cmd, sizeof(cmd), &off, "tbit -u '",
+		       target->un.url, "'");
       else
-	string_concat(cmd,sizeof(cmd),&off, "tbit -u \"%s\"", target->un.url);
+	string_concat3(cmd, sizeof(cmd), &off, "tbit -u \"",
+		       target->un.url, "\"");
       if(ttl != 0)
-	string_concat(cmd,sizeof(cmd),&off, " -T %d", ttl);
+	string_concaf(cmd,sizeof(cmd),&off, " -T %d", ttl);
     }
   else if(tbit_app == SCAMPER_TBIT_APP_BGP)
     {
-      string_concat(cmd, sizeof(cmd), &off, "tbit -p bgp -T %d -b %d",
+      string_concaf(cmd, sizeof(cmd), &off, "tbit -p bgp -T %d -b %d",
 		    ttl == 0 ? 69 : ttl, target->un.asn);
     }
   else return -1;
 
-  string_concat(cmd, sizeof(cmd), &off, " %s -s %d %s\n", m, target->sport,
+  string_concaf(cmd, sizeof(cmd), &off, " %s -s %d %s\n", m, target->sport,
 		scamper_addr_tostr(target->addr, addr, sizeof(addr)));
   write_wrap(scamper_fd, cmd, NULL, off);
   probing++;
@@ -976,7 +972,6 @@ int main(int argc, char *argv[])
     return -1;
   if((heap = heap_alloc(target_next_cmp)) == NULL)
     return -1;
-  heap_onremove(heap, target_onremove);
   if((list = slist_alloc()) == NULL)
     return -1;
   assert(addressfile != NULL);

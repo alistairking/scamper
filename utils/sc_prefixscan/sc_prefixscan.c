@@ -2,10 +2,10 @@
  * sc_prefixscan : scamper driver to collect evidence of pt2pt links
  *                 using the prefixscan method
  *
- * $Id: sc_prefixscan.c,v 1.24 2023/09/24 22:35:02 mjl Exp $
+ * $Id: sc_prefixscan.c,v 1.26 2024/12/31 04:17:31 mjl Exp $
  *
  * Copyright (C) 2011,2016 The University of Waikato
- * Copyright (C) 2019-2023 Matthew Luckie
+ * Copyright (C) 2019-2024 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -976,8 +976,8 @@ static int sc_test_ping(sc_test_t *test, char *cmd, size_t len)
   else
     return -1;
 
-  string_concat(cmd, len, &off, " -c 6 -o 4 %s",
-		scamper_addr_tostr(dst, buf, sizeof(buf)));
+  string_concat2(cmd, len, &off, " -c 6 -o 4 ",
+		 scamper_addr_tostr(dst, buf, sizeof(buf)));
 
   return off;
 }
@@ -1041,7 +1041,7 @@ static int sc_test_scan(sc_test_t *test, char *cmd, size_t len)
   else if(ps->step == 1) meth = "tcp-ack-sport";
   else meth = "icmp-echo";
 
-  string_concat(cmd, len, &off,
+  string_concaf(cmd, len, &off,
 		"dealias -m prefixscan -f 1000 -p '-P %s' %s %s/%d",
 		meth,
 		scamper_addr_tostr(ps->a, a, sizeof(a)),

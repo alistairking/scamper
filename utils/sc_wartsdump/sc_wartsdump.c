@@ -1,7 +1,7 @@
 /*
  * sc_wartsdump
  *
- * $Id: sc_wartsdump.c,v 1.303 2024/11/10 04:08:30 mjl Exp $
+ * $Id: sc_wartsdump.c,v 1.305 2024/12/31 04:17:31 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -9,7 +9,7 @@
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2012-2015 The Regents of the University of California
- * Copyright (C) 2019-2023 Matthew Luckie
+ * Copyright (C) 2019-2024 Matthew Luckie
  * Copyright (C) 2023-2024 The Regents of the University of California
  *
  * This program is free software; you can redistribute it and/or modify
@@ -1783,11 +1783,11 @@ static void dump_tbit(scamper_tbit_t *tbit)
 	    string_concat(tfstr, sizeof(tfstr), &soff, "RST");
 
 	  if(flags & 0x40)
-	    string_concat(tfstr, sizeof(tfstr), &soff, "%sECE",
-			  soff != 0 ? "/" : "");
+	    string_concat2(tfstr, sizeof(tfstr), &soff,
+			   soff != 0 ? "/" : "", "ECE");
 	  if(flags & 0x80)
-	    string_concat(tfstr, sizeof(tfstr), &soff, "%sCWR",
-			  soff != 0 ? "/" : "");
+	    string_concat2(tfstr, sizeof(tfstr), &soff,
+			   soff != 0 ? "/" : "", "CWR");
 
 	  /* parse TCP options for sack blocks */
 	  u8 = 20; soff = 0; sack[0] = '\0';
@@ -1818,7 +1818,7 @@ static void dump_tbit(scamper_tbit_t *tbit)
 
 		  string_concat(sack, sizeof(sack), &soff, " {");
 		  for(u16=0; u16<(tmp[1]-2)/8; u16++)
-		    string_concat(sack, sizeof(sack), &soff, "%s%u:%u",
+		    string_concaf(sack, sizeof(sack), &soff, "%s%u:%u",
 				  u16 != 0 ? "," : "",
 				  bytes_ntohl(tmp+2+(u16*8)) - u32,
 				  bytes_ntohl(tmp+2+(u16*8)+4) - u32);
@@ -1844,11 +1844,11 @@ static void dump_tbit(scamper_tbit_t *tbit)
 
 	  printf("%-13s %4d%s", tfstr, len, frag != 0 ? "F" : " ");
 	  soff = 0;
-	  string_concat(buf, sizeof(buf), &soff, " %u", seq);
+	  string_concaf(buf, sizeof(buf), &soff, " %u", seq);
 	  if(flags & TH_ACK)
-	    string_concat(buf, sizeof(buf), &soff, ":%u", ack);
+	    string_concaf(buf, sizeof(buf), &soff, ":%u", ack);
 	  if(datalen != 0)
-	    string_concat(buf, sizeof(buf), &soff, "(%d)", datalen);
+	    string_concaf(buf, sizeof(buf), &soff, "(%d)", datalen);
 	  printf("%-17s%s", buf, ipid);
 	  if(frag != 0) printf("%s", fstr);
 	  if(datalen > 0 && (pkt_data[0] >> 4) == 4 && pkt_data[6] & 0x40)
@@ -2012,11 +2012,11 @@ static void dump_sting(scamper_sting_t *sting)
 	string_concat(tfstr, sizeof(tfstr), &tfoff, "RST");
 
       if(flags & 0x40)
-	string_concat(tfstr, sizeof(tfstr), &tfoff, "%sECE",
-		      tfoff != 0 ? "/" : "");
+	string_concat2(tfstr, sizeof(tfstr), &tfoff,
+		       tfoff != 0 ? "/" : "", "ECE");
       if(flags & 0x80)
-	string_concat(tfstr, sizeof(tfstr), &tfoff, "%sCWR",
-		      tfoff != 0 ? "/" : "");
+	string_concat2(tfstr, sizeof(tfstr), &tfoff,
+		       tfoff != 0 ? "/" : "", "CWR");
       if(tfoff == 0)
 	tfstr[0] = '\0';
 

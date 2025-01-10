@@ -1,6 +1,6 @@
 #!/usr/bin/env perl
 #
-# $Id: build-man-pdfs.pl,v 1.23 2024/07/09 22:05:41 mjl Exp $
+# $Id: build-man-pdfs.pl,v 1.24 2024/11/12 23:55:47 mjl Exp $
 
 use strict;
 use warnings;

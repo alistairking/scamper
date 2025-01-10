@@ -1,11 +1,11 @@
 /*
  * sc_radargun : scamper driver to do radargun-style probing.
  *
- * $Id: sc_radargun.c,v 1.23 2024/04/26 06:52:24 mjl Exp $
+ * $Id: sc_radargun.c,v 1.24 2024/12/30 03:16:58 mjl Exp $
  *
  * Copyright (C) 2014      The Regents of the University of California
  * Copyright (C) 2016      The University of Waikato
- * Copyright (C) 2020-2023 Matthew Luckie
+ * Copyright (C) 2020-2024 Matthew Luckie
  * Author: Matthew Luckie
  *
  * Radargun technique authored by:
@@ -804,11 +804,11 @@ static int do_method_ping(sc_test_t *test, char **cmd_out, size_t *len_out)
   char cmd[256];
   char buf[64];
 
-  string_concat(cmd, sizeof(cmd), &off, "ping -P %s -i %d",
+  string_concaf(cmd, sizeof(cmd), &off, "ping -P %s -i %d",
 		method_tostr(pt->ping->method), wait_probe / 1000);
   if((wait_probe % 1000) != 0)
-    string_concat(cmd, sizeof(cmd), &off, ".%d", wait_probe % 1000);
-  string_concat(cmd, sizeof(cmd), &off, " -c %d -o %d %s\n",
+    string_concaf(cmd, sizeof(cmd), &off, ".%d", wait_probe % 1000);
+  string_concaf(cmd, sizeof(cmd), &off, " -c %d -o %d %s\n",
 		attempts+2, attempts,
 		scamper_addr_tostr(pt->ping->addr, buf, sizeof(buf)));
 
@@ -933,7 +933,7 @@ static int do_method_radargun(sc_test_t *test, char **cmd_out, size_t *len_out)
       goto err;
     }
 
-  string_concat(header, sizeof(header), &len,
+  string_concaf(header, sizeof(header), &len,
 		"dealias -m radargun -O shuffle -q %d -W %d -r %d",
 		round_count, rg_waitprobe, wait_round);
 
@@ -964,7 +964,7 @@ static int do_method_radargun(sc_test_t *test, char **cmd_out, size_t *len_out)
 
       ping = sc_ping_find(addr);
       off = 0;
-      string_concat(tmp, sizeof(tmp), &off, " -p '-P %s -i %s'",
+      string_concaf(tmp, sizeof(tmp), &off, " -p '-P %s -i %s'",
 		    method_tostr(ping->method),
 		    scamper_addr_tostr(addr, buf, sizeof(buf)));
       if((defs[i] = strdup(tmp)) == NULL)
@@ -982,9 +982,9 @@ static int do_method_radargun(sc_test_t *test, char **cmd_out, size_t *len_out)
       goto err;
     }
   off = 0;
-  string_concat(cmd, len, &off, "%s", header);
+  string_concat(cmd, len, &off, header);
   for(i=0; i<incrc; i++)
-    string_concat(cmd, len, &off, "%s", defs[i]);
+    string_concat(cmd, len, &off, defs[i]);
   string_concat(cmd, len, &off, "\n");
 
   for(i=0; i<incrc; i++)

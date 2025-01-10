@@ -1,9 +1,9 @@
 /*
  * scamper_host
  *
- * $Id: scamper_host.c,v 1.25 2024/09/05 01:29:26 mjl Exp $
+ * $Id: scamper_host.c,v 1.26 2025/01/05 20:04:29 mjl Exp $
  *
- * Copyright (C) 2018-2024 Matthew Luckie
+ * Copyright (C) 2018-2025 Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -62,13 +62,16 @@ scamper_host_rr_opt_elem_t *scamper_host_rr_opt_elem_alloc(uint16_t code,
   elem->refcnt = 1;
 #endif
 
-  if(len > 0 && (elem->data = malloc(len)) == NULL)
+  if(len > 0)
     {
-      free(elem);
-      return NULL;
+      if((elem->data = malloc(len)) == NULL)
+	{
+	  free(elem);
+	  return NULL;
+	}
+      memcpy(elem->data, data, len);
     }
 
-  memcpy(elem->data, data, len);
   elem->code = code;
   elem->len = len;
   return elem;

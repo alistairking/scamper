@@ -1,6 +1,6 @@
 # Process this file with autoconf to produce a configure script.
 
-AC_INIT([scamper],[20241112],[mjl@luckie.org.nz])
+AC_INIT([scamper],[20250106],[mjl@luckie.org.nz])
 
 AC_CONFIG_SRCDIR([scamper/scamper.c])
 AC_CONFIG_AUX_DIR([.])
@@ -29,6 +29,18 @@ AC_ARG_ENABLE([debug-file],
 		  [remove support for generating a debug file])])
 if test "x$enable_debug_file" = xno; then
   AC_DEFINE([WITHOUT_DEBUGFILE], [1], [Defined to 1 if we don't want to be able generate a debugfile])
+fi
+
+# --enable-scamper-select
+AC_ARG_ENABLE([scamper-select],
+  [AS_HELP_STRING([--enable-scamper-select],
+                  [build scamper with support for select syscall])],
+  [enable_scamper_select=$enableval],
+  [enable_scamper_select=no]
+)
+if test "x$enable_scamper_select" = "xno"; then
+  AC_DEFINE([DISABLE_SCAMPER_SELECT],[1],
+            [Define to 1 to not build scamper with support for select syscall])
 fi
 
 # --disable-privsep
@@ -556,6 +568,24 @@ AC_COMPILE_IFELSE([AC_LANG_PROGRAM(
 		AC_MSG_RESULT([yes])
 		AC_DEFINE_UNQUOTED([HAVE_STRUCT_TPACKET_REQ3], 1,
 		[Define to 1 if you have the `tpacket_req3' struct.])
+	],
+	[
+		AC_MSG_RESULT([no])
+	])
+
+AC_MSG_CHECKING([for clock_gettime(CLOCK_MONOTONIC)])
+AC_COMPILE_IFELSE([AC_LANG_PROGRAM(
+	[[
+		#include <time.h>
+	]],
+	[[
+		struct timespec ts;
+		clock_gettime(CLOCK_MONOTONIC, &ts);
+	]])],
+	[
+		AC_MSG_RESULT([yes])
+		AC_DEFINE_UNQUOTED([HAVE_CLOCK_MONOTONIC], 1,
+		[Define to 1 if you have CLOCK_MONOTONIC.])
 	],
 	[
 		AC_MSG_RESULT([no])

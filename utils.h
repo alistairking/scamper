@@ -1,7 +1,7 @@
 /*
  * utils.h
  *
- * $Id: utils.h,v 1.162 2024/10/13 08:58:53 mjl Exp $
+ * $Id: utils.h,v 1.165 2024/12/31 04:17:31 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -199,7 +199,7 @@ const char *addr_tostr(int af, const void *addr, char *buf, size_t len)
 int sockaddr_compose(struct sockaddr *sa, int af, const void *addr, int port);
 int sockaddr_compose_un(struct sockaddr *sa, const char *name)
   ATTRIBUTE_NONNULL;
-int sockaddr_compose_str(struct sockaddr *sa, const char *ip, int port)
+int sockaddr_compose_str(struct sockaddr *sa, int af, const char *ip, int port)
   ATTRIBUTE_NONNULL;
 int sockaddr_len(const struct sockaddr *sa)
   ATTRIBUTE_NONNULL_PURE;
@@ -251,13 +251,19 @@ char *string_lastof(char *str, const char *delim) ATTRIBUTE_NONNULL;
 char *string_lastof_char(char *str, char delim) ATTRIBUTE_NONNULL;
 char *string_firstof_char(char *str, char delim) ATTRIBUTE_NONNULL;
 #ifdef HAVE_FUNC_ATTRIBUTE_FORMAT
-char *string_concat(char *str, size_t len, size_t *off, const char *fs, ...)
+void string_concaf(char *str, size_t len, size_t *off, const char *fs, ...)
   __attribute__((format(printf, 4, 5)));
 #else
-char *string_concat(char *str, size_t len, size_t *off, const char *fs, ...);
+void string_concaf(char *str, size_t len, size_t *off, const char *fs, ...);
 #endif
-char *string_byte2hex(char *str, size_t len, size_t *off,
-		      const uint8_t *b, size_t bl) ATTRIBUTE_NONNULL;
+void string_concat(char *str, size_t len, size_t *off, const char *in)
+  ATTRIBUTE_NONNULL;
+void string_concat2(char *str, size_t len, size_t *off,
+		    const char *a, const char *b) ATTRIBUTE_NONNULL;
+void string_concat3(char *str, size_t len, size_t *off, const char *a,
+		    const char *b, const char *c) ATTRIBUTE_NONNULL;
+void string_byte2hex(char *str, size_t len, size_t *off,
+		     const uint8_t *b, size_t bl) ATTRIBUTE_NONNULL;
 
 const char *string_findlc(const char *str, const char *find)
   ATTRIBUTE_NONNULL_PURE;

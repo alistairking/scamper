@@ -21,11 +21,13 @@ my @tests = (
     "unit_dl_parse_arp",
     "unit_dl_parse_ip",
     "unit_fds",
+    "unit_heap",
     "unit_host_rr_list",
     "unit_http_lib",
     "unit_options",
     "unit_osinfo",
     "unit_ping_lib",
+    "unit_splaytree",
     "unit_string",
     "unit_timeval",
     );

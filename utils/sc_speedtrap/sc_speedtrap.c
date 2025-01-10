@@ -1,14 +1,14 @@
 /*
  * sc_speedtrap
  *
- * $Id: sc_speedtrap.c,v 1.88 2024/11/12 06:34:04 mjl Exp $
+ * $Id: sc_speedtrap.c,v 1.90 2024/12/31 04:17:31 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
  *
  * Copyright (C) 2013-2015 The Regents of the University of California
  * Copyright (C) 2016,2020 The University of Waikato
- * Copyright (C) 2022-2023 Matthew Luckie
+ * Copyright (C) 2022-2024 Matthew Luckie
  * Copyright (C) 2023-2024 The Regents of the University of California
  *
  * This program is free software; you can redistribute it and/or modify
@@ -999,12 +999,12 @@ static void sc_targetset_logprint(const sc_targetset_t *ts)
   slist_node_t *ss;
   size_t off = 0;
   char a[64], buf[131072];
-  string_concat(buf, sizeof(buf), &off, "%p:", ts);
+  string_concaf(buf, sizeof(buf), &off, "%p:", ts);
   for(ss=slist_head_node(ts->targets); ss != NULL; ss=slist_node_next(ss))
     {
       tg = slist_node_item(ss);
-      string_concat(buf, sizeof(buf), &off, " %s",
-		    scamper_addr_tostr(tg->addr, a, sizeof(a)));
+      string_concat2(buf, sizeof(buf), &off, " ",
+		     scamper_addr_tostr(tg->addr, a, sizeof(a)));
     }
   logprint(0, "%s\n", buf);
   return;
@@ -1319,8 +1319,7 @@ static int test_ping6(sc_target_t *target, char *cmd, size_t len)
 {
   size_t off = 0;
   char buf[64];
-  string_concat(cmd, len, &off,
-		"ping -U %d -c 6 -s 1300 -M 1280 %s",
+  string_concaf(cmd, len, &off, "ping -U %d -c 6 -s 1300 -M 1280 %s",
 		mode, scamper_addr_tostr(target->addr, buf, sizeof(buf)));
   return off;
 }
@@ -1329,7 +1328,7 @@ static int test_ping1(sc_target_t *target, char *cmd, size_t len)
 {
   size_t off = 0;
   char buf[64];
-  string_concat(cmd, len, &off,
+  string_concaf(cmd, len, &off,
 		"ping -O tbt -U %d -c 2 -o 1 -s 1300 -M 1280 %s",
 		mode, scamper_addr_tostr(target->addr, buf, sizeof(buf)));
   return off;
@@ -1540,13 +1539,13 @@ static int do_method_ally(void)
     return 0;
 
   tg = slist_head_item(ts->targets);
-  string_concat(cmd, sizeof(cmd), &off,
+  string_concaf(cmd, sizeof(cmd), &off,
 		"dealias -U %d -m ally -f %u -w 2 -W 1000 -p '%s' %s",
 		mode, fudge, "-P icmp-echo -s 1300 -M 1280",
 		scamper_addr_tostr(tg->addr, addr, sizeof(addr)));
   tg = slist_node_item(ts->next);
-  string_concat(cmd, sizeof(cmd), &off, " %s",
-		scamper_addr_tostr(tg->addr, addr, sizeof(addr)));
+  string_concat2(cmd, sizeof(cmd), &off, " ",
+		 scamper_addr_tostr(tg->addr, addr, sizeof(addr)));
 
   if(scamper_inst_do(scamper_inst, cmd, NULL) == NULL)
     {

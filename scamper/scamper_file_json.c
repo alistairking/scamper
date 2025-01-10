@@ -1,9 +1,9 @@
 /*
  * scamper_file_json.c
  *
- * $Id: scamper_file_json.c,v 1.6 2023/05/29 20:21:27 mjl Exp $
+ * $Id: scamper_file_json.c,v 1.8 2024/12/31 04:17:31 mjl Exp $
  *
- * Copyright (C) 2017-2023 Matthew Luckie
+ * Copyright (C) 2017-2024 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -32,36 +32,34 @@
 #include "scamper_file_json.h"
 #include "utils.h"
 
-int scamper_file_json_cyclestart_write(const scamper_file_t *sf,
-				       scamper_cycle_t *c)
+static int json_cycle(const scamper_file_t *sf, const scamper_cycle_t *c,
+		      const char *type, uint32_t time)
 {
   char buf[1024];
   size_t off = 0;
 
-  string_concat(buf, sizeof(buf), &off,
-		"{\"type\":\"cycle-start\", \"list_name\":\"%s\", \"id\":%u",
-		c->list->name, c->id);
+  string_concat2(buf, sizeof(buf), &off, "{\"type\":\"cycle-", type);
+  string_concat2(buf, sizeof(buf), &off, "\", \"list_name\":\"", c->list->name);
+  string_concaf(buf, sizeof(buf), &off, "\", \"id\":%u", c->id);
   if(c->hostname != NULL)
-    string_concat(buf,sizeof(buf),&off, ", \"hostname\":\"%s\"", c->hostname);
-  string_concat(buf,sizeof(buf),&off, ", \"start_time\":%u}\n",c->start_time);
+    string_concat3(buf, sizeof(buf), &off, ", \"hostname\":\"",
+		   c->hostname, "\"");
+  string_concat2(buf, sizeof(buf), &off, ", \"", type);
+  string_concaf(buf, sizeof(buf), &off, "_time\":%u}\n", time);
 
   return json_write(sf, buf, off, NULL);
+}
+
+int scamper_file_json_cyclestart_write(const scamper_file_t *sf,
+				       scamper_cycle_t *c)
+{
+  return json_cycle(sf, c, "start", c->start_time);
 }
 
 int scamper_file_json_cyclestop_write(const scamper_file_t *sf,
 				      scamper_cycle_t *c)
 {
-  char buf[1024];
-  size_t off = 0;
-
-  string_concat(buf, sizeof(buf), &off,
-		"{\"type\":\"cycle-stop\", \"list_name\":\"%s\", \"id\":%u",
-		c->list->name, c->id);
-  if(c->hostname != NULL)
-    string_concat(buf,sizeof(buf),&off, ", \"hostname\":\"%s\"", c->hostname);
-  string_concat(buf,sizeof(buf),&off, ", \"stop_time\":%u}\n", c->stop_time);
-
-  return json_write(sf, buf, off, NULL);
+  return json_cycle(sf, c, "stop", c->stop_time);
 }
 
 /*

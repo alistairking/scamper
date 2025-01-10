@@ -1,4 +1,4 @@
-# $Id: Makefile.am,v 1.1.2.1 2024/11/12 07:36:14 mjl Exp $
+# $Id: Makefile.am,v 1.3 2025/01/06 03:08:22 mjl Exp $
 
 AUTOMAKE_OPTIONS = subdir-objects
 
@@ -8,7 +8,7 @@ lib_LTLIBRARIES = libscamperfile.la
 
 libscamperfile_la_CFLAGS = -DBUILDING_LIBSCAMPERFILE
 
-libscamperfile_la_LDFLAGS = -version-info 11:0:2 \
+libscamperfile_la_LDFLAGS = -version-info 11:1:2 \
 	-export-symbols-regex '^scamper_'
 
 libscamperfile_la_LIBADD = @ZLIB_LIBS@ @LIBBZ2_LIBS@ @LIBLZMA_LIBS@ \
