@@ -4,7 +4,7 @@
  *
  * Authors       : Matthew Luckie
  *
- * Copyright (C) 2018-2023 Matthew Luckie
+ * Copyright (C) 2018-2024 Matthew Luckie
  * Copyright (C) 2023      The Regents of the University of California
  *
  * This program is free software; you can redistribute it and/or modify
@@ -376,12 +376,6 @@ static int sc_ep_addr_fbd(const sc_ep_t *a, const sc_ep_t *b)
 static int sc_ep_addr_bit(const sc_ep_t *ep, int bit)
 {
   return scamper_addr_bit(ep->addr, bit);
-}
-
-static void sc_ep_heap_onremove(sc_ep_t *ep)
-{
-  ep->hn = NULL;
-  return;
 }
 
 static void ep_del_tree(sc_ep_t *ep)
@@ -870,6 +864,7 @@ static int do_method(void)
   if(ep->type != EP_TYPE_PROBE || more < 1)
     return 0;
   ep = heap_remove(waiting);
+  ep->hn = NULL;
 
   scamper_addr_tostr(ep->addr, buf, sizeof(buf));
   if((bc = snprintf(cmd, sizeof(cmd), "%s %s\n", command, buf)) < 0 ||
@@ -1149,7 +1144,6 @@ int main(int argc, char *argv[])
 
   if((waiting = heap_alloc((heap_cmp_t)sc_ep_tv_cmp)) == NULL)
     return -1;
-  heap_onremove(waiting, (heap_onremove_t)sc_ep_heap_onremove);
 
   if((probing4 = patricia_alloc((patricia_bit_t)sc_ep_addr_bit,
 				(patricia_cmp_t)sc_ep_addr_cmp,

@@ -2,11 +2,11 @@
  * sc_ally : scamper driver to collect data on candidate aliases using the
  *           Ally method.
  *
- * $Id: sc_ally.c,v 1.61 2024/03/04 19:36:41 mjl Exp $
+ * $Id: sc_ally.c,v 1.63 2024/12/31 04:17:31 mjl Exp $
  *
  * Copyright (C) 2009-2011 The University of Waikato
  * Copyright (C) 2013-2015 The Regents of the University of California
- * Copyright (C) 2016-2023 Matthew Luckie
+ * Copyright (C) 2016-2024 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -1333,15 +1333,15 @@ static int test_ally_next(sc_test_t *test, uint8_t result)
   char buf[64];
   int rc = 0;
 
-  string_concat(msg, sizeof(msg), &off, "set ally %s:",
-		scamper_addr_tostr(a, buf, sizeof(buf)));
-  string_concat(msg, sizeof(msg), &off, "%s ",
-		scamper_addr_tostr(b, buf, sizeof(buf)));
+  string_concat3(msg, sizeof(msg), &off, "set ally ",
+		 scamper_addr_tostr(a, buf, sizeof(buf)), ":");
+  string_concat2(msg, sizeof(msg), &off,
+		 scamper_addr_tostr(b, buf, sizeof(buf)), " ");
 
   at->attempt++;
   if(result == SCAMPER_DEALIAS_RESULT_NONE && at->attempt <= 4)
     {
-      string_concat(msg, sizeof(msg), &off, "wait %d", at->attempt);
+      string_concaf(msg, sizeof(msg), &off, "wait %d", at->attempt);
       if(sc_waittest(test) != 0)
 	rc = -1;
     }
@@ -1414,10 +1414,10 @@ static int sc_test_ping(sc_test_t *test, char *cmd, size_t len, sc_test_t **out)
     string_concat(cmd, len, &off, "tcp-ack-sport");
   else
     return -1;
-  string_concat(cmd, len, &off, " -i %d", probe_wait / 1000);
+  string_concaf(cmd, len, &off, " -i %d", probe_wait / 1000);
   if((probe_wait % 1000) != 0)
-    string_concat(cmd, len, &off, ".%03d", probe_wait % 1000);
-  string_concat(cmd, len, &off, " -c %d -o %d %s", attempts + 2, attempts,
+    string_concaf(cmd, len, &off, ".%03d", probe_wait % 1000);
+  string_concaf(cmd, len, &off, " -c %d -o %d %s", attempts + 2, attempts,
 		scamper_addr_tostr(dst, buf, sizeof(buf)));
 
   *out = test;
@@ -1512,10 +1512,10 @@ static int sc_test_ally(sc_test_t *test, char *cmd, size_t len, sc_test_t **out)
   if(fudge == 0)
     string_concat(cmd, len, &off, " -O inseq");
   else
-    string_concat(cmd, len, &off, " -f %d", fudge);
+    string_concaf(cmd, len, &off, " -f %d", fudge);
   if(flags & FLAG_NOBS)
     string_concat(cmd, len, &off, " -O nobs");
-  string_concat(cmd, len, &off, " -W %d -q %d -p '-P %s' %s %s",
+  string_concaf(cmd, len, &off, " -W %d -q %d -p '-P %s' %s %s",
 		probe_wait, attempts, method[at->method-1],
 		scamper_addr_tostr(at->a->addr, ab, sizeof(ab)),
 		scamper_addr_tostr(at->b->addr, bb, sizeof(bb)));

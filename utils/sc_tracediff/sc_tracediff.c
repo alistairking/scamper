@@ -1,13 +1,13 @@
 /*
  * sc_tracediff
  *
- * $Id: sc_tracediff.c,v 1.17 2023/08/27 06:39:31 mjl Exp $
+ * $Id: sc_tracediff.c,v 1.20 2024/12/31 04:17:31 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
  *
- * Copyright (C) 2011 The University of Waikato
- * Copyright (C) 2023 Matthew Luckie
+ * Copyright (C) 2011      The University of Waikato
+ * Copyright (C) 2023-2024 Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -163,7 +163,7 @@ static char *hop_tostr(const scamper_trace_t *trace, int i,
      addr_toname(hop_addr, addr, sizeof(addr)) == NULL)
     scamper_addr_tostr(hop_addr, addr, sizeof(addr));
 
-  string_concat(buf, len, &off, "%s", addr);
+  string_concat(buf, len, &off, addr);
 
   if(scamper_trace_hop_is_icmp_ttl_exp(hop) ||
      scamper_trace_hop_is_icmp_echo_reply(hop) ||
@@ -191,11 +191,11 @@ static char *hop_tostr(const scamper_trace_t *trace, int i,
 	  else if(icmp_code == ICMP_UNREACH_NET)
 	    string_concat(buf, len, &off, " !N");
 	  else if(icmp_code != ICMP_UNREACH_PORT)
-	    string_concat(buf, len, &off, " !<%d>", icmp_code);
+	    string_concaf(buf, len, &off, " !<%d>", icmp_code);
 	}
       else
 	{
-	  string_concat(buf, len, &off, " !<%d,%d>", icmp_type, icmp_code);
+	  string_concaf(buf, len, &off, " !<%d,%d>", icmp_type, icmp_code);
 	}
     }
   else if(scamper_addr_isipv6(hop_addr))
@@ -211,7 +211,7 @@ static char *hop_tostr(const scamper_trace_t *trace, int i,
 	  else if(icmp_code == ICMP6_DST_UNREACH_NOROUTE)
 	    string_concat(buf, len, &off, " !N");
 	  else if(icmp_code != ICMP6_DST_UNREACH_NOPORT)
-	    string_concat(buf, len, &off, " !<%d>", icmp_code);
+	    string_concaf(buf, len, &off, " !<%d>", icmp_code);
 	}
       else if(icmp_type == ICMP6_PACKET_TOO_BIG)
 	{
@@ -219,19 +219,13 @@ static char *hop_tostr(const scamper_trace_t *trace, int i,
 	}
       else
 	{
-	  string_concat(buf, len, &off, " !<%d,%d>", icmp_type, icmp_code);
+	  string_concaf(buf, len, &off, " !<%d,%d>", icmp_type, icmp_code);
 	}
     }
 
  done:
   *len_out = off;
   return buf;
-}
-
-static void tracepair_onremove(tracepair_t *pair)
-{
-  pair->node = NULL;
-  return;
 }
 
 static void tracepair_free(tracepair_t *pair)
@@ -327,14 +321,15 @@ static void tracepair_dump(const tracepair_t *pair)
     if(scamper_addr_cmp(dst, scamper_trace_dst_get(pair->traces[i])) != 0)
       break;
   w = 0;
-  string_concat(a, sizeof(a), &w, "traceroute ");
+  string_concat(a, sizeof(a), &w, "traceroute");
   if(i == pair->tracec)
-    string_concat(a, sizeof(a), &w, "from %s ",
-		  scamper_addr_tostr(scamper_trace_src_get(trace),b,sizeof(b)));
-  string_concat(a, sizeof(a), &w, "to %s",
+    string_concat2(a, sizeof(a), &w, " from ",
+		   scamper_addr_tostr(scamper_trace_src_get(trace),
+				      b, sizeof(b)));
+  string_concat2(a, sizeof(a), &w, " to ",
 		scamper_addr_tostr(dst, b, sizeof(b)));
   if(options & OPT_NAMES && addr_toname(dst, b, sizeof(b)) != NULL)
-    string_concat(a, sizeof(a), &w, " (%s)", b);
+    string_concat3(a, sizeof(a), &w, " (", b, ")");
   printf("%s\n", a);
 
   max_ttl = 0;
@@ -473,7 +468,6 @@ int main(int argc, char *argv[])
       fprintf(stderr, "could not alloc tracepair tree\n");
       goto err;
     }
-  splaytree_onremove(pairs, (splaytree_onremove_t)tracepair_onremove);
 
   while(filec_open != 0)
     {
@@ -525,7 +519,7 @@ int main(int argc, char *argv[])
 	  if(pair->tracec != filec)
 	    continue;
 
-	  splaytree_remove_node(pairs, pair->node);
+	  splaytree_remove_node(pairs, pair->node); pair->node = NULL;
 	  tracepair_process(pair);
 	  tracepair_free(pair);
 	}

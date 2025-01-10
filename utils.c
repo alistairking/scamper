@@ -1,7 +1,7 @@
 /*
  * utils.c
  *
- * $Id: utils.c,v 1.246 2024/10/13 08:58:53 mjl Exp $
+ * $Id: utils.c,v 1.250 2024/12/31 04:17:31 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -112,41 +112,42 @@ int sockaddr_compose_un(struct sockaddr *sa, const char *file)
 #endif
 }
 
-int sockaddr_compose_str(struct sockaddr *sa, const char *addr, int port)
+int sockaddr_compose_str(struct sockaddr *sa,int af,const char *addr,int port)
 {
-  struct addrinfo hints, *res, *res0;
-  int rc = -1;
-  void *va;
+  struct sockaddr_in *sin;
+  struct sockaddr_in6 *sin6;
 
-  memset(&hints, 0, sizeof(struct addrinfo));
-  hints.ai_flags    = AI_NUMERICHOST;
-  hints.ai_socktype = SOCK_DGRAM;
-  hints.ai_protocol = IPPROTO_UDP;
-  hints.ai_family   = AF_UNSPEC;
-
-  if(getaddrinfo(addr, NULL, &hints, &res0) != 0 || res0 == NULL)
-    return rc;
-
-  for(res = res0; res != NULL; res = res->ai_next)
+  if(af == AF_UNSPEC || af == AF_INET)
     {
-      if(res->ai_family == PF_INET)
+      sin = (struct sockaddr_in *)sa;
+      memset(sin, 0, sizeof(struct sockaddr_in));
+      if(inet_pton(AF_INET, addr, &sin->sin_addr) == 1)
 	{
-	  va = &((struct sockaddr_in *)res->ai_addr)->sin_addr;
-	  sockaddr_compose(sa, AF_INET, va, port);
-	  rc = 0;
-	  break;
-	}
-      else if(res->ai_family == PF_INET6)
-	{
-	  va = &((struct sockaddr_in6 *)res->ai_addr)->sin6_addr;
-	  sockaddr_compose(sa, AF_INET6, va, port);
-	  rc = 0;
-	  break;
+	  sa->sa_family = AF_INET;
+#if defined(HAVE_STRUCT_SOCKADDR_SA_LEN)
+	  sa->sa_len    = sizeof(struct sockaddr_in);
+#endif
+	  sin->sin_port = htons(port);
+	  return 0;
 	}
     }
 
-  freeaddrinfo(res0);
-  return rc;
+  if(af == AF_UNSPEC || af == AF_INET6)
+    {
+      sin6 = (struct sockaddr_in6 *)sa;
+      memset(sin6, 0, sizeof(struct sockaddr_in6));
+      if(inet_pton(AF_INET6, addr, &sin6->sin6_addr) == 1)
+	{
+	  sa->sa_family   = AF_INET6;
+#if defined(HAVE_STRUCT_SOCKADDR_SA_LEN)
+	  sa->sa_len      = sizeof(struct sockaddr_in6);
+#endif
+	  sin6->sin6_port = htons(port);
+	  return 0;
+	}
+    }
+
+  return -1;
 }
 
 #if defined(AF_LINK) && !defined(_WIN32)
@@ -1613,39 +1614,84 @@ char *string_firstof_char(char *str, char delim)
   return firstof;
 }
 
-char *string_concat(char *str, size_t len, size_t *off, const char *fs, ...)
+void string_concaf(char *str, size_t len, size_t *off, const char *fs, ...)
 {
   va_list ap;
   size_t left;
   int wc;
 
+  /* error condition: offset is beyond reported length */
   if(len < *off)
-    return NULL;
+    return;
 
+  /* no space left */
   if((left = len - *off) == 0)
-    return str;
+    return;
 
   va_start(ap, fs);
   wc = vsnprintf(str + *off, left, fs, ap);
   va_end(ap);
 
+  /* error condition: invalid format string */
   if(wc < 0)
-    return NULL;
+    return;
 
   *off = *off + ((size_t)wc < left ? (size_t)wc : left);
-  return str;
+  return;
 }
 
-char *string_byte2hex(char *str, size_t len, size_t *off,
-		      const uint8_t *b, size_t bl)
+void string_concat(char *str, size_t len, size_t *off, const char *in)
+{
+  size_t left, wc, cp;
+
+  /* error condition: offset is beyond reported length */
+  if(len < *off)
+    return;
+
+  /* no space left */
+  if((left = len - *off) == 0)
+    return;
+
+  wc = strlen(in);
+  cp = wc < left ? wc : left - 1;
+  memcpy(str + *off, in, cp);
+
+  /* always null terminate */
+  (*off) += cp;
+  str[*off] = '\0';
+
+  return;
+}
+
+void string_concat3(char *str, size_t len, size_t *off,
+		    const char *a, const char *b, const char *c)
+{
+  string_concat(str, len, off, a);
+  string_concat(str, len, off, b);
+  string_concat(str, len, off, c);
+  return;
+}
+
+void string_concat2(char *str, size_t len, size_t *off,
+		    const char *a, const char *b)
+{
+  string_concat(str, len, off, a);
+  string_concat(str, len, off, b);
+  return;
+}
+
+void string_byte2hex(char *str, size_t len, size_t *off,
+		     const uint8_t *b, size_t bl)
 {
   size_t i;
 
+  /* error condition: offset is beyond reported length */
   if(len < *off)
-    return NULL;
+    return;
 
+  /* no space left */
   if((len - *off) == 0)
-    return str;
+    return;
 
   for(i=0; i<bl; i++)
     {
@@ -1655,8 +1701,9 @@ char *string_byte2hex(char *str, size_t len, size_t *off,
       (*off) += 2;
     }
 
+  /* always null terminate */
   str[*off] = '\0';
-  return str;
+  return;
 }
 
 /*

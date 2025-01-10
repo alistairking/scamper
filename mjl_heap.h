@@ -1,7 +1,7 @@
 /*
  * mjl_heap
  *
- * Copyright (C) 2006-2012 Matthew Luckie. All rights reserved.
+ * Copyright (C) 2006-2024 Matthew Luckie. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -24,7 +24,7 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  *
- * $Id: mjl_heap.h,v 1.7 2015/01/08 18:27:00 mjl Exp $
+ * $Id: mjl_heap.h,v 1.9 2024/12/29 03:21:29 mjl Exp $
  *
  */
 
@@ -37,7 +37,6 @@ typedef struct heap_node heap_node_t;
 typedef int  (*heap_cmp_t)(const void *a, const void *b);
 typedef void (*heap_free_t)(void *ptr);
 typedef void (*heap_foreach_t)(void *param, void *item);
-typedef void (*heap_onremove_t)(void *ptr);
 
 #ifndef DMALLOC
 heap_t *heap_alloc(heap_cmp_t cmp);
@@ -45,9 +44,8 @@ heap_node_t *heap_insert(heap_t *heap, void *ptr);
 #endif
 
 #ifdef DMALLOC
-heap_t *heap_alloc_dm(heap_cmp_t cmp, const char *file, const int line);
-heap_node_t *heap_insert_dm(heap_t *heap, void *ptr, const char *file,
-			    const int line);
+heap_t *heap_alloc_dm(heap_cmp_t cmp, const char *file, int line);
+heap_node_t *heap_insert_dm(heap_t *heap,void *ptr,const char *file,int line);
 #define heap_alloc(cmp) heap_alloc_dm((cmp), __FILE__, __LINE__)
 #define heap_insert(heap, ptr) heap_insert_dm((heap),(ptr),__FILE__,__LINE__)
 #endif
@@ -55,7 +53,6 @@ heap_node_t *heap_insert_dm(heap_t *heap, void *ptr, const char *file,
 void heap_free(heap_t *heap, heap_free_t free_func);
 
 void heap_remake(heap_t *heap);
-void heap_onremove(heap_t *heap, heap_onremove_t onremove);
 
 void *heap_remove(heap_t *heap);
 heap_node_t *heap_head_node(heap_t *heap);

@@ -4,10 +4,10 @@
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2012-2014 The Regents of the University of California
- * Copyright (C) 2022-2023 Matthew Luckie
+ * Copyright (C) 2022-2024 Matthew Luckie
  * Author: Matthew Luckie
  *
- * $Id: scamper_ping_text.c,v 1.22 2023/07/08 04:57:51 mjl Exp $
+ * $Id: scamper_ping_text.c,v 1.24 2024/12/31 04:17:31 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -74,18 +74,18 @@ static char *ping_reply(const scamper_ping_t *ping,
   scamper_addr_tostr(reply->addr, a, sizeof(a));
   timeval_tostr_us(&reply->rtt, rtt, sizeof(rtt));
 
-  string_concat(buf, sizeof(buf), &off, "%d bytes from %s, seq=%d ",
+  string_concaf(buf, sizeof(buf), &off, "%d bytes from %s, seq=%d ",
 		reply->reply_size, a, reply->probe_id);
 
   if(SCAMPER_PING_REPLY_IS_ICMP(reply) || SCAMPER_PING_REPLY_IS_UDP(reply))
     {
-      string_concat(buf, sizeof(buf), &off, "ttl=%d time=%s ms",
+      string_concaf(buf, sizeof(buf), &off, "ttl=%d time=%s ms",
 		    reply->reply_ttl, rtt);
     }
 
   if(SCAMPER_PING_REPLY_IS_ICMP(reply) && reply->tsreply != NULL)
     {
-      string_concat(buf, sizeof(buf), &off, " tso=%s tsr=%s tst=%s",
+      string_concaf(buf, sizeof(buf), &off, " tso=%s tsr=%s tst=%s",
 		    tsreply_tostr(tso, sizeof(tso), reply->tsreply->tso),
 		    tsreply_tostr(tsr, sizeof(tsr), reply->tsreply->tsr),
 		    tsreply_tostr(tst, sizeof(tst), reply->tsreply->tst));
@@ -109,35 +109,35 @@ static char *ping_reply(const scamper_ping_t *ping,
 	  tcp = flags;
 	}
 
-      string_concat(buf, sizeof(buf), &off, "tcp=%s ttl=%d time=%s ms",
+      string_concaf(buf, sizeof(buf), &off, "tcp=%s ttl=%d time=%s ms",
 		    tcp, reply->reply_ttl, rtt);
     }
   string_concat(buf, sizeof(buf), &off, "\n");
 
   if((v4rr = reply->v4rr) != NULL)
     {
-      string_concat(buf, sizeof(buf), &off, " RR: %s\n",
-		    scamper_addr_tostr(v4rr->ip[0], a, sizeof(a)));
+      string_concat3(buf, sizeof(buf), &off, " RR: ",
+		     scamper_addr_tostr(v4rr->ip[0], a, sizeof(a)), "\n");
       for(i=1; i<v4rr->ipc; i++)
-	string_concat(buf, sizeof(buf), &off, "     %s\n",
-		      scamper_addr_tostr(v4rr->ip[i], a, sizeof(a)));
+	string_concat3(buf, sizeof(buf), &off, "     ",
+		       scamper_addr_tostr(v4rr->ip[i], a, sizeof(a)), "\n");
     }
 
   if((v4ts = reply->v4ts) != NULL && v4ts->tsc > 0)
     {
       string_concat(buf, sizeof(buf), &off, " TS: ");
       if(v4ts->ips != NULL)
-	string_concat(buf, sizeof(buf), &off, "%-15s ",
+	string_concaf(buf, sizeof(buf), &off, "%-15s ",
 		      scamper_addr_tostr(v4ts->ips[0], a, sizeof(a)));
-      string_concat(buf, sizeof(buf), &off, "%d\n", v4ts->tss[0]);
+      string_concaf(buf, sizeof(buf), &off, "%d\n", v4ts->tss[0]);
 
       for(i=1; i<v4ts->tsc; i++)
 	{
 	  string_concat(buf, sizeof(buf), &off, "     ");
 	  if(v4ts->ips != NULL)
-	    string_concat(buf, sizeof(buf), &off, "%-15s ",
+	    string_concaf(buf, sizeof(buf), &off, "%-15s ",
 			  scamper_addr_tostr(v4ts->ips[i], a, sizeof(a)));
-	  string_concat(buf, sizeof(buf), &off, "%d\n", v4ts->tss[i]);
+	  string_concaf(buf, sizeof(buf), &off, "%d\n", v4ts->tss[i]);
 	}
     }
 
@@ -158,27 +158,29 @@ static char *ping_stats(const scamper_ping_t *ping)
   if(ping->ping_sent != 0)
     rp = ((ping->ping_sent - stats->nreplies) * 100) / ping->ping_sent;
 
-  string_concat(buf, sizeof(buf), &off, "--- %s ping statistics ---\n",
-		scamper_addr_tostr(ping->dst, str, sizeof(str)));
-  string_concat(buf, sizeof(buf), &off,
+  string_concat3(buf, sizeof(buf), &off, "--- ",
+		 scamper_addr_tostr(ping->dst, str, sizeof(str)),
+		 " ping statistics ---\n");
+  string_concaf(buf, sizeof(buf), &off,
 		"%d packets transmitted, %d packets received, ",
 		ping->ping_sent, stats->nreplies);
   if(stats->ndups > 0)
-    string_concat(buf, sizeof(buf), &off, "+%d duplicates, ", stats->ndups);
+    string_concaf(buf, sizeof(buf), &off, "+%d duplicates, ", stats->ndups);
   if(stats->nerrs > 0)
-    string_concat(buf, sizeof(buf), &off, "+%d errors, ", stats->nerrs);
-  string_concat(buf, sizeof(buf), &off, "%d%% packet loss\n", rp);
+    string_concaf(buf, sizeof(buf), &off, "+%d errors, ", stats->nerrs);
+  string_concaf(buf, sizeof(buf), &off, "%d%% packet loss\n", rp);
   if(stats->nreplies > 0)
     {
       string_concat(buf, sizeof(buf), &off, "round-trip min/avg/max/stddev =");
-      string_concat(buf, sizeof(buf), &off, " %s",
-		    timeval_tostr_us(&stats->min_rtt, str, sizeof(str)));
-      string_concat(buf, sizeof(buf), &off, "/%s",
-		    timeval_tostr_us(&stats->avg_rtt, str, sizeof(str)));
-      string_concat(buf, sizeof(buf), &off, "/%s",
-		    timeval_tostr_us(&stats->max_rtt, str, sizeof(str)));
-      string_concat(buf, sizeof(buf), &off, "/%s ms\n",
-      		    timeval_tostr_us(&stats->stddev_rtt, str, sizeof(str)));
+      string_concat2(buf, sizeof(buf), &off, " ",
+		     timeval_tostr_us(&stats->min_rtt, str, sizeof(str)));
+      string_concat2(buf, sizeof(buf), &off, "/",
+		     timeval_tostr_us(&stats->avg_rtt, str, sizeof(str)));
+      string_concat2(buf, sizeof(buf), &off, "/",
+		     timeval_tostr_us(&stats->max_rtt, str, sizeof(str)));
+      string_concat3(buf, sizeof(buf), &off, "/",
+		     timeval_tostr_us(&stats->stddev_rtt, str, sizeof(str)),
+		     " ms\n");
     }
 
   dup = strdup(buf);

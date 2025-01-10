@@ -3,12 +3,12 @@
  *
  * the warts file format
  *
- * $Id: scamper_file_warts.c,v 1.282 2024/05/01 07:46:20 mjl Exp $
+ * $Id: scamper_file_warts.c,v 1.283 2024/12/14 23:51:28 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2012-2015 The Regents of the University of California
- * Copyright (C) 2015-2023 Matthew Luckie
+ * Copyright (C) 2015-2024 Matthew Luckie
  * Copyright (C) 2024      The Regents of the University of California
  * Author: Matthew Luckie
  *
@@ -395,7 +395,7 @@ void insert_ifname(uint8_t *buf, uint32_t *off, const uint32_t len,
     {
       ifnlen = strlen(ifn->ifname) + 1;
       assert(len - *off >= ifnlen + 1);
-      buf[(*off)++] = wifn->id;
+      buf[(*off)++] = wifn != NULL ? wifn->id : 0;
       memcpy(&buf[(*off)], ifn->ifname, ifnlen);
       *off += ifnlen;
 

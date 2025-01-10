@@ -1,11 +1,11 @@
 /*
  * scamper_icmp6.c
  *
- * $Id: scamper_icmp6.c,v 1.117 2024/08/13 05:14:13 mjl Exp $
+ * $Id: scamper_icmp6.c,v 1.119 2024/12/12 15:27:06 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
- * Copyright (C) 2022-2023 Matthew Luckie
+ * Copyright (C) 2022-2024 Matthew Luckie
  * Copyright (C) 2023      The Regents of the University of California
  * Author: Matthew Luckie
  *
@@ -278,8 +278,7 @@ static void icmp6_recv_ip_outer(SOCKET fd,
   int16_t hlim = -1;
   int v;
 
-#if (defined(IPV6_HOPLIMIT) || defined(SO_TIMESTAMP)) && !defined(_WIN32)
-  /* get the HLIM field of the ICMP6 packet returned */
+#ifndef _WIN32 /* windows does not have msghdr */
   struct cmsghdr *cm;
 
 #ifdef IPV6_PKTINFO
@@ -337,7 +336,7 @@ static void icmp6_recv_ip_outer(SOCKET fd,
 	  cm = (struct cmsghdr *)CMSG_NXTHDR(msg, cm);
 	}
     }
-#endif
+#endif /* not _WIN32 */
 
 #if defined(SIOCGSTAMP)
   if((resp->ir_flags & SCAMPER_ICMP_RESP_FLAG_KERNRX) == 0)
@@ -698,7 +697,6 @@ SOCKET scamper_icmp6_open(const void *addr)
   if(setsockopt_int(fd, IPPROTO_IPV6, IPV6_RECVPKTINFO, 1) != 0)
     printerror(__func__, "could not set IPV6_RECVPKTINFO");
 #elif defined(IPV6_PKTINFO)
-  opt = 1;
   if(setsockopt_int(fd, IPPROTO_IPV6, IPV6_PKTINFO, 1) != 0)
     printerror(__func__, "could not set IPV6_PKTINFO");
 #endif

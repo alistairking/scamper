@@ -1,11 +1,11 @@
 /*
  * scamper_queue.h
  *
- * $Id: scamper_queue.h,v 1.16 2016/07/15 09:16:27 mjl Exp $
+ * $Id: scamper_queue.h,v 1.17 2024/12/15 06:56:23 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2010 The University of Waikato
- * Copyright (C) 2015-2016 Matthew Luckie
+ * Copyright (C) 2015-2024 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -60,13 +60,10 @@ void scamper_queue_detach(scamper_queue_t *queue);
 struct scamper_task *scamper_queue_select(void);
 
 /* get the next task that is completed and ready to be written out */
-struct scamper_task *scamper_queue_getdone(const struct timeval *tv);
+struct scamper_task *scamper_queue_getdone(void);
 
 /* return the time that the first task on the queue will time out */
 int scamper_queue_waittime(struct timeval *tv);
-
-/* return the number of tasks in the various queues */
-int scamper_queue_count(void);
 
 /* return the number of tasks that are ready to be probed now */
 int scamper_queue_readycount(void);

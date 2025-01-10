@@ -2,9 +2,10 @@
  * sc_prefixprober : scamper driver to probe addresses in specified
  *                   prefixes
  *
- * $Id: sc_prefixprober.c,v 1.40 2024/09/19 08:08:58 mjl Exp $
+ * $Id: sc_prefixprober.c,v 1.44 2024/12/31 04:17:31 mjl Exp $
  *
  * Copyright (C) 2023 The Regents of the University of California
+ * Copyright (C) 2024 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -827,7 +828,8 @@ static int sc_prefix_nest_cmp(const sc_prefix_nest_t *a,
 static int sc_prefix_add(slist_t *list, char *str, uint8_t dnp,
 			 const char *filename, int line)
 {
-  struct addrinfo hints, *res, *res0;
+  struct sockaddr_storage sas;
+  struct sockaddr *sa = (struct sockaddr *)&sas;
   sc_prefix_t *p;
   char *pf;
   void *va;
@@ -863,61 +865,49 @@ static int sc_prefix_add(slist_t *list, char *str, uint8_t dnp,
       return -1;
     }
 
-  memset(&hints, 0, sizeof(struct addrinfo));
-  hints.ai_flags    = AI_NUMERICHOST;
-  hints.ai_socktype = SOCK_DGRAM;
-  hints.ai_protocol = IPPROTO_UDP;
-  hints.ai_family   = AF_UNSPEC;
-
-  if(getaddrinfo(str, NULL, &hints, &res0) != 0 || res0 == NULL)
+  if(sockaddr_compose_str(sa, AF_UNSPEC, str, 0) != 0)
     {
       print("%s: invalid network address on line %d of %s",
 	    __func__, line, filename);
       return -1;
     }
 
-  for(res = res0; res != NULL; res = res->ai_next)
+  if(sa->sa_family == AF_INET)
     {
-      if(res->ai_family == PF_INET)
+      va = &((struct sockaddr_in *)sa)->sin_addr;
+      if(prefix4_isvalid(va, lo) == 0)
 	{
-	  va = &((struct sockaddr_in *)res->ai_addr)->sin_addr;
-	  if(prefix4_isvalid(va, lo) == 0)
-	    {
-	      print("%s: invalid IPv4 prefix on line %d of %s",
-		    __func__, line, filename);
-	      return -1;
-	    }
-	  if((p = sc_prefix_alloc(4, va, lo, dnp)) == NULL ||
-	     slist_tail_push(list, p) == NULL)
-	    {
-	      if(p != NULL) sc_prefix_free(p);
-	      print("%s: could not store IPv4 prefix on line %d of %s",
-		    __func__, line, filename);
-	      return -1;
-	    }
-	  break;
+	  print("%s: invalid IPv4 prefix on line %d of %s",
+		__func__, line, filename);
+	  return -1;
 	}
-      else if(res->ai_family == PF_INET6)
+      if((p = sc_prefix_alloc(4, va, lo, dnp)) == NULL ||
+	 slist_tail_push(list, p) == NULL)
 	{
-	  va = &((struct sockaddr_in6 *)res->ai_addr)->sin6_addr;
-	  if(prefix6_isvalid(va, lo) == 0)
-	    {
-	      print("%s: invalid IPv6 prefix on line %d of %s",
-		    __func__, line, filename);
-	      return -1;
-	    }
-	  if((p = sc_prefix_alloc(6, va, lo, dnp)) == NULL ||
-	     slist_tail_push(list, p) == NULL)
-	    {
-	      if(p != NULL) sc_prefix_free(p);
-	      print("%s: could not store IPv6 prefix on line %d of %s",
-		    __func__, line, filename);
-	      return -1;
-	    }
-	  break;
+	  if(p != NULL) sc_prefix_free(p);
+	  print("%s: could not store IPv4 prefix on line %d of %s",
+		__func__, line, filename);
+	  return -1;
 	}
     }
-  freeaddrinfo(res0);
+  else if(sa->sa_family == AF_INET6)
+    {
+      va = &((struct sockaddr_in6 *)sa)->sin6_addr;
+      if(prefix6_isvalid(va, lo) == 0)
+	{
+	  print("%s: invalid IPv6 prefix on line %d of %s",
+		__func__, line, filename);
+	  return -1;
+	}
+      if((p = sc_prefix_alloc(6, va, lo, dnp)) == NULL ||
+	 slist_tail_push(list, p) == NULL)
+	{
+	  if(p != NULL) sc_prefix_free(p);
+	  print("%s: could not store IPv6 prefix on line %d of %s",
+		__func__, line, filename);
+	  return -1;
+	}
+    }
 
   return 0;
 }
@@ -1428,7 +1418,7 @@ static int do_method(void)
   scamper_addr_tostr(sa, buf, sizeof(buf));
   scamper_addr_free(sa);
 
-  string_concat(cmd, sizeof(cmd), &off, "%s %s", scamper_cmd, buf);
+  string_concat3(cmd, sizeof(cmd), &off, scamper_cmd, " ", buf);
   if(scamper_inst_do(scamper_inst, cmd, prefix) == NULL)
     {
       print("%s: could not send %s", __func__, cmd);

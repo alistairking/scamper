@@ -2,10 +2,10 @@
  * sc_pinger : scamper driver to probe destinations with various ping
  *             methods
  *
- * $Id: sc_pinger.c,v 1.34 2024/09/07 02:33:17 mjl Exp $
+ * $Id: sc_pinger.c,v 1.35 2024/12/30 03:16:58 mjl Exp $
  *
  * Copyright (C) 2020      The University of Waikato
- * Copyright (C) 2022-2023 Matthew Luckie
+ * Copyright (C) 2022-2024 Matthew Luckie
  * Copyright (C) 2023-2024 The Regents of the University of California
  * Author: Matthew Luckie
  *
@@ -737,10 +737,10 @@ static int do_method_ping_cmd(sc_pinger_t *pinger)
 
   scamper_addr_tostr(pinger->dst, addr, sizeof(addr));
   if(probe_count != reply_count)
-    string_concat(cmd, sizeof(cmd), &off, "ping -c %d -o %d -P %s %s",
+    string_concaf(cmd, sizeof(cmd), &off, "ping -c %d -o %d -P %s %s",
 		  probe_count, reply_count, methods[pinger->step], addr);
   else
-    string_concat(cmd, sizeof(cmd), &off, "ping -c %d -P %s %s",
+    string_concaf(cmd, sizeof(cmd), &off, "ping -c %d -P %s %s",
 		  probe_count, methods[pinger->step], addr);
 
   if((cs = sc_cmdstate_alloc(0, pinger)) == NULL)
@@ -798,7 +798,7 @@ static int do_method_radargun(void)
 
   /* put the first part of the probe command on the list */
   off = 0;
-  string_concat(part, sizeof(part), &off,
+  string_concaf(part, sizeof(part), &off,
 		"dealias -w 1s -r 1s -m radargun -q %d", reply_count);
   if((dup = memdup(part, off+1)) == NULL ||
      slist_tail_push(cmd_parts, dup) == NULL)
@@ -821,7 +821,7 @@ static int do_method_radargun(void)
 
       off = 0;
       scamper_addr_tostr(pinger->dst, addr, sizeof(addr));
-      string_concat(part, sizeof(part), &off, " -p '-P %s -i %s'",
+      string_concaf(part, sizeof(part), &off, " -p '-P %s -i %s'",
 		    methods[pinger->step], addr);
       len += off;
 
@@ -854,7 +854,7 @@ static int do_method_radargun(void)
   off = 0;
   while((dup = slist_head_pop(cmd_parts)) != NULL)
     {
-      string_concat(cmd, len + 1, &off, "%s", dup);
+      string_concat(cmd, len + 1, &off, dup);
       free(dup); dup = NULL;
     }
 

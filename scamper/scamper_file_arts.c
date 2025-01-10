@@ -1,7 +1,7 @@
 /*
  * scamper_file_arts.c
  *
- * $Id: scamper_file_arts.c,v 1.73 2024/10/16 07:01:29 mjl Exp $
+ * $Id: scamper_file_arts.c,v 1.74 2024/12/15 21:19:48 mjl Exp $
  *
  * code to read the legacy arts data file format into scamper_hop structures.
  *
@@ -576,7 +576,7 @@ static scamper_trace_t *arts_read_trace(const scamper_file_t *sf,
       hops = NULL;
     }
 
-  if(destination_replied != 0)
+  if(destination_replied != 0 && hop_distance > 0)
     {
       if((hop = arts_hop_reply(trace->dst, rtt, hop_distance)) == NULL)
 	goto err;

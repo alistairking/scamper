@@ -1,7 +1,7 @@
 /*
  * sc_analysis_dump
  *
- * $Id: sc_analysis_dump.c,v 1.69 2024/07/19 08:12:26 mjl Exp $
+ * $Id: sc_analysis_dump.c,v 1.70 2024/12/30 03:16:58 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -10,7 +10,7 @@
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2012-2013 The Regents of the University of California
  * Copyright (C) 2012      Matthew Luckie
- * Copyright (C) 2023      Matthew Luckie
+ * Copyright (C) 2023-2024 Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -703,20 +703,20 @@ static char *hop_tostr(const scamper_trace_hop_t *hop, char *buf, size_t len)
   size_t off = 0;
   int i;
 
-  string_concat(buf, len, &off, "%s",
+  string_concat(buf, len, &off,
 		scamper_addr_tostr(hop_addr, addr, sizeof(addr)));
 
   if((options & OPT_HIDEIRTT) == 0)
-    string_concat(buf, len, &off, ",%s,%d",
+    string_concaf(buf, len, &off, ",%s,%d",
 		  rtt_tostr(rtt, sizeof(rtt), scamper_trace_hop_rtt_get(hop)),
 		  scamper_trace_hop_probe_id_get(hop));
 
   if((options & OPT_SHOWQTTL) != 0 && scamper_trace_hop_is_icmp_q(hop))
-    string_concat(buf, len, &off, ",Q|%d",
+    string_concaf(buf, len, &off, ",Q|%d",
 		  scamper_trace_hop_icmp_q_ttl_get(hop));
 
   if((options & OPT_SHOWIPTTL) != 0)
-    string_concat(buf, len, &off, ",T|%d",
+    string_concaf(buf, len, &off, ",T|%d",
 		  scamper_trace_hop_reply_ttl_get(hop));
 
   if((options & OPT_SHOWMPLS) != 0)
@@ -728,7 +728,7 @@ static char *hop_tostr(const scamper_trace_hop_t *hop, char *buf, size_t len)
 	    {
 	      for(i=0; i<scamper_icmpext_mpls_count_get(ie); i++)
 		{
-		  string_concat(buf, len, &off, ",M|%d|%d|%d|%d",
+		  string_concaf(buf, len, &off, ",M|%d|%d|%d|%d",
 				scamper_icmpext_mpls_ttl_get(ie, i),
 				scamper_icmpext_mpls_label_get(ie, i),
 				scamper_icmpext_mpls_exp_get(ie, i),

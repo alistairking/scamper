@@ -3,7 +3,7 @@
  *
  * Author: Matthew Luckie
  *
- * $Id: scamper_udpprobe_json.c,v 1.5 2024/11/07 18:15:39 mjl Exp $
+ * $Id: scamper_udpprobe_json.c,v 1.7 2024/12/31 04:17:31 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -52,7 +52,7 @@ static char *reply_tostr(const scamper_udpprobe_probe_t *probe,
     }
 
   timeval_diff_tv(&rtt, &probe->tx, &reply->rx);
-  string_concat(buf, sizeof(buf), &off,
+  string_concaf(buf, sizeof(buf), &off,
 		"{\"rx\":{\"sec\":%ld,\"usec\":%d}"
 		", \"rtt\":{\"sec\":%ld,\"usec\":%d}"
 		", \"len\":%u, \"data\":\"",
@@ -62,8 +62,8 @@ static char *reply_tostr(const scamper_udpprobe_probe_t *probe,
   string_byte2hex(buf, sizeof(buf), &off, reply->data, reply->len);
   string_concat(buf, sizeof(buf), &off, "\"");
   if(reply->ifname != NULL && reply->ifname->ifname != NULL)
-    string_concat(buf, sizeof(buf), &off, ", \"ifname\":\"%s\"",
-		  reply->ifname->ifname);
+    string_concat3(buf, sizeof(buf), &off, ", \"ifname\":\"",
+		   reply->ifname->ifname, "\"");
   string_concat(buf, sizeof(buf), &off, "}");
 
   *len = off;
@@ -79,7 +79,7 @@ static char *probe_tostr(const scamper_udpprobe_probe_t *probe)
   if(probe == NULL)
     return strdup("{}");
 
-  string_concat(header, sizeof(header), &header_len,
+  string_concaf(header, sizeof(header), &header_len,
 		"{\"tx\":{\"sec\":%ld,\"usec\":%d}, \"sport\":%u,"
 		" \"replyc\":%u, \"replies\":[",
 		(long)probe->tx.tv_sec, (int)probe->tx.tv_usec,
@@ -146,12 +146,12 @@ static char *header_tostr(const scamper_udpprobe_t *up)
   string_concat(buf, sizeof(buf), &off,
 		"{\"type\":\"udpprobe\", \"version\":\"0.1\"");
   if(up->src != NULL)
-    string_concat(buf, sizeof(buf), &off, ", \"src\":\"%s\"",
-		  scamper_addr_tostr(up->src, tmp, sizeof(tmp)));
+    string_concat3(buf, sizeof(buf), &off, ", \"src\":\"",
+		   scamper_addr_tostr(up->src, tmp, sizeof(tmp)), "\"");
   if(up->dst != NULL)
-    string_concat(buf, sizeof(buf), &off, ", \"dst\":\"%s\"",
-		  scamper_addr_tostr(up->dst, tmp, sizeof(tmp)));
-  string_concat(buf, sizeof(buf), &off,
+    string_concat3(buf, sizeof(buf), &off, ", \"dst\":\"",
+		   scamper_addr_tostr(up->dst, tmp, sizeof(tmp)), "\"");
+  string_concaf(buf, sizeof(buf), &off,
 		", \"userid\":%u, \"start\":{\"sec\":%ld,\"usec\":%d}"
 		", \"sport\":%u, \"dport\":%u"
 		", \"wait_timeout\":{\"sec\":%ld,\"usec\":%d}",
@@ -164,16 +164,16 @@ static char *header_tostr(const scamper_udpprobe_t *up)
 
   string_concat(buf, sizeof(buf), &off, ", \"stop_reason\":\"");
   if(up->stop >= sizeof(stop_m) / sizeof(char *))
-    string_concat(buf, sizeof(buf), &off, "%d", up->stop);
+    string_concaf(buf, sizeof(buf), &off, "%d", up->stop);
   else
-    string_concat(buf, sizeof(buf), &off, "%s", stop_m[up->stop]);
+    string_concat(buf, sizeof(buf), &off, stop_m[up->stop]);
   string_concat(buf, sizeof(buf), &off, "\"");
 
   string_concat(buf, sizeof(buf), &off, ", \"data\":\"");
   string_byte2hex(buf, sizeof(buf), &off, up->data, up->len);
-  string_concat(buf, sizeof(buf), &off, "\", \"len\":%u", up->len);
+  string_concaf(buf, sizeof(buf), &off, "\", \"len\":%u", up->len);
 
-  string_concat(buf, sizeof(buf), &off,
+  string_concaf(buf, sizeof(buf), &off,
 		", \"probe_count\":%u, \"probe_sent\":%u, \"stop_count\":%u",
 		up->probe_count, up->probe_sent, up->stop_count);
 

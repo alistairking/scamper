@@ -1,11 +1,11 @@
 /*
  * scamper_tracelb_do.c
  *
- * $Id: scamper_tracelb_do.c,v 1.311 2024/08/13 05:14:13 mjl Exp $
+ * $Id: scamper_tracelb_do.c,v 1.316 2024/12/31 04:17:31 mjl Exp $
  *
  * Copyright (C) 2008-2011 The University of Waikato
  * Copyright (C) 2012      The Regents of the University of California
- * Copyright (C) 2016-2023 Matthew Luckie
+ * Copyright (C) 2016-2024 Matthew Luckie
  * Copyright (C) 2024      The Regents of the University of California
  * Author: Matthew Luckie
  *
@@ -245,9 +245,9 @@ typedef struct tracelb_state
 #endif
 } tracelb_state_t;
 
-/* temporary buffer shared amongst traceroutes */
-static uint8_t             *pktbuf     = NULL;
-static size_t               pktbuf_len = 0;
+/* temporary buffer shared amongst measurements */
+extern uint8_t            *txbuf;
+extern size_t              txbuf_len;
 
 /* the callback functions registered with the tracelb task */
 static scamper_task_funcs_t funcs;
@@ -438,7 +438,7 @@ static void tracelb_paths_dump(tracelb_state_t *state)
       path = state->paths[p];
       off  = 0;
 
-      string_concat(buf, sizeof(buf), &off, "%p: %d %d %d %d", path,
+      string_concaf(buf, sizeof(buf), &off, "%p: %d %d %d %d", path,
 		    path->distance, (int)path->backc, (int)path->linkc,
 		    (int)path->fwdc);
       if(path->linkc > 0)
@@ -447,7 +447,7 @@ static void tracelb_paths_dump(tracelb_state_t *state)
 	    {
 	      scamper_addr_tostr(path->links[0]->link->from->addr,
 				 addr, sizeof(addr));
-	      string_concat(buf, sizeof(buf), &off, " %s", addr);
+	      string_concat2(buf, sizeof(buf), &off, " ", addr);
 	    }
 	  else
 	    {
@@ -468,16 +468,16 @@ static void tracelb_paths_dump(tracelb_state_t *state)
 		  for(c=1; c<link->link->hopc; c++)
 		    string_concat(buf, sizeof(buf), &off, " +");
 		  scamper_addr_tostr(link->link->to->addr, addr, sizeof(addr));
-		  string_concat(buf, sizeof(buf), &off, " %s", addr);
+		  string_concat2(buf, sizeof(buf), &off, " ", addr);
 		}
 
 	      if(link->flowids != NULL && (c=slist_count(link->flowids)) != 0)
-		string_concat(buf, sizeof(buf), &off, " (%d)", c);
+		string_concaf(buf, sizeof(buf), &off, " (%d)", c);
 	    }
 	}
 
       for(i=0; i<path->fwdc; i++)
-	string_concat(buf, sizeof(buf), &off, " %p", path->fwd[i]);
+	string_concaf(buf, sizeof(buf), &off, " %p", path->fwd[i]);
 
       scamper_debug(__func__, "%s", buf);
     }
@@ -503,9 +503,9 @@ static void tracelb_links_dump(tracelb_state_t *state)
       if(node->addr != NULL)
 	{
 	  scamper_addr_tostr(node->addr, addr, sizeof(addr));
-	  string_concat(buf, sizeof(buf), &off, "%s", addr);
+	  string_concat(buf, sizeof(buf), &off, addr);
 	  if(SCAMPER_TRACELB_NODE_QTTL(node))
-	    string_concat(buf, sizeof(buf), &off, ",%d", node->q_ttl);
+	    string_concaf(buf, sizeof(buf), &off, ",%d", node->q_ttl);
 	}
       else
 	string_concat(buf, sizeof(buf), &off, "*");
@@ -521,9 +521,9 @@ static void tracelb_links_dump(tracelb_state_t *state)
 	{
 	  node = link->to;
 	  scamper_addr_tostr(node->addr, addr, sizeof(addr));
-	  string_concat(buf, sizeof(buf), &off, " %s", addr);
+	  string_concat2(buf, sizeof(buf), &off, " ", addr);
 	  if(SCAMPER_TRACELB_NODE_QTTL(node))
-	    string_concat(buf, sizeof(buf), &off, ",%d", node->q_ttl);
+	    string_concaf(buf, sizeof(buf), &off, ",%d", node->q_ttl);
 	}
 
       scamper_debug(__func__, "%s", buf);
@@ -2355,7 +2355,10 @@ static void tracelb_process_probes(scamper_task_t *task, tracelb_branch_t *br)
 
   /* remove the branch from the active heap, if it is not already removed */
   if(br->heapnode != NULL)
-    heap_delete(state->active, br->heapnode);
+    {
+      heap_delete(state->active, br->heapnode);
+      br->heapnode = NULL;
+    }
 
   assert(br->mode == MODE_FIRSTHOP  || br->mode == MODE_HOPPROBE ||
 	 br->mode == MODE_PERPACKET || br->mode == MODE_CLUMP);
@@ -2797,6 +2800,7 @@ static void handleicmp_firstaddr(scamper_task_t *task, scamper_icmp_resp_t *ir,
   assert(trace->nodes == NULL);
 
   heap_delete(state->active, branch->heapnode);
+  branch->heapnode = NULL;
 
   /* record the details of the first hop */
   if((node = scamper_tracelb_node_alloc(from)) == NULL ||
@@ -2877,6 +2881,7 @@ static int hopprobe_handlereply(scamper_task_t *task, tracelb_probe_t *pr,
     }
 
   heap_delete(state->active, branch->heapnode);
+  branch->heapnode = NULL;
   branch->k++;
 
   /*
@@ -2980,6 +2985,7 @@ static void handleicmp_perpacket(scamper_task_t *task, scamper_icmp_resp_t *ir,
   if(process == 0)
     {
       heap_delete(state->active, branch->heapnode);
+      branch->heapnode = NULL;
       timeval_add_tv3(&branch->next_tx, &branch->last_tx, &trace->wait_probe);
       if(tracelb_branch_active(state, branch) != 0)
 	goto err;
@@ -3128,6 +3134,7 @@ static void handleicmp_bringfwd(scamper_task_t *task, scamper_icmp_resp_t *ir,
   if(branch != NULL)
     {
       heap_delete(state->active, branch->heapnode);
+      branch->heapnode = NULL;
       timeval_add_tv3(&branch->next_tx, &branch->last_tx, &trace->wait_probe);
       if(tracelb_branch_active(state, branch) != 0)
 	goto err;
@@ -3338,6 +3345,7 @@ static void handletimeout_firstaddr(scamper_task_t *task, tracelb_branch_t *br)
   scamper_tracelb_node_t *node = NULL;
 
   heap_delete(state->active, br->heapnode);
+  br->heapnode = NULL;
 
   if((node = scamper_tracelb_node_alloc(NULL)) == NULL ||
 #ifndef DISABLE_SCAMPER_HOST
@@ -3376,6 +3384,7 @@ static void handletimeout_abandon(scamper_task_t *task, tracelb_branch_t *br)
 {
   tracelb_state_t *state = tracelb_getstate(task);
   heap_delete(state->active, br->heapnode);
+  br->heapnode = NULL;
   tracelb_branch_free(state, br);
   tracelb_queue(task);
   return;
@@ -3533,7 +3542,10 @@ static void handletcp_firstaddr(scamper_task_t *task, scamper_dl_rec_t *dl,
 
   /* don't need the branch any more */
   if(br->heapnode != NULL)
-    heap_delete(state->active, br->heapnode);
+    {
+      heap_delete(state->active, br->heapnode);
+      br->heapnode = NULL;
+    }
   tracelb_branch_free(state, br);
 
   /* record the details of the first hop */
@@ -3839,7 +3851,10 @@ static void tracelb_state_free(scamper_tracelb_t *trace,tracelb_state_t *state)
   if(state->active != NULL)
     {
       while((br = heap_remove(state->active)) != NULL)
-	tracelb_branch_free(state, br);
+	{
+	  br->heapnode = NULL;
+	  tracelb_branch_free(state, br);
+	}
       heap_free(state->active, NULL);
     }
 
@@ -3847,7 +3862,10 @@ static void tracelb_state_free(scamper_tracelb_t *trace,tracelb_state_t *state)
   if(state->waiting != NULL)
     {
       while((br = heap_remove(state->waiting)) != NULL)
-	tracelb_branch_free(state, br);
+	{
+	  br->heapnode = NULL;
+	  tracelb_branch_free(state, br);
+	}
       heap_free(state->waiting, NULL);
     }
 
@@ -3924,12 +3942,6 @@ static void do_tracelb_free(scamper_task_t *task)
   return;
 }
 
-static void tracelb_branch_onremove(void *item)
-{
-  ((tracelb_branch_t *)item)->heapnode = NULL;
-  return;
-}
-
 /*
  * tracelb_state_alloc
  *
@@ -3976,13 +3988,11 @@ static int tracelb_state_alloc(scamper_task_t *task)
       printerror(__func__, "could not alloc active heap");
       goto err;
     }
-  heap_onremove(state->active, tracelb_branch_onremove);
   if((state->waiting=heap_alloc((heap_cmp_t)tracelb_branch_waiting_cmp))==NULL)
     {
       printerror(__func__, "could not alloc waiting heap");
       goto err;
     }
-  heap_onremove(state->waiting, tracelb_branch_onremove);
 
   if((branch = malloc_zero(sizeof(tracelb_branch_t))) == NULL)
     {
@@ -4057,15 +4067,15 @@ static int tracelb_state_alloc(scamper_task_t *task)
     }
   else goto err;
 
-  /* allocate a larger global pktbuf if needed */
-  if(pktbuf_len < state->payload_size)
+  /* allocate a larger global txbuf if needed */
+  if(txbuf_len < state->payload_size)
     {
-      if(realloc_wrap((void **)&pktbuf, state->payload_size) != 0)
+      if(realloc_wrap((void **)&txbuf, state->payload_size) != 0)
 	{
 	  printerror(__func__, "could not realloc");
 	  goto err;
 	}
-      pktbuf_len = state->payload_size;
+      txbuf_len = state->payload_size;
     }
 
   if(state->icmp == NULL)
@@ -4131,6 +4141,7 @@ static void do_tracelb_probe(scamper_task_t *task)
       branch = heap_remove(state->waiting);
     }
   assert(branch != NULL);
+  branch->heapnode = NULL;
 
   if(branch->mode == MODE_RTSOCK)
     {
@@ -4251,7 +4262,7 @@ static void do_tracelb_probe(scamper_task_t *task)
   if(state->payload_size > 0)
     {
       probe.pr_len   = state->payload_size;
-      probe.pr_data  = pktbuf;
+      probe.pr_data  = txbuf;
     }
 
   if(trace->dst->type == SCAMPER_ADDR_TYPE_IPV4)
@@ -4399,7 +4410,6 @@ scamper_task_t *scamper_do_tracelb_alloctask(void *data,
   if(trace->src == NULL &&
      (trace->src = scamper_getsrc(trace->dst, 0, errbuf, errlen)) == NULL)
     goto err;
-  sig->sig_tx_ip_src = scamper_addr_use(trace->src);
 
   switch(trace->type)
     {
@@ -4461,12 +4471,6 @@ uint32_t scamper_do_tracelb_userid(void *data)
 
 void scamper_do_tracelb_cleanup(void)
 {
-  if(pktbuf != NULL)
-    {
-      free(pktbuf);
-      pktbuf = NULL;
-    }
-
   return;
 }
 

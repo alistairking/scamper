@@ -1,12 +1,12 @@
 /*
  * libscamperctrl
  *
- * $Id: libscamperctrl.c,v 1.59 2024/04/26 06:52:24 mjl Exp $
+ * $Id: libscamperctrl.c,v 1.61 2024/12/15 18:33:44 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
  *
- * Copyright (C) 2021-2023 Matthew Luckie. All rights reserved.
+ * Copyright (C) 2021-2024 Matthew Luckie. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -103,7 +103,7 @@ struct scamper_inst
 {
   scamper_ctrl_t    *ctrl;     /* backpointer to overall control structure */
   dlist_t           *list;     /* ctrl->insts or ctrl->waitlist or NULL */
-  dlist_node_t      *dn;       /* dlist node in ctrl->insts or ctrl->waitlist */
+  dlist_node_t      *idn;      /* dlist node in ctrl->insts or ctrl->waitlist */
   char              *name;     /* string representing name of instance */
   void              *param;    /* user-supplied parameter */
   uint8_t            type;     /* types: inet, unix, or remote */
@@ -150,7 +150,7 @@ typedef struct scamper_cmd
   size_t             off;     /* where in the command we are up to */
   size_t             len;     /* length of string, including \n */
   scamper_task_t    *task;    /* pointer to the task */
-  dlist_node_t      *dn;      /* pointer to the dlist_node_t when in queue */
+  dlist_node_t      *cdn;     /* pointer to the dlist_node_t when in queue */
 } scamper_cmd_t;
 
 struct scamper_task
@@ -312,7 +312,7 @@ static scamper_cmd_t *scamper_inst_cmd(scamper_inst_t *inst,
   cmd->str[len] = '\0';
   cmd->len = len;
 
-  if((cmd->dn = dlist_tail_push(inst->queue, cmd)) == NULL)
+  if((cmd->cdn = dlist_tail_push(inst->queue, cmd)) == NULL)
     {
       snprintf(inst->err, sizeof(inst->err), "could not push cmd");
       goto err;
@@ -427,10 +427,10 @@ int scamper_inst_halt(scamper_inst_t *inst, scamper_task_t *task)
   /* if the task hasn't been passed to scamper yet, remove it */
   if(task->flags & SCAMPER_TASK_FLAG_QUEUE)
     {
-      assert(task->cmd != NULL); assert(task->cmd->dn != NULL);
-      dlist_node_pop(inst->queue, task->cmd->dn);
+      assert(task->cmd != NULL); assert(task->cmd->cdn != NULL);
+      dlist_node_pop(inst->queue, task->cmd->cdn);
       task->flags &= (~SCAMPER_TASK_FLAG_QUEUE);
-      task->cmd->dn = NULL;
+      task->cmd->cdn = NULL;
       scamper_cmd_free(task->cmd); task->cmd = NULL;
       scamper_task_free(task);
       return 0;
@@ -477,8 +477,8 @@ const char *scamper_inst_strerror(const scamper_inst_t *inst)
 
 static void scamper_inst_freedo(scamper_inst_t *inst)
 {
-  if(inst->dn != NULL)
-    dlist_node_pop(inst->list, inst->dn);
+  if(inst->idn != NULL)
+    dlist_node_pop(inst->list, inst->idn);
   if(socket_isvalid(inst->fd))
     socket_close(inst->fd);
   if(inst->name != NULL)
@@ -513,7 +513,9 @@ void scamper_inst_free(scamper_inst_t *inst)
       inst->flags |= SCAMPER_INST_FLAG_FREE;
       if(inst->list != inst->ctrl->waitlist)
 	{
-	  dlist_node_tail_push(inst->ctrl->waitlist, inst->dn);
+	  if(inst->list != NULL)
+	    dlist_node_eject(inst->list, inst->idn);
+	  dlist_node_tail_push(inst->ctrl->waitlist, inst->idn);
 	  inst->list = inst->ctrl->waitlist;
 	}
     }
@@ -591,11 +593,11 @@ static scamper_inst_t *scamper_inst_alloc_dm(scamper_ctrl_t *ctrl, uint8_t t,
     list = ctrl->waitlist;
 
 #ifndef DMALLOC
-  inst->dn = dlist_tail_push(list, inst);
+  inst->idn = dlist_tail_push(list, inst);
 #else
-  inst->dn = dlist_tail_push_dm(list, inst, file, line);
+  inst->idn = dlist_tail_push_dm(list, inst, file, line);
 #endif
-  if(inst->dn == NULL)
+  if(inst->idn == NULL)
     {
       snprintf(ctrl->err, sizeof(ctrl->err), "could not put inst on list");
       goto err;
@@ -671,14 +673,47 @@ static int scamper_inst_attach(const scamper_attp_t *attp,char *buf,size_t len)
   return 0;
 }
 
+static int sockaddr_fromstr(struct sockaddr *sa,
+			    const char *addr, uint16_t port)
+{
+  struct sockaddr_in *sin;
+  struct sockaddr_in6 *sin6;
+
+  sin = (struct sockaddr_in *)sa;
+  memset(sin, 0, sizeof(struct sockaddr_in));
+  if(inet_pton(AF_INET, addr, &sin->sin_addr) == 1)
+    {
+      sa->sa_family = AF_INET;
+#if defined(HAVE_STRUCT_SOCKADDR_SA_LEN)
+      sa->sa_len    = sizeof(struct sockaddr_in);
+#endif
+      sin->sin_port = htons(port);
+      return 0;
+    }
+
+  sin6 = (struct sockaddr_in6 *)sa;
+  memset(sin6, 0, sizeof(struct sockaddr_in6));
+  if(inet_pton(AF_INET6, addr, &sin6->sin6_addr) == 1)
+    {
+      sa->sa_family   = AF_INET6;
+#if defined(HAVE_STRUCT_SOCKADDR_SA_LEN)
+      sa->sa_len      = sizeof(struct sockaddr_in6);
+#endif
+      sin6->sin6_port = htons(port);
+      return 0;
+    }
+
+  return -1;
+}
+
 scamper_inst_t *scamper_inst_inet(scamper_ctrl_t *ctrl,
 				  const scamper_attp_t *attp,
 				  const char *addr, uint16_t port)
 {
-  struct addrinfo hints, *res, *res0;
+  struct sockaddr_storage sas;
   scamper_inst_t *inst = NULL;
+  socklen_t sl;
   char buf[512];
-  char servname[6];
 
 #ifndef _WIN32 /* type: int vs SOCKET */
   int fd = -1;
@@ -689,38 +724,32 @@ scamper_inst_t *scamper_inst_inet(scamper_ctrl_t *ctrl,
   if(addr == NULL)
     addr = "127.0.0.1";
 
-  memset(&hints, 0, sizeof(struct addrinfo));
-  hints.ai_flags    = AI_NUMERICHOST;
-  hints.ai_socktype = SOCK_STREAM;
-  hints.ai_protocol = IPPROTO_TCP;
-  hints.ai_family   = AF_UNSPEC;
-
-  snprintf(servname, sizeof(servname), "%u", port);
-  if(getaddrinfo(addr, servname, &hints, &res0) != 0 || res0 == NULL)
+  if(sockaddr_fromstr((struct sockaddr *)&sas, addr, port) != 0)
     {
       snprintf(ctrl->err, sizeof(ctrl->err), "could not resolve");
       goto err;
     }
 
-  for(res = res0; res != NULL; res = res->ai_next)
-    if(res->ai_family == PF_INET || res->ai_family == PF_INET6)
-      break;
-
-  if(res == NULL)
+  if(sas.ss_family == AF_INET)
     {
-      snprintf(ctrl->err, sizeof(ctrl->err), "could not resolve");
-      goto err;
+      sl = sizeof(struct sockaddr_in);
+      snprintf(buf, sizeof(buf), "%s:%d", addr, port);
+    }
+  else
+    {
+      sl = sizeof(struct sockaddr_in6);
+      snprintf(buf, sizeof(buf), "[%s]:%d", addr, port);
     }
 
   /* connect to the scamper instance and set non-blocking */
-  fd = socket(res->ai_family, SOCK_STREAM, IPPROTO_TCP);
+  fd = socket(sas.ss_family, SOCK_STREAM, IPPROTO_TCP);
   if(socket_isinvalid(fd))
     {
       snprintf(ctrl->err, sizeof(ctrl->err),
 	       "could not create inet socket: %s", strerror(errno));
       goto err;
     }
-  if(connect(fd, res->ai_addr, res->ai_addrlen) != 0)
+  if(connect(fd, (struct sockaddr *)&sas, sl) != 0)
     {
       snprintf(ctrl->err, sizeof(ctrl->err),
 	       "could not connect: %s", strerror(errno));
@@ -736,11 +765,6 @@ scamper_inst_t *scamper_inst_inet(scamper_ctrl_t *ctrl,
     }
 #endif
 
-  if(res->ai_family == PF_INET)
-    snprintf(buf, sizeof(buf), "%s:%d", addr, port);
-  else
-    snprintf(buf, sizeof(buf), "[%s]:%d", addr, port);
-
   if((inst = scamper_inst_alloc(ctrl, SCAMPER_INST_TYPE_INET, fd, buf)) == NULL)
     goto err;
   fd = socket_invalid();
@@ -752,12 +776,9 @@ scamper_inst_t *scamper_inst_inet(scamper_ctrl_t *ctrl,
   if(scamper_inst_cmd(inst, SCAMPER_CMD_TYPE_ATTACH, buf) == NULL)
     goto err;
 
-  freeaddrinfo(res0);
   return inst;
 
  err:
-  if(res0 != NULL)
-    freeaddrinfo(res0);
   if(socket_isvalid(fd))
     socket_close(fd);
   if(inst != NULL)
@@ -900,8 +921,8 @@ static int scamper_inst_read(scamper_inst_t *inst)
       ctrl->cb(inst, SCAMPER_CTRL_TYPE_EOF, NULL, NULL, 0);
       if(inst->list == ctrl->insts)
 	{
-	  dlist_node_pop(inst->list, inst->dn);
-	  inst->dn = NULL; inst->list = NULL;
+	  dlist_node_pop(inst->list, inst->idn);
+	  inst->idn = NULL; inst->list = NULL;
 	}
       return 0;
     }
@@ -1266,13 +1287,15 @@ static int ctrl_wait_done(scamper_ctrl_t *ctrl, int rc)
     {
       if(inst->flags & SCAMPER_INST_FLAG_FREE)
 	{
-	  inst->list = NULL; inst->dn = NULL;
+	  inst->list = NULL; inst->idn = NULL;
 	  scamper_inst_freedo(inst);
 	}
       else
 	{
 	  assert(inst->ctrl == ctrl);
-	  dlist_node_tail_push(ctrl->insts, inst->dn);
+	  if(inst->list != NULL)
+	    dlist_node_eject(inst->list, inst->idn);
+	  dlist_node_tail_push(ctrl->insts, inst->idn);
 	  inst->list = ctrl->insts;
 	  if(inst_set_read(ctrl, inst) != 0 && rc == 0)
 	    {
@@ -1353,7 +1376,7 @@ int scamper_ctrl_wait(scamper_ctrl_t *ctrl, struct timeval *to)
   dn = dlist_head_node(ctrl->insts);
   while(dn != NULL)
     {
-      inst = dlist_node_item(dn); assert(dn == inst->dn);
+      inst = dlist_node_item(dn); assert(dn == inst->idn);
       dn = dlist_node_next(dn);
       assert(socket_isvalid(inst->fd));
       FD_SET(inst->fd, &rfds); rfdsp = &rfds;
@@ -1438,7 +1461,7 @@ void scamper_ctrl_free(scamper_ctrl_t *ctrl)
 	    {
 	      inst->ctrl = NULL;
 	      inst->list = NULL;
-	      inst->dn = NULL;
+	      inst->idn = NULL;
 	    }
 	  dlist_free(list);
 	}

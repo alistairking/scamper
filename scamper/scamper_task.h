@@ -1,7 +1,7 @@
 /*
  * scamper_task.h
  *
- * $Id: scamper_task.h,v 1.55 2024/10/17 07:58:43 mjl Exp $
+ * $Id: scamper_task.h,v 1.56 2024/11/30 01:43:32 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -57,7 +57,6 @@ typedef struct scamper_task_sig
     struct tx_ip
     {
       struct scamper_addr *dst;
-      struct scamper_addr *src;
       uint8_t              proto;
       union
       {
@@ -101,7 +100,6 @@ typedef struct scamper_task_sig
 } scamper_task_sig_t;
 
 #define sig_tx_ip_dst         un.ip.dst
-#define sig_tx_ip_src         un.ip.src
 #define sig_tx_ip_proto       un.ip.proto
 #define sig_tx_ip_icmp_id     un.ip.un.icmp.id
 #define sig_tx_ip_icmp_type   un.ip.un.icmp.type

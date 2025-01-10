@@ -6,7 +6,7 @@
  *
  * Copyright (C) 2008-2011 The University of Waikato
  * Copyright (C) 2012-2015 Regents of the University of California
- * Copyright (C) 2015-2023 Matthew Luckie
+ * Copyright (C) 2015-2024 Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -21,7 +21,7 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
- * $Id: sc_attach.c,v 1.44 2024/09/06 22:15:40 mjl Exp $
+ * $Id: sc_attach.c,v 1.47 2024/12/31 04:17:31 mjl Exp $
  *
  */
 
@@ -397,15 +397,16 @@ static int command_new(char *line, void *param)
       len = strlen(opt_command) + strlen(line) + 3;
       if((buf = malloc(len)) == NULL)
 	return -1;
-      string_concat(buf, len, &off, "%s %s\n", opt_command, line);
+      string_concat3(buf, len, &off, opt_command, " ", line);
     }
   else
     {
       len = strlen(line) + 2;
       if((buf = malloc(len)) == NULL)
 	return -1;
-      string_concat(buf, len, &off, "%s\n", line);
+      string_concat(buf, len, &off, line);
     }
+  string_concat(buf, len, &off, "\n");
 
   if(slist_tail_push(commands, buf) == NULL)
     {
@@ -650,7 +651,7 @@ static int do_scamperconnect(void)
     {
       if(dst_addr != NULL)
 	{
-	  if(sockaddr_compose_str(sa, dst_addr, dst_port) != 0)
+	  if(sockaddr_compose_str(sa, AF_UNSPEC, dst_addr, dst_port) != 0)
 	    {
 	      fprintf(stderr, "%s: could not compose sockaddr from %s:%d\n",
 		      __func__, dst_addr, dst_port);
@@ -726,7 +727,7 @@ static int do_scamperconnect(void)
     {
       string_concat(buf, sizeof(buf), &off, "attach");
       if((options & OPT_PRIORITY) != 0)
-	string_concat(buf, sizeof(buf), &off, " priority %d", priority);
+	string_concaf(buf, sizeof(buf), &off, " priority %d", priority);
       string_concat(buf, sizeof(buf), &off, "\n");
       if(scamper_writebuf_send(scamper_wb, buf, off) != 0)
 	{

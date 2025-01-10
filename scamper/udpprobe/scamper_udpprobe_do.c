@@ -1,7 +1,7 @@
 /*
  * scamper_udpprobe_do.c
  *
- * $Id: scamper_udpprobe_do.c,v 1.15 2024/11/10 03:12:51 mjl Exp $
+ * $Id: scamper_udpprobe_do.c,v 1.16 2024/11/30 01:43:32 mjl Exp $
  *
  * Copyright (C) 2023-2024 The Regents of the University of California
  *
@@ -376,7 +376,6 @@ static void do_udpprobe_sigs(scamper_task_t *task)
 	  goto err;
 	}
       sig->sig_tx_ip_dst = scamper_addr_use(up->dst);
-      sig->sig_tx_ip_src = scamper_addr_use(up->src);
       SCAMPER_TASK_SIG_UDP(sig, sports[i], up->dport);
       if(scamper_task_sig_add(task, sig) != 0)
 	{

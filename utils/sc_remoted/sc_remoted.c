@@ -1,7 +1,7 @@
 /*
  * sc_remoted
  *
- * $Id: sc_remoted.c,v 1.119 2024/09/07 02:55:38 mjl Exp $
+ * $Id: sc_remoted.c,v 1.122 2024/12/15 09:11:07 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -192,8 +192,7 @@
 typedef struct sc_unit
 {
   void               *data;
-  dlist_t            *list; /* list == gclist if on that list */
-  dlist_node_t       *node;
+  dlist_node_t       *unode;
   uint8_t             type;
   uint8_t             gc;
 } sc_unit_t;
@@ -262,7 +261,7 @@ typedef struct sc_master
 
   dlist_t            *channels;
   uint32_t            next_channel;
-  dlist_node_t       *node;
+  dlist_node_t       *mnode;
   splaytree_node_t   *tree_node;
   uint8_t             buf[65536 + SC_MESSAGE_HDRLEN];
   size_t              buf_offset;
@@ -283,7 +282,7 @@ typedef struct sc_channel
   scamper_linepoll_t *unix_lp;
   scamper_writebuf_t *unix_wb;
   sc_master_t        *master;  /* corresponding master */
-  dlist_node_t       *node;    /* node in master->channels */
+  dlist_node_t       *cnode;   /* node in master->channels */
   uint8_t             flags;   /* channel flags: eof tx/rx */
 } sc_channel_t;
 
@@ -613,7 +612,8 @@ static int check_options(int argc, char *argv[])
    * ensure the address at least matches the specified address family
    */
   if(ss_addr != NULL && (options & (OPT_IPV4|OPT_IPV6)) != 0 &&
-     (sockaddr_compose_str((struct sockaddr *)&sas, ss_addr, ss_port) != 0 ||
+     (sockaddr_compose_str((struct sockaddr *)&sas, AF_UNSPEC,
+			   ss_addr, ss_port) != 0 ||
       ((options & OPT_IPV4) != 0 && sas.ss_family == AF_INET6) ||
       ((options & OPT_IPV6) != 0 && sas.ss_family == AF_INET)))
     {
@@ -884,20 +884,12 @@ static sc_fd_t *sc_fd_alloc(int fd, uint8_t type, sc_unit_t *unit)
   return sfd;
 }
 
-static void sc_unit_onremove(sc_unit_t *scu)
-{
-  scu->node = NULL;
-  scu->list = NULL;
-  return;
-}
-
 static void sc_unit_gc(sc_unit_t *scu)
 {
   if(scu->gc != 0)
     return;
   scu->gc = 1;
-  dlist_node_tail_push(gclist, scu->node);
-  scu->list = gclist;
+  dlist_node_tail_push(gclist, scu->unode);
   return;
 }
 
@@ -905,8 +897,8 @@ static void sc_unit_free(sc_unit_t *scu)
 {
   if(scu == NULL)
     return;
-  if(scu->node != NULL)
-    dlist_node_pop(scu->list, scu->node);
+  if(scu->gc != 0 && scu->unode != NULL)
+    dlist_node_pop(gclist, scu->unode);
   free(scu);
   return;
 }
@@ -915,7 +907,7 @@ static sc_unit_t *sc_unit_alloc(uint8_t type, void *data)
 {
   sc_unit_t *scu;
   if((scu = malloc_zero(sizeof(sc_unit_t))) == NULL ||
-     (scu->node = dlist_node_alloc(scu)) == NULL)
+     (scu->unode = dlist_node_alloc(scu)) == NULL)
     {
       if(scu != NULL) sc_unit_free(scu);
       return NULL;
@@ -939,12 +931,6 @@ static int sc_master_cmp(const sc_master_t *a, const sc_master_t *b)
   return memcmp(a->magic, b->magic, a->magic_len);
 }
 
-static void sc_master_onremove(sc_master_t *ms)
-{
-  ms->node = NULL;
-  return;
-}
-
 static sc_channel_t *sc_master_channel_find(sc_master_t *ms, uint32_t id)
 {
   dlist_node_t *dn;
@@ -956,12 +942,6 @@ static sc_channel_t *sc_master_channel_find(sc_master_t *ms, uint32_t id)
 	return cn;
     }
   return NULL;
-}
-
-static void sc_master_channels_onremove(sc_channel_t *cn)
-{
-  cn->node = NULL;
-  return;
 }
 
 static int sc_master_inet_write(sc_master_t *ms, void *ptr, uint16_t len,
@@ -2007,7 +1987,7 @@ static void sc_master_unix_accept_do(sc_master_t *ms)
 
   if((cn->unix_wb = scamper_writebuf_alloc()) == NULL)
     goto err;
-  if((cn->node = dlist_tail_push(ms->channels, cn)) == NULL)
+  if((cn->cnode = dlist_tail_push(ms->channels, cn)) == NULL)
     goto err;
   cn->master = ms;
 
@@ -2032,13 +2012,22 @@ static void sc_master_unix_accept_do(sc_master_t *ms)
  */
 static void sc_master_free(sc_master_t *ms)
 {
+  sc_channel_t *cn;
+
   if(ms == NULL)
     return;
 
   sc_master_unix_free(ms);
 
   if(ms->channels != NULL)
-    dlist_free_cb(ms->channels, (dlist_free_t)sc_channel_free);
+    {
+      while((cn = dlist_head_pop(ms->channels)) != NULL)
+	{
+	  cn->cnode = NULL;
+	  sc_channel_free(cn);
+	}
+      dlist_free(ms->channels);
+    }
   if(ms->messages != NULL)
     slist_free_cb(ms->messages, (slist_free_t)sc_message_free);
 
@@ -2050,7 +2039,7 @@ static void sc_master_free(sc_master_t *ms)
   if(ms->name != NULL) free(ms->name);
   if(ms->monitorname != NULL) free(ms->monitorname);
   if(ms->magic != NULL) free(ms->magic);
-  if(ms->node != NULL) dlist_node_pop(mslist, ms->node);
+  if(ms->mnode != NULL) dlist_node_pop(mslist, ms->mnode);
   free(ms);
   return;
 }
@@ -2073,7 +2062,6 @@ static sc_master_t *sc_master_alloc(int fd)
       remote_debug(__func__, "could not alloc channels: %s", strerror(errno));
       goto err;
     }
-  dlist_onremove(ms->channels, (dlist_onremove_t)sc_master_channels_onremove);
   ms->next_channel = 1;
 
   /* allocate a unit to describe this */
@@ -2243,8 +2231,8 @@ static void sc_channel_free(sc_channel_t *cn)
 {
   if(cn == NULL)
     return;
-  if(cn->master != NULL && cn->node != NULL)
-    dlist_node_pop(cn->master->channels, cn->node);
+  if(cn->master != NULL && cn->cnode != NULL)
+    dlist_node_pop(cn->master->channels, cn->cnode);
   if(cn->unix_fd != NULL) sc_fd_free(cn->unix_fd);
   if(cn->unix_lp != NULL) scamper_linepoll_free(cn->unix_lp, 0);
   if(cn->unix_wb != NULL) scamper_writebuf_free(cn->unix_wb);
@@ -2293,7 +2281,7 @@ static int serversocket_accept(int ss)
   timeval_add_s(&ms->rx_abort, &now, 30);
   timeval_cpy(&ms->tx_ka, &ms->rx_abort);
 
-  if((ms->node = dlist_tail_push(mslist, ms)) == NULL)
+  if((ms->mnode = dlist_tail_push(mslist, ms)) == NULL)
     {
       remote_debug(__func__, "could not push to mslist: %s", strerror(errno));
       goto err;
@@ -2373,7 +2361,8 @@ static int serversocket_init(void)
 
   if(ss_addr != NULL)
     {
-      if(sockaddr_compose_str((struct sockaddr *)&sas, ss_addr, ss_port) != 0)
+      if(sockaddr_compose_str((struct sockaddr *)&sas, AF_UNSPEC,
+			      ss_addr, ss_port) != 0)
 	{
 	  remote_debug(__func__, "could not compose sockaddr");
 	  return -1;
@@ -2424,6 +2413,7 @@ static int unixdomain_direxists(void)
 
 static void cleanup(void)
 {
+  sc_master_t *ms;
   int i;
 
   for(i=0; i<2; i++)
@@ -2432,7 +2422,14 @@ static void cleanup(void)
   if(ss_addr != NULL)
     free(ss_addr);
   if(mslist != NULL)
-    dlist_free_cb(mslist, (dlist_free_t)sc_master_free);
+    {
+      while((ms = dlist_head_pop(mslist)) != NULL)
+	{
+	  ms->mnode = NULL;
+	  sc_master_free(ms);
+	}
+      dlist_free(mslist);
+    }
   if(mstree != NULL)
     splaytree_free(mstree, NULL);
 
@@ -2758,10 +2755,7 @@ static int kqueue_loop(void)
 	    write_cb[scfd->type](scu->data);
 #else
 	  if(scu->gc != 0)
-	    {
-	      assert(scu->list == gclist);
-	      continue;
-	    }
+	    continue;
 	  if(events[i].filter == EVFILT_READ)
 	    read_cb[scfd->type](scu->data);
 	  else if(events[i].filter == EVFILT_WRITE)
@@ -2770,7 +2764,10 @@ static int kqueue_loop(void)
 	}
 
       while((scu = dlist_head_pop(gclist)) != NULL)
-	unit_gc[scu->type](scu->data);
+	{
+	  scu->unode = NULL;
+	  unit_gc[scu->type](scu->data);
+	}
     }
 
   return 0;
@@ -2974,7 +2971,10 @@ static int select_loop(void)
 	}
 
       while((scu = dlist_head_pop(gclist)) != NULL)
-	unit_gc[scu->type](scu->data);
+	{
+	  scu->unode = NULL;
+	  unit_gc[scu->type](scu->data);
+	}
     }
 
   return 0;
@@ -3063,8 +3063,6 @@ int main(int argc, char *argv[])
      (mstree = splaytree_alloc((splaytree_cmp_t)sc_master_cmp)) == NULL ||
      (gclist = dlist_alloc()) == NULL)
     return -1;
-  dlist_onremove(mslist, (dlist_onremove_t)sc_master_onremove);
-  dlist_onremove(gclist, (dlist_onremove_t)sc_unit_onremove);
 
 #if defined(HAVE_EPOLL)
   if((flags & FLAG_SELECT) == 0)
