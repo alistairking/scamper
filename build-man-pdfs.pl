@@ -13,8 +13,8 @@ sub cmd($)
 }
 
 my @mans = ("scamper/scamper.1",
-	    "scamper/libscamperfile.3",
-	    "scamper/warts.5",
+	    "lib/libscamperfile/libscamperfile.3",
+	    "lib/libscamperfile/warts.5",
 	    "lib/libscamperctrl/libscamperctrl.3",
 	    "utils/sc_ally/sc_ally.1",
 	    "utils/sc_analysis_dump/sc_analysis_dump.1",
