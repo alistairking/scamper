@@ -70,6 +70,7 @@ char *scamper_ping_stop_tostr(const scamper_ping_t *ping, char *buf, size_t len)
     "done",
     "error",
     "halted",
+    "inprogress",
   };
   size_t off = 0;
 

@@ -328,6 +328,7 @@ char *scamper_trace_stop_tostr(const scamper_trace_t *trace,
     "HOPLIMIT",
     "GSS",
     "HALTED",
+    "INPROGRESS",
   };
   if(trace->stop_reason >= sizeof(r) / sizeof(char *))
     snprintf(buf, len, "%d", trace->stop_reason);

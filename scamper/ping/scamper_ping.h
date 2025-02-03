@@ -40,6 +40,7 @@ typedef struct scamper_ping_stats scamper_ping_stats_t;
 #define SCAMPER_PING_STOP_COMPLETED    1 /* sent all probes */
 #define SCAMPER_PING_STOP_ERROR        2 /* error occured during ping */
 #define SCAMPER_PING_STOP_HALTED       3 /* halted */
+#define SCAMPER_PING_STOP_INPROGRESS   4 /* measurement in-progress */
 
 #define SCAMPER_PING_REPLY_FLAG_REPLY_TTL  0x01 /* reply ttl included */
 #define SCAMPER_PING_REPLY_FLAG_REPLY_IPID 0x02 /* reply ipid included */

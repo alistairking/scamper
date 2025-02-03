@@ -1303,6 +1303,35 @@ static int ping_state_alloc(scamper_task_t *task)
   return -1;
 }
 
+static void ping_stream(scamper_task_t *task)
+{
+  scamper_task_t *dup;
+  scamper_ping_t *ping;
+
+  if((dup = scamper_task_dup(task)) == NULL)
+    return;
+  ping_stop(dup, SCAMPER_PING_STOP_INPROGRESS, 0);
+
+  return;
+}
+
+static void *do_ping_data_dup(void *data)
+{
+  return scamper_ping_dup(data);
+}
+
+static void do_ping_data_free(void *data)
+{
+  scamper_ping_free(data);
+  return;
+}
+
+static int do_ping_data_inprog(void *data)
+{
+  scamper_ping_t *ping = data;
+  return ping->stop_reason == SCAMPER_PING_STOP_INPROGRESS ? 1 : 0;
+}
+
 /*
  * do_ping_probe
  *
@@ -1575,6 +1604,9 @@ static void do_ping_probe(scamper_task_t *task)
   ping->probes[state->seq] = pp;
   state->seq++;
   ping->ping_sent++;
+
+  if(ping->stream > 0 && (ping->ping_sent % ping->stream) == 0)
+    ping_stream(task);
 
  queue:
   if(ping->ping_sent < ping->attempts)
@@ -1895,6 +1927,9 @@ int scamper_do_ping_init()
   ping_funcs.task_free      = do_ping_free;
   ping_funcs.halt           = do_ping_halt;
   ping_funcs.sigs           = do_ping_sigs;
+  ping_funcs.data_dup       = do_ping_data_dup;
+  ping_funcs.data_free      = do_ping_data_free;
+  ping_funcs.data_inprog    = do_ping_data_inprog;
 
   return 0;
 }
