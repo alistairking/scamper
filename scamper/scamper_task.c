@@ -575,7 +575,8 @@ void scamper_task_anc_del(scamper_task_t *task, scamper_task_anc_t *anc)
 int scamper_task_sig_add(scamper_task_t *task, scamper_task_sig_t *sig)
 {
   s2t_t *s2t;
-  if((s2t = malloc_zero(sizeof(s2t_t))) == NULL)
+  if((task->siglist == NULL && (task->siglist = slist_alloc()) == NULL) ||
+     (s2t = malloc_zero(sizeof(s2t_t))) == NULL)
     return -1;
   s2t->sig = sig;
   s2t->task = task;
@@ -781,6 +782,9 @@ static void scamper_task_sig_deinstall(scamper_task_t *task)
   int exp_set = 0;
   s2t_t *s2t;
 
+  if(task->siglist == NULL)
+    return;
+
   while((s2t = slist_head_pop(task->siglist)) != NULL)
     {
       sig = s2t->sig;
@@ -831,6 +835,9 @@ int scamper_task_sig_install(scamper_task_t *task)
   patricia_t *pt;
   s2t_t *s2t;
   slist_node_t *n;
+
+  if(task->siglist == NULL)
+    return 0;
 
   for(n=slist_head_node(task->siglist); n != NULL; n = slist_node_next(n))
     {
@@ -921,6 +928,10 @@ scamper_task_t *scamper_task_sig_block(scamper_task_t *task)
   slist_node_t *n;
   s2t_t *s2t;
 
+  /* no signatures so nothing to block on */
+  if(task->siglist == NULL)
+    return NULL;
+
   for(n=slist_head_node(task->siglist); n != NULL; n = slist_node_next(n))
     {
       s2t = slist_node_item(n); sig = s2t->sig;
@@ -1009,6 +1020,45 @@ int scamper_task_dehold(scamper_task_t *task, void *cookie)
   return 0;
 }
 
+int scamper_task_is_inprog(scamper_task_t *task)
+{
+  if(task->funcs->data_inprog == NULL)
+    return 0;
+  return task->funcs->data_inprog(task->data);
+}
+
+scamper_task_t *scamper_task_dup(scamper_task_t *task)
+{
+  scamper_task_t *dup = NULL;
+  scamper_source_t *source = NULL;
+  void *data = NULL;
+  uint32_t id;
+
+  if(task->funcs->data_dup == NULL || task->sourcetask == NULL ||
+     (source = scamper_task_getsource(task)) == NULL ||
+     (data = task->funcs->data_dup(task->data)) == NULL ||
+     (dup = scamper_task_alloc(data, task->funcs)) == NULL)
+    goto err;
+
+  /* dup holds reference to data, is responsible for calling free */
+  data = NULL;
+
+  /*
+   * add the duplicate to the source's set of tasks with the same ID as the
+   * current task.
+   */
+  id = scamper_sourcetask_getid(task->sourcetask);
+  if(scamper_source_add_dup(source, dup, id) != 0)
+    goto err;
+
+  return dup;
+
+ err:
+  if(dup != NULL) scamper_task_free(dup);
+  if(data != NULL) task->funcs->data_free(data);
+  return NULL;
+}
+
 /*
  * scamper_task_alloc
  *
@@ -1028,9 +1078,6 @@ scamper_task_t *scamper_task_alloc(void *data, scamper_task_funcs_t *funcs)
     }
 
   if((task->queue = scamper_queue_alloc(task)) == NULL)
-    goto err;
-
-  if((task->siglist = slist_alloc()) == NULL)
     goto err;
 
   task->funcs = funcs;

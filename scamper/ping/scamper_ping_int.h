@@ -40,6 +40,9 @@ int scamper_ping_reply_append(scamper_ping_t *p, scamper_ping_reply_t *reply);
 /* count how many replies were received in total */
 uint32_t scamper_ping_reply_total(const scamper_ping_t *ping);
 
+scamper_ping_t *scamper_ping_dup(const scamper_ping_t *in);
+scamper_ping_reply_t *scamper_ping_reply_dup(const scamper_ping_reply_t *in);
+
 #define SCAMPER_PING_REPLY_IS_ICMP(reply) (        \
  ((reply)->addr->type == SCAMPER_ADDR_TYPE_IPV4 && \
   (reply)->reply_proto == 1) ||                    \
@@ -159,6 +162,9 @@ uint32_t scamper_ping_reply_total(const scamper_ping_t *ping);
 
 #define SCAMPER_PING_FLAG_IS_SOCKRX(ping) (	\
  ((ping)->flags & SCAMPER_PING_FLAG_SOCKRX))
+
+#define SCAMPER_PING_FLAG_IS_INPROGRESS(ping) (	\
+ ((ping)->flags & SCAMPER_PING_FLAG_INPROGRESS))
 
 struct scamper_ping_stats
 {
@@ -316,6 +322,7 @@ struct scamper_ping
   uint8_t                probe_method;     /* -P */
   uint8_t                probe_ttl;        /* -m */
   uint8_t                probe_tos;        /* -z */
+  uint8_t                stream;           /* -y */
   uint16_t               probe_sport;      /* -F */
   uint16_t               probe_dport;      /* -d */
   uint16_t               probe_icmpsum;    /* -C */

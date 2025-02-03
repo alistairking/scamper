@@ -4080,6 +4080,37 @@ static void do_trace_free(scamper_task_t *task)
   return;
 }
 
+static void trace_stream(scamper_task_t *task)
+{
+  scamper_task_t *dup;
+  scamper_trace_t *trace;
+
+  if((dup = scamper_task_dup(task)) == NULL)
+    return;
+  trace = trace_getdata(dup);
+  trace->stop_reason = SCAMPER_TRACE_STOP_INPROGRESS;
+  trace_queue_done(dup);
+
+  return;
+}
+
+static void *do_trace_data_dup(void *data)
+{
+  return scamper_trace_dup(data);
+}
+
+static void do_trace_data_free(void *data)
+{
+  scamper_trace_free(data);
+  return;
+}
+
+static int do_trace_data_inprog(void *data)
+{
+  scamper_trace_t *trace = data;
+  return trace->stop_reason == SCAMPER_TRACE_STOP_INPROGRESS ? 1 : 0;
+}
+
 /*
  * do_trace_probe
  *
@@ -4452,6 +4483,9 @@ static void do_trace_probe(scamper_task_t *task)
 
   timeval_cpy(&state->last_tx, &probe.pr_tx);
 
+  if(trace->stream > 0 && (trace->probec % trace->stream) == 0)
+    trace_stream(task);
+
   trace_queue(task, &probe.pr_tx);
   return;
 
@@ -4689,6 +4723,9 @@ int scamper_do_trace_init(void)
   trace_funcs.task_free      = do_trace_free;
   trace_funcs.halt           = do_trace_halt;
   trace_funcs.sigs           = do_trace_sigs;
+  trace_funcs.data_dup       = do_trace_data_dup;
+  trace_funcs.data_free      = do_trace_data_free;
+  trace_funcs.data_inprog    = do_trace_data_inprog;
 
   return 0;
 }

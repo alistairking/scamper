@@ -70,6 +70,10 @@ static char *ping_header(const scamper_ping_t *ping)
 		", \"start\":{\"sec\":%ld,\"usec\":%d}",
 		(long)ping->start.tv_sec, (int)ping->start.tv_usec);
   string_concaf(buf, sizeof(buf), &off,
+		", \"stop_reason\":\"%s\", \"stop_data\":%u",
+		scamper_ping_stop_tostr(ping, tmp, sizeof(tmp)),
+		ping->stop_data);
+  string_concaf(buf, sizeof(buf), &off,
 		", \"ping_sent\":%u, \"probe_size\":%u"
 		", \"userid\":%u, \"ttl\":%u, \"tos\":%u, \"wait\":%u",
 		ping->ping_sent, ping->probe_size,

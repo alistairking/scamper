@@ -229,6 +229,33 @@ void scamper_trace_hop_free(scamper_trace_hop_t *hop)
   return;
 }
 
+scamper_trace_hop_t *scamper_trace_hop_dup(const scamper_trace_hop_t *in)
+{
+  scamper_trace_hop_t *out = NULL;
+
+  if((out = memdup(in, sizeof(scamper_trace_hop_t))) == NULL)
+    goto err;
+  out->hop_addr = NULL;
+  out->hop_name = NULL;
+  out->hop_icmpext = NULL;
+  out->hop_next = NULL;
+
+#ifdef BUILDING_LIBSCAMPERFILE
+  out->refcnt = 1;
+#endif
+
+  if(in->hop_name != NULL && (out->hop_name = strdup(in->hop_name)))
+    goto err;
+  if(in->hop_addr != NULL)
+    out->hop_addr = scamper_addr_use(in->hop_addr);
+
+  return out;
+
+ err:
+  if(out != NULL) scamper_trace_hop_free(out);
+  return NULL;
+}
+
 #ifndef DMALLOC
 scamper_trace_hop_t *scamper_trace_hop_alloc(void)
 #else
@@ -298,6 +325,7 @@ char *scamper_trace_stop_tostr(const scamper_trace_t *trace,
     "HOPLIMIT",
     "GSS",
     "HALTED",
+    "INPROGRESS",
   };
   if(trace->stop_reason >= sizeof(r) / sizeof(char *))
     snprintf(buf, len, "%d", trace->stop_reason);
@@ -356,6 +384,67 @@ void scamper_trace_free(scamper_trace_t *trace)
 
   free(trace);
   return;
+}
+
+scamper_trace_t *scamper_trace_dup(scamper_trace_t *in)
+{
+  scamper_trace_t *out = NULL;
+  scamper_trace_hop_t *hop_in, *hop_out;
+  uint16_t i;
+
+  if((out = memdup(in, sizeof(scamper_trace_t))) == NULL)
+    goto err;
+
+  if(in->list != NULL)
+    out->list = scamper_list_use(in->list);
+  if(in->cycle != NULL)
+    out->cycle = scamper_cycle_use(in->cycle);
+  if(in->src != NULL)
+    out->src = scamper_addr_use(in->src);
+  if(in->dst != NULL)
+    out->dst = scamper_addr_use(in->dst);
+  if(in->rtr != NULL)
+    out->rtr = scamper_addr_use(in->rtr);
+
+  /* set everything to NULL that could possibly fail */
+  out->payload = NULL;
+  out->pmtud = NULL;
+  out->lastditch = NULL;
+  out->hops = NULL;
+
+  if(in->payload != NULL &&
+     (out->payload = memdup(in->payload, in->payload_len)) == NULL)
+    goto err;
+
+  if(in->hop_count > 0)
+    {
+      out->hops = malloc_zero(sizeof(scamper_trace_hop_t *) * in->hop_count);
+      if(out->hops == NULL)
+	goto err;
+
+      for(i=0; i<in->hop_count; i++)
+	{
+	  if(in->hops[i] == NULL)
+	    continue;
+	  if((out->hops[i] = scamper_trace_hop_dup(in->hops[i])) == NULL)
+	    goto err;
+	  hop_in = in->hops[i]; hop_out = out->hops[i];
+	  while(hop_in->hop_next != NULL)
+	    {
+	      hop_out->hop_next = scamper_trace_hop_dup(hop_in->hop_next);
+	      if(hop_out->hop_next == NULL)
+		goto err;
+	      hop_in = hop_in->hop_next;
+	      hop_out = hop_out->hop_next;
+	    }
+	}
+    }
+
+  return out;
+
+ err:
+  if(out != NULL) scamper_trace_free(out);
+  return NULL;
 }
 
 /*

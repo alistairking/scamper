@@ -64,6 +64,7 @@
 #define PING_OPT_PROBETCPACK  20
 #define PING_OPT_RTRADDR      21
 #define PING_OPT_PAYLOADSIZE  22
+#define PING_OPT_STREAM       23
 
 static const scamper_option_in_t opts[] = {
   {'A', NULL, PING_OPT_PROBETCPACK,  SCAMPER_OPTION_TYPE_NUM},
@@ -87,6 +88,7 @@ static const scamper_option_in_t opts[] = {
   {'T', NULL, PING_OPT_TIMESTAMP,    SCAMPER_OPTION_TYPE_STR},
   {'U', NULL, PING_OPT_USERID,       SCAMPER_OPTION_TYPE_NUM},
   {'W', NULL, PING_OPT_WAITTIMEOUT,  SCAMPER_OPTION_TYPE_STR},
+  {'y', NULL, PING_OPT_STREAM,       SCAMPER_OPTION_TYPE_NUM},
   {'z', NULL, PING_OPT_PROBETOS,     SCAMPER_OPTION_TYPE_STR},
 };
 static const int opts_cnt = SCAMPER_OPTION_COUNT(opts);
@@ -122,6 +124,7 @@ static const opt_limit_t limits[] = {
   {"tcp-seq/ack", 0, UINT32_MAX},
   {NULL, 0, 0}, /* -R rtr-addr */
   {"payload-size", 0, 65535},
+  {"stream", 0, 20},
 };
 
 const char *scamper_do_ping_usage(void)
@@ -130,8 +133,8 @@ const char *scamper_do_ping_usage(void)
     "ping [-R] [-A tcp-ack] [-b payload-size] [-B payload] [-c count]\n"
     "     [-C icmp-sum] [-d dport] [-F sport] [-i wait-probe] [-m ttl]\n"
     "     [-M pmtu] [-o reply-count] [-O option] [-p pattern] [-P method]\n"
-    "     [-r rtraddr] [-s probe-size] [-S srcaddr]\n"
-    "     [-T timestamp-option] [-U userid] [-W wait-timeout] [-z tos]";
+    "     [-r rtraddr] [-s probe-size] [-S srcaddr] [-T timestamp-option]\n"
+    "     [-U userid] [-W wait-timeout] [-y stream] [-z tos]";
 }
 
 static int ping_arg_param_validate(int optid, char *param, long long *out,
@@ -159,6 +162,7 @@ static int ping_arg_param_validate(int optid, char *param, long long *out,
     case PING_OPT_PAYLOADSIZE:
     case PING_OPT_USERID:
     case PING_OPT_PROBETOS:
+    case PING_OPT_STREAM:
       if(string_tollong(param, &tmp, NULL, 0) != 0 ||
 	 tmp < limits[optid].min || tmp > limits[optid].max)
 	{
@@ -408,6 +412,7 @@ void *scamper_do_ping_alloc(char *str, char *errbuf, size_t errlen)
   uint8_t  *payload       = NULL;
   uint32_t  userid        = 0;
   uint32_t  flags         = 0;
+  uint8_t   stream        = 0;
   char     *src           = NULL;
   char     *rtr           = NULL;
   char     *tsopt         = NULL;
@@ -580,6 +585,10 @@ void *scamper_do_ping_alloc(char *str, char *errbuf, size_t errlen)
 	case PING_OPT_WAITTIMEOUT:
 	  wait_timeout.tv_sec = tmp / 1000000;
 	  wait_timeout.tv_usec = tmp % 1000000;
+	  break;
+
+	case PING_OPT_STREAM:
+	  stream = (uint8_t)tmp;
 	  break;
 	}
     }
@@ -888,6 +897,7 @@ void *scamper_do_ping_alloc(char *str, char *errbuf, size_t errlen)
   ping->reply_pmtu       = reply_pmtu;
   ping->userid           = userid;
   ping->flags            = flags;
+  ping->stream           = stream;
 
   if((flags & SCAMPER_PING_FLAG_RAW) != 0 &&
      (SCAMPER_ADDR_TYPE_IS_IPV4(ping->dst) == 0 ||

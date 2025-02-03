@@ -1542,7 +1542,7 @@ scamper_source_t *scamper_sourcetask_getsource(scamper_sourcetask_t *st)
   return st->source;
 }
 
-uint32_t scamper_sourcetask_getid(scamper_sourcetask_t *st)
+uint32_t scamper_sourcetask_getid(const scamper_sourcetask_t *st)
 {
   return st->id;
 }
@@ -1579,6 +1579,17 @@ void scamper_sourcetask_free(scamper_sourcetask_t *st)
 
   sources_assert();
   return;
+}
+
+int scamper_source_add_dup(scamper_source_t *source,
+			   scamper_task_t *task, uint32_t id)
+{
+  scamper_sourcetask_t *st = NULL;
+  if((st = sourcetask_alloc(source, task)) == NULL)
+    return -1;
+  st->id = id;
+  scamper_task_setsourcetask(task, st);
+  return 0;
 }
 
 /*

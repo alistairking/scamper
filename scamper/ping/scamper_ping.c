@@ -60,6 +60,24 @@ char *scamper_ping_method_tostr(const scamper_ping_t *ping,char *buf,size_t len)
   return buf;
 }
 
+char *scamper_ping_stop_tostr(const scamper_ping_t *ping, char *buf, size_t len)
+{
+  static char *r[] = {
+    "none",
+    "done",
+    "error",
+    "halted",
+    "inprogress",
+  };
+
+  if(ping->stop_reason < sizeof(r) / sizeof(char *))
+    snprintf(buf, len, "%s", r[ping->stop_reason]);
+  else
+    snprintf(buf, len, "%d", ping->stop_reason);
+
+  return buf;
+}
+
 void scamper_ping_stats_free(scamper_ping_stats_t *stats)
 {
   free(stats);
@@ -242,6 +260,67 @@ void scamper_ping_free(scamper_ping_t *ping)
   return;
 }
 
+scamper_ping_t *scamper_ping_dup(const scamper_ping_t *in)
+{
+  scamper_ping_t *out = NULL;
+  scamper_ping_reply_t *r_in, *r_out;
+  uint16_t i;
+
+  if((out = memdup(in, sizeof(scamper_ping_t))) == NULL)
+    goto err;
+
+  if(in->list != NULL)
+    out->list = scamper_list_use(in->list);
+  if(in->cycle != NULL)
+    out->cycle = scamper_cycle_use(in->cycle);
+  if(in->src != NULL)
+    out->src = scamper_addr_use(in->src);
+  if(in->dst != NULL)
+    out->dst = scamper_addr_use(in->dst);
+  if(in->rtr != NULL)
+    out->rtr = scamper_addr_use(in->rtr);
+
+  /* set everything to NULL that could possibly fail */
+  out->probe_data = NULL;
+  out->probe_tsps = NULL;
+  out->probe_data = NULL;
+  out->ping_replies = NULL;
+
+  if(in->probe_data != NULL &&
+     (out->probe_data = memdup(in->probe_data, in->probe_datalen)) == NULL)
+    goto err;
+
+  if(in->ping_sent > 0)
+    {
+      if(scamper_ping_replies_alloc(out, in->ping_sent) != 0)
+	goto err;
+
+      for(i=0; i<in->ping_sent; i++)
+	{
+	  if(in->ping_replies[i] == NULL)
+	    continue;
+
+	  out->ping_replies[i] = scamper_ping_reply_dup(in->ping_replies[i]);
+	  if(out->ping_replies[i] == NULL)
+	    goto err;
+	  r_in = in->ping_replies[i]; r_out = out->ping_replies[i];
+	  while(r_in->next != NULL)
+	    {
+	      if((r_out->next = scamper_ping_reply_dup(r_in->next)) == NULL)
+		goto err;
+	      r_in = r_in->next;
+	      r_out = r_out->next;
+	    }
+	}
+    }
+
+  return out;
+
+ err:
+  if(out != NULL) scamper_ping_free(out);
+  return NULL;
+}
+
 uint32_t scamper_ping_reply_total(const scamper_ping_t *ping)
 {
   scamper_ping_reply_t *reply;
@@ -419,4 +498,29 @@ void scamper_ping_reply_free(scamper_ping_reply_t *reply)
 
   free(reply);
   return;
+}
+
+scamper_ping_reply_t *scamper_ping_reply_dup(const scamper_ping_reply_t *in)
+{
+  scamper_ping_reply_t *out = NULL;
+
+  if((out = memdup(in, sizeof(scamper_ping_reply_t))) == NULL)
+    return NULL;
+
+#ifdef BUILDING_LIBSCAMPERFILE
+  out->refcnt  = 1;
+#endif
+
+  out->ifname  = NULL;
+  out->v4rr    = NULL;
+  out->v4ts    = NULL;
+  out->tsreply = NULL;
+  out->next    = NULL;
+
+  if(in->addr != NULL)
+    out->addr = scamper_addr_use(in->addr);
+  if(in->ifname != NULL)
+    out->ifname = scamper_ifname_use(in->ifname);
+
+  return out;
 }

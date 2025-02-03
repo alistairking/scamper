@@ -35,10 +35,11 @@ typedef struct scamper_ping_reply_v4ts scamper_ping_reply_v4ts_t;
 typedef struct scamper_ping_reply_tsreply scamper_ping_reply_tsreply_t;
 typedef struct scamper_ping_stats scamper_ping_stats_t;
 
-#define SCAMPER_PING_STOP_NONE      0x00 /* null reason */
-#define SCAMPER_PING_STOP_COMPLETED 0x01 /* sent all probes */
-#define SCAMPER_PING_STOP_ERROR     0x02 /* error occured during ping */
-#define SCAMPER_PING_STOP_HALTED    0x03 /* halted */
+#define SCAMPER_PING_STOP_NONE         0 /* null reason */
+#define SCAMPER_PING_STOP_COMPLETED    1 /* sent all probes */
+#define SCAMPER_PING_STOP_ERROR        2 /* error occured during ping */
+#define SCAMPER_PING_STOP_HALTED       3 /* halted */
+#define SCAMPER_PING_STOP_INPROGRESS   4 /* measurement in-progress */
 
 #define SCAMPER_PING_REPLY_FLAG_REPLY_TTL  0x01 /* reply ttl included */
 #define SCAMPER_PING_REPLY_FLAG_REPLY_IPID 0x02 /* reply ipid included */
@@ -86,6 +87,7 @@ scamper_addr_t *scamper_ping_rtr_get(const scamper_ping_t *ping);
 const struct timeval *scamper_ping_start_get(const scamper_ping_t *ping);
 uint8_t scamper_ping_stop_reason_get(const scamper_ping_t *ping);
 uint8_t scamper_ping_stop_data_get(const scamper_ping_t *ping);
+char *scamper_ping_stop_tostr(const scamper_ping_t *ping,char *buf,size_t len);
 const uint8_t *scamper_ping_probe_data_get(const scamper_ping_t *ping);
 uint16_t scamper_ping_probe_datalen_get(const scamper_ping_t *ping);
 uint16_t scamper_ping_probe_count_get(const scamper_ping_t *ping);
