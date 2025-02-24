@@ -145,6 +145,15 @@ typedef struct scamper_task_funcs
 
   void (*halt)(struct scamper_task *task);
 
+  /* return a duplicate of the data currently stored with the task */
+  void *(*data_dup)(void *data);
+
+  /* function to call to free data */
+  void (*data_free)(void *data);
+
+  /* is the data marked as in-progress? */
+  int (*data_inprog)(void *data);
+
   /* write the task's data object out */
   void (*write)(struct scamper_file *file, struct scamper_task *task);
 
@@ -155,6 +164,9 @@ typedef struct scamper_task_funcs
 
 scamper_task_t *scamper_task_alloc(void *data, scamper_task_funcs_t *funcs);
 void scamper_task_free(scamper_task_t *task);
+
+/* put a duplicate version of the task in the source's queue */
+scamper_task_t *scamper_task_dup(scamper_task_t *task);
 
 /* get various items of the task */
 void *scamper_task_getdata(const scamper_task_t *task);
@@ -168,6 +180,8 @@ void scamper_task_setstate(scamper_task_t *task, void *state);
 void scamper_task_setsourcetask(scamper_task_t *task,
 				struct scamper_sourcetask *st);
 void scamper_task_setcyclemon(scamper_task_t *t, struct scamper_cyclemon *cm);
+
+int scamper_task_is_inprog(scamper_task_t *task);
 
 /* access the various functions registered with the task */
 void scamper_task_write(scamper_task_t *task, struct scamper_file *file);

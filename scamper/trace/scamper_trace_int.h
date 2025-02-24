@@ -46,6 +46,8 @@ scamper_trace_hop_t *scamper_trace_hop_alloc_dm(const char *file, int line);
   scamper_trace_hop_alloc_dm(__FILE__, __LINE__)
 #endif
 
+scamper_trace_t *scamper_trace_dup(scamper_trace_t *trace);
+
 /*
  * scamper_trace_hops_alloc:
  *  allocate an array of hop records to the trace object
@@ -217,6 +219,9 @@ struct scamper_trace
 
   /* if we did a parallel traceroute */
   uint8_t                stop_hop;
+
+  /* how regularly to stream in-progress results */
+  uint8_t                stream;
 
   /* trace parameters */
   uint8_t                type;

@@ -114,10 +114,14 @@ int scamper_source_cycle(scamper_source_t *source);
 int scamper_source_task(scamper_source_t *source, struct scamper_task *task);
 int scamper_source_halttask(scamper_source_t *source, uint32_t id);
 
+/* function for adding a snapshot of a current task to source */
+int scamper_source_add_dup(scamper_source_t *source,
+			   scamper_task_t *task, uint32_t id);
+
 /* function for advising source that an active task has completed */
 void scamper_sourcetask_free(scamper_sourcetask_t *st);
 scamper_source_t *scamper_sourcetask_getsource(scamper_sourcetask_t *st);
-uint32_t scamper_sourcetask_getid(scamper_sourcetask_t *st);
+uint32_t scamper_sourcetask_getid(const scamper_sourcetask_t *st);
 
 /* functions for managing a collection of sources */
 int scamper_sources_add(scamper_source_t *source);
