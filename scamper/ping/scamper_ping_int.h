@@ -29,19 +29,20 @@
 
 scamper_ping_t *scamper_ping_alloc(void);
 scamper_ping_v4ts_t *scamper_ping_v4ts_alloc(uint8_t ipc);
+scamper_ping_probe_t *scamper_ping_probe_alloc(void);
 scamper_ping_reply_t *scamper_ping_reply_alloc(void);
 scamper_ping_reply_v4ts_t *scamper_ping_reply_v4ts_alloc(uint8_t tsc, int ip);
 scamper_ping_reply_v4rr_t *scamper_ping_reply_v4rr_alloc(uint8_t ipc);
 scamper_ping_reply_tsreply_t *scamper_ping_reply_tsreply_alloc(void);
 
-int scamper_ping_replies_alloc(scamper_ping_t *ping, uint16_t count);
-int scamper_ping_reply_append(scamper_ping_t *p, scamper_ping_reply_t *reply);
+int scamper_ping_probes_alloc(scamper_ping_t *ping, uint16_t count);
+int scamper_ping_probe_replies_alloc(scamper_ping_probe_t *probe,
+				     uint16_t count);
+int scamper_ping_probe_reply_append(scamper_ping_probe_t *probe,
+				    scamper_ping_reply_t *reply);
 
 /* count how many replies were received in total */
 uint32_t scamper_ping_reply_total(const scamper_ping_t *ping);
-
-scamper_ping_t *scamper_ping_dup(const scamper_ping_t *in);
-scamper_ping_reply_t *scamper_ping_reply_dup(const scamper_ping_reply_t *in);
 
 #define SCAMPER_PING_REPLY_IS_ICMP(reply) (        \
  ((reply)->addr->type == SCAMPER_ADDR_TYPE_IPV4 && \
@@ -166,6 +167,10 @@ scamper_ping_reply_t *scamper_ping_reply_dup(const scamper_ping_reply_t *in);
 #define SCAMPER_PING_FLAG_IS_INPROGRESS(ping) (	\
  ((ping)->flags & SCAMPER_PING_FLAG_INPROGRESS))
 
+#define SCAMPER_PING_PROBE_FLAGS_MASK(reply) ( \
+  ((reply)->flags & (SCAMPER_PING_REPLY_FLAG_PROBE_IPID | \
+		     SCAMPER_PING_REPLY_FLAG_DLTX)))
+
 struct scamper_ping_stats
 {
   uint32_t nreplies;
@@ -244,9 +249,6 @@ struct scamper_ping_reply
   scamper_addr_t            *addr;
 
   /* the TTL / size of the packet that is returned */
-  uint16_t                   probe_id;
-  uint16_t                   probe_ipid;
-  uint16_t                   probe_sport;
   uint8_t                    reply_proto;
   uint8_t                    reply_ttl;
   uint8_t                    reply_tos;
@@ -265,7 +267,6 @@ struct scamper_ping_reply
   uint8_t                    tcp_flags;
 
   /* the time elapsed between sending the probe and getting this response */
-  struct timeval             tx;
   struct timeval             rtt;
 
   /* the name of the interface that received the response */
@@ -276,8 +277,21 @@ struct scamper_ping_reply
   scamper_ping_reply_v4ts_t *v4ts;
   scamper_ping_reply_tsreply_t *tsreply;
 
-  /* if a single probe gets more than one response, they get chained */
-  struct scamper_ping_reply *next;
+#ifdef BUILDING_LIBSCAMPERFILE
+  int                        refcnt;
+#endif
+};
+
+struct scamper_ping_probe
+{
+  struct timeval             tx;
+  uint16_t                   id;
+  uint16_t                   ipid;
+  uint16_t                   sport;
+  uint8_t                    flags;
+
+  scamper_ping_reply_t     **replies;
+  uint16_t                   replyc;
 
 #ifdef BUILDING_LIBSCAMPERFILE
   int                        refcnt;
@@ -334,7 +348,7 @@ struct scamper_ping
   uint32_t               flags;
 
   /* actual data collected with the ping */
-  scamper_ping_reply_t **ping_replies;
+  scamper_ping_probe_t **probes;
   uint16_t               ping_sent;
 };
 

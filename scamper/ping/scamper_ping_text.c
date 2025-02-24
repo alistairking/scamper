@@ -63,6 +63,7 @@ static char *tsreply_tostr(char *buf, size_t len, uint32_t val)
 }
 
 static char *ping_reply(const scamper_ping_t *ping,
+			const scamper_ping_probe_t *probe,
 			const scamper_ping_reply_t *reply)
 {
   scamper_ping_reply_v4rr_t *v4rr;
@@ -75,7 +76,7 @@ static char *ping_reply(const scamper_ping_t *ping,
   timeval_tostr_us(&reply->rtt, rtt, sizeof(rtt));
 
   string_concaf(buf, sizeof(buf), &off, "%d bytes from %s, seq=%d ",
-		reply->reply_size, a, reply->probe_id);
+		reply->reply_size, a, probe->id);
 
   if(SCAMPER_PING_REPLY_IS_ICMP(reply) || SCAMPER_PING_REPLY_IS_UDP(reply))
     {
@@ -192,6 +193,7 @@ static char *ping_stats(const scamper_ping_t *ping)
 int scamper_file_text_ping_write(const scamper_file_t *sf,
 				 const scamper_ping_t *ping, void *p)
 {
+  scamper_ping_probe_t *probe;
   scamper_ping_reply_t *reply;
   int       fd          = scamper_file_getfd(sf);
   off_t     off         = 0;
@@ -206,7 +208,7 @@ int scamper_file_text_ping_write(const scamper_file_t *sf,
   size_t    len         = 0;
   size_t    wc          = 0;
   int       ret         = -1;
-  uint32_t  i,j;
+  uint32_t  i, j, k;
 
   /* get current position incase trunction is required */
   if(fd != 1 && (off = lseek(fd, 0, SEEK_CUR)) == -1)
@@ -224,19 +226,19 @@ int scamper_file_text_ping_write(const scamper_file_t *sf,
 	 (reply_lens = malloc_zero(sizeof(size_t) * reply_count)) == NULL)
 	goto cleanup;
 
-      for(i=0, j=0; i<ping->ping_sent; i++)
+      k = 0;
+      for(i=0; i<ping->ping_sent; i++)
 	{
-	  reply = ping->ping_replies[i];
-	  while(reply != NULL)
+	  if((probe = ping->probes[i]) == NULL)
+	    continue;
+	  for(j=0; j<probe->replyc; j++)
 	    {
 	      /* build string representation of this reply */
-	      if((replies[j] = ping_reply(ping, reply)) == NULL)
-		{
-		  goto cleanup;
-		}
-	      len += (reply_lens[j] = strlen(replies[j]));
-	      reply = reply->next;
-	      j++;
+	      reply = probe->replies[j];
+	      if((replies[k] = ping_reply(ping, probe, reply)) == NULL)
+		goto cleanup;
+	      len += (reply_lens[k] = strlen(replies[k]));
+	      k++;
 	    }
 	}
     }

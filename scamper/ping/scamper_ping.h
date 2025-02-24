@@ -29,6 +29,7 @@
 
 typedef struct scamper_ping scamper_ping_t;
 typedef struct scamper_ping_v4ts scamper_ping_v4ts_t;
+typedef struct scamper_ping_probe scamper_ping_probe_t;
 typedef struct scamper_ping_reply scamper_ping_reply_t;
 typedef struct scamper_ping_reply_v4rr scamper_ping_reply_v4rr_t;
 typedef struct scamper_ping_reply_v4ts scamper_ping_reply_v4ts_t;
@@ -75,6 +76,7 @@ typedef struct scamper_ping_stats scamper_ping_stats_t;
 char *scamper_ping_tojson(const scamper_ping_t *ping, size_t *len);
 
 /* basic routines to use and free scamper_ping structures */
+scamper_ping_t *scamper_ping_dup(const scamper_ping_t *ping);
 void scamper_ping_free(scamper_ping_t *ping);
 
 /* get methods for accessing ping structure variables */
@@ -118,8 +120,12 @@ uint16_t scamper_ping_sent_get(const scamper_ping_t *ping);
 scamper_ping_reply_t *scamper_ping_reply_get(const scamper_ping_t *ping,
 					     uint16_t i);
 
+scamper_ping_probe_t *scamper_ping_probe_dup(const scamper_ping_probe_t *probe);
+void scamper_ping_probe_free(scamper_ping_probe_t *probe);
+
 /* basic routines to use and free scamper_ping_reply structures */
 scamper_ping_reply_t *scamper_ping_reply_use(scamper_ping_reply_t *reply);
+scamper_ping_reply_t *scamper_ping_reply_dup(const scamper_ping_reply_t *reply);
 void scamper_ping_reply_free(scamper_ping_reply_t *reply);
 
 /* get methods for accessing ping reply structure variables */
@@ -151,7 +157,6 @@ int scamper_ping_reply_is_icmp_ttl_exp(const scamper_ping_reply_t *reply);
 int scamper_ping_reply_is_icmp_tsreply(const scamper_ping_reply_t *reply);
 const struct timeval *scamper_ping_reply_tx_get(const scamper_ping_reply_t *reply);
 const struct timeval *scamper_ping_reply_rtt_get(const scamper_ping_reply_t *reply);
-scamper_ping_reply_t *scamper_ping_reply_next_get(const scamper_ping_reply_t *reply);
 scamper_ping_reply_v4rr_t *scamper_ping_reply_v4rr_get(const scamper_ping_reply_t *reply);
 scamper_ping_reply_v4ts_t *scamper_ping_reply_v4ts_get(const scamper_ping_reply_t *reply);
 scamper_ping_reply_tsreply_t *scamper_ping_reply_tsreply_get(const scamper_ping_reply_t *reply);

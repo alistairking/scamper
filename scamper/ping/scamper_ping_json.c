@@ -142,6 +142,71 @@ static char *ping_header(const scamper_ping_t *ping)
   return strdup(buf);
 }
 
+static void ping_probe_json(char *buf, size_t len, size_t *off,
+			    const scamper_ping_t *ping,
+			    const scamper_ping_probe_t *probe, int reply)
+{
+  uint16_t sport, dport;
+  char *pt = "bug";
+
+  string_concaf(buf, len, off, "%c\"seq\":%u",
+		reply == 0 ? '{' : ',', probe->id);
+
+  if(reply == 0 && probe->flags & SCAMPER_PING_REPLY_FLAG_DLTX)
+    string_concat(buf, len, off, ", \"probe_flags\":[\"dltxts\"]");
+
+  if(probe->tx.tv_sec != 0)
+    {
+      string_concaf(buf, len, off, ", \"tx\":{\"sec\":%ld, \"usec\":%d}",
+		    (long)probe->tx.tv_sec, (int)probe->tx.tv_usec);
+    }
+
+  if(SCAMPER_PING_METHOD_IS_ICMP(ping))
+    {
+      string_concaf(buf, len, off, ", \"icmp_id\":%u, \"icmp_seq\":%u",
+		    ping->probe_sport, ping->probe_dport + probe->id);
+    }
+  else
+    {
+      if(SCAMPER_PING_METHOD_IS_UDP(ping))
+	pt = "udp";
+      else
+	pt = "tcp";
+
+      if(probe->sport == 0)
+	{
+	  sport = ping->probe_sport;
+	  if(SCAMPER_PING_METHOD_IS_VARY_SPORT(ping))
+	    sport += probe->id;
+	}
+      else sport = probe->sport;
+
+      dport = ping->probe_dport;
+      if(SCAMPER_PING_METHOD_IS_VARY_DPORT(ping))
+	dport += probe->id;
+
+      string_concaf(buf, len, off, ", \"%s_sport\":%u, \"%s_dport\":%u",
+		    pt, sport, pt, dport);
+    }
+
+  if(probe->flags & SCAMPER_PING_REPLY_FLAG_PROBE_IPID)
+    string_concaf(buf, len, off, ", \"probe_ipid\":%u", probe->ipid);
+
+  if(reply == 0)
+    string_concat(buf, len, off, "}");
+
+  return;
+}
+
+static char *ping_probe(const scamper_ping_t *ping,
+			const scamper_ping_probe_t *probe)
+{
+  char buf[512];
+  size_t off = 0;
+  ping_probe_json(buf, sizeof(buf), &off, ping, probe, 0);
+  return strdup(buf);
+}
+
 static char *ping_reply_proto(const scamper_ping_reply_t *reply,
 			     char *buf, size_t len)
 {
@@ -157,23 +222,24 @@ static char *ping_reply_proto(const scamper_ping_reply_t *reply,
 }
 
 static char *ping_reply(const scamper_ping_t *ping,
+			const scamper_ping_probe_t *probe,
 			const scamper_ping_reply_t *reply)
 {
   scamper_ping_reply_v4rr_t *v4rr;
   scamper_ping_reply_v4ts_t *v4ts;
   struct timeval tv;
-  char buf[512], tmp[64], *pt = "bug";
+  char buf[512], tmp[64];
   uint8_t i;
   size_t off = 0, off2;
-  uint16_t sport, dport;
 
-  string_concaf(buf, sizeof(buf), &off, "{\"from\":\"%s\", \"seq\":%u",
-		scamper_addr_tostr(reply->addr, tmp, sizeof(tmp)),
-		reply->probe_id);
+  string_concaf(buf, sizeof(buf), &off, "{\"from\":\"%s\"",
+		scamper_addr_tostr(reply->addr, tmp, sizeof(tmp)));
   string_concaf(buf, sizeof(buf), &off,", \"reply_size\":%u, \"reply_ttl\":%u",
 		reply->reply_size, reply->reply_ttl);
   string_concat2(buf, sizeof(buf), &off, ", \"reply_proto\":",
 		 ping_reply_proto(reply, tmp, sizeof(tmp)));
+
+  ping_probe_json(buf, sizeof(buf), &off, ping, probe, 1);
 
   if(reply->ifname != NULL && reply->ifname->ifname != NULL)
     string_concat3(buf, sizeof(buf), &off, ", \"ifname\":\"",
@@ -191,12 +257,9 @@ static char *ping_reply(const scamper_ping_t *ping,
 	string_concat3(buf, sizeof(buf), &off, ", \"reply_flags\":[",tmp,"]");
     }
 
-  if(reply->tx.tv_sec != 0)
+  if(probe->tx.tv_sec != 0)
     {
-      timeval_add_tv3(&tv, &reply->tx, &reply->rtt);
-      string_concaf(buf, sizeof(buf), &off,
-		    ", \"tx\":{\"sec\":%ld, \"usec\":%d}",
-		    (long)reply->tx.tv_sec, (int)reply->tx.tv_usec);
+      timeval_add_tv3(&tv, &probe->tx, &reply->rtt);
       string_concaf(buf, sizeof(buf), &off,
 		    ", \"rx\":{\"sec\":%ld, \"usec\":%d}",
 		    (long)tv.tv_sec, (int)tv.tv_usec);
@@ -204,42 +267,10 @@ static char *ping_reply(const scamper_ping_t *ping,
   string_concat2(buf, sizeof(buf), &off, ", \"rtt\":",
 		 timeval_tostr_us(&reply->rtt, tmp, sizeof(tmp)));
 
-  if(SCAMPER_PING_METHOD_IS_ICMP(ping))
-    {
-      string_concaf(buf, sizeof(buf), &off,
-		    ", \"icmp_id\":%u, \"icmp_seq\":%u",
-		    ping->probe_sport,
-		    ping->probe_dport + reply->probe_id);
-    }
-  else
-    {
-      if(SCAMPER_PING_METHOD_IS_UDP(ping))
-	pt = "udp";
-      else
-	pt = "tcp";
-
-      if(reply->probe_sport == 0)
-	{
-	  sport = ping->probe_sport;
-	  if(SCAMPER_PING_METHOD_IS_VARY_SPORT(ping))
-	    sport += reply->probe_id;
-	}
-      else sport = reply->probe_sport;
-
-      dport = ping->probe_dport;
-      if(SCAMPER_PING_METHOD_IS_VARY_DPORT(ping))
-	dport += reply->probe_id;
-
-      string_concaf(buf, sizeof(buf), &off,
-		    ", \"%s_sport\":%u, \"%s_dport\":%u",
-		    pt, sport, pt, dport);
-    }
-
   if(SCAMPER_ADDR_TYPE_IS_IPV4(reply->addr))
     {
-      string_concaf(buf, sizeof(buf), &off,
-		    ", \"probe_ipid\":%u, \"reply_ipid\":%u",
-		    reply->probe_ipid, reply->reply_ipid);
+      string_concaf(buf, sizeof(buf), &off, ", \"reply_ipid\":%u",
+		    reply->reply_ipid);
     }
   else if(SCAMPER_ADDR_TYPE_IS_IPV6(reply->addr) &&
 	  (reply->flags & SCAMPER_PING_REPLY_FLAG_REPLY_IPID) != 0)
@@ -357,51 +388,95 @@ static char *ping_stats(const scamper_ping_t *ping)
 
 char *scamper_ping_tojson(const scamper_ping_t *ping, size_t *len_out)
 {
+  scamper_ping_probe_t *probe;
   scamper_ping_reply_t *reply;
-  uint32_t  reply_count = scamper_ping_reply_total(ping);
   char     *header      = NULL;
   size_t    header_len  = 0;
+  uint32_t  replyc      = 0;
   char    **replies     = NULL;
   size_t   *reply_lens  = NULL;
+  char    **noreplies   = NULL;
+  size_t   *noreply_lens = NULL;
+  uint16_t  noreplyc    = 0;
   char     *stats       = NULL;
   size_t    stats_len   = 0;
   char     *str         = NULL;
   size_t    len         = 0;
   size_t    wc          = 0;
   int       rc          = -1;
-  uint32_t  i,j;
+  uint32_t  i, j, k;
 
   /* get the header string */
   if((header = ping_header(ping)) == NULL)
     goto cleanup;
   len = (header_len = strlen(header));
 
+  for(i=0; i<ping->ping_sent; i++)
+    {
+      if((probe = ping->probes[i]) == NULL)
+	continue;
+      if(probe->replyc > 0)
+	replyc += probe->replyc;
+      else
+	noreplyc++;
+    }
+
   /* put together a string for each reply */
   len += 15; /* , \"responses\":[" */
-  if(reply_count > 0)
+  if(replyc > 0)
     {
-      if((replies    = malloc_zero(sizeof(char *) * reply_count)) == NULL ||
-	 (reply_lens = malloc_zero(sizeof(size_t) * reply_count)) == NULL)
+      if((replies    = malloc_zero(sizeof(char *) * replyc)) == NULL ||
+	 (reply_lens = malloc_zero(sizeof(size_t) * replyc)) == NULL)
 	{
 	  goto cleanup;
 	}
 
-      for(i=0, j=0; i<ping->ping_sent; i++)
+      k = 0;
+      for(i=0; i<ping->ping_sent; i++)
 	{
-	  reply = ping->ping_replies[i];
-	  while(reply != NULL)
+	  if((probe = ping->probes[i]) == NULL)
+	    continue;
+
+	  for(j=0; j<probe->replyc; j++)
 	    {
 	      /* build string representation of this reply */
-	      if((replies[j] = ping_reply(ping, reply)) == NULL)
+	      reply = probe->replies[j];
+	      if((replies[k] = ping_reply(ping, probe, reply)) == NULL)
 		goto cleanup;
-	      len += (reply_lens[j] = strlen(replies[j]));
-	      if(j > 0) len++; /* , */
-	      reply = reply->next;
-	      j++;
+	      len += (reply_lens[k] = strlen(replies[k]));
+	      if(k > 0) len++; /* , */
+	      k++;
 	    }
 	}
     }
   len += 2; /* ], */
+
+  /* put together a string for each probe without a reply */
+  len += 16; /* \"no_responses\":[" */
+  if(noreplyc > 0)
+    {
+      if((noreplies    = malloc_zero(sizeof(char *) * noreplyc)) == NULL ||
+	 (noreply_lens = malloc_zero(sizeof(size_t) * noreplyc)) == NULL)
+	goto cleanup;
+
+      k = 0;
+      for(i=0; i<ping->ping_sent; i++)
+	{
+	  if((probe = ping->probes[i]) == NULL || probe->replyc > 0)
+	    continue;
+
+	  /* build string representation of this probe */
+	  if((noreplies[k] = ping_probe(ping, probe)) == NULL)
+	    goto cleanup;
+	  len += (noreply_lens[k] = strlen(noreplies[k]));
+	  if(k > 0)
+	    len++; /* , */
+	  k++;
+	}
+    }
+  len += 2; /* ], */
+
+  /* put together a string for the ping statistics */
   if((stats = ping_stats(ping)) != NULL)
     len += (stats_len = strlen(stats));
   len += 2; /* }\0 */
@@ -410,7 +485,7 @@ char *scamper_ping_tojson(const scamper_ping_t *ping, size_t *len_out)
     goto cleanup;
   memcpy(str+wc, header, header_len); wc += header_len;
   memcpy(str+wc, ", \"responses\":[", 15); wc += 15;
-  for(i=0; i<reply_count; i++)
+  for(i=0; i < replyc; i++)
     {
       if(i > 0)
 	str[wc++] = ',';
@@ -418,6 +493,17 @@ char *scamper_ping_tojson(const scamper_ping_t *ping, size_t *len_out)
       wc += reply_lens[i];
     }
   memcpy(str+wc, "],", 2); wc += 2;
+
+  memcpy(str+wc, "\"no_responses\":[", 16); wc += 16;
+  for(i=0; i < noreplyc; i++)
+    {
+      if(i > 0)
+	str[wc++] = ',';
+      memcpy(str+wc, noreplies[i], noreply_lens[i]);
+      wc += noreply_lens[i];
+    }
+  memcpy(str+wc, "],", 2); wc += 2;
+
   if(stats != NULL)
     {
       memcpy(str+wc, stats, stats_len);
@@ -434,10 +520,18 @@ char *scamper_ping_tojson(const scamper_ping_t *ping, size_t *len_out)
   if(reply_lens != NULL) free(reply_lens);
   if(replies != NULL)
     {
-      for(i=0; i<reply_count; i++)
+      for(i=0; i < replyc; i++)
 	if(replies[i] != NULL)
 	  free(replies[i]);
       free(replies);
+    }
+  if(noreply_lens != NULL) free(noreply_lens);
+  if(noreplies != NULL)
+    {
+      for(i=0; i < noreplyc; i++)
+	if(noreplies[i] != NULL)
+	  free(noreplies[i]);
+      free(noreplies);
     }
 
   if(rc != 0)
