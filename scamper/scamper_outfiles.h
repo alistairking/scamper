@@ -1,7 +1,7 @@
 /*
  * scamper_outfiles: hold a collection of output targets together
  *
- * $Id: scamper_outfiles.h,v 1.21 2023/06/15 23:03:58 mjl Exp $
+ * $Id: scamper_outfiles.h,v 1.26 2025/01/15 02:32:15 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2010 The University of Waikato
@@ -41,43 +41,26 @@ const char *scamper_outfile_getname(const scamper_outfile_t *sof)
   __attribute__((nonnull));
 int scamper_outfile_getrefcnt(const scamper_outfile_t *sof)
   __attribute__((nonnull));
-scamper_outfile_t *scamper_outfile_open(const char *alias, const char *file,
-					const char *mo,char *err,size_t errlen)
-  __attribute__((nonnull));
-int scamper_outfile_close(scamper_outfile_t *sof) __attribute__((nonnull));
 void scamper_outfile_free(scamper_outfile_t *sof) __attribute__((nonnull));
 #else
 const char *scamper_outfile_getname(const scamper_outfile_t *sof);
 int scamper_outfile_getrefcnt(const scamper_outfile_t *sof);
-scamper_outfile_t *scamper_outfile_open(const char *alias, const char *file,
-					const char *mo,char *err,size_t errlen);
-int scamper_outfile_close(scamper_outfile_t *sof);
 void scamper_outfile_free(scamper_outfile_t *sof);
 #endif
 
 scamper_outfile_t *scamper_outfiles_get(const char *alias);
 scamper_outfile_t *scamper_outfile_use(scamper_outfile_t *sof);
-void scamper_outfiles_foreach(void *p,
-			      int (*func)(void *p, scamper_outfile_t *sof));
 
 #ifdef HAVE_FUNC_ATTRIBUTE_NONNULL
 int scamper_outfiles_init(const char *def_filename, const char *def_type)
   __attribute__((nonnull));
-scamper_outfile_t *scamper_outfile_openfd(const char *name, int fd,
-					  const char *type)
-  __attribute__((nonnull));
 scamper_outfile_t *scamper_outfile_opennull(const char *name,
 					    const char *type)
   __attribute__((nonnull));
-void scamper_outfiles_swap(scamper_outfile_t *a, scamper_outfile_t *b)
-  __attribute__((nonnull));
 #else
 int scamper_outfiles_init(const char *def_filename, const char *def_type);
-scamper_outfile_t *scamper_outfile_openfd(const char *name, int fd,
-					  const char *type);
 scamper_outfile_t *scamper_outfile_opennull(const char *name,
 					    const char *type);
-void scamper_outfiles_swap(scamper_outfile_t *a, scamper_outfile_t *b);
 #endif
 
 void scamper_outfiles_cleanup(void);

@@ -6,9 +6,9 @@
 .\" Copyright (c) 2013 The Regents of the University of California
 .\"                    All rights reserved
 .\"
-.\" $Id: sc_speedtrap.1,v 1.7 2024/11/12 06:34:29 mjl Exp $
+.\" $Id: sc_speedtrap.1,v 1.8 2025/02/24 21:35:33 mjl Exp $
 .\"
-.Dd November 12, 2024
+.Dd February 25, 2025
 .Dt SC_SPEEDTRAP 1
 .Os
 .Sh NAME
@@ -88,6 +88,13 @@ is accepting control socket connections.
 specifies the name of a unix domain socket on the local host where a remote
 .Xr scamper 1
 instance is accepting commands.
+The unix-remote parameter can either be a unix domain socket for a single
+remote
+.Xr scamper 1
+instance, or be a
+.Xr sc_remoted 1
+mux socket with the name of the remote VP encoded after a trailing
+slash.
 .It Fl s Ar stop
 specifies the step at which
 .Nm
@@ -116,12 +123,20 @@ in aliases.txt:
 .Pp
 .Dl sc_speedtrap -p 31337 -a addressfile.txt -o outfile1.warts -A aliases.txt
 .Pp
+Given a
+.Xr sc_remoted 1
+process listening on a unix domain socket named /path/to/socket, and a
+remote vantage point named 'foo' connected to the controller, probe
+the addresses with the remote vantage point using:
+.Pp
+.Dl sc_speedtrap -R /path/to/socket/foo -a addressfile.txt -o outfile2.warts
+.Pp
 The next example is useful when inferring aliases from multiple vantage points.
 Given the output of aliases.txt from a previous measurement, the following
 will resolve the addressfile for aliases, skipping those in aliases.txt, and
 appending the new aliases to aliases.txt:
 .Pp
-.Dl sc_speedtrap -p 31337 -a addressfile.txt -o outfile2.warts -A aliases.txt -S aliases.txt
+.Dl sc_speedtrap -p 31337 -a addressfile.txt -o outfile3.warts -A aliases.txt -S aliases.txt
 .Pp
 To obtain a transitive closure of routers from an input warts file:
 .Pp

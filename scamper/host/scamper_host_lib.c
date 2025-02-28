@@ -1,9 +1,9 @@
 /*
  * scamper_host_lib.c
  *
- * $Id: scamper_host_lib.c,v 1.11 2024/09/04 08:50:06 mjl Exp $
+ * $Id: scamper_host_lib.c,v 1.13 2025/02/23 05:38:15 mjl Exp $
  *
- * Copyright (C) 2023-2024 Matthew Luckie
+ * Copyright (C) 2023-2025 Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -98,6 +98,11 @@ const char *scamper_host_qname_get(const scamper_host_t *host)
 uint8_t scamper_host_qcount_get(const scamper_host_t *host)
 {
   return host->qcount;
+}
+
+const char *scamper_host_ecs_get(const scamper_host_t *host)
+{
+  return host->ecs;
 }
 
 scamper_host_query_t *scamper_host_query_get(const scamper_host_t *host, uint8_t i)
@@ -266,82 +271,12 @@ scamper_host_rr_opt_t *scamper_host_rr_opt_get(const scamper_host_rr_t *rr)
   return rr->un.opt;
 }
 
-#ifdef BUILDING_LIBSCAMPERFILE
-scamper_host_rr_opt_t *scamper_host_rr_opt_use(scamper_host_rr_opt_t *opt)
+scamper_host_rr_svcb_t *scamper_host_rr_svcb_get(const scamper_host_rr_t *rr)
 {
-  opt->refcnt++;
-  return opt;
-}
-#endif
-
-uint16_t scamper_host_rr_opt_elemc_get(const scamper_host_rr_opt_t *opt)
-{
-  return opt->elemc;
-}
-
-scamper_host_rr_opt_elem_t *scamper_host_rr_opt_elem_get(const scamper_host_rr_opt_t *opt,
-							 uint16_t i)
-{
-  if(opt != NULL && opt->elems != NULL && i < opt->elemc)
-    return opt->elems[i];
-  return NULL;
-}
-
-#ifdef BUILDING_LIBSCAMPERFILE
-scamper_host_rr_opt_elem_t *scamper_host_rr_opt_elem_use(scamper_host_rr_opt_elem_t *elem)
-{
-  elem->refcnt++;
-  return elem;
-}
-#endif
-
-uint16_t scamper_host_rr_opt_elem_code_get(const scamper_host_rr_opt_elem_t *elem)
-{
-  return elem->code;
-}
-
-/*
- * scamper_host_rr_opt_elem_code_tostr
- *
- * convert 16-bit OPT code to name.
- *
- * https://www.iana.org/assignments/dns-parameters/dns-parameters.xhtml
- */
-char *scamper_host_rr_opt_elem_code_tostr(uint16_t code, char *b, size_t l)
-{
-  switch(code)
-    {
-    case 1:  snprintf(b, l, "LLQ"); break;
-    case 3:  snprintf(b, l, "NSID"); break;
-    case 5:  snprintf(b, l, "DAU"); break;
-    case 6:  snprintf(b, l, "DHU"); break;
-    case 7:  snprintf(b, l, "N3U"); break;
-    case 8:  snprintf(b, l, "edns-client-subnet"); break;
-    case 9:  snprintf(b, l, "EDNS-EXPIRE"); break;
-    case 10: snprintf(b, l, "COOKIE"); break;
-    case 11: snprintf(b, l, "edns-tcp-keepalive"); break;
-    case 12: snprintf(b, l, "Padding"); break;
-    case 13: snprintf(b, l, "CHAIN"); break;
-    case 14: snprintf(b, l, "edns-key-tag"); break;
-    case 15: snprintf(b, l, "Extended DNS Error"); break;
-    case 16: snprintf(b, l, "EDNS-Client-Tag"); break;
-    case 17: snprintf(b, l, "EDNS-Server-Tag"); break;
-    case 18: snprintf(b, l, "Report-Channel"); break;
-    case 19: snprintf(b, l, "ZONEVERSION"); break;
-    default: snprintf(b, l, "%u", code); break;
-    }
-
-  return b;
-}
-
-uint16_t scamper_host_rr_opt_elem_len_get(const scamper_host_rr_opt_elem_t *elem)
-{
-  return elem->len;
-}
-
-const uint8_t *scamper_host_rr_opt_elem_data_get(const scamper_host_rr_opt_elem_t *elem)
-{
-  return elem->data;
+  if(scamper_host_rr_data_type(rr->class, rr->type) !=
+     SCAMPER_HOST_RR_DATA_TYPE_SVCB)
+    return NULL;
+  return rr->un.svcb;
 }
 
 #ifdef BUILDING_LIBSCAMPERFILE
@@ -423,4 +358,167 @@ const char *scamper_host_rr_txt_str_get(const scamper_host_rr_txt_t *txt, uint16
   if(txt != NULL && txt->strs != NULL && i < txt->strc)
     return txt->strs[i];
   return NULL;
+}
+
+#ifdef BUILDING_LIBSCAMPERFILE
+scamper_host_rr_opt_t *scamper_host_rr_opt_use(scamper_host_rr_opt_t *opt)
+{
+  opt->refcnt++;
+  return opt;
+}
+#endif
+
+uint16_t scamper_host_rr_opt_elemc_get(const scamper_host_rr_opt_t *opt)
+{
+  return opt->elemc;
+}
+
+scamper_host_rr_opt_elem_t *scamper_host_rr_opt_elem_get(const scamper_host_rr_opt_t *opt,
+							 uint16_t i)
+{
+  if(opt != NULL && opt->elems != NULL && i < opt->elemc)
+    return opt->elems[i];
+  return NULL;
+}
+
+#ifdef BUILDING_LIBSCAMPERFILE
+scamper_host_rr_opt_elem_t *scamper_host_rr_opt_elem_use(scamper_host_rr_opt_elem_t *elem)
+{
+  elem->refcnt++;
+  return elem;
+}
+#endif
+
+uint16_t scamper_host_rr_opt_elem_code_get(const scamper_host_rr_opt_elem_t *elem)
+{
+  return elem->code;
+}
+
+/*
+ * scamper_host_rr_opt_elem_code_tostr
+ *
+ * convert 16-bit OPT code to name.
+ *
+ * https://www.iana.org/assignments/dns-parameters/dns-parameters.xhtml
+ */
+char *scamper_host_rr_opt_elem_code_tostr(uint16_t code, char *b, size_t l)
+{
+  switch(code)
+    {
+    case 1:  snprintf(b, l, "LLQ"); break;
+    case 3:  snprintf(b, l, "NSID"); break;
+    case 5:  snprintf(b, l, "DAU"); break;
+    case 6:  snprintf(b, l, "DHU"); break;
+    case 7:  snprintf(b, l, "N3U"); break;
+    case 8:  snprintf(b, l, "edns-client-subnet"); break;
+    case 9:  snprintf(b, l, "EDNS-EXPIRE"); break;
+    case 10: snprintf(b, l, "COOKIE"); break;
+    case 11: snprintf(b, l, "edns-tcp-keepalive"); break;
+    case 12: snprintf(b, l, "Padding"); break;
+    case 13: snprintf(b, l, "CHAIN"); break;
+    case 14: snprintf(b, l, "edns-key-tag"); break;
+    case 15: snprintf(b, l, "Extended DNS Error"); break;
+    case 16: snprintf(b, l, "EDNS-Client-Tag"); break;
+    case 17: snprintf(b, l, "EDNS-Server-Tag"); break;
+    case 18: snprintf(b, l, "Report-Channel"); break;
+    case 19: snprintf(b, l, "ZONEVERSION"); break;
+    default: snprintf(b, l, "%u", code); break;
+    }
+
+  return b;
+}
+
+uint16_t scamper_host_rr_opt_elem_len_get(const scamper_host_rr_opt_elem_t *elem)
+{
+  return elem->len;
+}
+
+const uint8_t *scamper_host_rr_opt_elem_data_get(const scamper_host_rr_opt_elem_t *elem)
+{
+  return elem->data;
+}
+
+#ifdef BUILDING_LIBSCAMPERFILE
+scamper_host_rr_svcb_t *scamper_host_rr_svcb_use(scamper_host_rr_svcb_t *svcb)
+{
+  svcb->refcnt++;
+  return svcb;
+}
+#endif
+
+const char *scamper_host_rr_svcb_target_get(const scamper_host_rr_svcb_t *svcb)
+{
+  return svcb->target;
+}
+
+uint16_t scamper_host_rr_svcb_priority_get(const scamper_host_rr_svcb_t *svcb)
+{
+  return svcb->priority;
+}
+
+uint16_t scamper_host_rr_svcb_paramc_get(const scamper_host_rr_svcb_t *svcb)
+{
+  return svcb->paramc;
+}
+
+scamper_host_rr_svcb_param_t *
+scamper_host_rr_svcb_param_get(const scamper_host_rr_svcb_t *svcb, uint16_t i)
+{
+  if(svcb != NULL && svcb->params != NULL && i < svcb->paramc)
+    return svcb->params[i];
+  return NULL;
+}
+
+#ifdef BUILDING_LIBSCAMPERFILE
+scamper_host_rr_svcb_param_t *
+scamper_host_rr_svcb_param_use(scamper_host_rr_svcb_param_t *param)
+{
+  param->refcnt++;
+  return param;
+}
+#endif
+
+uint16_t
+scamper_host_rr_svcb_param_key_get(const scamper_host_rr_svcb_param_t *param)
+{
+  return param->key;
+}
+
+uint16_t
+scamper_host_rr_svcb_param_len_get(const scamper_host_rr_svcb_param_t *param)
+{
+  return param->len;
+}
+
+const uint8_t *
+scamper_host_rr_svcb_param_val_get(const scamper_host_rr_svcb_param_t *param)
+{
+  return param->val;
+}
+
+/*
+ * scamper_host_rr_svcb_param_key_tostr
+ *
+ * convert 16-bit SVCB param key to name.
+ *
+ * https://www.iana.org/assignments/dns-svcb/dns-svcb.xhtml
+ */
+char *scamper_host_rr_svcb_param_key_tostr(uint16_t key, char *b, size_t l)
+{
+  switch(key)
+    {
+    case 0:  snprintf(b, l, "mandatory"); break;
+    case 1:  snprintf(b, l, "alpn"); break;
+    case 2:  snprintf(b, l, "no-default-alpn"); break;
+    case 3:  snprintf(b, l, "port"); break;
+    case 4:  snprintf(b, l, "ipv4hint"); break;
+    case 5:  snprintf(b, l, "ech"); break;
+    case 6:  snprintf(b, l, "ipv6hint"); break;
+    case 7:  snprintf(b, l, "dohpath"); break;
+    case 8:  snprintf(b, l, "ohttp"); break;
+    case 9:  snprintf(b, l, "tls-supported-groups"); break;
+    default: snprintf(b, l, "%u", key); break;
+    }
+
+  return b;
 }

@@ -1,12 +1,12 @@
 /*
  * unit_host_rr_list : unit tests for host_rr_list function
  *
- * $Id: unit_host_rr_list.c,v 1.6 2024/09/04 08:17:55 mjl Exp $
+ * $Id: unit_host_rr_list.c,v 1.8 2025/02/26 04:10:35 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
  *
- * Copyright (C) 2023-2024 Matthew Luckie
+ * Copyright (C) 2023-2025 Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -56,12 +56,16 @@ static int com_soa(const slist_t *rr_list)
   scamper_host_rr_t *rr;
   scamper_host_rr_soa_t *soa;
   slist_node_t *sn;
+  const char *str;
   int i = 0;
 
   if(rr_list == NULL)
     return -1;
   for(sn=slist_head_node(rr_list); sn != NULL; sn=slist_node_next(sn))
     {
+      if(i >= 2)
+	return -1;
+
       rr = slist_node_item(sn);
       if(scamper_host_rr_data_type(rr->class, rr->type) != types[i])
 	return -1;
@@ -72,7 +76,16 @@ static int com_soa(const slist_t *rr_list)
 	     rr->type != SCAMPER_HOST_TYPE_SOA ||
 	     rr->ttl != 509 ||
 	     strcmp(rr->name, "com") != 0 ||
-	     (soa = scamper_host_rr_soa_get(rr)) == NULL)
+	     (soa = scamper_host_rr_soa_get(rr)) == NULL ||
+	     (str = scamper_host_rr_soa_mname_get(soa)) == NULL ||
+	     strcmp(str, "a.gtld-servers.net") != 0 ||
+	     (str = scamper_host_rr_soa_rname_get(soa)) == NULL ||
+	     strcmp(str, "nstld.verisign-grs.com") != 0 ||
+	     scamper_host_rr_soa_serial_get(soa) != 1699073504 ||
+	     scamper_host_rr_soa_refresh_get(soa) != 1800 ||
+	     scamper_host_rr_soa_retry_get(soa) != 900 ||
+	     scamper_host_rr_soa_expire_get(soa) != 604800 ||
+	     scamper_host_rr_soa_minimum_get(soa) != 86400)
 	    return -1;
 	}
       else if(i == 1)
@@ -105,6 +118,9 @@ static int example_org_txt(const slist_t *rr_list)
     return -1;
   for(sn=slist_head_node(rr_list); sn != NULL; sn=slist_node_next(sn))
     {
+      if(i >= 3)
+	return -1;
+
       rr = slist_node_item(sn);
       if(scamper_host_rr_data_type(rr->class, rr->type) != types[i])
 	return -1;
@@ -166,6 +182,9 @@ static int doesnotexist_nsid(const slist_t *rr_list)
 
   for(sn=slist_head_node(rr_list); sn != NULL; sn=slist_node_next(sn))
     {
+      if(i >= 2)
+	return -1;
+
       rr = slist_node_item(sn);
       if(scamper_host_rr_data_type(rr->class, rr->type) != types[i])
 	return -1;
@@ -193,6 +212,91 @@ static int doesnotexist_nsid(const slist_t *rr_list)
 	    return -1;
 	}
       else return -1;
+      i++;
+    }
+
+  return 0;
+}
+
+static int dns_resolver_arpa_svcb(const slist_t *rr_list)
+{
+  const uint16_t types[5] = {
+    SCAMPER_HOST_RR_DATA_TYPE_SVCB,
+    SCAMPER_HOST_RR_DATA_TYPE_SVCB,
+    SCAMPER_HOST_RR_DATA_TYPE_ADDR,
+    SCAMPER_HOST_RR_DATA_TYPE_ADDR,
+    SCAMPER_HOST_RR_DATA_TYPE_ADDR,
+  };
+  const uint16_t keys[9] = {1, 3, 4, 6,  1, 3, 4,  6,  7};
+  const uint16_t lens[9] = {4, 2, 8, 16, 3, 2, 8, 16, 16};
+  const char *addrs[3] = {"9.9.9.9", "149.112.112.112", "2620:fe::fe"};
+  const uint8_t vals[9][16] = {
+    {3, 'd', 'o', 't'},
+    {0x03, 0x55},  /* 853 */
+    {9, 9, 9, 9, 149, 112, 112, 112},
+    {0x26, 0x20, 0, 0xfe, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xfe},
+    {2, 'h', '2'},
+    {0x01, 0xBB},  /* 443 */
+    {9, 9, 9, 9, 149, 112, 112, 112},
+    {0x26, 0x20, 0, 0xfe, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xfe},
+    {'/','d','n','s','-','q','u','e','r','y','{','?','d','n','s', '}'}
+  };
+  const uint8_t *val;
+  scamper_host_rr_t *rr;
+  scamper_host_rr_svcb_t *svcb;
+  scamper_host_rr_svcb_param_t *param;
+  slist_node_t *sn;
+  const char *name;
+  uint16_t j, x = 0;
+  int i = 0;
+
+  if(rr_list == NULL)
+    return -1;
+
+  for(sn=slist_head_node(rr_list); sn != NULL; sn=slist_node_next(sn))
+    {
+      if(i >= 5)
+	return -1;
+
+      rr = slist_node_item(sn);
+      if(scamper_host_rr_data_type(rr->class, rr->type) != types[i] ||
+	 rr->class != SCAMPER_HOST_CLASS_IN || rr->ttl != 60)
+	return -1;
+
+      if(i == 0 || i == 1)
+	{
+	  if(rr->type != SCAMPER_HOST_TYPE_SVCB ||
+	     (name = scamper_host_rr_name_get(rr)) == NULL ||
+	     strcmp(name, "_dns.resolver.arpa") != 0 ||
+	     (svcb = scamper_host_rr_svcb_get(rr)) == NULL ||
+	     scamper_host_rr_svcb_priority_get(svcb) != (uint16_t)(i + 1) ||
+	     (name = scamper_host_rr_svcb_target_get(svcb)) == NULL ||
+	     strcmp(name, "dns.quad9.net") != 0 ||
+	     scamper_host_rr_svcb_paramc_get(svcb) != (i + 4))
+	    return -1;
+
+	  for(j=0; j < i + 4; j++)
+	    {
+	      if((param = scamper_host_rr_svcb_param_get(svcb, j)) == NULL ||
+		 scamper_host_rr_svcb_param_key_get(param) != keys[x] ||
+		 scamper_host_rr_svcb_param_len_get(param) != lens[x] ||
+		 (val = scamper_host_rr_svcb_param_val_get(param)) == NULL ||
+		 memcmp(vals[x], val, lens[x]) != 0)
+		return -1;
+	      x++;
+	    }
+	}
+      else if(i == 2 || i == 3 || i == 4)
+	{
+	  if((i == 2 && rr->type != SCAMPER_HOST_TYPE_A) ||
+	     (i == 3 && rr->type != SCAMPER_HOST_TYPE_A) ||
+	     (i == 4 && rr->type != SCAMPER_HOST_TYPE_AAAA) ||
+	     (name = scamper_host_rr_name_get(rr)) == NULL ||
+	     strcmp(name, "dns.quad9.net") != 0 ||
+	     check_addr(scamper_host_rr_addr_get(rr), addrs[i-2]) != 0)
+	    return -1;
+	}
+
       i++;
     }
 
@@ -290,6 +394,27 @@ int main(int argc, char *argv[])
      "00002910000000000000120003000e61382e75732d736a632e726f6f74",
      12 + 16 + 4,
      doesnotexist_nsid},
+    {"79e581000001000200000003" /* 12 byte header */
+     "045f646e73087265736f6c766572046172706100" /* _dns.resolver.arpa (20b) */
+     "00400001" /* SVCB IN (4 bytes) */
+     "c00c004000010000003c003f00010364"
+     "6e73057175616439036e657400000100"
+     "0403646f740003000203550004000809"
+     "0909099570707000060010262000fe00"
+     "00000000000000000000fec00c004000"
+     "010000003c0052000203646e73057175"
+     "616439036e6574000001000302683200"
+     "03000201bb0004000809090909957070"
+     "7000060010262000fe00000000000000"
+     "00000000fe000700102f646e732d7175"
+     "6572797b3f646e737d03646e73057175"
+     "616439036e657400000100010000003c"
+     "000409090909c0cd000100010000003c"
+     "000495707070c0cd001c00010000003c"
+     "0010262000fe00000000000000000000"
+     "00fe",
+     12 + 20 + 4,
+     dns_resolver_arpa_svcb},
   };
   size_t i, testc = sizeof(tests) / sizeof(sc_test_t);
   char filename[128];
@@ -299,7 +424,7 @@ int main(int argc, char *argv[])
       for(i=0; i<testc; i++)
 	{
 	  snprintf(filename, sizeof(filename),
-		   "%s/dealias-%03x.txt", argv[2], (int)i);
+		   "%s/rrset-%03x.dat", argv[2], (int)i);
 	  if(dump_hex(tests[i].pkt, filename) != 0)
 	    break;
 	}

@@ -1,12 +1,12 @@
 /*
  * scamper_ping_int.h
  *
- * $Id: scamper_ping_int.h,v 1.14 2024/08/26 09:15:54 mjl Exp $
+ * $Id: scamper_ping_int.h,v 1.16 2025/02/25 06:31:24 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2012-2015 The Regents of the University of California
- * Copyright (C) 2020-2023 Matthew Luckie
+ * Copyright (C) 2020-2025 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -29,92 +29,92 @@
 
 scamper_ping_t *scamper_ping_alloc(void);
 scamper_ping_v4ts_t *scamper_ping_v4ts_alloc(uint8_t ipc);
+scamper_ping_probe_t *scamper_ping_probe_alloc(void);
 scamper_ping_reply_t *scamper_ping_reply_alloc(void);
 scamper_ping_reply_v4ts_t *scamper_ping_reply_v4ts_alloc(uint8_t tsc, int ip);
 scamper_ping_reply_v4rr_t *scamper_ping_reply_v4rr_alloc(uint8_t ipc);
 scamper_ping_reply_tsreply_t *scamper_ping_reply_tsreply_alloc(void);
 
-int scamper_ping_replies_alloc(scamper_ping_t *ping, uint16_t count);
-int scamper_ping_reply_append(scamper_ping_t *p, scamper_ping_reply_t *reply);
+int scamper_ping_probes_alloc(scamper_ping_t *ping, uint16_t count);
+int scamper_ping_probe_replies_alloc(scamper_ping_probe_t *probe,
+				     uint16_t count);
+int scamper_ping_probe_reply_append(scamper_ping_probe_t *probe,
+				    scamper_ping_reply_t *reply);
 
 /* count how many replies were received in total */
 uint32_t scamper_ping_reply_total(const scamper_ping_t *ping);
 
-#define SCAMPER_PING_REPLY_IS_ICMP(reply) (        \
- ((reply)->addr->type == SCAMPER_ADDR_TYPE_IPV4 && \
-  (reply)->reply_proto == 1) ||                    \
- ((reply)->addr->type == SCAMPER_ADDR_TYPE_IPV6 && \
-  (reply)->reply_proto == 58))
+#define SCAMPER_PING_REPLY_IS_ICMP(reply) ( \
+ ((reply)->addr->type == SCAMPER_ADDR_TYPE_IPV4 && (reply)->proto == 1) || \
+ ((reply)->addr->type == SCAMPER_ADDR_TYPE_IPV6 && (reply)->proto == 58))
 
-#define SCAMPER_PING_REPLY_IS_TCP(reply) ( \
- ((reply)->reply_proto == 6))
+#define SCAMPER_PING_REPLY_IS_TCP(reply) ((reply)->proto == 6)
 
-#define SCAMPER_PING_REPLY_IS_UDP(reply) ( \
- ((reply)->reply_proto == 17))
+#define SCAMPER_PING_REPLY_IS_UDP(reply) ((reply)->proto == 17)
 
 #define SCAMPER_PING_REPLY_IS_ICMP_ECHO_REPLY(reply) (     \
  ((reply)->addr->type == SCAMPER_ADDR_TYPE_IPV4 &&         \
-  (reply)->reply_proto == 1 && (reply)->icmp_type == 0) || \
+  (reply)->proto == 1 && (reply)->icmp_type == 0) ||	   \
  ((reply)->addr->type == SCAMPER_ADDR_TYPE_IPV6 &&         \
-  (reply)->reply_proto == 58 && (reply)->icmp_type == 129))
+  (reply)->proto == 58 && (reply)->icmp_type == 129))
 
 #define SCAMPER_PING_REPLY_IS_ICMP_UNREACH(reply) (        \
  ((reply)->addr->type == SCAMPER_ADDR_TYPE_IPV4 &&         \
-  (reply)->reply_proto == 1 && (reply)->icmp_type == 3) || \
+  (reply)->proto == 1 && (reply)->icmp_type == 3) ||	   \
  ((reply)->addr->type == SCAMPER_ADDR_TYPE_IPV6 &&         \
-  (reply)->reply_proto == 58 && (reply)->icmp_type == 1))
+  (reply)->proto == 58 && (reply)->icmp_type == 1))
 
 #define SCAMPER_PING_REPLY_IS_ICMP_UNREACH_PORT(reply) (   \
  ((reply)->addr->type == SCAMPER_ADDR_TYPE_IPV4 &&         \
-  (reply)->reply_proto == 1 &&                             \
+  (reply)->proto == 1 &&				   \
   (reply)->icmp_type == 3 && (reply)->icmp_code == 3) ||   \
  ((reply)->addr->type == SCAMPER_ADDR_TYPE_IPV6 &&         \
-  (reply)->reply_proto == 58 &&                            \
+  (reply)->proto == 58 &&                            \
   (reply)->icmp_type == 1 && (reply)->icmp_code == 4))
 
-#define SCAMPER_PING_REPLY_IS_ICMP_TTL_EXP(reply) (         \
- ((reply)->addr->type == SCAMPER_ADDR_TYPE_IPV4 &&          \
-  (reply)->reply_proto == 1 && (reply)->icmp_type == 11) || \
- ((reply)->addr->type == SCAMPER_ADDR_TYPE_IPV6 &&          \
-  (reply)->reply_proto == 58 && (reply)->icmp_type == 3))
+#define SCAMPER_PING_REPLY_IS_ICMP_TTL_EXP(reply) (        \
+ ((reply)->addr->type == SCAMPER_ADDR_TYPE_IPV4 &&         \
+  (reply)->proto == 1 && (reply)->icmp_type == 11) ||	   \
+ ((reply)->addr->type == SCAMPER_ADDR_TYPE_IPV6 &&         \
+  (reply)->proto == 58 && (reply)->icmp_type == 3))
 
 #define SCAMPER_PING_REPLY_IS_ICMP_TSREPLY(reply) ( \
- ((reply)->addr->type == SCAMPER_ADDR_TYPE_IPV4 && \
-  (reply)->reply_proto == 1 && (reply)->icmp_type == 14))
+ (reply)->addr->type == SCAMPER_ADDR_TYPE_IPV4 &&   \
+ (reply)->proto == 1 && (reply)->icmp_type == 14)
 
-#define SCAMPER_PING_METHOD_IS_ICMP(ping) (\
- (ping)->probe_method == SCAMPER_PING_METHOD_ICMP_ECHO || \
- (ping)->probe_method == SCAMPER_PING_METHOD_ICMP_TIME)
+#define SCAMPER_PING_METHOD_IS_ICMP(ping) (         \
+ (ping)->method == SCAMPER_PING_METHOD_ICMP_ECHO || \
+ (ping)->method == SCAMPER_PING_METHOD_ICMP_TIME)
 
-#define SCAMPER_PING_METHOD_IS_TCP(ping) (                    \
- ((ping)->probe_method == SCAMPER_PING_METHOD_TCP_ACK ||      \
-  (ping)->probe_method == SCAMPER_PING_METHOD_TCP_ACK_SPORT || \
-  (ping)->probe_method == SCAMPER_PING_METHOD_TCP_SYN || \
-  (ping)->probe_method == SCAMPER_PING_METHOD_TCP_SYNACK || \
-  (ping)->probe_method == SCAMPER_PING_METHOD_TCP_RST || \
-  (ping)->probe_method == SCAMPER_PING_METHOD_TCP_SYN_SPORT))
+#define SCAMPER_PING_METHOD_IS_TCP(ping) (              \
+ (ping)->method == SCAMPER_PING_METHOD_TCP_ACK ||       \
+ (ping)->method == SCAMPER_PING_METHOD_TCP_ACK_SPORT || \
+ (ping)->method == SCAMPER_PING_METHOD_TCP_SYN ||       \
+ (ping)->method == SCAMPER_PING_METHOD_TCP_SYNACK ||    \
+ (ping)->method == SCAMPER_PING_METHOD_TCP_RST ||       \
+ (ping)->method == SCAMPER_PING_METHOD_TCP_SYN_SPORT)
 
-#define SCAMPER_PING_METHOD_IS_TCP_ACK_SPORT(ping) (		\
- ((ping)->probe_method == SCAMPER_PING_METHOD_TCP_ACK_SPORT))
+#define SCAMPER_PING_METHOD_IS_TCP_ACK_SPORT(ping) (  \
+ (ping)->method == SCAMPER_PING_METHOD_TCP_ACK_SPORT)
 
-#define SCAMPER_PING_METHOD_IS_UDP(ping) (                \
- ((ping)->probe_method == SCAMPER_PING_METHOD_UDP ||      \
-  (ping)->probe_method == SCAMPER_PING_METHOD_UDP_SPORT || \
-  (ping)->probe_method == SCAMPER_PING_METHOD_UDP_DPORT))
+#define SCAMPER_PING_METHOD_IS_UDP(ping) (          \
+ (ping)->method == SCAMPER_PING_METHOD_UDP ||       \
+ (ping)->method == SCAMPER_PING_METHOD_UDP_SPORT || \
+ (ping)->method == SCAMPER_PING_METHOD_UDP_DPORT)
 
-#define SCAMPER_PING_METHOD_IS_ICMP_TIME(ping) (\
- ((ping)->probe_method == SCAMPER_PING_METHOD_ICMP_TIME))
+#define SCAMPER_PING_METHOD_IS_ICMP_TIME(ping) (    \
+ (ping)->method == SCAMPER_PING_METHOD_ICMP_TIME)
 
-#define SCAMPER_PING_METHOD_IS_ICMP_ECHO(ping) (\
- ((ping)->probe_method == SCAMPER_PING_METHOD_ICMP_ECHO))
+#define SCAMPER_PING_METHOD_IS_ICMP_ECHO(ping) (    \
+ (ping)->method == SCAMPER_PING_METHOD_ICMP_ECHO)
 
-#define SCAMPER_PING_METHOD_IS_VARY_SPORT(ping) (		\
- ((ping)->probe_method == SCAMPER_PING_METHOD_TCP_ACK_SPORT ||	\
-  (ping)->probe_method == SCAMPER_PING_METHOD_TCP_SYN_SPORT ||	\
-  (ping)->probe_method == SCAMPER_PING_METHOD_UDP_SPORT))
+#define SCAMPER_PING_METHOD_IS_VARY_SPORT(ping) (       \
+ (ping)->method == SCAMPER_PING_METHOD_TCP_ACK_SPORT ||	\
+ (ping)->method == SCAMPER_PING_METHOD_TCP_SYN_SPORT ||	\
+ (ping)->method == SCAMPER_PING_METHOD_UDP_SPORT)
 
-#define SCAMPER_PING_METHOD_IS_VARY_DPORT(ping) (			\
- ((ping)->probe_method == SCAMPER_PING_METHOD_UDP_DPORT))
+#define SCAMPER_PING_METHOD_IS_VARY_DPORT(ping) (  \
+ (ping)->method == SCAMPER_PING_METHOD_UDP_DPORT)
 
 #define SCAMPER_PING_REPLY_IS_FROM_TARGET(ping, reply) ( \
  (SCAMPER_PING_METHOD_IS_ICMP_ECHO(ping) &&           \
@@ -128,44 +128,48 @@ uint32_t scamper_ping_reply_total(const scamper_ping_t *ping);
    SCAMPER_PING_REPLY_IS_UDP(reply))))
 
 #define SCAMPER_PING_FLAG_IS_V4RR(ping) (	\
- ((ping)->flags & SCAMPER_PING_FLAG_V4RR))
+ (ping)->flags & SCAMPER_PING_FLAG_V4RR)
 
 #define SCAMPER_PING_FLAG_IS_SPOOF(ping) (	\
- ((ping)->flags & SCAMPER_PING_FLAG_SPOOF))
+ (ping)->flags & SCAMPER_PING_FLAG_SPOOF)
 
 #define SCAMPER_PING_FLAG_IS_PAYLOAD(ping) (	\
- ((ping)->flags & SCAMPER_PING_FLAG_PAYLOAD))
+ (ping)->flags & SCAMPER_PING_FLAG_PAYLOAD)
 
 #define SCAMPER_PING_FLAG_IS_TSONLY(ping) (	\
- ((ping)->flags & SCAMPER_PING_FLAG_TSONLY))
+ (ping)->flags & SCAMPER_PING_FLAG_TSONLY)
 
 #define SCAMPER_PING_FLAG_IS_TSANDADDR(ping) (	\
- ((ping)->flags & SCAMPER_PING_FLAG_TSANDADDR))
+ (ping)->flags & SCAMPER_PING_FLAG_TSANDADDR)
 
 #define SCAMPER_PING_FLAG_IS_ICMPSUM(ping) (	\
- ((ping)->flags & SCAMPER_PING_FLAG_ICMPSUM))
+ (ping)->flags & SCAMPER_PING_FLAG_ICMPSUM)
 
 #define SCAMPER_PING_FLAG_IS_DL(ping) (		\
- ((ping)->flags & SCAMPER_PING_FLAG_DL))
+ (ping)->flags & SCAMPER_PING_FLAG_DL)
 
 #define SCAMPER_PING_FLAG_IS_TBT(ping) (	\
- ((ping)->flags & SCAMPER_PING_FLAG_TBT))
+ (ping)->flags & SCAMPER_PING_FLAG_TBT)
 
 #define SCAMPER_PING_FLAG_IS_NOSRC(ping) (	\
- ((ping)->flags & SCAMPER_PING_FLAG_NOSRC))
+ (ping)->flags & SCAMPER_PING_FLAG_NOSRC)
 
 #define SCAMPER_PING_FLAG_IS_RAW(ping) (	\
- ((ping)->flags & SCAMPER_PING_FLAG_RAW))
+ (ping)->flags & SCAMPER_PING_FLAG_RAW)
 
 #define SCAMPER_PING_FLAG_IS_SOCKRX(ping) (	\
- ((ping)->flags & SCAMPER_PING_FLAG_SOCKRX))
+ (ping)->flags & SCAMPER_PING_FLAG_SOCKRX)
+
+#define SCAMPER_PING_PROBE_FLAGS_MASK(reply) ( \
+ (reply)->flags & (SCAMPER_PING_REPLY_FLAG_PROBE_IPID | \
+		   SCAMPER_PING_REPLY_FLAG_DLTX))
 
 struct scamper_ping_stats
 {
-  uint32_t nreplies;
-  uint32_t ndups;
-  uint32_t nloss;
-  uint32_t nerrs;
+  uint32_t       nreplies;
+  uint32_t       ndups;
+  uint32_t       nloss;
+  uint32_t       nerrs;
   struct timeval min_rtt;
   struct timeval max_rtt;
   struct timeval avg_rtt;
@@ -237,19 +241,15 @@ struct scamper_ping_reply
   /* where the response came from */
   scamper_addr_t            *addr;
 
-  /* the TTL / size of the packet that is returned */
-  uint16_t                   probe_id;
-  uint16_t                   probe_ipid;
-  uint16_t                   probe_sport;
-  uint8_t                    reply_proto;
-  uint8_t                    reply_ttl;
-  uint8_t                    reply_tos;
-  uint16_t                   reply_size;
-  uint16_t                   reply_ipid;
-  uint32_t                   reply_ipid32;
-
   /* flags defined by SCAMPER_PING_REPLY_FLAG_* */
   uint8_t                    flags;
+
+  /* the TTL / size of the packet that is returned */
+  uint8_t                    proto;
+  uint8_t                    ttl;
+  uint8_t                    tos;
+  uint32_t                   ipid32;
+  uint16_t                   size;
 
   /* the icmp type / code returned */
   uint8_t                    icmp_type;
@@ -259,7 +259,6 @@ struct scamper_ping_reply
   uint8_t                    tcp_flags;
 
   /* the time elapsed between sending the probe and getting this response */
-  struct timeval             tx;
   struct timeval             rtt;
 
   /* the name of the interface that received the response */
@@ -270,8 +269,21 @@ struct scamper_ping_reply
   scamper_ping_reply_v4ts_t *v4ts;
   scamper_ping_reply_tsreply_t *tsreply;
 
-  /* if a single probe gets more than one response, they get chained */
-  struct scamper_ping_reply *next;
+#ifdef BUILDING_LIBSCAMPERFILE
+  int                        refcnt;
+#endif
+};
+
+struct scamper_ping_probe
+{
+  struct timeval             tx;
+  uint16_t                   id;
+  uint16_t                   ipid;
+  uint16_t                   sport;
+  uint8_t                    flags;
+
+  scamper_ping_reply_t     **replies;
+  uint16_t                   replyc;
 
 #ifdef BUILDING_LIBSCAMPERFILE
   int                        refcnt;
@@ -305,29 +317,29 @@ struct scamper_ping
   uint8_t                stop_data;
 
   /* the data to use inside of a probe.  if null then all zeros */
-  uint8_t               *probe_data;
-  uint16_t               probe_datalen;
+  uint8_t               *data;
+  uint16_t               datalen;
 
   /* ping options */
   struct timeval         wait_probe;       /* -i */
   struct timeval         wait_timeout;     /* -W */
-  uint16_t               probe_count;      /* -c */
-  uint16_t               probe_size;       /* -s */
-  uint8_t                probe_method;     /* -P */
-  uint8_t                probe_ttl;        /* -m */
-  uint8_t                probe_tos;        /* -z */
-  uint16_t               probe_sport;      /* -F */
-  uint16_t               probe_dport;      /* -d */
-  uint16_t               probe_icmpsum;    /* -C */
-  uint32_t               probe_tcpseq;     /* -A w/ tcp-syn and tcp-rst */
-  uint32_t               probe_tcpack;     /* -A w/ other tcp probe methods */
-  uint16_t               reply_count;      /* -o */
-  uint16_t               reply_pmtu;       /* -M */
-  scamper_ping_v4ts_t   *probe_tsps;       /* -T */
+  uint16_t               attempts;         /* -c */
+  uint16_t               size;             /* -s */
+  uint8_t                method;           /* -P */
+  uint8_t                ttl;              /* -m */
+  uint8_t                tos;              /* -z */
+  uint16_t               sport;            /* -F */
+  uint16_t               dport;            /* -d */
+  uint16_t               icmpsum;          /* -C */
+  uint32_t               tcpseq;           /* -A w/ tcp-syn and tcp-rst */
+  uint32_t               tcpack;           /* -A w/ other tcp probe methods */
+  uint16_t               stop_count;       /* -o */
+  uint16_t               pmtu;             /* -M */
+  scamper_ping_v4ts_t   *tsps;             /* -T */
   uint32_t               flags;
 
   /* actual data collected with the ping */
-  scamper_ping_reply_t **ping_replies;
+  scamper_ping_probe_t **probes;
   uint16_t               ping_sent;
 };
 

@@ -1,7 +1,7 @@
 /*
  * scamper_source
  *
- * $Id: scamper_sources.c,v 1.84 2024/12/31 04:17:31 mjl Exp $
+ * $Id: scamper_sources.c,v 1.85 2025/01/15 02:51:01 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -1242,24 +1242,6 @@ uint32_t scamper_source_getpriority(const scamper_source_t *source)
   return source->priority;
 }
 
-void scamper_source_setpriority(scamper_source_t *source, uint32_t priority)
-{
-  uint32_t old_priority;
-
-  sources_assert();
-
-  old_priority = source->priority;
-  source->priority = priority;
-
-  if(priority == 0 && old_priority > 0)
-    source_blocked_attach(source);
-  else if(priority > 0 && old_priority == 0)
-    source_active_attach(source);
-
-  sources_assert();
-  return;
-}
-
 const char *scamper_source_type_tostr(const scamper_source_t *source)
 {
   switch(source->type)
@@ -1529,17 +1511,6 @@ int scamper_source_command(scamper_source_t *source, const char *command)
   return -1;
 }
 
-/*
- * scamper_source_cycle
- *
- * externally visible function to mark a new cycle point; the new cycle
- * id is one greater than the currently active cycle.
- */
-int scamper_source_cycle(scamper_source_t *source)
-{
-  return source_cycle(source, source->cycle->id + 1);
-}
-
 scamper_source_t *scamper_sourcetask_getsource(scamper_sourcetask_t *st)
 {
   return st->source;
@@ -1729,34 +1700,6 @@ scamper_source_t *scamper_sources_get(char *name)
   findme.list = &list;
 
   return (scamper_source_t *)splaytree_find(source_tree, &findme);
-}
-
-/*
- * scamper_sources_del
- *
- * given a source, remove it entirely.  to do so, existing tasks must be
- * halted, the source must be flushed of on-hold tasks and commands,
- * and it must be removed from the data structures that link the source
- * to the main scamper loop.
- */
-int scamper_sources_del(scamper_source_t *source)
-{
-  sources_assert();
-
-  source_flush_tasks(source);
-  source_flush_commands(source);
-  source_detach(source);
-
-  /* if there are external references to the source, then don't free it */
-  if(source->refcnt > 1)
-    {
-      return -1;
-    }
-
-  source_free(source);
-
-  sources_assert();
-  return 0;
 }
 
 /*

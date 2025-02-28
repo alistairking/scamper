@@ -3,12 +3,12 @@
  *
  * the warts file format
  *
- * $Id: scamper_file_warts.h,v 1.34 2024/05/01 07:46:20 mjl Exp $
+ * $Id: scamper_file_warts.h,v 1.36 2025/02/11 14:31:43 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2012      The Regents of the University of California
- * Copyright (C) 2016-2023 Matthew Luckie
+ * Copyright (C) 2016-2025 Matthew Luckie
  * Copyright (C) 2024      The Regents of the University of California
  * Author: Matthew Luckie
  *
@@ -240,10 +240,11 @@ int warts_cycle_getid(const scamper_file_t *sf, scamper_cycle_t *cycle,
 			     uint32_t *id);
 int warts_cycle_stop_write(const scamper_file_t *sf,
 				  scamper_cycle_t *cycle);
-int warts_icmpext_read(const uint8_t *buf, uint32_t *off, uint32_t len,
-			      scamper_icmpext_t **exts);
-void warts_icmpext_write(uint8_t *buf,uint32_t *off,const uint32_t len,
-				const scamper_icmpext_t *exts);
+int warts_icmpexts_read(const uint8_t *buf, uint32_t *off, uint32_t len,
+			scamper_icmpexts_t **exts);
+void warts_icmpexts_write(uint8_t *buf, uint32_t *off, uint32_t len,
+			  const scamper_icmpexts_t *exts);
+int warts_icmpexts_size(const scamper_icmpexts_t *exts, uint16_t *len);
 
 int scamper_file_warts_read(scamper_file_t *sf,
 			    const scamper_file_filter_t *filter,

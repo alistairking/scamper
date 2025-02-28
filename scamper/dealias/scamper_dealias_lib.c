@@ -1,9 +1,9 @@
 /*
  * scamper_dealias_lib.c
  *
- * $Id: scamper_dealias_lib.c,v 1.22 2024/01/16 06:55:18 mjl Exp $
+ * $Id: scamper_dealias_lib.c,v 1.23 2025/02/11 14:31:43 mjl Exp $
  *
- * Copyright (C) 2023 Matthew Luckie
+ * Copyright (C) 2023-2025 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This code implements alias resolution techniques published by others
@@ -884,9 +884,10 @@ int scamper_dealias_reply_from_target(const scamper_dealias_probe_t *probe,
   return SCAMPER_DEALIAS_REPLY_FROM_TARGET(probe, reply);
 }
 
-scamper_icmpext_t *scamper_dealias_reply_icmp_ext_get(const scamper_dealias_reply_t *reply)
+scamper_icmpexts_t *
+scamper_dealias_reply_icmp_exts_get(const scamper_dealias_reply_t *reply)
 {
-  return reply->icmp_ext;
+  return reply->icmp_exts;
 }
 
 #ifdef BUILDING_LIBSCAMPERFILE

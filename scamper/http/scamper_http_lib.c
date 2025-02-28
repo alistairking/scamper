@@ -1,7 +1,7 @@
 /*
  * scamper_http_lib.c
  *
- * $Id: scamper_http_lib.c,v 1.13 2024/01/03 03:51:42 mjl Exp $
+ * $Id: scamper_http_lib.c,v 1.13.24.1 2025/02/27 07:51:11 mjl Exp $
  *
  * Copyright (C) 2023-2024 The Regents of the University of California
  *
@@ -454,7 +454,7 @@ int scamper_http_tx_hdr_get(const scamper_http_t *http,uint8_t *buf,size_t len)
 static int process_chunked(const scamper_http_t *http,uint8_t *buf,size_t *len)
 {
   const scamper_http_buf_t *htb;
-  char chunk[8], *endptr;
+  char chunk[16], *endptr;
   size_t chunk_off = 0, off = 0;
   uint32_t i;
   uint16_t j;
@@ -475,7 +475,10 @@ static int process_chunked(const scamper_http_t *http,uint8_t *buf,size_t *len)
 	{
 	  if(mode == 0) /* parsing chunk-size */
 	    {
-	      chunk[chunk_off++] = htb->data[j];
+	      /* some servers pad chunk sizes with many leading zeros */
+	      chunk[chunk_off] = htb->data[j];
+	      if(chunk[chunk_off] != '0' || chunk_off > 0)
+		chunk_off++;
 	      if(chunk_off == sizeof(chunk))
 		return -1;
 	      if(htb->data[j] == '\n')
@@ -486,6 +489,10 @@ static int process_chunked(const scamper_http_t *http,uint8_t *buf,size_t *len)
 		    return -1;
 		  if(lo == 0)
 		    {
+		      /*
+		       * the transmission ends when a zero-length chunk is
+		       * received
+		       */
 		      if(buf == NULL)
 			*len = off;
 		      else if(off != *len)
@@ -540,7 +547,12 @@ static int process_chunked(const scamper_http_t *http,uint8_t *buf,size_t *len)
 	}
     }
 
-  return -1;
+  if(buf == NULL)
+    *len = off;
+  else if(off != *len)
+    return -1;
+
+  return 0;
 }
 
 int scamper_http_rx_data_get(const scamper_http_t *http,uint8_t *buf,size_t len)
@@ -587,15 +599,12 @@ int scamper_http_rx_data_len_get(const scamper_http_t *http, size_t *len)
   return rc;
 }
 
-static scamper_http_hdr_field_t *htf_alloc(const char *start,
-					   const char *colon, const char *end)
+static scamper_http_hdr_field_t *htf_alloc(const char *start, const char *colon,
+					   const char *fv, const char *end)
 {
   scamper_http_hdr_field_t *htf = NULL;
   char *name = NULL, *value = NULL;
   size_t len;
-
-  if(colon[0] != ':' || colon[1] != ' ')
-    goto err;
 
   assert(colon > start);
   len = (colon - start) + 1;
@@ -604,11 +613,10 @@ static scamper_http_hdr_field_t *htf_alloc(const char *start,
   memcpy(name, start, len-1);
   name[len-1] = '\0';
 
-  assert(end - colon > 1);
-  len = end - colon - 1;
+  len = end - fv + 2;
   if((value = malloc(len)) == NULL)
     goto err;
-  memcpy(value, colon + 2, len-1);
+  memcpy(value, fv, len-1);
   value[len-1] = '\0';
 
   if((htf = malloc_zero(sizeof(scamper_http_hdr_field_t))) == NULL)
@@ -628,8 +636,9 @@ static scamper_http_hdr_fields_t *htfs_parse(const char *buf, size_t len)
 {
   scamper_http_hdr_fields_t *htfs = NULL;
   scamper_http_hdr_field_t *htf = NULL;
-  const char *start, *end, *colon;
+  const char *start, *end, *colon, *fv;
   size_t first, off, lf;
+  int bit;
 
   /* skip over the first line, which has either the request or status */
   for(off=0; off<len; off++)
@@ -656,28 +665,46 @@ static scamper_http_hdr_fields_t *htfs_parse(const char *buf, size_t len)
   if(htfs->fields == NULL)
     goto err;
 
-  start = buf + first; colon = NULL;
+  start = buf + first;
+  colon = NULL; fv = NULL;
+  bit = 0;
   for(off=first; off<len; off++)
     {
       if(buf[off] != '\n')
 	{
-	  if(buf[off] == ':' && colon == NULL)
-	    colon = buf + off;
+	  if(bit == 0 && buf[off] == ':')
+	    {
+	      colon = buf + off;
+	      bit++;
+	    }
+	  else if(bit == 1 && (buf[off] != ' ' && buf[off] != '\t'))
+	    {
+	      fv = buf + off;
+	      bit++;
+	    }
 	  continue;
 	}
 
-      if(colon != NULL && start != colon)
+      if(colon == NULL || start == colon || fv == NULL)
+	goto next;
+      end = buf + off - 1;
+      if(*end == '\r')
+	end--;
+      while(end > fv)
 	{
-	  if(off > 0 && buf[off-1] == '\r')
-	    end = buf + off - 1;
-	  else
-	    end = buf + off;
-	  if((htf = htf_alloc(start, colon, end)) == NULL)
-	    goto err;
-	  htfs->fields[htfs->fieldc++] = htf; htf = NULL;
+	  if(*end != ' ' && *end != '\t')
+	    break;
+	  end--;
 	}
+      if(end < fv)
+	goto next;
 
-      colon = NULL;
+      if((htf = htf_alloc(start, colon, fv, end)) == NULL)
+	goto err;
+      htfs->fields[htfs->fieldc++] = htf; htf = NULL;
+
+    next:
+      colon = NULL; fv = NULL; bit = 0;
       start = buf + off + 1;
     }
 

@@ -7,9 +7,9 @@
  * Copyright (C) 2017      Matthew Luckie
  * Copyright (C) 2018-2019 The University of Waikato
  * Copyright (C) 2023      The Regents of the University of California
- * Copyright (C) 2023-2024 Matthew Luckie
+ * Copyright (C) 2023-2025 Matthew Luckie
  *
- * $Id: sc_uptime.c,v 1.91 2024/12/31 04:17:31 mjl Exp $
+ * $Id: sc_uptime.c,v 1.93 2025/02/24 06:59:36 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -925,6 +925,7 @@ static int db_update(sc_dst_t *dst, uint32_t last_tx)
 
 static int do_decoderead_ping(scamper_ping_t *ping)
 {
+  const scamper_ping_probe_t *probe;
   const scamper_ping_reply_t *reply;
   const struct timeval *tv;
   scamper_addr_t *dst_addr;
@@ -948,7 +949,8 @@ static int do_decoderead_ping(scamper_ping_t *ping)
   ping_sent = scamper_ping_sent_get(ping);
   for(i=0; i<ping_sent; i++)
     {
-      if((reply = scamper_ping_reply_get(ping, i)) == NULL ||
+      if((probe = scamper_ping_probe_get(ping, i)) == NULL ||
+	 (reply = scamper_ping_probe_reply_get(probe, 0)) == NULL ||
 	 scamper_ping_reply_is_icmp_echo_reply(reply) == 0)
 	continue;
       replyc++;
@@ -956,7 +958,7 @@ static int do_decoderead_ping(scamper_ping_t *ping)
 	{
 	  if(ipidc == 10)
 	    break;
-	  tv = scamper_ping_reply_tx_get(reply);
+	  tv = scamper_ping_probe_tx_get(probe);
 	  ipids[ipidc].ipid = scamper_ping_reply_ipid32_get(reply);
 	  ipids[ipidc].tx_sec = tv->tv_sec;
 	  ipidc++;
@@ -2086,6 +2088,7 @@ static int up_import(void)
   sqlite3_int64 id, samples_rowid;
   scamper_file_t *in;
   scamper_ping_t *ping;
+  const scamper_ping_probe_t *p;
   const scamper_ping_reply_t *r;
   const unsigned char *addr;
   const struct timeval *tx, *start;
@@ -2298,11 +2301,12 @@ static int up_import(void)
 	  ping_sent = scamper_ping_sent_get(ping);
 	  for(j=0; j<ping_sent; j++)
 	    {
-	      r = scamper_ping_reply_get(ping, j);
-	      if(r != NULL && scamper_ping_reply_is_icmp_echo_reply(r))
+	      if((p = scamper_ping_probe_get(ping, j)) != NULL &&
+		 (r = scamper_ping_probe_reply_get(p, 0)) != NULL &&
+		 scamper_ping_reply_is_icmp_echo_reply(r))
 		{
 		  rx++;
-		  tx = scamper_ping_reply_tx_get(r);
+		  tx = scamper_ping_probe_tx_get(p);
 		  timeval_add_tv3(&tv, tx, scamper_ping_reply_rtt_get(r));
 		  bytes_htonl(u8+1, (uint32_t)tx->tv_sec);
 		  bytes_htonl(u8+5, (uint32_t)tx->tv_usec);
@@ -2395,7 +2399,7 @@ static int up_import(void)
 
 static int up_reboots_arerandom(sc_sample_t **samples,int samplec, int l,int r)
 {
-  uint32_t posdiff_min, u32;
+  uint32_t posdiff_min = 0, u32;
   double sum = 0, mean, abs;
   int posdiffc = 0;
   int i;

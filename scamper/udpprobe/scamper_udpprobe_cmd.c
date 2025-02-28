@@ -1,7 +1,7 @@
 /*
  * scamper_udpprobe_cmd.c
  *
- * $Id: scamper_udpprobe_cmd.c,v 1.14 2024/09/17 03:45:14 mjl Exp $
+ * $Id: scamper_udpprobe_cmd.c,v 1.15 2025/02/26 04:23:08 mjl Exp $
  *
  * Copyright (C) 2023-2024 The Regents of the University of California
  *
@@ -132,7 +132,6 @@ static int udpprobe_arg_param_validate(int optid, char *param, long long *out,
 	  snprintf(errbuf, errlen, "payload limit is 1400 bytes");
 	  goto err;
 	}
-      assert(i > 0);
       tmp = i;
       break;
 
@@ -266,6 +265,7 @@ void *scamper_do_udpprobe_alloc(char *str, char *errbuf, size_t errlen)
 
 	case UDPPROBE_OPT_PAYLOAD:
 	  assert(payload == NULL);
+	  assert(tmp >= 2);
 	  if((payload = malloc(tmp/2)) == NULL)
 	    {
 	      snprintf(errbuf, errlen, "could not malloc payload");

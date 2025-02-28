@@ -2,7 +2,7 @@
  * sc_ally : scamper driver to collect data on candidate aliases using the
  *           Ally method.
  *
- * $Id: sc_ally.c,v 1.63 2024/12/31 04:17:31 mjl Exp $
+ * $Id: sc_ally.c,v 1.65 2025/02/24 06:59:36 mjl Exp $
  *
  * Copyright (C) 2009-2011 The University of Waikato
  * Copyright (C) 2013-2015 The Regents of the University of California
@@ -1166,6 +1166,7 @@ static int addressfile_line(char *buf, void *param)
 
 static int ping_classify(scamper_ping_t *ping)
 {
+  const scamper_ping_probe_t *tx;
   const scamper_ping_reply_t *rx;
   int rc = -1, echo = 0, bs = 0, nobs = 0;
   int i, samples[65536];
@@ -1187,7 +1188,8 @@ static int ping_classify(scamper_ping_t *ping)
   ping_sent = scamper_ping_sent_get(ping);
   for(i=0; i<ping_sent; i++)
     {
-      if((rx = scamper_ping_reply_get(ping, i)) != NULL &&
+      if((tx = scamper_ping_probe_get(ping, i)) != NULL &&
+	 (rx = scamper_ping_probe_reply_get(tx, 0)) != NULL &&
 	 scamper_ping_reply_is_from_target(ping, rx))
 	{
 	  /*
@@ -1196,7 +1198,7 @@ static int ping_classify(scamper_ping_t *ping)
 	   * where some responses echo but others increment.
 	   */
 	  reply_ipid = scamper_ping_reply_ipid_get(rx);
-	  if(scamper_ping_reply_probe_ipid_get(rx) == reply_ipid && ++echo > 1)
+	  if(scamper_ping_probe_ipid_get(tx) == reply_ipid && ++echo > 1)
 	    {
 	      rc = IPID_ECHO;
 	      goto done;
@@ -1654,7 +1656,7 @@ static void ctrlcb(scamper_inst_t *inst, uint8_t type, scamper_task_t *task,
 	}
 
       probing--;
-      test = scamper_task_getparam(task);
+      test = scamper_task_param_get(task);
 
       if(test->type == TEST_PING)
 	{
@@ -1675,7 +1677,7 @@ static void ctrlcb(scamper_inst_t *inst, uint8_t type, scamper_task_t *task,
   else if(type == SCAMPER_CTRL_TYPE_ERR)
     {
       probing--;
-      test = scamper_task_getparam(task);
+      test = scamper_task_param_get(task);
 
       if(test->type == TEST_PING)
 	{
@@ -1917,9 +1919,10 @@ static int dump_process_ally(const scamper_dealias_t *dealias)
 static int dump_process_ping(const scamper_ping_t *ping)
 {
   scamper_addr_t *dst, *r_addr;
+  const scamper_ping_probe_t *p;
   const scamper_ping_reply_t *r;
   char a[64], b[64];
-  uint16_t i, ping_sent;
+  uint16_t i, j, ping_sent;
 
   if(scamper_ping_method_is_udp(ping) == 0)
     return 0;
@@ -1928,9 +1931,11 @@ static int dump_process_ping(const scamper_ping_t *ping)
   dst = scamper_ping_dst_get(ping);
   for(i=0; i<ping_sent; i++)
     {
-      r = scamper_ping_reply_get(ping, i);
-      while(r != NULL)
+      if((p = scamper_ping_probe_get(ping, i)) == NULL)
+	continue;
+      for(j=0; j<scamper_ping_probe_replyc_get(p); j++)
 	{
+	  r = scamper_ping_probe_reply_get(p, j);
 	  r_addr = scamper_ping_reply_addr_get(r);
 	  if(scamper_ping_reply_is_icmp_unreach_port(r) == 0 &&
 	     scamper_addr_cmp(r_addr, dst) != 0)
@@ -1952,7 +1957,6 @@ static int dump_process_ping(const scamper_ping_t *ping)
 		    return -1;
 		}
 	    }
-	  r = scamper_ping_reply_next_get(r);
 	}
     }
 

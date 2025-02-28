@@ -1,12 +1,12 @@
 /*
  * unit_string: unit tests for string_* functions in utils.c
  *
- * $Id: unit_string.c,v 1.6 2025/01/05 23:22:33 mjl Exp $
+ * $Id: unit_string.c,v 1.11 2025/02/15 09:20:37 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
  *
- * Copyright (C) 2024 Matthew Luckie
+ * Copyright (C) 2024-2025 Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -55,6 +55,23 @@ typedef struct sc_concat_test
   size_t  len;
   char   *out;
 } sc_concat_test_t;
+
+typedef struct sc_concatu_test
+{
+  char     *pre;
+  uint32_t  val;
+  size_t    len;
+  char     *out;
+} sc_concatu_test_t;
+
+typedef struct sc_concatc_test
+{
+  const char *str;
+  char        c;
+  size_t      len_in;
+  size_t      off_in;
+  size_t      off_out;
+} sc_concatc_test_t;
 
 static int byte2hex_tests(void)
 {
@@ -175,11 +192,169 @@ static int concat_tests(void)
   return 0;
 }
 
+static int concat_u8_tests(void)
+{
+  sc_concatu_test_t tests[] = {
+    {"foo:", 32,  8, "foo:32"},
+    {"foo:", 32,  6, "foo:3"},
+    {"foo:", 255, 8, "foo:255"},
+    {"foo:", 0,   6, "foo:0"},
+    {NULL,   32,  3, "32"},
+    {NULL,   32,  2, "3"},
+  };
+  size_t i, testc = sizeof(tests) / sizeof(sc_concatu_test_t);
+  size_t off;
+  char   buf[16], cmp[16];
+
+  for(i=0; i<testc; i++)
+    {
+      /* set the output buf to ##### */
+      memset(buf, 35, sizeof(buf));
+      buf[sizeof(buf)-1] = '\0';
+
+      off = 0;
+      string_concat_u8(buf, tests[i].len, &off, tests[i].pre, tests[i].val);
+      if(strcmp(buf, tests[i].out) != 0)
+	{
+	  printf("concat_u8 fail %d %s != %s\n", (int)i, buf, tests[i].out);
+	  return -1;
+	}
+    }
+
+  for(i=0; i<256; i++)
+    {
+      off = 0;
+      string_concat_u8(buf, sizeof(buf), &off, NULL, i);
+      snprintf(cmp, sizeof(cmp), "%u", (uint8_t)i);
+      if(strcmp(buf, cmp) != 0)
+	{
+	  printf("concat_u8 fail %d %s != %s\n", (int)i, buf, cmp);
+	  return -1;
+	}
+    }
+
+  return 0;
+}
+
+static int concat_u16_tests(void)
+{
+  sc_concatu_test_t  tests[] = {
+    {"foo:", 32,     8, "foo:32"},
+    {"foo:", 32,     6, "foo:3"},
+    {"foo:", 255,    8, "foo:255"},
+    {"foo:", 0,      6, "foo:0"},
+    {"foo:", 1000,   9, "foo:1000"},
+    {"foo:", 65535, 10, "foo:65535"},
+    {NULL,   32,     3, "32"},
+    {NULL,   32,     2, "3"},
+  };
+  size_t i, testc = sizeof(tests) / sizeof(sc_concatu_test_t);
+  size_t off;
+  char   buf[16], cmp[16];
+
+  for(i=0; i<testc; i++)
+    {
+      /* set the output buf to ##### */
+      memset(buf, 35, sizeof(buf));
+      buf[sizeof(buf)-1] = '\0';
+
+      off = 0;
+      string_concat_u16(buf, tests[i].len, &off, tests[i].pre, tests[i].val);
+      if(strcmp(buf, tests[i].out) != 0)
+	{
+	  printf("concat_u16 fail %d %s != %s\n", (int)i, buf, tests[i].out);
+	  return -1;
+	}
+    }
+
+  for(i=0; i<65536; i++)
+    {
+      off = 0;
+      string_concat_u16(buf, sizeof(buf), &off, NULL, i);
+      snprintf(cmp, sizeof(cmp), "%u", (uint16_t)i);
+      if(strcmp(buf, cmp) != 0)
+	{
+	  printf("concat_u16 fail %d %s != %s\n", (int)i, buf, cmp);
+	  return -1;
+	}
+    }
+
+  return 0;
+}
+
+static int concat_u32_tests(void)
+{
+  sc_concatu_test_t tests[] = {
+    {"foo:", 32,          8, "foo:32"},
+    {"bar:", 32,          6, "bar:3"},
+    {"foo:", 255,         8, "foo:255"},
+    {"bar:", 0,           6, "bar:0"},
+    {"foo:", 1000,        9, "foo:1000"},
+    {"bar:", 65535,      10, "bar:65535"},
+    {"foo:", 429496729,  14, "foo:429496729"},
+    {"bar:", 4294967295, 15, "bar:4294967295"},
+    {NULL,   32,          3, "32"},
+    {NULL,   32,          2, "3"},
+  };
+  size_t i, testc = sizeof(tests) / sizeof(sc_concatu_test_t);
+  size_t off;
+  char   buf[16];
+
+  for(i=0; i<testc; i++)
+    {
+      /* set the output buf to ##### */
+      memset(buf, 35, sizeof(buf));
+      buf[sizeof(buf)-1] = '\0';
+
+      off = 0;
+      string_concat_u32(buf, tests[i].len, &off, tests[i].pre, tests[i].val);
+      if(strcmp(buf, tests[i].out) != 0)
+	{
+	  printf("concat_u32 fail %d %s != %s\n", (int)i, buf, tests[i].out);
+	  return -1;
+	}
+    }
+
+  return 0;
+}
+
+static int concat_c_tests(void)
+{
+  sc_concatc_test_t tests[] = {
+    {"##c",         'c', 12, 2, 3},
+    {"d",           'd', 12, 0, 1},
+    {"###########", 'f', 12, 11, 11},
+    {"##########e", 'e', 12, 10, 11},
+  };
+  size_t i, testc = sizeof(tests) / sizeof(sc_concatc_test_t);
+  size_t off, len;
+  char buf[12];
+
+  for(i=0; i<testc; i++)
+    {
+      /* set the output buf to ##### */
+      memset(buf, 35, sizeof(buf));
+      buf[sizeof(buf)-1] = '\0';
+
+      /* run the test */
+      len = tests[i].len_in;
+      off = tests[i].off_in;
+      string_concatc(buf, len, &off, tests[i].c);
+      if(off != tests[i].off_out || strcmp(buf, tests[i].str) != 0)
+	{
+	  printf("concat_c fail %d %s != %s\n", (int)i, buf, tests[i].str);
+	  return -1;
+	}
+    }
+  return 0;
+}
+
 int main(int argc, char *argv[])
 {
-  if(byte2hex_tests() != 0 ||
-     jsonesc_tests() != 0 ||
-     concat_tests() != 0)
+  if(byte2hex_tests() != 0 || jsonesc_tests() != 0 ||
+     concat_tests() != 0 || concat_u8_tests() != 0 ||
+     concat_u16_tests() != 0 || concat_u32_tests() != 0 ||
+     concat_c_tests() != 0)
     return -1;
 
   printf("OK\n");
