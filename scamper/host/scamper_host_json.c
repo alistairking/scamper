@@ -1,10 +1,10 @@
 /*
  * scamper_host_json.c
  *
- * Copyright (c) 2023-2024 Matthew Luckie
+ * Copyright (c) 2023-2025 Matthew Luckie
  * Author: Matthew Luckie
  *
- * $Id: scamper_host_json.c,v 1.14 2024/12/31 04:17:31 mjl Exp $
+ * $Id: scamper_host_json.c,v 1.16 2025/02/25 22:45:05 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -39,7 +39,7 @@
 static char *header_tostr(const scamper_host_t *host)
 {
   char buf[1024], tmp[512];
-  size_t off = 0;
+  size_t off = 0, off2;
   uint32_t ms;
 
   string_concat(buf, sizeof(buf), &off,
@@ -55,8 +55,20 @@ static char *header_tostr(const scamper_host_t *host)
 		host->userid,
 		(long)host->start.tv_sec, (int)host->start.tv_usec);
 
-  if(host->flags & SCAMPER_HOST_FLAG_NORECURSE)
-    string_concat(buf, sizeof(buf), &off, ", \"flags\":[\"norecurse\"]");
+  if(host->flags != 0)
+    {
+      tmp[0] = '\0'; off2 = 0;
+      if(host->flags & SCAMPER_HOST_FLAG_NORECURSE)
+	string_concat(tmp, sizeof(tmp), &off2, "\"norecurse\"");
+      if(host->flags & SCAMPER_HOST_FLAG_TCP)
+	string_concat2(tmp, sizeof(tmp), &off2,
+		       off2 != 0 ? ", " : "", "\"tcp\"");
+      if(host->flags & SCAMPER_HOST_FLAG_NSID)
+	string_concat2(tmp, sizeof(tmp), &off2,
+		       off2 != 0 ? ", " : "", "\"nsid\"");
+      if(off2 != 0)
+	string_concat3(buf, sizeof(buf), &off, ", \"flags\":[", tmp, "]");
+    }
 
   ms = (host->wait_timeout.tv_sec * 1000) + (host->wait_timeout.tv_usec / 1000);
   string_concaf(buf, sizeof(buf), &off,
@@ -69,13 +81,15 @@ static char *header_tostr(const scamper_host_t *host)
   string_concat3(buf, sizeof(buf), &off, ", \"qtype\":\"",
 		 scamper_host_qtype_tostr(host->qtype,tmp,sizeof(tmp)), "\"");
   string_concaf(buf, sizeof(buf), &off, ", \"qcount\":%u", host->qcount);
+  if(host->ecs != NULL)
+    string_concat3(buf, sizeof(buf), &off, ", \"ecs\":\"", host->ecs, "\"");
 
   return strdup(buf);
 }
 
 static char *rr_tostr(const scamper_host_rr_t *rr)
 {
-  char *out, buf[1024], tmp[512], tmp2[256];
+  char *out = NULL, buf[1024], tmp[512], tmp2[256];
   size_t off = 0, len, *lens = NULL;
   uint16_t i;
 
@@ -134,7 +148,7 @@ static char *rr_tostr(const scamper_host_rr_t *rr)
       if(rr->un.txt->strc > 0)
 	{
 	  if((lens = malloc(sizeof(size_t) * rr->un.txt->strc)) == NULL)
-	    return NULL;
+	    goto err;
 	  for(i=0; i<rr->un.txt->strc; i++)
 	    {
 	      lens[i] = json_esc_len(rr->un.txt->strs[i]);
@@ -144,7 +158,7 @@ static char *rr_tostr(const scamper_host_rr_t *rr)
 	}
       len += 3; /* ]}\0 */
       if((out = malloc(len)) == NULL)
-	return NULL;
+	goto err;
 
       /* form the RR string and return it */
       memcpy(out, buf, off);
@@ -161,7 +175,7 @@ static char *rr_tostr(const scamper_host_rr_t *rr)
 	      off += (lens[i] > 0 ? lens[i]-1 : 0);
 	      out[off++] = '"';
 	    }
-	  free(lens);
+	  free(lens); lens = NULL;
 	}
       out[off++] = ']';
       out[off++] = '}';
@@ -172,6 +186,11 @@ static char *rr_tostr(const scamper_host_rr_t *rr)
 
   string_concat(buf, sizeof(buf), &off, "}");
   return strdup(buf);
+
+ err:
+  if(out != NULL) free(out);
+  if(lens != NULL) free(lens);
+  return NULL;
 }
 
 static char *query_tostr(const scamper_host_query_t *query)

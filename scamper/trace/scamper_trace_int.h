@@ -1,7 +1,7 @@
 /*
  * scamper_trace_int.h
  *
- * $Id: scamper_trace_int.h,v 1.10 2024/10/16 07:01:29 mjl Exp $
+ * $Id: scamper_trace_int.h,v 1.11 2025/02/11 14:31:43 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -307,7 +307,7 @@ struct scamper_trace_hop
   struct timeval               hop_rtt;
 
   /* ICMP extensions */
-  struct scamper_icmpext      *hop_icmpext;
+  struct scamper_icmpexts     *hop_icmp_exts;
 
   struct scamper_trace_hop    *hop_next;
 

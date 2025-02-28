@@ -1,9 +1,9 @@
 /*
  * scamper_trace_lib.c
  *
- * $Id: scamper_trace_lib.c,v 1.9 2024/03/04 19:36:41 mjl Exp $
+ * $Id: scamper_trace_lib.c,v 1.10 2025/02/11 14:31:43 mjl Exp $
  *
- * Copyright (C) 2023 Matthew Luckie
+ * Copyright (C) 2023-2025 Matthew Luckie
  *
  * Authors: Matthew Luckie
  *
@@ -259,9 +259,10 @@ uint8_t scamper_trace_hop_icmp_code_get(const scamper_trace_hop_t *hop)
   return hop->hop_icmp_code;
 }
 
-scamper_icmpext_t *scamper_trace_hop_icmpext_get(const scamper_trace_hop_t *hop)
+scamper_icmpexts_t *
+scamper_trace_hop_icmp_exts_get(const scamper_trace_hop_t *hop)
 {
-  return hop->hop_icmpext;
+  return hop->hop_icmp_exts;
 }
 
 scamper_trace_hop_t *scamper_trace_hop_next_get(const scamper_trace_hop_t *hop)

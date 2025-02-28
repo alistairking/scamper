@@ -1,7 +1,7 @@
 /*
  * sc_minrtt: dump RTT values by node for use by sc_hoiho
  *
- * $Id: sc_minrtt.c,v 1.21 2024/09/15 20:39:25 mjl Exp $
+ * $Id: sc_minrtt.c,v 1.22 2025/02/24 06:59:36 mjl Exp $
  *
  *         Matthew Luckie
  *         mjl@luckie.org.nz
@@ -1457,28 +1457,30 @@ static int do_import_dst_samples(scamper_addr_t *addr, slist_t *samples)
 
 static int do_file_read_ping(scamper_ping_t *ping, sc_filedata_t *fd)
 {
+  scamper_ping_probe_t *probe;
   scamper_ping_reply_t *reply;
-  const struct timeval *reply_rtt, *reply_tx;
+  const struct timeval *reply_rtt, *probe_tx;
   scamper_addr_t *ping_dst;
   sc_sample_t *sample;
   uint8_t reply_ttl, method;
-  uint16_t i, reply_count;
+  uint16_t i, ping_count;
   uint32_t rtt;
   int rc = -1;
 
   ping_dst = scamper_ping_dst_get(ping);
-  reply_count = scamper_ping_reply_count_get(ping);
+  ping_count = scamper_ping_sent_get(ping);
 
-  for(i=0; i<reply_count; i++)
+  for(i=0; i<ping_count; i++)
     {
-      if((reply = scamper_ping_reply_get(ping, i)) == NULL ||
+      if((probe = scamper_ping_probe_get(ping, i)) == NULL ||
+	 (reply = scamper_ping_probe_reply_get(probe, 0)) == NULL ||
 	 scamper_ping_reply_is_from_target(ping, reply) == 0 ||
-	 (reply_tx = scamper_ping_reply_tx_get(reply)) == NULL ||
+	 (probe_tx = scamper_ping_probe_tx_get(probe)) == NULL ||
 	 (reply_rtt = scamper_ping_reply_rtt_get(reply)) == NULL)
 	continue;
 
       reply_ttl = scamper_ping_reply_ttl_get(reply);
-      switch(scamper_ping_probe_method_get(ping))
+      switch(scamper_ping_method_get(ping))
 	{
 	case SCAMPER_PING_METHOD_UDP:
 	case SCAMPER_PING_METHOD_UDP_DPORT:
@@ -1505,7 +1507,7 @@ static int do_file_read_ping(scamper_ping_t *ping, sc_filedata_t *fd)
 	  if(sample != NULL) sc_sample_free(sample);
 	  goto done;
 	}
-      timeval_cpy(&sample->tx, reply_tx);
+      timeval_cpy(&sample->tx, probe_tx);
     }
 
   rc = 0;

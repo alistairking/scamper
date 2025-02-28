@@ -1,12 +1,12 @@
 /*
  * unit_cmd_dealias : unit tests for dealias commands
  *
- * $Id: unit_addr.c,v 1.3 2023/09/24 22:35:01 mjl Exp $
+ * $Id: unit_addr.c,v 1.4 2025/02/20 19:07:21 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
  *
- * Copyright (C) 2023 Matthew Luckie
+ * Copyright (C) 2023-2025 Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -56,9 +56,18 @@ int main(int argc, char *argv[])
     {SCAMPER_ADDR_TYPE_IPV6, "::", is_reserved},
     {SCAMPER_ADDR_TYPE_IPV6, "1000::", is_reserved},
     {SCAMPER_ADDR_TYPE_IPV6, "2000::", is_not_reserved},
-    {SCAMPER_ADDR_TYPE_IPV6, "3000::", is_not_reserved}, /* ensure 2000::/3 check is ok */
+    {SCAMPER_ADDR_TYPE_IPV6, "2001::66", is_reserved},     /* teredo */
+    {SCAMPER_ADDR_TYPE_IPV6, "2001:2::", is_reserved},     /* benchmarking */
+    {SCAMPER_ADDR_TYPE_IPV6, "2001:3::", is_reserved},     /* AMT */
+    {SCAMPER_ADDR_TYPE_IPV6, "2001:4:112::", is_reserved}, /* AS112-v6 */
+    {SCAMPER_ADDR_TYPE_IPV6, "2001:10::", is_reserved},    /* ORCHID */
+    {SCAMPER_ADDR_TYPE_IPV6, "2001:20::", is_reserved},    /* ORCHIDv2 */
+    {SCAMPER_ADDR_TYPE_IPV6, "2001:40::", is_not_reserved},
+    {SCAMPER_ADDR_TYPE_IPV6, "2001:db8::", is_reserved},   /* documentation */
+    {SCAMPER_ADDR_TYPE_IPV6, "2401::", is_not_reserved},
+    {SCAMPER_ADDR_TYPE_IPV6, "2402::", is_not_reserved},
+    {SCAMPER_ADDR_TYPE_IPV6, "3000::", is_not_reserved},   /* check 2000::/3 */
     {SCAMPER_ADDR_TYPE_IPV6, "4000::", is_reserved},
-    {SCAMPER_ADDR_TYPE_IPV6, "2001::66", is_reserved},   /* teredo */
   };
   scamper_addr_t *sa;
   size_t i, testc = sizeof(tests) / sizeof(sc_test_t);

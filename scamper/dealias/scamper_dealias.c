@@ -1,11 +1,11 @@
 /*
  * scamper_dealias.c
  *
- * $Id: scamper_dealias.c,v 1.76 2024/09/23 09:45:14 mjl Exp $
+ * $Id: scamper_dealias.c,v 1.77 2025/02/11 14:31:43 mjl Exp $
  *
  * Copyright (C) 2008-2010 The University of Waikato
  * Copyright (C) 2012-2013 The Regents of the University of California
- * Copyright (C) 2021-2024 Matthew Luckie
+ * Copyright (C) 2021-2025 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This code implements alias resolution techniques published by others
@@ -157,8 +157,8 @@ void scamper_dealias_reply_free(scamper_dealias_reply_t *reply)
 #endif
   if(reply->src != NULL)
     scamper_addr_free(reply->src);
-  if(reply->icmp_ext != NULL)
-    scamper_icmpext_free(reply->icmp_ext);
+  if(reply->icmp_exts != NULL)
+    scamper_icmpexts_free(reply->icmp_exts);
   free(reply);
   return;
 }

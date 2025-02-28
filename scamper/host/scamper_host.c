@@ -1,7 +1,7 @@
 /*
  * scamper_host
  *
- * $Id: scamper_host.c,v 1.26 2025/01/05 20:04:29 mjl Exp $
+ * $Id: scamper_host.c,v 1.28 2025/02/23 05:38:14 mjl Exp $
  *
  * Copyright (C) 2018-2025 Matthew Luckie
  *
@@ -49,6 +49,104 @@ int scamper_host_query_counts(scamper_host_query_t *q,
   return 0;
 }
 
+void scamper_host_rr_svcb_param_free(scamper_host_rr_svcb_param_t *param)
+{
+  if(param == NULL)
+    return;
+
+#ifdef BUILDING_LIBSCAMPERFILE
+  if(--param->refcnt > 0)
+    return;
+#endif
+
+  if(param->val != NULL)
+    free(param->val);
+  free(param);
+  return;
+}
+
+scamper_host_rr_svcb_param_t *
+scamper_host_rr_svcb_param_alloc(uint16_t key,uint16_t len,const uint8_t *val)
+{
+  scamper_host_rr_svcb_param_t *param;
+
+  if((param = malloc_zero(sizeof(scamper_host_rr_svcb_param_t))) == NULL)
+    return NULL;
+
+#ifdef BUILDING_LIBSCAMPERFILE
+  param->refcnt = 1;
+#endif
+
+  if(len > 0)
+    {
+      if((param->val = malloc(len)) == NULL)
+	{
+	  free(param);
+	  return NULL;
+	}
+      memcpy(param->val, val, len);
+    }
+
+  param->key = key;
+  param->len = len;
+  return param;
+}
+
+void scamper_host_rr_svcb_free(scamper_host_rr_svcb_t *svcb)
+{
+  uint16_t i;
+
+  if(svcb == NULL)
+    return;
+
+#ifdef BUILDING_LIBSCAMPERFILE
+  if(--svcb->refcnt > 0)
+    return;
+#endif
+
+  if(svcb->target != NULL)
+    free(svcb->target);
+
+  if(svcb->params != NULL)
+    {
+      for(i=0; i<svcb->paramc; i++)
+        if(svcb->params[i] != NULL)
+	  scamper_host_rr_svcb_param_free(svcb->params[i]);
+      free(svcb->params);
+    }
+
+  free(svcb);
+  return;
+}
+
+scamper_host_rr_svcb_t *scamper_host_rr_svcb_alloc(uint16_t prio,
+						   const char *target,
+						   uint16_t paramc)
+{
+  scamper_host_rr_svcb_t *svcb;
+  size_t len;
+
+  if((svcb = malloc_zero(sizeof(scamper_host_rr_svcb_t))) == NULL)
+    return NULL;
+
+#ifdef BUILDING_LIBSCAMPERFILE
+  svcb->refcnt = 1;
+#endif
+
+  len = sizeof(scamper_host_rr_svcb_param_t *) * paramc;
+  if((target != NULL && (svcb->target = strdup(target)) == NULL) ||
+     (len > 0 && (svcb->params = malloc_zero(len)) == NULL))
+    goto err;
+
+  svcb->paramc = paramc;
+  svcb->priority = prio;
+  return svcb;
+
+ err:
+  if(svcb != NULL) scamper_host_rr_svcb_free(svcb);
+  return NULL;
+}
+
 scamper_host_rr_opt_elem_t *scamper_host_rr_opt_elem_alloc(uint16_t code,
                                                            uint16_t len,
                                                            const uint8_t *data)
@@ -90,7 +188,7 @@ void scamper_host_rr_opt_elem_free(scamper_host_rr_opt_elem_t *elem)
   if(elem->data != NULL)
     free(elem->data);
   free(elem);
-    return;
+  return;
 }
 
 void scamper_host_rr_opt_free(scamper_host_rr_opt_t *opt)
@@ -273,6 +371,9 @@ int scamper_host_rr_data_type(uint16_t class, uint16_t type)
 
 	case SCAMPER_HOST_TYPE_TXT:
 	  return SCAMPER_HOST_RR_DATA_TYPE_TXT;
+
+	case SCAMPER_HOST_TYPE_SVCB:
+	  return SCAMPER_HOST_RR_DATA_TYPE_SVCB;
 	}
     }
   else if(class == SCAMPER_HOST_CLASS_CH)
@@ -327,6 +428,10 @@ void scamper_host_rr_free(scamper_host_rr_t *rr)
 
     case SCAMPER_HOST_RR_DATA_TYPE_OPT:
       if(rr->un.opt != NULL) scamper_host_rr_opt_free(rr->un.opt);
+      break;
+
+    case SCAMPER_HOST_RR_DATA_TYPE_SVCB:
+      if(rr->un.svcb != NULL) scamper_host_rr_svcb_free(rr->un.svcb);
       break;
     }
 
@@ -465,6 +570,7 @@ char *scamper_host_qtype_tostr(uint16_t qtype, char *b, size_t l)
     case SCAMPER_HOST_TYPE_NSEC: snprintf(b, l, "NSEC"); break;
     case SCAMPER_HOST_TYPE_DNSKEY: snprintf(b, l, "DNSKEY"); break;
     case SCAMPER_HOST_TYPE_OPT: snprintf(b, l, "OPT"); break;
+    case SCAMPER_HOST_TYPE_SVCB: snprintf(b, l, "SVCB"); break;
     default: snprintf(b, l, "%u", qtype); break;
     }
 
@@ -517,6 +623,7 @@ void scamper_host_free(scamper_host_t *host)
   if(host->dst != NULL) scamper_addr_free(host->dst);
   if(host->cycle != NULL) scamper_cycle_free(host->cycle);
   if(host->list != NULL) scamper_list_free(host->list);
+  if(host->ecs != NULL) free(host->ecs);
 
   free(host);
   return;

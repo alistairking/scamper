@@ -4,10 +4,10 @@
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2014      The Regents of the University of California
- * Copyright (C) 2020-2024 Matthew Luckie
+ * Copyright (C) 2020-2025 Matthew Luckie
  * Author: Matthew Luckie
  *
- * $Id: scamper_trace_text.c,v 1.36 2024/12/31 04:17:31 mjl Exp $
+ * $Id: scamper_trace_text.c,v 1.37 2025/02/17 07:53:31 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -607,9 +607,11 @@ static int pmtud_ver2(const scamper_trace_t *trace, char **mtus)
 	      if(addr[0] != '\0')
 		string_concat2(buf, sizeof(buf), &off, " ptb ", addr);
 	      if(note->nhmtu != hop->hop_icmp_nhmtu)
-		string_concaf(buf, sizeof(buf), &off, " nhmtu %d!",
-			      hop->hop_icmp_nhmtu);
-
+		{
+		  string_concat_u16(buf, sizeof(buf), &off, " nhmtu ",
+				    hop->hop_icmp_nhmtu);
+		  string_concatc(buf, sizeof(buf), &off, '!');
+		}
 	      free(mtus[i]);
 	      if((mtus[i] = strdup(buf)) == NULL)
 		return -1;

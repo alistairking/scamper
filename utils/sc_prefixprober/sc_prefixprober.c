@@ -2,7 +2,7 @@
  * sc_prefixprober : scamper driver to probe addresses in specified
  *                   prefixes
  *
- * $Id: sc_prefixprober.c,v 1.44 2024/12/31 04:17:31 mjl Exp $
+ * $Id: sc_prefixprober.c,v 1.46 2025/02/18 23:02:07 mjl Exp $
  *
  * Copyright (C) 2023 The Regents of the University of California
  * Copyright (C) 2024 Matthew Luckie
@@ -506,11 +506,11 @@ static int check_options(int argc, char *argv[])
 		  usage(OPT_LIST);
 		  goto done;
 		}
-	      scamper_attp_set_listid(scamper_attp, (uint32_t)ll);
+	      scamper_attp_listid_set(scamper_attp, (uint32_t)ll);
 	    }
 	  else if(strcasecmp(dup, "name") == 0)
 	    {
-	      if(scamper_attp_set_listname(scamper_attp, param) != 0)
+	      if(scamper_attp_listname_set(scamper_attp, param) != 0)
 		{
 		  usage(OPT_LIST);
 		  goto done;
@@ -518,7 +518,7 @@ static int check_options(int argc, char *argv[])
 	    }
 	  else if(strcasecmp(dup, "descr") == 0)
 	    {
-	      if(scamper_attp_set_listdescr(scamper_attp, param) != 0)
+	      if(scamper_attp_listdescr_set(scamper_attp, param) != 0)
 		{
 		  usage(OPT_LIST);
 		  goto done;
@@ -526,7 +526,7 @@ static int check_options(int argc, char *argv[])
 	    }
 	  else if(strcasecmp(dup, "monitor") == 0)
 	    {
-	      if(scamper_attp_set_listmonitor(scamper_attp, param) != 0)
+	      if(scamper_attp_listmonitor_set(scamper_attp, param) != 0)
 		{
 		  usage(OPT_LIST);
 		  goto done;
@@ -540,7 +540,7 @@ static int check_options(int argc, char *argv[])
 		  usage(OPT_LIST);
 		  goto done;
 		}
-	      scamper_attp_set_cycleid(scamper_attp, (uint32_t)ll);
+	      scamper_attp_cycleid_set(scamper_attp, (uint32_t)ll);
 	    }
 	  else
 	    {
@@ -564,7 +564,7 @@ static int check_options(int argc, char *argv[])
 		  strerror(errno));
 	  goto done;
 	}
-      if((sb.st_mode & S_IFDIR) == 0)
+      if(S_ISDIR(sb.st_mode) == 0)
 	{
 	  usage(OPT_MOVE);
 	  fprintf(stderr, "%s is not a directory\n", movedir_name);
@@ -1532,7 +1532,7 @@ static void ctrlcb(scamper_inst_t *inst, uint8_t type, scamper_task_t *task,
 	  goto err;
 	}
 
-      pfx = scamper_task_getparam(task);
+      pfx = scamper_task_param_get(task);
       print("p %d, w %d, v %d: %s done %s", probing,
 	    slist_count(waiting), slist_count(prefix_list),
 	    sc_prefix_tostr(pfx, pfx_str, sizeof(pfx_str)), addr_str);
@@ -1545,11 +1545,11 @@ static void ctrlcb(scamper_inst_t *inst, uint8_t type, scamper_task_t *task,
   else if(type == SCAMPER_CTRL_TYPE_ERR)
     {
       probing--;
-      pfx = scamper_task_getparam(task);
+      pfx = scamper_task_param_get(task);
       print("p %d, w %d, v %d: %s err %s", probing,
 	    slist_count(waiting), slist_count(prefix_list),
 	    sc_prefix_tostr(pfx, pfx_str, sizeof(pfx_str)),
-	    scamper_task_getcmd(task, cmd_str, sizeof(cmd_str)));
+	    scamper_task_cmd_get(task, cmd_str, sizeof(cmd_str)));
       if(process(pfx) != 0)
 	goto err;
     }

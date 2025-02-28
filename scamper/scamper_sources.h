@@ -1,7 +1,7 @@
 /*
  * scamper_source
  *
- * $Id: scamper_sources.h,v 1.19 2024/06/10 03:28:08 mjl Exp $
+ * $Id: scamper_sources.h,v 1.20 2025/01/15 02:51:01 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -111,7 +111,6 @@ int scamper_source_command(scamper_source_t *source, const char *command);
 int scamper_source_command2(scamper_source_t *source, const char *command,
 			    uint32_t *id, uint32_t *userid,
 			    char *errbuf, size_t errlen);
-int scamper_source_cycle(scamper_source_t *source);
 int scamper_source_task(scamper_source_t *source, struct scamper_task *task);
 int scamper_source_halttask(scamper_source_t *source, uint32_t id);
 
@@ -123,7 +122,6 @@ uint32_t scamper_sourcetask_getid(scamper_sourcetask_t *st);
 /* functions for managing a collection of sources */
 int scamper_sources_add(scamper_source_t *source);
 int scamper_sources_gettask(struct scamper_task **task);
-int scamper_sources_del(scamper_source_t *source);
 scamper_source_t *scamper_sources_get(char *name);
 int scamper_sources_isready(void);
 int scamper_sources_isempty(void);

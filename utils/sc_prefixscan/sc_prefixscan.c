@@ -2,7 +2,7 @@
  * sc_prefixscan : scamper driver to collect evidence of pt2pt links
  *                 using the prefixscan method
  *
- * $Id: sc_prefixscan.c,v 1.26 2024/12/31 04:17:31 mjl Exp $
+ * $Id: sc_prefixscan.c,v 1.28 2025/02/24 06:59:36 mjl Exp $
  *
  * Copyright (C) 2011,2016 The University of Waikato
  * Copyright (C) 2019-2024 Matthew Luckie
@@ -741,6 +741,7 @@ static int process_ping(scamper_ping_t *ping)
   sc_target_t *target, findme;
   sc_pingtest_t *pt;
   sc_ipidseq_t *seq;
+  const scamper_ping_probe_t *t[4], *tx;
   const scamper_ping_reply_t *r[4], *rx;
   sc_test_t *test;
   uint32_t u32;
@@ -782,10 +783,15 @@ static int process_ping(scamper_ping_t *ping)
   ping_sent = scamper_ping_sent_get(ping);
   for(j=0; j<ping_sent && rc < 4; j++)
     {
-      if((rx = scamper_ping_reply_get(ping, j)) == NULL)
+      if((tx = scamper_ping_probe_get(ping, j)) == NULL ||
+	 (rx = scamper_ping_probe_reply_get(tx, 0)) == NULL)
 	continue;
       if(scamper_ping_reply_is_from_target(ping, rx))
-	r[rc++] = rx;
+	{
+	  t[rc] = tx;
+	  r[rc] = rx;
+	  rc++;
+	}
     }
 
   if(rc < 4)
@@ -801,11 +807,8 @@ static int process_ping(scamper_ping_t *ping)
    */
   u32 = 0;
   for(i=0; i<4; i++)
-    {
-      if(scamper_ping_reply_probe_ipid_get(r[i]) ==
-	 scamper_ping_reply_ipid_get(r[i]))
-	u32++;
-    }
+    if(scamper_ping_probe_ipid_get(t[i]) == scamper_ping_reply_ipid_get(r[i]))
+      u32++;
   if(u32 > 1)
     {
       class = IPID_ECHO;
@@ -1225,6 +1228,8 @@ static int pf_data(void)
   struct timeval tv, *tv_ptr;
   sc_waittest_t *wait;
   int done = 0;
+
+  assert(infile != NULL);
 
   /* global data structures used to keep track of the set of traceset */
   if((targets = splaytree_alloc(sc_target_cmp)) == NULL ||

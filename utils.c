@@ -1,13 +1,13 @@
 /*
  * utils.c
  *
- * $Id: utils.c,v 1.250 2024/12/31 04:17:31 mjl Exp $
+ * $Id: utils.c,v 1.260 2025/02/15 09:20:11 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2011      Matthew Luckie
  * Copyright (C) 2012-2015 The Regents of the University of California
- * Copyright (C) 2015-2024 Matthew Luckie
+ * Copyright (C) 2015-2025 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -30,6 +30,11 @@
 #endif
 #include "internal.h"
 #include "utils.h"
+
+static const uint8_t inc[2][10] = {{0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+				   {1, 0, 0, 0, 0, 0, 0, 0, 0, 0}};
+static uint8_t u32tostr(char *buf, uint32_t x);
+static uint8_t u16tostr(char *buf, uint16_t x);
 
 #if defined(HAVE_STRUCT_SOCKADDR_SA_LEN)
 int sockaddr_len(const struct sockaddr *sa)
@@ -94,15 +99,28 @@ int sockaddr_compose_un(struct sockaddr *sa, const char *file)
 {
 #ifdef HAVE_SOCKADDR_UN
   struct sockaddr_un *sn = (struct sockaddr_un *)sa;
+  size_t len;
 
-  if(strlen(file) + 1 > sizeof(sn->sun_path))
+  /*
+   * ensure that we can store the full null terminated path in the
+   * available space
+   */
+  len = strlen(file);
+  if(len + 1 > sizeof(sn->sun_path))
     return -1;
+
+  /* initialize all of the struct to zero */
   memset(sn, 0, sizeof(struct sockaddr_un));
   sn->sun_family = AF_UNIX;
-  snprintf(sn->sun_path, sizeof(sn->sun_path), "%s", file);
+
+  /*
+   * memcpy the string across, without null termination byte.
+   * the null termination byte is provided by the memset
+   */
+  memcpy(sn->sun_path, file, len);
 
 #ifdef HAVE_STRUCT_SOCKADDR_SA_LEN
-  sn->sun_len    = sizeof(struct sockaddr_un);
+  sn->sun_len = sizeof(struct sockaddr_un);
 #endif
 
   return 0;
@@ -275,6 +293,40 @@ char *sockaddr_tostr(const struct sockaddr *sa, char *buf, size_t len,
     }
 
   return buf;
+}
+
+int prefix_to_sockaddr(const char *prefix, struct sockaddr *sa)
+{
+  char *plen, *dup = NULL;
+  long lo;
+  int rc = -1;
+
+  if((dup = strdup(prefix)) == NULL)
+    goto done;
+  string_nullterm_char(dup, '/', &plen);
+  if(plen == NULL || string_isdigit(plen) == 0 ||
+     string_tolong(plen, &lo) != 0 || lo < 0 ||
+     sockaddr_compose_str(sa, AF_UNSPEC, dup, 0) != 0)
+    goto done;
+
+  if(sa->sa_family == AF_INET)
+    {
+      if(lo > 32)
+	goto done;
+      ((struct sockaddr_in *)sa)->sin_port = lo;
+    }
+  else if(sa->sa_family == AF_INET6)
+    {
+      if(lo > 128)
+	goto done;
+      ((struct sockaddr_in6 *)sa)->sin6_port = lo;
+    }
+  else goto done;
+  rc = 0;
+
+ done:
+  if(dup != NULL) free(dup);
+  return rc;
 }
 
 int addr4_cmp(const struct in_addr *a, const struct in_addr *b)
@@ -957,8 +1009,69 @@ int timeval_inrange_us(const struct timeval *a, const struct timeval *b, int c)
 char *timeval_tostr_us(const struct timeval *rtt, char *str, size_t len)
 {
   uint32_t usec = (rtt->tv_sec * 1000000) + rtt->tv_usec;
-  snprintf(str, len, "%d.%03d", usec / 1000, usec % 1000);
+  char ms[12], us[6];
+  size_t off = 0;
+  uint8_t msc;
+
+  /* snprintf(str, len, "%d.%03d", usec / 1000, usec % 1000); */
+  msc = u32tostr(ms, usec / 1000); ms[10] = '\0';
+  u16tostr(us, usec % 1000); us[5] = '\0';
+  string_concat3(str, len, &off, ms + msc, ".", us + 2);
+
   return str;
+}
+
+/*
+ * timeval_tostr_hhmmssms:
+ *
+ * fast routine to generate a printable timestamp.  expects buf to
+ * be at least 13 bytes in size.
+ */
+char *timeval_tostr_hhmmssms(const struct timeval *tv, char *buf)
+{
+  static const uint16_t s100[10] = {0, 100, 200, 300, 400, 500, 600,
+				    700, 800, 900};
+  static const uint8_t s10[10] = {0, 10, 20, 30, 40, 50, 60, 70, 80, 90};
+  struct tm      *tm;
+  uint16_t        hh, mm, ss, ms, z;
+  time_t          t;
+
+  t = tv->tv_sec;
+  if((tm = localtime(&t)) == NULL)
+    {
+      buf[0] = '\0';
+      return buf;
+    }
+
+  /* ensure the input values are in expected ranges */
+  hh = ((uint16_t)tm->tm_hour) % 24;
+  mm = ((uint16_t)tm->tm_min) % 60;
+  ss = ((uint16_t)tm->tm_sec) % 61;
+  ms = ((uint16_t)((uint32_t)tv->tv_usec / 1000)) % 1000;
+
+  z = hh / 10;
+  buf[0] = z + '0'; hh -= s10[z];
+  buf[1] = hh + '0';
+  buf[2] = ':';
+
+  z = mm / 10;
+  buf[3] = z + '0'; mm -= s10[z];
+  buf[4] = mm + '0';
+  buf[5] = ':';
+
+  z = ss / 10;
+  buf[6] = z + '0'; ss -= s10[z];
+  buf[7] = ss + '0';
+  buf[8] = ':';
+
+  z = ms / 100;
+  buf[9]  = z + '0'; ms -= s100[z];
+  z = ms / 10;
+  buf[10] = z + '0'; ms -= s10[z];
+  buf[11] = ms + '0';
+  buf[12] = '\0';
+
+  return buf;
 }
 
 int timeval_fromstr(struct timeval *out, const char *in, uint32_t unit)
@@ -1614,18 +1727,181 @@ char *string_firstof_char(char *str, char delim)
   return firstof;
 }
 
+static uint8_t u32tostr(char *buf, uint32_t x)
+{
+  static const uint32_t s1b[5] = {0, 1000000000U, 2000000000U, 3000000000U,
+				  4000000000U};
+  static const uint32_t s100m[10] = {0, 100000000U, 200000000U, 300000000U,
+				     400000000U, 500000000U, 600000000U,
+				     700000000U, 800000000U, 900000000U};
+  static const uint32_t s10m[10] = {0, 10000000U, 20000000U, 30000000U,
+				    40000000U, 50000000U, 60000000U,
+				    70000000U, 80000000U, 90000000U};
+  static const uint32_t s1m[10] = {0, 1000000U, 2000000U, 3000000U,
+				   4000000U, 5000000U, 6000000U,
+				   7000000U, 8000000U, 9000000U};
+  static const uint32_t s100k[10] = {0, 100000U, 200000U, 300000U,
+				     400000U, 500000U, 600000U,
+				     700000U, 800000U, 900000U};
+  static const uint32_t s10k[10] = {0, 10000U, 20000U, 30000U, 40000U,
+				    50000U, 60000U, 70000U, 80000U, 90000U};
+  static const uint16_t s1k[10] = {0, 1000, 2000, 3000, 4000, 5000,
+				   6000, 7000, 8000, 9000};
+  static const uint16_t s100[10] = {0, 100, 200, 300, 400, 500, 600,
+				    700, 800, 900};
+  static const uint8_t s10[10] = {0, 10, 20, 30, 40, 50, 60, 70, 80, 90};
+  uint32_t z; uint8_t i = 1, out = 0;
+
+  z = x / 1000000000U; buf[0] = z + '0'; x -= s1b[z];   i = inc[i][z]; out += i;
+  z = x / 100000000U;  buf[1] = z + '0'; x -= s100m[z]; i = inc[i][z]; out += i;
+  z = x / 10000000U;   buf[2] = z + '0'; x -= s10m[z];  i = inc[i][z]; out += i;
+  z = x / 1000000U;    buf[3] = z + '0'; x -= s1m[z];   i = inc[i][z]; out += i;
+  z = x / 100000U;     buf[4] = z + '0'; x -= s100k[z]; i = inc[i][z]; out += i;
+  z = x / 10000U;      buf[5] = z + '0'; x -= s10k[z];  i = inc[i][z]; out += i;
+  z = x / 1000U;       buf[6] = z + '0'; x -= s1k[z];   i = inc[i][z]; out += i;
+  z = x / 100U;        buf[7] = z + '0'; x -= s100[z];  i = inc[i][z]; out += i;
+  z = x / 10U;         buf[8] = z + '0'; x -= s10[z];   i = inc[i][z]; out += i;
+  buf[9] = x + '0';
+
+  return out;
+}
+
+static uint8_t u16tostr(char *buf, uint16_t x)
+{
+  static const uint16_t s10k[7] = {0, 10000U, 20000U, 30000U, 40000U,
+				   50000U, 60000U};
+  static const uint16_t s1k[10] = {0, 1000, 2000, 3000, 4000, 5000,
+				   6000, 7000, 8000, 9000};
+  static const uint16_t s100[10] = {0, 100, 200, 300, 400, 500, 600,
+				    700, 800, 900};
+  static const uint8_t s10[10] = {0, 10, 20, 30, 40, 50, 60, 70, 80, 90};
+  uint16_t z; uint8_t i = 1, out = 0;
+
+  z = x / 10000U; buf[0] = z + '0'; x -= s10k[z]; i = inc[i][z]; out += i;
+  z = x / 1000U;  buf[1] = z + '0'; x -= s1k[z];  i = inc[i][z]; out += i;
+  z = x / 100U;   buf[2] = z + '0'; x -= s100[z]; i = inc[i][z]; out += i;
+  z = x / 10U;    buf[3] = z + '0'; x -= s10[z];  i = inc[i][z]; out += i;
+  buf[4] = x + '0';
+
+  return out;
+}
+
+static uint8_t u8tostr(char *buf, uint8_t x)
+{
+  static const uint8_t s100[3] = {0, 100U, 200U};
+  static const uint8_t s10[10] = {0, 10, 20, 30, 40, 50, 60, 70, 80, 90};
+  uint8_t z, i = 1, out = 0;
+
+  z = x / 100; buf[0] = z + '0'; x -= s100[z]; i = inc[i][z]; out += i;
+  z = x / 10;  buf[1] = z + '0'; x -= s10[z];  i = inc[i][z]; out += i;
+  buf[2] = x + '0';
+
+  return out;
+}
+
+static int string_concat_pre(size_t len, size_t off, size_t *left)
+{
+  /*
+   * error conditions:
+   * - offset is beyond reported length
+   * - no space left
+   */
+  if(len < off || (*left = len - off) == 0)
+    return -1;
+  return 0;
+}
+
+static void string_concat_post(char *str, size_t *off, size_t cp)
+{
+  /* always null terminate */
+  (*off) += cp;
+  str[*off] = '\0';
+  return;
+}
+
+void string_concatc(char *str, size_t len, size_t *off, char c)
+{
+  if(len - *off >= 2)
+    {
+      str[(*off)++] = c;
+      str[*off] = '\0';
+    }
+  return;
+}
+
+void string_concat_u8(char *str, size_t len, size_t *off,
+		      const char *pre, uint8_t val)
+{
+  size_t left, wc, cp;
+  char buf[3];
+  uint8_t rc;
+
+  if(pre != NULL)
+    string_concat(str, len, off, pre);
+
+  if(string_concat_pre(len, *off, &left) != 0)
+    return;
+
+  rc = u8tostr(buf, val);
+  wc = 3 - rc;
+  cp = wc < left ? wc : left - 1;
+  memcpy(str + *off, buf + rc, cp);
+
+  string_concat_post(str, off, cp);
+  return;
+}
+
+void string_concat_u16(char *str, size_t len, size_t *off,
+		       const char *pre, uint16_t val)
+{
+  size_t left, wc, cp;
+  char buf[5];
+  uint8_t rc;
+
+  if(pre != NULL)
+    string_concat(str, len, off, pre);
+
+  if(string_concat_pre(len, *off, &left) != 0)
+    return;
+
+  rc = u16tostr(buf, val);
+  wc = 5 - rc;
+  cp = wc < left ? wc : left - 1;
+  memcpy(str + *off, buf + rc, cp);
+
+  string_concat_post(str, off, cp);
+  return;
+}
+
+void string_concat_u32(char *str, size_t len, size_t *off,
+		       const char *pre, uint32_t val)
+{
+  size_t left, wc, cp;
+  char buf[10];
+  uint8_t rc;
+
+  if(pre != NULL)
+    string_concat(str, len, off, pre);
+
+  if(string_concat_pre(len, *off, &left) != 0)
+    return;
+
+  rc = u32tostr(buf, val);
+  wc = 10 - rc;
+  cp = wc < left ? wc : left - 1;
+  memcpy(str + *off, buf + rc, cp);
+
+  string_concat_post(str, off, cp);
+  return;
+}
+
 void string_concaf(char *str, size_t len, size_t *off, const char *fs, ...)
 {
   va_list ap;
   size_t left;
   int wc;
 
-  /* error condition: offset is beyond reported length */
-  if(len < *off)
-    return;
-
-  /* no space left */
-  if((left = len - *off) == 0)
+  if(string_concat_pre(len, *off, &left) != 0)
     return;
 
   va_start(ap, fs);
@@ -1644,22 +1920,14 @@ void string_concat(char *str, size_t len, size_t *off, const char *in)
 {
   size_t left, wc, cp;
 
-  /* error condition: offset is beyond reported length */
-  if(len < *off)
-    return;
-
-  /* no space left */
-  if((left = len - *off) == 0)
+  if(string_concat_pre(len, *off, &left) != 0)
     return;
 
   wc = strlen(in);
   cp = wc < left ? wc : left - 1;
   memcpy(str + *off, in, cp);
 
-  /* always null terminate */
-  (*off) += cp;
-  str[*off] = '\0';
-
+  string_concat_post(str, off, cp);
   return;
 }
 
@@ -2614,8 +2882,8 @@ int fd_lines(int fd, int (*func)(char *, void *), void *param)
 	}
       else
 	{
-	  memmove(readbuf, readbuf+start, end - start);
 	  readbuf_off = end - start;
+	  memmove(readbuf, readbuf+start, readbuf_off);
 	}
     }
 

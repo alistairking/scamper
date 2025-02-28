@@ -2,7 +2,7 @@
 #
 # Author: Matthew Luckie
 #
-# Copyright (C) 2023-2024 The Regents of the University of California
+# Copyright (C) 2023-2025 The Regents of the University of California
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -26,6 +26,8 @@ cdef extern from "scamper_addr.h":
 
 cdef extern from "scamper_icmpext.h":
  ctypedef struct scamper_icmpext_t:
+  pass
+ ctypedef struct scamper_icmpexts_t:
   pass
 
 cdef extern from "scamper_list.h":
@@ -57,6 +59,8 @@ cdef extern from "scamper_trace.h":
  const timeval *scamper_trace_start_get(const scamper_trace_t *trace)
  uint8_t scamper_trace_stop_reason_get(const scamper_trace_t *trace)
  uint8_t scamper_trace_stop_data_get(const scamper_trace_t *trace)
+ char *scamper_trace_stop_tostr(const scamper_trace_t *trace,
+                                char *buf, size_t len)
  scamper_trace_hop_t *scamper_trace_hop_get(const scamper_trace_t *trace,
 					    uint8_t i)
  uint16_t scamper_trace_hop_count_get(const scamper_trace_t *trace)
@@ -116,7 +120,7 @@ cdef extern from "scamper_trace.h":
  uint8_t scamper_trace_hop_icmp_q_tos_get(const scamper_trace_hop_t *hop)
  uint16_t scamper_trace_hop_icmp_q_ipl_get(const scamper_trace_hop_t *hop)
  uint8_t scamper_trace_hop_tcp_flags_get(const scamper_trace_hop_t *hop)
- scamper_icmpext_t *scamper_trace_hop_icmpext_get(const scamper_trace_hop_t *hop)
+ scamper_icmpexts_t *scamper_trace_hop_icmp_exts_get(const scamper_trace_hop_t *hop)
 
  scamper_trace_pmtud_t *scamper_trace_pmtud_get(const scamper_trace_t *trace)
  void scamper_trace_pmtud_free(scamper_trace_pmtud_t *pmtud)

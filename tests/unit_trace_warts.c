@@ -1,7 +1,7 @@
 /*
  * unit_trace_warts : unit tests for warts trace storage
  *
- * $Id: unit_trace_warts.c,v 1.1 2024/10/18 07:38:08 mjl Exp $
+ * $Id: unit_trace_warts.c,v 1.3 2025/02/13 18:48:55 mjl Exp $
  *
  *        Marcus Luckie, Matthew Luckie
  *        mjl@luckie.org.nz
@@ -33,60 +33,13 @@
 #include "scamper_addr.h"
 #include "scamper_file.h"
 #include "scamper_trace.h"
-#include "scamper_trace_int.h"
 #include "scamper_ifname.h"
-#include "scamper_ifname_int.h"
-#include "utils.h"
+#include "common_ok.h"
+#include "common_trace.h"
 #include "mjl_list.h"
-
-#include "common_warts.h"
+#include "utils.h"
 
 typedef scamper_trace_t * (*test_func_t)(void);
-
-static int trace_ok(const scamper_trace_t *in, const scamper_trace_t *out)
-{
-  assert(in != NULL);
-  if(out == NULL ||
-     addr_ok(in->src, out->src) != 0 ||
-     addr_ok(in->dst, out->dst) != 0 ||
-     in->userid != out->userid ||
-     timeval_cmp(&in->start, &out->start) != 0 ||
-     timeval_cmp(&in->wait_probe, &out->wait_probe) != 0 ||
-     timeval_cmp(&in->wait_timeout, &out->wait_timeout) != 0 ||
-     in->sport != out->sport ||
-     in->dport != out->dport ||
-     in->flags != out->flags)
-    return -1;
-
-  return 0;
-}
-
-static scamper_trace_t *trace_1(void)
-{
-  scamper_trace_t *trace = NULL;
-
-  if((trace = scamper_trace_alloc()) == NULL ||
-     (trace->src = scamper_addr_fromstr_ipv4("192.0.2.1")) == NULL ||
-     (trace->dst = scamper_addr_fromstr_ipv4("192.0.2.2")) == NULL)
-    goto err;
-
-  trace->userid               = 69;
-  trace->sport                = 120;
-  trace->dport                = 154;
-  trace->start.tv_sec         = 1724828853;
-  trace->start.tv_usec        = 123456;
-  trace->wait_timeout.tv_sec  = 1;
-  trace->wait_timeout.tv_usec = 0;
-  trace->wait_probe.tv_sec    = 1;
-  trace->wait_probe.tv_usec   = 0;
-  trace->flags                = 0;
-
-  return trace;
-
- err:
-  if(trace != NULL) scamper_trace_free(trace);
-  return NULL;
-}
 
 static int write_file(const char *filename, const scamper_trace_t *trace)
 {

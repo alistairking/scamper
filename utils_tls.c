@@ -1,13 +1,13 @@
 /*
  * utils_tls : functions for TLS
  *
- * $Id: utils_tls.c,v 1.6 2024/08/19 02:59:36 mjl Exp $
+ * $Id: utils_tls.c,v 1.8 2025/02/07 16:37:20 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
  *
  * Copyright (C) 2014-2024 Matthew Luckie
- * Copyright (C) 2024      The Regents of the University of California
+ * Copyright (C) 2024-2025 The Regents of the University of California
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -108,6 +108,49 @@ void tls_bio_free(SSL *ssl, BIO *rbio, BIO *wbio)
   return;
 }
 
+static int tls_certname_matches(const char *certname, const char *hostname)
+{
+  size_t suffix_len, hostname_len, i;
+
+  if(certname[0] == '*')
+    {
+      /* do not support partial wildcard */
+      if(certname[1] != '.' || certname[2] == '\0')
+	return 0;
+
+      /* do not let hostname start with dot */
+      if(hostname[0] == '.')
+	return 0;
+
+      suffix_len = strlen(certname+2);
+      hostname_len = strlen(hostname);
+
+      /*
+       * hostname cannot match a wildcard cert where the suffix of the
+       * wildcard is not shorter than the input hostname.  choice of
+       * >= deliberate.
+       */
+      if(suffix_len >= hostname_len)
+	return 0;
+
+      /* suffix does not match */
+      if(strcasecmp(hostname + hostname_len - suffix_len, certname+2) != 0)
+	return 0;
+
+      /* ensure the text after the next dot is the suffix of the cert */
+      i = 0;
+      while(hostname[i] != '\0' && hostname[i] != '.')
+	i++;
+      if(hostname[i] != '.' || i + 1 != hostname_len - suffix_len)
+	return 0;
+
+      return 1;
+    }
+  if(strcasecmp(certname, hostname) == 0)
+    return 1;
+  return 0;
+}
+
 /*
  * tls_is_valid_cert
  *
@@ -129,7 +172,7 @@ int tls_is_valid_cert(SSL *ssl, const char *hostname)
   const char *dname;
   char buf[256];
   int rc = 0;
-  int i, count, x;
+  int i, count;
 
   if(SSL_get_verify_result(ssl) != X509_V_OK)
     return 0;
@@ -145,16 +188,16 @@ int tls_is_valid_cert(SSL *ssl, const char *hostname)
 	  gname = sk_GENERAL_NAME_value(names, i);
 	  if(gname == NULL || gname->type != GEN_DNS ||
 	     gname->d.dNSName == NULL ||
-	     (x = ASN1_STRING_length(gname->d.dNSName)) < 1)
+	     ASN1_STRING_length(gname->d.dNSName) < 1)
 	    continue;
 #ifdef HAVE_ASN1_STRING_GET0_DATA
 	  dname = (const char *)ASN1_STRING_get0_data(gname->d.dNSName);
 #else
 	  dname = (const char *)ASN1_STRING_data(gname->d.dNSName);
 #endif
-	  if(dname == NULL || (size_t)x != strlen(dname))
+	  if(dname == NULL)
 	    continue;
-	  if(strcasecmp(dname, hostname) == 0)
+	  if(tls_certname_matches(dname, hostname) != 0)
 	    {
 	      rc = 1;
 	      goto done;
@@ -166,7 +209,7 @@ int tls_is_valid_cert(SSL *ssl, const char *hostname)
      X509_NAME_get_text_by_NID(name, NID_commonName, buf, sizeof(buf)) > 0)
     {
       buf[sizeof(buf)-1] = 0;
-      if(strcasecmp(buf, hostname) == 0)
+      if(tls_certname_matches(buf, hostname) != 0)
 	rc = 1;
     }
 

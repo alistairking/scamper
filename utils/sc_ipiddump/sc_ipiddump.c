@@ -1,7 +1,7 @@
 /*
  * sc_ipiddump
  *
- * $Id: sc_ipiddump.c,v 1.25 2023/09/24 22:35:02 mjl Exp $
+ * $Id: sc_ipiddump.c,v 1.26 2025/02/24 06:59:36 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -327,11 +327,12 @@ static int process_dealias(scamper_dealias_t *dealias)
 
 static int process_ping(scamper_ping_t *ping)
 {
+  const scamper_ping_probe_t *probe;
   const scamper_ping_reply_t *reply;
   const struct timeval *tx;
   scamper_addr_t *r_addr;
   ipid_sample_t *sample;
-  uint16_t i, ping_sent;
+  uint16_t i, j, ping_sent;
   uint32_t u32;
 
   if(useridc > 0 &&
@@ -341,12 +342,15 @@ static int process_ping(scamper_ping_t *ping)
   ping_sent = scamper_ping_sent_get(ping);
   for(i=0; i<ping_sent; i++)
     {
-      for(reply = scamper_ping_reply_get(ping, i); reply != NULL;
-	  reply = scamper_ping_reply_next_get(reply))
+      if((probe = scamper_ping_probe_get(ping, i)) == NULL)
+	continue;
+      tx = scamper_ping_probe_tx_get(probe);
+      if(tx->tv_sec == 0)
+	continue;
+
+      for(j=0; j<scamper_ping_probe_replyc_get(probe); j++)
 	{
-	  tx = scamper_ping_reply_tx_get(reply);
-	  if(tx->tv_sec == 0)
-	    continue;
+	  reply = scamper_ping_probe_reply_get(probe, j);
 	  r_addr = scamper_ping_reply_addr_get(reply);
 	  if(ipc > 0 && ip_find(ips, ipc, r_addr) == 0)
 	    continue;

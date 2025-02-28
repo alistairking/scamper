@@ -1,12 +1,13 @@
 /*
  * scamper_addr.c
  *
- * $Id: scamper_addr.c,v 1.86 2024/12/15 19:07:43 mjl Exp $
+ * $Id: scamper_addr.c,v 1.87 2025/02/20 00:27:29 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2013-2014 The Regents of the University of California
  * Copyright (C) 2016-2024 Matthew Luckie
+ * Copyright (C) 2025      The Regents of the University of California
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -659,11 +660,11 @@ static int ipv6_isreserved(const scamper_addr_t *sa)
     return 1;
 
   /* 2002::/16 (6to4) */
-  if(a->s6_addr[1] == 0x02)
+  if(a->s6_addr[0] == 0x20 && a->s6_addr[1] == 0x02)
     return 1;
 
   /* 2001::/16 (many) */
-  if(a->s6_addr[1] == 0x01)
+  if(a->s6_addr[0] == 0x20 && a->s6_addr[1] == 0x01)
     {
       if(a->s6_addr[2] == 0)
 	{
@@ -680,8 +681,8 @@ static int ipv6_isreserved(const scamper_addr_t *sa)
 	    return 1;
 
 	  /* 2001:4:112::/48 (AS112-v6) */
-	  if(a->s6_addr[4] == 0x4 && a->s6_addr[5] == 0x1 &&
-	     a->s6_addr[6] == 0x12)
+	  if(a->s6_addr[3] == 0x4 && a->s6_addr[4] == 0x1 &&
+	     a->s6_addr[5] == 0x12)
 	    return 1;
 
 	  /* 2001:10::/28 (ORCHID) and 2001:20::/28 (ORCHIDv2) */

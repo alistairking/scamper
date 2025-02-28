@@ -1,9 +1,9 @@
 /*
  * scamper_host_cmd
  *
- * $Id: scamper_host_cmd.c,v 1.15 2024/09/04 07:36:24 mjl Exp $
+ * $Id: scamper_host_cmd.c,v 1.17 2025/02/23 05:38:14 mjl Exp $
  *
- * Copyright (C) 2018-2024 Matthew Luckie
+ * Copyright (C) 2018-2025 Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -72,6 +72,7 @@ const char *scamper_do_host_usage(void)
 static int host_arg_param_validate(int optid, char *param, long long *out,
 				   char *errbuf, size_t errlen)
 {
+  struct sockaddr_storage sas;
   scamper_addr_t *addr;
   struct timeval tv;
   long long tmp = 0;
@@ -130,6 +131,8 @@ static int host_arg_param_validate(int optid, char *param, long long *out,
 	tmp = SCAMPER_HOST_TYPE_SOA;
       else if(strcasecmp(param, "TXT") == 0)
 	tmp = SCAMPER_HOST_TYPE_TXT;
+      else if(strcasecmp(param, "SVCB") == 0)
+	tmp = SCAMPER_HOST_TYPE_SVCB;
       else
 	{
 	  snprintf(errbuf, errlen, "unsupported query type");
@@ -168,7 +171,18 @@ static int host_arg_param_validate(int optid, char *param, long long *out,
 
     case HOST_OPT_OPTION:
       if(strcasecmp(param, "NSID") == 0)
-	tmp = SCAMPER_HOST_FLAG_NSID;
+	{
+	  tmp = SCAMPER_HOST_FLAG_NSID;
+	}
+      else if(strncasecmp(param, "subnet=", 7) == 0)
+	{
+	  if(prefix_to_sockaddr(param+7, (struct sockaddr *)&sas) != 0)
+	    {
+	      snprintf(errbuf, errlen, "invalid ecs subnet option");
+	      goto err;
+	    }
+	  tmp = 0;
+	}
       else
 	{
 	  snprintf(errbuf, errlen, "unknown option");
@@ -204,7 +218,7 @@ void *scamper_do_host_alloc(char *str, char *errbuf, size_t errlen)
   scamper_option_out_t *opts_out = NULL, *opt;
   scamper_addr_t *server = NULL;
   scamper_addr_t *name_addr = NULL;
-  char *name = NULL;
+  char *name = NULL, *ecs = NULL;
   uint8_t retries = 0;
   uint32_t userid = 0;
   uint16_t flags = 0;
@@ -246,7 +260,7 @@ void *scamper_do_host_alloc(char *str, char *errbuf, size_t errlen)
 	  goto err;
 	}
 
-      if((optids & (0x1 << opt->id)) != 0)
+      if((optids & (0x1 << opt->id)) != 0 && opt->id != HOST_OPT_OPTION)
 	{
 	  snprintf(errbuf, errlen, "repeated option -%c",
 		   scamper_options_id2c(opts, opts_cnt, opt->id));
@@ -289,7 +303,16 @@ void *scamper_do_host_alloc(char *str, char *errbuf, size_t errlen)
 	  break;
 
 	case HOST_OPT_OPTION:
-	  flags |= (uint16_t)tmp;
+	  if(strcasecmp(opt->str, "NSID") == 0)
+	    flags |= (uint16_t)tmp;
+	  else if(strncasecmp(opt->str, "subnet=", 7) == 0)
+	    {
+	      if((ecs = strdup(opt->str+7)) == NULL)
+		{
+		  snprintf(errbuf, errlen, "could not strdup subnet");
+		  goto err;
+		}
+	    }
 	  break;
 
 	case HOST_OPT_WAIT:
@@ -317,7 +340,7 @@ void *scamper_do_host_alloc(char *str, char *errbuf, size_t errlen)
     }
   else if(qtype == SCAMPER_HOST_TYPE_A || qtype == SCAMPER_HOST_TYPE_AAAA ||
 	  qtype == SCAMPER_HOST_TYPE_MX || qtype == SCAMPER_HOST_TYPE_NS ||
-	  qtype == SCAMPER_HOST_TYPE_SOA)
+	  qtype == SCAMPER_HOST_TYPE_SOA || qtype == SCAMPER_HOST_TYPE_SVCB)
     {
       /*
        * for A, AAAA, MX, NS, SOA, the name to look up MUST NOT be an
@@ -369,6 +392,7 @@ void *scamper_do_host_alloc(char *str, char *errbuf, size_t errlen)
   host->retries = retries;
   host->qtype   = qtype;
   host->qclass  = qclass;
+  host->ecs     = ecs; ecs = NULL;
 
   timeval_cpy(&host->wait_timeout, &wait_timeout);
 
@@ -397,6 +421,7 @@ void *scamper_do_host_alloc(char *str, char *errbuf, size_t errlen)
 
  err:
   assert(errbuf[0] != '\0');
+  if(ecs != NULL) free(ecs);
   if(host != NULL) scamper_host_free(host);
   if(name_addr != NULL) scamper_addr_free(name_addr);
   if(server != NULL) scamper_addr_free(server);

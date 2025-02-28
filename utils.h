@@ -1,12 +1,12 @@
 /*
  * utils.h
  *
- * $Id: utils.h,v 1.165 2024/12/31 04:17:31 mjl Exp $
+ * $Id: utils.h,v 1.170 2025/02/15 09:20:11 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2012-2014 The Regents of the University of California
- * Copyright (C) 2015-2024 Matthew Luckie
+ * Copyright (C) 2015-2025 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -96,6 +96,8 @@ void timeval_sub_us(struct timeval *out, const struct timeval *in, int us)
 void timeval_cpy(struct timeval *dst, const struct timeval *src)
   ATTRIBUTE_NONNULL;
 char *timeval_tostr_us(const struct timeval *rtt, char *str, size_t len)
+  ATTRIBUTE_NONNULL;
+char *timeval_tostr_hhmmssms(const struct timeval *tv, char *buf)
   ATTRIBUTE_NONNULL;
 
 int timeval_iszero(const struct timeval *tv) ATTRIBUTE_NONNULL;
@@ -206,6 +208,8 @@ int sockaddr_len(const struct sockaddr *sa)
 char *sockaddr_tostr(const struct sockaddr *sa, char *buf, size_t len, int with_port)
   ATTRIBUTE_NONNULL;
 
+int prefix_to_sockaddr(const char *prefix, struct sockaddr *sa);
+
 /*
  * Functions for dealing with fcntl flags on a file descriptor
  */
@@ -258,10 +262,18 @@ void string_concaf(char *str, size_t len, size_t *off, const char *fs, ...);
 #endif
 void string_concat(char *str, size_t len, size_t *off, const char *in)
   ATTRIBUTE_NONNULL;
+void string_concatc(char *str, size_t len, size_t *off, char c)
+  ATTRIBUTE_NONNULL;
 void string_concat2(char *str, size_t len, size_t *off,
 		    const char *a, const char *b) ATTRIBUTE_NONNULL;
 void string_concat3(char *str, size_t len, size_t *off, const char *a,
 		    const char *b, const char *c) ATTRIBUTE_NONNULL;
+void string_concat_u8(char *str, size_t len, size_t *off,
+		      const char *pre, uint8_t val);
+void string_concat_u16(char *str, size_t len, size_t *off,
+		       const char *pre, uint16_t val);
+void string_concat_u32(char *str, size_t len, size_t *off,
+		       const char *pre, uint32_t val);
 void string_byte2hex(char *str, size_t len, size_t *off,
 		     const uint8_t *b, size_t bl) ATTRIBUTE_NONNULL;
 

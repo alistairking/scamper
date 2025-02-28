@@ -1,10 +1,10 @@
 /*
  * scamper_ping_lib.c
  *
- * Copyright (C) 2023 Matthew Luckie
+ * Copyright (C) 2023-2025 Matthew Luckie
  * Author: Matthew Luckie
  *
- * $Id: scamper_ping_lib.c,v 1.10 2024/05/01 07:46:20 mjl Exp $
+ * $Id: scamper_ping_lib.c,v 1.13 2025/02/25 06:31:24 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -79,29 +79,29 @@ uint8_t scamper_ping_stop_data_get(const scamper_ping_t *ping)
   return ping->stop_data;
 }
 
-const uint8_t *scamper_ping_probe_data_get(const scamper_ping_t *ping)
+const uint8_t *scamper_ping_data_get(const scamper_ping_t *ping)
 {
-  return ping->probe_data;
+  return ping->data;
 }
 
-uint16_t scamper_ping_probe_datalen_get(const scamper_ping_t *ping)
+uint16_t scamper_ping_datalen_get(const scamper_ping_t *ping)
 {
-  return ping->probe_datalen;
+  return ping->datalen;
 }
 
-uint16_t scamper_ping_probe_count_get(const scamper_ping_t *ping)
+uint16_t scamper_ping_attempts_get(const scamper_ping_t *ping)
 {
-  return ping->probe_count;
+  return ping->attempts;
 }
 
-uint16_t scamper_ping_probe_size_get(const scamper_ping_t *ping)
+uint16_t scamper_ping_pktsize_get(const scamper_ping_t *ping)
 {
-  return ping->probe_size;
+  return ping->size;
 }
 
-uint8_t scamper_ping_probe_method_get(const scamper_ping_t *ping)
+uint8_t scamper_ping_method_get(const scamper_ping_t *ping)
 {
-  return ping->probe_method;
+  return ping->method;
 }
 
 int scamper_ping_method_is_icmp(const scamper_ping_t *ping)
@@ -137,14 +137,14 @@ int scamper_ping_method_is_vary_dport(const scamper_ping_t *ping)
   return SCAMPER_PING_METHOD_IS_VARY_DPORT(ping);
 }
 
-uint8_t scamper_ping_probe_ttl_get(const scamper_ping_t *ping)
+uint8_t scamper_ping_ttl_get(const scamper_ping_t *ping)
 {
-  return ping->probe_ttl;
+  return ping->ttl;
 }
 
-uint8_t scamper_ping_probe_tos_get(const scamper_ping_t *ping)
+uint8_t scamper_ping_tos_get(const scamper_ping_t *ping)
 {
-  return ping->probe_tos;
+  return ping->tos;
 }
 
 const struct timeval *scamper_ping_wait_probe_get(const scamper_ping_t *ping)
@@ -157,34 +157,34 @@ const struct timeval *scamper_ping_wait_timeout_get(const scamper_ping_t *ping)
   return &ping->wait_timeout;
 }
 
-uint16_t scamper_ping_probe_sport_get(const scamper_ping_t *ping)
+uint16_t scamper_ping_sport_get(const scamper_ping_t *ping)
 {
-  return ping->probe_sport;
+  return ping->sport;
 }
 
-uint16_t scamper_ping_probe_dport_get(const scamper_ping_t *ping)
+uint16_t scamper_ping_dport_get(const scamper_ping_t *ping)
 {
-  return ping->probe_dport;
+  return ping->dport;
 }
 
-uint16_t scamper_ping_probe_icmpsum_get(const scamper_ping_t *ping)
+uint16_t scamper_ping_icmpsum_get(const scamper_ping_t *ping)
 {
-  return ping->probe_icmpsum;
+  return ping->icmpsum;
 }
 
-uint32_t scamper_ping_probe_tcpseq_get(const scamper_ping_t *ping)
+uint32_t scamper_ping_tcpseq_get(const scamper_ping_t *ping)
 {
-  return ping->probe_tcpseq;
+  return ping->tcpseq;
 }
 
-uint32_t scamper_ping_probe_tcpack_get(const scamper_ping_t *ping)
+uint32_t scamper_ping_tcpack_get(const scamper_ping_t *ping)
 {
-  return ping->probe_tcpack;
+  return ping->tcpack;
 }
 
-scamper_ping_v4ts_t *scamper_ping_probe_tsps_get(const scamper_ping_t *ping)
+scamper_ping_v4ts_t *scamper_ping_tsps_get(const scamper_ping_t *ping)
 {
-  return ping->probe_tsps;
+  return ping->tsps;
 }
 
 uint32_t scamper_ping_flags_get(const scamper_ping_t *ping)
@@ -192,14 +192,14 @@ uint32_t scamper_ping_flags_get(const scamper_ping_t *ping)
   return ping->flags;
 }
 
-uint16_t scamper_ping_reply_count_get(const scamper_ping_t *ping)
+uint16_t scamper_ping_stop_count_get(const scamper_ping_t *ping)
 {
-  return ping->reply_count;
+  return ping->stop_count;
 }
 
-uint16_t scamper_ping_reply_pmtu_get(const scamper_ping_t *ping)
+uint16_t scamper_ping_pmtu_get(const scamper_ping_t *ping)
 {
-  return ping->reply_pmtu;
+  return ping->pmtu;
 }
 
 uint16_t scamper_ping_sent_get(const scamper_ping_t *ping)
@@ -207,11 +207,11 @@ uint16_t scamper_ping_sent_get(const scamper_ping_t *ping)
   return ping->ping_sent;
 }
 
-scamper_ping_reply_t *scamper_ping_reply_get(const scamper_ping_t *ping, uint16_t i)
+scamper_ping_probe_t *scamper_ping_probe_get(const scamper_ping_t *ping, uint16_t i)
 {
   if(i >= ping->ping_sent)
     return NULL;
-  return ping->ping_replies[i];
+  return ping->probes[i];
 }
 
 int scamper_ping_reply_is_from_target(const scamper_ping_t *ping, const scamper_ping_reply_t *reply)
@@ -224,49 +224,66 @@ scamper_addr_t *scamper_ping_reply_addr_get(const scamper_ping_reply_t *reply)
   return reply->addr;
 }
 
-uint16_t scamper_ping_reply_probe_id_get(const scamper_ping_reply_t *reply)
+uint16_t scamper_ping_probe_id_get(const scamper_ping_probe_t *probe)
 {
-  return reply->probe_id;
+  return probe->id;
 }
 
-uint16_t scamper_ping_reply_probe_ipid_get(const scamper_ping_reply_t *reply)
+uint16_t scamper_ping_probe_ipid_get(const scamper_ping_probe_t *probe)
 {
-  return reply->probe_ipid;
+  return probe->ipid;
 }
 
-uint16_t scamper_ping_reply_probe_sport_get(const scamper_ping_reply_t *reply)
+uint16_t scamper_ping_probe_sport_get(const scamper_ping_probe_t *probe)
 {
-  return reply->probe_sport;
+  return probe->sport;
+}
+
+uint8_t scamper_ping_probe_flags_get(const scamper_ping_probe_t *probe)
+{
+  return probe->flags;
+}
+
+uint16_t scamper_ping_probe_replyc_get(const scamper_ping_probe_t *probe)
+{
+  return probe->replyc;
+}
+
+scamper_ping_reply_t *scamper_ping_probe_reply_get(const scamper_ping_probe_t *probe, uint16_t i)
+{
+  if(probe->replies == NULL || i >= probe->replyc)
+    return NULL;
+  return probe->replies[i];
 }
 
 uint8_t scamper_ping_reply_proto_get(const scamper_ping_reply_t *reply)
 {
-  return reply->reply_proto;
+  return reply->proto;
 }
 
 uint8_t scamper_ping_reply_ttl_get(const scamper_ping_reply_t *reply)
 {
-  return reply->reply_ttl;
+  return reply->ttl;
 }
 
 uint8_t scamper_ping_reply_tos_get(const scamper_ping_reply_t *reply)
 {
-  return reply->reply_tos;
+  return reply->tos;
 }
 
 uint16_t scamper_ping_reply_size_get(const scamper_ping_reply_t *reply)
 {
-  return reply->reply_size;
+  return reply->size;
 }
 
 uint16_t scamper_ping_reply_ipid_get(const scamper_ping_reply_t *reply)
 {
-  return reply->reply_ipid;
+  return reply->ipid32 & 0xFFFF;
 }
 
 uint32_t scamper_ping_reply_ipid32_get(const scamper_ping_reply_t *reply)
 {
-  return reply->reply_ipid32;
+  return reply->ipid32;
 }
 
 uint32_t scamper_ping_reply_flags_get(const scamper_ping_reply_t *reply)
@@ -343,19 +360,14 @@ int scamper_ping_reply_is_icmp_tsreply(const scamper_ping_reply_t *reply)
   return SCAMPER_PING_REPLY_IS_ICMP_TSREPLY(reply);
 }
 
-const struct timeval *scamper_ping_reply_tx_get(const scamper_ping_reply_t *reply)
+const struct timeval *scamper_ping_probe_tx_get(const scamper_ping_probe_t *probe)
 {
-  return &reply->tx;
+  return &probe->tx;
 }
 
 const struct timeval *scamper_ping_reply_rtt_get(const scamper_ping_reply_t *reply)
 {
   return &reply->rtt;
-}
-
-scamper_ping_reply_t *scamper_ping_reply_next_get(const scamper_ping_reply_t *reply)
-{
-  return reply->next;
 }
 
 scamper_ping_reply_v4rr_t *scamper_ping_reply_v4rr_get(const scamper_ping_reply_t *reply)
@@ -491,5 +503,11 @@ scamper_ping_reply_t *scamper_ping_reply_use(scamper_ping_reply_t *reply)
 {
   reply->refcnt++;
   return reply;
+}
+
+scamper_ping_probe_t *scamper_ping_probe_use(scamper_ping_probe_t *probe)
+{
+  probe->refcnt++;
+  return probe;
 }
 #endif

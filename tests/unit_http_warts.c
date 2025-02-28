@@ -1,7 +1,7 @@
 /*
  * unit_http_warts : unit tests for warts http storage
  *
- * $Id: unit_http_warts.c,v 1.1 2024/10/18 07:38:08 mjl Exp $
+ * $Id: unit_http_warts.c,v 1.2 2025/02/13 18:48:55 mjl Exp $
  *
  *        Marcus Luckie, Matthew Luckie
  *        mjl@luckie.org.nz
@@ -36,10 +36,9 @@
 #include "scamper_http_int.h"
 #include "scamper_ifname.h"
 #include "scamper_ifname_int.h"
-#include "utils.h"
+#include "common_ok.h"
 #include "mjl_list.h"
-
-#include "common_warts.h"
+#include "utils.h"
 
 typedef scamper_http_t * (*test_func_t)(void);
 

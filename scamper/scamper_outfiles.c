@@ -1,7 +1,7 @@
 /*
  * scamper_outfiles: hold a collection of output targets together
  *
- * $Id: scamper_outfiles.c,v 1.58 2023/08/26 21:25:08 mjl Exp $
+ * $Id: scamper_outfiles.c,v 1.63 2025/01/15 02:32:15 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -145,136 +145,12 @@ void scamper_outfile_free(scamper_outfile_t *sof)
   return;
 }
 
-int scamper_outfile_close(scamper_outfile_t *sof)
-{
-  if(sof->refcnt > 1)
-    {
-      scamper_debug(__func__,"not closing %s refcnt %d",sof->name,sof->refcnt);
-      return -1;
-    }
-
-  outfile_free(sof);
-  return 0;
-}
-
 scamper_outfile_t *scamper_outfiles_get(const char *name)
 {
   const scamper_outfile_t findme = {(char *)name, NULL, 0};
   if(name == NULL)
     return outfile_def;
   return splaytree_find(outfiles, &findme);
-}
-
-/*
- * scamper_outfiles_swap
- *
- * swap the files around.  the name and refcnt parameters are unchanged.
- */
-void scamper_outfiles_swap(scamper_outfile_t *a, scamper_outfile_t *b)
-{
-  scamper_file_t *sf;
-
-  sf = b->sf;
-  b->sf = a->sf;
-  a->sf = sf;
-
-  return;
-}
-
-scamper_outfile_t *scamper_outfile_open(const char *name, const char *file,
-					const char *mo,char *err,size_t errlen)
-{
-  scamper_outfile_t *sof;
-  scamper_file_t *sf;
-  char *outfile_type = "warts";
-  int flags;
-  char sf_mode;
-  int fd;
-
-  /* already an outfile with this name */
-  if(scamper_outfiles_get(name) != NULL)
-    {
-      snprintf(err, errlen, "already an outfile with name");
-      return NULL;
-    }
-
-  if(string_endswith(file, ".gz") != 0)
-    {
-#ifdef HAVE_ZLIB
-      outfile_type = "warts.gz";
-#else
-      snprintf(err, errlen, "not compiled with zlib");
-      return NULL;
-#endif
-    }
-  else if(string_endswith(file, ".bz2") != 0)
-    {
-#ifdef HAVE_LIBBZ2
-      outfile_type = "warts.bz2";
-#else
-      snprintf(err, errlen, "not compiled with libbz2");
-      return NULL;
-#endif
-    }
-  else if(string_endswith(file, ".xz") != 0)
-    {
-#ifdef HAVE_LIBLZMA
-      outfile_type = "warts.xz";
-#else
-      snprintf(err, errlen, "not compiled with liblzma");
-      return NULL;
-#endif
-    }
-
-  if(strcasecmp(mo, "append") == 0)
-    {
-      flags = O_RDWR | O_APPEND | O_CREAT;
-      sf_mode = 'a';
-    }
-  else if(strcasecmp(mo, "truncate") == 0)
-    {
-      flags = O_WRONLY | O_TRUNC | O_CREAT;
-      sf_mode = 'w';
-    }
-  else
-    {
-      snprintf(err, errlen, "unknown mode");
-      return NULL;
-    }
-
-#ifdef _WIN32 /* windows needs O_BINARY */
-  flags |= O_BINARY;
-#endif
-
-#ifdef DISABLE_PRIVSEP
-  fd = open(file, flags, MODE_644);
-#else
-  fd = scamper_privsep_open_file(file, flags, MODE_644);
-#endif
-
-  /* make sure the fd is valid, otherwise bail */
-  if(fd == -1)
-    {
-      snprintf(err, errlen, "could not open %s", file);
-      return NULL;
-    }
-
-  if((sf = scamper_file_openfd(fd, file, sf_mode, outfile_type)) == NULL)
-    {
-      snprintf(err, errlen, "could not openfd for %s", file);
-      close(fd);
-      return NULL;
-    }
-
-  if((sof = outfile_alloc(name, sf)) == NULL)
-    {
-      snprintf(err, errlen, "could not outfile_alloc %s", name);
-      scamper_file_close(sf);
-      return NULL;
-    }
-
-  err[0] = '\0';
-  return sof;
 }
 
 static int outfile_opendef(const char *filename, const char *type)
@@ -330,24 +206,6 @@ static int outfile_opendef(const char *filename, const char *type)
   return 0;
 }
 
-scamper_outfile_t *scamper_outfile_openfd(const char *name, int fd,
-					  const char *type)
-{
-  scamper_outfile_t *sof = NULL;
-  scamper_file_t *sf = NULL;
-
-  if(fd == -1 || (sf = scamper_file_openfd(fd, NULL, 'w', type)) == NULL)
-    return NULL;
-
-  if((sof = outfile_alloc(name, sf)) == NULL)
-    {
-      scamper_file_free(sf);
-      return NULL;
-    }
-
-  return sof;
-}
-
 scamper_outfile_t *scamper_outfile_opennull(const char *name,
 					    const char *type)
 {
@@ -367,13 +225,6 @@ scamper_outfile_t *scamper_outfile_opennull(const char *name,
     }
 
   return sof;
-}
-
-void scamper_outfiles_foreach(void *p,
-			      int (*func)(void *p, scamper_outfile_t *sof))
-{
-  splaytree_inorder(outfiles, (splaytree_inorder_t)func, p);
-  return;
 }
 
 int scamper_outfiles_init(const char *def_filename, const char *def_type)
