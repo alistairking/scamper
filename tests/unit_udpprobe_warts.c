@@ -1,7 +1,7 @@
 /*
  * unit_udpprobe_warts : unit tests for warts udpprobe storage
  *
- * $Id: unit_udpprobe_warts.c,v 1.1 2024/10/14 07:59:19 mjl Exp $
+ * $Id: unit_udpprobe_warts.c,v 1.2 2025/02/13 18:48:55 mjl Exp $
  *
  *        Marcus Luckie, Matthew Luckie
  *        mjl@luckie.org.nz
@@ -36,10 +36,9 @@
 #include "scamper_udpprobe_int.h"
 #include "scamper_ifname.h"
 #include "scamper_ifname_int.h"
-#include "utils.h"
+#include "common_ok.h"
 #include "mjl_list.h"
-
-#include "common_warts.h"
+#include "utils.h"
 
 typedef scamper_udpprobe_t * (*test_func_t)(void);
 

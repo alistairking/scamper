@@ -1,7 +1,7 @@
 /*
  * scamper_tracelb.c
  *
- * $Id: scamper_tracelb.c,v 1.81 2024/10/13 20:54:54 mjl Exp $
+ * $Id: scamper_tracelb.c,v 1.82 2025/02/11 14:31:43 mjl Exp $
  *
  * Copyright (C) 2008-2010 The University of Waikato
  * Copyright (C) 2012      The Regents of the University of California
@@ -270,8 +270,8 @@ void scamper_tracelb_reply_free(scamper_tracelb_reply_t *reply)
 #endif
   if(reply->reply_from != NULL)
     scamper_addr_free(reply->reply_from);
-  if(reply->reply_icmp_ext != NULL)
-    scamper_icmpext_free(reply->reply_icmp_ext);
+  if(reply->reply_icmp_exts != NULL)
+    scamper_icmpexts_free(reply->reply_icmp_exts);
   free(reply);
   return;
 }

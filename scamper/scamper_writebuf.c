@@ -1,12 +1,12 @@
 /*
  * scamper_writebuf.c: use in combination with select to send without blocking
  *
- * $Id: scamper_writebuf.c,v 1.52 2024/12/30 03:16:57 mjl Exp $
+ * $Id: scamper_writebuf.c,v 1.53 2025/01/17 06:45:28 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2010 The University of Waikato
  * Copyright (C) 2014      The Regents of the University of California
- * Copyright (C) 2014-2024 Matthew Luckie
+ * Copyright (C) 2014-2025 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -70,7 +70,6 @@ static void writebuf_iovfree(scamper_writebuf_t *wb, size_t size)
 {
   slist_node_t *node;
   struct iovec *iov;
-  uint8_t *bytes;
 
   while(size > 0)
     {
@@ -95,9 +94,8 @@ static void writebuf_iovfree(scamper_writebuf_t *wb, size_t size)
 	}
 
       /* if this iovec was only partially sent, then shift the vec */
-      bytes = (uint8_t *)iov->iov_base;
-      memmove(iov->iov_base, bytes + size, iov->iov_len - size);
       iov->iov_len -= size;
+      memmove(iov->iov_base, ((uint8_t *)iov->iov_base) + size, iov->iov_len);
       break;
     }
 
@@ -208,7 +206,7 @@ static int writebuf_tx(scamper_writebuf_t *wb, SOCKET fd)
   else
     {
       iov->iov_len -= size;
-      memmove(iov->iov_base, (uint8_t *)iov->iov_base + size, iov->iov_len);
+      memmove(iov->iov_base, ((uint8_t *)iov->iov_base) + size, iov->iov_len);
     }
 
   return 0;

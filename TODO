@@ -1,11 +1,8 @@
-$Id: TODO,v 1.40 2024/12/30 04:01:25 mjl Exp $
+$Id: TODO,v 1.43 2025/02/26 21:22:51 mjl Exp $
 
 * compile without warnings when the following is passed in CFLAGS
   -Wall -Wno-unneeded-internal-declaration -Wno-unused-const-variable
   -Wno-deprecated-declarations -Wno-unused-parameter -Wshadow -Wextra
-
-* investigate if anyone uses the "source add" functionality and deorbit
-  if nobody does
 
 * the warts code sets flags/params_len to zero in a bunch of places, but
   they may have been malloc_zero'd.  go through and figure out.
@@ -24,20 +21,13 @@ $Id: TODO,v 1.40 2024/12/30 04:01:25 mjl Exp $
   sc_prefixprober, sc_prefixscan, sc_speedtrap
 
 * libscamperctrl:
-   scamper_task_use should return a pointer to a scamper_task_t *
-   scamper_inst_halt -> scamper_task_halt
    unit tests
-
-* libscamperfile:
-   scamper_ping_reply_t: addr -> src
 
 * investigate if gettimeofday has to be called so much.
 
 * check that the TOS bits are being set properly on tx.
 
-* ensure that all clients that have observed sources unobserves.
-
-* ensure that all outfiles are closed when scamper shuts down.
+* deorbit scamper_outfiles.[ch]
 
 * in the scamper.1 man page:
    document control socket quoting rules.
@@ -54,5 +44,5 @@ $Id: TODO,v 1.40 2024/12/30 04:01:25 mjl Exp $
   - expire queue should just use time_t, and be organized by time_t
     rather than have a timeval in each expire node
 
-* doubletree with probe backwards when -O dtree-noback is passed if the
+* doubletree will probe backwards when -O dtree-noback is passed if the
   first hop times out.  this is probably incorrect behavior.

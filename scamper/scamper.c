@@ -1,7 +1,7 @@
 /*
  * scamper
  *
- * $Id: scamper.c,v 1.361 2024/12/30 03:59:35 mjl Exp $
+ * $Id: scamper.c,v 1.362 2025/01/15 03:19:07 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -137,7 +137,6 @@
 #define OPT_NAMESERVER      0x08000000 /* n: */
 
 #define FLAG_NOINITNDC       0x00000001
-#define FLAG_OUTCOPY         0x00000002
 #define FLAG_SELECT          0x00000004
 #define FLAG_KQUEUE          0x00000008
 #define FLAG_PLANETLAB       0x00000010
@@ -394,7 +393,6 @@ static void usage(uint32_t opt_mask)
       usage_line("json: output results in json format, better to use warts");
       usage_line("planetlab: necessary to use safe raw sockets on planetlab");
       usage_line("noinitndc: do not initialise neighbour discovery cache");
-      usage_line("outcopy: output copy of all results collected to file");
       usage_line("rawtcp: use raw socket to send IPv4 TCP probes");
 #if defined(IP_RECVERR) || defined(IPV6_RECVERR)
       usage_line("icmp-rxerr: use recverr cmsg to receive ICMP responses");
@@ -778,8 +776,6 @@ static int check_options(int argc, char *argv[])
 	    flags |= FLAG_PLANETLAB;
 	  else if(strcasecmp(optarg, "noinitndc") == 0)
 	    flags |= FLAG_NOINITNDC;
-	  else if(strcasecmp(optarg, "outcopy") == 0)
-	    flags |= FLAG_OUTCOPY;
 	  else if(strcasecmp(optarg, "rawtcp") == 0)
 	    flags |= FLAG_RAWTCP;
 #if defined(IP_RECVERR) || defined(IPV6_RECVERR)
@@ -1764,7 +1760,7 @@ static int scamper_timeout(struct timeval *timeout,
  */
 static void scamper_process_done(void)
 {
-  scamper_outfile_t *sof, *sof2;
+  scamper_outfile_t *sof;
   scamper_source_t *source;
   scamper_task_t *task;
   scamper_file_t *file;
@@ -1779,17 +1775,6 @@ static void scamper_process_done(void)
 	{
 	  file = scamper_outfile_getfile(sof);
 	  scamper_task_write(task, file);
-
-	  /*
-	   * write a copy of the data out if asked to, and it has not
-	   * already been written to this output file.
-	   */
-	  if((flags & FLAG_OUTCOPY) != 0 &&
-	     (sof2 = scamper_outfiles_get(NULL)) != NULL && sof != sof2)
-	    {
-	      file = scamper_outfile_getfile(sof2);
-	      scamper_task_write(task, file);
-	    }
 	}
 
       /* cleanup the task */

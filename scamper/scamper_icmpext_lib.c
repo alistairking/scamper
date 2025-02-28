@@ -1,7 +1,7 @@
 /*
  * scamper_icmpext_lib.c
  *
- * $Id: scamper_icmpext_lib.c,v 1.5 2024/09/05 23:17:18 mjl Exp $
+ * $Id: scamper_icmpext_lib.c,v 1.7 2025/02/13 18:32:43 mjl Exp $
  *
  * Copyright (C) 2023 Matthew Luckie
  * Author: Matthew Luckie
@@ -36,8 +36,10 @@ int scamper_icmpext_cmp(const scamper_icmpext_t *a, const scamper_icmpext_t *b)
   if(a->ie_ct < b->ie_ct) return -1;
   if(a->ie_ct > b->ie_ct) return  1;
   if(a->ie_dl < b->ie_dl) return -1;
-  if(a->ie_dl > b->ie_dl) return -1;
-  return memcmp(a->ie_data, b->ie_data, a->ie_dl);
+  if(a->ie_dl > b->ie_dl) return  1;
+  if(a->ie_data != NULL)
+    return memcmp(a->ie_data, b->ie_data, a->ie_dl);
+  return 0;
 }
 
 uint8_t scamper_icmpext_cn_get(const scamper_icmpext_t *ie)
@@ -58,11 +60,6 @@ uint16_t scamper_icmpext_dl_get(const scamper_icmpext_t *ie)
 const uint8_t *scamper_icmpext_data_get(const scamper_icmpext_t *ie)
 {
   return ie->ie_data;
-}
-
-const scamper_icmpext_t *scamper_icmpext_next_get(const scamper_icmpext_t *ie)
-{
-  return ie->ie_next;
 }
 
 int scamper_icmpext_is_mpls(const scamper_icmpext_t *ie)
@@ -100,5 +97,44 @@ scamper_icmpext_t *scamper_icmpext_use(scamper_icmpext_t *ie)
 {
   ie->refcnt++;
   return ie;
+}
+#endif
+
+int scamper_icmpexts_cmp(const scamper_icmpexts_t *a,
+			 const scamper_icmpexts_t *b)
+{
+  uint16_t i, c = a->extc <= b->extc ? a->extc : b->extc;
+  int x;
+
+  for(i=0; i<c; i++)
+    if((x = scamper_icmpext_cmp(a->exts[i], b->exts[i])) != 0)
+      return x;
+
+  if(a->extc < b->extc) return -1;
+  if(a->extc > b->extc) return  1;
+  return 0;
+}
+
+uint16_t scamper_icmpexts_count_get(const scamper_icmpexts_t *exts)
+{
+  if(exts != NULL)
+    return exts->extc;
+  return 0;
+}
+
+scamper_icmpext_t *
+scamper_icmpexts_ext_get(const scamper_icmpexts_t *exts, uint16_t i)
+{
+  if(exts != NULL && exts->exts != NULL && i < exts->extc)
+    return exts->exts[i];
+  return NULL;
+}
+
+#ifdef BUILDING_LIBSCAMPERFILE
+scamper_icmpexts_t *scamper_icmpexts_use(scamper_icmpexts_t *exts)
+{
+  if(exts != NULL)
+    exts->refcnt++;
+  return exts;
 }
 #endif

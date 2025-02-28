@@ -27,6 +27,8 @@ cdef extern from "scamper_addr.h":
 cdef extern from "scamper_icmpext.h":
  ctypedef struct scamper_icmpext_t:
   pass
+ ctypedef struct scamper_icmpexts_t:
+  pass
 
 cdef extern from "scamper_list.h":
  ctypedef struct scamper_list_t:
@@ -135,7 +137,7 @@ cdef extern from "scamper_tracelb.h":
  bint scamper_tracelb_reply_is_icmp_unreach(const scamper_tracelb_reply_t *reply)
  bint scamper_tracelb_reply_is_tcp(const scamper_tracelb_reply_t *reply)
  bint scamper_tracelb_reply_is_reply_ttl(const scamper_tracelb_reply_t *reply)
- scamper_icmpext_t *scamper_tracelb_reply_icmp_ext_get(const scamper_tracelb_reply_t *reply)
+ scamper_icmpexts_t *scamper_tracelb_reply_icmp_exts_get(const scamper_tracelb_reply_t *reply)
 
  scamper_tracelb_probeset_summary_t *scamper_tracelb_probeset_summary_alloc(const scamper_tracelb_probeset_t *set)
  void scamper_tracelb_probeset_summary_free(scamper_tracelb_probeset_summary_t *sum)

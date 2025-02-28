@@ -5,10 +5,10 @@
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2014      The Regents of the University of California
  * Copyright (C) 2015      The University of Waikato
- * Copyright (C) 2015-2024 Matthew Luckie
+ * Copyright (C) 2015-2025 Matthew Luckie
  * Author: Matthew Luckie
  *
- * $Id: scamper_trace_warts.c,v 1.49 2024/10/17 07:56:45 mjl Exp $
+ * $Id: scamper_trace_warts.c,v 1.52 2025/02/23 06:18:50 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -499,7 +499,7 @@ static int warts_trace_hop_read_icmpext(const uint8_t *buf, uint32_t *off,
 					uint32_t len, scamper_trace_hop_t *hop,
 					void *param)
 {
-  return warts_icmpext_read(buf, off, len, &hop->hop_icmpext);
+  return warts_icmpexts_read(buf, off, len, &hop->hop_icmp_exts);
 }
 
 static void warts_trace_hop_write_icmpext(uint8_t *buf, uint32_t *off,
@@ -507,7 +507,7 @@ static void warts_trace_hop_write_icmpext(uint8_t *buf, uint32_t *off,
 					  const scamper_trace_hop_t *hop,
 					  void *param)
 {
-  warts_icmpext_write(buf, off, len, hop->hop_icmpext);
+  warts_icmpexts_write(buf, off, len, hop->hop_icmp_exts);
   return;
 }
 
@@ -516,7 +516,6 @@ static int warts_trace_hop_params(const scamper_trace_t *trace,
 				  warts_addrtable_t *table, uint8_t *flags,
 				  uint16_t *flags_len, uint16_t *params_len)
 {
-  scamper_icmpext_t *ie;
   const warts_var_t *var;
   int max_id = 0;
   size_t i;
@@ -530,68 +529,27 @@ static int warts_trace_hop_params(const scamper_trace_t *trace,
       var = &hop_vars[i];
 
       /* not used any more */
-      if(var->id == WARTS_TRACE_HOP_ADDR_GID)
+      if(var->id == WARTS_TRACE_HOP_ADDR_GID ||
+	 (var->id == WARTS_TRACE_HOP_ADDR && hop->hop_addr == NULL) ||
+	 (var->id == WARTS_TRACE_HOP_TCP_FLAGS &&
+	  SCAMPER_TRACE_HOP_IS_TCP(hop) == 0) ||
+	 (var->id == WARTS_TRACE_HOP_ICMP_TC &&
+	  SCAMPER_TRACE_HOP_IS_ICMP(hop) == 0) ||
+	 (var->id == WARTS_TRACE_HOP_Q_IPLEN &&
+	  (SCAMPER_TRACE_HOP_IS_ICMP_Q(hop) == 0 ||
+	   hop->hop_icmp_q_ipl == trace->probe_size)) ||
+	 (var->id == WARTS_TRACE_HOP_Q_IPTTL &&
+	  (SCAMPER_TRACE_HOP_IS_ICMP_Q(hop) == 0 ||
+	   hop->hop_icmp_q_ttl == 1)) ||
+	 (var->id == WARTS_TRACE_HOP_Q_IPTOS &&
+	  SCAMPER_TRACE_HOP_IS_ICMP_Q(hop) == 0) ||
+	 (var->id == WARTS_TRACE_HOP_NHMTU &&
+	  SCAMPER_TRACE_HOP_IS_ICMP_PTB(hop) == 0) ||
+	 (var->id == WARTS_TRACE_HOP_ICMPEXT && hop->hop_icmp_exts == NULL) ||
+	 (var->id == WARTS_TRACE_HOP_REPLY_IPID && hop->hop_reply_ipid == 0) ||
+	 (var->id == WARTS_TRACE_HOP_TX && hop->hop_tx.tv_sec == 0) ||
+	 (var->id == WARTS_TRACE_HOP_NAME && hop->hop_name == NULL))
 	continue;
-
-      if(var->id == WARTS_TRACE_HOP_ADDR)
-	{
-	  if(hop->hop_addr == NULL)
-	    continue;
-	}
-      else if(var->id == WARTS_TRACE_HOP_TCP_FLAGS)
-	{
-	  if(SCAMPER_TRACE_HOP_IS_TCP(hop) == 0)
-	    continue;
-	}
-      else if(var->id == WARTS_TRACE_HOP_ICMP_TC)
-	{
-	  if(SCAMPER_TRACE_HOP_IS_ICMP(hop) == 0)
-	    continue;
-	}
-      else if(var->id == WARTS_TRACE_HOP_Q_IPLEN)
-	{
-	  if(SCAMPER_TRACE_HOP_IS_ICMP_Q(hop) == 0)
-	    continue;
-	  if(hop->hop_icmp_q_ipl == trace->probe_size)
-	    continue;
-	}
-      else if(var->id == WARTS_TRACE_HOP_Q_IPTTL)
-	{
-	  if(SCAMPER_TRACE_HOP_IS_ICMP_Q(hop) == 0)
-	    continue;
-	  if(hop->hop_icmp_q_ttl == 1)
-	    continue;
-	}
-      else if(var->id == WARTS_TRACE_HOP_Q_IPTOS)
-	{
-	  if(SCAMPER_TRACE_HOP_IS_ICMP_Q(hop) == 0)
-	    continue;
-	}
-      else if(var->id == WARTS_TRACE_HOP_NHMTU)
-	{
-	  if(SCAMPER_TRACE_HOP_IS_ICMP_PTB(hop) == 0)
-	    continue;
-	}
-      else if(var->id == WARTS_TRACE_HOP_ICMPEXT)
-	{
-	  if(hop->hop_icmpext == NULL)
-	    continue;
-	}
-      else if(var->id == WARTS_TRACE_HOP_REPLY_IPID)
-	{
-	  if(hop->hop_reply_ipid == 0)
-	    continue;
-	}
-      else if(var->id == WARTS_TRACE_HOP_TX)
-	{
-	  if(hop->hop_tx.tv_sec == 0)
-	    continue;
-	}
-      else if(var->id == WARTS_TRACE_HOP_NAME)
-	{
-	  if(hop->hop_name == NULL)
-	    continue;
-	}
 
       flag_set(flags, var->id, &max_id);
 
@@ -602,9 +560,8 @@ static int warts_trace_hop_params(const scamper_trace_t *trace,
 	}
       else if(var->id == WARTS_TRACE_HOP_ICMPEXT)
 	{
-	  *params_len += 2;
-	  for(ie = hop->hop_icmpext; ie != NULL; ie = ie->ie_next)
-	    *params_len += (2 + 1 + 1 + ie->ie_dl);
+	  if(warts_icmpexts_size(hop->hop_icmp_exts, params_len) != 0)
+	    return -1;
 	}
       else if(var->id == WARTS_TRACE_HOP_NAME)
 	{
@@ -889,26 +846,11 @@ static void warts_trace_pmtud_params(const scamper_trace_t *trace,
   for(i=0; i<sizeof(pmtud_vars)/sizeof(warts_var_t); i++)
     {
       var = &pmtud_vars[i];
-      if(var->id == WARTS_TRACE_PMTUD_IFMTU)
-	{
-	  if(pmtud->ifmtu == 0)
-	    continue;
-	}
-      else if(var->id == WARTS_TRACE_PMTUD_PMTU)
-	{
-	  if(pmtud->pmtu == 0)
-	    continue;
-	}
-      else if(var->id == WARTS_TRACE_PMTUD_OUTMTU)
-	{
-	  if(pmtud->outmtu == 0)
-	    continue;
-	}
-      else if(var->id == WARTS_TRACE_PMTUD_NOTEC)
-	{
-	  if(pmtud->notec == 0)
-	    continue;
-	}
+      if((var->id == WARTS_TRACE_PMTUD_IFMTU && pmtud->ifmtu == 0) ||
+	 (var->id == WARTS_TRACE_PMTUD_PMTU && pmtud->pmtu == 0) ||
+	 (var->id == WARTS_TRACE_PMTUD_OUTMTU && pmtud->outmtu == 0) ||
+	 (var->id == WARTS_TRACE_PMTUD_NOTEC && pmtud->notec == 0))
+	continue;
 
       flag_set(state->flags, var->id, &max_id);
       assert(var->size >= 0);

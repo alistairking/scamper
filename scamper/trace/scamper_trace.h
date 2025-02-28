@@ -1,14 +1,14 @@
 /*
  * scamper_trace.h
  *
- * $Id: scamper_trace.h,v 1.162 2024/11/07 18:15:39 mjl Exp $
+ * $Id: scamper_trace.h,v 1.165 2025/02/11 19:12:29 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2008      Alistair King
  * Copyright (C) 2015      The Regents of the University of California
  * Copyright (C) 2015      The University of Waikato
- * Copyright (C) 2019-2023 Matthew Luckie
+ * Copyright (C) 2019-2025 Matthew Luckie
  *
  * Authors: Matthew Luckie
  *          Doubletree implementation by Alistair King
@@ -46,6 +46,7 @@ typedef struct scamper_trace_dtree scamper_trace_dtree_t;
 
 char *scamper_trace_tojson(const scamper_trace_t *trace, size_t *len);
 
+scamper_trace_t *scamper_trace_dup(scamper_trace_t *trace);
 void scamper_trace_free(scamper_trace_t *trace);
 scamper_addr_t *scamper_trace_src_get(const scamper_trace_t *trace);
 scamper_addr_t *scamper_trace_dst_get(const scamper_trace_t *trace);
@@ -97,6 +98,7 @@ int scamper_trace_type_is_icmp(const scamper_trace_t *trace);
 int scamper_trace_flag_is_icmpcsumdp(const scamper_trace_t *trace);
 
 /* use and free hop structures */
+scamper_trace_hop_t *scamper_trace_hop_dup(const scamper_trace_hop_t *hop);
 scamper_trace_hop_t *scamper_trace_hop_use(scamper_trace_hop_t *hop);
 void scamper_trace_hop_free(scamper_trace_hop_t *hop);
 
@@ -133,19 +135,20 @@ uint8_t scamper_trace_hop_tcp_flags_get(const scamper_trace_hop_t *hop);
 scamper_trace_hop_t *scamper_trace_hop_next_get(const scamper_trace_hop_t *hop);
 
 #ifdef __SCAMPER_ICMPEXT_H
-scamper_icmpext_t *scamper_trace_hop_icmpext_get(const scamper_trace_hop_t *hop);
+scamper_icmpexts_t *
+scamper_trace_hop_icmp_exts_get(const scamper_trace_hop_t *hop);
 #endif
 
-#define SCAMPER_TRACE_STOP_NONE      0x00 /* null reason */
-#define SCAMPER_TRACE_STOP_COMPLETED 0x01 /* got an ICMP port unreach */
-#define SCAMPER_TRACE_STOP_UNREACH   0x02 /* got an other ICMP unreach code */
-#define SCAMPER_TRACE_STOP_ICMP      0x03 /* got an ICMP msg, not unreach */
-#define SCAMPER_TRACE_STOP_LOOP      0x04 /* loop detected */
-#define SCAMPER_TRACE_STOP_GAPLIMIT  0x05 /* gaplimit reached */
-#define SCAMPER_TRACE_STOP_ERROR     0x06 /* sendto error */
-#define SCAMPER_TRACE_STOP_HOPLIMIT  0x07 /* hoplimit reached */
-#define SCAMPER_TRACE_STOP_GSS       0x08 /* found hop in global stop set */
-#define SCAMPER_TRACE_STOP_HALTED    0x09 /* halted */
+#define SCAMPER_TRACE_STOP_NONE         0 /* null reason */
+#define SCAMPER_TRACE_STOP_COMPLETED    1 /* got an ICMP port unreach */
+#define SCAMPER_TRACE_STOP_UNREACH      2 /* got an other ICMP unreach code */
+#define SCAMPER_TRACE_STOP_ICMP         3 /* got an ICMP msg, not unreach */
+#define SCAMPER_TRACE_STOP_LOOP         4 /* loop detected */
+#define SCAMPER_TRACE_STOP_GAPLIMIT     5 /* gaplimit reached */
+#define SCAMPER_TRACE_STOP_ERROR        6 /* sendto error */
+#define SCAMPER_TRACE_STOP_HOPLIMIT     7 /* hoplimit reached */
+#define SCAMPER_TRACE_STOP_GSS          8 /* found hop in global stop set */
+#define SCAMPER_TRACE_STOP_HALTED       9 /* halted */
 
 #define SCAMPER_TRACE_FLAG_ALLATTEMPTS  0x01 /* send all allotted attempts */
 #define SCAMPER_TRACE_FLAG_PMTUD        0x02 /* conduct PMTU discovery */

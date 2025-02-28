@@ -1,12 +1,12 @@
 /*
  * scamper_ping_cmd.c
  *
- * $Id: scamper_ping_cmd.c,v 1.27 2024/08/19 21:53:01 mjl Exp $
+ * $Id: scamper_ping_cmd.c,v 1.28 2025/02/25 06:31:24 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2012-2015 The Regents of the University of California
- * Copyright (C) 2016-2023 Matthew Luckie
+ * Copyright (C) 2016-2025 Matthew Luckie
  * Copyright (C) 2024      The Regents of the University of California
  * Author: Matthew Luckie
  *
@@ -43,13 +43,13 @@
 #define SCAMPER_DO_PING_PATTERN_MAX       32
 
 #define PING_OPT_PAYLOAD      1
-#define PING_OPT_PROBECOUNT   2
+#define PING_OPT_ATTEMPTS     2
 #define PING_OPT_PROBEICMPSUM 3
 #define PING_OPT_PROBESPORT   4
 #define PING_OPT_PROBEDPORT   5
 #define PING_OPT_WAITPROBE    6
 #define PING_OPT_PROBETTL     7
-#define PING_OPT_REPLYCOUNT   8
+#define PING_OPT_STOPCOUNT    8
 #define PING_OPT_OPTION       9
 #define PING_OPT_PATTERN      10
 #define PING_OPT_PROBEMETHOD  11
@@ -69,14 +69,14 @@ static const scamper_option_in_t opts[] = {
   {'A', NULL, PING_OPT_PROBETCPACK,  SCAMPER_OPTION_TYPE_NUM},
   {'b', NULL, PING_OPT_PAYLOADSIZE,  SCAMPER_OPTION_TYPE_NUM},
   {'B', NULL, PING_OPT_PAYLOAD,      SCAMPER_OPTION_TYPE_STR},
-  {'c', NULL, PING_OPT_PROBECOUNT,   SCAMPER_OPTION_TYPE_NUM},
+  {'c', NULL, PING_OPT_ATTEMPTS,     SCAMPER_OPTION_TYPE_NUM},
   {'C', NULL, PING_OPT_PROBEICMPSUM, SCAMPER_OPTION_TYPE_STR},
   {'d', NULL, PING_OPT_PROBEDPORT,   SCAMPER_OPTION_TYPE_NUM},
   {'F', NULL, PING_OPT_PROBESPORT,   SCAMPER_OPTION_TYPE_NUM},
   {'i', NULL, PING_OPT_WAITPROBE,    SCAMPER_OPTION_TYPE_STR},
   {'m', NULL, PING_OPT_PROBETTL,     SCAMPER_OPTION_TYPE_NUM},
   {'M', NULL, PING_OPT_REPLYPMTU,    SCAMPER_OPTION_TYPE_NUM},
-  {'o', NULL, PING_OPT_REPLYCOUNT,   SCAMPER_OPTION_TYPE_NUM},
+  {'o', NULL, PING_OPT_STOPCOUNT,    SCAMPER_OPTION_TYPE_NUM},
   {'O', NULL, PING_OPT_OPTION,       SCAMPER_OPTION_TYPE_STR},
   {'p', NULL, PING_OPT_PATTERN,      SCAMPER_OPTION_TYPE_STR},
   {'P', NULL, PING_OPT_PROBEMETHOD,  SCAMPER_OPTION_TYPE_STR},
@@ -101,13 +101,13 @@ typedef struct opt_limit
 static const opt_limit_t limits[] = {
   {NULL, 0, 0}, /* zero unused */
   {NULL, 0, 0}, /* payload */
-  {"probe-count", 1, 65535},
+  {"attempts", 1, 65535},
   {"icmp-sum", 0, 65535},
   {"sport", 0, 65535},
   {"dport", 0, 65535},
   {NULL, 0, 0}, /* wait-probe */
   {"ttl", 1, 255},
-  {"reply-count", 0, 65535},
+  {"stop-count", 0, 65535},
   {NULL, 0, 0}, /* -O options */
   {NULL, 0, 0}, /* pattern */
   {NULL, 0, 0}, /* probe method */
@@ -127,9 +127,9 @@ static const opt_limit_t limits[] = {
 const char *scamper_do_ping_usage(void)
 {
   return
-    "ping [-R] [-A tcp-ack] [-b payload-size] [-B payload] [-c count]\n"
+    "ping [-R] [-A tcp-ack] [-b payload-size] [-B payload] [-c attempts]\n"
     "     [-C icmp-sum] [-d dport] [-F sport] [-i wait-probe] [-m ttl]\n"
-    "     [-M pmtu] [-o reply-count] [-O option] [-p pattern] [-P method]\n"
+    "     [-M pmtu] [-o stop-count] [-O option] [-p pattern] [-P method]\n"
     "     [-r rtraddr] [-s probe-size] [-S srcaddr]\n"
     "     [-T timestamp-option] [-U userid] [-W wait-timeout] [-z tos]";
 }
@@ -148,12 +148,12 @@ static int ping_arg_param_validate(int optid, char *param, long long *out,
   switch(optid)
     {
     case PING_OPT_PROBETCPACK:
-    case PING_OPT_PROBECOUNT:
+    case PING_OPT_ATTEMPTS:
     case PING_OPT_PROBEICMPSUM:
     case PING_OPT_PROBEDPORT:
     case PING_OPT_PROBESPORT:
     case PING_OPT_PROBETTL:
-    case PING_OPT_REPLYCOUNT:
+    case PING_OPT_STOPCOUNT:
     case PING_OPT_REPLYPMTU:
     case PING_OPT_PROBESIZE:
     case PING_OPT_PAYLOADSIZE:
@@ -360,7 +360,7 @@ static int ping_tsopt(scamper_ping_t *ping, uint32_t *flags, char *tsopt)
 	  i--;
 	}
 
-      ping->probe_tsps = ts;
+      ping->tsps = ts;
     }
   else if(*ptr == '\0' && strcasecmp(tsopt, "tsonly") == 0)
     {
@@ -389,14 +389,14 @@ void *scamper_do_ping_alloc(char *str, char *errbuf, size_t errlen)
 {
   scamper_option_out_t *opts_out = NULL, *opt;
   scamper_ping_t *ping = NULL;
-  uint16_t  probe_count   = 4;
+  uint16_t  attempts      = 4;
   struct timeval wait_timeout, wait_probe;
   uint8_t   probe_ttl     = 64;
   uint8_t   probe_tos     = 0;
   uint8_t   probe_method  = SCAMPER_PING_METHOD_ICMP_ECHO;
   int       probe_sport   = -1;
   int       probe_dport   = -1;
-  uint16_t  reply_count   = 0;
+  uint16_t  stop_count    = 0;
   uint16_t  reply_pmtu    = 0;
   uint16_t  probe_size    = 0; /* unset */
   int       payload_size  = -1; /* unset */
@@ -484,8 +484,8 @@ void *scamper_do_ping_alloc(char *str, char *errbuf, size_t errlen)
 	  flags |= SCAMPER_PING_FLAG_PAYLOAD;
 	  break;
 
-	case PING_OPT_PROBECOUNT:
-	  probe_count = (uint16_t)tmp;
+	case PING_OPT_ATTEMPTS:
+	  attempts = (uint16_t)tmp;
 	  break;
 
 	case PING_OPT_PROBEDPORT:
@@ -517,8 +517,8 @@ void *scamper_do_ping_alloc(char *str, char *errbuf, size_t errlen)
 	  break;
 
 	/* how many unique replies are required before the ping completes */
-	case PING_OPT_REPLYCOUNT:
-	  reply_count = (uint16_t)tmp;
+	case PING_OPT_STOPCOUNT:
+	  stop_count = (uint16_t)tmp;
 	  break;
 
 	case PING_OPT_REPLYPMTU:
@@ -604,7 +604,7 @@ void *scamper_do_ping_alloc(char *str, char *errbuf, size_t errlen)
       snprintf(errbuf, errlen, "invalid destination address");
       goto err;
     }
-  ping->probe_method = probe_method;
+  ping->method = probe_method;
 
   /* only one of pattern or payload should be specified */
   if(countbits32(optids & ((0x1 << PING_OPT_PATTERN) |
@@ -662,8 +662,8 @@ void *scamper_do_ping_alloc(char *str, char *errbuf, size_t errlen)
       cmps = 20;
       if(flags & SCAMPER_PING_FLAG_V4RR)
 	cmps += 40;
-      else if(ping->probe_tsps != NULL)
-	cmps += (8 * ping->probe_tsps->ipc) + 4;
+      else if(ping->tsps != NULL)
+	cmps += (8 * ping->tsps->ipc) + 4;
       else if(flags & SCAMPER_PING_FLAG_TSONLY)
 	cmps += 40;
       else if(flags & SCAMPER_PING_FLAG_TSANDADDR)
@@ -808,17 +808,17 @@ void *scamper_do_ping_alloc(char *str, char *errbuf, size_t errlen)
   /* copy in the data bytes, if any */
   if(pattern_len != 0)
     {
-      if((ping->probe_data = memdup(pattern, pattern_len)) == NULL)
+      if((ping->data = memdup(pattern, pattern_len)) == NULL)
 	{
 	  snprintf(errbuf, errlen, "could not copy pattern");
 	  goto err;
 	}
-      ping->probe_datalen = pattern_len;
+      ping->datalen = pattern_len;
     }
   else if(payload_len != 0)
     {
-      ping->probe_data = payload; payload = NULL;
-      ping->probe_datalen = payload_len;
+      ping->data = payload; payload = NULL;
+      ping->datalen = payload_len;
     }
 
   /* caller is happy with a scamper-chosen source port */
@@ -836,9 +836,9 @@ void *scamper_do_ping_alloc(char *str, char *errbuf, size_t errlen)
 	   * won't wrap to zero.
 	   */
 	  if(SCAMPER_PING_METHOD_IS_VARY_SPORT(ping) &&
-	     65535 - probe_sport < probe_count-1 && probe_count < 32768)
+	     65535 - probe_sport < attempts - 1 && attempts < 32768)
 	    {
-	      probe_sport -= probe_count;
+	      probe_sport -= attempts;
 	      if(probe_sport < 0x8000)
 		probe_sport = 0x8000;
 	    }
@@ -846,13 +846,12 @@ void *scamper_do_ping_alloc(char *str, char *errbuf, size_t errlen)
     }
   else if(probe_sport != 0)
     {
-      /* make sure probe_sport + probe_count <= 65535 */
+      /* make sure probe_sport + attempts <= 65535 */
       if(SCAMPER_PING_METHOD_IS_VARY_SPORT(ping) &&
-	 65535 - probe_sport < probe_count - 1)
+	 65535 - probe_sport < attempts - 1)
 	{
-	  snprintf(errbuf, errlen,
-		   "invalid probe_sport %u given probe_count %u",
-		   probe_sport, probe_count);
+	  snprintf(errbuf, errlen, "invalid probe_sport %u given attempts %u",
+		   probe_sport, attempts);
 	  goto err;
 	}
     }
@@ -865,29 +864,29 @@ void *scamper_do_ping_alloc(char *str, char *errbuf, size_t errlen)
 	probe_dport = 33435;
     }
 
-  /* make sure probe_dport + probe_count <= 65535 */
+  /* make sure probe_dport + attempts <= 65535 */
   if(SCAMPER_PING_METHOD_IS_VARY_DPORT(ping) &&
-     65535 - probe_dport < probe_count - 1)
+     65535 - probe_dport < attempts - 1)
     {
-      snprintf(errbuf, errlen, "invalid probe_dport %u given probe_count %u",
-	       probe_dport, probe_count);
+      snprintf(errbuf, errlen, "invalid probe_dport %u given attempts %u",
+	       probe_dport, attempts);
       goto err;
     }
 
   timeval_cpy(&ping->wait_probe, &wait_probe);
   timeval_cpy(&ping->wait_timeout, &wait_timeout);
 
-  ping->probe_count      = probe_count;
-  ping->probe_size       = probe_size;
-  ping->probe_ttl        = probe_ttl;
-  ping->probe_tos        = probe_tos;
-  ping->probe_sport      = probe_sport;
-  ping->probe_dport      = probe_dport;
-  ping->probe_icmpsum    = probe_icmpsum;
-  ping->reply_count      = reply_count;
-  ping->reply_pmtu       = reply_pmtu;
-  ping->userid           = userid;
-  ping->flags            = flags;
+  ping->attempts   = attempts;
+  ping->size       = probe_size;
+  ping->ttl        = probe_ttl;
+  ping->tos        = probe_tos;
+  ping->sport      = probe_sport;
+  ping->dport      = probe_dport;
+  ping->icmpsum    = probe_icmpsum;
+  ping->stop_count = stop_count;
+  ping->pmtu       = reply_pmtu;
+  ping->userid     = userid;
+  ping->flags      = flags;
 
   if((flags & SCAMPER_PING_FLAG_RAW) != 0 &&
      (SCAMPER_ADDR_TYPE_IS_IPV4(ping->dst) == 0 ||
@@ -905,17 +904,17 @@ void *scamper_do_ping_alloc(char *str, char *errbuf, size_t errlen)
 	  goto err;
 	}
 
-      if(ping->probe_method == SCAMPER_PING_METHOD_TCP_SYN ||
-	 ping->probe_method == SCAMPER_PING_METHOD_TCP_SYN_SPORT ||
-	 ping->probe_method == SCAMPER_PING_METHOD_TCP_RST)
+      if(ping->method == SCAMPER_PING_METHOD_TCP_SYN ||
+	 ping->method == SCAMPER_PING_METHOD_TCP_SYN_SPORT ||
+	 ping->method == SCAMPER_PING_METHOD_TCP_RST)
 	{
-	  ping->probe_tcpseq = probe_tcpack;
-	  ping->probe_tcpack = 0;
+	  ping->tcpseq = probe_tcpack;
+	  ping->tcpack = 0;
 	}
       else
 	{
-	  ping->probe_tcpack = probe_tcpack;
-	  if(random_u32(&ping->probe_tcpseq) != 0)
+	  ping->tcpack = probe_tcpack;
+	  if(random_u32(&ping->tcpseq) != 0)
 	    {
 	      snprintf(errbuf, errlen, "could not generate random tcp seq val");
 	      goto err;

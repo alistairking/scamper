@@ -1,7 +1,7 @@
 /*
  * scamper_tracelb_int.h
  *
- * $Id: scamper_tracelb_int.h,v 1.6 2024/10/13 20:53:37 mjl Exp $
+ * $Id: scamper_tracelb_int.h,v 1.7 2025/02/11 14:31:43 mjl Exp $
  *
  * Copyright (C) 2008-2009 The University of Waikato
  * Copyright (C) 2018-2024 Matthew Luckie
@@ -123,7 +123,7 @@ struct scamper_tracelb_reply
   uint8_t                reply_icmp_code;  /* icmp code of the reply */
   uint8_t                reply_icmp_q_tos; /* tos byte in quote */
   uint8_t                reply_icmp_q_ttl; /* ttl byte in quote */
-  scamper_icmpext_t     *reply_icmp_ext;   /* icmp extensions included */
+  scamper_icmpexts_t    *reply_icmp_exts;  /* icmp extensions included */
   uint8_t                reply_tcp_flags;  /* tcp flags of the reply */
 
 #ifdef BUILDING_LIBSCAMPERFILE

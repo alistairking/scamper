@@ -2,11 +2,11 @@
  * sc_pinger : scamper driver to probe destinations with various ping
  *             methods
  *
- * $Id: sc_pinger.c,v 1.35 2024/12/30 03:16:58 mjl Exp $
+ * $Id: sc_pinger.c,v 1.40 2025/02/24 21:35:33 mjl Exp $
  *
  * Copyright (C) 2020      The University of Waikato
- * Copyright (C) 2022-2024 Matthew Luckie
- * Copyright (C) 2023-2024 The Regents of the University of California
+ * Copyright (C) 2022-2025 Matthew Luckie
+ * Copyright (C) 2023-2025 The Regents of the University of California
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -471,7 +471,7 @@ static int check_options(int argc, char *argv[])
 		  strerror(errno));
 	  goto done;
 	}
-      if((sb.st_mode & S_IFDIR) == 0)
+      if(S_ISDIR(sb.st_mode) == 0)
 	{
 	  usage(OPT_MOVE);
 	  fprintf(stderr, "%s is not a directory\n", movedir_name);
@@ -716,8 +716,8 @@ static int do_addrfile(void)
     }
   else
     {
-      memmove(addrfile_buf, addrfile_buf+start, end - start);
       addrfile_off = end - start;
+      memmove(addrfile_buf, addrfile_buf+start, addrfile_off);
     }
 
   return 0;
@@ -895,6 +895,7 @@ static int do_method(void)
 
 static int process_pinger(sc_pinger_t *pinger, scamper_ping_t *ping)
 {
+  const scamper_ping_probe_t *probe;
   const scamper_ping_reply_t *reply;
   scamper_addr_t *dst, *r_addr;
   uint16_t i, ping_sent;
@@ -909,11 +910,11 @@ static int process_pinger(sc_pinger_t *pinger, scamper_ping_t *ping)
       dst = scamper_ping_dst_get(ping);
       for(i=0; i<ping_sent; i++)
 	{
-	  if((reply = scamper_ping_reply_get(ping, i)) == NULL)
-	    continue;
-	  r_addr = scamper_ping_reply_addr_get(reply);
-	  if(scamper_addr_cmp(dst, r_addr) != 0 &&
-	     scamper_ping_reply_is_from_target(ping, reply) == 0)
+	  if((probe = scamper_ping_probe_get(ping, i)) == NULL ||
+	     (reply = scamper_ping_probe_reply_get(probe, 0)) == NULL ||
+	     (r_addr = scamper_ping_reply_addr_get(reply)) == NULL ||
+	     (scamper_addr_cmp(dst, r_addr) != 0 &&
+	      scamper_ping_reply_is_from_target(ping, reply) == 0))
 	    continue;
 	  replyc++;
 	}
@@ -1072,7 +1073,7 @@ static void ctrlcb(scamper_inst_t *inst, uint8_t type, scamper_task_t *task,
 	  return;
 	}
 
-      cs = scamper_task_getparam(task);
+      cs = scamper_task_param_get(task);
       if(obj_type == SCAMPER_FILE_OBJ_PING)
 	{
 	  if(cs->type != 0)
@@ -1096,7 +1097,7 @@ static void ctrlcb(scamper_inst_t *inst, uint8_t type, scamper_task_t *task,
     }
   else if(type == SCAMPER_CTRL_TYPE_ERR)
     {
-      cs = scamper_task_getparam(task);
+      cs = scamper_task_param_get(task);
       if(cs->type == 0)
 	{
 	  if(process_pinger(cs->un.pinger, NULL) != 0)
@@ -1129,6 +1130,40 @@ static void ctrlcb(scamper_inst_t *inst, uint8_t type, scamper_task_t *task,
   return;
 }
 
+#ifdef HAVE_SOCKADDR_UN
+/*
+ * inst_remote:
+ *
+ * create a remote instance, either via
+ *  - mux: /path/to/mux/vp
+ *  - socket: /path/to/unix-dir/vp
+ */
+static scamper_inst_t *inst_remote(void)
+{
+  scamper_inst_t *inst = NULL;
+  struct stat sb;
+
+  if(stat(scamper_unix, &sb) == 0)
+    {
+      if(S_ISSOCK(sb.st_mode) == 0)
+	{
+	  print("%s: %s is not a remote socket", __func__, scamper_unix);
+	  return NULL;
+	}
+      if((inst = scamper_inst_remote(scamper_ctrl, scamper_unix)) == NULL)
+	print("%s: could not alloc remote inst: %s", __func__,
+	      scamper_ctrl_strerror(scamper_ctrl));
+      return inst;
+    }
+
+  if((inst = scamper_inst_muxvp(scamper_ctrl, scamper_unix)) == NULL)
+    print("%s: could not alloc mux vp inst: %s", __func__,
+	  scamper_ctrl_strerror(scamper_ctrl));
+
+  return inst;
+}
+#endif
+
 /*
  * do_scamperconnect
  *
@@ -1137,8 +1172,6 @@ static void ctrlcb(scamper_inst_t *inst, uint8_t type, scamper_task_t *task,
  */
 static int do_scamperconnect(void)
 {
-  const char *type = "unknown";
-
   if((scamper_ctrl = scamper_ctrl_alloc(ctrlcb)) == NULL)
     {
       print("%s: could not alloc scamper_ctrl", __func__);
@@ -1147,31 +1180,30 @@ static int do_scamperconnect(void)
 
   if(scamper_port != 0)
     {
-      type = "port";
       scamper_inst = scamper_inst_inet(scamper_ctrl, NULL, NULL, scamper_port);
+      if(scamper_inst == NULL)
+	print("%s: could not alloc port inst: %s", __func__,
+	      scamper_ctrl_strerror(scamper_ctrl));
     }
 #ifdef HAVE_SOCKADDR_UN
   else if(scamper_unix != NULL)
     {
       if(options & OPT_UNIX)
 	{
-	  type = "unix";
 	  scamper_inst = scamper_inst_unix(scamper_ctrl, NULL, scamper_unix);
+	  if(scamper_inst == NULL)
+	    print("%s: could not alloc unix inst: %s", __func__,
+		  scamper_ctrl_strerror(scamper_ctrl));
 	}
       else if(options & OPT_REMOTE)
 	{
-	  type = "remote";
-	  scamper_inst = scamper_inst_remote(scamper_ctrl, scamper_unix);
+	  scamper_inst = inst_remote();
 	}
     }
 #endif
 
   if(scamper_inst == NULL)
-    {
-      print("%s: could not alloc %s inst: %s", __func__, type,
-	    scamper_ctrl_strerror(scamper_ctrl));
-      return -1;
-    }
+    return -1;
 
   return 0;
 }

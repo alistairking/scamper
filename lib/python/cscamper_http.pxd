@@ -72,6 +72,8 @@ cdef extern from "scamper_http.h":
  bint scamper_http_buf_is_tls(const scamper_http_buf_t *htb)
  bint scamper_http_buf_is_hdr(const scamper_http_buf_t *htb)
  bint scamper_http_buf_is_data(const scamper_http_buf_t *htb)
+ char *scamper_http_buf_dir_tostr(const scamper_http_buf_t *htb, char *buf, size_t len)
+ char *scamper_http_buf_type_tostr(const scamper_http_buf_t *htb, char *buf, size_t len)
 
  int scamper_http_status_code_get(const scamper_http_t *http, uint16_t *status)
  int scamper_http_url_len_get(const scamper_http_t *http, size_t *len)

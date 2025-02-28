@@ -2,7 +2,7 @@
 #
 # Author: Matthew Luckie
 #
-# Copyright (C) 2023-2024 The Regents of the University of California
+# Copyright (C) 2023-2025 The Regents of the University of California
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -35,6 +35,8 @@ cdef extern from "scamper_ping.h":
   pass
  ctypedef struct scamper_ping_v4ts_t:
   pass
+ ctypedef struct scamper_ping_probe_t:
+  pass
  ctypedef struct scamper_ping_reply_t:
   pass
  ctypedef struct scamper_ping_reply_v4rr_t:
@@ -59,11 +61,11 @@ cdef extern from "scamper_ping.h":
  const timeval *scamper_ping_start_get(const scamper_ping_t *ping)
  uint8_t scamper_ping_stop_reason_get(const scamper_ping_t *ping)
  uint8_t scamper_ping_stop_data_get(const scamper_ping_t *ping)
- const uint8_t *scamper_ping_probe_data_get(const scamper_ping_t *ping)
- uint16_t scamper_ping_probe_datalen_get(const scamper_ping_t *ping)
- uint16_t scamper_ping_probe_count_get(const scamper_ping_t *ping)
- uint16_t scamper_ping_probe_size_get(const scamper_ping_t *ping)
- uint8_t scamper_ping_probe_method_get(const scamper_ping_t *ping)
+ const uint8_t *scamper_ping_data_get(const scamper_ping_t *ping)
+ uint16_t scamper_ping_datalen_get(const scamper_ping_t *ping)
+ uint16_t scamper_ping_attempts_get(const scamper_ping_t *ping)
+ uint16_t scamper_ping_pktsize_get(const scamper_ping_t *ping)
+ uint8_t scamper_ping_method_get(const scamper_ping_t *ping)
  char *scamper_ping_method_tostr(const scamper_ping_t *, char *, size_t)
  bint scamper_ping_method_is_icmp(const scamper_ping_t *ping)
  bint scamper_ping_method_is_icmp_time(const scamper_ping_t *ping)
@@ -74,27 +76,32 @@ cdef extern from "scamper_ping.h":
  bint scamper_ping_method_is_vary_dport(const scamper_ping_t *ping)
  const timeval *scamper_ping_wait_probe_get(const scamper_ping_t *ping)
  const timeval *scamper_ping_wait_timeout_get(const scamper_ping_t *ping)
- uint8_t scamper_ping_probe_ttl_get(const scamper_ping_t *ping)
- uint8_t scamper_ping_probe_tos_get(const scamper_ping_t *ping)
- uint16_t scamper_ping_probe_sport_get(const scamper_ping_t *ping)
- uint16_t scamper_ping_probe_dport_get(const scamper_ping_t *ping)
- uint16_t scamper_ping_probe_icmpsum_get(const scamper_ping_t *ping)
- uint32_t scamper_ping_probe_tcpseq_get(const scamper_ping_t *ping)
- uint32_t scamper_ping_probe_tcpack_get(const scamper_ping_t *ping)
- scamper_ping_v4ts_t *scamper_ping_probe_tsps_get(const scamper_ping_t *ping)
+ uint8_t scamper_ping_ttl_get(const scamper_ping_t *ping)
+ uint8_t scamper_ping_tos_get(const scamper_ping_t *ping)
+ uint16_t scamper_ping_sport_get(const scamper_ping_t *ping)
+ uint16_t scamper_ping_dport_get(const scamper_ping_t *ping)
+ uint16_t scamper_ping_icmpsum_get(const scamper_ping_t *ping)
+ uint32_t scamper_ping_tcpseq_get(const scamper_ping_t *ping)
+ uint32_t scamper_ping_tcpack_get(const scamper_ping_t *ping)
+ scamper_ping_v4ts_t *scamper_ping_tsps_get(const scamper_ping_t *ping)
  uint32_t scamper_ping_flags_get(const scamper_ping_t *ping)
- uint16_t scamper_ping_reply_count_get(const scamper_ping_t *ping)
- uint16_t scamper_ping_reply_pmtu_get(const scamper_ping_t *ping)
+ uint16_t scamper_ping_stop_count_get(const scamper_ping_t *ping)
+ uint16_t scamper_ping_pmtu_get(const scamper_ping_t *ping)
  uint16_t scamper_ping_sent_get(const scamper_ping_t *ping)
- scamper_ping_reply_t *scamper_ping_reply_get(const scamper_ping_t *ping, uint16_t i)
+ scamper_ping_probe_t *scamper_ping_probe_get(const scamper_ping_t *ping, uint16_t i)
+
+ void scamper_ping_probe_free(scamper_ping_probe_t *probe)
+ scamper_ping_probe_t *scamper_ping_probe_use(scamper_ping_probe_t *probe)
+ uint16_t scamper_ping_probe_id_get(const scamper_ping_probe_t *probe)
+ uint16_t scamper_ping_probe_ipid_get(const scamper_ping_probe_t *probe)
+ uint32_t scamper_ping_probe_flags_get(const scamper_ping_probe_t *probe)
+ const timeval *scamper_ping_probe_tx_get(const scamper_ping_probe_t *probe)
+ scamper_ping_reply_t *scamper_ping_probe_reply_get(const scamper_ping_probe_t *probe, uint16_t i)
 
  void scamper_ping_reply_free(scamper_ping_reply_t *reply)
  scamper_ping_reply_t *scamper_ping_reply_use(scamper_ping_reply_t *reply)
-
  bint scamper_ping_reply_is_from_target(const scamper_ping_t *ping, const scamper_ping_reply_t *reply)
  scamper_addr_t *scamper_ping_reply_addr_get(const scamper_ping_reply_t *reply)
- uint16_t scamper_ping_reply_probe_id_get(const scamper_ping_reply_t *reply)
- uint16_t scamper_ping_reply_probe_ipid_get(const scamper_ping_reply_t *reply)
  uint8_t scamper_ping_reply_proto_get(const scamper_ping_reply_t *reply)
  uint8_t scamper_ping_reply_ttl_get(const scamper_ping_reply_t *reply)
  uint16_t scamper_ping_reply_size_get(const scamper_ping_reply_t *reply)
@@ -113,9 +120,7 @@ cdef extern from "scamper_ping.h":
  bint scamper_ping_reply_is_icmp_unreach_port(const scamper_ping_reply_t *reply)
  bint scamper_ping_reply_is_icmp_ttl_exp(const scamper_ping_reply_t *reply)
  bint scamper_ping_reply_is_icmp_tsreply(const scamper_ping_reply_t *reply)
- const timeval *scamper_ping_reply_tx_get(const scamper_ping_reply_t *reply)
  const timeval *scamper_ping_reply_rtt_get(const scamper_ping_reply_t *reply)
- scamper_ping_reply_t *scamper_ping_reply_next_get(const scamper_ping_reply_t *reply)
  scamper_ping_reply_v4rr_t *scamper_ping_reply_v4rr_get(const scamper_ping_reply_t *reply)
  scamper_ping_reply_v4ts_t *scamper_ping_reply_v4ts_get(const scamper_ping_reply_t *reply)
  scamper_ping_reply_tsreply_t *scamper_ping_reply_tsreply_get(const scamper_ping_reply_t *reply)

@@ -21,7 +21,7 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
- * $Id: sc_tbitpmtud.c,v 1.40 2024/12/31 04:17:31 mjl Exp $
+ * $Id: sc_tbitpmtud.c,v 1.41 2025/02/07 16:52:31 mjl Exp $
  */
 
 #ifdef HAVE_CONFIG_H
@@ -1225,13 +1225,12 @@ static int pmtud_data(void)
   fd_set rfds;
   int nfds;
 
-  if((tree = splaytree_alloc(target_addr_cmp)) == NULL)
-    return -1;
-  if((heap = heap_alloc(target_next_cmp)) == NULL)
-    return -1;
-  if((list = slist_alloc()) == NULL)
-    return -1;
-  if(file_lines(addressfile, parse_list, NULL) != 0)
+  assert(addressfile != NULL);
+
+  if((tree = splaytree_alloc(target_addr_cmp)) == NULL ||
+     (heap = heap_alloc(target_next_cmp)) == NULL ||
+     (list = slist_alloc()) == NULL ||
+     file_lines(addressfile, parse_list, NULL) != 0)
     return -1;
   splaytree_empty(tree, NULL);
 
@@ -1241,9 +1240,8 @@ static int pmtud_data(void)
       slist_shuffle(list);
     }
 
-  if(do_scamperconnect() != 0)
-    return -1;
-  if(do_files() != 0)
+  if(do_scamperconnect() != 0 ||
+     do_files() != 0)
     return -1;
 
   /* attach */

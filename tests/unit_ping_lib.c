@@ -1,7 +1,7 @@
 /*
  * unit_ping_lib: unit tests for ping library
  *
- * $Id: unit_ping_lib.c,v 1.1 2024/08/26 08:21:32 mjl Exp $
+ * $Id: unit_ping_lib.c,v 1.2 2025/02/25 06:31:24 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -86,8 +86,8 @@ static int test_reply_is_from_target(void)
 	 (reply->addr = scamper_addr_fromstr(test->at, test->from)) == NULL)
 	goto done;
 
-      ping->probe_method = test->probe_method;
-      reply->reply_proto = test->reply_proto;
+      ping->method     = test->probe_method;
+      reply->proto     = test->reply_proto;
       reply->icmp_type = test->reply_icmp_type;
       reply->icmp_code = test->reply_icmp_code;
 
