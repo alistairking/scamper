@@ -1,11 +1,11 @@
 /*
  * scamper_icmpext_int.h
  *
- * $Id: scamper_icmpext_int.h,v 1.4 2023/07/25 20:22:09 mjl Exp $
+ * $Id: scamper_icmpext_int.h,v 1.5 2025/02/11 14:31:43 mjl Exp $
  *
  * Copyright (C) 2008 The University of Waikato
  * Copyright (C) 2012 Matthew Luckie
- * Copyright (C) 2023 Matthew Luckie
+ * Copyright (C) 2023-2025 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -37,7 +37,16 @@ struct scamper_icmpext
   uint8_t                 ie_ct;   /* class type */
   uint16_t                ie_dl;   /* data length */
   uint8_t                *ie_data; /* data */
-  scamper_icmpext_t      *ie_next;
+
+#ifdef BUILDING_LIBSCAMPERFILE
+  int                     refcnt;
+#endif
+};
+
+struct scamper_icmpexts
+{
+  scamper_icmpext_t     **exts;
+  uint16_t                extc;
 
 #ifdef BUILDING_LIBSCAMPERFILE
   int                     refcnt;
@@ -92,9 +101,11 @@ struct scamper_icmpext
 #define SCAMPER_ICMPEXT_UNNUMBERED_CT_IS_MTU(ie)		\
  ((ie)->ie_ct & SCAMPER_ICMPEXT_UNNUMBERED_CT_MTU)
 
-int scamper_icmpext_parse(struct scamper_icmpext **ext,void *data,uint16_t len);
+int scamper_icmpext_parse(struct scamper_icmpexts **exts,
+			  uint8_t *data, size_t len);
 
 scamper_icmpext_t *scamper_icmpext_alloc(uint8_t cn, uint8_t ct, uint16_t dl,
 					 const void *data);
+scamper_icmpexts_t *scamper_icmpexts_alloc(uint16_t c);
 
 #endif /* __SCAMPER_ICMPEXT_INT_H */

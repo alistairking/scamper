@@ -1,7 +1,7 @@
 /*
  * scamper_tracelb.h
  *
- * $Id: scamper_tracelb.h,v 1.82 2024/11/07 18:15:39 mjl Exp $
+ * $Id: scamper_tracelb.h,v 1.83 2025/02/11 14:31:43 mjl Exp $
  *
  * Copyright (C) 2008-2009 The University of Waikato
  * Copyright (C) 2018-2024 Matthew Luckie
@@ -127,7 +127,7 @@ int scamper_tracelb_reply_is_tcp(const scamper_tracelb_reply_t *reply);
 int scamper_tracelb_reply_is_reply_ttl(const scamper_tracelb_reply_t *reply);
 
 #ifdef __SCAMPER_ICMPEXT_H
-scamper_icmpext_t *scamper_tracelb_reply_icmp_ext_get(const scamper_tracelb_reply_t *reply);
+scamper_icmpexts_t *scamper_tracelb_reply_icmp_exts_get(const scamper_tracelb_reply_t *reply);
 #endif /* __SCAMPER_ICMPEXT_H */
 
 scamper_tracelb_probeset_summary_t *scamper_tracelb_probeset_summary_alloc(const scamper_tracelb_probeset_t *set);

@@ -1,4 +1,4 @@
-# $Id: Makefile.am,v 1.44 2024/12/29 03:02:54 mjl Exp $
+# $Id: Makefile.am,v 1.49 2025/02/23 05:59:13 mjl Exp $
 
 AUTOMAKE_OPTIONS = subdir-objects
 
@@ -42,8 +42,10 @@ noinst_PROGRAMS = \
 	fuzz_host_rr_list \
 	unit_host_rr_list \
 	unit_host_warts \
+	unit_ping_dup \
 	unit_ping_lib \
 	unit_ping_warts \
+	unit_trace_dup \
 	unit_trace_warts \
 	unit_udpprobe_warts \
 	unit_options \
@@ -77,6 +79,7 @@ libscamperfiletest_la_LIBADD = @ZLIB_LIBS@ @LIBBZ2_LIBS@ @LIBLZMA_LIBS@ \
 	@WINSOCK_LIBS@
 libscamperfiletest_la_SOURCES = \
 	../mjl_splaytree.c \
+	../mjl_list.c \
 	../utils.c \
 	../scamper/scamper_file.c \
 	../scamper/scamper_file_arts.c \
@@ -331,7 +334,7 @@ unit_http_lib_LDADD = libcmdtest.la
 unit_http_warts_CFLAGS = -I$(top_srcdir)/scamper/http
 unit_http_warts_SOURCES = unit_http_warts.c \
 	../utils.c \
-	common_warts.c
+	common_ok.c
 unit_http_warts_LDADD = libscamperfiletest.la
 
 fuzz_host_rr_list_CFLAGS = -I$(top_srcdir)/scamper/host -DTEST_HOST_RR_LIST
@@ -344,7 +347,8 @@ fuzz_host_rr_list_SOURCES = fuzz_host_rr_list.c \
 	../utils.c \
 	common.c
 
-unit_host_rr_list_CFLAGS = -I$(top_srcdir)/scamper/host -DTEST_HOST_RR_LIST
+unit_host_rr_list_CFLAGS = -I$(top_srcdir)/scamper/host \
+	-DTEST_HOST_RR_LIST -DCOMMON_CHECK_ADDR
 unit_host_rr_list_SOURCES = unit_host_rr_list.c \
 	../scamper/host/scamper_host_do.c \
 	../scamper/host/scamper_host_lib.c \
@@ -369,6 +373,13 @@ unit_options_SOURCES = unit_options.c \
 	../scamper/scamper_options.c \
 	../utils.c
 
+unit_ping_dup_CFLAGS = -I$(top_srcdir)/scamper/ping
+unit_ping_dup_SOURCES = unit_ping_dup.c \
+	../utils.c \
+	common_ok.c \
+	common_ping.c
+unit_ping_dup_LDADD = libscamperfiletest.la
+
 unit_ping_lib_CFLAGS = -I$(top_srcdir)/scamper/ping
 unit_ping_lib_SOURCES = unit_ping_lib.c \
 	../scamper/ping/scamper_ping.c \
@@ -378,19 +389,28 @@ unit_ping_lib_LDADD = libcmdtest.la
 unit_ping_warts_CFLAGS = -I$(top_srcdir)/scamper/ping
 unit_ping_warts_SOURCES = unit_ping_warts.c \
 	../utils.c \
-	common_warts.c
+	common_ok.c \
+	common_ping.c
 unit_ping_warts_LDADD = libscamperfiletest.la
+
+unit_trace_dup_CFLAGS = -I$(top_srcdir)/scamper/trace
+unit_trace_dup_SOURCES = unit_trace_dup.c \
+	../utils.c \
+	common_ok.c \
+	common_trace.c
+unit_trace_dup_LDADD = libscamperfiletest.la
 
 unit_trace_warts_CFLAGS = -I$(top_srcdir)/scamper/trace
 unit_trace_warts_SOURCES = unit_trace_warts.c \
 	../utils.c \
-	common_warts.c
+	common_ok.c \
+	common_trace.c
 unit_trace_warts_LDADD = libscamperfiletest.la
 
 unit_udpprobe_warts_CFLAGS = -I$(top_srcdir)/scamper/udpprobe
 unit_udpprobe_warts_SOURCES = unit_udpprobe_warts.c \
 	../utils.c \
-	common_warts.c
+	common_ok.c
 unit_udpprobe_warts_LDADD = libscamperfiletest.la
 
 unit_heap_CFLAGS = $(AM_CFLAGS) -DMJLHEAP_DEBUG

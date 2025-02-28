@@ -1,11 +1,11 @@
 /*
  * scamper_tracelb_do.c
  *
- * $Id: scamper_tracelb_do.c,v 1.316 2024/12/31 04:17:31 mjl Exp $
+ * $Id: scamper_tracelb_do.c,v 1.317 2025/02/11 14:31:43 mjl Exp $
  *
  * Copyright (C) 2008-2011 The University of Waikato
  * Copyright (C) 2012      The Regents of the University of California
- * Copyright (C) 2016-2024 Matthew Luckie
+ * Copyright (C) 2016-2025 Matthew Luckie
  * Copyright (C) 2024      The Regents of the University of California
  * Author: Matthew Luckie
  *
@@ -2751,7 +2751,7 @@ static scamper_tracelb_reply_t *handleicmp_reply(const scamper_icmp_resp_t *ir,
     }
 
   if(ir->ir_ext != NULL &&
-     scamper_icmpext_parse(&reply->reply_icmp_ext,
+     scamper_icmpext_parse(&reply->reply_icmp_exts,
 			   ir->ir_ext, ir->ir_extlen) != 0)
     {
       scamper_debug(__func__, "could not include icmp extension data");

@@ -1,7 +1,7 @@
 /*
  * scamper_do_tbit.c
  *
- * $Id: scamper_tbit_do.c,v 1.213 2024/12/31 04:17:31 mjl Exp $
+ * $Id: scamper_tbit_do.c,v 1.214 2025/01/17 06:45:28 mjl Exp $
  *
  * Copyright (C) 2009-2010 Ben Stasiewicz
  * Copyright (C) 2009-2010 Stephen Eichler
@@ -9,7 +9,7 @@
  * Copyright (C) 2012      Matthew Luckie
  * Copyright (C) 2012-2015 The Regents of the University of California
  * Copyright (C) 2017      University of Waikato
- * Copyright (C) 2022-2024 Matthew Luckie
+ * Copyright (C) 2022-2025 Matthew Luckie
  *
  * Authors: Matthew Luckie, Ben Stasiewicz, Stephen Eichler, Tiange Wu,
  *          Robert Beverly
@@ -1209,8 +1209,8 @@ static void dl_syn(scamper_task_t *task, scamper_dl_rec_t *dl)
 	}
       else
 	{
-	  memmove(seg->data, seg->data+ab, seg->len-ab);
 	  seg->len -= ab;
+	  memmove(seg->data, seg->data+ab, seg->len);
 	}
       state->snd_nxt += ab;
     }
@@ -2478,8 +2478,8 @@ static void dl_data(scamper_task_t *task, scamper_dl_rec_t *dl)
 	}
       else
 	{
-	  memmove(seg->data, seg->data+ab, seg->len-ab);
 	  seg->len -= ab;
+	  memmove(seg->data, seg->data+ab, seg->len);
 	}
       state->snd_nxt += ab;
     }

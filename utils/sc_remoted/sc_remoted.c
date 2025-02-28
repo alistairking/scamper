@@ -1,12 +1,12 @@
 /*
  * sc_remoted
  *
- * $Id: sc_remoted.c,v 1.122 2024/12/15 09:11:07 mjl Exp $
+ * $Id: sc_remoted.c,v 1.138 2025/02/26 03:54:24 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
  *
- * Copyright (C) 2014-2024 Matthew Luckie
+ * Copyright (C) 2014-2025 Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -164,6 +164,103 @@
  *
  * uint32_t  rcv_nxt
  *
+ *****************
+ *
+ * This code also defines a user-facing protocol that allows user code
+ * to work with a collection of remote scamper instances over a single
+ * unix domain socket (the scamper multiplexor).  This protocol is roughly
+ * designed as follows:
+ *
+ * Header:
+ * ------
+ * uint32_t channel
+ * uint32_t msglen
+ *
+ * This control header is included in every message sent between the
+ * remote controller and the user code.
+ * Channel #0 is reserved for control messages.  All other channels
+ * correspond to an individual scamper instance that the user code is
+ * working with.
+ * The msglen value defines the size of the message that follows the header.
+ *
+ * Control Messages:
+ * ----------------
+ *
+ * uint16_t type
+ *
+ * A control message begins with a mandatory type number.  The following
+ * control message types are defined.
+ *
+ * 0 - VP update       (remoted --> client) -- MUX_VP_UPDATE
+ * 1 - VP depart       (remoted --> client) -- MUX_VP_DEPART
+ * 2 - Go              (remoted --> client) -- MUX_GO
+ * 3 - Channel open    (remoted <-- client) -- MUX_CHANNEL_OPEN
+ * 4 - Channel close   (remoted <-> client) -- MUX_CHANNEL_CLOSE
+ *
+ * Control Message - Vantage Point update (MUX_VP_UPDATE)
+ * ---------------------------------
+ *
+ * When user code first connects to the controller, or a scamper instance
+ * connects to the controller, the controller advises the user code
+ * about the existence of instances.  The format of the message is as follows:
+ *
+ * uint32_t instance_id
+ * <series of attribute/value pairs>
+ * each attribute/value pair is encoded as:
+ *   uint16_t  attribute
+ *   char     *value
+ *
+ *  attribute values:
+ *   1: monitor name, as supplied to scamper with -M.
+ *   2: arrival time, formatted as sec.usec.
+ *   3: IPv4 address of the monitor, as viewed by sc_remoted.
+ *   4: IPv4 address of the socket the monitor used to connect to sc_remoted.
+ *   5: ASN of the IPv4 address, as viewed by sc_remoted, if available.
+ *   6: country code of the monitor, if available
+ *   7: coordinates of the monitor, if available
+ *
+ * The user code should read all MUX_VP_UPDATE messages,
+ * until the remoted process sends a MUX_GO message, before passing
+ * control to the user code.  When instances arrive after the first
+ * batch, these are reported individually, and the 'last' value is set
+ * on these individual reports.  Note that an instance can arrive with
+ * the same monitor name as an existing VP, but will have a different
+ * ID value.
+ *
+ * Control Message - Vantage Point depart (MUX_VP_DEPART)
+ * ---------------------------------
+ *
+ * When a remote scamper instance disconnects from the controller, the
+ * remote controller signals that to user code.  The departing instance
+ * is identified using the same ID value that the user code saw in an
+ * initial arrive message.
+ * 
+ * uint32_t instance_id
+ *
+ * Control Message - GO (MUX_GO)
+ * --------------------
+ *
+ * Sent to user code once the server has sent it metadata for all
+ * connected scamper instances.
+ *
+ * Control Message - Channel Close (MUX_CHANNEL_CLOSE)
+ * ---------------------
+ *
+ * When either scamper or the channel owner is freeing state associated with
+ * the channel, this is signalled with a close message.
+ *
+ * uint32_t channel_id
+ *
+ * Control Message - Channel Open (MUX_CHANNEL_OPEN)
+ * -------------------------------
+ *
+ * When a local process wants to use an instance, it sends an open
+ * message, identifying the instance by ID, and declaring the ID to
+ * identify the channel.
+ *
+ * uint32_t instance_id
+ * uint32_t channel_id
+ *
  */
 
 #ifdef HAVE_CONFIG_H
@@ -181,7 +278,24 @@
 #include "utils_tls.h"
 #endif
 
-#define SC_MESSAGE_HDRLEN 10
+#define SC_MESSAGE_HDRLEN 10 /* sequence:4 + channel_id:4 + msglen:2 */
+
+/*
+ * sc_metadata
+ *
+ * this structure records per-node metadata stored in a file.
+ */
+typedef struct sc_metadata
+{
+  char               *name;
+  char               *asn4;
+  char               *latlong;
+  char               *cc;
+  char               *st;
+  char               *place;
+  char               *shortname;
+  slist_t            *tags;
+} sc_metadata_t;
 
 /*
  * sc_unit
@@ -198,7 +312,8 @@ typedef struct sc_unit
 } sc_unit_t;
 
 #define UNIT_TYPE_MASTER  0
-#define UNIT_TYPE_CHANNEL 1
+#define UNIT_TYPE_ONECHAN 1
+#define UNIT_TYPE_MUX     2
 
 /*
  * sc_fd
@@ -218,10 +333,12 @@ typedef struct sc_fd
 #define FD_TYPE_SERVER       0
 #define FD_TYPE_MASTER_INET  1
 #define FD_TYPE_MASTER_UNIX  2
-#define FD_TYPE_CHANNEL_UNIX 3
+#define FD_TYPE_ONECHAN_UNIX 3
+#define FD_TYPE_MUX_ACCEPT   4
+#define FD_TYPE_MUX          5
 
-#define FD_FLAG_READ        1
-#define FD_FLAG_WRITE       2
+#define FD_FLAG_READ        0x1
+#define FD_FLAG_WRITE       0x2
 
 /*
  * sc_master_t
@@ -239,6 +356,7 @@ typedef struct sc_master
   uint8_t            *magic;       /* magic value first sent by scamper */
   uint8_t             magic_len;   /* size of magic first sent by scamper */
   int                 mode;        /* connect / go / flush */
+  uint32_t            id;          /* unique ID value, assigned by remoted */
 
   sc_fd_t            *unix_fd;     /* socket that accepts clients */
   sc_fd_t             inet_fd;     /* the socket to the scamper instance */
@@ -251,6 +369,7 @@ typedef struct sc_master
   BIO                *inet_wbio;
 #endif
 
+  struct timeval      arrival;
   struct timeval      tx_ka;
   struct timeval      rx_abort;
   struct timeval      zombie;
@@ -272,19 +391,68 @@ typedef struct sc_master
  *
  * this structure holds a mapping between a local process that wants
  * to drive a remote scamper, and a channel corresponding to that
- * instance.
+ * instance open towards scamper.
  */
 typedef struct sc_channel
 {
   uint32_t            id;      /* id, derived from master->next_channel */
+  sc_master_t        *master;  /* corresponding master */
+  dlist_node_t       *cnode;   /* node in master->channels */
+  uint8_t             flags;   /* channel flags: eof tx/rx, type of channel */
+  void               *data;    /* onechan or muxchan struct */
+} sc_channel_t;
+
+/*
+ * sc_onechan_t
+ *
+ * this structure holds a mapping between a local process connected to
+ * a unix domain socket that represents a single remote scamper instance.
+ */
+typedef struct sc_onechan
+{
   sc_unit_t          *unit;
   sc_fd_t            *unix_fd;
   scamper_linepoll_t *unix_lp;
   scamper_writebuf_t *unix_wb;
-  sc_master_t        *master;  /* corresponding master */
-  dlist_node_t       *cnode;   /* node in master->channels */
-  uint8_t             flags;   /* channel flags: eof tx/rx */
-} sc_channel_t;
+  sc_channel_t       *channel;
+} sc_onechan_t;
+
+/*
+ * sc_mux_t
+ *
+ * this structure holds a mapping between a local process that wants
+ * to drive multiple remote scamper instances over a single unix domain
+ * socket.
+ */
+typedef struct sc_mux
+{
+  sc_unit_t          *unit;
+  sc_fd_t            *unix_fd;
+  scamper_writebuf_t *unix_wb;
+  dlist_t            *channels;     /* list of sc_muxchan_t */
+  dlist_node_t       *mxnode;       /* node in mxlist */
+  uint32_t            next_muxchan; /* next ID to assign */
+
+  uint8_t            *buf;          /* data left over from previous recv */
+  size_t              buf_len;      /* amount of data left over */
+  uint32_t            recv_chan;    /* are we reading a long message */
+  size_t              recv_left;    /* how much left of the frame to recv */
+} sc_mux_t;
+
+/*
+ * sc_muxchan_t
+ *
+ * this structure holds a mapping between a local process using an mux
+ * socket to drive multiple remote scamper instances, and the channel
+ * opened towards scamper.
+ */
+typedef struct sc_muxchan
+{
+  sc_mux_t           *mux;
+  sc_channel_t       *channel;
+  uint32_t            channel_id;
+  dlist_node_t       *mxcnode;
+} sc_muxchan_t;
 
 /*
  * sc_message_t
@@ -302,7 +470,7 @@ typedef struct sc_message
 } sc_message_t;
 
 #define OPT_HELP    0x0001
-#define OPT_UNIX    0x0002
+#define OPT_UNIXDIR 0x0002
 #define OPT_PORT    0x0004
 #define OPT_DAEMON  0x0008
 #define OPT_IPV4    0x0010
@@ -313,11 +481,11 @@ typedef struct sc_message
 #define OPT_ZOMBIE  0x0200
 #define OPT_PIDFILE 0x0400
 #define OPT_TLSCA   0x0800
-
 #ifdef PACKAGE_VERSION
 #define OPT_VERSION 0x1000
 #endif
-
+#define OPT_METADATA 0x2000
+#define OPT_MUXSOCK 0x4000
 #define OPT_ALL     0xffff
 
 #define FLAG_DEBUG      0x0001 /* verbose debugging */
@@ -326,8 +494,13 @@ typedef struct sc_message
 #define FLAG_ALLOW_O    0x0008 /* allow everyone to connect */
 #define FLAG_SKIP_VERIF 0x0010 /* skip TLS name verification */
 
-#define CHANNEL_FLAG_EOF_TX 0x01
-#define CHANNEL_FLAG_EOF_RX 0x02
+#define CHANNEL_FLAG_EOF_TX  0x01
+#define CHANNEL_FLAG_EOF_RX  0x02
+#define CHANNEL_FLAG_ONECHAN 0x04
+#define CHANNEL_FLAG_MUXCHAN 0x08
+
+#define CHANNEL_IS_ONECHAN(cn) ((cn)->flags & CHANNEL_FLAG_ONECHAN)
+#define CHANNEL_IS_MUXCHAN(cn) ((cn)->flags & CHANNEL_FLAG_MUXCHAN)
 
 #define MASTER_MODE_CONNECT 0
 #define MASTER_MODE_GO      1
@@ -343,19 +516,44 @@ typedef struct sc_message
 #define CONTROL_MASTER_REJ   7 /* scamper <-- remoted */
 #define CONTROL_MASTER_OK    8 /* scamper <-- remoted */
 
+#define MUX_HDRLEN             8 /* channel_id:4 + msglen:4 */
+
+#define MUX_VP_UPDATE          0 /* remoted --> client */
+#define MUX_VP_DEPART          1 /* remoted --> client */
+#define MUX_GO                 2 /* remoted --> client */
+#define MUX_CHANNEL_OPEN       3 /* remoted <-- client */
+#define MUX_CHANNEL_CLOSE      4 /* remoted <-> client */
+
+#define VP_ATTR_NAME           1
+#define VP_ATTR_ARRIVAL        2
+#define VP_ATTR_IPV4           3
+#define VP_ATTR_IPV4_ASN       4
+#define VP_ATTR_CC             5
+#define VP_ATTR_ST             6
+#define VP_ATTR_PLACE          7
+#define VP_ATTR_LATLONG        8
+#define VP_ATTR_SHORTNAME      9
+#define VP_ATTR_TAG           10
+
 static uint16_t     options        = 0;
-static char        *unix_name      = NULL;
+static char        *unix_dir       = NULL;
 static char        *ss_addr        = NULL;
 static int          ss_port        = 0;
+static char        *metadata_file  = NULL;
+static splaytree_t *metadata       = NULL;
 static splaytree_t *mstree         = NULL;
 static dlist_t     *mslist         = NULL;
 static dlist_t     *gclist         = NULL;
+static dlist_t     *mxlist         = NULL;
 static int          stop           = 0;
 static int          reload         = 0;
 static uint16_t     flags          = 0;
 static int          serversockets[2];
+static char        *muxsocket_name = NULL;
+static int          muxsocket      = -1;
 static int          zombie         = 60 * 15;
 static char        *pidfile        = NULL;
+static uint32_t     master_id      = 1;
 static struct timeval now;
 
 #if defined(HAVE_EPOLL)
@@ -380,33 +578,46 @@ static char        *tls_cafile     = NULL;
  */
 typedef void (*sc_unit_gc_t)(void *);
 static void sc_channel_free(sc_channel_t *);
+static void sc_onechan_free(sc_onechan_t *);
 static void sc_master_free(sc_master_t *);
+static void sc_mux_free(sc_mux_t *);
 static const sc_unit_gc_t unit_gc[] = {
   (sc_unit_gc_t)sc_master_free,      /* UNIT_TYPE_MASTER */
-  (sc_unit_gc_t)sc_channel_free,     /* UNIT_TYPE_CHANNEL */
+  (sc_unit_gc_t)sc_onechan_free,     /* UNIT_TYPE_ONECHAN */
+  (sc_unit_gc_t)sc_mux_free,         /* UNIT_TYPE_MUX */
 };
 
 #if defined(HAVE_EPOLL) || defined(HAVE_KQUEUE)
 typedef void (*sc_fd_cb_t)(void *);
-static void sc_channel_unix_read_do(sc_channel_t *);
-static void sc_channel_unix_write_do(sc_channel_t *);
+static void sc_onechan_unix_read_do(sc_onechan_t *);
+static void sc_onechan_unix_write_do(sc_onechan_t *);
 static void sc_master_inet_read_do(sc_master_t *);
 static void sc_master_inet_write_do(sc_master_t *);
 static void sc_master_unix_accept_do(sc_master_t *);
+static void sc_mux_unix_read_do(sc_mux_t *ub);
+static void sc_mux_unix_write_do(sc_mux_t *ub);
 
 static const sc_fd_cb_t read_cb[] = {
   NULL,                                 /* FD_TYPE_SERVER */
   (sc_fd_cb_t)sc_master_inet_read_do,   /* FD_TYPE_MASTER_INET */
   (sc_fd_cb_t)sc_master_unix_accept_do, /* FD_TYPE_MASTER_UNIX */
-  (sc_fd_cb_t)sc_channel_unix_read_do,  /* FD_TYPE_CHANNEL_UNIX */
+  (sc_fd_cb_t)sc_onechan_unix_read_do,  /* FD_TYPE_ONECHAN_UNIX */
+  NULL,                                 /* FD_TYPE_MUX_ACCEPT */
+  (sc_fd_cb_t)sc_mux_unix_read_do,      /* FD_TYPE_MUX */
 };
 static const sc_fd_cb_t write_cb[] = {
   NULL,                                 /* FD_TYPE_SERVER */
   (sc_fd_cb_t)sc_master_inet_write_do,  /* FD_TYPE_MASTER_INET */
   NULL,                                 /* FD_TYPE_MASTER_UNIX */
-  (sc_fd_cb_t)sc_channel_unix_write_do, /* FD_TYPE_CHANNEL_UNIX */
+  (sc_fd_cb_t)sc_onechan_unix_write_do, /* FD_TYPE_ONECHAN_UNIX */
+  NULL,                                 /* FD_TYPE_MUX_ACCEPT */
+  (sc_fd_cb_t)sc_mux_unix_write_do,     /* FD_TYPE_MUX */
 };
 #endif
+
+static int sc_onechan_unix_send(sc_onechan_t *ocn, uint8_t *buf, uint16_t len);
+static int sc_muxchan_unix_send(sc_muxchan_t *ucn, uint8_t *buf, uint32_t len);
+static int sc_mux_unix_send(sc_mux_t *mux, uint8_t *buf, size_t len);
 
 static void usage(uint32_t opt_mask)
 {
@@ -417,11 +628,13 @@ static void usage(uint32_t opt_mask)
 #endif
 
   fprintf(stderr,
-	  "usage: sc_remoted [-?46D%s] [-O option] -P [ip:]port -U unix\n"
+	  "usage: sc_remoted [-?46D%s] -P [ip:]port\n"
+	  "                  [-M mux-socket] [-U unix-dir] [-O option]\n"
 #ifdef HAVE_OPENSSL
-	  "                  [-c certfile] [-p privfile] [-C CAfile]\n"
+	  "                  [-C CA-file] [-c cert-file] [-p priv-file]\n"
 #endif
-	  "                  [-e pidfile] [-Z zombie-time]\n", v);
+	  "                  [-e pid-file] [-m meta-file] [-Z zombie-time]\n",
+	  v);
 
   if(opt_mask == 0)
     {
@@ -438,6 +651,11 @@ static void usage(uint32_t opt_mask)
   if(opt_mask & OPT_DAEMON)
     fprintf(stderr, "     -D operate as a daemon\n");
 
+#ifdef OPT_VERSION
+  if(opt_mask & OPT_VERSION)
+    fprintf(stderr, "     -v display version and exit\n");
+#endif
+
   if(opt_mask & OPT_PIDFILE)
     fprintf(stderr, "     -e write process ID to specified file\n");
 
@@ -451,24 +669,25 @@ static void usage(uint32_t opt_mask)
       fprintf(stderr, "        skipnameverification: skip TLS name verif\n");
     }
 
+  if(opt_mask & OPT_MUXSOCK)
+    fprintf(stderr, "     -M location to place multiplexed socket interface");
+
+  if(opt_mask & OPT_METADATA)
+    fprintf(stderr, "     -m location of metadata file\n");
+
   if(opt_mask & OPT_PORT)
     fprintf(stderr, "     -P [ip:]port to accept remote scamper connections\n");
 
-  if(opt_mask & OPT_UNIX)
-    fprintf(stderr, "     -U directory for unix domain sockets\n");
+  if(opt_mask & OPT_UNIXDIR)
+    fprintf(stderr, "     -U directory for individual unix domain sockets\n");
 
 #ifdef HAVE_OPENSSL
+  if(opt_mask & OPT_TLSCA)
+    fprintf(stderr, "     -C require client authentication using this CA\n");
   if(opt_mask & OPT_TLSCERT)
     fprintf(stderr, "     -c server certificate in PEM format\n");
   if(opt_mask & OPT_TLSPRIV)
     fprintf(stderr, "     -p private key in PEM format\n");
-  if(opt_mask & OPT_TLSCA)
-    fprintf(stderr, "     -C require client authentication using this CA\n");
-#endif
-
-#ifdef OPT_VERSION
-  if(opt_mask & OPT_VERSION)
-    fprintf(stderr, "     -v display version and exit\n");
 #endif
 
   if(opt_mask & OPT_ZOMBIE)
@@ -485,7 +704,7 @@ static int check_options(int argc, char *argv[])
   long lo;
   int ch;
 
-  string_concat(opts, sizeof(opts), &off, "?46DO:c:C:e:p:P:U:Z:");
+  string_concat(opts, sizeof(opts), &off, "?46DO:c:C:e:m:M:p:P:U:Z:");
 #ifdef OPT_VERSION
   string_concat(opts, sizeof(opts), &off, "v");
 #endif
@@ -509,6 +728,16 @@ static int check_options(int argc, char *argv[])
 	case 'e':
 	  options |= OPT_PIDFILE;
 	  opt_pidfile = optarg;
+	  break;
+
+	case 'm':
+	  options |= OPT_METADATA;
+	  metadata_file = optarg;
+	  break;
+
+	case 'M':
+	  options |= OPT_MUXSOCK;
+	  muxsocket_name = optarg;
 	  break;
 
 	case 'O':
@@ -551,7 +780,7 @@ static int check_options(int argc, char *argv[])
 #endif
 
 	case 'U':
-	  unix_name = optarg;
+	  unix_dir = optarg;
 	  break;
 
 #ifdef OPT_VERSION
@@ -571,9 +800,15 @@ static int check_options(int argc, char *argv[])
 	}
     }
 
-  if(unix_name == NULL || opt_addrport == NULL)
+  if(opt_addrport == NULL)
     {
-      usage(OPT_PORT|OPT_UNIX);
+      usage(OPT_PORT);
+      return -1;
+    }
+
+  if(unix_dir == NULL && muxsocket_name == NULL)
+    {
+      usage(OPT_UNIXDIR | OPT_MUXSOCK);
       return -1;
     }
 
@@ -629,7 +864,7 @@ static int check_options(int argc, char *argv[])
 
   if(opt_zombie != NULL)
     {
-      if(string_tolong(opt_zombie, &lo) != 0 || lo < 0 || lo > (60 * 60))
+      if(string_tolong(opt_zombie, &lo) != 0 || lo < 0 || lo > (3 * 60 * 60))
 	{
 	  usage(OPT_ZOMBIE);
 	  return -1;
@@ -648,10 +883,7 @@ static void remote_debug(const char *func, const char *format, ...)
 static void remote_debug(const char *func, const char *format, ...)
 {
   char message[512], ts[16];
-  struct tm *tm;
   va_list ap;
-  time_t t;
-  int ms;
 
   if(options & OPT_DAEMON)
     return;
@@ -663,14 +895,8 @@ static void remote_debug(const char *func, const char *format, ...)
   vsnprintf(message, sizeof(message), format, ap);
   va_end(ap);
 
-  t = now.tv_sec;
-  if((tm = localtime(&t)) == NULL)
-    return;
-  ms = now.tv_usec / 1000;
-  snprintf(ts, sizeof(ts), "[%02d:%02d:%02d:%03d]",
-	   tm->tm_hour, tm->tm_min, tm->tm_sec, ms);
-
-  fprintf(stderr, "%s %s: %s\n", ts, func, message);
+  fprintf(stderr, "[%s] %s: %s\n",
+	  timeval_tostr_hhmmssms(&now, ts), func, message);
   fflush(stderr);
   return;
 }
@@ -924,6 +1150,25 @@ static void sc_message_free(sc_message_t *msg)
   return;
 }
 
+static int sc_metadata_cmp(const sc_metadata_t *a, const sc_metadata_t *b)
+{
+  return strcmp(a->name, b->name);
+}
+
+static void sc_metadata_free(sc_metadata_t *md)
+{
+  if(md->name != NULL) free(md->name);
+  if(md->asn4 != NULL) free(md->asn4);
+  if(md->latlong != NULL) free(md->latlong);
+  if(md->cc != NULL) free(md->cc);
+  if(md->st != NULL) free(md->st);
+  if(md->place != NULL) free(md->place);
+  if(md->shortname != NULL) free(md->shortname);
+  if(md->tags != NULL) slist_free_cb(md->tags, free);
+  free(md);
+  return;
+}
+
 static int sc_master_cmp(const sc_master_t *a, const sc_master_t *b)
 {
   if(a->magic_len < b->magic_len) return -1;
@@ -1072,6 +1317,22 @@ static void sc_master_inet_free(sc_master_t *ms)
   return;
 }
 
+static int sc_master_inet_send_channel_new(sc_master_t *ms, sc_channel_t *cn)
+{
+  uint8_t msg[5];
+  msg[0] = CONTROL_CHANNEL_NEW;
+  bytes_htonl(msg+1, cn->id);
+  return sc_master_inet_send(ms, msg, 1 + 4, 0, 1);
+}
+
+static int sc_master_inet_send_channel_eof(sc_master_t *ms, sc_channel_t *cn)
+{
+  uint8_t msg[5];
+  msg[0] = CONTROL_CHANNEL_FIN;
+  bytes_htonl(msg+1, cn->id);
+  return sc_master_inet_send(ms, msg, 1 + 4, 0, 1);
+}
+
 #ifdef HAVE_OPENSSL
 static int sc_master_is_valid_client_cert_0(sc_master_t *ms)
 {
@@ -1164,6 +1425,108 @@ static int unix_create(const char *filename)
   return -1;
 }
 
+static int attr_embed(uint8_t *buf, size_t len, size_t *off, uint16_t attr,
+		      char *attr_str)
+{
+  size_t attr_len = strlen(attr_str) + 1;
+  if(len - *off < attr_len + 2)
+    return -1;
+  bytes_htons(buf+(*off), attr); (*off) += 2;
+  memcpy(buf+(*off), attr_str, attr_len); (*off) += attr_len;
+  return 0;
+}
+
+static int tags_embed(uint8_t *buf, size_t len, size_t *off, slist_t *tags)
+{
+  slist_node_t *sn;
+  char *tag;
+  for(sn=slist_head_node(tags); sn != NULL; sn=slist_node_next(sn))
+    {
+      tag = slist_node_item(sn);
+      if(attr_embed(buf, len, off, VP_ATTR_TAG, tag) != 0)
+	return -1;
+    }
+  return 0;
+}
+
+static int sc_master_mux_encode(const sc_master_t *ms,uint8_t *buf,size_t *len)
+{
+  sc_metadata_t fm, *md = NULL;
+  char tmp[128];
+  size_t off;
+
+  if(*len < 16)
+    return -1;
+
+  bytes_htonl(buf + 0, 0);                          /* channel zero */
+  bytes_htonl(buf + 4, 0);                          /* msglen */
+  bytes_htons(buf + MUX_HDRLEN, MUX_VP_UPDATE);     /* type */
+  bytes_htonl(buf + MUX_HDRLEN + 2, ms->id);        /* id of scamper */
+  off = MUX_HDRLEN + 6;
+
+  if(ms->monitorname != NULL)
+    {
+      if(attr_embed(buf, *len, &off, VP_ATTR_NAME, ms->monitorname) != 0)
+	return -1;
+      fm.name = ms->monitorname;
+      md = splaytree_find(metadata, &fm);
+    }
+
+  snprintf(tmp, sizeof(tmp), "%ld.%06d",
+	   (long int)ms->arrival.tv_sec, (int)ms->arrival.tv_usec);
+  if(attr_embed(buf, *len, &off, VP_ATTR_ARRIVAL, tmp) != 0)
+    return -1;
+
+  if(ms->inet_fd.fd != -1 &&
+     fd_peername(ms->inet_fd.fd, tmp, sizeof(tmp), 0) == 0 &&
+     attr_embed(buf, *len, &off, VP_ATTR_IPV4, tmp) != 0)
+    return -1;
+
+  /* append external metadata */
+  if(md != NULL &&
+     ((md->asn4 != NULL &&
+       attr_embed(buf, *len, &off, VP_ATTR_IPV4_ASN, md->asn4) != 0) ||
+      (md->latlong != NULL &&
+       attr_embed(buf, *len, &off, VP_ATTR_LATLONG, md->latlong) != 0) ||
+      (md->cc != NULL &&
+       attr_embed(buf, *len, &off, VP_ATTR_CC, md->cc) != 0) ||
+      (md->st != NULL &&
+       attr_embed(buf, *len, &off, VP_ATTR_ST, md->st) != 0) ||
+      (md->place != NULL &&
+       attr_embed(buf, *len, &off, VP_ATTR_PLACE, md->place) != 0) ||
+      (md->shortname != NULL &&
+       attr_embed(buf, *len, &off, VP_ATTR_SHORTNAME, md->shortname) != 0) ||
+      (md->tags != NULL &&
+       tags_embed(buf, *len, &off, md->tags) != 0)))
+    return -1;
+
+  bytes_htonl(buf + 4, off - MUX_HDRLEN);                  /* msglen */
+
+  *len = off;
+  return 0;
+}
+
+static void sc_master_mux_notify(const sc_master_t *ms)
+{
+  dlist_node_t *dn;
+  sc_mux_t *mux;
+  uint8_t buf[1024];
+  size_t len;
+
+  len = sizeof(buf);
+  if(sc_master_mux_encode(ms, buf, &len) != 0)
+    return;
+
+  for(dn=dlist_head_node(mxlist); dn != NULL; dn=dlist_node_next(dn))
+    {
+      mux = dlist_node_item(dn);
+      if(sc_mux_unix_send(mux, buf, len) != 0)
+	remote_debug(__func__, "could not write instance update message");
+    }
+
+  return;
+}
+
 /*
  * sc_master_unix_create
  *
@@ -1203,7 +1566,7 @@ static int sc_master_unix_create(sc_master_t *ms)
       goto err;
     }
 
-  snprintf(filename, sizeof(filename), "%s/%s", unix_name, ms->name);
+  snprintf(filename, sizeof(filename), "%s/%s", unix_dir, ms->name);
   if((fd = unix_create(filename)) == -1)
     goto err;
 
@@ -1243,7 +1606,7 @@ static void sc_master_unix_free(sc_master_t *ms)
     {
       sc_fd_free(ms->unix_fd);
       ms->unix_fd = NULL;
-      snprintf(filename, sizeof(filename), "%s/%s", unix_name, ms->name);
+      snprintf(filename, sizeof(filename), "%s/%s", unix_dir, ms->name);
       unlink(filename);
     }
 
@@ -1415,7 +1778,7 @@ static int sc_master_control_master(sc_master_t *ms, uint8_t *buf, size_t len)
     }
 
   /* create the unix domain socket for the scamper instance */
-  if(sc_master_unix_create(ms) != 0)
+  if(unix_dir != NULL && sc_master_unix_create(ms) != 0)
     goto err;
 
   /* send the list name to the client. do not expect an ack */
@@ -1423,20 +1786,52 @@ static int sc_master_control_master(sc_master_t *ms, uint8_t *buf, size_t len)
     goto err;
   remote_debug(__func__, "%s", sab);
   ms->mode = MASTER_MODE_GO;
+  ms->id = master_id; master_id++;
+  gettimeofday_wrap(&ms->arrival);
   off = strlen(sab);
   resp[0] = CONTROL_MASTER_ID;
   resp[1] = off + 1;
   memcpy(resp+2, sab, off + 1);
   if(sc_master_inet_send(ms, resp, 1 + 1 + off + 1, 0, 0) != 0)
     {
-      remote_debug(__func__, "could not write ID: %s\n", strerror(errno));
+      remote_debug(__func__, "could not write ID: %s", strerror(errno));
       goto err;
     }
+
+  /* send the existence of the remote instance out */
+  sc_master_mux_notify(ms);
 
   return 0;
 
  err:
   return -1;
+}
+
+static void onechan_fin(sc_onechan_t *ocn)
+{
+  if(ocn->unix_wb == NULL || scamper_writebuf_gtzero(ocn->unix_wb) == 0)
+    sc_unit_gc(ocn->unit);
+  else
+    sc_fd_read_del(ocn->unix_fd);
+  return;
+}
+
+static void muxchan_fin(sc_muxchan_t *mcn)
+{
+  uint8_t buf[MUX_HDRLEN + 2 + 4];
+
+  if(mcn == NULL || mcn->mux == NULL)
+    return;
+
+  bytes_htonl(buf + 0,              0);
+  bytes_htonl(buf + 4,              6); /* type:2 + channel:4 */
+  bytes_htons(buf + MUX_HDRLEN,     MUX_CHANNEL_CLOSE);
+  bytes_htonl(buf + MUX_HDRLEN + 2, mcn->channel_id);
+
+  if(sc_mux_unix_send(mcn->mux, buf, MUX_HDRLEN + 2 + 4) != 0)
+    remote_debug(__func__, "could not write mux channel close message");
+
+  return;
 }
 
 /*
@@ -1452,22 +1847,27 @@ static int sc_master_control_channel_fin(sc_master_t *ms,
 
   if(len != 4)
     {
-      remote_debug(__func__, "malformed channel fin: %u\n",(uint32_t)len);
+      remote_debug(__func__, "malformed channel fin: %u", (uint32_t)len);
       return -1;
     }
 
   id = bytes_ntohl(buf);
   if((cn = sc_master_channel_find(ms, id)) == NULL)
     {
-      remote_debug(__func__, "could not find channel %u\n", id);
-      return -1;
+      remote_debug(__func__, "could not find channel %u", id);
+      return 0;
     }
   cn->flags |= CHANNEL_FLAG_EOF_RX;
 
-  if(cn->unix_wb == NULL || scamper_writebuf_gtzero(cn->unix_wb) == 0)
-    sc_unit_gc(cn->unit);
+  if(CHANNEL_IS_ONECHAN(cn))
+    {
+      onechan_fin(cn->data);
+    }
   else
-    sc_fd_read_del(cn->unix_fd);
+    {
+      assert(CHANNEL_IS_MUXCHAN(cn));
+      muxchan_fin(cn->data);
+    }
 
   return 0;
 }
@@ -1640,7 +2040,7 @@ static int sc_master_control_resume(sc_master_t *ms, uint8_t *buf, size_t len)
     }
 
   /* create a new unix domain socket */
-  if(sc_master_unix_create(ms2) != 0)
+  if(unix_dir != NULL && sc_master_unix_create(ms2) != 0)
     goto err;
 
   /*
@@ -1664,6 +2064,9 @@ static int sc_master_control_resume(sc_master_t *ms, uint8_t *buf, size_t len)
 			      msg->channel) != 0)
 	goto err;
     }
+
+  /* XXX: send the existence of the remote instance out */
+  /* sc_master_mux_notify(ms2); */
 
  done:
   return 0;
@@ -1753,7 +2156,8 @@ static int sc_master_control(sc_master_t *ms)
  */
 static void sc_master_inet_read_cb(sc_master_t *ms, uint8_t *buf, size_t len)
 {
-  sc_channel_t *channel;
+  sc_channel_t *cn;
+  sc_onechan_t *ocn;
   uint32_t seq, id;
   uint16_t msglen, x, y;
   size_t off = 0;
@@ -1776,14 +2180,6 @@ static void sc_master_inet_read_cb(sc_master_t *ms, uint8_t *buf, size_t len)
       if(seq != ms->rcv_nxt)
 	{
 	  remote_debug(__func__, "got seq %u expected %u", seq, ms->rcv_nxt);
-	  goto err;
-	}
-
-      /* check the channel id is valid */
-      channel = NULL;
-      if(id != 0 && (channel = sc_master_channel_find(ms, id)) == NULL)
-	{
-	  remote_debug(__func__, "could not find channel %u", id);
 	  goto err;
 	}
 
@@ -1821,13 +2217,20 @@ static void sc_master_inet_read_cb(sc_master_t *ms, uint8_t *buf, size_t len)
 	goto err;
       ms->rcv_nxt++;
 
-      /* the unix domain socket may have gone away but we need to flush */
-      if(channel->unix_wb != NULL)
+      if((cn = sc_master_channel_find(ms, id)) != NULL)
 	{
-	  if(scamper_writebuf_send(channel->unix_wb, ptr, msglen) != 0)
-	    sc_unit_gc(channel->unit);
-	  sc_fd_write_add(channel->unix_fd);
+	  if(CHANNEL_IS_ONECHAN(cn))
+	    {
+	      ocn = cn->data;
+	      if(sc_onechan_unix_send(cn->data, ptr, msglen) != 0)
+		sc_unit_gc(ocn->unit);
+	    }
+	  else if(CHANNEL_IS_MUXCHAN(cn))
+	    {
+	      sc_muxchan_unix_send(cn->data, ptr, msglen);
+	    }
 	}
+      else remote_debug(__func__, "could not find channel %u", id);
     }
 
   return;
@@ -1955,7 +2358,7 @@ static void sc_master_inet_read_do(sc_master_t *ms)
 static void sc_master_unix_accept_do(sc_master_t *ms)
 {
   sc_channel_t *cn = NULL;
-  uint8_t msg[1+4];
+  sc_onechan_t *ocn = NULL;
   int s = -1;
 
   if((s = accept(ms->unix_fd->fd, NULL, NULL)) == -1)
@@ -1964,44 +2367,47 @@ static void sc_master_unix_accept_do(sc_master_t *ms)
       goto err;
     }
 
-  if((cn = malloc_zero(sizeof(sc_channel_t))) == NULL)
+  if((cn = malloc_zero(sizeof(sc_channel_t))) == NULL ||
+     (ocn = malloc_zero(sizeof(sc_onechan_t))) == NULL)
     goto err;
+  cn->flags |= CHANNEL_FLAG_ONECHAN;
   cn->id = ms->next_channel++;
   if(ms->next_channel == 0)
     ms->next_channel++;
 
   /* allocate a unit to describe this structure */
-  if((cn->unit = sc_unit_alloc(UNIT_TYPE_CHANNEL, cn)) == NULL)
+  if((ocn->unit = sc_unit_alloc(UNIT_TYPE_ONECHAN, ocn)) == NULL)
     {
       remote_debug(__func__, "could not alloc unit: %s", strerror(errno));
       goto err;
     }
 
-  if((cn->unix_fd = sc_fd_alloc(s, FD_TYPE_CHANNEL_UNIX, cn->unit)) == NULL)
+  if((ocn->unix_fd = sc_fd_alloc(s, FD_TYPE_ONECHAN_UNIX, ocn->unit)) == NULL)
     {
       remote_debug(__func__, "could not alloc unix_fd: %s", strerror(errno));
       goto err;
     }
   s = -1;
-  sc_fd_read_add(cn->unix_fd);
+  sc_fd_read_add(ocn->unix_fd);
 
-  if((cn->unix_wb = scamper_writebuf_alloc()) == NULL)
+  if((ocn->unix_wb = scamper_writebuf_alloc()) == NULL)
     goto err;
   if((cn->cnode = dlist_tail_push(ms->channels, cn)) == NULL)
     goto err;
   cn->master = ms;
 
   /* send a new channel message to scamper. expect an acknowledgement */
-  msg[0] = CONTROL_CHANNEL_NEW;
-  bytes_htonl(msg+1, cn->id);
-  if(sc_master_inet_send(ms, msg, 1 + 4, 0, 1) != 0)
+  if(sc_master_inet_send_channel_new(ms, cn) != 0)
     goto err;
 
+  cn->data = ocn;
+  ocn->channel = cn;
   return;
 
  err:
   if(s != -1) close(s);
   if(cn != NULL) sc_channel_free(cn);
+  if(ocn != NULL) sc_onechan_free(ocn);
   return;
 }
 
@@ -2012,10 +2418,28 @@ static void sc_master_unix_accept_do(sc_master_t *ms)
  */
 static void sc_master_free(sc_master_t *ms)
 {
+  uint8_t dep[MUX_HDRLEN + 2 + 4];
+  dlist_node_t *dn;
   sc_channel_t *cn;
+  sc_mux_t *mux;
 
   if(ms == NULL)
     return;
+
+  /* send depart message to any mux sockets */
+  if(mxlist != NULL)
+    {
+      bytes_htonl(dep + 0, 0);                          /* channel zero */
+      bytes_htonl(dep + 4, 6);                          /* msglen */
+      bytes_htons(dep + MUX_HDRLEN, MUX_VP_DEPART);     /* type */
+      bytes_htonl(dep + MUX_HDRLEN + 2, ms->id);        /* id of scamper */
+      for(dn=dlist_head_node(mxlist); dn != NULL; dn = dlist_node_next(dn))
+	{
+	  mux = dlist_node_item(dn);
+	  if(sc_mux_unix_send(mux, dep, MUX_HDRLEN + 2 + 4) != 0)
+	    remote_debug(__func__, "could not write instance depart message");
+	}
+    }
 
   sc_master_unix_free(ms);
 
@@ -2114,18 +2538,44 @@ static sc_master_t *sc_master_alloc(int fd)
   return NULL;
 }
 
+static int sc_muxchan_unix_send(sc_muxchan_t *mcn, uint8_t *buf, uint32_t len)
+{
+  uint8_t msg[MUX_HDRLEN];
+  if(mcn == NULL || mcn->mux == NULL || mcn->mux->unix_wb == NULL)
+    return 0;
+  bytes_htonl(msg+0, mcn->channel_id);
+  bytes_htonl(msg+4, len);
+  if(scamper_writebuf_send(mcn->mux->unix_wb, msg, MUX_HDRLEN) != 0 ||
+     scamper_writebuf_send(mcn->mux->unix_wb, buf, len) != 0)
+    return -1;
+  sc_fd_write_add(mcn->mux->unix_fd);
+  return 0;
+}
+
+static int sc_onechan_unix_send(sc_onechan_t *ocn, uint8_t *buf, uint16_t len)
+{
+  if(ocn->unix_wb == NULL)
+    return 0;
+  if(scamper_writebuf_send(ocn->unix_wb, buf, len) != 0)
+    return -1;
+  sc_fd_write_add(ocn->unix_fd);
+  return 0;
+}
+
 /*
- * sc_channel_unix_write_do
+ * sc_onechan_unix_write_do
  *
  * we can write to the unix fd without blocking, so do so.
  */
-static void sc_channel_unix_write_do(sc_channel_t *cn)
+static void sc_onechan_unix_write_do(sc_onechan_t *ocn)
 {
+  sc_channel_t *cn = ocn->channel;
+
   /* if we did a read which returned -1, then the unix_fd will be null */
-  if(cn->unix_fd == NULL)
+  if(ocn->unix_fd == NULL)
     return;
 
-  if(scamper_writebuf_write(cn->unix_fd->fd, cn->unix_wb) != 0)
+  if(scamper_writebuf_write(ocn->unix_fd->fd, ocn->unix_wb) != 0)
     {
       remote_debug(__func__, "write to %s channel %u failed",
 		   cn->master->name, cn->id);
@@ -2136,11 +2586,11 @@ static void sc_channel_unix_write_do(sc_channel_t *cn)
    * if we still have data to write, then wait until we get signal to
    * write again
    */
-  if(scamper_writebuf_gtzero(cn->unix_wb) != 0)
+  if(scamper_writebuf_gtzero(ocn->unix_wb) != 0)
     return;
 
   /* nothing more to write, so remove fd */
-  if(sc_fd_write_del(cn->unix_fd) != 0)
+  if(sc_fd_write_del(ocn->unix_fd) != 0)
     {
       remote_debug(__func__, "could not delete unix write for %s channel %u",
 		   cn->master->name, cn->id);
@@ -2152,7 +2602,7 @@ static void sc_channel_unix_write_do(sc_channel_t *cn)
     {
       remote_debug(__func__, "received EOF for %s channel %u",
 		   cn->master->name, cn->id);
-      sc_unit_gc(cn->unit);
+      sc_unit_gc(ocn->unit);
       return;
     }
 
@@ -2160,30 +2610,29 @@ static void sc_channel_unix_write_do(sc_channel_t *cn)
 
  err:
   /* got an error trying to write, so we're done */
-  sc_fd_free(cn->unix_fd); cn->unix_fd = NULL;
-  scamper_writebuf_free(cn->unix_wb); cn->unix_wb = NULL;
+  sc_fd_free(ocn->unix_fd); ocn->unix_fd = NULL;
+  scamper_writebuf_free(ocn->unix_wb); ocn->unix_wb = NULL;
 
   /* we've received an EOF, we're done */
   if((cn->flags & CHANNEL_FLAG_EOF_RX) != 0)
-    {
-      sc_unit_gc(cn->unit);
-      return;
-    }
+    sc_unit_gc(ocn->unit);
+
   return;
 }
 
 /*
- * sc_channel_unix_read_do
+ * sc_onechan_unix_read_do
  *
  * a local client process has written to a unix domain socket, which
  * we will process line by line.
  */
-static void sc_channel_unix_read_do(sc_channel_t *cn)
+static void sc_onechan_unix_read_do(sc_onechan_t *ocn)
 {
+  sc_channel_t *cn = ocn->channel;
   ssize_t rc;
   uint8_t buf[4096];
 
-  if((rc = read(cn->unix_fd->fd, buf, sizeof(buf))) <= 0)
+  if((rc = read(ocn->unix_fd->fd, buf, sizeof(buf))) <= 0)
     {
       if(rc == -1 && (errno == EAGAIN || errno == EINTR))
 	return;
@@ -2191,16 +2640,14 @@ static void sc_channel_unix_read_do(sc_channel_t *cn)
       /* send an EOF if we haven't tx'd or rx'd an EOF. expect an ack */
       if((cn->flags & (CHANNEL_FLAG_EOF_RX|CHANNEL_FLAG_EOF_TX)) == 0)
 	{
-	  buf[0] = CONTROL_CHANNEL_FIN;
-	  bytes_htonl(buf+1, cn->id);
-	  sc_master_inet_send(cn->master, buf, 5, 0, 1);
+	  sc_master_inet_send_channel_eof(cn->master, cn);
 	  cn->flags |= CHANNEL_FLAG_EOF_TX;
 	}
 
       /* if we've received an EOF, we're done */
       if((cn->flags & CHANNEL_FLAG_EOF_RX) != 0)
 	{
-	  sc_unit_gc(cn->unit);
+	  sc_unit_gc(ocn->unit);
 	  return;
 	}
 
@@ -2211,12 +2658,12 @@ static void sc_channel_unix_read_do(sc_channel_t *cn)
        */
       if(rc == -1)
 	{
-	  sc_fd_free(cn->unix_fd); cn->unix_fd = NULL;
-	  scamper_writebuf_free(cn->unix_wb); cn->unix_wb = NULL;
+	  sc_fd_free(ocn->unix_fd); ocn->unix_fd = NULL;
+	  scamper_writebuf_free(ocn->unix_wb); ocn->unix_wb = NULL;
 	}
       else
 	{
-	  sc_fd_read_del(cn->unix_fd);
+	  sc_fd_read_del(ocn->unix_fd);
 	}
       return;
     }
@@ -2227,16 +2674,63 @@ static void sc_channel_unix_read_do(sc_channel_t *cn)
   return;
 }
 
+static void sc_onechan_free(sc_onechan_t *ocn)
+{
+  if(ocn == NULL)
+    return;
+  if(ocn->unix_fd != NULL) sc_fd_free(ocn->unix_fd);
+  if(ocn->unix_lp != NULL) scamper_linepoll_free(ocn->unix_lp, 0);
+  if(ocn->unix_wb != NULL) scamper_writebuf_free(ocn->unix_wb);
+  if(ocn->unit != NULL) sc_unit_free(ocn->unit);
+  if(ocn->channel != NULL)
+    {
+      ocn->channel->data = NULL;
+      sc_channel_free(ocn->channel);
+    }
+  free(ocn);
+  return;
+}
+
+static void sc_muxchan_free(sc_muxchan_t *mcn)
+{
+  if(mcn == NULL)
+    return;
+  if(mcn->channel != NULL)
+    {
+      mcn->channel->data = NULL;
+      sc_channel_free(mcn->channel);
+    }
+  if(mcn->mux != NULL && mcn->mux->channels != NULL && mcn->mxcnode != NULL)
+    {
+      dlist_node_pop(mcn->mux->channels, mcn->mxcnode);
+      mcn->mxcnode = NULL;
+    }
+  free(mcn);
+  return;
+}
+
 static void sc_channel_free(sc_channel_t *cn)
 {
+  sc_onechan_t *ocn;
+  sc_muxchan_t *mcn;
+
   if(cn == NULL)
     return;
   if(cn->master != NULL && cn->cnode != NULL)
     dlist_node_pop(cn->master->channels, cn->cnode);
-  if(cn->unix_fd != NULL) sc_fd_free(cn->unix_fd);
-  if(cn->unix_lp != NULL) scamper_linepoll_free(cn->unix_lp, 0);
-  if(cn->unix_wb != NULL) scamper_writebuf_free(cn->unix_wb);
-  if(cn->unit != NULL) sc_unit_free(cn->unit);
+  if(cn->data != NULL && CHANNEL_IS_ONECHAN(cn))
+    {
+      ocn = cn->data;
+      ocn->channel = NULL;
+      sc_onechan_free(ocn);
+    }
+  else if(cn->data != NULL && CHANNEL_IS_MUXCHAN(cn))
+    {
+      mcn = cn->data;
+      mcn->channel = NULL;
+      sc_muxchan_free(mcn);
+    }
+
   free(cn);
   return;
 }
@@ -2390,6 +2884,359 @@ static int serversocket_init(void)
   return 0;
 }
 
+static void sc_mux_free(sc_mux_t *mux)
+{
+  sc_muxchan_t *mcn;
+
+  if(mux == NULL)
+    return;
+
+  if(mux->mxnode != NULL) dlist_node_pop(mxlist, mux->mxnode);
+  if(mux->unix_fd != NULL) sc_fd_free(mux->unix_fd);
+  if(mux->unix_wb != NULL) scamper_writebuf_free(mux->unix_wb);
+  if(mux->unit != NULL) sc_unit_free(mux->unit);
+  if(mux->buf != NULL) free(mux->buf);
+
+  if(mux->channels != NULL)
+    {
+      while((mcn = dlist_head_pop(mux->channels)) != NULL)
+	{
+	  mcn->mxcnode = NULL;
+	  sc_muxchan_free(mcn);
+	}
+      dlist_free(mux->channels);
+    }
+
+  free(mux);
+  return;
+}
+
+static sc_mux_t *sc_mux_alloc(void)
+{
+  sc_mux_t *mux = NULL;
+
+  if((mux = malloc_zero(sizeof(sc_mux_t))) == NULL ||
+     (mux->unix_wb = scamper_writebuf_alloc()) == NULL ||
+     (mux->channels = dlist_alloc()) == NULL ||
+     (mux->unit = sc_unit_alloc(UNIT_TYPE_MUX, mux)) == NULL)
+    {
+      remote_debug(__func__, "could not alloc mux: %s", strerror(errno));
+      goto err;
+    }
+
+  mux->next_muxchan = 1;
+  return mux;
+
+ err:
+  sc_mux_free(mux);
+  return NULL;
+}
+
+sc_muxchan_t *sc_mux_chan_get(sc_mux_t *mux, uint32_t channel_id)
+{
+  sc_muxchan_t *mcn;
+  dlist_node_t *dn;
+
+  for(dn=dlist_head_node(mux->channels); dn != NULL; dn=dlist_node_next(dn))
+    {
+      mcn = dlist_node_item(dn);
+      if(mcn->channel_id == channel_id)
+	return mcn;
+    }
+
+  return NULL;
+}
+
+static int sc_mux_read_channel_open(sc_mux_t *mux,const uint8_t *buf,size_t len)
+{
+  sc_master_t *ms = NULL;
+  sc_muxchan_t *mcn = NULL;
+  sc_channel_t *cn = NULL;
+  dlist_node_t *dn;
+  uint32_t instance_id;
+  uint32_t channel_id;
+
+  if(len < 8)
+    return -1;
+  instance_id = bytes_ntohl(buf);
+  channel_id = bytes_ntohl(buf+4);
+
+  /* do not allow re-use of channel ids */
+  if(sc_mux_chan_get(mux, channel_id) != NULL)
+    goto err;
+
+  /* find the master instance referred to */
+  for(dn=dlist_head_node(mslist); dn != NULL; dn=dlist_node_next(dn))
+    {
+      ms = dlist_node_item(dn);
+      if(ms->id == instance_id)
+	break;
+    }
+  if(ms == NULL || ms->id != instance_id)
+    goto err;
+
+  if((cn = malloc_zero(sizeof(sc_channel_t))) == NULL ||
+     (mcn = malloc_zero(sizeof(sc_muxchan_t))) == NULL)
+    goto err;
+  cn->flags |= CHANNEL_FLAG_MUXCHAN;
+  cn->id = ms->next_channel++;
+  if(ms->next_channel == 0)
+    ms->next_channel++;
+  if((cn->cnode = dlist_tail_push(ms->channels, cn)) == NULL)
+    goto err;
+  cn->master = ms;
+
+  /* send a new channel message to scamper. expect an acknowledgement */
+  if(sc_master_inet_send_channel_new(ms, cn) != 0)
+    goto err;
+
+  cn->data = mcn;
+  mcn->channel = cn;
+  mcn->mux = mux;
+  mcn->channel_id = channel_id;
+
+  if((mcn->mxcnode = dlist_tail_push(mux->channels, mcn)) == NULL)
+    goto err;
+
+  return 0;
+
+ err:
+  if(mcn != NULL)
+    {
+      mcn->channel = NULL;
+      sc_muxchan_free(mcn);
+    }
+  if(cn != NULL)
+    {
+      cn->data = NULL;
+      sc_channel_free(cn);
+    }
+  return -1;
+}
+
+static int sc_mux_read_channel_zero(sc_mux_t *mux,const uint8_t *buf,size_t len)
+{
+  uint16_t msg_type;
+
+  if(len < 2)
+    return -1;
+
+  msg_type = bytes_ntohs(buf);
+  if(msg_type == MUX_CHANNEL_OPEN)
+    {
+      if(sc_mux_read_channel_open(mux, buf+2, len-2) != 0)
+	return -1;
+    }
+
+  return 0;
+}
+
+static void sc_mux_unix_read_do(sc_mux_t *mux)
+{
+  dlist_node_t *dn;
+  sc_muxchan_t *mcn;
+  sc_channel_t *cn;
+  size_t off, len, left, x;
+  uint32_t msg_chan, msg_len;
+  ssize_t rrc;
+
+  if(realloc_wrap((void **)&mux->buf, mux->buf_len + 8192) != 0)
+    goto zombie;
+
+  if((rrc = recv(mux->unix_fd->fd, mux->buf + mux->buf_len, 8192, 0)) <= 0)
+    {
+      if(rrc == -1 && (errno == EAGAIN || errno == EINTR))
+	return;
+      if(rrc == 0)
+	remote_debug(__func__, "mux disconnected");
+      else
+	remote_debug(__func__, "mux read failed: %s", strerror(errno));
+      goto zombie;
+    }
+
+  len = mux->buf_len + rrc;
+  off = 0;
+  mux->buf_len = 0;
+
+  while(off < len)
+    {
+      /* how much is left in the buf? */
+      left = len - off;
+
+      if(mux->recv_chan != 0)
+	{
+	  x = mux->recv_left <= left ? mux->recv_left : left;
+	  if((mcn = sc_mux_chan_get(mux, mux->recv_chan)) != NULL)
+	    sc_master_inet_send(mcn->channel->master, mux->buf + off, x,
+				mcn->channel->id, 1);
+	  mux->recv_left -= x;
+	  off += x;
+	  if(mux->recv_left == 0)
+	    mux->recv_chan = 0;
+	  continue;
+	}
+
+      /* need to buffer the remainder */
+      if(left < MUX_HDRLEN)
+	break;
+
+      msg_chan = bytes_ntohl(mux->buf + off);
+      msg_len  = bytes_ntohl(mux->buf + off + 4);
+      off += MUX_HDRLEN;
+
+      /* have the code block at the top of the loop handle frame */
+      if(msg_chan != 0)
+	{
+	  mux->recv_chan = msg_chan;
+	  mux->recv_left = msg_len;
+	  continue;
+	}
+
+      /* require all of a channel zero message before processing it */
+      if(left < msg_len)
+	break;
+
+      if(sc_mux_read_channel_zero(mux, mux->buf + off, msg_len) != 0)
+	goto zombie;
+
+      off += msg_len;
+    }
+
+  mux->buf_len = len - off;
+  if(mux->buf_len > 0)
+    memmove(mux->buf, mux->buf + off, mux->buf_len);
+  realloc_wrap((void **)&mux->buf, mux->buf_len);
+
+  return;
+
+ zombie:
+  for(dn=dlist_head_node(mux->channels); dn != NULL; dn=dlist_node_next(dn))
+    {
+      mcn = dlist_node_item(dn);
+      if((cn = mcn->channel) == NULL)
+	continue;
+      if((cn->flags & (CHANNEL_FLAG_EOF_RX|CHANNEL_FLAG_EOF_TX)) == 0)
+	{
+	  sc_master_inet_send_channel_eof(cn->master, cn);
+	  cn->flags |= CHANNEL_FLAG_EOF_TX;
+	}
+    }
+  sc_unit_gc(mux->unit);
+  return;  
+}
+
+static int sc_mux_unix_send(sc_mux_t *mux, uint8_t *buf, size_t len)
+{
+  if(mux->unix_wb == NULL || mux->unix_fd == NULL)
+    return -1;
+  if(scamper_writebuf_send(mux->unix_wb, buf, len) != 0)
+    return -1;
+  sc_fd_write_add(mux->unix_fd);
+  return 0;
+}
+
+static void sc_mux_unix_write_do(sc_mux_t *mux)
+{
+  if(mux->unix_fd == NULL)
+    return;
+
+  if(scamper_writebuf_write(mux->unix_fd->fd, mux->unix_wb) != 0)
+    {
+      remote_debug(__func__, "write to mux failed");
+      goto err;
+    }
+
+  /*
+   * if we still have data to write, then wait until we get signal to
+   * write again
+   */
+  if(scamper_writebuf_gtzero(mux->unix_wb) != 0)
+    return;
+
+  /* nothing more to write, so remove fd */
+  if(sc_fd_write_del(mux->unix_fd) != 0)
+    {
+      remote_debug(__func__, "could not delete unix write mux");
+      goto err;
+    }
+
+  return;
+
+ err:
+  remote_debug(__func__, "err");
+  return;
+}
+
+static int muxsocket_accept(int muxsock)
+{
+  sc_mux_t *mux = NULL;
+  dlist_node_t *dn;
+  sc_master_t *ms;
+  uint8_t buf[1024];
+  size_t len;
+  int s;
+
+  assert(muxsock == muxsocket);
+
+  if((s = accept(muxsock, NULL, NULL)) == -1)
+    {
+      remote_debug(__func__, "accept failed: %s", strerror(errno));
+      goto err;
+    }
+
+  if((mux = sc_mux_alloc()) == NULL ||
+     (mux->unix_fd  = sc_fd_alloc(s, FD_TYPE_MUX, mux->unit)) == NULL)
+    {
+      remote_debug(__func__, "could not alloc mux: %s", strerror(errno));
+      goto err;
+    }
+  s = -1;
+  sc_fd_read_add(mux->unix_fd);
+
+  for(dn=dlist_head_node(mslist); dn != NULL; dn=dlist_node_next(dn))
+    {
+      ms = dlist_node_item(dn);
+      if(ms->mode != MASTER_MODE_GO)
+	continue;
+      len = sizeof(buf);
+      if(sc_master_mux_encode(ms, buf, &len) == 0 &&
+	 scamper_writebuf_send(mux->unix_wb, buf, len) != 0)
+	remote_debug(__func__, "could not write VP update message");
+    }
+
+  /* send GO message */
+  bytes_htonl(buf + 0,          0);       /* channel zero */
+  bytes_htonl(buf + 4,          2);       /* msglen */
+  bytes_htons(buf + MUX_HDRLEN, MUX_GO);  /* type */
+  if(scamper_writebuf_send(mux->unix_wb, buf, MUX_HDRLEN + 2) != 0)
+    {
+      remote_debug(__func__, "could not write go message");
+      goto err;
+    }
+
+  if((mux->mxnode = dlist_tail_push(mxlist, mux)) == NULL)
+    {
+      remote_debug(__func__, "could not add mux to list");
+      goto err;
+    }
+
+  sc_fd_write_add(mux->unix_fd);
+
+  return 0;
+
+ err:
+  if(s != -1) close(s);
+  if(mux != NULL) sc_mux_free(mux);
+  return -1;
+}
+
+static int muxsocket_init(void)
+{
+  if(muxsocket_name != NULL && (muxsocket = unix_create(muxsocket_name)) == -1)
+    return -1;
+  return 0;
+}
+
 /*
  * unixdomain_direxists
  *
@@ -2398,29 +3245,66 @@ static int serversocket_init(void)
 static int unixdomain_direxists(void)
 {
   struct stat sb;
-  if(stat(unix_name, &sb) != 0)
+  if(stat(unix_dir, &sb) != 0)
     {
-      usage(OPT_UNIX);
-      remote_debug(__func__,"could not stat %s: %s",unix_name,strerror(errno));
+      usage(OPT_UNIXDIR);
+      remote_debug(__func__, "stat failed %s: %s", unix_dir, strerror(errno));
       return -1;
     }
-  if((sb.st_mode & S_IFDIR) != 0)
-    return 0;
-  usage(OPT_UNIX);
-  remote_debug(__func__, "%s is not a directory", unix_name);
-  return -1;
+  if(S_ISDIR(sb.st_mode) == 0)
+    {
+      usage(OPT_UNIXDIR);
+      remote_debug(__func__, "%s is not a directory", unix_dir);
+      return -1;
+    }
+
+  return 0;
 }
 
 static void cleanup(void)
 {
   sc_master_t *ms;
+  sc_mux_t *mux;
   int i;
 
   for(i=0; i<2; i++)
-    close(serversockets[i]);
+    {
+      if(serversockets[i] != -1)
+	{
+	  close(serversockets[i]);
+	  serversockets[i] = -1;
+	}
+    }
+
+  if(muxsocket != -1)
+    {
+      unlink(muxsocket_name);
+      close(muxsocket);
+      muxsocket = -1;
+    }
+
+  if(metadata != NULL)
+    {
+      splaytree_free(metadata, (splaytree_free_t)sc_metadata_free);
+      metadata = NULL;
+    }
 
   if(ss_addr != NULL)
-    free(ss_addr);
+    {
+      free(ss_addr);
+      ss_addr = NULL;
+    }
+
+  if(mxlist != NULL)
+    {
+      while((mux = dlist_head_pop(mxlist)) != NULL)
+	{
+	  mux->mxnode = NULL;
+	  sc_mux_free(mux);
+	}
+      dlist_free(mxlist); mxlist = NULL;
+    }
+
   if(mslist != NULL)
     {
       while((ms = dlist_head_pop(mslist)) != NULL)
@@ -2428,29 +3312,49 @@ static void cleanup(void)
 	  ms->mnode = NULL;
 	  sc_master_free(ms);
 	}
-      dlist_free(mslist);
+      dlist_free(mslist); mslist = NULL;
     }
   if(mstree != NULL)
-    splaytree_free(mstree, NULL);
+    {
+      splaytree_free(mstree, NULL);
+      mstree = NULL;
+    }
 
 #ifdef HAVE_OPENSSL
-  if(tls_ctx != NULL) SSL_CTX_free(tls_ctx);
+  if(tls_ctx != NULL)
+    {
+      SSL_CTX_free(tls_ctx);
+      tls_ctx = NULL;
+    }
 #endif
 
-  if(gclist != NULL) dlist_free(gclist);
+  if(gclist != NULL)
+    {
+      dlist_free(gclist);
+      gclist = NULL;
+    }
 
   if(pidfile != NULL)
     {
       unlink(pidfile);
       free(pidfile);
+      pidfile = NULL;
     }
 
 #ifdef HAVE_EPOLL
-  if(epfd != -1) close(epfd);
+  if(epfd != -1)
+    {
+      close(epfd);
+      epfd = -1;
+    }
 #endif
 
 #ifdef HAVE_KQUEUE
-  if(kqfd != -1) close(kqfd);
+  if(kqfd != -1)
+    {
+      close(kqfd);
+      kqfd = -1;
+    }
 #endif
 
   return;
@@ -2549,6 +3453,120 @@ static int remoted_pidfile(void)
   return -1;
 }
 
+/*
+ * metadata_line:
+ *
+ * process lines of the format:
+ *
+ * hlz2-nz cc nz
+ * hlz2-nz asn4 64504
+ *
+ */
+static int metadata_line(char *line, void *param)
+{
+  splaytree_t *tree = param;
+  sc_metadata_t fm, *md;
+  char *name = NULL, *attr = NULL, *value = NULL, *tag = NULL;
+  char **out = NULL, *ptr = line;
+
+  if(*line == '#' || *line == '\0')
+    return 0;
+
+  /* name is the first string */
+  name = ptr;
+
+  /* null terminate name */
+  while(*ptr != '\0' && isspace((unsigned char)*ptr) == 0)
+    ptr++;
+  if(*ptr == '\0')
+    return -1;
+  *ptr = '\0';
+
+  /* find the start of the attribute type */
+  ptr++;
+  while(*ptr != '\0' && isspace((unsigned char)*ptr) != 0)
+    ptr++;
+  if(*ptr == '\0')
+    return -1;
+  attr = ptr;
+
+  /* null terminate attribute type */
+  while(*ptr != '\0' && isspace((unsigned char)*ptr) == 0)
+    ptr++;
+  if(*ptr == '\0')
+    return -1;
+  *ptr = '\0';
+
+  /* find the start of the attribute value */
+  ptr++;
+  while(*ptr != '\0' && isspace((unsigned char)*ptr) != 0)
+    ptr++;
+  if(*ptr == '\0')
+    return -1;
+  value = ptr;
+
+  fm.name = name;
+  if((md = splaytree_find(tree, &fm)) == NULL)
+    {
+      if((md = malloc_zero(sizeof(sc_metadata_t))) == NULL ||
+	 (md->name = strdup(name)) == NULL ||
+	 splaytree_insert(tree, md) == NULL)
+	{
+	  if(md != NULL)
+	    sc_metadata_free(md);
+	  return -1;
+	}
+    }
+
+  /* handle arbitrary tags separately */
+  if(strcasecmp(attr, "tag") == 0)
+    {
+      if((md->tags == NULL && (md->tags = slist_alloc()) == NULL) ||
+	 (tag = strdup(value)) == NULL ||
+	 slist_tail_push(md->tags, tag) == NULL)
+	{
+	  if(tag != NULL) free(tag);
+	  return -1;
+	}
+      return 0;
+    }
+
+  if(strcasecmp(attr, "asn4") == 0) out = &md->asn4;
+  else if(strcasecmp(attr, "cc") == 0) out = &md->cc;
+  else if(strcasecmp(attr, "st") == 0) out = &md->st;
+  else if(strcasecmp(attr, "place") == 0) out = &md->place;
+  else if(strcasecmp(attr, "latlong") == 0) out = &md->latlong;
+  else if(strcasecmp(attr, "shortname") == 0) out = &md->shortname;
+  else remote_debug(__func__, "unknown attribute type %s", attr);
+
+  if(out != NULL && (*out = strdup(value)) == NULL)
+    return -1;
+   
+  return 0;
+}
+
+static int metadata_load(void)
+{
+  splaytree_t *tree = NULL;
+
+  if((tree = splaytree_alloc((splaytree_cmp_t)sc_metadata_cmp)) == NULL ||
+     (metadata_file != NULL &&
+      file_lines(metadata_file, metadata_line, tree) != 0))
+    goto err;
+
+  /* switch over the metadata trees */
+  if(metadata != NULL)
+    splaytree_free(metadata, (splaytree_free_t)sc_metadata_free);
+  metadata = tree; tree = NULL;
+
+  return 0;
+
+ err:
+  if(tree != NULL)
+    splaytree_free(tree, (splaytree_free_t)sc_metadata_free);
+  return -1;
+}
+
 #ifdef HAVE_SIGACTION
 static void remoted_sigaction(int sig)
 {
@@ -2579,7 +3597,7 @@ static int kqueue_loop(void)
   struct timeval tv, to, *tvp;
   sc_master_t *ms;
   dlist_node_t *dn;
-  sc_fd_t *scfd, scfd_ss[2];
+  sc_fd_t *scfd, scfds[3];
   sc_unit_t *scu;
   int i, rc;
 
@@ -2597,17 +3615,27 @@ static int kqueue_loop(void)
     }
 #endif
 
-  /* add the server sockets to the poll set */
-  memset(&scfd_ss, 0, sizeof(scfd_ss));
+  /* add accept() sockets to the poll set */
+  memset(scfds, 0, sizeof(scfds));
+  scfd = &scfds[0];
   for(i=0; i<2; i++)
     {
       if(serversockets[i] == -1)
 	continue;
-      scfd_ss[i].type = FD_TYPE_SERVER;
-      scfd_ss[i].fd = serversockets[i];
-      if(sc_fd_read_add(&scfd_ss[i]) != 0)
+      scfd->type = FD_TYPE_SERVER;
+      scfd->fd = serversockets[i];
+      if(sc_fd_read_add(scfd) != 0)
+	return -1;
+      scfd++;
+    }
+  if(muxsocket != -1)
+    {
+      scfd->type = FD_TYPE_MUX_ACCEPT;
+      scfd->fd = muxsocket;
+      if(sc_fd_read_add(scfd) != 0)
 	return -1;
     }
+  scfd = NULL;
 
   /* main event loop */
   while(stop == 0)
@@ -2615,6 +3643,7 @@ static int kqueue_loop(void)
       if(reload != 0)
 	{
 	  reload = 0;
+	  metadata_load();
 #ifdef HAVE_OPENSSL
 	  if(remoted_tlsctx_reload() != 0)
 	    return -1;
@@ -2665,10 +3694,11 @@ static int kqueue_loop(void)
 
 	      /*
 	       * ensure we send something every 30 seconds.
-	       * unix_fd being not null signifies the remote controller
-	       * has received an opening "master" frame.
+	       * XXX: unix_fd being not null signifies the remote
+	       * controller has received an opening "master" frame.
 	       */
-	      if(ms->unix_fd != NULL && timeval_cmp(&now, &ms->tx_ka) >= 0)
+	      if(ms->mode == MASTER_MODE_GO &&
+		 timeval_cmp(&now, &ms->tx_ka) >= 0)
 		{
 		  timeval_add_s(&ms->tx_ka, &now, 30);
 		  if(sc_master_tx_keepalive(ms) != 0)
@@ -2742,11 +3772,18 @@ static int kqueue_loop(void)
 	  scfd = events[i].udata;
 #endif
 
-	  if((scu = scfd->unit) == NULL)
+	  if(scfd->type == FD_TYPE_SERVER)
 	    {
 	      serversocket_accept(scfd->fd);
 	      continue;
 	    }
+	  else if(scfd->type == FD_TYPE_MUX_ACCEPT)
+	    {
+	      muxsocket_accept(scfd->fd);
+	      continue;
+	    }
+
+	  scu = scfd->unit; assert(scu != NULL);
 
 #if defined(HAVE_EPOLL)
 	  if(events[i].events & (EPOLLIN|EPOLLHUP) && scu->gc == 0)
@@ -2783,6 +3820,8 @@ static int select_loop(void)
   dlist_node_t *dn, *dn2;
   sc_master_t *ms;
   sc_channel_t *cn;
+  sc_onechan_t *ocn;
+  sc_mux_t *mux;
   sc_unit_t *scu;
 
   while(stop == 0)
@@ -2790,6 +3829,7 @@ static int select_loop(void)
       if(reload != 0)
 	{
 	  reload = 0;
+	  metadata_load();
 #ifdef HAVE_OPENSSL
 	  if(remoted_tlsctx_reload() != 0)
 	    return -1;
@@ -2806,6 +3846,26 @@ static int select_loop(void)
 	  FD_SET(serversockets[i], &rfds);
 	  if(serversockets[i] > nfds)
 	    nfds = serversockets[i];
+	}
+
+      if(muxsocket != -1)
+	{
+	  FD_SET(muxsocket, &rfds);
+	  if(muxsocket > nfds)
+	    nfds = muxsocket;
+	}
+
+      for(dn=dlist_head_node(mxlist); dn != NULL; dn=dlist_node_next(dn))
+	{
+	  mux = dlist_node_item(dn);
+	  FD_SET(mux->unix_fd->fd, &rfds);
+	  if(mux->unix_fd->fd > nfds)
+	    nfds = mux->unix_fd->fd;
+	  if(scamper_writebuf_len(mux->unix_wb) > 0)
+	    {
+	      FD_SET(mux->unix_fd->fd, &wfds);
+	      wfdsp = &wfds;
+	    }
 	}
 
       if((dn = dlist_head_node(mslist)) != NULL)
@@ -2845,11 +3905,12 @@ static int select_loop(void)
 		}
 
 	      /*
-	       * ensure we send something every 30 seconds
-	       * unix_fd being not null signifies the remote controller
-	       * has received an opening "master" frame.
+	       * ensure we send something every 30 seconds.
+	       * XXX: unix_fd being not null signifies the remote
+	       * controller has received an opening "master" frame.
 	       */
-	      if(ms->unix_fd != NULL && timeval_cmp(&now, &ms->tx_ka) >= 0)
+	      if(ms->mode == MASTER_MODE_GO &&
+		 timeval_cmp(&now, &ms->tx_ka) >= 0)
 		{
 		  timeval_add_s(&ms->tx_ka, &now, 30);
 		  if(sc_master_tx_keepalive(ms) != 0)
@@ -2895,18 +3956,22 @@ static int select_loop(void)
 		{
 		  cn = dlist_node_item(dn2);
 		  dn2 = dlist_node_next(dn2);
-		  if(cn->unix_fd == NULL)
-		    continue;
-		  if((cn->unix_fd->flags & (FD_FLAG_READ|FD_FLAG_WRITE)) == 0)
-		    continue;
-		  if(cn->unix_fd->fd > nfds)
-		    nfds = cn->unix_fd->fd;
-		  if(cn->unix_fd->flags & FD_FLAG_READ)
-		    FD_SET(cn->unix_fd->fd, &rfds);
-		  if(cn->unix_fd->flags & FD_FLAG_WRITE)
+		  if(CHANNEL_IS_ONECHAN(cn))
 		    {
-		      FD_SET(cn->unix_fd->fd, &wfds);
-		      wfdsp = &wfds;
+		      ocn = cn->data;
+		      if(ocn->unix_fd == NULL ||
+			 ((ocn->unix_fd->flags & FD_FLAG_READ) == 0 &&
+			  (ocn->unix_fd->flags & FD_FLAG_WRITE) == 0))
+			continue;
+		      if(ocn->unix_fd->fd > nfds)
+			nfds = ocn->unix_fd->fd;
+		      if(ocn->unix_fd->flags & FD_FLAG_READ)
+			FD_SET(ocn->unix_fd->fd, &rfds);
+		      if(ocn->unix_fd->flags & FD_FLAG_WRITE)
+			{
+			  FD_SET(ocn->unix_fd->fd, &wfds);
+			  wfdsp = &wfds;
+			}
 		    }
 		}
 
@@ -2944,6 +4009,10 @@ static int select_loop(void)
 		return -1;
 	    }
 
+	  if(muxsocket != -1 && FD_ISSET(muxsocket, &rfds) &&
+	     muxsocket_accept(muxsocket) != 0)
+	    return -1;
+
 	  for(dn=dlist_head_node(mslist); dn != NULL; dn=dlist_node_next(dn))
 	    {
 	      ms = dlist_node_item(dn);
@@ -2961,12 +4030,27 @@ static int select_loop(void)
 		  dn2 = dlist_node_next(dn2))
 		{
 		  cn = dlist_node_item(dn2);
-		  if(cn->unix_fd != NULL && FD_ISSET(cn->unix_fd->fd, &rfds))
-		    sc_channel_unix_read_do(cn);
-		  if(wfdsp != NULL && cn->unix_fd != NULL &&
-		     FD_ISSET(cn->unix_fd->fd, wfdsp))
-		    sc_channel_unix_write_do(cn);
+		  if(CHANNEL_IS_ONECHAN(cn))
+		    {
+		      ocn = cn->data;
+		      if(ocn->unix_fd != NULL &&
+			 FD_ISSET(ocn->unix_fd->fd, &rfds))
+			sc_onechan_unix_read_do(ocn);
+		      if(wfdsp != NULL && ocn->unix_fd != NULL &&
+			 FD_ISSET(ocn->unix_fd->fd, wfdsp))
+			sc_onechan_unix_write_do(ocn);
+		    }
 		}
+	    }
+
+	  for(dn=dlist_head_node(mxlist); dn != NULL; dn=dlist_node_next(dn))
+	    {
+	      mux = dlist_node_item(dn);
+	      if(mux->unix_fd->fd != -1 && FD_ISSET(mux->unix_fd->fd, &rfds))
+		sc_mux_unix_read_do(mux);
+	      if(wfdsp != NULL &&
+		 mux->unix_fd->fd != -1 && FD_ISSET(mux->unix_fd->fd, wfdsp))
+		sc_mux_unix_write_do(mux);
 	    }
 	}
 
@@ -3056,12 +4140,16 @@ int main(int argc, char *argv[])
     }
 #endif
 
-  if(unixdomain_direxists() != 0 || serversocket_init() != 0)
+  if((unix_dir != NULL && unixdomain_direxists() != 0) ||
+     serversocket_init() != 0 ||
+     muxsocket_init() != 0)
     return -1;
 
   if((mslist = dlist_alloc()) == NULL ||
      (mstree = splaytree_alloc((splaytree_cmp_t)sc_master_cmp)) == NULL ||
-     (gclist = dlist_alloc()) == NULL)
+     (gclist = dlist_alloc()) == NULL ||
+     (mxlist = dlist_alloc()) == NULL ||
+     metadata_load() != 0)
     return -1;
 
 #if defined(HAVE_EPOLL)

@@ -455,7 +455,7 @@ static int check_options(int argc, char *argv[])
 #endif
 	}
 
-      if(options & OPT_PORT)
+      if(opt_port != NULL)
 	{
 	  if(string_tolong(opt_port, &lo) != 0 || lo < 1 || lo > 65535)
 	    {
@@ -465,7 +465,7 @@ static int check_options(int argc, char *argv[])
 	  port = lo;
 	}
 #ifdef HAVE_SOCKADDR_UN
-      else if(options & OPT_UNIX)
+      else if(opt_unix != NULL)
 	{
 	  unix_name = opt_unix;
 	}
@@ -593,7 +593,7 @@ static void logprint(char *format, ...)
 static sc_policytest_t *ping_to_method(const scamper_ping_t *ping)
 {
   uint32_t id = 0;
-  uint8_t probe_method = scamper_ping_probe_method_get(ping);
+  uint8_t probe_method = scamper_ping_method_get(ping);
 
   if(probe_method == SCAMPER_PING_METHOD_ICMP_ECHO)
     {
@@ -601,7 +601,7 @@ static sc_policytest_t *ping_to_method(const scamper_ping_t *ping)
     }
   else if(probe_method == SCAMPER_PING_METHOD_TCP_SYN)
     {
-      switch(scamper_ping_probe_dport_get(ping))
+      switch(scamper_ping_dport_get(ping))
 	{
 	case 21:   id = PT_METHOD_FTP;     break;
 	case 22:   id = PT_METHOD_SSH;     break;
@@ -619,7 +619,7 @@ static sc_policytest_t *ping_to_method(const scamper_ping_t *ping)
     }
   else if(probe_method == SCAMPER_PING_METHOD_UDP)
     {
-      switch(scamper_ping_probe_dport_get(ping))
+      switch(scamper_ping_dport_get(ping))
 	{
 	case 53:   id = PT_METHOD_DNS;  break;
 	case 123:  id = PT_METHOD_NTP;  break;
@@ -635,15 +635,18 @@ static sc_policytest_t *ping_to_method(const scamper_ping_t *ping)
 
 static int ping_r(const sc_policytest_t *method, const scamper_ping_t *ping)
 {
+  const scamper_ping_probe_t *p;
   const scamper_ping_reply_t *r;
-  uint16_t i, ping_sent;
+  uint16_t i, j, ping_sent;
 
   ping_sent = scamper_ping_sent_get(ping);
   for(i=0; i<ping_sent; i++)
     {
-      for(r = scamper_ping_reply_get(ping, i); r != NULL;
-	  r = scamper_ping_reply_next_get(r))
+      if((p = scamper_ping_probe_get(ping, i)) == NULL)
+	continue;
+      for(j=0; j<scamper_ping_probe_replyc_get(p); j++)
 	{
+	  r = scamper_ping_probe_reply_get(p, j);
 	  if(method->flags & PT_FLAG_TCP)
 	    {
 	      if(scamper_ping_reply_is_tcp(r) &&
@@ -1202,6 +1205,7 @@ static int do_infile(void)
       return -1;
     }
 
+  assert(infile != NULL);
   if(flags & FLAG_TUPLES)
     {
       if(file_lines(infile, infile_tuples_line, addrtree) != 0)

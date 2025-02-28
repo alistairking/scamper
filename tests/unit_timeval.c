@@ -1,7 +1,7 @@
 /*
  * unit_timeval: unit tests for timeval_* functions in utils.c
  *
- * $Id: unit_timeval.c,v 1.2 2024/03/05 08:03:42 mjl Exp $
+ * $Id: unit_timeval.c,v 1.3 2025/02/14 21:07:26 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -48,6 +48,13 @@ typedef struct sc_fromstr_test
   time_t      finish_sec;
   suseconds_t finish_usec;
 } sc_fromstr_test_t;
+
+typedef struct sc_tostr_us_test
+{
+  const char  *out;
+  time_t       tv_sec;
+  suseconds_t  tv_usec;
+} sc_tostr_us_test_t;
 
 typedef struct sc_cmp_test
 {
@@ -176,11 +183,43 @@ int cmp_tests(void)
   return 0;
 }
 
+int tostr_us_tests(void)
+{
+  sc_tostr_us_test_t tests[] = {
+    {"123.456",  0, 123456},
+    {"1123.456", 1, 123456},
+    {"999.000", 0, 999000},
+    {"888.001", 0, 888001},
+    {"777.010", 0, 777010},
+    {"654.100", 0, 654100},
+    {"0.000", 0, 0},
+    {"123456.789", 123, 456789},
+  };
+  size_t i, testc = sizeof(tests) / sizeof(sc_tostr_us_test_t);
+  struct timeval in;
+  char buf[16];
+
+  for(i=0; i<testc; i++)
+    {
+      in.tv_sec  = tests[i].tv_sec;
+      in.tv_usec = tests[i].tv_usec;
+      timeval_tostr_us(&in, buf, sizeof(buf));
+      if(strcmp(buf, tests[i].out) != 0)
+	{
+	  printf("tostr_us fail %lu %s != %s\n", i, buf, tests[i].out);
+	  return -1;
+	}
+    }
+
+  return 0;
+}
+
 int main(int argc, char *argv[])
 {
   if(fromstr_tests() != 0 ||
      sub_tests() != 0 ||
-     cmp_tests() != 0)
+     cmp_tests() != 0 ||
+     tostr_us_tests() != 0)
     return -1;
 
   printf("OK\n");

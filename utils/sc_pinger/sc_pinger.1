@@ -4,12 +4,12 @@
 .\" Author: Matthew Luckie <mjl@luckie.org.nz>
 .\"
 .\" Copyright (c) 2020 University of Waikato
-.\" Copyright (c) 2023-2024 The Regents of the University of California
+.\" Copyright (c) 2023-2025 The Regents of the University of California
 .\"                    All rights reserved
 .\"
-.\" $Id: sc_pinger.1,v 1.6 2024/11/12 06:25:50 mjl Exp $
+.\" $Id: sc_pinger.1,v 1.7 2025/02/24 21:35:33 mjl Exp $
 .\"
-.Dd November 12, 2024
+.Dd February 25, 2025
 .Dt SC_PINGER 1
 .Os
 .Sh NAME
@@ -123,6 +123,13 @@ is accepting control socket connections.
 specifies the name of a unix domain socket on the local host where a remote
 .Xr scamper 1
 instance is accepting commands.
+The unix-remote parameter can either be a unix domain socket for a single
+remote
+.Xr scamper 1
+instance, or be a
+.Xr sc_remoted 1
+mux socket with the name of the remote VP encoded after a trailing
+slash.
 .It Fl t Ar logfile
 specifies the name of a file to log output from
 .Nm
@@ -148,7 +155,7 @@ Given a set of IPv4 and IPv6 address sets in a file named infile.txt:
 and a
 .Xr scamper 1
 daemon listening on port 31337, then these addresses can be probed
-using
+using:
 .Pp
 .Dl sc_pinger -a infile.txt -o outfile.warts -p 31337
 .Pp
@@ -156,7 +163,7 @@ To send 4 probes, and stop after receiving two responses:
 .Pp
 .Dl sc_pinger -a infile.txt -o outfile.warts -p 31337 -c 2/4
 .Pp
-To use ICMP-echo and TCP-syn probes to destination port 443
+To use ICMP-echo and TCP-syn probes to destination port 443:
 .Pp
 .Dl sc_pinger -a infile.txt -o outfile.warts -p 31337 -m icmp-echo -m 'tcp-syn -d 443'
 .Pp
@@ -175,9 +182,19 @@ file with
 .Pp
 .Dl sc_wartscat -o outfile_final.warts.bz2 outfile_0000.warts.gz outfile_0001.warts.gz
 .Pp
+Given a
+.Xr sc_remoted 1
+process listening on a unix domain socket named /path/to/socket, and a
+remote vantage point named 'foo' connected to the controller, probe
+the addresses with the remote vantage point using:
+.Pp
+.Dl sc_pinger -a infile.txt -o outfile.warts -R /path/to/socket/foo
+.Pp
 .\""""""""""""
 .Sh SEE ALSO
 .Xr scamper 1 ,
+.Xr sc_minrtt 1 ,
+.Xr sc_remoted 1 ,
 .Xr sc_wartscat 1 ,
 .Xr sc_wartsdump 1 ,
 .Xr sc_warts2json 1 ,

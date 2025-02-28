@@ -1,7 +1,7 @@
 /*
  * unit_cmd_ping : unit tests for ping commands
  *
- * $Id: unit_cmd_ping.c,v 1.16 2024/08/01 04:49:23 mjl Exp $
+ * $Id: unit_cmd_ping.c,v 1.17 2025/02/24 06:59:36 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -53,7 +53,7 @@ static int recordroute(const scamper_ping_t *ping)
 {
   if(ping == NULL ||
      scamper_ping_flags_get(ping) != SCAMPER_PING_FLAG_V4RR ||
-     scamper_ping_probe_size_get(ping) != 20 + 40 + 8 + 56 ||
+     scamper_ping_pktsize_get(ping) != 20 + 40 + 8 + 56 ||
      check_addr(scamper_ping_dst_get(ping), "192.0.2.1") != 0)
     return -1;
   return 0;
@@ -89,8 +89,8 @@ static int spoof(const scamper_ping_t *ping)
 static int tcpack_2323(const scamper_ping_t *ping)
 {
   if(ping == NULL ||
-     scamper_ping_probe_tcpack_get(ping) != 2323 ||
-     scamper_ping_probe_size_get(ping) != 20 + 20)
+     scamper_ping_tcpack_get(ping) != 2323 ||
+     scamper_ping_pktsize_get(ping) != 20 + 20)
     return -1;
   return 0;
 }
@@ -98,8 +98,8 @@ static int tcpack_2323(const scamper_ping_t *ping)
 static int tcpsyn_2323(const scamper_ping_t *ping)
 {
   if(ping == NULL ||
-     scamper_ping_probe_tcpseq_get(ping) != 2323 ||
-     scamper_ping_probe_size_get(ping) != 20 + 20)
+     scamper_ping_tcpseq_get(ping) != 2323 ||
+     scamper_ping_pktsize_get(ping) != 20 + 20)
     return -1;
   return 0;
 }
@@ -108,12 +108,12 @@ static int payload_hex(const scamper_ping_t *ping)
 {
   const uint8_t *payload;
   if(ping == NULL ||
-     scamper_ping_probe_datalen_get(ping) != 8 ||
-     (payload = scamper_ping_probe_data_get(ping)) == NULL ||
-     scamper_ping_probe_method_get(ping) != SCAMPER_PING_METHOD_ICMP_ECHO ||
+     scamper_ping_datalen_get(ping) != 8 ||
+     (payload = scamper_ping_data_get(ping)) == NULL ||
+     scamper_ping_method_get(ping) != SCAMPER_PING_METHOD_ICMP_ECHO ||
      scamper_ping_method_is_icmp(ping) == 0 ||
      scamper_ping_method_is_icmp_time(ping) != 0 ||
-     scamper_ping_probe_size_get(ping) != 20 + 8 + 8 ||
+     scamper_ping_pktsize_get(ping) != 20 + 8 + 8 ||
      payload[0] != 0x01 || payload[1] != 0x23 || payload[2] != 0x45 ||
      payload[3] != 0x67 || payload[4] != 0x89 || payload[5] != 0xab ||
      payload[6] != 0xcd || payload[7] != 0xef)
@@ -125,12 +125,12 @@ static int atf(const scamper_ping_t *ping)
 {
   const struct timeval *tv;
   if(ping == NULL ||
-     scamper_ping_probe_dport_get(ping) != 0 ||
-     scamper_ping_probe_method_get(ping) != SCAMPER_PING_METHOD_ICMP_ECHO ||
+     scamper_ping_dport_get(ping) != 0 ||
+     scamper_ping_method_get(ping) != SCAMPER_PING_METHOD_ICMP_ECHO ||
      (tv = scamper_ping_wait_probe_get(ping)) == NULL ||
      tv->tv_sec != 1 || tv->tv_usec != 0 ||
-     scamper_ping_probe_tos_get(ping) != 0 ||
-     scamper_ping_probe_count_get(ping) != 5 ||
+     scamper_ping_tos_get(ping) != 0 ||
+     scamper_ping_attempts_get(ping) != 5 ||
      scamper_ping_flags_get(ping) != SCAMPER_PING_FLAG_DL ||
      check_addr(scamper_ping_dst_get(ping), "2001:db8::1") != 0)
     return -1;
@@ -141,8 +141,8 @@ static int tbt_1280_1300(const scamper_ping_t *ping)
 {
   if(ping == NULL ||
      scamper_ping_flags_get(ping) != (SCAMPER_PING_FLAG_TBT|SCAMPER_PING_FLAG_DL) ||
-     scamper_ping_probe_size_get(ping) != 1300 ||
-     scamper_ping_reply_pmtu_get(ping) != 1280)
+     scamper_ping_pktsize_get(ping) != 1300 ||
+     scamper_ping_pmtu_get(ping) != 1280)
     return -1;
   return 0;
 }
@@ -150,10 +150,10 @@ static int tbt_1280_1300(const scamper_ping_t *ping)
 static int icmpecho_plain(const scamper_ping_t *ping)
 {
   if(ping == NULL ||
-     scamper_ping_probe_method_get(ping) != SCAMPER_PING_METHOD_ICMP_ECHO ||
+     scamper_ping_method_get(ping) != SCAMPER_PING_METHOD_ICMP_ECHO ||
      scamper_ping_method_is_icmp(ping) == 0 ||
      scamper_ping_method_is_icmp_time(ping) != 0 ||
-     scamper_ping_probe_size_get(ping) != 20 + 8 + 56)
+     scamper_ping_pktsize_get(ping) != 20 + 8 + 56)
     return -1;
   return 0;
 }
@@ -161,10 +161,10 @@ static int icmpecho_plain(const scamper_ping_t *ping)
 static int icmptime_plain(const scamper_ping_t *ping)
 {
   if(ping == NULL ||
-     scamper_ping_probe_method_get(ping) != SCAMPER_PING_METHOD_ICMP_TIME ||
+     scamper_ping_method_get(ping) != SCAMPER_PING_METHOD_ICMP_TIME ||
      scamper_ping_method_is_icmp(ping) == 0 ||
      scamper_ping_method_is_icmp_time(ping) == 0 ||
-     scamper_ping_probe_size_get(ping) != 20 + 20 + 44)
+     scamper_ping_pktsize_get(ping) != 20 + 20 + 44)
     return -1;
   return 0;
 }
@@ -172,9 +172,9 @@ static int icmptime_plain(const scamper_ping_t *ping)
 static int tcpsyn_plain(const scamper_ping_t *ping)
 {
   if(ping == NULL ||
-     scamper_ping_probe_method_get(ping) != SCAMPER_PING_METHOD_TCP_SYN ||
+     scamper_ping_method_get(ping) != SCAMPER_PING_METHOD_TCP_SYN ||
      scamper_ping_method_is_tcp(ping) == 0 ||
-     scamper_ping_probe_size_get(ping) != 20 + 20)
+     scamper_ping_pktsize_get(ping) != 20 + 20)
     return -1;
   return 0;
 }
@@ -190,9 +190,9 @@ static int tcpsyn_raw(const scamper_ping_t *ping)
 static int udp_plain(const scamper_ping_t *ping)
 {
   if(ping == NULL ||
-     scamper_ping_probe_method_get(ping) != SCAMPER_PING_METHOD_UDP ||
+     scamper_ping_method_get(ping) != SCAMPER_PING_METHOD_UDP ||
      scamper_ping_method_is_udp(ping) == 0 ||
-     scamper_ping_probe_size_get(ping) != 20 + 8 + 12)
+     scamper_ping_pktsize_get(ping) != 20 + 8 + 12)
     return -1;
   return 0;
 }
@@ -200,8 +200,8 @@ static int udp_plain(const scamper_ping_t *ping)
 static int icmpecho_zero_payload(const scamper_ping_t *ping)
 {
   if(ping == NULL ||
-     scamper_ping_probe_method_get(ping) != SCAMPER_PING_METHOD_ICMP_ECHO ||
-     scamper_ping_probe_size_get(ping) != 20 + 8)
+     scamper_ping_method_get(ping) != SCAMPER_PING_METHOD_ICMP_ECHO ||
+     scamper_ping_pktsize_get(ping) != 20 + 8)
     return -1;
   return 0;
 }
@@ -209,8 +209,8 @@ static int icmpecho_zero_payload(const scamper_ping_t *ping)
 static int icmpecho_zero_payload_v6(const scamper_ping_t *ping)
 {
   if(ping == NULL ||
-     scamper_ping_probe_method_get(ping) != SCAMPER_PING_METHOD_ICMP_ECHO ||
-     scamper_ping_probe_size_get(ping) != 40 + 8)
+     scamper_ping_method_get(ping) != SCAMPER_PING_METHOD_ICMP_ECHO ||
+     scamper_ping_pktsize_get(ping) != 40 + 8)
     return -1;
   return 0;
 }
@@ -218,9 +218,9 @@ static int icmpecho_zero_payload_v6(const scamper_ping_t *ping)
 static int icmpecho_csum_default(const scamper_ping_t *ping)
 {
   if(ping == NULL ||
-     scamper_ping_probe_method_get(ping) != SCAMPER_PING_METHOD_ICMP_ECHO ||
-     scamper_ping_probe_size_get(ping) != 20 + 8 + 56 ||
-     scamper_ping_probe_icmpsum_get(ping) != 0x2323)
+     scamper_ping_method_get(ping) != SCAMPER_PING_METHOD_ICMP_ECHO ||
+     scamper_ping_pktsize_get(ping) != 20 + 8 + 56 ||
+     scamper_ping_icmpsum_get(ping) != 0x2323)
     return -1;
   return 0;
 }
@@ -228,9 +228,9 @@ static int icmpecho_csum_default(const scamper_ping_t *ping)
 static int icmpecho_csum_payload4(const scamper_ping_t *ping)
 {
   if(ping == NULL ||
-     scamper_ping_probe_method_get(ping) != SCAMPER_PING_METHOD_ICMP_ECHO ||
-     scamper_ping_probe_size_get(ping) != 20 + 8 + 4 ||
-     scamper_ping_probe_icmpsum_get(ping) != 2323)
+     scamper_ping_method_get(ping) != SCAMPER_PING_METHOD_ICMP_ECHO ||
+     scamper_ping_pktsize_get(ping) != 20 + 8 + 4 ||
+     scamper_ping_icmpsum_get(ping) != 2323)
     return -1;
   return 0;
 }
@@ -240,11 +240,11 @@ static int udp_zero_bytes_c1(const scamper_ping_t *ping)
   const uint8_t *payload;
   int i;
   if(ping == NULL ||
-     scamper_ping_probe_count_get(ping) != 1 ||
-     scamper_ping_probe_method_get(ping) != SCAMPER_PING_METHOD_UDP ||
-     scamper_ping_probe_size_get(ping) != 20 + 8 + 20 ||
-     scamper_ping_probe_datalen_get(ping) != 20 ||
-     (payload = scamper_ping_probe_data_get(ping)) == NULL)
+     scamper_ping_attempts_get(ping) != 1 ||
+     scamper_ping_method_get(ping) != SCAMPER_PING_METHOD_UDP ||
+     scamper_ping_pktsize_get(ping) != 20 + 8 + 20 ||
+     scamper_ping_datalen_get(ping) != 20 ||
+     (payload = scamper_ping_data_get(ping)) == NULL)
     return -1;
   for(i=0; i<20; i++)
     if(payload[i] != 0)

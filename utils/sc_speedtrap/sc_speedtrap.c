@@ -1,7 +1,7 @@
 /*
  * sc_speedtrap
  *
- * $Id: sc_speedtrap.c,v 1.90 2024/12/31 04:17:31 mjl Exp $
+ * $Id: sc_speedtrap.c,v 1.93 2025/02/25 00:15:21 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -9,7 +9,7 @@
  * Copyright (C) 2013-2015 The Regents of the University of California
  * Copyright (C) 2016,2020 The University of Waikato
  * Copyright (C) 2022-2024 Matthew Luckie
- * Copyright (C) 2023-2024 The Regents of the University of California
+ * Copyright (C) 2023-2025 The Regents of the University of California
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -161,6 +161,12 @@ typedef struct sc_notaliases
   splaytree_t        *tree;
 } sc_notaliases_t;
 
+typedef struct sc_addrpair
+{
+  scamper_addr_t     *a;
+  scamper_addr_t     *b;
+} sc_addrpair_t;
+
 typedef struct sc_dump
 {
   char  *descr;
@@ -191,6 +197,7 @@ static splaytree_t           *targets       = NULL;
 static splaytree_t           *addr2routers  = NULL;
 static dlist_t               *routers       = NULL;
 static splaytree_t           *notaliases    = NULL;
+static splaytree_t           *notpairs      = NULL;
 static slist_t               *probelist     = NULL;
 static heap_t                *probeheap     = NULL;
 static slist_t               *incr          = NULL; /* descend and overlap */
@@ -645,6 +652,53 @@ static int ipid_incr(uint32_t *ipids, int ipidc)
     if(ipid_inseq3(ipids[i-2], ipids[i-1], ipids[i]) == 0)
       return 0;
   return 1;
+}
+
+static int sc_addrpair_cmp(const sc_addrpair_t *a, const sc_addrpair_t *b)
+{
+  int diff;
+  if((diff = scamper_addr_cmp(a->a, b->a)) != 0)
+    return diff;
+  return scamper_addr_cmp(a->b, b->b);
+}
+
+static void sc_addrpair_free(sc_addrpair_t *ap)
+{
+  if(ap->a != NULL) scamper_addr_free(ap->a);
+  if(ap->b != NULL) scamper_addr_free(ap->b);
+  free(ap);
+  return;
+}
+
+static sc_addrpair_t *sc_addrpair_find(splaytree_t *tree,
+				       scamper_addr_t *a, scamper_addr_t *b)
+{
+  sc_addrpair_t fm;
+  int x;
+  x = scamper_addr_cmp(a, b);
+  fm.a = x < 0 ? a : b;
+  fm.b = x < 0 ? b : a;
+  return splaytree_find(tree, &fm);
+}
+
+static int sc_addrpair_add(splaytree_t *tree,
+			   scamper_addr_t *a, scamper_addr_t *b)
+{
+  sc_addrpair_t *ap;
+  int x;
+
+  if((ap = malloc(sizeof(sc_addrpair_t))) == NULL)
+    return -1;
+  x = scamper_addr_cmp(a, b);
+  ap->a = scamper_addr_use(x < 0 ? a : b);
+  ap->b = scamper_addr_use(x < 0 ? b : a);
+  if(splaytree_insert(tree, ap) == NULL)
+    {
+      sc_addrpair_free(ap);
+      return -1;
+    }
+
+  return 0;
 }
 
 static int sc_addr2router_human_cmp(sc_addr2router_t *a, sc_addr2router_t *b)
@@ -1886,6 +1940,7 @@ static int do_decoderead_ping(scamper_ping_t *ping)
     reply_overlap,
     reply_descend2,
   };
+  const scamper_ping_probe_t *probe;
   const scamper_ping_reply_t *reply;
   const struct timeval   *tx;
   sc_target_t            *target;
@@ -1909,13 +1964,14 @@ static int do_decoderead_ping(scamper_ping_t *ping)
   ping_sent = scamper_ping_sent_get(ping);
   for(u16=0; u16<ping_sent; u16++)
     {
-      if((reply = scamper_ping_reply_get(ping, u16)) == NULL ||
+      if((probe = scamper_ping_probe_get(ping, u16)) == NULL ||
+	 (reply = scamper_ping_probe_reply_get(probe, 0)) == NULL ||
 	 scamper_ping_reply_is_icmp_echo_reply(reply) == 0)
 	continue;
       probes_rxd++;
       if(scamper_ping_reply_flag_is_reply_ipid(reply))
 	{
-	  tx = scamper_ping_reply_tx_get(reply);
+	  tx = scamper_ping_probe_tx_get(probe);
 	  timeval_cpy(&p[ipids_rxd].tx, tx);
 	  timeval_add_tv3(&p[ipids_rxd].rx, tx,
 			  scamper_ping_reply_rtt_get(reply));
@@ -2198,6 +2254,40 @@ static int do_addressfile(void)
   return rc;
 }
 
+#ifdef HAVE_SOCKADDR_UN
+/*
+ * inst_remote:
+ *
+ * create a remote instance, either via
+ *  - mux: /path/to/mux/vp
+ *  - socket: /path/to/unix-dir/vp
+ */
+static scamper_inst_t *inst_remote(void)
+{
+  scamper_inst_t *inst = NULL;
+  struct stat sb;
+
+  if(stat(unix_name, &sb) == 0)
+    {
+      if(S_ISSOCK(sb.st_mode) == 0)
+	{
+	  fprintf(stderr, "%s is not a remote socket", unix_name);
+	  return NULL;
+	}
+      if((inst = scamper_inst_remote(scamper_ctrl, unix_name)) == NULL)
+	fprintf(stderr, "could not alloc remote inst: %s",
+		scamper_ctrl_strerror(scamper_ctrl));
+      return inst;
+    }
+
+  if((inst = scamper_inst_muxvp(scamper_ctrl, unix_name)) == NULL)
+    fprintf(stderr, "could not alloc mux vp inst: %s",
+	    scamper_ctrl_strerror(scamper_ctrl));
+
+  return inst;
+}
+#endif
+
 /*
  * do_scamperconnect
  *
@@ -2206,8 +2296,6 @@ static int do_addressfile(void)
  */
 static int do_scamperconnect(void)
 {
-  const char *type = "unknown";
-
   if((scamper_ctrl = scamper_ctrl_alloc(ctrlcb)) == NULL)
     {
       fprintf(stderr, "could not alloc scamper_ctrl\n");
@@ -2216,27 +2304,28 @@ static int do_scamperconnect(void)
 
   if(options & OPT_PORT)
     {
-      type = "port";
       scamper_inst = scamper_inst_inet(scamper_ctrl, NULL, dst_addr, dst_port);
+      if(scamper_inst == NULL)
+	fprintf(stderr, "could not alloc port inst: %s\n",
+		scamper_ctrl_strerror(scamper_ctrl));
     }
 #ifdef HAVE_SOCKADDR_UN
   else if(options & OPT_UNIX)
     {
-      type = "unix";
       scamper_inst = scamper_inst_unix(scamper_ctrl, NULL, unix_name);
+      if(scamper_inst == NULL)
+	fprintf(stderr, "could not alloc unix inst: %s\n",
+		scamper_ctrl_strerror(scamper_ctrl));
     }
   else if(options & OPT_REMOTE)
     {
-      type = "remote";
-      scamper_inst = scamper_inst_remote(scamper_ctrl, unix_name);
+      scamper_inst = inst_remote();
     }
 #endif
 
   if(scamper_inst == NULL)
-    {
-      fprintf(stderr, "could not alloc %s inst\n", type);
-      return -1;
-    }
+    return -1;
+
   return 0;
 }
 
@@ -2329,6 +2418,7 @@ static int speedtrap_data(void)
 static int ping_read(const scamper_ping_t *ping, uint32_t *ipids,
 		     int *ipidc, int *replyc)
 {
+  const scamper_ping_probe_t *probe;
   const scamper_ping_reply_t *reply;
   uint16_t i, ping_sent;
   int maxipidc = *ipidc;
@@ -2339,9 +2429,9 @@ static int ping_read(const scamper_ping_t *ping, uint32_t *ipids,
   ping_sent = scamper_ping_sent_get(ping);
   for(i=0; i<ping_sent; i++)
     {
-      if((reply = scamper_ping_reply_get(ping, i)) == NULL)
-	continue;
-      if(scamper_ping_reply_is_icmp_echo_reply(reply) == 0)
+      if((probe = scamper_ping_probe_get(ping, i)) == NULL ||
+	 (reply = scamper_ping_probe_reply_get(probe, 0)) == NULL ||
+	 scamper_ping_reply_is_icmp_echo_reply(reply) == 0)
 	continue;
       (*replyc)++;
       if(scamper_ping_reply_flag_is_reply_ipid(reply))
@@ -2393,14 +2483,27 @@ static int process_1_ally(const scamper_dealias_t *dealias)
   sc_router_t *r;
   slist_node_t *sn;
   scamper_addr_t *a, *b;
+  int result;
 
-  if(scamper_dealias_result_get(dealias) != SCAMPER_DEALIAS_RESULT_ALIASES)
+  result = scamper_dealias_result_get(dealias);
+  if(result != SCAMPER_DEALIAS_RESULT_ALIASES &&
+     result != SCAMPER_DEALIAS_RESULT_NOTALIASES)
     return 0;
 
   def = scamper_dealias_ally_def0_get(ally);
   a = scamper_dealias_probedef_dst_get(def);
   def = scamper_dealias_ally_def1_get(ally);
   b = scamper_dealias_probedef_dst_get(def);
+
+  if(result == SCAMPER_DEALIAS_RESULT_NOTALIASES)
+    {
+      if(notpairs == NULL &&
+	 (notpairs = splaytree_alloc((splaytree_cmp_t)sc_addrpair_cmp)) == NULL)
+	goto err;
+      if(sc_addrpair_add(notpairs, a, b) != 0)
+	goto err;
+      return 0;
+    }
 
   a2r_a = sc_addr2router_find(a);
   a2r_b = sc_addr2router_find(b);
@@ -2454,10 +2557,35 @@ static void finish_1(void)
 {
   sc_addr2router_t *a2r;
   dlist_node_t *dn;
-  slist_node_t *sn;
+  slist_node_t *sn, *snb;
+  scamper_addr_t *a, *b;
   sc_router_t *r;
   char buf[128];
   int x;
+
+  /* remove routers for which any pair of addrs is in notpairs */
+  dn = dlist_head_node(routers);
+  while(dn != NULL)
+    {
+      r = dlist_node_item(dn);
+      dn = dlist_node_next(dn); /* increment now in case of sc_router_free */
+      for(sn=slist_head_node(r->addrs); sn != NULL; sn=slist_node_next(sn))
+	{
+	  a = ((sc_addr2router_t *)slist_node_item(sn))->addr;
+	  for(snb=slist_node_next(sn); snb != NULL; snb=slist_node_next(snb))
+	    {
+	      b = ((sc_addr2router_t *)slist_node_item(snb))->addr;
+	      if(sc_addrpair_find(notpairs, a, b) != NULL)
+		{
+		  sc_router_free(r);
+		  r = NULL;
+		  break;
+		}
+	    }
+	  if(r == NULL)
+	    break;
+	}
+    }
 
   for(dn=dlist_head_node(routers); dn != NULL; dn=dlist_node_next(dn))
     {
@@ -2574,6 +2702,7 @@ static void finish_3(void)
 
 static int process_4_ping(const scamper_ping_t *ping)
 {
+  const scamper_ping_probe_t *probe;
   const scamper_ping_reply_t *reply;
   const struct timeval *tx;
   sc_target_t *target;
@@ -2604,7 +2733,8 @@ static int process_4_ping(const scamper_ping_t *ping)
   ping_sent = scamper_ping_sent_get(ping);
   for(u16=0; u16<ping_sent; u16++)
     {
-      if((reply = scamper_ping_reply_get(ping, u16)) == NULL ||
+      if((probe = scamper_ping_probe_get(ping, u16)) == NULL ||
+	 (reply = scamper_ping_probe_reply_get(probe, 0)) == NULL ||
 	 scamper_ping_reply_is_icmp_echo_reply(reply) == 0 ||
 	 scamper_ping_reply_flag_is_reply_ipid(reply) == 0)
 	continue;
@@ -2612,7 +2742,7 @@ static int process_4_ping(const scamper_ping_t *ping)
       /* record the response */
       ti.target = target;
       ti.ipid = scamper_ping_reply_ipid32_get(reply);
-      tx = scamper_ping_reply_tx_get(reply);
+      tx = scamper_ping_probe_tx_get(probe);
       timeval_cpy(&ti.tx, tx);
       timeval_add_tv3(&ti.rx, tx, scamper_ping_reply_rtt_get(reply));
       if(sc_target_sample(target, &ti) == NULL)
@@ -2784,6 +2914,12 @@ static void cleanup(void)
     {
       splaytree_free(addr2routers, (splaytree_free_t)sc_addr2router_free);
       addr2routers = NULL;
+    }
+
+  if(notpairs != NULL)
+    {
+      splaytree_free(notpairs, (splaytree_free_t)sc_addrpair_free);
+      notpairs = NULL;
     }
 
   if(routers != NULL)

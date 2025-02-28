@@ -1,7 +1,7 @@
 /*
- * common.c: common functions that we might need for linking warts unit tests
+ * common_trace : common functions for unit testing trace
  *
- * $Id: common_warts.c,v 1.1 2024/10/13 02:17:43 mjl Exp $
+ * $Id: common_trace.h,v 1.1 2025/02/13 04:56:22 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -23,29 +23,5 @@
  *
  */
 
-#ifdef HAVE_CONFIG_H
-#include "config.h"
-#endif
-#include "internal.h"
-#include "scamper_addr.h"
-#include "scamper_ifname.h"
-
-int addr_ok(const scamper_addr_t *in, const scamper_addr_t *out)
-{
-  if(in == NULL && out == NULL)
-    return 0;
-  if((in == NULL && out != NULL) ||
-     (in != NULL && out == NULL))
-    return -1;
-  return scamper_addr_cmp(in, out);
-}
-
-int ifname_ok(const scamper_ifname_t *in, const scamper_ifname_t *out)
-{
-  if(in == NULL && out == NULL)
-    return 0;
-  if((in == NULL && out != NULL) ||
-     (in != NULL && out == NULL))
-    return -1;
-  return scamper_ifname_cmp(in, out);
-}
+int trace_ok(const scamper_trace_t *in, const scamper_trace_t *out);
+scamper_trace_t *trace_1(void);

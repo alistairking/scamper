@@ -4,11 +4,11 @@
  * Copyright (C) 2008-2011 The University of Waikato
  * Copyright (C) 2012      Matthew Luckie
  * Copyright (C) 2012-2014 The Regents of the University of California
- * Copyright (C) 2015-2023 Matthew Luckie
+ * Copyright (C) 2015-2025 Matthew Luckie
  * Copyright (C) 2023      The Regents of the University of California
  * Author: Matthew Luckie
  *
- * $Id: scamper_dealias_warts.c,v 1.45 2024/11/10 04:09:12 mjl Exp $
+ * $Id: scamper_dealias_warts.c,v 1.47 2025/02/11 14:31:43 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -1545,7 +1545,7 @@ static int extract_dealias_reply_icmpext(const uint8_t *buf, uint32_t *off,
 					 scamper_dealias_reply_t *reply,
 					 void *param)
 {
-  return warts_icmpext_read(buf, off, len, &reply->icmp_ext);
+  return warts_icmpexts_read(buf, off, len, &reply->icmp_exts);
 }
 
 static void insert_dealias_reply_icmpext(uint8_t *buf, uint32_t *off,
@@ -1553,7 +1553,7 @@ static void insert_dealias_reply_icmpext(uint8_t *buf, uint32_t *off,
 					 const scamper_dealias_reply_t *reply,
 					 void *param)
 {
-  warts_icmpext_write(buf, off, len, reply->icmp_ext);
+  warts_icmpexts_write(buf, off, len, reply->icmp_exts);
   return;
 }
 
@@ -1563,7 +1563,6 @@ static int warts_dealias_reply_state(const scamper_dealias_reply_t *reply,
 				     warts_addrtable_t *table, uint32_t *len)
 {
   const warts_var_t *var;
-  scamper_icmpext_t *ie;
   int max_id = 0;
   size_t i;
 
@@ -1571,15 +1570,11 @@ static int warts_dealias_reply_state(const scamper_dealias_reply_t *reply,
   state->params_len = 0;
 
   /* encode any icmp extensions included */
-  if(SCAMPER_DEALIAS_REPLY_IS_ICMP(reply) && reply->icmp_ext != NULL)
+  if(SCAMPER_DEALIAS_REPLY_IS_ICMP(reply) && reply->icmp_exts != NULL)
     {
       flag_set(state->flags, WARTS_DEALIAS_REPLY_ICMP_EXT, &max_id);
-      state->params_len += 2;
-
-      for(ie = reply->icmp_ext; ie != NULL; ie = ie->ie_next)
-	{
-	  state->params_len += (2 + 1 + 1 + ie->ie_dl);
-	}
+      if(warts_icmpexts_size(reply->icmp_exts, &state->params_len) != 0)
+	return -1;	
     }
 
   for(i=0; i<sizeof(dealias_reply_vars)/sizeof(warts_var_t); i++)

@@ -4,7 +4,7 @@
 .\" Author: Matthew Luckie
 .\" Copyright (c) 2022-2023 Matthew Luckie
 .\"
-.\" $Id: libscamperctrl.3,v 1.7 2024/01/16 00:09:23 mjl Exp $
+.\" $Id: libscamperctrl.3,v 1.8 2025/02/17 20:15:03 mjl Exp $
 .\"
 .Dd February 24, 2023
 .Dt LIBSCAMPERCTRL 3
@@ -132,19 +132,19 @@ to keep a reference, and then call
 once done with it.
 .Pp
 .Ft int
-.Fn scamper_inst_halt "scamper_inst_t *inst" "scamper_task_t *task"
-.br
-Issue a halt command for the task.
-If the command has not been issued to scamper yet, then no DATA object
-will be returned; otherwise, a DATA object will be returned.
-.Pp
-.Ft int
 .Fn scamper_inst_done "scamper_inst_t *inst"
 .br
 Send a done command, which will cause the
 .Xr scamper 1
 instance to disconnect when it has returned all completed
 measurements.
+.Pp
+.Ft int
+.Fn scamper_task_halt "scamper_task_t *task"
+.br
+Issue a halt command for the task.
+If the command has not been issued to scamper yet, then no DATA object
+will be returned; otherwise, a DATA object will be returned.
 .Pp
 .Ft void
 .Fn scamper_task_free "scamper_task_t *task"
@@ -155,7 +155,7 @@ to advice
 .Xr libscamperctrl 3
 that the programmer would also be keeping a copy of a task pointer.
 .Pp
-.Ft void
+.Ft scamper_task_t *
 .Fn scamper_task_use "scamper_task_t *task"
 .br
 Advise

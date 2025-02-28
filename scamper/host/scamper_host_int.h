@@ -1,9 +1,9 @@
 /*
  * scamper_host_int.h
  *
- * $Id: scamper_host_int.h,v 1.9 2024/09/05 01:29:26 mjl Exp $
+ * $Id: scamper_host_int.h,v 1.11 2025/02/23 05:38:15 mjl Exp $
  *
- * Copyright (C) 2018-2023 Matthew Luckie
+ * Copyright (C) 2018-2025 Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -34,9 +34,38 @@ scamper_host_rr_mx_t *scamper_host_rr_mx_alloc(uint16_t, const char *);
 scamper_host_rr_soa_t *scamper_host_rr_soa_alloc(const char *, const char *);
 scamper_host_rr_txt_t *scamper_host_rr_txt_alloc(uint16_t strc);
 scamper_host_rr_opt_t *scamper_host_rr_opt_alloc(uint16_t optc);
-scamper_host_rr_opt_elem_t *scamper_host_rr_opt_elem_alloc(uint16_t code,
-                                                           uint16_t len,
-                                                           const uint8_t *data);
+scamper_host_rr_svcb_t *scamper_host_rr_svcb_alloc(uint16_t prio,
+						   const char *target,
+						   uint16_t paramc);
+
+scamper_host_rr_opt_elem_t *
+scamper_host_rr_opt_elem_alloc(uint16_t code,uint16_t len,const uint8_t *data);
+
+scamper_host_rr_svcb_param_t *
+scamper_host_rr_svcb_param_alloc(uint16_t key,uint16_t len,const uint8_t *val);
+
+struct scamper_host_rr_svcb_param
+{
+  uint16_t                 key;
+  uint16_t                 len;
+  uint8_t                 *val;
+
+#ifdef BUILDING_LIBSCAMPERFILE
+  int                      refcnt;
+#endif
+};
+
+struct scamper_host_rr_svcb
+{
+  char                          *target;
+  uint16_t                       priority;
+  scamper_host_rr_svcb_param_t **params;
+  uint16_t                       paramc;
+
+#ifdef BUILDING_LIBSCAMPERFILE
+  int                            refcnt;
+#endif
+};
 
 struct scamper_host_rr_opt_elem
 {
@@ -102,13 +131,14 @@ struct scamper_host_rr
   uint32_t                 ttl;
   union
   {
-    void                  *v;
-    scamper_addr_t        *addr;
-    char                  *str;
-    scamper_host_rr_soa_t *soa;
-    scamper_host_rr_mx_t  *mx;
-    scamper_host_rr_txt_t *txt;
-    scamper_host_rr_opt_t *opt;
+    void                   *v;
+    scamper_addr_t         *addr;
+    char                   *str;
+    scamper_host_rr_soa_t  *soa;
+    scamper_host_rr_mx_t   *mx;
+    scamper_host_rr_txt_t  *txt;
+    scamper_host_rr_opt_t  *opt;
+    scamper_host_rr_svcb_t *svcb;
   } un;
 
 #ifdef BUILDING_LIBSCAMPERFILE
@@ -150,6 +180,7 @@ struct scamper_host
   uint16_t                 qtype;    /* query type */
   uint16_t                 qclass;   /* query class */
   char                    *qname;    /* query name */
+  char                    *ecs;      /* edns-client-subnet */
   scamper_host_query_t   **queries;  /* queries sent */
   uint8_t                  qcount;   /* number of queries sent */
 };

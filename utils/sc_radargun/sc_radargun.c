@@ -1,7 +1,7 @@
 /*
  * sc_radargun : scamper driver to do radargun-style probing.
  *
- * $Id: sc_radargun.c,v 1.24 2024/12/30 03:16:58 mjl Exp $
+ * $Id: sc_radargun.c,v 1.25 2025/02/24 06:59:36 mjl Exp $
  *
  * Copyright (C) 2014      The Regents of the University of California
  * Copyright (C) 2016      The University of Waikato
@@ -1068,6 +1068,7 @@ static int do_method(void)
 
 static int ping_classify(scamper_ping_t *ping)
 {
+  const scamper_ping_probe_t *tx;
   const scamper_ping_reply_t *rx;
   int rc = -1, echo = 0, bs = 0, nobs = 0;
   int i, samples[65536];
@@ -1089,7 +1090,8 @@ static int ping_classify(scamper_ping_t *ping)
   ping_sent = scamper_ping_sent_get(ping);
   for(i=0; i<ping_sent; i++)
     {
-      if((rx = scamper_ping_reply_get(ping, i)) != NULL &&
+      if((tx = scamper_ping_probe_get(ping, i)) != NULL &&
+	 (rx = scamper_ping_probe_reply_get(tx, 0)) != NULL &&
 	 scamper_ping_reply_is_from_target(ping, rx))
 	{
 	  /*
@@ -1098,7 +1100,7 @@ static int ping_classify(scamper_ping_t *ping)
 	   * where some responses echo but others increment.
 	   */
 	  reply_ipid = scamper_ping_reply_ipid_get(rx);
-	  if(scamper_ping_reply_probe_ipid_get(rx) == reply_ipid && ++echo > 1)
+	  if(scamper_ping_probe_ipid_get(tx) == reply_ipid && ++echo > 1)
 	    {
 	      rc = IPID_ECHO;
 	      goto done;

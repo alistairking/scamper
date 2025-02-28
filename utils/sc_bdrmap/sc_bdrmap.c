@@ -1,7 +1,7 @@
 /*
  * sc_bdrmap: driver to map first hop border routers of networks
  *
- * $Id: sc_bdrmap.c,v 1.55 2024/12/31 04:17:31 mjl Exp $
+ * $Id: sc_bdrmap.c,v 1.57 2025/02/26 02:07:42 mjl Exp $
  *
  *         Matthew Luckie
  *         mjl@caida.org / mjl@wand.net.nz
@@ -4713,6 +4713,7 @@ static int do_decoderead_ping_link(sc_test_t *test, scamper_ping_t *ping)
 
 static int ping_classify(const scamper_addr_t *dst, const scamper_ping_t *ping)
 {
+  const scamper_ping_probe_t *tx;
   const scamper_ping_reply_t *rx;
   int rc = -1, echo = 0, bs = 0, nobs = 0;
   int i, samples[65536];
@@ -4734,7 +4735,8 @@ static int ping_classify(const scamper_addr_t *dst, const scamper_ping_t *ping)
   ping_sent = scamper_ping_sent_get(ping);
   for(i=0; i<ping_sent; i++)
     {
-      if((rx = scamper_ping_reply_get(ping, i)) != NULL &&
+      if((tx = scamper_ping_probe_get(ping, i)) != NULL &&
+	 (rx = scamper_ping_probe_reply_get(tx, 0)) != NULL &&
 	 (scamper_ping_reply_is_from_target(ping, rx) ||
 	  (scamper_ping_reply_is_icmp_ttl_exp(rx) &&
 	   scamper_addr_cmp(dst, scamper_ping_reply_addr_get(rx)) == 0)))
@@ -4745,7 +4747,7 @@ static int ping_classify(const scamper_addr_t *dst, const scamper_ping_t *ping)
 	   * where some responses echo but others increment.
 	   */
 	  reply_ipid = scamper_ping_reply_ipid_get(rx);
-	  if(scamper_ping_reply_probe_ipid_get(rx) == reply_ipid && ++echo > 1)
+	  if(scamper_ping_probe_ipid_get(tx) == reply_ipid && ++echo > 1)
 	    {
 	      rc = IPID_ECHO;
 	      goto done;
@@ -5059,16 +5061,10 @@ static int do_decoderead_trace(scamper_trace_t *trace)
   if(lv+1 < lh && (x = scamper_trace_hop_get(trace, lv+1)) != NULL)
     {
       assert(scamper_trace_hop_addr_cmp(lv_hop, x) != 0);
-      if(lv+2 < lh)
-	{
-	  y = scamper_trace_hop_get(trace, lv+2);
-	  y_a = scamper_trace_hop_addr_get(y);
-	}
-      else
-	{
-	  y = NULL;
-	  y_a = NULL;
-	}
+      y = NULL;
+      y_a = NULL;
+      if(lv+2 < lh && (y = scamper_trace_hop_get(trace, lv+2)) != NULL)
+	y_a = scamper_trace_hop_addr_get(y);
 
       if(y == NULL || scamper_trace_hop_addr_cmp(x, y) != 0)
 	{
@@ -6955,9 +6951,10 @@ static int process_1_trace(scamper_trace_t *trace)
  */
 static int process_1_ping(scamper_ping_t *ping)
 {
+  const scamper_ping_probe_t *p;
   const scamper_ping_reply_t *r;
   scamper_addr_t *dst, *r_addr;
-  uint16_t i, ping_sent;
+  uint16_t i, j, ping_sent;
 
   if(scamper_ping_method_is_udp(ping) == 0)
     goto done;
@@ -6966,9 +6963,11 @@ static int process_1_ping(scamper_ping_t *ping)
   dst = scamper_ping_dst_get(ping);
   for(i=0; i<ping_sent; i++)
     {
-      r = scamper_ping_reply_get(ping, i);
-      while(r != NULL)
+      if((p = scamper_ping_probe_get(ping, i)) == NULL)
+	continue;
+      for(j=0; j<scamper_ping_probe_replyc_get(p); j++)
 	{
+	  r = scamper_ping_probe_reply_get(p, j);
 	  r_addr = scamper_ping_reply_addr_get(r);
 	  if(scamper_ping_reply_is_icmp_unreach_port(r) &&
 	     scamper_addr_cmp(r_addr, dst) != 0 &&
@@ -6977,7 +6976,6 @@ static int process_1_ping(scamper_ping_t *ping)
 	     sc_link_find(r_addr, dst) == NULL &&
 	     sc_routerset_getpair(rtrset, dst, r_addr) == NULL)
 	    goto err;
-	  r = scamper_ping_reply_next_get(r);
 	}
     }
 

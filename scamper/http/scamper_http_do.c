@@ -1,7 +1,7 @@
 /*
  * scamper_http_do.c
  *
- * $Id: scamper_http_do.c,v 1.19 2024/12/31 04:17:31 mjl Exp $
+ * $Id: scamper_http_do.c,v 1.20 2025/02/07 16:38:51 mjl Exp $
  *
  * Copyright (C) 2023-2024 The Regents of the University of California
  * Copyright (C) 2024      Matthew Luckie
@@ -266,13 +266,12 @@ static int http_tls_want_read_cb(void *param, uint8_t *buf, int len)
 static int http_tls_want_read(http_state_t *state)
 {
   char errbuf[64];
-  int rc;
 
   if(state->mode == STATE_MODE_TLS_HS)
     gettimeofday_wrap(&state->now);
 
-  if((rc = tls_want_read(state->ssl_wbio, state, errbuf, sizeof(errbuf),
-			 http_tls_want_read_cb)) < 0)
+  if(tls_want_read(state->ssl_wbio, state, errbuf, sizeof(errbuf),
+		   http_tls_want_read_cb) < 0)
     {
       scamper_debug(__func__, "%s", errbuf);
       return -1;

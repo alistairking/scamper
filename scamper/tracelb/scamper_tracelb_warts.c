@@ -2,10 +2,10 @@
  * scamper_tracelb_warts.c
  *
  * Copyright (C) 2008-2011 The University of Waikato
- * Copyright (C) 2016-2023 Matthew Luckie
+ * Copyright (C) 2016-2025 Matthew Luckie
  * Author: Matthew Luckie
  *
- * $Id: scamper_tracelb_warts.c,v 1.22 2023/12/21 06:11:32 mjl Exp $
+ * $Id: scamper_tracelb_warts.c,v 1.24 2025/02/11 14:31:43 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -519,7 +519,7 @@ static int extract_tracelb_reply_icmp_ext(const uint8_t *buf, uint32_t *off,
 					  scamper_tracelb_reply_t *reply,
 					  void *param)
 {
-  return warts_icmpext_read(buf, off, len, &reply->reply_icmp_ext);
+  return warts_icmpexts_read(buf, off, len, &reply->reply_icmp_exts);
 }
 
 static void insert_tracelb_reply_icmp_ext(uint8_t *buf, uint32_t *off,
@@ -527,7 +527,7 @@ static void insert_tracelb_reply_icmp_ext(uint8_t *buf, uint32_t *off,
 					  const scamper_tracelb_reply_t *reply,
 					  void *param)
 {
-  warts_icmpext_write(buf, off, len, reply->reply_icmp_ext);
+  warts_icmpexts_write(buf, off, len, reply->reply_icmp_exts);
   return;
 }
 
@@ -537,7 +537,6 @@ static int warts_tracelb_reply_state(const scamper_file_t *sf,
 				     warts_addrtable_t *table, uint32_t *len)
 {
   const warts_var_t *var;
-  scamper_icmpext_t *ie;
   int max_id = 0;
   size_t i;
 
@@ -574,14 +573,11 @@ static int warts_tracelb_reply_state(const scamper_file_t *sf,
       else if(var->id == WARTS_TRACELB_REPLY_ICMP_EXT)
 	{
 	  if((reply->reply_flags & SCAMPER_TRACELB_REPLY_FLAG_TCP) != 0 ||
-	     reply->reply_icmp_ext == NULL)
+	     reply->reply_icmp_exts == NULL)
 	    continue;
-
-	  state->params_len += 2;
-	  for(ie = reply->reply_icmp_ext; ie != NULL; ie = ie->ie_next)
-	    {
-	      state->params_len += (2 + 1 + 1 + ie->ie_dl);
-	    }
+	  if(warts_icmpexts_size(reply->reply_icmp_exts,
+				 &state->params_len) != 0)
+	    return -1;
 	}
       else if(var->id == WARTS_TRACELB_REPLY_FROM)
 	{

@@ -1,13 +1,13 @@
 /*
  * scamper_debug.c
  *
- * $Id: scamper_debug.c,v 1.51 2024/12/31 04:17:31 mjl Exp $
+ * $Id: scamper_debug.c,v 1.52 2025/01/19 03:51:01 mjl Exp $
  *
  * routines to reduce the impact of debugging cruft in scamper's code.
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2010 The University of Waikato
- * Copyright (C) 2012-2024 Matthew Luckie
+ * Copyright (C) 2012-2025 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -40,23 +40,14 @@ static FILE *debugfile = NULL;
 
 static int isdaemon = 0;
 
-static char *timestamp_str(char *buf, const size_t len)
+static void timestamp_str(char *buf, size_t len)
 {
-  struct timeval  tv;
-  struct tm      *tm;
-  int             ms;
-  time_t          t;
-
-  buf[0] = '\0';
+  struct timeval tv;
+  size_t off = 0;
+  char ts[16];
   gettimeofday_wrap(&tv);
-  t = tv.tv_sec;
-  if((tm = localtime(&t)) == NULL) return buf;
-
-  ms = tv.tv_usec / 1000;
-  snprintf(buf, len, "[%02d:%02d:%02d:%03d]",
-	   tm->tm_hour, tm->tm_min, tm->tm_sec, ms);
-
-  return buf;
+  string_concat3(buf, len, &off, "[", timeval_tostr_hhmmssms(&tv, ts), "]");
+  return;
 }
 
 /*

@@ -7,7 +7,7 @@
  * Copyright (C) 2016-2024 Matthew Luckie
  * Author: Matthew Luckie
  *
- * $Id: scamper_ping_warts.c,v 1.35 2024/10/17 07:57:25 mjl Exp $
+ * $Id: scamper_ping_warts.c,v 1.37 2025/02/25 06:31:24 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -58,7 +58,7 @@
 #define WARTS_PING_PROBE_SIZE     11
 #define WARTS_PING_PROBE_WAIT     12
 #define WARTS_PING_PROBE_TTL      13
-#define WARTS_PING_REPLY_COUNT    14
+#define WARTS_PING_STOP_COUNT     14
 #define WARTS_PING_PING_SENT      15
 #define WARTS_PING_PROBE_METHOD   16
 #define WARTS_PING_PROBE_SPORT    17
@@ -94,7 +94,7 @@ static const warts_var_t ping_vars[] =
   {WARTS_PING_PROBE_SIZE,        2},
   {WARTS_PING_PROBE_WAIT,        1},
   {WARTS_PING_PROBE_TTL,         1},
-  {WARTS_PING_REPLY_COUNT,       2},
+  {WARTS_PING_STOP_COUNT,        2},
   {WARTS_PING_PING_SENT,         2},
   {WARTS_PING_PROBE_METHOD,      1},
   {WARTS_PING_PROBE_SPORT,       2},
@@ -165,6 +165,7 @@ static const warts_var_t ping_reply_vars[] =
 
 typedef struct warts_ping_reply
 {
+  scamper_ping_probe_t *probe;
   scamper_ping_reply_t *reply;
   uint8_t               flags[WARTS_VAR_MFB(ping_reply_vars)];
   uint16_t              flags_len;
@@ -307,6 +308,7 @@ static int extract_ping_reply_tsreply(uint8_t *buf, uint32_t *off,
 }
 
 static int warts_ping_reply_params(const scamper_ping_t *ping,
+				   const scamper_ping_probe_t *probe,
 				   const scamper_ping_reply_t *reply,
 				   warts_addrtable_t *table,
 				   warts_ifnametable_t *ifntable,
@@ -347,10 +349,10 @@ static int warts_ping_reply_params(const scamper_ping_t *ping,
 	  SCAMPER_PING_REPLY_IS_TCP(reply) == 0) ||
 	 (var->id == WARTS_PING_REPLY_V4RR && reply->v4rr == NULL) ||
 	 (var->id == WARTS_PING_REPLY_V4TS && reply->v4ts == NULL) ||
-	 (var->id == WARTS_PING_REPLY_TX && reply->tx.tv_sec == 0) ||
+	 (var->id == WARTS_PING_REPLY_TX && probe->tx.tv_sec == 0) ||
 	 (var->id == WARTS_PING_REPLY_TSREPLY && reply->tsreply == NULL) ||
-	 (var->id == WARTS_PING_REPLY_PROBE_SPORT && reply->probe_sport == 0) ||
-	 (var->id == WARTS_PING_REPLY_REPLY_IPTOS && reply->reply_tos == 0) ||
+	 (var->id == WARTS_PING_REPLY_PROBE_SPORT && probe->sport == 0) ||
+	 (var->id == WARTS_PING_REPLY_REPLY_IPTOS && reply->tos == 0) ||
 	 (var->id == WARTS_PING_REPLY_IFNAME && reply->ifname == NULL))
 	{
 	  continue;
@@ -399,16 +401,18 @@ static int warts_ping_reply_params(const scamper_ping_t *ping,
 
 static int warts_ping_reply_state(const scamper_file_t *sf,
 				  const scamper_ping_t *ping,
+				  scamper_ping_probe_t *probe,
 				  scamper_ping_reply_t *reply,
 				  warts_ping_reply_t *state,
 				  warts_addrtable_t *table,
 				  warts_ifnametable_t *ifntable,
 				  uint32_t *len)
 {
-  if(warts_ping_reply_params(ping, reply, table, ifntable, state->flags,
+  if(warts_ping_reply_params(ping, probe, reply, table, ifntable, state->flags,
 			     &state->flags_len, &state->params_len) != 0)
     return -1;
 
+  state->probe = probe;
   state->reply = reply;
 
   *len += state->flags_len + state->params_len;
@@ -442,45 +446,64 @@ static void insert_ping_reply_icmptc(uint8_t *buf, uint32_t *off,
   return;
 }
 
-static int warts_ping_reply_read(const scamper_ping_t *ping,
-				 scamper_ping_reply_t *reply,
-				 warts_state_t *state,
-				 warts_addrtable_t *table,
-				 warts_ifnametable_t *ifntable,
-				 const uint8_t *buf,
-				 uint32_t *off, uint32_t len)
+static int warts_ping_reply_read_int(const scamper_ping_t *ping,
+				     scamper_ping_reply_t *reply,
+				     warts_state_t *state,
+				     warts_addrtable_t *table,
+				     warts_ifnametable_t *ifntable,
+				     const uint8_t *buf,
+				     uint32_t *off, uint32_t len)
 {
+  uint16_t probe_id = 0, probe_ipid = 0, probe_sport = 0, reply_ipid = 0;
+  struct timeval probe_tx;
   warts_param_reader_t handlers[] = {
     {&reply->addr,            (wpr_t)extract_addr_gid,             state},
     {&reply->flags,           (wpr_t)extract_byte,                 NULL},
-    {&reply->reply_ttl,       (wpr_t)extract_byte,                 NULL},
-    {&reply->reply_size,      (wpr_t)extract_uint16,               NULL},
+    {&reply->ttl,             (wpr_t)extract_byte,                 NULL},
+    {&reply->size,            (wpr_t)extract_uint16,               NULL},
     {reply,                   (wpr_t)extract_ping_reply_icmptc,    NULL},
     {&reply->rtt,             (wpr_t)extract_rtt,                  NULL},
-    {&reply->probe_id,        (wpr_t)extract_uint16,               NULL},
-    {&reply->reply_ipid,      (wpr_t)extract_uint16,               NULL},
-    {&reply->probe_ipid,      (wpr_t)extract_uint16,               NULL},
-    {&reply->reply_proto,     (wpr_t)extract_byte,                 NULL},
+    {&probe_id,               (wpr_t)extract_uint16,               NULL},
+    {&reply_ipid,             (wpr_t)extract_uint16,               NULL},
+    {&probe_ipid,             (wpr_t)extract_uint16,               NULL},
+    {&reply->proto,           (wpr_t)extract_byte,                 NULL},
     {&reply->tcp_flags,       (wpr_t)extract_byte,                 NULL},
     {&reply->addr,            (wpr_t)extract_addr,                 table},
     {&reply->v4rr,            (wpr_t)extract_ping_reply_v4rr,      table},
     {&reply->v4ts,            (wpr_t)extract_ping_reply_v4ts,      table},
-    {&reply->reply_ipid32,    (wpr_t)extract_uint32,               NULL},
-    {&reply->tx,              (wpr_t)extract_timeval,              NULL},
+    {&reply->ipid32,          (wpr_t)extract_uint32,               NULL},
+    {&probe_tx,               (wpr_t)extract_timeval,              NULL},
     {&reply->tsreply,         (wpr_t)extract_ping_reply_tsreply,   NULL},
-    {&reply->probe_sport,     (wpr_t)extract_uint16,               NULL},
-    {&reply->reply_tos,       (wpr_t)extract_byte,                 NULL},
+    {&probe_sport,            (wpr_t)extract_uint16,               NULL},
+    {&reply->tos,             (wpr_t)extract_byte,                 NULL},
     {&reply->ifname,          (wpr_t)extract_ifname,               ifntable},
   };
   const int handler_cnt = sizeof(handlers) / sizeof(warts_param_reader_t);
+  scamper_ping_probe_t *probe = NULL;
   uint32_t o = *off;
   int i;
+
+  memset(&probe_tx, 0, sizeof(probe_tx));
 
   if((i = warts_params_read(buf, off, len, handlers, handler_cnt)) != 0)
     return i;
 
   if(reply->addr == NULL)
     return -1;
+
+  if(ping->ping_sent < probe_id)
+    return -1;
+  if((probe = ping->probes[probe_id]) == NULL)
+    {
+      if((probe = scamper_ping_probe_alloc()) == NULL)
+	return -1;
+      probe->id = probe_id;
+      probe->sport = probe_sport;
+      probe->ipid  = probe_ipid;
+      probe->flags = SCAMPER_PING_PROBE_FLAGS_MASK(reply);
+      timeval_cpy(&probe->tx, &probe_tx);
+      ping->probes[probe_id] = probe;
+    }
 
   /*
    * some earlier versions of the ping reply structure did not include
@@ -489,9 +512,36 @@ static int warts_ping_reply_read(const scamper_ping_t *ping,
   if(flag_isset(&buf[o], WARTS_PING_REPLY_REPLY_PROTO) == 0)
     {
       if(ping->dst->type == SCAMPER_ADDR_TYPE_IPV4)
-	reply->reply_proto = IPPROTO_ICMP;
+	reply->proto = IPPROTO_ICMP;
       else
-	reply->reply_proto = IPPROTO_ICMPV6;
+	reply->proto = IPPROTO_ICMPV6;
+    }
+
+  if(flag_isset(&buf[o], WARTS_PING_REPLY_REPLY_IPID))
+    reply->ipid32 = reply_ipid;
+
+  if(scamper_ping_probe_reply_append(probe, reply) != 0)
+    return -1;
+
+  return 0;
+}
+
+static int warts_ping_reply_read(const scamper_ping_t *ping,
+				 warts_state_t *state,
+				 warts_addrtable_t *table,
+				 warts_ifnametable_t *ifntable,
+				 const uint8_t *buf,
+				 uint32_t *off, uint32_t len)
+{
+  scamper_ping_reply_t *reply;
+
+  if((reply = scamper_ping_reply_alloc()) == NULL ||
+     warts_ping_reply_read_int(ping, reply, state, table, ifntable,
+			       buf, off, len) != 0)
+    {
+      if(reply != NULL)
+	scamper_ping_reply_free(reply);
+      return -1;
     }
 
   return 0;
@@ -502,28 +552,30 @@ static void warts_ping_reply_write(const warts_ping_reply_t *state,
 				   warts_ifnametable_t *ifntable,
 				   uint8_t *buf, uint32_t *off, uint32_t len)
 {
+  scamper_ping_probe_t *probe = state->probe;
   scamper_ping_reply_t *reply = state->reply;
+  uint16_t reply_ipid = reply->ipid32 & 0xFFFF;
 
   warts_param_writer_t handlers[] = {
     {NULL,                    NULL,                                 NULL},
     {&reply->flags,           (wpw_t)insert_byte,                   NULL},
-    {&reply->reply_ttl,       (wpw_t)insert_byte,                   NULL},
-    {&reply->reply_size,      (wpw_t)insert_uint16,                 NULL},
+    {&reply->ttl,             (wpw_t)insert_byte,                   NULL},
+    {&reply->size,            (wpw_t)insert_uint16,                 NULL},
     {reply,                   (wpw_t)insert_ping_reply_icmptc,      NULL},
     {&reply->rtt,             (wpw_t)insert_rtt,                    NULL},
-    {&reply->probe_id,        (wpw_t)insert_uint16,                 NULL},
-    {&reply->reply_ipid,      (wpw_t)insert_uint16,                 NULL},
-    {&reply->probe_ipid,      (wpw_t)insert_uint16,                 NULL},
-    {&reply->reply_proto,     (wpw_t)insert_byte,                   NULL},
+    {&probe->id,              (wpw_t)insert_uint16,                 NULL},
+    {&reply_ipid,             (wpw_t)insert_uint16,                 NULL},
+    {&probe->ipid,            (wpw_t)insert_uint16,                 NULL},
+    {&reply->proto,           (wpw_t)insert_byte,                   NULL},
     {&reply->tcp_flags,       (wpw_t)insert_byte,                   NULL},
     {reply->addr,             (wpw_t)insert_addr,                   table},
     {reply->v4rr,             (wpw_t)insert_ping_reply_v4rr,        table},
     {reply->v4ts,             (wpw_t)insert_ping_reply_v4ts,        table},
-    {&reply->reply_ipid32,    (wpw_t)insert_uint32,                 NULL},
-    {&reply->tx,              (wpw_t)insert_timeval,                NULL},
+    {&reply->ipid32,          (wpw_t)insert_uint32,                 NULL},
+    {&probe->tx,              (wpw_t)insert_timeval,                NULL},
     {reply->tsreply,          (wpw_t)insert_ping_reply_tsreply,     NULL},
-    {&reply->probe_sport,     (wpw_t)insert_uint16,                 NULL},
-    {&reply->reply_tos,       (wpw_t)insert_byte,                   NULL},
+    {&probe->sport,           (wpw_t)insert_uint16,                 NULL},
+    {&reply->tos,             (wpw_t)insert_byte,                   NULL},
     {reply->ifname,           (wpw_t)insert_ifname,                 ifntable},
   };
   const int handler_cnt = sizeof(handlers) / sizeof(warts_param_writer_t);
@@ -557,48 +609,25 @@ static int warts_ping_params(const scamper_ping_t *ping,
 	 (var->id == WARTS_PING_LIST_ID       && ping->list == NULL) ||
 	 (var->id == WARTS_PING_CYCLE_ID      && ping->cycle == NULL) ||
 	 (var->id == WARTS_PING_USERID        && ping->userid == 0) ||
-	 (var->id == WARTS_PING_DATA_LEN      && ping->probe_datalen == 0) ||
-	 (var->id == WARTS_PING_PROBE_METHOD  && ping->probe_method == 0) ||
-	 (var->id == WARTS_PING_PROBE_TOS     && ping->probe_tos == 0) ||
-	 (var->id == WARTS_PING_PROBE_SPORT   && ping->probe_sport == 0) ||
-	 (var->id == WARTS_PING_PROBE_DPORT   && ping->probe_dport == 0) ||
+	 (var->id == WARTS_PING_DATA_LEN      && ping->datalen == 0) ||
+	 (var->id == WARTS_PING_PROBE_METHOD  && ping->method == 0) ||
+	 (var->id == WARTS_PING_PROBE_TOS     && ping->tos == 0) ||
+	 (var->id == WARTS_PING_PROBE_SPORT   && ping->sport == 0) ||
+	 (var->id == WARTS_PING_PROBE_DPORT   && ping->dport == 0) ||
 	 (var->id == WARTS_PING_FLAGS8        && (ping->flags & 0xFF) == 0) ||
 	 (var->id == WARTS_PING_FLAGS         && (ping->flags & ~0xFF) == 0) ||
-	 (var->id == WARTS_PING_REPLY_PMTU    && ping->reply_pmtu == 0) ||
+	 (var->id == WARTS_PING_STOP_COUNT    && ping->stop_count == 0) ||
+	 (var->id == WARTS_PING_REPLY_PMTU    && ping->pmtu == 0) ||
 	 (var->id == WARTS_PING_PROBE_TIMEOUT && ping->wait_timeout.tv_sec == ping->wait_probe.tv_sec) ||
 	 (var->id == WARTS_PING_PROBE_WAIT_US && ping->wait_probe.tv_usec == 0) ||
 	 (var->id == WARTS_PING_PROBE_TIMEOUT_US && ping->wait_timeout.tv_usec == 0) ||
-	 (var->id == WARTS_PING_PROBE_TCPACK  && ping->probe_tcpack == 0) ||
-	 (var->id == WARTS_PING_PROBE_TCPSEQ  && ping->probe_tcpseq == 0))
+	 (var->id == WARTS_PING_PROBE_TCPACK  && ping->tcpack == 0) ||
+	 (var->id == WARTS_PING_PROBE_TCPSEQ  && ping->tcpseq == 0) ||
+	 (var->id == WARTS_PING_PROBE_ICMPSUM &&
+	  (ping->icmpsum == 0 || (ping->flags & SCAMPER_PING_FLAG_ICMPSUM) == 0)) ||
+	 (var->id == WARTS_PING_DATA_BYTES    && ping->datalen == 0) ||
+	 (var->id == WARTS_PING_PROBE_TSPS    && ping->tsps == NULL))
 	{
-	  continue;
-	}
-
-      if(var->id == WARTS_PING_PROBE_ICMPSUM)
-	{
-	  if(ping->probe_icmpsum == 0 ||
-	     (ping->flags & SCAMPER_PING_FLAG_ICMPSUM) == 0)
-	    continue;
-	}
-      else if(var->id == WARTS_PING_DATA_BYTES)
-	{
-	  if(ping->probe_datalen != 0)
-	    {
-	      flag_set(flags, WARTS_PING_DATA_BYTES, &max_id);
-	      *params_len += ping->probe_datalen;
-	    }
-	  continue;
-	}
-      else if(var->id == WARTS_PING_PROBE_TSPS)
-	{
-	  if(ping->probe_tsps != NULL)
-	    {
-	      flag_set(flags, WARTS_PING_PROBE_TSPS, &max_id);
-	      *params_len += 1;
-	      for(j=0; j<ping->probe_tsps->ipc; j++)
-		if(warts_addr_size(table,ping->probe_tsps->ips[j], params_len) != 0)
-		  return -1;
-	    }
 	  continue;
 	}
 
@@ -608,23 +637,33 @@ static int warts_ping_params(const scamper_ping_t *ping,
 	{
 	  if(warts_addr_size(table, ping->src, params_len) != 0)
 	    return -1;
-	  continue;
 	}
       else if(var->id == WARTS_PING_ADDR_DST)
 	{
 	  if(warts_addr_size(table, ping->dst, params_len) != 0)
 	    return -1;
-	  continue;
 	}
       else if(var->id == WARTS_PING_ADDR_RTR)
 	{
 	  if(warts_addr_size_static(ping->rtr, params_len) != 0)
 	    return -1;
-	  continue;
 	}
-
-      assert(var->size >= 0);
-      *params_len += var->size;
+      else if(var->id == WARTS_PING_DATA_BYTES)
+	{
+	  *params_len += ping->datalen;
+	}
+      else if(var->id == WARTS_PING_PROBE_TSPS)
+	{
+	  *params_len += 1;
+	  for(j=0; j<ping->tsps->ipc; j++)
+	    if(warts_addr_size(table, ping->tsps->ips[j], params_len) != 0)
+	      return -1;
+	}
+      else
+	{
+	  assert(var->size >= 0);
+	  *params_len += var->size;
+	}
     }
 
   *flags_len = fold_flags(flags, max_id);
@@ -690,30 +729,30 @@ static int warts_ping_params_read(scamper_ping_t *ping, warts_state_t *state,
     {&ping->start,         (wpr_t)extract_timeval,         NULL},
     {&ping->stop_reason,   (wpr_t)extract_byte,            NULL},
     {&ping->stop_data,     (wpr_t)extract_byte,            NULL},
-    {&ping->probe_datalen, (wpr_t)extract_uint16,          NULL},
-    {&ping->probe_data,    (wpr_t)extract_bytes_alloc,   &ping->probe_datalen},
-    {&ping->probe_count,   (wpr_t)extract_uint16,          NULL},
-    {&ping->probe_size,    (wpr_t)extract_uint16,          NULL},
+    {&ping->datalen,       (wpr_t)extract_uint16,          NULL},
+    {&ping->data,          (wpr_t)extract_bytes_alloc,     &ping->datalen},
+    {&ping->attempts,      (wpr_t)extract_uint16,          NULL},
+    {&ping->size,          (wpr_t)extract_uint16,          NULL},
     {&wait_probe_sec,      (wpr_t)extract_byte,            NULL},
-    {&ping->probe_ttl,     (wpr_t)extract_byte,            NULL},
-    {&ping->reply_count,   (wpr_t)extract_uint16,          NULL},
+    {&ping->ttl,           (wpr_t)extract_byte,            NULL},
+    {&ping->stop_count,    (wpr_t)extract_uint16,          NULL},
     {&ping->ping_sent,     (wpr_t)extract_uint16,          NULL},
-    {&ping->probe_method,  (wpr_t)extract_byte,            NULL},
-    {&ping->probe_sport,   (wpr_t)extract_uint16,          NULL},
-    {&ping->probe_dport,   (wpr_t)extract_uint16,          NULL},
+    {&ping->method,        (wpr_t)extract_byte,            NULL},
+    {&ping->sport,         (wpr_t)extract_uint16,          NULL},
+    {&ping->dport,         (wpr_t)extract_uint16,          NULL},
     {&ping->userid,        (wpr_t)extract_uint32,          NULL},
     {&ping->src,           (wpr_t)extract_addr,            table},
     {&ping->dst,           (wpr_t)extract_addr,            table},
     {&flags8,              (wpr_t)extract_byte,            NULL},
-    {&ping->probe_tos,     (wpr_t)extract_byte,            NULL},
-    {&ping->probe_tsps,    (wpr_t)extract_ping_probe_tsps, table},
-    {&ping->probe_icmpsum, (wpr_t)extract_uint16,          NULL},
-    {&ping->reply_pmtu,    (wpr_t)extract_uint16,          NULL},
+    {&ping->tos,           (wpr_t)extract_byte,            NULL},
+    {&ping->tsps,          (wpr_t)extract_ping_probe_tsps, table},
+    {&ping->icmpsum,       (wpr_t)extract_uint16,          NULL},
+    {&ping->pmtu,          (wpr_t)extract_uint16,          NULL},
     {&wait_timeout_sec,    (wpr_t)extract_byte,            NULL},
     {&wait_probe_usec,     (wpr_t)extract_uint32,          NULL},
-    {&ping->probe_tcpack,  (wpr_t)extract_uint32,          NULL},
+    {&ping->tcpack,        (wpr_t)extract_uint32,          NULL},
     {&ping->flags,         (wpr_t)extract_uint32,          NULL},
-    {&ping->probe_tcpseq,  (wpr_t)extract_uint32,          NULL},
+    {&ping->tcpseq,        (wpr_t)extract_uint32,          NULL},
     {&ping->rtr,           (wpr_t)extract_addr_static,     NULL},
     {&wait_timeout_usec,   (wpr_t)extract_uint32,          NULL},
   };
@@ -749,7 +788,7 @@ static int warts_ping_params_write(const scamper_ping_t *ping,
 				   const uint16_t params_len)
 {
   uint32_t list_id, cycle_id;
-  uint16_t pad_len = ping->probe_datalen;
+  uint16_t pad_len = ping->datalen;
   uint8_t flags8 = ping->flags & 0xFF;
   uint8_t wait_probe_sec = ping->wait_probe.tv_sec;
   uint32_t wait_probe_usec = ping->wait_probe.tv_usec;
@@ -763,30 +802,30 @@ static int warts_ping_params_write(const scamper_ping_t *ping,
     {&ping->start,         (wpw_t)insert_timeval,         NULL},
     {&ping->stop_reason,   (wpw_t)insert_byte,            NULL},
     {&ping->stop_data,     (wpw_t)insert_byte,            NULL},
-    {&ping->probe_datalen, (wpw_t)insert_uint16,          NULL},
-    {ping->probe_data,     (wpw_t)insert_bytes_uint16,    &pad_len},
-    {&ping->probe_count,   (wpw_t)insert_uint16,          NULL},
-    {&ping->probe_size,    (wpw_t)insert_uint16,          NULL},
+    {&ping->datalen,       (wpw_t)insert_uint16,          NULL},
+    {ping->data,           (wpw_t)insert_bytes_uint16,    &pad_len},
+    {&ping->attempts,      (wpw_t)insert_uint16,          NULL},
+    {&ping->size,          (wpw_t)insert_uint16,          NULL},
     {&wait_probe_sec,      (wpw_t)insert_byte,            NULL},
-    {&ping->probe_ttl,     (wpw_t)insert_byte,            NULL},
-    {&ping->reply_count,   (wpw_t)insert_uint16,          NULL},
+    {&ping->ttl,           (wpw_t)insert_byte,            NULL},
+    {&ping->stop_count,    (wpw_t)insert_uint16,          NULL},
     {&ping->ping_sent,     (wpw_t)insert_uint16,          NULL},
-    {&ping->probe_method,  (wpw_t)insert_byte,            NULL},
-    {&ping->probe_sport,   (wpw_t)insert_uint16,          NULL},
-    {&ping->probe_dport,   (wpw_t)insert_uint16,          NULL},
+    {&ping->method,        (wpw_t)insert_byte,            NULL},
+    {&ping->sport,         (wpw_t)insert_uint16,          NULL},
+    {&ping->dport,         (wpw_t)insert_uint16,          NULL},
     {&ping->userid,        (wpw_t)insert_uint32,          NULL},
     {ping->src,            (wpw_t)insert_addr,            table},
     {ping->dst,            (wpw_t)insert_addr,            table},
     {&flags8,              (wpw_t)insert_byte,            NULL},
-    {&ping->probe_tos,     (wpw_t)insert_byte,            NULL},
-    {ping->probe_tsps,     (wpw_t)insert_ping_probe_tsps, table},
-    {&ping->probe_icmpsum, (wpw_t)insert_uint16,          NULL},
-    {&ping->reply_pmtu,    (wpw_t)insert_uint16,          NULL},
+    {&ping->tos,           (wpw_t)insert_byte,            NULL},
+    {ping->tsps,           (wpw_t)insert_ping_probe_tsps, table},
+    {&ping->icmpsum,       (wpw_t)insert_uint16,          NULL},
+    {&ping->pmtu,          (wpw_t)insert_uint16,          NULL},
     {&wait_timeout_sec,    (wpw_t)insert_byte,            NULL},
     {&wait_probe_usec,     (wpw_t)insert_uint32,          NULL},
-    {&ping->probe_tcpack,  (wpw_t)insert_uint32,          NULL},
+    {&ping->tcpack,        (wpw_t)insert_uint32,          NULL},
     {&ping->flags,         (wpw_t)insert_uint32,          NULL},
-    {&ping->probe_tcpseq,  (wpw_t)insert_uint32,          NULL},
+    {&ping->tcpseq,        (wpw_t)insert_uint32,          NULL},
     {ping->rtr,            (wpw_t)insert_addr_static,     NULL},
     {&wait_timeout_usec,   (wpw_t)insert_uint32,          NULL},
   };
@@ -806,7 +845,6 @@ int scamper_file_warts_ping_read(scamper_file_t *sf, const warts_hdr_t *hdr,
 {
   warts_state_t *state = scamper_file_getstate(sf);
   scamper_ping_t *ping = NULL;
-  scamper_ping_reply_t *reply = NULL;
   warts_addrtable_t *table = NULL;
   warts_ifnametable_t *ifntable = NULL;
   uint8_t *buf = NULL;
@@ -843,8 +881,8 @@ int scamper_file_warts_ping_read(scamper_file_t *sf, const warts_hdr_t *hdr,
       goto err;
     }
 
-  /* allocate the ping_replies array */
-  if(scamper_ping_replies_alloc(ping, ping->ping_sent) != 0)
+  /* allocate the ping->probes array */
+  if(scamper_ping_probes_alloc(ping, ping->ping_sent) != 0)
     {
       goto err;
     }
@@ -858,17 +896,9 @@ int scamper_file_warts_ping_read(scamper_file_t *sf, const warts_hdr_t *hdr,
   /* for each reply, read it and insert it into the ping structure */
   for(i=0; i<reply_count; i++)
     {
-      if((reply = scamper_ping_reply_alloc()) == NULL)
-	goto err;
-
-      if(warts_ping_reply_read(ping, reply, state, table, ifntable,
+      if(warts_ping_reply_read(ping, state, table, ifntable,
 			       buf, &off, hdr->len) != 0)
 	goto err;
-
-      if(scamper_ping_reply_append(ping, reply) != 0)
-	goto err;
-
-      reply = NULL;
     }
 
  done:
@@ -883,7 +913,6 @@ int scamper_file_warts_ping_read(scamper_file_t *sf, const warts_hdr_t *hdr,
   if(ifntable != NULL) warts_ifnametable_free(ifntable);
   if(buf != NULL) free(buf);
   if(ping != NULL) scamper_ping_free(ping);
-  if(reply != NULL) scamper_ping_reply_free(reply);
   return -1;
 }
 
@@ -893,14 +922,13 @@ int scamper_file_warts_ping_write(const scamper_file_t *sf,
   warts_addrtable_t *table = NULL;
   warts_ifnametable_t *ifntable = NULL;
   warts_ping_reply_t *reply_state = NULL;
-  scamper_ping_reply_t *reply;
+  scamper_ping_probe_t *probe;
   uint8_t *buf = NULL;
   uint8_t  flags[ping_vars_mfb];
   uint16_t flags_len, params_len;
   uint32_t len, off = 0;
-  uint16_t reply_count;
+  uint16_t i, j, k, reply_count;
   size_t   size;
-  int      i, j;
 
   if((table = warts_addrtable_alloc_byaddr()) == NULL ||
      (ifntable = warts_ifnametable_alloc_byname()) == NULL)
@@ -921,12 +949,17 @@ int scamper_file_warts_ping_write(const scamper_file_t *sf,
 	  goto err;
 	}
 
-      for(i=0, j=0; i<ping->ping_sent; i++)
+      k = 0;
+      for(i=0; i<ping->ping_sent; i++)
 	{
-	  for(reply=ping->ping_replies[i]; reply != NULL; reply = reply->next)
+	  if((probe = ping->probes[i]) == NULL)
+	    continue;
+
+	  for(j=0; j<probe->replyc; j++)
 	    {
-	      if(warts_ping_reply_state(sf, ping, reply, &reply_state[j++],
-					table, ifntable, &len) == -1)
+	      if(warts_ping_reply_state(sf, ping, probe, probe->replies[j],
+					&reply_state[k++],
+					table, ifntable, &len) != 0)
 		{
 		  goto err;
 		}

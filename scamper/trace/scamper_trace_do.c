@@ -1,7 +1,7 @@
 /*
  * scamper_do_trace.c
  *
- * $Id: scamper_trace_do.c,v 1.388 2024/12/30 03:59:35 mjl Exp $
+ * $Id: scamper_trace_do.c,v 1.389 2025/02/11 14:31:43 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -1524,7 +1524,7 @@ static scamper_trace_hop_t *trace_icmp_hop(const scamper_task_t *task,
 
   /* if ICMP extensions are included, then parse and include them. */
   if(ir->ir_ext != NULL &&
-     scamper_icmpext_parse(&hop->hop_icmpext,ir->ir_ext,ir->ir_extlen) != 0)
+     scamper_icmpext_parse(&hop->hop_icmp_exts, ir->ir_ext, ir->ir_extlen) != 0)
     {
       goto err;
     }

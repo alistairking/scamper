@@ -1,11 +1,11 @@
 /*
  * scamper_host_warts.c
  *
- * Copyright (C) 2019-2023 Matthew Luckie
+ * Copyright (C) 2019-2025 Matthew Luckie
  *
  * Author: Matthew Luckie
  *
- * $Id: scamper_host_warts.c,v 1.22 2024/09/05 01:03:05 mjl Exp $
+ * $Id: scamper_host_warts.c,v 1.24 2025/02/23 05:38:15 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -53,6 +53,7 @@
 #define WARTS_HOST_QCLASS          12
 #define WARTS_HOST_QNAME           13
 #define WARTS_HOST_QCOUNT          14
+#define WARTS_HOST_ECS             15
 
 static const warts_var_t host_vars[] =
 {
@@ -70,6 +71,7 @@ static const warts_var_t host_vars[] =
   {WARTS_HOST_QCLASS,          2},
   {WARTS_HOST_QNAME,          -1},
   {WARTS_HOST_QCOUNT,          1},
+  {WARTS_HOST_ECS,            -1},
 };
 #define host_vars_mfb WARTS_VAR_MFB(host_vars)
 
@@ -179,6 +181,23 @@ static const warts_var_t host_rr_opt_vars[] =
 };
 #define host_rr_opt_vars_mfb WARTS_VAR_MFB(host_rr_opt_vars)
 
+/*
+ * the bits of a rr_svcb structure
+ */
+#define WARTS_HOST_RR_SVCB_PRIORITY 1
+#define WARTS_HOST_RR_SVCB_TARGET   2
+#define WARTS_HOST_RR_SVCB_PARAMC   3
+#define WARTS_HOST_RR_SVCB_PARAMS   4
+
+static const warts_var_t host_rr_svcb_vars[] =
+{
+  {WARTS_HOST_RR_SVCB_PRIORITY,    2},
+  {WARTS_HOST_RR_SVCB_TARGET,     -1},
+  {WARTS_HOST_RR_SVCB_PARAMC,      2},
+  {WARTS_HOST_RR_SVCB_PARAMS,     -1},
+};
+#define host_rr_svcb_vars_mfb WARTS_VAR_MFB(host_rr_svcb_vars)
+
 typedef struct warts_host_query
 {
   uint8_t   flags[WARTS_VAR_MFB(host_query_vars)];
@@ -219,6 +238,14 @@ typedef struct warts_host_rr_opt
   uint16_t  len;
 } warts_host_rr_opt_t;
 
+typedef struct warts_host_rr_svcb
+{
+  uint8_t   flags[WARTS_VAR_MFB(host_rr_svcb_vars)];
+  uint16_t  flags_len;
+  uint16_t  params_len;
+  uint16_t  len;
+} warts_host_rr_svcb_t;
+
 typedef struct warts_host_rr
 {
   uint8_t   flags[WARTS_VAR_MFB(host_rr_vars)];
@@ -230,11 +257,12 @@ typedef struct warts_host_rr
   uint16_t  data_type;
   union
   {
-    warts_host_rr_soa_t *soa;
-    warts_host_rr_mx_t  *mx;
-    warts_host_rr_txt_t *txt;
-    warts_host_rr_opt_t *opt;
-    void                *v;
+    warts_host_rr_soa_t  *soa;
+    warts_host_rr_mx_t   *mx;
+    warts_host_rr_txt_t  *txt;
+    warts_host_rr_opt_t  *opt;
+    warts_host_rr_svcb_t *svcb;
+    void                 *v;
   } data_un;
 } warts_host_rr_t;
 
@@ -781,6 +809,160 @@ static void warts_host_rr_opt_write(scamper_host_rr_opt_t *opt,
   return;
 }
 
+static int svcb_params_size(const scamper_host_rr_svcb_t *svcb, uint16_t *len)
+{
+  size_t s = 0;
+  uint16_t i;
+  for(i=0; i<svcb->paramc; i++)
+    s += 2 + 2 + svcb->params[i]->len;
+  if(s > UINT16_MAX || uint16_wouldwrap(*len, (uint16_t)s))
+    return -1;
+  *len += (uint16_t)s;
+  return 0;
+}
+
+static void svcb_params_insert(uint8_t *buf, uint32_t *off, const uint32_t len,
+			       const scamper_host_rr_svcb_t *svcb, void *param)
+{
+  scamper_host_rr_svcb_param_t *p;
+  uint16_t i;
+
+  for(i=0; i<svcb->paramc; i++)
+    {
+      p = svcb->params[i];
+      insert_uint16(buf, off, len, &p->key, NULL);
+      insert_uint16(buf, off, len, &p->len, NULL);
+      if(p->len > 0)
+	{
+	  memcpy(&buf[*off], p->val, p->len);
+	  *off += p->len;
+	}
+    }
+
+  return;
+}
+
+static int svcb_params_extract(const uint8_t *buf, uint32_t *off,
+			       const uint32_t len,
+			       scamper_host_rr_svcb_t *svcb, void *param)
+{
+  scamper_host_rr_svcb_param_t *p;
+  uint16_t i, p_key, p_len;
+  size_t size;
+
+  if(*off >= len)
+    return -1;
+
+  size = svcb->paramc * sizeof(scamper_host_rr_svcb_param_t *);
+  if((svcb->params = malloc_zero(size)) == NULL)
+    return -1;
+
+  for(i=0; i<svcb->paramc; i++)
+    {
+      if(extract_uint16(buf, off, len, &p_key, NULL) != 0 ||
+	 extract_uint16(buf, off, len, &p_len, NULL) != 0 ||
+	 len - *off < p_len)
+	return -1;
+      p = scamper_host_rr_svcb_param_alloc(p_key, p_len, buf + *off);
+      if(p == NULL)
+	return -1;
+      svcb->params[i] = p;
+      *off += p_len;
+    }
+
+  return 0;
+}
+
+static int warts_host_rr_svcb_params(const scamper_host_rr_svcb_t *svcb,
+				     warts_host_rr_svcb_t *state)
+{
+  const warts_var_t *var;
+  int max_id = 0;
+  size_t i;
+
+  memset(state->flags, 0, host_rr_svcb_vars_mfb);
+  state->params_len = 0;
+
+  for(i=0; i<sizeof(host_rr_svcb_vars)/sizeof(warts_var_t); i++)
+    {
+      var = &host_rr_svcb_vars[i];
+      if((var->id == WARTS_HOST_RR_SVCB_PRIORITY && svcb->priority == 0) ||
+	 (var->id == WARTS_HOST_RR_SVCB_TARGET && svcb->target == NULL) ||
+	 (var->id == WARTS_HOST_RR_SVCB_PARAMC && svcb->paramc == 0) ||
+	 (var->id == WARTS_HOST_RR_SVCB_PARAMS && svcb->paramc == 0))
+	continue;
+
+      flag_set(state->flags, var->id, &max_id);
+      if(var->id == WARTS_HOST_RR_SVCB_PARAMS)
+	{
+	  if(svcb_params_size(svcb, &state->params_len) != 0)
+	    return -1;
+	}
+      else if(var->id == WARTS_HOST_RR_SVCB_TARGET)
+	{
+	  if(warts_str_size(svcb->target, &state->params_len) != 0)
+	    return -1;
+	}
+      else
+	{
+	  assert(var->size >= 0);
+	  state->params_len += var->size;
+	}
+    }
+
+  state->flags_len += fold_flags(state->flags, max_id);
+  state->len = state->flags_len + state->params_len;
+  if(state->params_len != 0)
+    state->len += 2;
+  return 0;
+}
+
+static int warts_host_rr_svcb_read(void **data, const uint8_t *buf,
+				   uint32_t *off, uint32_t len)
+{
+  scamper_host_rr_svcb_t *svcb = NULL;
+  warts_param_reader_t handlers[] = {
+    {NULL, (wpr_t)extract_uint16,      NULL}, /* priority */
+    {NULL, (wpr_t)extract_string,      NULL}, /* target */
+    {NULL, (wpr_t)extract_uint16,      NULL}, /* paramc */
+    {NULL, (wpr_t)svcb_params_extract, NULL}, /* params */
+  };
+  const int handler_cnt = sizeof(handlers)/sizeof(warts_param_reader_t);
+
+  if((svcb = scamper_host_rr_svcb_alloc(0, NULL, 0)) == NULL)
+    goto err;
+  handlers[0].data = &svcb->priority;
+  handlers[1].data = &svcb->target;
+  handlers[2].data = &svcb->paramc;
+  handlers[3].data = svcb;
+
+  if(warts_params_read(buf, off, len, handlers, handler_cnt) != 0)
+    goto err;
+
+  *data = svcb;
+  return 0;
+
+ err:
+  if(svcb != NULL) scamper_host_rr_svcb_free(svcb);
+  return -1;
+}
+
+static void warts_host_rr_svcb_write(scamper_host_rr_svcb_t *svcb,
+				     uint8_t *buf, uint32_t *off, uint32_t len,
+				     warts_host_rr_svcb_t *state)
+{
+  warts_param_writer_t handlers[] = {
+    {&svcb->priority,  (wpw_t)insert_uint16,      NULL},
+    {svcb->target,     (wpw_t)insert_string,      NULL},
+    {&svcb->paramc,    (wpw_t)insert_uint16,      NULL},
+    {svcb,             (wpw_t)svcb_params_insert, NULL},
+  };
+  const int handler_cnt = sizeof(handlers)/sizeof(warts_param_writer_t);
+  warts_params_write(buf, off, len, state->flags, state->flags_len,
+		     state->params_len, handlers, handler_cnt);
+  return;
+}
+
 static int extract_rrdata(const uint8_t *buf, uint32_t *off, uint32_t len,
 			  warts_host_rr_read_t *rrdata,
 			  warts_addrtable_t *table)
@@ -828,6 +1010,12 @@ static int extract_rrdata(const uint8_t *buf, uint32_t *off, uint32_t len,
 	return -1;
       return 0;
     }
+  else if(type == SCAMPER_HOST_RR_DATA_TYPE_SVCB)
+    {
+      if(warts_host_rr_svcb_read(&rrdata->data, buf, off, len) != 0)
+	return -1;
+      return 0;
+    }
   return -1;
 }
 
@@ -849,6 +1037,8 @@ static void insert_rrdata(uint8_t *buf, uint32_t *off, const uint32_t len,
     warts_host_rr_txt_write(rr->rr->un.txt, buf, off, len, rr->data_un.txt);
   else if(rr->data_type == SCAMPER_HOST_RR_DATA_TYPE_OPT)
     warts_host_rr_opt_write(rr->rr->un.opt, buf, off, len, rr->data_un.opt);
+  else if(rr->data_type == SCAMPER_HOST_RR_DATA_TYPE_SVCB)
+    warts_host_rr_svcb_write(rr->rr->un.svcb, buf, off, len, rr->data_un.svcb);
 
   return;
 }
@@ -867,7 +1057,8 @@ static int warts_host_rr_data_len(const scamper_host_rr_t *rr,
 	 x == SCAMPER_HOST_RR_DATA_TYPE_SOA ||
 	 x == SCAMPER_HOST_RR_DATA_TYPE_MX  ||
 	 x == SCAMPER_HOST_RR_DATA_TYPE_TXT ||
-	 x == SCAMPER_HOST_RR_DATA_TYPE_OPT);
+	 x == SCAMPER_HOST_RR_DATA_TYPE_OPT ||
+	 x == SCAMPER_HOST_RR_DATA_TYPE_SVCB);
 
   state->data_type = (uint16_t)x;
   state->rr = (scamper_host_rr_t *)rr;
@@ -916,6 +1107,15 @@ static int warts_host_rr_data_len(const scamper_host_rr_t *rr,
       if(uint16_wouldwrap(len, state->data_un.opt->len))
 	return -1;
       len += state->data_un.opt->len;
+    }
+  else if(state->data_type == SCAMPER_HOST_RR_DATA_TYPE_SVCB)
+    {
+      if((state->data_un.svcb=malloc_zero(sizeof(warts_host_rr_svcb_t)))==NULL)
+	return -1;
+      warts_host_rr_svcb_params(rr->un.svcb, state->data_un.svcb);
+      if(uint16_wouldwrap(len, state->data_un.svcb->len))
+	return -1;
+      len += state->data_un.svcb->len;
     }
   else return -1;
 
@@ -1021,6 +1221,8 @@ static int warts_host_rr_read(scamper_host_rr_t **rr, int i,
 	scamper_host_rr_txt_free(rrdata.data);
       else if(rrdata.type == SCAMPER_HOST_RR_DATA_TYPE_OPT)
 	scamper_host_rr_opt_free(rrdata.data);
+      else if(rrdata.type == SCAMPER_HOST_RR_DATA_TYPE_SVCB)
+	scamper_host_rr_svcb_free(rrdata.data);
     }
   return rc;
 }
@@ -1071,7 +1273,8 @@ static int warts_host_params(const scamper_host_t *host,
 	 (var->id == WARTS_HOST_QTYPE   && host->qtype == 0) ||
 	 (var->id == WARTS_HOST_QCLASS  && host->qclass == 0) ||
 	 (var->id == WARTS_HOST_QNAME   && host->qname == NULL) ||
-	 (var->id == WARTS_HOST_QCOUNT  && host->qcount == 0))
+	 (var->id == WARTS_HOST_QCOUNT  && host->qcount == 0) ||
+	 (var->id == WARTS_HOST_ECS     && host->ecs == NULL))
 	continue;
 
       /* Set the flag for the rest of the variables */
@@ -1091,6 +1294,11 @@ static int warts_host_params(const scamper_host_t *host,
       else if(var->id == WARTS_HOST_QNAME)
 	{
 	  if(warts_str_size(host->qname, params_len) != 0)
+	    return -1;
+	}
+      else if(var->id == WARTS_HOST_ECS)
+	{
+	  if(warts_str_size(host->ecs, params_len) != 0)
 	    return -1;
 	}
       else
@@ -1125,6 +1333,7 @@ static int warts_host_params_read(scamper_host_t *host,
     {&host->qclass,       (wpr_t)extract_uint16,  NULL},
     {&host->qname,        (wpr_t)extract_string,  NULL},
     {&host->qcount,       (wpr_t)extract_byte,    NULL},
+    {&host->ecs,          (wpr_t)extract_string,  NULL},
   };
   const int handler_cnt = sizeof(handlers) / sizeof(warts_param_reader_t);
   int rc;
@@ -1165,6 +1374,7 @@ static int warts_host_params_write(const scamper_host_t *host,
     {&host->qclass,       (wpw_t)insert_uint16,   NULL},
     {host->qname,         (wpw_t)insert_string,   NULL},
     {&host->qcount,       (wpw_t)insert_byte,     NULL},
+    {host->ecs,           (wpw_t)insert_string,   NULL},
   };
   const int handler_cnt = sizeof(handlers)/sizeof(warts_param_writer_t);
 

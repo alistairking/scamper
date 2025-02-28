@@ -1,7 +1,7 @@
 /*
  * scamper_task.c
  *
- * $Id: scamper_task.c,v 1.104 2024/12/31 04:17:31 mjl Exp $
+ * $Id: scamper_task.c,v 1.105 2025/02/11 17:35:53 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -575,7 +575,8 @@ void scamper_task_anc_del(scamper_task_t *task, scamper_task_anc_t *anc)
 int scamper_task_sig_add(scamper_task_t *task, scamper_task_sig_t *sig)
 {
   s2t_t *s2t;
-  if((s2t = malloc_zero(sizeof(s2t_t))) == NULL)
+  if((task->siglist == NULL && (task->siglist = slist_alloc()) == NULL) ||
+     (s2t = malloc_zero(sizeof(s2t_t))) == NULL)
     return -1;
   s2t->sig = sig;
   s2t->task = task;
@@ -781,6 +782,9 @@ static void scamper_task_sig_deinstall(scamper_task_t *task)
   int exp_set = 0;
   s2t_t *s2t;
 
+  if(task->siglist == NULL)
+    return;
+
   while((s2t = slist_head_pop(task->siglist)) != NULL)
     {
       sig = s2t->sig;
@@ -831,6 +835,9 @@ int scamper_task_sig_install(scamper_task_t *task)
   patricia_t *pt;
   s2t_t *s2t;
   slist_node_t *n;
+
+  if(task->siglist == NULL)
+    return 0;
 
   for(n=slist_head_node(task->siglist); n != NULL; n = slist_node_next(n))
     {
@@ -920,6 +927,10 @@ scamper_task_t *scamper_task_sig_block(scamper_task_t *task)
   scamper_task_t *tf;
   slist_node_t *n;
   s2t_t *s2t;
+
+  /* no signatures so nothing to block on */
+  if(task->siglist == NULL)
+    return NULL;
 
   for(n=slist_head_node(task->siglist); n != NULL; n = slist_node_next(n))
     {
@@ -1028,9 +1039,6 @@ scamper_task_t *scamper_task_alloc(void *data, scamper_task_funcs_t *funcs)
     }
 
   if((task->queue = scamper_queue_alloc(task)) == NULL)
-    goto err;
-
-  if((task->siglist = slist_alloc()) == NULL)
     goto err;
 
   task->funcs = funcs;

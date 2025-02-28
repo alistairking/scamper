@@ -1,7 +1,7 @@
 /*
  * scamper_trace.c
  *
- * $Id: scamper_trace.c,v 1.120 2024/10/16 07:01:29 mjl Exp $
+ * $Id: scamper_trace.c,v 1.122 2025/02/11 19:12:29 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2003-2011 The University of Waikato
@@ -221,12 +221,42 @@ void scamper_trace_hop_free(scamper_trace_hop_t *hop)
 #endif
   if(hop->hop_name != NULL)
     free(hop->hop_name);
-  if(hop->hop_icmpext != NULL)
-    scamper_icmpext_free(hop->hop_icmpext);
+  if(hop->hop_icmp_exts != NULL)
+    scamper_icmpexts_free(hop->hop_icmp_exts);
   if(hop->hop_addr != NULL)
     scamper_addr_free(hop->hop_addr);
   free(hop);
   return;
+}
+
+scamper_trace_hop_t *scamper_trace_hop_dup(const scamper_trace_hop_t *in)
+{
+  scamper_trace_hop_t *out = NULL;
+
+  if((out = memdup(in, sizeof(scamper_trace_hop_t))) == NULL)
+    goto err;
+  out->hop_addr = NULL;
+  out->hop_name = NULL;
+  out->hop_icmp_exts = NULL;
+  out->hop_next = NULL;
+
+#ifdef BUILDING_LIBSCAMPERFILE
+  out->refcnt = 1;
+#endif
+
+  if(in->hop_addr != NULL)
+    out->hop_addr = scamper_addr_use(in->hop_addr);
+  if(in->hop_name != NULL && (out->hop_name = strdup(in->hop_name)))
+    goto err;
+  if(in->hop_icmp_exts != NULL &&
+     (out->hop_icmp_exts = scamper_icmpexts_dup(in->hop_icmp_exts)) != NULL)
+    goto err;
+
+  return out;
+
+ err:
+  if(out != NULL) scamper_trace_hop_free(out);
+  return NULL;
 }
 
 #ifndef DMALLOC
@@ -356,6 +386,67 @@ void scamper_trace_free(scamper_trace_t *trace)
 
   free(trace);
   return;
+}
+
+scamper_trace_t *scamper_trace_dup(scamper_trace_t *in)
+{
+  scamper_trace_t *out = NULL;
+  scamper_trace_hop_t *hop_in, *hop_out;
+  uint16_t i;
+
+  if((out = memdup(in, sizeof(scamper_trace_t))) == NULL)
+    goto err;
+
+  if(in->list != NULL)
+    out->list = scamper_list_use(in->list);
+  if(in->cycle != NULL)
+    out->cycle = scamper_cycle_use(in->cycle);
+  if(in->src != NULL)
+    out->src = scamper_addr_use(in->src);
+  if(in->dst != NULL)
+    out->dst = scamper_addr_use(in->dst);
+  if(in->rtr != NULL)
+    out->rtr = scamper_addr_use(in->rtr);
+
+  /* set everything to NULL that could possibly fail */
+  out->payload = NULL;
+  out->pmtud = NULL;
+  out->lastditch = NULL;
+  out->hops = NULL;
+
+  if(in->payload != NULL &&
+     (out->payload = memdup(in->payload, in->payload_len)) == NULL)
+    goto err;
+
+  if(in->hop_count > 0)
+    {
+      out->hops = malloc_zero(sizeof(scamper_trace_hop_t *) * in->hop_count);
+      if(out->hops == NULL)
+	goto err;
+
+      for(i=0; i<in->hop_count; i++)
+	{
+	  if(in->hops[i] == NULL)
+	    continue;
+	  if((out->hops[i] = scamper_trace_hop_dup(in->hops[i])) == NULL)
+	    goto err;
+	  hop_in = in->hops[i]; hop_out = out->hops[i];
+	  while(hop_in->hop_next != NULL)
+	    {
+	      hop_out->hop_next = scamper_trace_hop_dup(hop_in->hop_next);
+	      if(hop_out->hop_next == NULL)
+		goto err;
+	      hop_in = hop_in->hop_next;
+	      hop_out = hop_out->hop_next;
+	    }
+	}
+    }
+
+  return out;
+
+ err:
+  if(out != NULL) scamper_trace_free(out);
+  return NULL;
 }
 
 /*

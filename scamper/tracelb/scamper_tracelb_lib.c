@@ -1,7 +1,7 @@
 /*
  * scamper_tracelb_lib.c
  *
- * $Id: scamper_tracelb_lib.c,v 1.11 2023/12/21 06:11:32 mjl Exp $
+ * $Id: scamper_tracelb_lib.c,v 1.12 2025/02/11 14:31:43 mjl Exp $
  *
  * Copyright (C) 2023 Matthew Luckie
  * Author: Matthew Luckie
@@ -341,9 +341,9 @@ uint8_t scamper_tracelb_reply_icmp_q_ttl_get(const scamper_tracelb_reply_t *repl
   return reply->reply_icmp_q_ttl;
 }
 
-scamper_icmpext_t *scamper_tracelb_reply_icmp_ext_get(const scamper_tracelb_reply_t *reply)
+scamper_icmpexts_t *scamper_tracelb_reply_icmp_exts_get(const scamper_tracelb_reply_t *reply)
 {
-  return reply->reply_icmp_ext;
+  return reply->reply_icmp_exts;
 }
 
 uint8_t scamper_tracelb_reply_tcp_flags_get(const scamper_tracelb_reply_t *reply)

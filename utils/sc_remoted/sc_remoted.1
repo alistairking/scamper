@@ -3,12 +3,12 @@
 .\"
 .\" Author: Matthew Luckie <mjl@luckie.org.nz>
 .\"
-.\" Copyright (c) 2014-2024 Matthew Luckie
+.\" Copyright (c) 2014-2025 Matthew Luckie
 .\"               All rights reserved
 .\"
-.\" $Id: sc_remoted.1,v 1.18 2024/09/07 03:34:44 mjl Exp $
+.\" $Id: sc_remoted.1,v 1.20 2025/02/26 03:55:21 mjl Exp $
 .\"
-.Dd September 7, 2024
+.Dd February 26, 2025
 .Dt SC_REMOTED 1
 .Os
 .Sh NAME
@@ -19,12 +19,14 @@
 .Bk -words
 .Op Fl ?46Dv
 .Op Fl O Ar options
+.Op Fl M Ar mux-socket
 .Op Fl P Ar [ip:]port
-.Op Fl U Ar directory
+.Op Fl U Ar unix-dir
 .Op Fl C Ar tls-ca
 .Op Fl c Ar tls-certificate
 .Op Fl p Ar tls-privatekey
-.Op Fl e Ar pidfile
+.Op Fl m Ar meta-file
+.Op Fl e Ar pid-file
 .Op Fl Z Ar zombie-time
 .Ek
 .\""""""""""""
@@ -94,9 +96,15 @@ should listen for incoming connections.
 If an IP address is not specified,
 .Nm
 will listen on all available IP addresses for incoming connections.
-.It Fl U Ar directory
-specifies the directory on the local host where unix domain sockets
-corresponding to remote hosts should be placed.
+.It Fl M Ar mux-socket
+specifies location in the file system on the local host where
+.Nm
+should provide a multiplexed interface for access to remote hosts.
+.It Fl U Ar unix-dir
+specifies the directory on the local host where
+.Nm
+should place individual unix domain sockets corresponding to
+individual remote hosts.
 .It Fl C Ar tls-ca
 specifies the certificate authority certificate file in PEM format
 for
@@ -112,8 +120,10 @@ specifies the private key file in PEM format that corresponds to the
 certificate file.  This key should have a passphrase.
 .Nm
 will prompt for the passphrase when starting up.
-.It Fl e Ar pidfile
+.It Fl e Ar pid-file
 specifies the name of a file to write the process ID to.
+.It Fl m Ar meta-file
+specifies the name of a file containing meta data for remote hosts.
 .It Fl Z Ar zombie-time
 specifies the length of time
 .Nm
@@ -122,6 +132,8 @@ will retain state for a disconnected
 instance, allowing it to resume.  By default
 .Nm
 retains state for 15 minutes.
+.Nm
+can wait for up to three hours for a remote scamper instance to resume.
 .El
 .\""""""""""""
 .Sh EXAMPLES
@@ -134,7 +146,7 @@ runs a
 process listening on a port for remote scamper process, placing
 control sockets in a specified directory:
 .Pp
-.Dl sc_remoted -P 31337 -U scamper-remote-sockets
+.Dl sc_remoted -P 31337 -U remote-socket-dir
 .Pp
 Then, a remote host with IP address 198.51.100.55 runs scamper
 and connects to the remote controller:
@@ -149,7 +161,7 @@ port the remote scamper process connected to controller with.  If the
 scamper process used source port 1025, then the unix domain socket's
 name will be
 .Pp
-.Dl scamper-remote-sockets/198.51.100.55:1025
+.Dl remote-socket-dir/198.51.100.55:1025
 .Pp
 If a second remote host with IP address 2001:db8:1234::1 runs scamper
 and connects to the remote controller:
@@ -162,7 +174,7 @@ process will place another unix domain socket in the directory
 corresponding to the remote process.  If the scamper process used
 source port 1026, then the unix domain socket's name will be
 .Pp
-.Dl scamper-remote-sockets/2001:db8:1234::1.1026
+.Dl remote-socket-dir/2001:db8:1234::1.1026
 .Pp
 If scamper is started with -M monitor-name, then it will pass the
 monitor name sc_remoted, which will use it in the unix domain socket's
@@ -172,7 +184,59 @@ name.  For example, if scamper is started as follows:
 .Pp
 then the unix domain socket's name will be
 .Pp
-.Dl scamper-remote-sockets/foo.bar-2001:db8:1234::1.1026
+.Dl remote-socket-dir/foo.bar-2001:db8:1234::1.1026
+.Pp
+Because providing a unix domain socket per remote scamper process
+scales poorly in its use of file descriptors, it is recommended that
+.Nm
+provides a multiplexed interface to the remote scamper instances over
+a single unix domain socket, as follows:
+.Pp
+.Dl sc_remoted -P 31337 -M mux-socket
+.Pp
+It is possible to simultaneously provide a mux-socket and individual
+unix domain sockets in a separate directory, as follows:
+.Pp
+.Dl sc_remoted -P 31337 -M mux-socket -U remote-socket-dir
+.Pp
+.\""""""""""""
+.Sh PROVIDING METADATA TO REMOTE CONTROLLER USERS
+.Nm
+can provide metadata for remote scamper instances to users of the
+multiplexed interface.
+.Xr libscamperctrl 3
+provides interfaces to use the multiplexed interface and obtain
+metadata at runtime.
+To associate metadata with remote scamper instances, the instances
+must be started with unique monitor-name values, such as
+.Pp
+.Dl scamper -R 192.0.2.1:31337 -M foo.bar
+.Pp
+which self-identifies as foo.bar.
+Given a
+.Nm
+process started as follows:
+.Pp
+.Dl sc_remoted -M mux-socket -m meta.txt -P 31337
+.Pp
+with meta.txt containing metadata formatted as follows:
+.Pp
+.in +.3i
+.nf
+foo.bar asn4 64504
+foo.bar cc nz
+foo.bar st wko
+foo.bar place Hamilton
+foo.bar latlong -37.7875184,175.2783528
+foo.bar shortname foo
+foo.bar tag os:freebsd
+foo.bar tag hardware:pi4
+.fi
+.in -.3i
+.Pp
+then users can programmatically identify that the remote system named
+foo.bar is located in New Zealand, and is a Raspberry Pi4 running
+FreeBSD.
 .Pp
 .\""""""""""""
 .Sh USING TRANSPORT LAYER SECURITY
@@ -181,7 +245,7 @@ and scamper support the use of transport layer security (TLS) using
 OpenSSL to authenticate and encrypt communications between
 .Nm
 and scamper.
-To use this support requires a public certificate signed by a
+To use this support requires a certificate signed by a
 certificate authority.
 Scamper will verify the certificate presented by
 .Nm
@@ -208,7 +272,7 @@ Both remotecert.pem and remotepriv.pem are required parameters to
 .Nm
 to enable TLS support:
 .Pp
-.Dl sc_remoted -P 31337 -U scamper-remote-sockets -c remotecert.pem -p remotepriv.pem
+.Dl sc_remoted -P 31337 -U remote-socket-dir -c remotecert.pem -p remotepriv.pem
 .Pp
 and then run scamper as follows:
 .Pp
@@ -218,7 +282,7 @@ and then run scamper as follows:
 can also require that scamper present a certificate during the TLS
 handshake with the -C parameter:
 .Pp
-.Dl sc_remoted -P 31337 -U scamper-remote-sockets -c remotecert.pem -p remotepriv.pem -C remoteca.pem
+.Dl sc_remoted -P 31337 -U remote-socket-dir -c remotecert.pem -p remotepriv.pem -C remoteca.pem
 .Pp
 In this case,
 .Nm
@@ -240,10 +304,11 @@ to exit gracefully.
 SIGHUP causes
 .Nm
 to reload the TLS certificate and private key, without interrupting
-existing TLS connections.
+existing TLS connections, and reload the metadata file.
 .Pp
 .\""""""""""""
 .Sh SEE ALSO
+.Xr libscamperctrl 3 ,
 .Xr scamper 1 ,
 .Xr sc_attach 1 ,
 .Xr sc_wartsdump 1 ,

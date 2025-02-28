@@ -1,9 +1,9 @@
 /*
  * scamper_host
  *
- * $Id: scamper_host.h,v 1.30 2024/11/07 18:15:39 mjl Exp $
+ * $Id: scamper_host.h,v 1.32 2025/02/23 05:38:14 mjl Exp $
  *
- * Copyright (C) 2018-2024 Matthew Luckie
+ * Copyright (C) 2018-2025 Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -31,6 +31,8 @@ typedef struct scamper_host_rr_mx scamper_host_rr_mx_t;
 typedef struct scamper_host_rr_txt scamper_host_rr_txt_t;
 typedef struct scamper_host_rr_opt scamper_host_rr_opt_t;
 typedef struct scamper_host_rr_opt_elem scamper_host_rr_opt_elem_t;
+typedef struct scamper_host_rr_svcb scamper_host_rr_svcb_t;
+typedef struct scamper_host_rr_svcb_param scamper_host_rr_svcb_param_t;
 
 char *scamper_host_tojson(const scamper_host_t *host, size_t *len);
 
@@ -53,9 +55,10 @@ uint16_t scamper_host_qtype_get(const scamper_host_t *host);
 uint16_t scamper_host_qclass_get(const scamper_host_t *host);
 const char *scamper_host_qname_get(const scamper_host_t *host);
 uint8_t scamper_host_qcount_get(const scamper_host_t *host);
+const char *scamper_host_ecs_get(const scamper_host_t *host);
+
 scamper_host_query_t *scamper_host_query_get(const scamper_host_t *host,
 					     uint8_t i);
-
 scamper_host_query_t *scamper_host_query_use(scamper_host_query_t *q);
 void scamper_host_query_free(scamper_host_query_t *q);
 const struct timeval *scamper_host_query_tx_get(const scamper_host_query_t *q);
@@ -89,6 +92,7 @@ scamper_host_rr_soa_t *scamper_host_rr_soa_get(const scamper_host_rr_t *rr);
 scamper_host_rr_mx_t *scamper_host_rr_mx_get(const scamper_host_rr_t *rr);
 scamper_host_rr_txt_t *scamper_host_rr_txt_get(const scamper_host_rr_t *rr);
 scamper_host_rr_opt_t *scamper_host_rr_opt_get(const scamper_host_rr_t *rr);
+scamper_host_rr_svcb_t *scamper_host_rr_svcb_get(const scamper_host_rr_t *rr);
 
 scamper_host_rr_mx_t *scamper_host_rr_mx_use(scamper_host_rr_mx_t *mx);
 void scamper_host_rr_mx_free(scamper_host_rr_mx_t *mx);
@@ -121,6 +125,19 @@ char *scamper_host_rr_opt_elem_code_tostr(uint16_t code, char *b, size_t l);
 uint16_t scamper_host_rr_opt_elem_len_get(const scamper_host_rr_opt_elem_t *elem);
 const uint8_t *scamper_host_rr_opt_elem_data_get(const scamper_host_rr_opt_elem_t *elem);
 
+scamper_host_rr_svcb_t *scamper_host_rr_svcb_use(scamper_host_rr_svcb_t *svcb);
+void scamper_host_rr_svcb_free(scamper_host_rr_svcb_t *svcb);
+const char *scamper_host_rr_svcb_target_get(const scamper_host_rr_svcb_t *svcb);
+uint16_t scamper_host_rr_svcb_priority_get(const scamper_host_rr_svcb_t *svcb);
+uint16_t scamper_host_rr_svcb_paramc_get(const scamper_host_rr_svcb_t *svcb);
+void scamper_host_rr_svcb_param_free(scamper_host_rr_svcb_param_t *param);
+scamper_host_rr_svcb_param_t *scamper_host_rr_svcb_param_get(const scamper_host_rr_svcb_t *svcb, uint16_t i);
+scamper_host_rr_svcb_param_t *scamper_host_rr_svcb_param_use(scamper_host_rr_svcb_param_t *param);
+uint16_t scamper_host_rr_svcb_param_key_get(const scamper_host_rr_svcb_param_t *param);
+char *scamper_host_rr_svcb_param_key_tostr(uint16_t code, char *b, size_t l);
+uint16_t scamper_host_rr_svcb_param_len_get(const scamper_host_rr_svcb_param_t *param);
+const uint8_t *scamper_host_rr_svcb_param_val_get(const scamper_host_rr_svcb_param_t *param);
+
 #define SCAMPER_HOST_FLAG_NORECURSE 0x0001
 #define SCAMPER_HOST_FLAG_TCP       0x0002
 #define SCAMPER_HOST_FLAG_NSID      0x0004
@@ -142,6 +159,7 @@ const uint8_t *scamper_host_rr_opt_elem_data_get(const scamper_host_rr_opt_elem_
 #define SCAMPER_HOST_TYPE_RRSIG  46
 #define SCAMPER_HOST_TYPE_NSEC   47
 #define SCAMPER_HOST_TYPE_DNSKEY 48
+#define SCAMPER_HOST_TYPE_SVCB   64
 
 #define SCAMPER_HOST_STOP_NONE    0
 #define SCAMPER_HOST_STOP_DONE    1
@@ -174,7 +192,9 @@ const uint8_t *scamper_host_rr_opt_elem_data_get(const scamper_host_rr_opt_elem_
 #define SCAMPER_HOST_RR_DATA_TYPE_MX   4
 #define SCAMPER_HOST_RR_DATA_TYPE_TXT  5
 #define SCAMPER_HOST_RR_DATA_TYPE_OPT  6
+#define SCAMPER_HOST_RR_DATA_TYPE_SVCB 7
 
 #define SCAMPER_HOST_RR_OPT_ELEM_CODE_NSID 3
+#define SCAMPER_HOST_RR_OPT_ELEM_CODE_ECS  8
 
 #endif /* __SCAMPER_HOST_H */

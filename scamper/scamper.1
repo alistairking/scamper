@@ -10,9 +10,9 @@
 .\" Copyright (c) 2024      The Regents of the University of California
 .\"                         All rights reserved
 .\"
-.\" $Id: scamper.1,v 1.145 2024/12/05 23:59:22 mjl Exp $
+.\" $Id: scamper.1,v 1.152 2025/01/19 04:15:10 mjl Exp $
 .\"
-.Dd December 6, 2024
+.Dd January 19, 2025
 .Dt SCAMPER 1
 .Os
 .\""""""""""""
@@ -88,7 +88,14 @@ option, where it will be supplied with commands dynamically.
 .Pp
 For most modules,
 .Nm
-must be run as root.
+must be started as root.
+It is recommended to set the setuid bit on the scamper binary, and set
+the ownership of the scamper binary to root.
+.Nm
+will run privilege separated, forking a process that retains root
+privileges for tasks that require root, while processing network
+traffic in an unprivileged process running in a
+.Xr chroot 2 .
 .Pp
 The options are as follows:
 .Bl -tag -width Ds
@@ -331,9 +338,6 @@ the input file consists of complete commands.
 .It
 .Sy noinitndc:
 do not initialise the neighbour discovery cache.
-.It
-.Sy outcopy:
-write a copy of all data written by scamper with the default output method.
 .It
 .Sy debugfileappend:
 append to the debugfile specified with the
@@ -1447,46 +1451,6 @@ The set command sets the current setting for the supplied argument.
 Valid argument values are: holdtime, monitorname, nameserver, pps.
 .It Ic source Ar argument ...
 .Bl -tag -width "   "
-.It Ic add Ar arguments
-The
-.Ic source add
-command allows a new input source to be added.
-It accepts the following arguments:
-.Bl -tag -width "   "
-.It Ic name Ar string
-The name of the source.  This parameter is mandatory.
-.It Ic descr Ar string
-An optional string describing the source.
-.It Ic command Ar string
-The command to execute for each address supplied.
-If not supplied, the default command is used.
-.It Ic list_id Ar uint32_t
-An optional numeric list identifier, assigned by a human.
-If not supplied, a value of zero is used.
-.It Ic cycle_id Ar uint32_t
-An optional numeric initial cycle identifier to use, assigned by a human.
-If not supplied, a value of one is used.
-.It Ic priority Ar uint32_t
-An optional numeric value that specifies the mix rate of measurements from
-the source compared to other sources.
-If not supplied, a mix rate of one is used.
-A value of zero causes the source to be created, but not actively used.
-.It Ic outfile Ar string
-The name of the output file to write results to, previously defined with
-.Ic outfile open .
-If not supplied, the default output file is used.
-.It Ic file Ar string
-The name of the input file to read target addresses from.
-This parameter is mandatory if the source is a managed source.
-.El
-.It Ic update Ar name arguments
-The
-.Ic source update
-command allows some properties of an existing source to be modified.
-The source to update is specified with the
-.Ar name
-parameter.
-Valid parameters are: priority.
 .It Ic list Ar ...
 The
 .Ic source list
@@ -1494,58 +1458,6 @@ command provides a listing of all currently defined sources.
 The optional third
 .Ar name
 parameter restricts the listing to the source specified.
-.It Ic cycle Ar name
-The
-.Ic source cycle
-command manually inserts a cycle marker in an adhoc source.
-.It Ic delete Ar name
-The
-.Ic source delete
-command deletes the named source, if possible.
-.El
-.It Ic outfile Ar argument ...
-The outfile commands provide the ability to manage output files.
-It accepts the following arguments:
-.Bl -tag -width "   "
-.It Ic open Ar ...
-The
-.Ic outfile open
-command allows a new output file to be defined.
-It accepts the following parameters:
-.Bl -tag -width "   "
-.It Ic name Ar alias
-The alias of the output file.  This parameter is mandatory.
-.It Ic file Ar string
-The filename of the output file.  This parameter is mandatory.
-.It Ic mode Xo
-.Op Cm truncate | append
-.Xc
-How the file will be opened.
-If the append mode is used, any existing file with the specified name will
-be appended to.
-If the truncate mode is used, any existing file will be truncated when it is
-opened.
-.El
-.It Ic close Ar alias
-The
-.Ic outfile close
-command allows an existing output file to be closed.
-The mandatory
-.Ar alias
-parameter specifies which output file to close.
-An output file that is currently referenced is not able to be closed.
-To close a file that is currently referenced, a new outfile must be opened,
-and then the
-.Ic outfile swap
-command be used.
-.It Ic swap Ar alias1 alias2
-The
-.Ic outfile swap
-command swaps the file associated with each output file.
-.It Ic list
-The
-.Ic outfile list
-command outputs a list of the existing outfiles.
 .El
 .It Ic shutdown Ar argument
 The shutdown argument allows the

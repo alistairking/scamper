@@ -3,12 +3,12 @@
  *
  * the warts file format
  *
- * $Id: scamper_file_warts.c,v 1.283 2024/12/14 23:51:28 mjl Exp $
+ * $Id: scamper_file_warts.c,v 1.285 2025/02/11 14:31:43 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2012-2015 The Regents of the University of California
- * Copyright (C) 2015-2024 Matthew Luckie
+ * Copyright (C) 2015-2025 Matthew Luckie
  * Copyright (C) 2024      The Regents of the University of California
  * Author: Matthew Luckie
  *
@@ -68,6 +68,7 @@
 #include "udpprobe/scamper_udpprobe_warts.h"
 
 #include "mjl_splaytree.h"
+#include "mjl_list.h"
 #include "utils.h"
 
 #define WARTS_MAGIC 0x1205
@@ -2199,78 +2200,79 @@ int warts_cycle_stop_write(const scamper_file_t *sf,
   return -1;
 }
 
-int warts_icmpext_read(const uint8_t *buf, uint32_t *off, uint32_t len,
-			      scamper_icmpext_t **exts)
+int warts_icmpexts_read(const uint8_t *buf, uint32_t *off, uint32_t len,
+			scamper_icmpexts_t **out)
 {
-  scamper_icmpext_t *ie, *next = NULL;
-  uint16_t tmp;
-  uint16_t u16;
+  scamper_icmpexts_t *exts = NULL;
+  scamper_icmpext_t *ie = NULL;
+  slist_t *list = NULL;
+  uint16_t tmp, u16;
   uint8_t cn, ct;
-
-  /* make sure there's enough left for the length field */
-  if(len - *off < 2)
-    {
-      return -1;
-    }
+  int c, rc = -1;
 
   /* extract the length field that says how much data is left past it */
-  memcpy(&tmp, &buf[*off], 2);
-  tmp = ntohs(tmp);
-
-  *off += 2;
+  if(extract_uint16(buf, off, len, &tmp, NULL) != 0)
+    goto err;
 
   /* the length value must be greater than zero */
   if(tmp == 0)
-    return -1;
+    goto err;
 
   /* make sure there's enough left for the extension data */
   if(len - *off < tmp)
-    return -1;
+    goto err;
+
+  if((list = slist_alloc()) == NULL)
+    goto err;
 
   while(tmp >= 4)
     {
-      memcpy(&u16, &buf[*off], 2); u16 = ntohs(u16);
+      u16 = bytes_ntohs(buf + *off);
       if(len - *off < (uint32_t)(u16 + 2 + 1 + 1))
-	{
-	  return -1;
-	}
+	goto err;
+
       cn = buf[*off+2];
       ct = buf[*off+3];
 
-      if((ie = scamper_icmpext_alloc(cn, ct, u16, &buf[*off+4])) == NULL)
-	{
-	  return -1;
-	}
-
-      if(next == NULL)
-	{
-	  *exts = ie;
-	}
-      else
-	{
-	  next->ie_next = ie;
-	}
-      next = ie;
+      if((ie = scamper_icmpext_alloc(cn, ct, u16, &buf[*off+4])) == NULL ||
+	 slist_tail_push(list, ie) == NULL)
+	goto err;
+      ie = NULL;
 
       *off += (2 + 1 + 1 + u16);
       tmp  -= (2 + 1 + 1 + u16);
     }
 
   if(tmp != 0)
-    return -1;
+    goto err;
 
-  return 0;
+  if((c = slist_count(list)) >= 0)
+    {
+      if((exts = scamper_icmpexts_alloc((uint16_t)c)) == NULL)
+	goto err;
+      while((ie = slist_head_pop(list)) != NULL)
+	exts->exts[exts->extc++] = ie;
+    }
+  *out = exts; exts = NULL;
+  rc = 0;
+
+ err:
+  if(list != NULL) slist_free_cb(list, (slist_free_t)scamper_icmpext_free);
+  if(exts != NULL) scamper_icmpexts_free(exts);
+  if(ie != NULL) scamper_icmpext_free(ie);
+  return rc;
 }
 
-void warts_icmpext_write(uint8_t *buf,uint32_t *off,const uint32_t len,
-				const scamper_icmpext_t *exts)
+void warts_icmpexts_write(uint8_t *buf, uint32_t *off, uint32_t len,
+			  const scamper_icmpexts_t *exts)
 {
   const scamper_icmpext_t *ie;
   uint16_t tmp = 0;
-  uint16_t u16;
+  uint16_t u16, i;
 
-  for(ie=exts; ie != NULL; ie = ie->ie_next)
+  for(i=0; i<exts->extc; i++)
     {
+      ie = exts->exts[i];
       assert(*off + tmp + 1 + 1 + 2 + ie->ie_dl <= len);
 
       /* convert the data length field to network byte order and write */
@@ -2295,6 +2297,25 @@ void warts_icmpext_write(uint8_t *buf,uint32_t *off,const uint32_t len,
   *off = *off + 2 + tmp;
 
   return;
+}
+
+int warts_icmpexts_size(const scamper_icmpexts_t *exts, uint16_t *len)
+{
+  scamper_icmpext_t *ie;
+  uint16_t i;
+  size_t s;
+
+  s = 2;
+  for(i=0; i<exts->extc; i++)
+    {
+      ie = exts->exts[i];
+      s += (2 + 1 + 1 + ie->ie_dl);
+    }
+  if(s > UINT16_MAX || uint16_wouldwrap(*len, (uint16_t)s))
+    return -1;
+  *len += (uint16_t)s;
+
+  return 0;
 }
 
 /*

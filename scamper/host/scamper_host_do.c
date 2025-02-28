@@ -1,9 +1,9 @@
 /*
  * scamper_host_do
  *
- * $Id: scamper_host_do.c,v 1.86 2024/12/30 03:59:35 mjl Exp $
+ * $Id: scamper_host_do.c,v 1.89 2025/02/23 05:38:14 mjl Exp $
  *
- * Copyright (C) 2018-2024 Matthew Luckie
+ * Copyright (C) 2018-2025 Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -694,6 +694,67 @@ static int extract_opt(scamper_host_rr_t *rr, const uint8_t *pbuf,
   return -1;
 }
 
+static int extract_svcb(scamper_host_rr_t *rr, const uint8_t *pbuf,
+			size_t plen, size_t off, size_t rdlength)
+{
+  scamper_host_rr_svcb_t *svcb = NULL;
+  scamper_host_rr_svcb_param_t *param = NULL;
+  uint16_t prio, key, val_len, paramc = 0;
+  slist_t *list = NULL;
+  char tgt[256];
+  size_t i = 0;
+
+  if(rdlength < 2 || plen - off < rdlength)
+    return 0;
+
+  if((list = slist_alloc()) == NULL)
+    goto err;
+
+  prio = bytes_ntohs(pbuf+off); off += 2;
+  if((i = extract_name(tgt, sizeof(tgt), pbuf, plen, off)) <= 0)
+    {
+      scamper_debug(__func__, "could not extract target name");
+      goto err;
+    }
+  off += i;
+  i += 2;
+
+  while(i < rdlength)
+    {
+      if(rdlength - i < 4)
+	break;
+      key = bytes_ntohs(pbuf+off); off += 2;
+      val_len = bytes_ntohs(pbuf+off); off += 2;
+      if(rdlength - i < (size_t)(4 + val_len))
+	break;
+
+      param = scamper_host_rr_svcb_param_alloc(key, val_len, pbuf + off);
+      if(param == NULL || slist_tail_push(list, param) == NULL)
+	goto err;
+      param = NULL;
+      paramc++;
+
+      i += (4 + val_len);
+      off += val_len;
+    }
+
+  if((svcb = scamper_host_rr_svcb_alloc(prio, tgt, paramc)) == NULL)
+    goto err;
+  i = 0;
+  while((param = slist_head_pop(list)) != NULL)
+    svcb->params[i++] = param;
+  rr->un.svcb = svcb;
+
+  slist_free(list);
+  return 0;
+
+ err:
+  if(param != NULL) scamper_host_rr_svcb_param_free(param);
+  if(list != NULL) slist_free_cb(list,
+				 (slist_free_t)scamper_host_rr_svcb_param_free);
+  return -1;
+}
+
 #ifdef TEST_HOST_RR_LIST
 slist_t *host_rr_list(const uint8_t *buf, size_t off, size_t len)
 #else
@@ -793,6 +854,12 @@ static slist_t *host_rr_list(const uint8_t *buf, size_t off, size_t len)
 	  else if(type == SCAMPER_HOST_TYPE_OPT)
 	    {
 	      if(extract_opt(rr, buf, len, off, rdlength) != 0)
+		goto err;
+	    }
+	  else if(class == SCAMPER_HOST_CLASS_IN &&
+		  type == SCAMPER_HOST_TYPE_SVCB)
+	    {
+	      if(extract_svcb(rr, buf, len, off, rdlength) != 0)
 		goto err;
 	    }
 
@@ -1045,18 +1112,60 @@ static void host_udp_read(SOCKET fd, void *param)
   return;
 }
 
+static int embed_ecs(const char *ecs, uint8_t *buf)
+{
+  struct sockaddr_storage sas;
+  struct sockaddr *sa = (struct sockaddr *)&sas;
+  int bc, off, plen;
+  uint16_t family;
+  uint8_t *va;
+
+  if(prefix_to_sockaddr(ecs, (struct sockaddr *)&sas) != 0)
+    return -1;
+
+  if(sa->sa_family == AF_INET)
+    {
+      va = (uint8_t *)(&((struct sockaddr_in *)sa)->sin_addr);
+      plen = ((struct sockaddr_in *)sa)->sin_port;
+      family = 1;
+    }
+  else if(sa->sa_family == AF_INET6)
+    {
+      va = (uint8_t *)(&((struct sockaddr_in6 *)sa)->sin6_addr);
+      plen = ((struct sockaddr_in6 *)sa)->sin6_port;
+      family = 2;
+    }
+  else return -1;
+
+  /* how many bytes of the prefix do we copy into the option */
+  bc = (plen / 8);
+  if((plen % 8) != 0)
+    bc++;
+
+  off = 0;
+  bytes_htons(buf+off, SCAMPER_HOST_RR_OPT_ELEM_CODE_ECS); off += 2;
+  bytes_htons(buf+off, 4 + bc); off += 2;
+  bytes_htons(buf+off, family); off += 2;
+  buf[off++] = plen;
+  buf[off++] = 0;
+  memcpy(buf+off, va, bc); off += bc;
+  return off;
+}
+
 static int do_host_probe_query(const scamper_host_t *host,
 			       const host_state_t *state, uint16_t id,
 			       uint8_t *buf, size_t *len)
 {
   const char *ptr, *dot;
-  uint16_t arcount = 0;
+  uint16_t arcount = 0, rdlength;
+  uint8_t *rdptr;
+  int ecs_len;
   size_t off;
 
   if(*len < 12)
     return -1;
 
-  if(host->flags & SCAMPER_HOST_FLAG_NSID)
+  if(host->flags & SCAMPER_HOST_FLAG_NSID || host->ecs != NULL)
     arcount = 1;
 
   /* 12 bytes of DNS header */
@@ -1105,15 +1214,31 @@ static int do_host_probe_query(const scamper_host_t *host,
   bytes_htons(buf+off, host->qtype); off += 2;
   bytes_htons(buf+off, host->qclass); off += 2;
 
-  if(host->flags & SCAMPER_HOST_FLAG_NSID)
+  if((host->flags & SCAMPER_HOST_FLAG_NSID) != 0 || host->ecs != NULL)
     {
       buf[off++] = 0;                       /* qname: root */
       bytes_htons(buf+off, SCAMPER_HOST_TYPE_OPT); off += 2;
       bytes_htons(buf+off, 1232); off += 2; /* udp option size: 1232 */
       bytes_htonl(buf+off, 0); off += 4;    /* extended rcode + flags: 0 */
-      bytes_htons(buf+off, 4); off += 2;    /* rdlength: 4 */
-      bytes_htons(buf+off, SCAMPER_HOST_RR_OPT_ELEM_CODE_NSID); off += 2;
-      bytes_htons(buf+off, 0); off += 2;
+
+      rdptr = buf+off; off += 2;
+      rdlength = 0;
+
+      if((host->flags & SCAMPER_HOST_FLAG_NSID) != 0)
+	{
+	  bytes_htons(buf+off, SCAMPER_HOST_RR_OPT_ELEM_CODE_NSID); off += 2;
+	  bytes_htons(buf+off, 0); off += 2;
+	  rdlength += 4;
+	}
+      if(host->ecs != NULL)
+	{
+	  if((ecs_len = embed_ecs(host->ecs, buf+off)) < 0)
+	    return -1;
+	  off += ecs_len;
+	  rdlength += ecs_len;
+	}
+
+      bytes_htons(rdptr, rdlength);
     }
 
   *len = off;
@@ -1136,16 +1261,15 @@ static int do_host_probe_udp(scamper_task_t *task)
   int af;
 
 #ifndef _WIN32 /* SOCKET vs int on windows */
-  int fd;
+  int fd = -1;
 #else
-  SOCKET fd;
+  SOCKET fd = INVALID_SOCKET;
 #endif
 
 #ifdef HAVE_SCAMPER_DEBUG
   char buf[128], qtype[16];
 #endif
 
-  fd = socket_invalid();
   af = scamper_addr_af(host->dst);
   assert(af == AF_INET || af == AF_INET6);
 
