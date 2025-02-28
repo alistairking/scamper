@@ -517,6 +517,16 @@ static void do_ping_handle_dl(scamper_task_t *task, scamper_dl_rec_t *dl)
 
   if(direction == DIR_INBOUND)
     {
+#if 0
+      /*
+       * if we expect to see the packet outbound on the datalink
+       * socket (because we did not transmit it on the datalink) and
+       * we have not yet seen it, then don't match this packet.
+       */
+      if(probe->dlts == 0 && probe->dltx == 0)
+	return;
+#endif
+
       /* allocate a reply structure for the response */
       if((reply = scamper_ping_reply_alloc()) == NULL)
 	{
