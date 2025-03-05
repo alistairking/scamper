@@ -64,6 +64,7 @@ typedef struct ping_state
   uint16_t           seq;
   uint8_t           *payload;
   uint16_t           payload_len;
+  uint16_t           pending;
 
   /* ip pre-specified timestamp options */
   struct in_addr     tsps_ips[4];
@@ -530,6 +531,7 @@ static void do_ping_handle_dl(scamper_task_t *task, scamper_dl_rec_t *dl)
 
       /* put together details of the reply */
       timeval_diff_tv(&reply->rtt, &probe->tx, &dl->dl_tv);
+      probe->flags      &= (~SCAMPER_PING_REPLY_FLAG_PENDING);
       reply->flags       = probe->flags;
       reply->reply_size  = dl->dl_ip_size;
       reply->reply_proto = dl->dl_ip_proto;
@@ -835,6 +837,7 @@ static void do_ping_handle_icmp(scamper_task_t *task, scamper_icmp_resp_t *ir)
 
   /* put together details of the reply */
   timeval_diff_tv(&reply->rtt, &probe->tx, &ir->ir_rx);
+  probe->flags      &= (~SCAMPER_PING_REPLY_FLAG_PENDING);
   reply->flags       = probe->flags;
   reply->reply_size  = ir->ir_ip_size;
   reply->icmp_type   = ir->ir_icmp_type;
@@ -1293,11 +1296,35 @@ static int ping_state_alloc(scamper_task_t *task)
   return -1;
 }
 
-static void ping_stream(scamper_task_t *task)
+static void ping_clear_pending(scamper_task_t *task, const struct timeval *now)
+{
+  scamper_ping_t *ping  = ping_getdata(task);
+  ping_state_t   *state = ping_getstate(task);
+  scamper_ping_probe_t *probe;
+  struct timeval  floor;
+
+  if(ping->ping_sent <= 0 || state == NULL)
+    return;
+
+  timeval_cpy(&floor, now);
+  timeval_sub_tv(&floor, &ping->wait_timeout);
+  while(state->pending < ping->ping_sent)
+    {
+      probe = ping->probes[state->pending];
+      if(timeval_cmp(&probe->tx, &floor) > 0)
+	break;
+      probe->flags &= ~SCAMPER_PING_REPLY_FLAG_PENDING;
+      state->pending++;
+    }
+
+  return;
+}
+
+static void ping_stream(scamper_task_t *task, const struct timeval *now)
 {
   scamper_task_t *dup;
-  scamper_ping_t *ping;
 
+  ping_clear_pending(task, now);
   if((dup = scamper_task_dup(task)) == NULL)
     return;
   ping_stop(dup, SCAMPER_PING_STOP_INPROGRESS, 0);
@@ -1590,6 +1617,7 @@ static void do_ping_probe(scamper_task_t *task)
       pp->flags = SCAMPER_PING_REPLY_FLAG_PROBE_IPID;
       pp->ipid = ipid;
     }
+  pp->flags |= SCAMPER_PING_REPLY_FLAG_PENDING;
   if(state->sports != NULL && state->seq > 0)
     pp->sport = state->sports[state->seq];
   ping->probes[state->seq] = pp;
@@ -1597,7 +1625,7 @@ static void do_ping_probe(scamper_task_t *task)
   ping->ping_sent++;
 
   if(ping->stream > 0 && (ping->ping_sent % ping->stream) == 0)
-    ping_stream(task);
+    ping_stream(task, &probe.pr_tx);
 
  queue:
   if(ping->ping_sent < ping->probe_count)
@@ -1616,6 +1644,9 @@ static void do_ping_probe(scamper_task_t *task)
 
 static void do_ping_write(scamper_file_t *sf, scamper_task_t *task)
 {
+  struct timeval now;
+  gettimeofday_wrap(&now);
+  ping_clear_pending(task, &now);
   scamper_file_write_ping(sf, ping_getdata(task), task);
   return;
 }
