@@ -374,6 +374,7 @@ static char *ping_stats(const scamper_ping_t *ping)
   scamper_ping_stats_t *stats;
   char buf[512], str[64], *dup;
   size_t off = 0;
+  uint32_t total;
 
   if((stats = scamper_ping_stats_alloc(ping)) == NULL)
     return NULL;
@@ -381,17 +382,17 @@ static char *ping_stats(const scamper_ping_t *ping)
   string_concat_u32(buf, sizeof(buf), &off, "\"statistics\":{\"replies\":",
 		    stats->nreplies);
 
-  if(ping->ping_sent != 0)
+  if(ping->ping_sent > stats->npend)
     {
+      total = ping->ping_sent - stats->npend;
       string_concat(buf, sizeof(buf), &off, ", \"loss\":");
-      if(stats->nloss == 0)
-	string_concat(buf, sizeof(buf), &off, "0");
-      else if(stats->nreplies == 0)
+      if(stats->nreplies == 0)
 	string_concat(buf, sizeof(buf), &off, "1");
+      else if(stats->nreplies == total)
+	string_concat(buf, sizeof(buf), &off, "0");
       else
 	string_concaf(buf, sizeof(buf), &off, "%.2f",
-		      (float)(ping->ping_sent - stats->nreplies)
-		      / ping->ping_sent);
+		      (float)(total - stats->nreplies) / total);
     }
   if(stats->nreplies > 0)
     {
@@ -408,6 +409,8 @@ static char *ping_stats(const scamper_ping_t *ping)
     string_concat_u32(buf, sizeof(buf), &off, ", \"ndups\":", stats->ndups);
   if(stats->nerrs > 0)
     string_concat_u32(buf, sizeof(buf), &off, ", \"nerrs\":", stats->nerrs);
+  if(stats->npend > 0)
+    string_concat_u32(buf, sizeof(buf), &off, ", \"npend\":", stats->npend);
 
   string_concatc(buf, sizeof(buf), &off, '}');
   dup = strdup(buf);
