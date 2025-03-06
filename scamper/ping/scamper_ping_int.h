@@ -173,6 +173,7 @@ struct scamper_ping_stats
   uint32_t       ndups;
   uint32_t       nloss;
   uint32_t       nerrs;
+  uint32_t       npend;
   struct timeval min_rtt;
   struct timeval max_rtt;
   struct timeval avg_rtt;

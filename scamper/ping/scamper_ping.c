@@ -105,9 +105,14 @@ scamper_ping_stats_t *scamper_ping_stats_alloc(const scamper_ping_t *ping)
 
   for(i=0; i<ping->ping_sent; i++)
     {
-      if((probe = ping->probes[i]) == NULL ||
-	 probe->flags & SCAMPER_PING_REPLY_FLAG_PENDING)
+      if((probe = ping->probes[i]) == NULL)
 	continue;
+
+      if(probe->flags & SCAMPER_PING_REPLY_FLAG_PENDING)
+	{
+	  stats->npend++;
+	  continue;
+	}
 
       rxc = 0;
       err = 0;
