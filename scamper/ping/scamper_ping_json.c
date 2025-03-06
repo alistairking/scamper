@@ -155,12 +155,23 @@ static void ping_probe_json(char *buf, size_t len, size_t *off,
 {
   uint16_t sport, dport;
   char *pt = "bug";
+  size_t off2;
+  char tmp[64];
 
   string_concatc(buf, len, off, reply == 0 ? '{' : ',');
   string_concat_u16(buf, len, off, "\"seq\":", probe->id);
 
-  if(reply == 0 && probe->flags & SCAMPER_PING_REPLY_FLAG_DLTX)
-    string_concat(buf, len, off, ", \"probe_flags\":[\"dltxts\"]");
+  if(reply == 0)
+    {
+      off2 = 0;
+      if(probe->flags & SCAMPER_PING_REPLY_FLAG_DLTX)
+	string_concat(tmp, sizeof(tmp), &off2, "\"dltxts\"");
+      if(probe->flags & SCAMPER_PING_REPLY_FLAG_PENDING)
+	string_concat2(tmp, sizeof(tmp), &off2,
+		       off2 != 0 ? ", " : "", "\"pending\"");
+      if(off2 != 0)
+	string_concat3(buf, len, off, ", \"probe_flags\":[", tmp, "]");
+    }
 
   if(probe->tx.tv_sec != 0)
     {
@@ -367,11 +378,10 @@ static char *ping_stats(const scamper_ping_t *ping)
   if(ping->ping_sent != 0)
     {
       string_concat(buf, sizeof(buf), &off, ", \"loss\":");
-
-      if(stats->nreplies == 0)
-	string_concatc(buf, sizeof(buf), &off, '1');
-      else if(stats->nreplies == ping->ping_sent)
-	string_concatc(buf, sizeof(buf), &off, '0');
+      if(stats->nloss == 0)
+	string_concat(buf, sizeof(buf), &off, "0");
+      else if(stats->nreplies == 0)
+	string_concat(buf, sizeof(buf), &off, "1");
       else
 	string_concaf(buf, sizeof(buf), &off, "%.2f",
 		      (float)(ping->ping_sent - stats->nreplies)
