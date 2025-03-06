@@ -364,11 +364,10 @@ static char *ping_stats(const scamper_ping_t *ping)
   if(ping->ping_sent != 0)
     {
       string_concat(buf, sizeof(buf), &off, ", \"loss\":");
-
-      if(stats->nreplies == 0)
-	string_concat(buf, sizeof(buf), &off, "1");
-      else if(stats->nreplies == ping->ping_sent)
+      if(stats->nloss == 0)
 	string_concat(buf, sizeof(buf), &off, "0");
+      else if(stats->nreplies == 0)
+	string_concat(buf, sizeof(buf), &off, "1");
       else
 	string_concaf(buf, sizeof(buf), &off, "%.2f",
 		      (float)(ping->ping_sent - stats->nreplies)
