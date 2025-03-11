@@ -1,7 +1,7 @@
 /*
  * scamper_do_dealias.c
  *
- * $Id: scamper_dealias_do.c,v 1.204 2024/12/30 03:59:35 mjl Exp $
+ * $Id: scamper_dealias_do.c,v 1.205 2025/03/11 00:31:05 mjl Exp $
  *
  * Copyright (C) 2008-2011 The University of Waikato
  * Copyright (C) 2012-2013 Matthew Luckie
@@ -2823,11 +2823,18 @@ static void do_dealias_sigs(scamper_task_t *task)
     dealias_midardisc_init,
   };
   scamper_dealias_t             *dealias = dealias_getdata(task);
-  dealias_state_t               *state = NULL;
+  dealias_state_t               *state = dealias_getstate(task);
   scamper_dealias_probedef_t    *def;
   char errbuf[256];
   size_t errlen = sizeof(errbuf);
   uint32_t p;
+
+  /*
+   * this function might have already been called if the task was held
+   * because its signature overlapped with another task.
+   */
+  if(state != NULL)
+    return;
 
   /* allocate a state for the task */
   if((state = malloc_zero(sizeof(dealias_state_t))) == NULL ||

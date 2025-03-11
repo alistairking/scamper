@@ -51,6 +51,13 @@
 #include "mjl_patricia.h"
 #include "utils.h"
 
+typedef struct task_onhold
+{
+  scamper_task_t *blocker; /* the task that is the blocker */
+  scamper_task_t *blocked; /* the task that is blocked */
+  dlist_node_t   *node;    /* node in blocker->onhold */
+} task_onhold_t;
+
 struct scamper_task
 {
   /* the data pointer points to the collected data */
@@ -59,11 +66,14 @@ struct scamper_task
   /* any state kept during the data collection is kept here */
   void                     *state;
 
-  /* state / details kept internally to the task */
-  dlist_t                  *onhold;
-
   /* various callbacks that scamper uses to handle this task */
   scamper_task_funcs_t     *funcs;
+
+  /* list of task_onhold_t, if tasks are blocked on this task */
+  dlist_t                  *onhold;
+
+  /* if this task is blocked, structure pointing to the blocker */
+  task_onhold_t            *toh;
 
   /* pointer to a queue structure that manages this task in the queues */
   scamper_queue_t          *queue;
@@ -133,12 +143,6 @@ typedef struct s2x
   struct timeval      expiry;
   dlist_node_t       *node;
 } s2x_t;
-
-typedef struct task_onhold
-{
-  void          (*unhold)(void *param);
-  void           *param;
-} task_onhold_t;
 
 static patricia_t  *tx_ip4 = NULL;
 static patricia_t  *tx_ip6 = NULL;
@@ -987,37 +991,24 @@ void scamper_task_sig_expiry_run(const struct timeval *now)
   return;
 }
 
-void *scamper_task_onhold(scamper_task_t *task, void *param,
-			  void (*unhold)(void *param))
+int scamper_task_onhold(scamper_task_t *blocker, scamper_task_t *blocked)
 {
   task_onhold_t *toh = NULL;
-  dlist_node_t *cookie;
 
-  if(task->onhold == NULL && (task->onhold = dlist_alloc()) == NULL)
-    goto err;
-  if((toh = malloc_zero(sizeof(task_onhold_t))) == NULL)
-    goto err;
-  if((cookie = dlist_tail_push(task->onhold, toh)) == NULL)
+  if((blocker->onhold == NULL && (blocker->onhold = dlist_alloc()) == NULL) ||
+     (toh = malloc_zero(sizeof(task_onhold_t))) == NULL ||
+     (toh->node = dlist_tail_push(blocker->onhold, toh)) == NULL)
     goto err;
 
-  toh->param = param;
-  toh->unhold = unhold;
+  toh->blocker = blocker;
+  toh->blocked = blocked;
+  blocked->toh = toh;
 
-  return cookie;
+  return 0;
 
  err:
   if(toh != NULL) free(toh);
-  return NULL;
-}
-
-int scamper_task_dehold(scamper_task_t *task, void *cookie)
-{
-  task_onhold_t *toh;
-  assert(task->onhold != NULL);
-  if((toh = dlist_node_pop(task->onhold, cookie)) == NULL)
-    return -1;
-  free(toh);
-  return 0;
+  return -1;
 }
 
 int scamper_task_is_inprog(scamper_task_t *task)
@@ -1115,12 +1106,26 @@ void scamper_task_free(scamper_task_t *task)
 
   if(task->onhold != NULL)
     {
-      while((toh = dlist_head_pop(task->onhold)) != NULL)
+      /*
+       * pop held tasks off from tail, as scamper_source_task_unhold
+       * pushes each task to the front of the list.  this retains
+       * ordering.
+       */
+      while((toh = dlist_tail_pop(task->onhold)) != NULL)
 	{
-	  toh->unhold(toh->param);
+	  toh->blocked->toh = NULL;
+	  scamper_source_task_unhold(toh->blocked);
 	  free(toh);
 	}
       dlist_free(task->onhold);
+      task->onhold = NULL;
+    }
+
+  if(task->toh != NULL)
+    {
+      dlist_node_pop(task->toh->blocker->onhold, task->toh->node);
+      free(task->toh);
+      task->toh = NULL;
     }
 
   if(task->cyclemon != NULL)

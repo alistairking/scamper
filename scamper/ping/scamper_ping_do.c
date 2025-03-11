@@ -1685,7 +1685,7 @@ static void do_ping_free(scamper_task_t *task)
 static void do_ping_sigs(scamper_task_t *task)
 {
   scamper_ping_t *ping = ping_getdata(task);
-  ping_state_t *state = NULL;
+  ping_state_t *state = ping_getstate(task);
   scamper_task_sig_t *sig = NULL;
   char errbuf[256];
   size_t errlen = sizeof(errbuf);
@@ -1695,6 +1695,13 @@ static void do_ping_sigs(scamper_task_t *task)
 #ifdef HAVE_SCAMPER_DEBUG
   const char *typestr;
 #endif
+
+  /*
+   * this function might have already been called if the task was held
+   * because its signature overlapped with another task.
+   */
+  if(state != NULL)
+    return;
 
   if((state = malloc_zero(sizeof(ping_state_t))) == NULL)
     {

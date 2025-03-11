@@ -4514,11 +4514,18 @@ int scamper_do_trace_dtree_lss_clear(char *name)
 static void do_trace_sigs(scamper_task_t *task)
 {
   scamper_trace_t *trace = trace_getdata(task);
-  trace_state_t *state = NULL;
+  trace_state_t *state = trace_getstate(task);
   scamper_task_sig_t *sig = NULL;
   char errbuf[256];
   size_t errlen = sizeof(errbuf);
   int i;
+
+  /*
+   * this function might have already been called if the task was held
+   * because its signature overlapped with another task.
+   */
+  if(state != NULL)
+    return;
 
   /* allocate state for storing fds in */
   if((state = malloc_zero(sizeof(trace_state_t))) == NULL)

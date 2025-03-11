@@ -123,6 +123,8 @@ void scamper_sourcetask_free(scamper_sourcetask_t *st);
 scamper_source_t *scamper_sourcetask_getsource(scamper_sourcetask_t *st);
 uint32_t scamper_sourcetask_getid(const scamper_sourcetask_t *st);
 
+void scamper_source_task_unhold(struct scamper_task *task);
+
 /* functions for managing a collection of sources */
 int scamper_sources_add(scamper_source_t *source);
 int scamper_sources_gettask(struct scamper_task **task);

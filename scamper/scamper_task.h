@@ -245,21 +245,11 @@ void scamper_task_anc_del(scamper_task_t *task, scamper_task_anc_t *anc);
  * scamper_task_onhold
  *
  * given a task that another is blocked on, register the fact.
- * when the task is free'd, the unhold function will be called.
+ * when either task is free'd, the other task will be placed back
+ * into the source's command queue.
  *
- * returns a cookie, so the dehold function can cancel the task
- * from  being on hold at a later point.
  */
-void *scamper_task_onhold(scamper_task_t *task, void *param,
-			  void (*unhold)(void *param));
-
-/*
- * scamper_task_dehold
- *
- * given a task and a cookie returned from putting another task on hold,
- * de-hold the task with this cookie.
- */
-int scamper_task_dehold(scamper_task_t *task, void *cookie);
+int scamper_task_onhold(scamper_task_t *blocker, scamper_task_t *blocked);
 
 int scamper_task_init(void);
 void scamper_task_cleanup(void);
