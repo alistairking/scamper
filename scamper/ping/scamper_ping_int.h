@@ -259,6 +259,7 @@ struct scamper_ping_reply
   uint8_t                    icmp_code;
 
   /* the tcp flags returned */
+  uint16_t                   tcp_mss;
   uint8_t                    tcp_flags;
 
   /* the time elapsed between sending the probe and getting this response */
@@ -335,6 +336,7 @@ struct scamper_ping
   uint16_t               sport;            /* -F */
   uint16_t               dport;            /* -d */
   uint16_t               icmpsum;          /* -C */
+  uint16_t               tcpmss;           /* -O mss= */
   uint32_t               tcpseq;           /* -A w/ tcp-syn and tcp-rst */
   uint32_t               tcpack;           /* -A w/ other tcp probe methods */
   uint16_t               stop_count;       /* -o */

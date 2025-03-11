@@ -553,6 +553,7 @@ static void do_ping_handle_dl(scamper_task_t *task, scamper_dl_rec_t *dl)
 	{
 	  scamper_dl_rec_tcp_print(dl);
 	  reply->tcp_flags = dl->dl_tcp_flags;
+	  reply->tcp_mss   = dl->dl_tcp_mss;
 	}
       else if(SCAMPER_DL_IS_ICMP(dl))
 	{
@@ -1549,6 +1550,7 @@ static void do_ping_probe(scamper_task_t *task)
       probe.pr_tcp_seq   = ping->tcpseq;
       probe.pr_tcp_ack   = ping->tcpack;
       probe.pr_tcp_win   = 65535;
+      probe.pr_tcp_mss   = ping->tcpmss;
 
       if(SCAMPER_PING_METHOD_IS_VARY_SPORT(ping))
 	probe.pr_tcp_sport = state->sports[state->seq];

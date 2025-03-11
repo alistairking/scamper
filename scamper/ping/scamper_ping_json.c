@@ -101,6 +101,9 @@ static char *ping_header(const scamper_ping_t *ping)
     {
       string_concat_u32(buf, sizeof(buf), &off, ", \"tcp_seq\":", ping->tcpseq);
       string_concat_u32(buf, sizeof(buf), &off, ", \"tcp_ack\":", ping->tcpack);
+      if(ping->tcpmss > 0)
+	string_concat_u16(buf, sizeof(buf), &off, ", \"tcp_mss\":",
+			  ping->tcpmss);
     }
 
   if(ping->datalen > 0 && ping->data != NULL)
@@ -314,6 +317,9 @@ static char *ping_reply(const scamper_ping_t *ping,
     {
       string_concat_u8(buf, sizeof(buf), &off, ", \"tcp_flags\":",
 		       reply->tcp_flags);
+      if(reply->tcp_mss > 0)
+	string_concat_u16(buf, sizeof(buf), &off, ", \"tcp_mss\":",
+			  reply->tcp_mss);
     }
 
   if((v4rr = reply->v4rr) != NULL)
