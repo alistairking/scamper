@@ -1,7 +1,7 @@
 /*
  * scamper_udpprobe_do.c
  *
- * $Id: scamper_udpprobe_do.c,v 1.16 2024/11/30 01:43:32 mjl Exp $
+ * $Id: scamper_udpprobe_do.c,v 1.17 2025/03/11 00:31:05 mjl Exp $
  *
  * Copyright (C) 2023-2024 The Regents of the University of California
  *
@@ -324,13 +324,20 @@ void scamper_do_udpprobe_free(void *data)
 
 static void do_udpprobe_sigs(scamper_task_t *task)
 {
-  scamper_udpprobe_t *up = (scamper_udpprobe_t *)udpprobe_getdata(task);
+  scamper_udpprobe_t *up = udpprobe_getdata(task);
+  udpprobe_state_t *state = udpprobe_getstate(task);
   scamper_task_sig_t *sig = NULL;
-  udpprobe_state_t *state = NULL;
   char errbuf[256];
   size_t errlen = sizeof(errbuf);
   uint16_t *sports = NULL;
   uint8_t i, probec = up->probe_count;
+
+  /*
+   * this function might have already been called if the task was held
+   * because its signature overlapped with another task
+   */
+  if(state != NULL)
+    return;
 
   /* allocate state for storing fds in */
   if((state = malloc_zero(sizeof(udpprobe_state_t))) == NULL ||
