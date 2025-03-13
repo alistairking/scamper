@@ -3041,11 +3041,16 @@ static void do_trace_handle_timeout(scamper_task_t *task)
   trace_probe_t   *probe;
   struct timeval now;
 
+#ifdef HAVE_SCAMPER_DEBUG
+  char buf[128];
+#endif
+
   assert(state->mode <= MODE_MAX);
 
-  /* XXX: not sure that this timeout should be handled here */
   if(state->mode == MODE_RTSOCK || state->mode == MODE_DLHDR)
     {
+      scamper_debug(__func__, "mode %d dst %s", state->mode,
+		    scamper_addr_tostr(trace->dst, buf, sizeof(buf)));
       trace_handleerror(task, 0);
       return;
     }

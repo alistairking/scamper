@@ -2084,6 +2084,8 @@ static int scamper(int argc, char *argv[])
     goto done;
 #endif
 
+  scamper_debug(__func__, "version %s", SCAMPER_VERSION);
+
   if(scamper_osinfo_init() != 0)
     goto done;
 
