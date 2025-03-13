@@ -960,8 +960,21 @@ static void do_ping_handle_timeout(scamper_task_t *task)
   scamper_ping_t *ping = ping_getdata(task);
   ping_state_t *state = ping_getstate(task);
 
-  if(state->seq == ping->attempts)
-    ping_stop(task, SCAMPER_PING_STOP_COMPLETED, 0);
+#ifdef HAVE_SCAMPER_DEBUG
+  char buf[128];
+#endif
+
+  if(state->mode == MODE_PING)
+    {
+      if(state->seq == ping->attempts)
+	ping_stop(task, SCAMPER_PING_STOP_COMPLETED, 0);
+    }
+  else
+    {
+      scamper_debug(__func__, "mode %d dst %s", state->mode,
+		    scamper_addr_tostr(ping->dst, buf, sizeof(buf)));
+      ping_stop(task, SCAMPER_PING_STOP_NONE, 0);
+    }
 
   return;
 }
