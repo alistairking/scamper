@@ -48,14 +48,18 @@ scamper_trace_hop_t *scamper_trace_hop_alloc_dm(const char *file, int line);
 
 scamper_trace_t *scamper_trace_dup(scamper_trace_t *trace);
 
+scamper_trace_probe_t *scamper_trace_probe_alloc(void);
+
+scamper_trace_probettl_t *scamper_trace_probettl_alloc(void);
+int scamper_trace_probettl_add(scamper_trace_probettl_t *pttl,
+			       scamper_trace_probe_t *probe);
+void scamper_trace_probettl_free(scamper_trace_probettl_t *pttl);
+
 /*
  * scamper_trace_hops_alloc:
  *  allocate an array of hop records to the trace object
- * scamper_trace_hops_free:
- *  free all hop records in the linked list
  */
 int scamper_trace_hops_alloc(scamper_trace_t *trace, uint16_t hops);
-void scamper_trace_hops_free(scamper_trace_hop_t *hops);
 
 /*
  * scamper_trace_pmtud_alloc:
@@ -206,8 +210,8 @@ struct scamper_trace
   /* when the trace commenced */
   struct timeval         start;
 
-  /* hops array, number of valid hops specified by hop_count */
-  scamper_trace_hop_t  **hops;
+  /* probes sent as part of traceroute */
+  scamper_trace_probettl_t **hops;
   uint16_t               hop_count;
 
   /* number of probes sent for this traceroute */
@@ -252,10 +256,43 @@ struct scamper_trace
   scamper_trace_pmtud_t *pmtud;
 
   /* if we perform last ditch probing, then record any responses here */
-  scamper_trace_hop_t   *lastditch;
+  scamper_trace_lastditch_t *lastditch;
 
   /* if we perform doubletree, record doubletree parameters and data here */
   scamper_trace_dtree_t *dtree;
+};
+
+struct scamper_trace_probettl
+{
+  scamper_trace_probe_t    **probes;
+  uint8_t                    probec;
+};
+
+/*
+ *
+ */
+struct scamper_trace_probe
+{
+  /*
+   * tx:      when we sent the probe
+   * replies: responses to the probe
+   * replyc:  number of responses in the replies array
+   * size:    the size of the probe we sent
+   * id:      an ID value identifying this probe attempt
+   * ttl:     the ttl that we sent to the trace->dst
+   * flags:   flags associated with the probe
+   */
+  struct timeval          tx;
+  scamper_trace_hop_t   **replies;
+  uint16_t                replyc;
+  uint16_t                size;
+  uint8_t                 id;
+  uint8_t                 ttl;
+  uint8_t                 flags;
+
+#ifdef BUILDING_LIBSCAMPERFILE
+  int                     refcnt;
+#endif
 };
 
 /*
@@ -265,6 +302,8 @@ struct scamper_trace
  */
 struct scamper_trace_hop
 {
+  scamper_trace_probe_t       *probe;
+
   /* the address / name of the hop that responded */
   scamper_addr_t              *hop_addr;
   char                        *hop_name;
@@ -273,17 +312,11 @@ struct scamper_trace_hop
   uint8_t                      hop_flags;
 
   /*
-   * probe_id:   the attempt # this probe is in response to [count from 0]
-   * probe_ttl:  the ttl that we sent to the trace->dst
-   * probe_size: the size of the probe we sent
    * reply_ttl:  the ttl of the reply packet
    * reply_tos:  the TOS of the reply packet
    * reply_size: the size of the icmp response we received
    * reply_ipid: the IPID value in the response
    */
-  uint8_t                      hop_probe_id;
-  uint8_t                      hop_probe_ttl;
-  uint16_t                     hop_probe_size;
   uint8_t                      hop_reply_ttl;
   uint8_t                      hop_reply_tos;
   uint16_t                     hop_reply_size;
@@ -308,13 +341,10 @@ struct scamper_trace_hop
   } hop_un;
 
   /* time elapsed between sending the probe and receiving this resp */
-  struct timeval               hop_tx;
   struct timeval               hop_rtt;
 
   /* ICMP extensions */
   struct scamper_icmpexts     *hop_icmp_exts;
-
-  struct scamper_trace_hop    *hop_next;
 
 #ifdef BUILDING_LIBSCAMPERFILE
   int                          refcnt;
@@ -342,6 +372,7 @@ struct scamper_trace_pmtud_n
   uint8_t              type;
   uint16_t             nhmtu;
   scamper_trace_hop_t *hop;
+
 #ifdef BUILDING_LIBSCAMPERFILE
   int                  refcnt;
 #endif
@@ -363,7 +394,8 @@ struct scamper_trace_pmtud
   uint16_t                  ifmtu;  /* the outgoing interface's MTU */
   uint16_t                  outmtu; /* MTU to first hop, if diff from ifmtu */
   uint16_t                  pmtu;   /* packet size that reached target */
-  scamper_trace_hop_t      *hops;   /* icmp messages */
+  scamper_trace_probe_t    *probes; /* PMTUD probes */
+  uint16_t                  probec; /* number of PMTUD probes */
   scamper_trace_pmtud_n_t **notes;  /* annotations about pmtud */
   uint8_t                   notec;  /* number of annotations */
 #ifdef BUILDING_LIBSCAMPERFILE
@@ -380,6 +412,17 @@ struct scamper_trace_dtree
   scamper_addr_t **gss;
   scamper_addr_t  *gss_stop;
   scamper_addr_t  *lss_stop;
+
+#ifdef BUILDING_LIBSCAMPERFILE
+  int              refcnt;
+#endif
+};
+
+struct scamper_trace_lastditch
+{
+  scamper_trace_probe_t **probes;
+  uint16_t                probec;
+
 #ifdef BUILDING_LIBSCAMPERFILE
   int              refcnt;
 #endif

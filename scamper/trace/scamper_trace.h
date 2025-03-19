@@ -39,10 +39,13 @@
  * only internal scamper components should include scamper_trace_int.h
  */
 typedef struct scamper_trace scamper_trace_t;
+typedef struct scamper_trace_probe scamper_trace_probe_t;
+typedef struct scamper_trace_probettl scamper_trace_probettl_t;
 typedef struct scamper_trace_hop scamper_trace_hop_t;
 typedef struct scamper_trace_pmtud_n scamper_trace_pmtud_n_t;
 typedef struct scamper_trace_pmtud scamper_trace_pmtud_t;
 typedef struct scamper_trace_dtree scamper_trace_dtree_t;
+typedef struct scamper_trace_lastditch scamper_trace_lastditch_t;
 
 char *scamper_trace_tojson(const scamper_trace_t *trace, size_t *len);
 
@@ -60,8 +63,6 @@ uint8_t scamper_trace_stop_reason_get(const scamper_trace_t *trace);
 uint8_t scamper_trace_stop_data_get(const scamper_trace_t *trace);
 char *scamper_trace_stop_tostr(const scamper_trace_t *trace,
 			       char *buf, size_t len);
-scamper_trace_hop_t *scamper_trace_hop_get(const scamper_trace_t *trace,
-					   uint8_t i);
 uint16_t scamper_trace_hop_count_get(const scamper_trace_t *trace);
 uint8_t scamper_trace_stop_hop_get(const scamper_trace_t *trace);
 
@@ -96,6 +97,8 @@ int scamper_trace_type_is_udp(const scamper_trace_t *trace);
 int scamper_trace_type_is_tcp(const scamper_trace_t *trace);
 int scamper_trace_type_is_icmp(const scamper_trace_t *trace);
 int scamper_trace_flag_is_icmpcsumdp(const scamper_trace_t *trace);
+
+void scamper_trace_probe_free(scamper_trace_probe_t *probe);
 
 /* use and free hop structures */
 scamper_trace_hop_t *scamper_trace_hop_dup(const scamper_trace_hop_t *hop);
@@ -132,7 +135,6 @@ uint8_t scamper_trace_hop_icmp_q_ttl_get(const scamper_trace_hop_t *hop);
 uint8_t scamper_trace_hop_icmp_q_tos_get(const scamper_trace_hop_t *hop);
 uint16_t scamper_trace_hop_icmp_q_ipl_get(const scamper_trace_hop_t *hop);
 uint8_t scamper_trace_hop_tcp_flags_get(const scamper_trace_hop_t *hop);
-scamper_trace_hop_t *scamper_trace_hop_next_get(const scamper_trace_hop_t *hop);
 
 #ifdef __SCAMPER_ICMPEXT_H
 scamper_icmpexts_t *

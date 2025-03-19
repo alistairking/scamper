@@ -216,9 +216,10 @@ static char *header_tostr(const scamper_trace_t *trace)
  * given a hop (with other hops possibly linked to it) create a string that
  * holds the hop.
  */
-static char *hop_tostr(const scamper_trace_t *trace, const int h)
+static char *hop_tostr(const scamper_trace_t *trace, int h)
 {
-  scamper_trace_hop_t *hop;
+  scamper_trace_probettl_t *pttl = trace->hops[h];
+  scamper_trace_hop_t *hop = NULL;
   char    *str = NULL;
   char   **str_addrs = NULL;
   size_t  *len_addrs = NULL;
@@ -232,10 +233,19 @@ static char *hop_tostr(const scamper_trace_t *trace, const int h)
   char     str_icmp[128];
   int      spare;
   int      replyc;
+  uint8_t  p;
+  uint16_t r;
 
   replyc = 0;
-  for(hop=trace->hops[h]; hop != NULL; hop = hop->hop_next)
-    replyc++;
+  if(pttl != NULL)
+    {
+      for(i=0; i<pttl->probec; i++)
+	{
+	  if(pttl->probes[i]->replyc > 0)
+	    hop = pttl->probes[i]->replies[0];
+	  replyc += pttl->probes[i]->replyc;
+	}
+    }
 
   /* if we got no responses at all for this hop */
   if(replyc == 0)
@@ -260,7 +270,7 @@ static char *hop_tostr(const scamper_trace_t *trace, const int h)
 
   if(replyc == 1)
     {
-      hop = trace->hops[h];
+      assert(hop != NULL);
       scamper_addr_tostr(hop->hop_addr, str_addr, sizeof(str_addr));
       timeval_tostr_us(&hop->hop_rtt, str_rtt, sizeof(str_rtt));
       icmp_tostr(hop, str_icmp, sizeof(str_icmp));
@@ -286,32 +296,37 @@ static char *hop_tostr(const scamper_trace_t *trace, const int h)
 
   /* for each response we have, record an entry in the array */
   i = 0;
-  for(hop = trace->hops[h]; hop != NULL; hop = hop->hop_next)
+  for(p=0; p<pttl->probec; p++)
     {
-      /*
-       * calculate the length of the address to record for this hop probe,
-       * and then generate and store the string
-       */
-      addr_str(hop->hop_addr, str_addr, sizeof(str_addr));
-      len = strlen(str_addr);
-      if((str_addrs[i] = malloc_zero(len+1)) == NULL)
-	goto out;
-      memcpy(str_addrs[i], str_addr, len+1);
-      len_addrs[i] = len;
+      for(r=0; r < pttl->probes[p]->replyc; r++)
+	{
+	  hop = pttl->probes[p]->replies[r];
 
-      /*
-       * calculate the length of the rtt and icmp data for this hop probe,
-       * and then generate and store the string
-       */
-      timeval_tostr_us(&hop->hop_rtt, str_rtt, sizeof(str_rtt));
-      icmp_tostr(hop, str_icmp, sizeof(str_icmp));
-      len = strlen(str_rtt) + 3 + strlen(str_icmp);
-      if((str_rtts[i] = malloc_zero(len+1)) == NULL)
-	goto out;
-      snprintf(str_rtts[i],len+1,"%s ms%s",str_rtt,str_icmp);
-      len_rtts[i] = len;
+	  /*
+	   * calculate the length of the address to record for this hop probe,
+	   * and then generate and store the string
+	   */
+	  addr_str(hop->hop_addr, str_addr, sizeof(str_addr));
+	  len = strlen(str_addr);
+	  if((str_addrs[i] = malloc_zero(len+1)) == NULL)
+	    goto out;
+	  memcpy(str_addrs[i], str_addr, len+1);
+	  len_addrs[i] = len;
 
-      i++;
+	  /*
+	   * calculate the length of the rtt and icmp data for this hop probe,
+	   * and then generate and store the string
+	   */
+	  timeval_tostr_us(&hop->hop_rtt, str_rtt, sizeof(str_rtt));
+	  icmp_tostr(hop, str_icmp, sizeof(str_icmp));
+	  len = strlen(str_rtt) + 3 + strlen(str_icmp);
+	  if((str_rtts[i] = malloc_zero(len+1)) == NULL)
+	    goto out;
+	  snprintf(str_rtts[i],len+1,"%s ms%s",str_rtt,str_icmp);
+	  len_rtts[i] = len;
+
+	  i++;
+	}
     }
 
   /*
@@ -414,6 +429,7 @@ static char *mtu_tostr(const int mtu, const int size)
 
 static int pmtud_ver1(const scamper_trace_t *trace, char **mtus)
 {
+#if 0
   scamper_trace_hop_t *hop;
   uint16_t mtu, size;
   int i;
@@ -495,12 +511,13 @@ static int pmtud_ver1(const scamper_trace_t *trace, char **mtus)
       if((mtus[i] = mtu_tostr(mtu, size)) == NULL)
 	return -1;
     }
-
+#endif
   return 0;
 }
 
 static int pmtud_ver2(const scamper_trace_t *trace, char **mtus)
 {
+#if 0
   const scamper_trace_pmtud_t *pmtud = trace->pmtud;
   const scamper_trace_pmtud_n_t *note;
   const scamper_trace_hop_t *hop;
@@ -629,7 +646,7 @@ static int pmtud_ver2(const scamper_trace_t *trace, char **mtus)
 	return -1;
       h++;
     }
-
+#endif
   return 0;
 }
 
