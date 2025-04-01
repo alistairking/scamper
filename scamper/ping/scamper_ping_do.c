@@ -1,7 +1,7 @@
 /*
  * scamper_do_ping.c
  *
- * $Id: scamper_ping_do.c,v 1.203 2025/02/25 06:31:24 mjl Exp $
+ * $Id: scamper_ping_do.c,v 1.207 2025/03/31 10:14:02 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -515,6 +515,10 @@ static void do_ping_handle_dl(scamper_task_t *task, scamper_dl_rec_t *dl)
   probe = ping->probes[seq];
   assert(probe != NULL);
 
+  /* timestamp from the datalink cannot be before when the probe was sent */
+  if(timeval_cmp(&dl->dl_tv, &probe->tx) < 0)
+    return;
+
   if(direction == DIR_INBOUND)
     {
       /* allocate a reply structure for the response */
@@ -541,6 +545,7 @@ static void do_ping_handle_dl(scamper_task_t *task, scamper_dl_rec_t *dl)
 	{
 	  scamper_dl_rec_tcp_print(dl);
 	  reply->tcp_flags = dl->dl_tcp_flags;
+	  reply->tcp_mss   = dl->dl_tcp_mss;
 	}
       else if(SCAMPER_DL_IS_ICMP(dl))
 	{
@@ -608,8 +613,7 @@ static void do_ping_handle_dl(scamper_task_t *task, scamper_dl_rec_t *dl)
   else
     {
       /* outbound packet */
-      if((probe->flags & SCAMPER_PING_REPLY_FLAG_DLTX) != 0 ||
-	 timeval_cmp(&probe->tx, &dl->dl_tv) >= 0)
+      if((probe->flags & SCAMPER_PING_REPLY_FLAG_DLTX) != 0)
 	return;
 
       timeval_diff_tv(&diff, &probe->tx, &dl->dl_tv);
@@ -946,8 +950,21 @@ static void do_ping_handle_timeout(scamper_task_t *task)
   scamper_ping_t *ping = ping_getdata(task);
   ping_state_t *state = ping_getstate(task);
 
-  if(state->seq == ping->attempts)
-    ping_stop(task, SCAMPER_PING_STOP_COMPLETED, 0);
+#ifdef HAVE_SCAMPER_DEBUG
+  char buf[128];
+#endif
+
+  if(state->mode == MODE_PING)
+    {
+      if(state->seq == ping->attempts)
+	ping_stop(task, SCAMPER_PING_STOP_COMPLETED, 0);
+    }
+  else
+    {
+      scamper_debug(__func__, "mode %d dst %s", state->mode,
+		    scamper_addr_tostr(ping->dst, buf, sizeof(buf)));
+      ping_stop(task, SCAMPER_PING_STOP_NONE, 0);
+    }
 
   return;
 }
@@ -1483,6 +1500,7 @@ static void do_ping_probe(scamper_task_t *task)
       probe.pr_tcp_seq   = ping->tcpseq;
       probe.pr_tcp_ack   = ping->tcpack;
       probe.pr_tcp_win   = 65535;
+      probe.pr_tcp_mss   = ping->tcpmss;
 
       if(SCAMPER_PING_METHOD_IS_VARY_SPORT(ping))
 	probe.pr_tcp_sport = state->sports[state->seq];
@@ -1610,7 +1628,7 @@ static void do_ping_free(scamper_task_t *task)
 static void do_ping_sigs(scamper_task_t *task)
 {
   scamper_ping_t *ping = ping_getdata(task);
-  ping_state_t *state = NULL;
+  ping_state_t *state = ping_getstate(task);
   scamper_task_sig_t *sig = NULL;
   char errbuf[256];
   size_t errlen = sizeof(errbuf);
@@ -1620,6 +1638,13 @@ static void do_ping_sigs(scamper_task_t *task)
 #ifdef HAVE_SCAMPER_DEBUG
   const char *typestr;
 #endif
+
+  /*
+   * this function might have already been called if the task was held
+   * because its signature overlapped with another task.
+   */
+  if(state != NULL)
+    return;
 
   if((state = malloc_zero(sizeof(ping_state_t))) == NULL)
     {

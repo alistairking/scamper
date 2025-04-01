@@ -7,7 +7,7 @@
  * Copyright (C) 2022-2024 Matthew Luckie
  * Author: Matthew Luckie
  *
- * $Id: scamper_ping_text.c,v 1.26 2025/02/25 06:31:24 mjl Exp $
+ * $Id: scamper_ping_text.c,v 1.27 2025/03/08 05:40:43 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -41,11 +41,17 @@
 
 static char *ping_header(const scamper_ping_t *ping)
 {
-  char header[192], src[64], dst[64];
+  char header[192], addr[64];
+  size_t off = 0;
 
-  snprintf(header, sizeof(header), "ping %s to %s: %d byte packets\n",
-	   scamper_addr_tostr(ping->src, src, sizeof(src)),
-	   scamper_addr_tostr(ping->dst, dst, sizeof(dst)), ping->size);
+  string_concat(header, sizeof(header), &off, "ping");
+  if(ping->src != NULL)
+    string_concat2(header, sizeof(header), &off, " from ",
+		   scamper_addr_tostr(ping->src, addr, sizeof(addr)));
+  string_concat2(header, sizeof(header), &off, " to ",
+		 scamper_addr_tostr(ping->dst, addr, sizeof(addr)));
+  string_concat_u16(header, sizeof(header), &off, ": ", ping->size);
+  string_concat(header, sizeof(header), &off, " byte packets\n");
 
   return strdup(header);
 }

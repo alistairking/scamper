@@ -1,7 +1,7 @@
 /*
  * scamper_task.c
  *
- * $Id: scamper_task.c,v 1.105 2025/02/11 17:35:53 mjl Exp $
+ * $Id: scamper_task.c,v 1.107 2025/03/31 10:25:38 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -51,6 +51,13 @@
 #include "mjl_patricia.h"
 #include "utils.h"
 
+typedef struct task_onhold
+{
+  scamper_task_t *blocker; /* the task that is the blocker */
+  scamper_task_t *blocked; /* the task that is blocked */
+  dlist_node_t   *node;    /* node in blocker->onhold */
+} task_onhold_t;
+
 struct scamper_task
 {
   /* the data pointer points to the collected data */
@@ -59,11 +66,14 @@ struct scamper_task
   /* any state kept during the data collection is kept here */
   void                     *state;
 
-  /* state / details kept internally to the task */
-  dlist_t                  *onhold;
-
   /* various callbacks that scamper uses to handle this task */
   scamper_task_funcs_t     *funcs;
+
+  /* list of task_onhold_t, if tasks are blocked on this task */
+  dlist_t                  *onhold;
+
+  /* if this task is blocked, structure pointing to the blocker */
+  task_onhold_t            *toh;
 
   /* pointer to a queue structure that manages this task in the queues */
   scamper_queue_t          *queue;
@@ -133,12 +143,6 @@ typedef struct s2x
   struct timeval      expiry;
   dlist_node_t       *node;
 } s2x_t;
-
-typedef struct task_onhold
-{
-  void          (*unhold)(void *param);
-  void           *param;
-} task_onhold_t;
 
 static patricia_t  *tx_ip4 = NULL;
 static patricia_t  *tx_ip6 = NULL;
@@ -596,7 +600,8 @@ static int overlap(uint16_t a, uint16_t b, uint16_t x, uint16_t y)
   return 0;
 }
 
-static int sig_tx_ip_overlap(scamper_task_sig_t *a, scamper_task_sig_t *b)
+static int sig_tx_ip_overlap(const scamper_task_sig_t *a,
+			     const scamper_task_sig_t *b)
 {
   if(a->sig_tx_ip_proto != b->sig_tx_ip_proto)
     return 0;
@@ -631,11 +636,19 @@ static int sig_tx_ip_overlap(scamper_task_sig_t *a, scamper_task_sig_t *b)
   return 1;
 }
 
-static int trie_addr_sig_tx_ip_overlap(trie_addr_t *ta, scamper_task_sig_t *sig)
+static int trie_addr_sig_tx_ip_overlap(const scamper_task_sig_t *sig)
 {
+  trie_addr_t *ta;
   dlist_node_t *dn;
   s2t_t *s2t;
   s2x_t *s2x;
+
+  /*
+   * if we don't have any measurement to that address, then the port
+   * is clear
+   */
+  if((ta = trie_addr_find(sig->sig_tx_ip_dst)) == NULL)
+    return 0;
 
   for(dn=dlist_head_node(ta->s2t_list); dn != NULL; dn=dlist_node_next(dn))
     {
@@ -653,32 +666,47 @@ static int trie_addr_sig_tx_ip_overlap(trie_addr_t *ta, scamper_task_sig_t *sig)
   return 0;
 }
 
+int scamper_task_sig_icmpid_used(scamper_addr_t *dst, uint8_t type, uint16_t id)
+{
+  scamper_task_sig_t sig;
+
+  sig.sig_tx_ip_dst = dst;
+  if(SCAMPER_ADDR_TYPE_IS_IPV4(dst))
+    {
+      if(type == ICMP_ECHO)
+	SCAMPER_TASK_SIG_ICMP_ECHO(&sig, id);
+      else if(type == ICMP_TSTAMP)
+	SCAMPER_TASK_SIG_ICMP_TIME(&sig, id);
+      else
+	return -1;
+    }
+  else if(SCAMPER_ADDR_TYPE_IS_IPV6(dst))
+    {
+      if(type == ICMP6_ECHO_REQUEST)
+	SCAMPER_TASK_SIG_ICMP_ECHO(&sig, id);
+      else
+	return -1;
+    }
+
+  /* check to see if there's an overlapping signature */
+  return trie_addr_sig_tx_ip_overlap(&sig);
+}
+
 int scamper_task_sig_sport_used(scamper_addr_t *dst, uint8_t proto,
 				uint16_t sport, uint16_t dport)
 {
   scamper_task_sig_t sig;
-  trie_addr_t *ta;
 
   sig.sig_tx_ip_dst = dst;
   if(proto == IPPROTO_TCP)
     SCAMPER_TASK_SIG_TCP(&sig, sport, dport);
   else if(proto == IPPROTO_UDP)
     SCAMPER_TASK_SIG_UDP(&sig, sport, dport);
-  else if((proto == IPPROTO_ICMP && SCAMPER_ADDR_TYPE_IS_IPV4(dst)) ||
-	  (proto == IPPROTO_ICMPV6 && SCAMPER_ADDR_TYPE_IS_IPV6(dst)))
-    SCAMPER_TASK_SIG_ICMP_ECHO(&sig, sport);
   else
     return -1;
 
-  /*
-   * if we don't have any measurement to that address, then the port
-   * is clear
-   */
-  if((ta = trie_addr_find(dst)) == NULL)
-    return 0;
-
   /* check to see if there's an overlapping signature */
-  return trie_addr_sig_tx_ip_overlap(ta, &sig);
+  return trie_addr_sig_tx_ip_overlap(&sig);
 }
 
 scamper_task_t *scamper_task_find(scamper_task_sig_t *sig)
@@ -987,37 +1015,24 @@ void scamper_task_sig_expiry_run(const struct timeval *now)
   return;
 }
 
-void *scamper_task_onhold(scamper_task_t *task, void *param,
-			  void (*unhold)(void *param))
+int scamper_task_onhold(scamper_task_t *blocker, scamper_task_t *blocked)
 {
   task_onhold_t *toh = NULL;
-  dlist_node_t *cookie;
 
-  if(task->onhold == NULL && (task->onhold = dlist_alloc()) == NULL)
-    goto err;
-  if((toh = malloc_zero(sizeof(task_onhold_t))) == NULL)
-    goto err;
-  if((cookie = dlist_tail_push(task->onhold, toh)) == NULL)
+  if((blocker->onhold == NULL && (blocker->onhold = dlist_alloc()) == NULL) ||
+     (toh = malloc_zero(sizeof(task_onhold_t))) == NULL ||
+     (toh->node = dlist_tail_push(blocker->onhold, toh)) == NULL)
     goto err;
 
-  toh->param = param;
-  toh->unhold = unhold;
+  toh->blocker = blocker;
+  toh->blocked = blocked;
+  blocked->toh = toh;
 
-  return cookie;
+  return 0;
 
  err:
   if(toh != NULL) free(toh);
-  return NULL;
-}
-
-int scamper_task_dehold(scamper_task_t *task, void *cookie)
-{
-  task_onhold_t *toh;
-  assert(task->onhold != NULL);
-  if((toh = dlist_node_pop(task->onhold, cookie)) == NULL)
-    return -1;
-  free(toh);
-  return 0;
+  return -1;
 }
 
 /*
@@ -1076,12 +1091,26 @@ void scamper_task_free(scamper_task_t *task)
 
   if(task->onhold != NULL)
     {
-      while((toh = dlist_head_pop(task->onhold)) != NULL)
+      /*
+       * pop held tasks off from tail, as scamper_source_task_unhold
+       * pushes each task to the front of the list.  this retains
+       * ordering.
+       */
+      while((toh = dlist_tail_pop(task->onhold)) != NULL)
 	{
-	  toh->unhold(toh->param);
+	  toh->blocked->toh = NULL;
+	  scamper_source_task_unhold(toh->blocked);
 	  free(toh);
 	}
       dlist_free(task->onhold);
+      task->onhold = NULL;
+    }
+
+  if(task->toh != NULL)
+    {
+      dlist_node_pop(task->toh->blocker->onhold, task->toh->node);
+      free(task->toh);
+      task->toh = NULL;
     }
 
   if(task->cyclemon != NULL)

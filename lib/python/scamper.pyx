@@ -8377,7 +8377,7 @@ cdef class ScamperFile:
                 raise ValueError("invalid type")
 
             seen = False
-            for i from 0 <= i < 10 by 1:
+            for i in range(typec):
                 if typea[i] == o_type:
                     seen = True
                     break
@@ -9096,6 +9096,14 @@ cdef class ScamperCtrl:
     @eofcb.setter
     def eofcb(self, eofcb):
         self._eofcb = eofcb
+
+    @property
+    def outfile(self):
+        return self._outfile
+
+    @outfile.setter
+    def outfile(self, outfile):
+        self._outfile = outfile
 
     @property
     def taskc(self):

@@ -1,7 +1,7 @@
 /*
  * scamper_dl: manage BPF/PF_PACKET datalink instances for scamper
  *
- * $Id: scamper_dl.c,v 1.233 2024/12/30 03:16:57 mjl Exp $
+ * $Id: scamper_dl.c,v 1.234 2025/03/29 18:46:03 mjl Exp $
  *
  *          Matthew Luckie
  *          Ben Stasiewicz added fragmentation support.
@@ -69,7 +69,7 @@ typedef struct sock_fprog  filt_prog_t;
 #include "scamper_addr_int.h"
 #include "scamper_fds.h"
 #include "scamper_dl.h"
-#include "scamper_privsep.h"
+#include "scamper_priv.h"
 #include "scamper_task.h"
 #include "scamper_if.h"
 #include "scamper_osinfo.h"
@@ -2911,22 +2911,9 @@ int scamper_dl_open_fd(int ifindex)
  */
 int scamper_dl_open(int ifindex)
 {
-  int fd = -1;
+  int fd;
 
-#ifdef DISABLE_PRIVSEP
-#ifdef HAVE_SETEUID
-  uid_t uid, euid;
-  if(scamper_seteuid_raise(&uid, &euid) != 0)
-    return -1;
-#endif
-  fd = scamper_dl_open_fd(ifindex);
-#ifdef HAVE_SETEUID
-  scamper_seteuid_lower(&uid, &euid);
-#endif
-#else
-  fd = scamper_privsep_open_datalink(ifindex);
-#endif
-  if(fd == -1)
+  if((fd = scamper_priv_dl(ifindex)) == -1)
     {
       printerror(__func__, "could not open ifindex %d", ifindex);
       return -1;

@@ -1,7 +1,7 @@
 /*
  * internal.h
  *
- * $Id: internal.h,v 1.67 2024/07/28 08:02:42 mjl Exp $
+ * $Id: internal.h,v 1.68 2025/03/30 00:12:47 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -210,7 +210,6 @@ typedef unsigned short sa_family_t;
 #include <linux/netfilter_ipv4/ip_tables.h>
 #include <linux/sockios.h>
 #include <linux/errqueue.h>
-#include <limits.h>
 
 #ifdef HAVE_LINUX_NETLINK_H
 #include <linux/netlink.h>
@@ -246,6 +245,11 @@ typedef unsigned short sa_family_t;
 #include <signal.h>
 #include <fcntl.h>
 #include <ctype.h>
+
+#ifdef HAVE_LIMITS_H
+#include <limits.h>
+#endif
+
 #include <time.h>
 #include <math.h>
 

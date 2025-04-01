@@ -1,7 +1,7 @@
 /*
  * scamper_ping_cmd.c
  *
- * $Id: scamper_ping_cmd.c,v 1.28 2025/02/25 06:31:24 mjl Exp $
+ * $Id: scamper_ping_cmd.c,v 1.29 2025/03/12 19:14:38 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -138,7 +138,7 @@ static int ping_arg_param_validate(int optid, char *param, long long *out,
 				   char *errbuf, size_t errlen)
 {
   struct timeval tv;
-  long long tmp = 0;
+  long long tmp = 0, mss;
   int i;
 
 #ifndef NDEBUG
@@ -259,6 +259,15 @@ static int ping_arg_param_validate(int optid, char *param, long long *out,
 	tmp = SCAMPER_PING_FLAG_SPOOF;
       else if(strcasecmp(param, "tbt") == 0)
 	tmp = SCAMPER_PING_FLAG_TBT;
+      else if(strncasecmp(param, "mss=", 4) == 0)
+	{
+	  if(string_tollong(param+4, &mss, NULL, 0) != 0 ||
+	     mss < 0 || mss > 65535)
+	    {
+	      snprintf(errbuf, errlen, "expected valid MSS value");
+	      goto err;
+	    }
+	}
       else
 	{
 	  snprintf(errbuf, errlen, "unknown option");
@@ -394,6 +403,7 @@ void *scamper_do_ping_alloc(char *str, char *errbuf, size_t errlen)
   uint8_t   probe_ttl     = 64;
   uint8_t   probe_tos     = 0;
   uint8_t   probe_method  = SCAMPER_PING_METHOD_ICMP_ECHO;
+  uint16_t  probe_mss     = 0;
   int       probe_sport   = -1;
   int       probe_dport   = -1;
   uint16_t  stop_count    = 0;
@@ -526,7 +536,25 @@ void *scamper_do_ping_alloc(char *str, char *errbuf, size_t errlen)
 	  break;
 
 	case PING_OPT_OPTION:
-	  flags |= (uint32_t)tmp;
+	  if(tmp != 0)
+	    {
+	      flags |= (uint32_t)tmp;
+	    }
+	  else if(strncasecmp(opt->str, "mss=", 4) == 0)
+	    {
+	      if(string_tollong(opt->str+4, &tmp, NULL, 0) != 0 ||
+		 tmp < 0 || tmp > 65535)
+		{
+		  snprintf(errbuf, errlen, "expected valid MSS value");
+		  goto err;
+		}
+	      probe_mss = (uint16_t)tmp;
+	    }
+	  else
+	    {
+	      snprintf(errbuf, errlen, "uncaught option");
+	      goto err;
+	    }
 	  break;
 
 	/* the pattern to fill each probe with */
@@ -593,6 +621,15 @@ void *scamper_do_ping_alloc(char *str, char *errbuf, size_t errlen)
      timeval_cmp(&wait_timeout, &wait_probe) < 0)
     timeval_cpy(&wait_timeout, &wait_probe);
 
+  if(probe_mss > 0 &&
+     probe_method != SCAMPER_PING_METHOD_TCP_SYN &&
+     probe_method != SCAMPER_PING_METHOD_TCP_SYNACK &&
+     probe_method != SCAMPER_PING_METHOD_TCP_SYN_SPORT)
+    {
+      snprintf(errbuf, errlen, "mss option only valid with tcp-syn probes");
+      goto err;
+    }
+
   /* allocate the ping object and determine the address to probe */
   if((ping = scamper_ping_alloc()) == NULL)
     {
@@ -630,8 +667,8 @@ void *scamper_do_ping_alloc(char *str, char *errbuf, size_t errlen)
     payload_size = payload_len;
 
   /*
-   * put together the timestamp option now so we can judge how large the
-   * options will be
+   * put together the IP timestamp option now so we can judge how
+   * large the IP options will be
    */
   if(tsopt != NULL)
     {
@@ -703,6 +740,10 @@ void *scamper_do_ping_alloc(char *str, char *errbuf, size_t errlen)
     {
       /* 20 bytes for TCP header */
       cmps += 20;
+
+      /* 4 bytes for MSS option */
+      if(probe_mss > 0)
+	cmps += 4;
     }
   else if(SCAMPER_PING_METHOD_IS_UDP(ping))
     {
@@ -920,6 +961,8 @@ void *scamper_do_ping_alloc(char *str, char *errbuf, size_t errlen)
 	      goto err;
 	    }
 	}
+
+      ping->tcpmss     = probe_mss;
     }
 
   return ping;

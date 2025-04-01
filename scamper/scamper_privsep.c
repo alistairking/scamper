@@ -1,7 +1,7 @@
 /*
  * scamper_privsep.c: code that does root-required tasks
  *
- * $Id: scamper_privsep.c,v 1.108 2024/08/27 21:30:34 mjl Exp $
+ * $Id: scamper_privsep.c,v 1.110 2025/03/29 19:12:28 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -57,6 +57,7 @@ typedef struct privsep_func
 
 static int   root_fd   = -1; /* the fd the root code send/recv on */
 static int   unpriv_fd = -1; /* the fd that the unpriv code uses */
+extern pid_t privsep_unpriv_pid; /* the pid of the unpriv process */
 
 /*
  * the privilege separation code works by allowing the unprivileged
@@ -1002,18 +1003,7 @@ static int privsep_root_do(void)
   close(unpriv_fd);
   unpriv_fd = -1;
 
-  /* write the pidfile of the privileged process */
-  if(scamper_pidfile() != 0)
-    {
-      /*
-       * if we can't write the pidfile, then we want to shutdown this process
-       * by closing the root_fd, which we do in the done block below
-       */
-      ret = (-errno);
-      goto done;
-    }
-
-  /* done the pidfile, send ready */
+  /* send ready */
   if(privsep_root_send_type(SCAMPER_PRIVSEP_READY) != 0)
     {
       ret = (-errno);
@@ -1583,6 +1573,23 @@ int scamper_privsep_init()
     }
 
   /*
+   * get the details for the PRIVSEP_USER login, which the rest of scamper
+   * will use to get things done
+   */
+  if((pw = getpwnam(PRIVSEP_USER)) == NULL)
+    {
+      printerror(__func__, "could not getpwnam " PRIVSEP_USER);
+      return -1;
+    }
+  uid = pw->pw_uid;
+  gid = pw->pw_gid;
+  memset(pw->pw_passwd, 0, strlen(pw->pw_passwd));
+
+#if defined(HAVE_ENDPWENT)
+  endpwent();
+#endif
+
+  /*
    * open up the unix domain sockets that will allow the prober to talk
    * with the privileged process
    */
@@ -1617,26 +1624,12 @@ int scamper_privsep_init()
   close(root_fd);
   root_fd = -1;
 
+  /* make a copy of the pid of the unprivileged process */
+  privsep_unpriv_pid = pid;
+
   /* make sure the privsep process signals ready */
   if(privsep_unpriv_getready() != 0)
     return -1;
-
-  /*
-   * get the details for the PRIVSEP_USER login, which the rest of scamper
-   * will use to get things done
-   */
-  if((pw = getpwnam(PRIVSEP_USER)) == NULL)
-    {
-      printerror(__func__, "could not getpwnam " PRIVSEP_USER);
-      return -1;
-    }
-  uid = pw->pw_uid;
-  gid = pw->pw_gid;
-  memset(pw->pw_passwd, 0, strlen(pw->pw_passwd));
-
-#if defined(HAVE_ENDPWENT)
-  endpwent();
-#endif
 
   /*
    * call localtime now, as then the unprivileged process will have the

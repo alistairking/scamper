@@ -1,4 +1,4 @@
-# $Id: Makefile.am,v 1.80 2024/11/10 20:41:44 mjl Exp $
+# $Id: Makefile.am,v 1.82 2025/03/29 19:55:24 mjl Exp $
 
 AUTOMAKE_OPTIONS = subdir-objects
 
@@ -17,6 +17,7 @@ scamper_SOURCES = \
 	scamper_addr.c \
 	scamper_list.c \
 	scamper_debug.c \
+	scamper_priv.c \
 	scamper_udp4.c \
 	scamper_udp6.c \
 	scamper_icmp4.c \
@@ -54,7 +55,7 @@ scamper_SOURCES = \
 	scamper_source_cmdline.c \
 	scamper_source_control.c \
 	scamper_source_file.c
-if ENABLE_PRIVSEP
+if ENABLE_SCAMPER_PRIVSEP
 scamper_SOURCES += \
 	scamper_privsep.c
 endif

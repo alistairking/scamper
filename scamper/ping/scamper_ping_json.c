@@ -9,7 +9,7 @@
  * Copyright (c) 2019-2025 Matthew Luckie
  * Authors: Brian Hammond, Matthew Luckie
  *
- * $Id: scamper_ping_json.c,v 1.47 2025/02/25 06:31:24 mjl Exp $
+ * $Id: scamper_ping_json.c,v 1.48 2025/03/12 19:14:38 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -101,6 +101,9 @@ static char *ping_header(const scamper_ping_t *ping)
     {
       string_concat_u32(buf, sizeof(buf), &off, ", \"tcp_seq\":", ping->tcpseq);
       string_concat_u32(buf, sizeof(buf), &off, ", \"tcp_ack\":", ping->tcpack);
+      if(ping->tcpmss > 0)
+	string_concat_u16(buf, sizeof(buf), &off, ", \"tcp_mss\":",
+			  ping->tcpmss);
     }
 
   if(ping->datalen > 0 && ping->data != NULL)
@@ -303,6 +306,9 @@ static char *ping_reply(const scamper_ping_t *ping,
     {
       string_concat_u8(buf, sizeof(buf), &off, ", \"tcp_flags\":",
 		       reply->tcp_flags);
+      if(reply->tcp_mss > 0)
+	string_concat_u16(buf, sizeof(buf), &off, ", \"tcp_mss\":",
+			  reply->tcp_mss);
     }
 
   if((v4rr = reply->v4rr) != NULL)
