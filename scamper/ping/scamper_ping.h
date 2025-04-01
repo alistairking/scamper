@@ -40,6 +40,7 @@ typedef struct scamper_ping_stats scamper_ping_stats_t;
 #define SCAMPER_PING_STOP_COMPLETED    1 /* sent all probes */
 #define SCAMPER_PING_STOP_ERROR        2 /* error occured during ping */
 #define SCAMPER_PING_STOP_HALTED       3 /* halted */
+#define SCAMPER_PING_STOP_INPROGRESS   4 /* measurement in-progress */
 
 #define SCAMPER_PING_REPLY_FLAG_REPLY_TTL  0x01 /* reply ttl included */
 #define SCAMPER_PING_REPLY_FLAG_REPLY_IPID 0x02 /* reply ipid included */
@@ -47,6 +48,7 @@ typedef struct scamper_ping_stats scamper_ping_stats_t;
 #define SCAMPER_PING_REPLY_FLAG_DLTX       0x08 /* datalink tx timestamp */
 #define SCAMPER_PING_REPLY_FLAG_DLRX       0x10 /* datalink rx timestamp */
 #define SCAMPER_PING_REPLY_FLAG_REPLY_TOS  0x20 /* reply tos included */
+#define SCAMPER_PING_REPLY_FLAG_PENDING    0x40 /* no reply, not timed out */
 
 #define SCAMPER_PING_METHOD_ICMP_ECHO     0
 #define SCAMPER_PING_METHOD_TCP_ACK       1

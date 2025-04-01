@@ -1299,7 +1299,8 @@ int scamper_source_halttask(scamper_source_t *source, uint32_t id)
  * which allows the command to be halted.  used by the control socket code.
  */
 int scamper_source_command2(scamper_source_t *s, const char *command,
-			    uint32_t *id, char *errbuf, size_t errlen)
+			    uint32_t *id, uint32_t *userid,
+			    char *errbuf, size_t errlen)
 {
   const command_func_t *f = NULL;
   scamper_sourcetask_t *st = NULL;
@@ -1325,6 +1326,8 @@ int scamper_source_command2(scamper_source_t *s, const char *command,
     }
   if((data = command_func_allocdata(f, command, errbuf, errlen)) == NULL)
     goto err;
+  if(userid != NULL)
+    *userid = f->userid(data);
   if((task = f->alloctask(data, s->list, s->cycle, errbuf, errlen)) == NULL)
     goto err;
   data = NULL;
@@ -1429,7 +1432,7 @@ scamper_source_t *scamper_sourcetask_getsource(scamper_sourcetask_t *st)
   return st->source;
 }
 
-uint32_t scamper_sourcetask_getid(scamper_sourcetask_t *st)
+uint32_t scamper_sourcetask_getid(const scamper_sourcetask_t *st)
 {
   return st->id;
 }
@@ -1466,6 +1469,17 @@ void scamper_sourcetask_free(scamper_sourcetask_t *st)
 
   sources_assert();
   return;
+}
+
+int scamper_source_add_dup(scamper_source_t *source,
+			   scamper_task_t *task, uint32_t id)
+{
+  scamper_sourcetask_t *st = NULL;
+  if((st = sourcetask_alloc(source, task)) == NULL)
+    return -1;
+  st->id = id;
+  scamper_task_setsourcetask(task, st);
+  return 0;
 }
 
 /*

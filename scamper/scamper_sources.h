@@ -109,13 +109,18 @@ int scamper_source_isfinished(scamper_source_t *source);
 /* functions for adding stuff to the source's command queue */
 int scamper_source_command(scamper_source_t *source, const char *command);
 int scamper_source_command2(scamper_source_t *source, const char *command,
-			    uint32_t *id, char *errbuf, size_t errlen);
+			    uint32_t *id, uint32_t *userid,
+			    char *errbuf, size_t errlen);
 int scamper_source_halttask(scamper_source_t *source, uint32_t id);
+
+/* function for adding a snapshot of a current task to source */
+int scamper_source_add_dup(scamper_source_t *source,
+			   scamper_task_t *task, uint32_t id);
 
 /* function for advising source that an active task has completed */
 void scamper_sourcetask_free(scamper_sourcetask_t *st);
 scamper_source_t *scamper_sourcetask_getsource(scamper_sourcetask_t *st);
-uint32_t scamper_sourcetask_getid(scamper_sourcetask_t *st);
+uint32_t scamper_sourcetask_getid(const scamper_sourcetask_t *st);
 
 void scamper_source_task_unhold(struct scamper_task *task);
 

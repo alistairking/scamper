@@ -245,6 +245,7 @@ typedef struct client
 #define CLIENT_FORMAT_JSON      1
 
 #define CLIENT_OBJ_FLAG_ID      0x01
+#define CLIENT_OBJ_FLAG_INPROG  0x02
 
 #define REMOTE_MODE_CONNECT     0
 #define REMOTE_MODE_GO          1
@@ -812,6 +813,9 @@ static int client_data_send(void *wf_param, const void *vdata, size_t len,
       st = scamper_task_getsourcetask(task);
       obj->id = scamper_sourcetask_getid(st);
       obj->flags |= CLIENT_OBJ_FLAG_ID;
+
+      if(scamper_task_is_inprog(task))
+	obj->flags |= CLIENT_OBJ_FLAG_INPROG;
     }
 
   if(slist_tail_push(client->sof_objs, obj) == NULL)
@@ -1599,7 +1603,7 @@ static int client_attached_cb(client_t *client, uint8_t *buf, size_t len)
   char errbuf[256];
   char *str;
   long long ll;
-  uint32_t id;
+  uint32_t id, userid;
 
   assert(client->source != NULL);
 
@@ -1625,7 +1629,7 @@ static int client_attached_cb(client_t *client, uint8_t *buf, size_t len)
     }
 
   /* try the command to see if it is valid and acceptable */
-  if(scamper_source_command2(client->source, (char *)buf, &id,
+  if(scamper_source_command2(client->source, (char *)buf, &id, &userid,
 			     errbuf, sizeof(errbuf)) != 0)
     {
       if(errbuf[0] != '\0')
@@ -1633,7 +1637,7 @@ static int client_attached_cb(client_t *client, uint8_t *buf, size_t len)
       return client_send(client, "ERR command not accepted");
     }
 
-  return client_send(client, "OK id-%d", id);
+  return client_send(client, "OK id-%d userid-%d", id, userid);
 }
 
 static int client_interactive_cb(client_t *client, uint8_t *buf, size_t len)
@@ -1803,7 +1807,9 @@ static int client_write_do(client_t *client,
 	    x = o->len;
 
 	  if(o->flags & CLIENT_OBJ_FLAG_ID)
-	    len = snprintf(str, sizeof(str), "DATA %d id-%u\n", (int)x, o->id);
+	    len = snprintf(str, sizeof(str), "DATA %d id-%u%s\n",
+			   (int)x, o->id,
+			   o->flags & CLIENT_OBJ_FLAG_INPROG ? " inprog" : "");
 	  else
 	    len = snprintf(str, sizeof(str), "DATA %d\n", (int)x);
 

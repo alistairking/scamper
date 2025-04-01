@@ -149,6 +149,7 @@ scamper_trace_hop_icmp_exts_get(const scamper_trace_hop_t *hop);
 #define SCAMPER_TRACE_STOP_HOPLIMIT     7 /* hoplimit reached */
 #define SCAMPER_TRACE_STOP_GSS          8 /* found hop in global stop set */
 #define SCAMPER_TRACE_STOP_HALTED       9 /* halted */
+#define SCAMPER_TRACE_STOP_INPROGRESS  10 /* in-progress */
 
 #define SCAMPER_TRACE_FLAG_ALLATTEMPTS  0x01 /* send all allotted attempts */
 #define SCAMPER_TRACE_FLAG_PMTUD        0x02 /* conduct PMTU discovery */

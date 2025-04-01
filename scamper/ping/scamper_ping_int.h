@@ -164,12 +164,16 @@ uint32_t scamper_ping_reply_total(const scamper_ping_t *ping);
  (reply)->flags & (SCAMPER_PING_REPLY_FLAG_PROBE_IPID | \
 		   SCAMPER_PING_REPLY_FLAG_DLTX))
 
+#define SCAMPER_PING_FLAG_IS_INPROGRESS(ping) (	\
+ ((ping)->flags & SCAMPER_PING_FLAG_INPROGRESS))
+
 struct scamper_ping_stats
 {
   uint32_t       nreplies;
   uint32_t       ndups;
   uint32_t       nloss;
   uint32_t       nerrs;
+  uint32_t       npend;
   struct timeval min_rtt;
   struct timeval max_rtt;
   struct timeval avg_rtt;
@@ -329,6 +333,7 @@ struct scamper_ping
   uint8_t                method;           /* -P */
   uint8_t                ttl;              /* -m */
   uint8_t                tos;              /* -z */
+  uint8_t                stream;           /* -y */
   uint16_t               sport;            /* -F */
   uint16_t               dport;            /* -d */
   uint16_t               icmpsum;          /* -C */

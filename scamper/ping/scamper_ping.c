@@ -70,6 +70,7 @@ char *scamper_ping_stop_tostr(const scamper_ping_t *ping, char *buf, size_t len)
     "done",
     "error",
     "halted",
+    "inprogress",
   };
   size_t off = 0;
 
@@ -106,6 +107,12 @@ scamper_ping_stats_t *scamper_ping_stats_alloc(const scamper_ping_t *ping)
     {
       if((probe = ping->probes[i]) == NULL)
 	continue;
+
+      if(probe->flags & SCAMPER_PING_REPLY_FLAG_PENDING)
+	{
+	  stats->npend++;
+	  continue;
+	}
 
       rxc = 0;
       err = 0;
