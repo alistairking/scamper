@@ -43,7 +43,7 @@ build:
              ./
         RUN ./set-version.sh "$(grep SCAMPER_VERSION scamper/scamper.h | cut -d \" -f 2)-${EARTHLY_TARGET_TAG}.${EARTHLY_GIT_SHORT_HASH}"
         RUN autoreconf -vfi
-        RUN ./configure --disable-libs --disable-utils
+        RUN ./configure --disable-libs --disable-utils --enable-scamper-privsep=rootonly
         RUN make
         RUN echo "Successfully built scamper version: $(./scamper/scamper -v)"
         LET baserelease="${base}"
