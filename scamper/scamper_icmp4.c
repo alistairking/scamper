@@ -1,7 +1,7 @@
 /*
  * scamper_icmp4.c
  *
- * $Id: scamper_icmp4.c,v 1.145 2024/11/28 08:57:30 mjl Exp $
+ * $Id: scamper_icmp4.c,v 1.146 2025/03/29 18:46:03 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -41,7 +41,7 @@
 #include "scamper_icmp_resp.h"
 #include "scamper_ip4.h"
 #include "scamper_icmp4.h"
-#include "scamper_privsep.h"
+#include "scamper_priv.h"
 #include "utils.h"
 
 static uint8_t *txbuf = NULL;
@@ -1140,30 +1140,18 @@ SOCKET scamper_icmp4_open(const void *addr)
   char tmp[32];
 
 #ifndef _WIN32 /* SOCKET vs int on windows */
-  int fd = -1;
+  int fd;
 #else
-  SOCKET fd = INVALID_SOCKET;
+  SOCKET fd;
 #endif
 
 #if defined(ICMP_FILTER)
   struct icmp_filter filter;
 #endif
 
-#ifdef DISABLE_PRIVSEP
-#ifdef HAVE_SETEUID
-  uid_t uid, euid;
-  if(scamper_seteuid_raise(&uid, &euid) != 0)
-    return -1;
-#endif
-  fd = scamper_icmp4_open_fd();
-#ifdef HAVE_SETEUID
-  scamper_seteuid_lower(&uid, &euid);
-#endif
-#else
-  fd = scamper_privsep_open_icmp(AF_INET);
-#endif
+  fd = scamper_priv_icmp4();
   if(socket_isinvalid(fd))
-    return socket_invalid();
+    goto err;
 
   if(setsockopt_raise(fd, SOL_SOCKET, SO_RCVBUF, 65535 + 128) != 0)
     {

@@ -1,7 +1,7 @@
 /*
  * scamper_source
  *
- * $Id: scamper_sources.c,v 1.85 2025/01/15 02:51:01 mjl Exp $
+ * $Id: scamper_sources.c,v 1.86 2025/03/11 02:07:52 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -115,14 +115,12 @@ struct scamper_source
    * commands:     a list of commands for the source that are queued, ready to
    *               be passed out as tasks
    * cycle_points: the number of cycle points in the commands list
-   * onhold:       a list of commands that are on hold.
    * tasks:        a list of tasks currently active from the source.
    * id:           the next id number to assign
    * idtree:       a tree of id numbers currently in use
    */
   dlist_t                      *commands;
   int                           cycle_points;
-  dlist_t                      *onhold;
   dlist_t                      *tasks;
   uint32_t                      id;
   splaytree_t                  *idtree;
@@ -305,26 +303,6 @@ typedef struct command
 #define COMMAND_TYPE_MAX   0x02
 
 /*
- * command_onhold
- *
- * structure to keep details of a command on hold.
- *
- *  st:      the task that is waiting on another task to complete
- *  block:   the task that has blocked this task from executing
- *  source:  pointer to the source that wants to execute the command
- *  node:    pointer to the dlist_node in the source's onhold dlist
- *  cookie:  cookie returned by scamper_task_onhold.
- */
-typedef struct command_onhold
-{
-  scamper_task_t       *block;
-  scamper_sourcetask_t *st;
-  scamper_source_t     *source;
-  dlist_node_t         *node;
-  void                 *cookie;
-} command_onhold_t;
-
-/*
  * global variables for managing sources:
  *
  * a source is stored in one of two lists depending on its state.  it is
@@ -378,7 +356,6 @@ static int command_assert(void *item, void *param)
 static int source_assert(void *item, void *param)
 {
   scamper_source_t *s = item;
-  command_onhold_t *c;
   dlist_node_t *dn;
   int cycles;
 
@@ -406,15 +383,6 @@ static int source_assert(void *item, void *param)
   cycles = 0;
   dlist_foreach(s->commands, command_assert, &cycles);
   /* XXX: should cycles == s->cycle_points? */
-
-  /* make sure the onhold list makes sense */
-  assert(s->onhold != NULL);
-  for(dn=dlist_head_node(s->onhold); dn != NULL; dn = dlist_node_next(dn))
-    {
-      c = dlist_node_item(dn);
-      assert(c->node == dn);
-      assert(c->source == s);
-    }
 
   return 0;
 }
@@ -681,71 +649,30 @@ static int source_finished_attach(scamper_source_t *source)
 /*
  * source_command_unhold
  *
- * the task this command was blocked on has now completed, and this callback
- * was used.  put the command at the front of the source's list of things
- * to do.
+ * the task this command was blocked on has now completed.
+ * put the command at the front of the source's list of things to do.
  */
-static void source_command_unhold(void *cookie)
+void scamper_source_task_unhold(scamper_task_t *task)
 {
-  command_onhold_t     *onhold = (command_onhold_t *)cookie;
-  scamper_source_t     *source = onhold->source;
-  scamper_sourcetask_t *st     = onhold->st;
-  command_t            *cmd    = NULL;
+  scamper_sourcetask_t *st = NULL;
+  scamper_source_t *source = NULL;
+  command_t *cmd = NULL;
 
-  /*
-   * 1. disconnect the onhold structure from the source
-   * 2. free the onhold structure -- don't need it anymore
-   * 3. put the task at the front of the source's command list
-   * 4. ensure the source is in active rotation
-   */
-  dlist_node_pop(source->onhold, onhold->node);
-  free(onhold);
+  if((st = scamper_task_getsourcetask(task)) == NULL ||
+     (source = st->source) == NULL)
+    return;
+
   if((cmd = command_alloc(COMMAND_TASK)) == NULL)
     goto err;
-  cmd->un.sourcetask = st; st = NULL;
+  cmd->un.sourcetask = st;
   if(dlist_head_push(source->commands, cmd) == NULL)
     goto err;
   source_active_attach(source);
   return;
 
  err:
-  if(st != NULL) scamper_sourcetask_free(st);
   if(cmd != NULL) free(cmd);
   return;
-}
-
-/*
- * source_command_onhold
- *
- *
- */
-static int source_command_onhold(scamper_source_t *source,
-				 scamper_task_t *block,
-				 scamper_sourcetask_t *st)
-{
-  command_onhold_t *onhold = NULL;
-
-  if((onhold         = malloc_zero(sizeof(command_onhold_t))) == NULL ||
-     (onhold->node   = dlist_tail_push(source->onhold, onhold)) == NULL ||
-     (onhold->cookie = scamper_task_onhold(block, onhold,
-					   source_command_unhold)) == NULL)
-    {
-      goto err;
-    }
-
-  onhold->block  = block;
-  onhold->source = source;
-  onhold->st     = st;
-
-  return 0;
-
- err:
-  if(onhold != NULL)
-    {
-      if(onhold->node != NULL) dlist_node_pop(source->onhold, onhold->node);
-      free(onhold);
-    }
-  return -1;
 }
 
 /*
@@ -758,11 +685,12 @@ static int source_task_install(scamper_source_t *source,
 			       scamper_sourcetask_t *st, scamper_task_t **out)
 {
   scamper_task_t *task = st->task;
-  scamper_task_t *block;
+  scamper_task_t *blocker;
 
   scamper_task_sig_prepare(task);
 
-  if((block = scamper_task_sig_block(task)) == NULL)
+  /* nothing blocking the task from running (blocker == NULL); install it */
+  if((blocker = scamper_task_sig_block(task)) == NULL)
     {
       if(scamper_task_sig_install(task) != 0)
 	return -1;
@@ -770,7 +698,11 @@ static int source_task_install(scamper_source_t *source,
     }
   else
     {
-      if(source_command_onhold(source, block, st) != 0)
+      /*
+       * something is blocking the command from running.  the blocking
+       * task is in the blocker variable.
+       */
+      if(scamper_task_onhold(blocker, task) != 0)
 	return -1;
       *out = NULL;
     }
@@ -978,7 +910,6 @@ static int source_cmp(const scamper_source_t *a, const scamper_source_t *b)
  */
 static void source_flush_commands(scamper_source_t *source)
 {
-  command_onhold_t *onhold;
   command_t *command;
 
   sources_assert();
@@ -998,17 +929,6 @@ static void source_flush_commands(scamper_source_t *source)
 	command_free(command);
       dlist_free(source->commands);
       source->commands = NULL;
-    }
-
-  if(source->onhold != NULL)
-    {
-      while((onhold = dlist_head_pop(source->onhold)) != NULL)
-	{
-	  scamper_task_dehold(onhold->block, onhold->cookie);
-	  free(onhold);
-	}
-      dlist_free(source->onhold);
-      source->onhold = NULL;
     }
 
   sources_assert();
@@ -1087,10 +1007,6 @@ int scamper_source_isfinished(scamper_source_t *source)
 
   /* if there are commands queued, then the source cannot be finished */
   if(source->commands != NULL && dlist_count(source->commands) > 0)
-    return 0;
-
-  /* if there are commands that are on hold, the source cannot be finished */
-  if(source->onhold != NULL && dlist_count(source->onhold) > 0)
     return 0;
 
   /* if there are still tasks underway, the source is not finished */
@@ -1646,12 +1562,6 @@ scamper_source_t *scamper_source_alloc(const scamper_source_params_t *ssp)
       goto err;
     }
 
-  if((source->onhold = dlist_alloc()) == NULL)
-    {
-      printerror(__func__, "could not alloc source->onhold");
-      goto err;
-    }
-
   if((source->tasks = dlist_alloc()) == NULL)
     {
       printerror(__func__, "could not alloc source->tasks");
@@ -1676,7 +1586,6 @@ scamper_source_t *scamper_source_alloc(const scamper_source_params_t *ssp)
       if(source->list != NULL) scamper_list_free(source->list);
       if(source->cycle != NULL) scamper_cycle_free(source->cycle);
       if(source->commands != NULL) dlist_free(source->commands);
-      if(source->onhold != NULL) dlist_free(source->onhold);
       if(source->tasks != NULL) dlist_free(source->tasks);
       free(source);
     }

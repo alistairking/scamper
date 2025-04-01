@@ -1,7 +1,7 @@
 /*
  * scamper_outfiles: hold a collection of output targets together
  *
- * $Id: scamper_outfiles.c,v 1.63 2025/01/15 02:32:15 mjl Exp $
+ * $Id: scamper_outfiles.c,v 1.64 2025/03/29 18:46:03 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -31,7 +31,7 @@
 
 #include "scamper_debug.h"
 #include "scamper_file.h"
-#include "scamper_privsep.h"
+#include "scamper_priv.h"
 #include "scamper_outfiles.h"
 #include "utils.h"
 #include "mjl_splaytree.h"
@@ -173,13 +173,7 @@ static int outfile_opendef(const char *filename, const char *type)
     }
   else
     {
-#ifdef DISABLE_PRIVSEP
-      fd = open(filename, flags, MODE_644);
-#else
-      fd = scamper_privsep_open_file(filename, flags, MODE_644);
-#endif
-
-      if(fd == -1)
+      if((fd = scamper_priv_open(filename, flags, MODE_644)) == -1)
 	{
 	  printerror(__func__, "could not open %s", filename);
 	  return -1;

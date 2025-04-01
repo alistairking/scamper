@@ -1,7 +1,7 @@
 /*
  * scamper_firewall.c
  *
- * $Id: scamper_firewall.c,v 1.60 2024/12/30 03:16:57 mjl Exp $
+ * $Id: scamper_firewall.c,v 1.62 2025/03/29 19:55:24 mjl Exp $
  *
  * Copyright (C) 2008-2011 The University of Waikato
  * Copyright (C) 2016-2024 Matthew Luckie
@@ -42,7 +42,9 @@
 #include "scamper_addr_int.h"
 #include "scamper_debug.h"
 #include "scamper_firewall.h"
+#ifndef DISABLE_SCAMPER_PRIVSEP
 #include "scamper_privsep.h"
+#endif
 #include "scamper_osinfo.h"
 #include "mjl_heap.h"
 #include "mjl_splaytree.h"
@@ -739,7 +741,7 @@ static int ipfw_init(char *opts)
   if(firewall_freeslots_alloc(start, end) != 0)
     return -1;
 
-#ifdef DISABLE_PRIVSEP
+#ifdef DISABLE_SCAMPER_PRIVSEP
   if(scamper_firewall_ipfw_init() != 0)
     return -1;
 #else
@@ -791,7 +793,7 @@ static int ipfw_add(int ruleno, scamper_firewall_rule_t *sfw)
   else
     d = sfw->sfw_5tuple_dst->addr;
 
-#ifdef DISABLE_PRIVSEP
+#ifdef DISABLE_SCAMPER_PRIVSEP
   if(scamper_firewall_ipfw_add(ruleno, af, p, s, d, sp, dp) != 0)
     return -1;
 #else
@@ -805,7 +807,7 @@ static int ipfw_add(int ruleno, scamper_firewall_rule_t *sfw)
 int ipfw_del(const scamper_firewall_entry_t *entry)
 {
   int af = scamper_addr_af(entry->rule->sfw_5tuple_src);
-#ifdef DISABLE_PRIVSEP
+#ifdef DISABLE_SCAMPER_PRIVSEP
   return scamper_firewall_ipfw_del(entry->slot, af);
 #else
   return scamper_privsep_ipfw_del(entry->slot, af);
@@ -1057,7 +1059,7 @@ static int pf_add(int n, scamper_firewall_rule_t *sfw)
   s  = sfw->sfw_5tuple_src->addr;
   d  = sfw->sfw_5tuple_dst->addr;
 
-#ifdef DISABLE_PRIVSEP
+#ifdef DISABLE_SCAMPER_PRIVSEP
   if(scamper_firewall_pf_add(n, af, p, s, d, sp, dp) != 0)
     return -1;
 #else
@@ -1069,7 +1071,7 @@ static int pf_add(int n, scamper_firewall_rule_t *sfw)
 
 static int pf_del(int n)
 {
-#ifdef DISABLE_PRIVSEP
+#ifdef DISABLE_SCAMPER_PRIVSEP
   return scamper_firewall_pf_del(n);
 #else
   return scamper_privsep_pf_del(n);
@@ -1107,7 +1109,7 @@ static int pf_init(char *opts)
   if(firewall_freeslots_alloc(1, num) != 0)
     return -1;
 
-#ifdef DISABLE_PRIVSEP
+#ifdef DISABLE_SCAMPER_PRIVSEP
   if(scamper_firewall_pf_init(name_str) != 0)
     return -1;
 #else
@@ -1279,7 +1281,7 @@ void scamper_firewall_cleanup(void)
 #ifdef HAVE_IPFW
   if(ipfw_use != 0)
     {
-#ifdef DISABLE_PRIVSEP
+#ifdef DISABLE_SCAMPER_PRIVSEP
       scamper_firewall_ipfw_cleanup();
 #else
       if(ipfw_inited != 0)
@@ -1291,7 +1293,7 @@ void scamper_firewall_cleanup(void)
 #ifdef HAVE_PF
   if(pf_use != 0)
     {
-#ifdef DISABLE_PRIVSEP
+#ifdef DISABLE_SCAMPER_PRIVSEP
       scamper_firewall_pf_cleanup();
 #else
       if(pf_inited != 0)

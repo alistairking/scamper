@@ -1,7 +1,7 @@
 /*
  * scamper_do_trace.c
  *
- * $Id: scamper_trace_do.c,v 1.389 2025/02/11 14:31:43 mjl Exp $
+ * $Id: scamper_trace_do.c,v 1.392 2025/03/16 21:14:33 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -1252,12 +1252,9 @@ static int trace_isloop(const scamper_trace_t *trace,
 		return 1;
 
 	      /* count the loop just once for this hop */
-	      break;
+	      return 0;
 	    }
 	}
-
-      if(tmp != NULL)
-	break;
     }
 
   return 0;
@@ -3041,11 +3038,16 @@ static void do_trace_handle_timeout(scamper_task_t *task)
   trace_probe_t   *probe;
   struct timeval now;
 
+#ifdef HAVE_SCAMPER_DEBUG
+  char buf[128];
+#endif
+
   assert(state->mode <= MODE_MAX);
 
-  /* XXX: not sure that this timeout should be handled here */
   if(state->mode == MODE_RTSOCK || state->mode == MODE_DLHDR)
     {
+      scamper_debug(__func__, "mode %d dst %s", state->mode,
+		    scamper_addr_tostr(trace->dst, buf, sizeof(buf)));
       trace_handleerror(task, 0);
       return;
     }
@@ -4480,11 +4482,18 @@ int scamper_do_trace_dtree_lss_clear(char *name)
 static void do_trace_sigs(scamper_task_t *task)
 {
   scamper_trace_t *trace = trace_getdata(task);
-  trace_state_t *state = NULL;
+  trace_state_t *state = trace_getstate(task);
   scamper_task_sig_t *sig = NULL;
   char errbuf[256];
   size_t errlen = sizeof(errbuf);
   int i;
+
+  /*
+   * this function might have already been called if the task was held
+   * because its signature overlapped with another task.
+   */
+  if(state != NULL)
+    return;
 
   /* allocate state for storing fds in */
   if((state = malloc_zero(sizeof(trace_state_t))) == NULL)

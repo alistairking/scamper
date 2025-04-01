@@ -1,7 +1,7 @@
 /*
  * scamper_trace.h
  *
- * $Id: scamper_trace.h,v 1.165 2025/02/11 19:12:29 mjl Exp $
+ * $Id: scamper_trace.h,v 1.166 2025/03/16 21:15:27 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -179,7 +179,6 @@ scamper_trace_hop_icmp_exts_get(const scamper_trace_hop_t *hop);
 #define SCAMPER_TRACE_HOP_FLAG_TS_SOCK_RX 0x01 /* socket rx timestamp */
 #define SCAMPER_TRACE_HOP_FLAG_TS_DL_TX   0x02 /* datalink tx timestamp */
 #define SCAMPER_TRACE_HOP_FLAG_TS_DL_RX   0x04 /* datalink rx timestamp */
-#define SCAMPER_TRACE_HOP_FLAG_TS_TSC     0x08 /* rtt computed w/ tsc clock */
 #define SCAMPER_TRACE_HOP_FLAG_REPLY_TTL  0x10 /* reply ttl included */
 #define SCAMPER_TRACE_HOP_FLAG_TCP        0x20 /* reply is TCP */
 #define SCAMPER_TRACE_HOP_FLAG_UDP        0x40 /* reply is UDP */

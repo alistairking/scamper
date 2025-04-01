@@ -1,7 +1,7 @@
 /*
  * utils.h
  *
- * $Id: utils.h,v 1.170 2025/02/15 09:20:11 mjl Exp $
+ * $Id: utils.h,v 1.173 2025/03/29 07:39:33 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -208,7 +208,11 @@ int sockaddr_len(const struct sockaddr *sa)
 char *sockaddr_tostr(const struct sockaddr *sa, char *buf, size_t len, int with_port)
   ATTRIBUTE_NONNULL;
 
-int prefix_to_sockaddr(const char *prefix, struct sockaddr *sa);
+int prefix_to_sockaddr(const char *prefix, struct sockaddr *sa)
+  ATTRIBUTE_NONNULL;
+
+int unix_bind(const char *filename) ATTRIBUTE_NONNULL;
+int unix_bind_listen(const char *filename, int backlog) ATTRIBUTE_NONNULL;
 
 /*
  * Functions for dealing with fcntl flags on a file descriptor

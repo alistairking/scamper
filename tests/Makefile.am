@@ -1,4 +1,4 @@
-# $Id: Makefile.am,v 1.49 2025/02/23 05:59:13 mjl Exp $
+# $Id: Makefile.am,v 1.50 2025/03/04 03:39:17 mjl Exp $
 
 AUTOMAKE_OPTIONS = subdir-objects
 
@@ -49,6 +49,7 @@ noinst_PROGRAMS = \
 	unit_trace_warts \
 	unit_udpprobe_warts \
 	unit_options \
+	unit_prefixtree \
 	unit_splaytree \
 	unit_string \
 	unit_timeval \
@@ -416,6 +417,11 @@ unit_udpprobe_warts_LDADD = libscamperfiletest.la
 unit_heap_CFLAGS = $(AM_CFLAGS) -DMJLHEAP_DEBUG
 unit_heap_SOURCES = unit_heap.c \
 	../mjl_heap.c
+
+unit_prefixtree_CFLAGS = $(AM_CFLAGS)
+unit_prefixtree_SOURCES = unit_prefixtree.c \
+	../mjl_prefixtree.c \
+	../utils.c
 
 unit_splaytree_CFLAGS = $(AM_CFLAGS) \
 	-DMJLSPLAYTREE_DEBUG -DSPLAYTREE_STACK_NODEC=2

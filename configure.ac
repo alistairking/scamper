@@ -1,6 +1,6 @@
 # Process this file with autoconf to produce a configure script.
 
-AC_INIT([scamper],[20250227],[mjl@luckie.org.nz])
+AC_INIT([scamper],[20250401],[mjl@luckie.org.nz])
 
 AC_CONFIG_SRCDIR([scamper/scamper.c])
 AC_CONFIG_AUX_DIR([.])
@@ -43,15 +43,21 @@ if test "x$enable_scamper_select" = "xno"; then
             [Define to 1 to not build scamper with support for select syscall])
 fi
 
-# --disable-privsep
-AC_ARG_ENABLE([privsep],
-  [AS_HELP_STRING([--disable-privsep], [disable privilege separation])],
-  [enable_privsep=$enableval],
-  [enable_privsep=yes])
-if test "x$enable_privsep" = xno; then
-  AC_DEFINE([DISABLE_PRIVSEP], [1], [Define to 1 if we don't want privilege separation])
+# --disable-scamper-privsep
+AC_ARG_ENABLE([scamper-privsep],
+  [AS_HELP_STRING([--disable-scamper-privsep],
+                  [build scamper without support for privilege separation])],
+  [enable_scamper_privsep=$enableval],
+  [enable_scamper_privsep=yes])
+if test "x$enable_scamper_privsep" = xno; then
+  AC_DEFINE([DISABLE_SCAMPER_PRIVSEP], [1],
+            [Define to 1 to not build scamper with privilege separation])
 fi
-AM_CONDITIONAL([ENABLE_PRIVSEP], [test x$enable_privsep = xyes])
+if test "x$enable_scamper_privsep" = xrootonly; then
+  AC_DEFINE([ENABLE_SCAMPER_PRIVSEP_ROOTONLY], [1],
+            [Define to 1 build scamper with privilege separation for root only])
+fi
+AM_CONDITIONAL([ENABLE_SCAMPER_PRIVSEP], [test x$enable_scamper_privsep != xno])
 
 # --with-privsep-user --with-privsep-dir
 # --with-privsep-dirowner --with-privsep-dirgroup

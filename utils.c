@@ -1,7 +1,7 @@
 /*
  * utils.c
  *
- * $Id: utils.c,v 1.260 2025/02/15 09:20:11 mjl Exp $
+ * $Id: utils.c,v 1.262 2025/03/29 07:39:33 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -107,7 +107,10 @@ int sockaddr_compose_un(struct sockaddr *sa, const char *file)
    */
   len = strlen(file);
   if(len + 1 > sizeof(sn->sun_path))
-    return -1;
+    {
+      errno = EINVAL;
+      return -1;
+    }
 
   /* initialize all of the struct to zero */
   memset(sn, 0, sizeof(struct sockaddr_un));
@@ -327,6 +330,39 @@ int prefix_to_sockaddr(const char *prefix, struct sockaddr *sa)
  done:
   if(dup != NULL) free(dup);
   return rc;
+}
+
+int unix_bind(const char *filename)
+{
+  struct sockaddr_un sn;
+  int fd = -1;
+
+  if(sockaddr_compose_un((struct sockaddr *)&sn, filename) != 0 ||
+     (fd = socket(AF_UNIX, SOCK_STREAM, 0)) == -1 ||
+     bind(fd, (struct sockaddr *)&sn, sizeof(sn)) != 0)
+    {
+      if(fd != -1) close(fd);
+      return -1;
+    }
+
+  return fd;
+}
+
+int unix_bind_listen(const char *filename, int backlog)
+{
+  int fd;
+
+  if((fd = unix_bind(filename)) == -1)
+    return -1;
+
+  if(listen(fd, backlog) != 0)
+    {
+      unlink(filename);
+      close(fd);
+      return -1;
+    }
+
+  return fd;
 }
 
 int addr4_cmp(const struct in_addr *a, const struct in_addr *b)
