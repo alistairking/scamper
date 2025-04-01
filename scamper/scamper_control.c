@@ -1,7 +1,7 @@
 /*
  * scamper_control.c
  *
- * $Id: scamper_control.c,v 1.286 2025/01/15 02:51:01 mjl Exp $
+ * $Id: scamper_control.c,v 1.289 2025/04/01 06:59:40 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -44,7 +44,7 @@
 #include "scamper_sources.h"
 #include "scamper_source_file.h"
 #include "scamper_source_control.h"
-#include "scamper_privsep.h"
+#include "scamper_priv.h"
 #include "mjl_list.h"
 #include "utils.h"
 
@@ -1117,7 +1117,7 @@ static int command_get(client_t *client, char *buf)
   if(buf == NULL)
     {
       client_send(client, "ERR usage: get "
-	  "[command | monitorname | pid | pps | version | window]");
+	  "[command | monitorname | nameserver | pid | pps | version | window]");
       return 0;
     }
 
@@ -3292,41 +3292,13 @@ int scamper_control_add_remote(const char *name, int port, int ssl)
 int scamper_control_add_unix(const char *file)
 {
 #ifdef HAVE_SOCKADDR_UN
-  int fd = -1;
+  int fd;
 
-#ifdef DISABLE_PRIVSEP
-  struct sockaddr_un sn;
-
-  if(sockaddr_compose_un((struct sockaddr *)&sn, file) != 0)
-    {
-      printerror(__func__, "could not compose socket");
-      goto err;
-    }
-
-  if((fd = socket(AF_UNIX, SOCK_STREAM, 0)) == -1)
-    {
-      printerror(__func__, "could not create socket");
-      goto err;
-    }
-
-  if(bind(fd, (struct sockaddr *)&sn, sizeof(sn)) != 0)
-    {
-      printerror(__func__, "could not bind");
-      goto err;
-    }
-
-  if(listen(fd, -1) != 0)
-    {
-      printerror(__func__, "could not listen");
-      goto err;
-    }
-#else
-  if((fd = scamper_privsep_open_unix(file)) == -1)
+  if((fd = scamper_priv_unix_bind(file)) == -1)
     {
       printerror(__func__, "could not open unix socket");
       goto err;
     }
-#endif
 
   if((ctrl_unix = malloc_zero(sizeof(control_unix_t))) == NULL ||
      (ctrl_unix->fd = scamper_fd_private(fd,NULL,control_accept,NULL))==NULL ||
@@ -3476,13 +3448,7 @@ void scamper_control_cleanup(void)
 
 #ifdef HAVE_SOCKADDR_UN
 	      if(ctrl_unix->name != NULL)
-		{
-#ifndef DISABLE_PRIVSEP
-		  scamper_privsep_unlink(ctrl_unix->name);
-#else
-		  unlink(ctrl_unix->name);
-#endif
-		}
+		scamper_priv_unlink(ctrl_unix->name);
 #endif
 	    }
 	  scamper_fd_free(ctrl_unix->fd);

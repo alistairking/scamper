@@ -9,7 +9,7 @@
  * Copyright (c) 2019-2025 Matthew Luckie
  * Authors: Brian Hammond, Matthew Luckie
  *
- * $Id: scamper_ping_json.c,v 1.47 2025/02/25 06:31:24 mjl Exp $
+ * $Id: scamper_ping_json.c,v 1.48 2025/03/12 19:14:38 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by

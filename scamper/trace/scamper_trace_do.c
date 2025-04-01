@@ -1,7 +1,7 @@
 /*
  * scamper_do_trace.c
  *
- * $Id: scamper_trace_do.c,v 1.389 2025/02/11 14:31:43 mjl Exp $
+ * $Id: scamper_trace_do.c,v 1.392 2025/03/16 21:14:33 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -1252,12 +1252,9 @@ static int trace_isloop(const scamper_trace_t *trace,
 		return 1;
 
 	      /* count the loop just once for this hop */
-	      break;
+	      return 0;
 	    }
 	}
-
-      if(tmp != NULL)
-	break;
     }
 
   return 0;

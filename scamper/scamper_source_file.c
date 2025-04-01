@@ -1,7 +1,7 @@
 /*
  * scamper_source_file.c
  *
- * $Id: scamper_source_file.c,v 1.36 2024/12/31 04:17:31 mjl Exp $
+ * $Id: scamper_source_file.c,v 1.37 2025/03/29 18:46:03 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -36,7 +36,7 @@
 #include "scamper_sources.h"
 #include "scamper_linepoll.h"
 #include "scamper_fds.h"
-#include "scamper_privsep.h"
+#include "scamper_priv.h"
 #include "scamper_source_file.h"
 
 #include "utils.h"
@@ -81,23 +81,6 @@ static void ssf_free(scamper_source_file_t *ssf)
 
   free(ssf);
   return;
-}
-
-static int ssf_open(const char *filename)
-{
-  int fd = -1;
-
-  /* get a file descriptor to the file */
-#ifdef DISABLE_PRIVSEP
-  fd = open(filename, O_RDONLY);
-#else
-  fd = scamper_privsep_open_file(filename, O_RDONLY, 0);
-#endif
-
-  if(fd == -1)
-    printerror(__func__, "could not open %s", filename);
-
-  return fd;
 }
 
 /*
@@ -395,8 +378,12 @@ scamper_source_t *scamper_source_file_alloc(scamper_source_params_t *ssp,
     }
   else
     {
-      if((fd = ssf_open(filename)) == -1)
-	goto err;
+      /* get a file descriptor to the file */
+      if((fd = scamper_priv_open(filename, O_RDONLY, 0)) == -1)
+	{
+	  printerror(__func__, "could not open %s", filename);
+	  goto err;
+	}
     }
 
   ssf->fd = fd;

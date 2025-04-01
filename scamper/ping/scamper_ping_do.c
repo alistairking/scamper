@@ -1,7 +1,7 @@
 /*
  * scamper_do_ping.c
  *
- * $Id: scamper_ping_do.c,v 1.203 2025/02/25 06:31:24 mjl Exp $
+ * $Id: scamper_ping_do.c,v 1.207 2025/03/31 10:14:02 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -516,6 +516,10 @@ static void do_ping_handle_dl(scamper_task_t *task, scamper_dl_rec_t *dl)
   probe = ping->probes[seq];
   assert(probe != NULL);
 
+  /* timestamp from the datalink cannot be before when the probe was sent */
+  if(timeval_cmp(&dl->dl_tv, &probe->tx) < 0)
+    return;
+
   if(direction == DIR_INBOUND)
     {
 #if 0
@@ -621,8 +625,7 @@ static void do_ping_handle_dl(scamper_task_t *task, scamper_dl_rec_t *dl)
   else
     {
       /* outbound packet */
-      if((probe->flags & SCAMPER_PING_REPLY_FLAG_DLTX) != 0 ||
-	 timeval_cmp(&probe->tx, &dl->dl_tv) >= 0)
+      if((probe->flags & SCAMPER_PING_REPLY_FLAG_DLTX) != 0)
 	return;
 
       timeval_diff_tv(&diff, &probe->tx, &dl->dl_tv);

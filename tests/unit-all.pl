@@ -31,6 +31,7 @@ my @tests = (
     ["unit_ping_dup"],
     ["unit_ping_lib"],
     ["unit_ping_warts", "check ."],
+    ["unit_prefixtree"],
     ["unit_splaytree"],
     ["unit_string"],
     ["unit_timeval"],

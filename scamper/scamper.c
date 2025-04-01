@@ -1,7 +1,7 @@
 /*
  * scamper
  *
- * $Id: scamper.c,v 1.362 2025/01/15 03:19:07 mjl Exp $
+ * $Id: scamper.c,v 1.370 2025/04/01 06:59:20 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -60,7 +60,10 @@
 #include "scamper_tcp4.h"
 #include "scamper_rtsock.h"
 #include "scamper_firewall.h"
+#include "scamper_priv.h"
+#ifndef DISABLE_SCAMPER_PRIVSEP
 #include "scamper_privsep.h"
+#endif
 #include "scamper_control.h"
 #include "scamper_osinfo.h"
 #ifndef DISABLE_SCAMPER_TRACE
@@ -161,7 +164,7 @@
 
 #define SCAMPER_OPTION_HOLDTIME_MIN  0
 #define SCAMPER_OPTION_HOLDTIME_DEF  5
-#define SCAMPER_OPTION_HOLDTIME_MAX  10
+#define SCAMPER_OPTION_HOLDTIME_MAX  60
 
 #define SCAMPER_OPTION_COMMAND_DEF   "trace"
 
@@ -240,9 +243,9 @@ static int    wait_between   = 1000000 / SCAMPER_OPTION_PPS_DEF;
 static int    probe_window   = 250000;
 static int    exit_when_done = 1;
 
-#if defined(HAVE_SIGACTION)
+#ifdef HAVE_SIGACTION
 #define HAVE_EXIT_NOW
-#if defined(DISABLE_PRIVSEP)
+#ifdef DISABLE_SCAMPER_PRIVSEP
 static int    exit_now = 0;
 static int    sighup_rx = 0;
 #else
@@ -251,8 +254,10 @@ int           sighup_rx = 0;
 #endif
 #endif
 
-#ifndef DISABLE_PRIVSEP
+#ifndef DISABLE_SCAMPER_PRIVSEP
 static scamper_fd_t *privsep_fdn = NULL;
+int                  privsep_do = -1; /* 0=no, 1=yes */
+pid_t                privsep_unpriv_pid = -1;
 #endif
 
 /* central cache of addresses that scamper is dealing with */
@@ -1496,9 +1501,7 @@ uid_t scamper_geteuid(void)
 /*
  * scamper_pidfile
  *
- * this function is called in scamper.c:scamper() if not compiled with
- * privilege separation, or by scamper_privsep.c:privsep_do() if
- * scamper is compiled with privilege separation.
+ * write the pidfile after any privilege separation occurs.
  */
 int scamper_pidfile(void)
 {
@@ -1507,39 +1510,31 @@ int scamper_pidfile(void)
   char buf[32];
   size_t len;
 
-#ifndef _WIN32 /* windows does not have getpid */
-  pid_t pid = getpid();
+#ifndef _WIN32 /* windows process-id differences */
+  pid_t pid;
 #else
-  DWORD pid = GetCurrentProcessId();
+  DWORD pid;
 #endif
 
   /* do not need to do anything if user did not request a pidfile */
   if((options & OPT_PIDFILE) == 0)
     return 0;
 
-#if defined(HAVE_SETEUID) && !defined(DISABLE_PRIVSEP)
-  if(seteuid(uid) != 0)
-    {
-      printerror(__func__, "could not claim uid");
-      goto err;
-    }
-#endif
-
-  fd = open(pidfile, fd_flags, MODE_644);
-
-#if defined(HAVE_SETEUID) && !defined(DISABLE_PRIVSEP)
-  if(seteuid(euid) != 0)
-    {
-      printerror(__func__, "could not return to euid");
-      exit(-errno);
-    }
-#endif
-
-  if(fd == -1)
+  if((fd = scamper_priv_open(pidfile, fd_flags, MODE_644)) == -1)
     {
       printerror(__func__, "could not open %s", pidfile);
-      goto err;
+      return -1;
     }
+
+#ifndef _WIN32 /* windows process-id differences */
+  pid = getpid();
+#ifndef DISABLE_SCAMPER_PRIVSEP
+  if(privsep_unpriv_pid != -1)
+    pid = privsep_unpriv_pid;
+#endif
+#else
+  pid = GetCurrentProcessId();
+#endif
 
   snprintf(buf, sizeof(buf), "%ld\n", (long)pid);
   len = strlen(buf);
@@ -1610,7 +1605,7 @@ static SSL_CTX *scamper_ssl_ctx(void)
 
 static int scamper_loadcerts(void)
 {
-#ifndef DISABLE_PRIVSEP
+#ifndef DISABLE_SCAMPER_PRIVSEP
   int fd = -1;
 #endif
 
@@ -1626,7 +1621,7 @@ static int scamper_loadcerts(void)
   /* we should already have a remote_tlx_ctx */
   assert(remote_tls_ctx != NULL);
 
-#ifndef DISABLE_PRIVSEP
+#ifndef DISABLE_SCAMPER_PRIVSEP
   if(privsep_fdn != NULL)
     {
       fd = scamper_privsep_open_file(remote_client_certfile, O_RDONLY, 0);
@@ -1649,7 +1644,7 @@ static int scamper_loadcerts(void)
       close(fd);
       return 0;
     }
-#endif /* !defined DISABLE_PRIVSEP */
+#endif /* !defined DISABLE_SCAMPER_PRIVSEP */
 
   /* load the client key materials */
   if(SSL_CTX_use_certificate_chain_file(remote_tls_ctx,
@@ -1670,7 +1665,7 @@ static int scamper_loadcerts(void)
   return 0;
 
  err:
-#ifndef DISABLE_PRIVSEP
+#ifndef DISABLE_SCAMPER_PRIVSEP
   if(fd != -1) close(fd);
 #endif
   return -1;
@@ -1843,7 +1838,7 @@ static void cleanup(void)
   scamper_sources_cleanup();
   scamper_outfiles_cleanup();
 
-#ifndef DISABLE_PRIVSEP
+#ifndef DISABLE_SCAMPER_PRIVSEP
   if(privsep_fdn != NULL)
     {
       scamper_fd_free(privsep_fdn);
@@ -1853,7 +1848,7 @@ static void cleanup(void)
 
   scamper_fds_cleanup();
 
-#ifndef DISABLE_PRIVSEP
+#ifndef DISABLE_SCAMPER_PRIVSEP
   scamper_privsep_cleanup();
 #endif
 
@@ -1970,8 +1965,8 @@ static int scamper(int argc, char *argv[])
   scamper_task_t          *task;
   int                      x, rc = -1;
 
-#ifndef DISABLE_PRIVSEP
-  int                      privsep_fd;
+#ifndef DISABLE_SCAMPER_PRIVSEP
+  int                      privsep_fd = -1;
 #endif
 
 #ifdef HAVE_SIGACTION
@@ -2130,20 +2125,35 @@ static int scamper(int argc, char *argv[])
     }
 #endif
 
-#ifndef DISABLE_PRIVSEP
+#ifndef DISABLE_SCAMPER_PRIVSEP
   /*
-   * revoke the root privileges we started with
-   * note: privsep_fd is a copy of lame_fd held in scamper_privsep.c,
+   * revoke the root privileges we started with, if started with root
+   * privileges (euid is zero).
+   *
+   * note: privsep_fd is a copy of unpriv_fd held in scamper_privsep.c,
    * and scamper_privsep_cleanup closes that fd, so we do not need to
    * worry about closing privsep_fd here.
    */
-  if((privsep_fd = scamper_privsep_init()) == -1)
-    goto done;
-#else
-  /* if not doing privsep, write the pidfile */
+  x = 1;
+#ifdef ENABLE_SCAMPER_PRIVSEP_ROOTONLY
+  if(euid != 0)
+    x = 0;
+#endif
+  if(x != 0)
+    {
+      if((privsep_fd = scamper_privsep_init()) == -1)
+	goto done;
+      privsep_do = 1;
+    }
+  else
+    {
+      privsep_do = 0;
+    }
+#endif
+
+  /* write the pidfile */
   if(scamper_pidfile() != 0)
     goto done;
-#endif
 
   random_seed();
 
@@ -2327,11 +2337,14 @@ static int scamper(int argc, char *argv[])
       scamper_source_free(source);
     }
 
-#ifndef DISABLE_PRIVSEP
-  privsep_fdn = scamper_fd_private(privsep_fd, NULL,
-				   scamper_privsep_read_cb, NULL);
-  if(privsep_fdn == NULL)
-    goto done;
+#ifndef DISABLE_SCAMPER_PRIVSEP
+  if(privsep_fd != -1)
+    {
+      privsep_fdn = scamper_fd_private(privsep_fd, NULL,
+				       scamper_privsep_read_cb, NULL);
+      if(privsep_fdn == NULL)
+	goto done;
+    }
 #endif
 
   gettimeofday_wrap(&lastprobe);

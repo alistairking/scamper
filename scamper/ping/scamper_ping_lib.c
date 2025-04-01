@@ -4,7 +4,7 @@
  * Copyright (C) 2023-2025 Matthew Luckie
  * Author: Matthew Luckie
  *
- * $Id: scamper_ping_lib.c,v 1.13 2025/02/25 06:31:24 mjl Exp $
+ * $Id: scamper_ping_lib.c,v 1.14 2025/03/12 19:14:38 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -180,6 +180,11 @@ uint32_t scamper_ping_tcpseq_get(const scamper_ping_t *ping)
 uint32_t scamper_ping_tcpack_get(const scamper_ping_t *ping)
 {
   return ping->tcpack;
+}
+
+uint16_t scamper_ping_tcpmss_get(const scamper_ping_t *ping)
+{
+  return ping->tcpmss;
 }
 
 scamper_ping_v4ts_t *scamper_ping_tsps_get(const scamper_ping_t *ping)

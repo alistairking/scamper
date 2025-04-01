@@ -1,7 +1,7 @@
 /*
  * unit_cmd_ping : unit tests for ping commands
  *
- * $Id: unit_cmd_ping.c,v 1.17 2025/02/24 06:59:36 mjl Exp $
+ * $Id: unit_cmd_ping.c,v 1.18 2025/03/12 19:14:38 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -336,6 +336,16 @@ static int wait_probe_0_25_timeout_0_5(const scamper_ping_t *ping)
   return 0;
 }
 
+static int mss_1460(const scamper_ping_t *ping)
+{
+  if(ping == NULL ||
+     scamper_ping_method_is_tcp(ping) == 0 ||
+     scamper_ping_tcpmss_get(ping) != 1460 ||
+     scamper_ping_pktsize_get(ping) != 20 + 20 + 4)
+    return -1;
+  return 0;
+}
+
 static int check(const char *cmd, int (*func)(const scamper_ping_t *in))
 {
   scamper_ping_t *ping;
@@ -399,6 +409,10 @@ int main(int argc, char *argv[])
     {"-O sockrx -O dl 192.0.2.1", sockrx_dl},
     {"-O raw -P tcp-syn 192.0.2.1", tcpsyn_raw},
     {"-O spoof 192.0.2.1", spoof},
+    {"-O mss=1460 -P tcp-syn 192.0.2.1", mss_1460},
+    {"-O mss=1460 -P tcp-synack 192.0.2.1", mss_1460},
+    {"-O mss=1460 -P tcp-syn-sport 192.0.2.1", mss_1460},
+    {"-O mss=1460 -P icmp-echo 192.0.2.1", isnull},
     {"-P icmp-echo 192.0.2.1", icmpecho_plain},
     {"-P icmp-time 192.0.2.1", icmptime_plain},
     {"-P tcp-syn 192.0.2.1", tcpsyn_plain},
