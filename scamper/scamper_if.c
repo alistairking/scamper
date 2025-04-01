@@ -1,7 +1,7 @@
 /*
  * scamper_if.c
  *
- * $Id: scamper_if.c,v 1.30 2024/07/18 22:26:44 mjl Exp $
+ * $Id: scamper_if.c,v 1.31 2025/03/29 18:46:03 mjl Exp $
  *
  * Copyright (C) 2008-2011 The University of Waikato
  * Copyright (C) 2014      The Regents of the University of California
@@ -31,7 +31,7 @@
 #include "scamper_debug.h"
 #include "scamper_fds.h"
 #include "scamper_if.h"
-#include "scamper_privsep.h"
+#include "scamper_priv.h"
 #include "utils.h"
 
 int scamper_if_getifindex(const char *ifname, int *ifindex)
@@ -214,24 +214,7 @@ int scamper_if_getmac(const int ifindex, uint8_t *mac)
   struct strbuf ctl;
   int fd = -1, flags;
 
-#ifdef DISABLE_PRIVSEP
-  char ifname[5+IFNAMSIZ];
-  uid_t uid, euid;
-
-  strncpy(ifname, "/dev/", sizeof(ifname));
-  if(if_indextoname(ifindex, ifname+5) == NULL)
-    {
-      printerror(__func__, "if_indextoname %d", ifindex);
-      goto err;
-    }
-  scamper_seteuid_raise(&uid, &euid);
-  fd = open(ifname, O_RDWR);
-  scamper_seteuid_lower(&uid, &euid);
-#else
-  fd = scamper_privsep_open_datalink(ifindex);
-#endif
-
-  if(fd == -1)
+  if((fd = scamper_priv_dl(ifindex)) == -1)
     {
       printerror(__func__, "could not open %d", ifindex);
       goto err;

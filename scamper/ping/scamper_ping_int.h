@@ -1,7 +1,7 @@
 /*
  * scamper_ping_int.h
  *
- * $Id: scamper_ping_int.h,v 1.16 2025/02/25 06:31:24 mjl Exp $
+ * $Id: scamper_ping_int.h,v 1.17 2025/03/12 19:14:38 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato

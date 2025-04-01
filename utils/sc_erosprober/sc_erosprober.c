@@ -787,8 +787,6 @@ static int do_ctrlsock_accept(void)
 
 static int do_ctrlsock(void)
 {
-  struct sockaddr_un sn;
-
   if(ctrlsock_name == NULL)
     return 0;
 
@@ -799,29 +797,10 @@ static int do_ctrlsock(void)
       return -1;
     }
 
-  if(sockaddr_compose_un((struct sockaddr *)&sn, ctrlsock_name) != 0)
-    {
-      fprintf(stderr, "%s: could not compose socket: %s\n",
-	      __func__, strerror(errno));
-      return -1;
-    }
-
-  if((ctrlsock_fd = socket(AF_UNIX, SOCK_STREAM, 0)) == -1)
+  if((ctrlsock_fd = unix_bind_listen(ctrlsock_name, -1)) == -1)
     {
       fprintf(stderr, "%s: could not create socket: %s\n",
 	      __func__, strerror(errno));
-      return -1;
-    }
-
-  if(bind(ctrlsock_fd, (struct sockaddr *)&sn, sizeof(sn)) != 0)
-    {
-      fprintf(stderr, "%s: could not bind: %s\n", __func__, strerror(errno));
-      return -1;
-    }
-
-  if(listen(ctrlsock_fd, -1) != 0)
-    {
-      fprintf(stderr, "%s: could not listen: %s\n", __func__, strerror(errno));
       return -1;
     }
 

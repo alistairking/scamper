@@ -1,7 +1,7 @@
 /*
  * scamper_udp4.c
  *
- * $Id: scamper_udp4.c,v 1.93 2024/11/28 09:04:48 mjl Exp $
+ * $Id: scamper_udp4.c,v 1.94 2025/03/29 18:46:03 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2010 The University of Waikato
@@ -39,7 +39,7 @@
 #include "scamper_probe.h"
 #include "scamper_ip4.h"
 #include "scamper_udp4.h"
-#include "scamper_privsep.h"
+#include "scamper_priv.h"
 #include "scamper_udp_resp.h"
 #include "utils.h"
 
@@ -419,24 +419,12 @@ SOCKET scamper_udp4_openraw(const void *addr)
 #endif
 {
 #ifndef _WIN32 /* SOCKET vs int on windows */
-  int fd = -1;
+  int fd;
 #else
-  SOCKET fd = INVALID_SOCKET;
+  SOCKET fd;
 #endif
 
-#ifdef DISABLE_PRIVSEP
-#ifdef HAVE_SETEUID
-  uid_t uid, euid;
-  if(scamper_seteuid_raise(&uid, &euid) != 0)
-    return -1;
-#endif
-  fd = scamper_udp4_openraw_fd(addr);
-#ifdef HAVE_SETEUID
-  scamper_seteuid_lower(&uid, &euid);
-#endif
-#else
-  fd = scamper_privsep_open_rawudp(addr);
-#endif
+  fd = scamper_priv_udp4raw(addr);
   if(socket_isinvalid(fd))
     goto err;
 

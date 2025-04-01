@@ -1,7 +1,7 @@
 /*
  * scamper_task.h
  *
- * $Id: scamper_task.h,v 1.56 2024/11/30 01:43:32 mjl Exp $
+ * $Id: scamper_task.h,v 1.58 2025/03/31 10:25:38 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -233,8 +233,10 @@ int scamper_task_sig_install(scamper_task_t *task);
 void scamper_task_sig_expiry_run(const struct timeval *now);
 scamper_task_t *scamper_task_find(scamper_task_sig_t *sig);
 char *scamper_task_sig_tostr(scamper_task_sig_t *sig, char *buf, size_t len);
-int scamper_task_sig_sport_used(struct scamper_addr *dst, uint8_t proto,
-				uint16_t sport, uint16_t dport);
+int scamper_task_sig_sport_used(struct scamper_addr *dst,
+				uint8_t proto, uint16_t sport, uint16_t dport);
+int scamper_task_sig_icmpid_used(struct scamper_addr *dst,
+				 uint8_t type, uint16_t id);
 
 /* manage ancillary data attached to the task */
 scamper_task_anc_t *scamper_task_anc_add(scamper_task_t *task, void *data,

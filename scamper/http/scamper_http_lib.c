@@ -1,7 +1,7 @@
 /*
  * scamper_http_lib.c
  *
- * $Id: scamper_http_lib.c,v 1.13.24.1 2025/02/27 07:51:11 mjl Exp $
+ * $Id: scamper_http_lib.c,v 1.15 2025/03/13 19:52:40 mjl Exp $
  *
  * Copyright (C) 2023-2024 The Regents of the University of California
  *
@@ -458,7 +458,7 @@ static int process_chunked(const scamper_http_t *http,uint8_t *buf,size_t *len)
   size_t chunk_off = 0, off = 0;
   uint32_t i;
   uint16_t j;
-  int mode = 0;
+  int mode = 0, digits = 0;
   long lo, x;
 
   for(i=0; i<http->bufc; i++)
@@ -475,14 +475,22 @@ static int process_chunked(const scamper_http_t *http,uint8_t *buf,size_t *len)
 	{
 	  if(mode == 0) /* parsing chunk-size */
 	    {
-	      /* some servers pad chunk sizes with many leading zeros */
-	      chunk[chunk_off] = htb->data[j];
-	      if(chunk[chunk_off] != '0' || chunk_off > 0)
-		chunk_off++;
-	      if(chunk_off == sizeof(chunk))
-		return -1;
-	      if(htb->data[j] == '\n')
+	      if(ishex(htb->data[j]) != 0)
 		{
+		  chunk[chunk_off] = htb->data[j];
+		  /* some servers pad chunk sizes with many leading zeros */
+		  if(chunk[chunk_off] != '0' || chunk_off > 0)
+		    chunk_off++;
+		  if(chunk_off == sizeof(chunk))
+		    return -1;
+		  digits = 1;
+		}
+	      else if(htb->data[j] == '\n')
+		{
+		  if(digits == 0)
+		    return -1;
+		  if(chunk_off == 0)
+		    chunk_off++;
 		  chunk[chunk_off] = '\0';
 		  errno = 0;
 		  if((lo = strtol(chunk, &endptr, 16)) == 0 && errno != 0)
@@ -501,8 +509,9 @@ static int process_chunked(const scamper_http_t *http,uint8_t *buf,size_t *len)
 		    }
 		  mode = 1;
 		  chunk_off = 0;
+		  digits = 0;
 		}
-	      else if(ishex(htb->data[j]) == 0 && htb->data[j] != '\r')
+	      else if(htb->data[j] != '\r')
 		return -1;
 	      j++;
 	    }

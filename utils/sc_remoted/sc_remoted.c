@@ -1,7 +1,7 @@
 /*
  * sc_remoted
  *
- * $Id: sc_remoted.c,v 1.138 2025/02/26 03:54:24 mjl Exp $
+ * $Id: sc_remoted.c,v 1.140 2025/03/29 08:22:51 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -670,7 +670,7 @@ static void usage(uint32_t opt_mask)
     }
 
   if(opt_mask & OPT_MUXSOCK)
-    fprintf(stderr, "     -M location to place multiplexed socket interface");
+    fprintf(stderr, "     -M location to place multiplexed socket interface\n");
 
   if(opt_mask & OPT_METADATA)
     fprintf(stderr, "     -m location of metadata file\n");
@@ -1378,30 +1378,17 @@ static int sc_master_is_valid_client_cert_1(sc_master_t *ms)
 static int unix_create(const char *filename)
 {
   int fd = -1;
-  struct sockaddr_un sn;
   mode_t mode;
-  int bound = 0;
 
-  /* create a unix domain socket for the remote scamper process */
-  if((fd = socket(AF_UNIX, SOCK_STREAM, 0)) == -1)
+  /* create a unix domain control socket */
+  if((fd = unix_bind_listen(filename, -1)) == -1)
     {
       remote_debug(__func__, "could not create unix socket: %s",
 		   strerror(errno));
       goto err;
     }
-  if(sockaddr_compose_un((struct sockaddr *)&sn, filename) != 0)
-    {
-      remote_debug(__func__, "could not compose socket: %s", strerror(errno));
-      goto err;
-    }
-  if(bind(fd, (struct sockaddr *)&sn, sizeof(sn)) != 0)
-    {
-      remote_debug(__func__, "could not bind unix socket: %s",strerror(errno));
-      goto err;
-    }
-  bound = 1;
 
-  /* set the requested permissions on the control sockets */
+  /* set the requested permissions on the control socket */
   mode = S_IRWXU;
   if(flags & FLAG_ALLOW_G) mode |= S_IRWXG;
   if(flags & FLAG_ALLOW_O) mode |= S_IRWXO;
@@ -1411,17 +1398,14 @@ static int unix_create(const char *filename)
       goto err;
     }
 
-  if(listen(fd, -1) != 0)
-    {
-      remote_debug(__func__, "could not listen: %s", strerror(errno));
-      goto err;
-    }
-
   return fd;
 
  err:
-  if(bound != 0) unlink(filename);
-  if(fd != -1) close(fd);
+  if(fd != -1)
+    {
+      unlink(filename);
+      close(fd);
+    }
   return -1;
 }
 

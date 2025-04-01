@@ -1,7 +1,7 @@
 /*
  * sc_wartsdump
  *
- * $Id: sc_wartsdump.c,v 1.309 2025/02/24 06:59:36 mjl Exp $
+ * $Id: sc_wartsdump.c,v 1.310 2025/03/16 21:15:27 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -253,8 +253,6 @@ static void dump_trace_hop(const scamper_trace_t *trace,
 	printf(" dltxts");
       if(hop_flags & SCAMPER_TRACE_HOP_FLAG_TS_DL_RX)
 	printf(" dlrxts");
-      if(hop_flags & SCAMPER_TRACE_HOP_FLAG_TS_TSC)
-	printf(" tscrtt");
       if(hop_flags & SCAMPER_TRACE_HOP_FLAG_REPLY_TTL)
 	printf(" replyttl");
       printf(" )");

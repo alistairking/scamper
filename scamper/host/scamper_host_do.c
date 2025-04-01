@@ -1,7 +1,7 @@
 /*
  * scamper_host_do
  *
- * $Id: scamper_host_do.c,v 1.89 2025/02/23 05:38:14 mjl Exp $
+ * $Id: scamper_host_do.c,v 1.90 2025/03/29 18:46:03 mjl Exp $
  *
  * Copyright (C) 2018-2025 Matthew Luckie
  *
@@ -39,7 +39,7 @@
 #include "scamper_host_do.h"
 #include "scamper_fds.h"
 #include "scamper_writebuf.h"
-#include "scamper_privsep.h"
+#include "scamper_priv.h"
 #include "mjl_list.h"
 #include "mjl_splaytree.h"
 #include "utils.h"
@@ -144,16 +144,10 @@ static int etc_resolv_line(char *line, void *param)
 
 void etc_resolv(void)
 {
-  int fd, flags = O_RDONLY;
-
-#ifdef DISABLE_PRIVSEP
-  fd = open("/etc/resolv.conf", flags);
-#else
-  fd = scamper_privsep_open_file("/etc/resolv.conf", flags, 0);
-#endif
+  int fd;
 
   /* non-fatal error, but we won't be able to do hostname lookups */
-  if(fd == -1)
+  if((fd = scamper_priv_open("/etc/resolv.conf", O_RDONLY, 0)) == -1)
     {
       scamper_debug(__func__, "could not open /etc/resolv.conf");
       return;

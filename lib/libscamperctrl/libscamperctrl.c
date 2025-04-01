@@ -1,7 +1,7 @@
 /*
  * libscamperctrl
  *
- * $Id: libscamperctrl.c,v 1.89 2025/02/25 22:40:01 mjl Exp $
+ * $Id: libscamperctrl.c,v 1.91 2025/03/12 02:58:09 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -771,11 +771,12 @@ static sc_tx_t *inst_tx(scamper_inst_t *inst, int type, const char *str)
 	  snprintf(inst->err, sizeof(inst->err), "could not malloc tx");
 	  goto err;
 	}
+      buf = NULL;
       if(TX_WANT_INST(tx))
 	tx->inst = inst;
 
-      memcpy(buf, str, len);
-      buf[len] = '\n';
+      memcpy(tx->buf, str, len);
+      tx->buf[len] = '\n';
 
       if(fd_set_write(inst->ctrl, fdn) != 0)
 	goto err;
@@ -790,13 +791,14 @@ static sc_tx_t *inst_tx(scamper_inst_t *inst, int type, const char *str)
 	  snprintf(inst->err, sizeof(inst->err), "could not malloc tx");
 	  goto err;
 	}
+      buf = NULL;
       if(TX_WANT_INST(tx))
 	tx->inst = inst;
 
-      bytes_htonl(buf + 0, inst->mc->chan);
-      bytes_htonl(buf + 4, len + 1);
-      memcpy(buf + MUX_HDRLEN, str, len);
-      buf[MUX_HDRLEN + len] = '\n';
+      bytes_htonl(tx->buf + 0, inst->mc->chan);
+      bytes_htonl(tx->buf + 4, len + 1);
+      memcpy(tx->buf + MUX_HDRLEN, str, len);
+      tx->buf[MUX_HDRLEN + len] = '\n';
 
       if(fd_set_write(inst->ctrl, fdn) != 0)
 	goto err;
@@ -1577,19 +1579,20 @@ static int mux_read(scamper_mux_t *mux)
 
       msg_chan = bytes_ntohl(mux->buf + off);
       msg_len  = bytes_ntohl(mux->buf + off + 4);
-      off += MUX_HDRLEN;
 
       /* have the code block at the top of the loop handle frame */
       if(msg_chan != 0)
 	{
+	  off += MUX_HDRLEN;
 	  mux->recv_chan = msg_chan;
 	  mux->recv_left = msg_len;
 	  continue;
 	}
 
       /* require all of a channel zero message before processing it */
-      if(left < msg_len)
+      if(left < MUX_HDRLEN + msg_len)
 	break;
+      off += MUX_HDRLEN;
 
       /* process the channel zero message */
       if(mux_read_zero(mux, mux->buf + off, msg_len) != 0)
@@ -1602,6 +1605,7 @@ static int mux_read(scamper_mux_t *mux)
       off += msg_len;
     }
 
+  assert(off <= len);
   mux->buf_len = len - off;
   if(mux->buf_len > 0)
     memmove(mux->buf, mux->buf + off, mux->buf_len);

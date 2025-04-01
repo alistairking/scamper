@@ -1,7 +1,7 @@
 /*
  * scamper_ip4.c
  *
- * $Id: scamper_ip4.c,v 1.28 2024/08/13 05:14:13 mjl Exp $
+ * $Id: scamper_ip4.c,v 1.29 2025/03/29 18:46:03 mjl Exp $
  *
  * Copyright (C) 2009-2011 The University of Waikato
  * Copyright (C) 2023      The Regents of the University of California
@@ -37,7 +37,7 @@
 #include "scamper_probe.h"
 #include "scamper_ip4.h"
 #include "scamper_tcp4.h"
-#include "scamper_privsep.h"
+#include "scamper_priv.h"
 #include "utils.h"
 
 #ifndef _WIN32 /* SOCKET vs int on windows */
@@ -58,6 +58,7 @@ SOCKET scamper_ip4_openraw_fd(void)
       printerror(__func__, "could not open socket");
       goto err;
     }
+
   if(setsockopt_int(fd, IPPROTO_IP, IP_HDRINCL, 1) != 0)
     {
       printerror(__func__, "could not IP_HDRINCL");
@@ -77,27 +78,7 @@ int scamper_ip4_openraw(void)
 SOCKET scamper_ip4_openraw(void)
 #endif
 {
-#ifndef _WIN32 /* SOCKET vs int on windows */
-  int fd = -1;
-#else
-  SOCKET fd = INVALID_SOCKET;
-#endif
-
-#ifdef DISABLE_PRIVSEP
-#ifdef HAVE_SETEUID
-  uid_t uid, euid;
-  if(scamper_seteuid_raise(&uid, &euid) != 0)
-    return -1;
-#endif
-  fd = scamper_ip4_openraw_fd();
-#ifdef HAVE_SETEUID
-  scamper_seteuid_lower(&uid, &euid);
-#endif
-#else
-  fd = scamper_privsep_open_rawip();
-#endif
-
-  return fd;
+  return scamper_priv_ip4raw();
 }
 
 int scamper_ip4_hlen(scamper_probe_t *pr, size_t *hlen)

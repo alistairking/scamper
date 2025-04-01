@@ -1,7 +1,7 @@
 /*
  * scamper_task.c
  *
- * $Id: scamper_task.c,v 1.105 2025/02/11 17:35:53 mjl Exp $
+ * $Id: scamper_task.c,v 1.107 2025/03/31 10:25:38 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -600,7 +600,8 @@ static int overlap(uint16_t a, uint16_t b, uint16_t x, uint16_t y)
   return 0;
 }
 
-static int sig_tx_ip_overlap(scamper_task_sig_t *a, scamper_task_sig_t *b)
+static int sig_tx_ip_overlap(const scamper_task_sig_t *a,
+			     const scamper_task_sig_t *b)
 {
   if(a->sig_tx_ip_proto != b->sig_tx_ip_proto)
     return 0;
@@ -635,11 +636,19 @@ static int sig_tx_ip_overlap(scamper_task_sig_t *a, scamper_task_sig_t *b)
   return 1;
 }
 
-static int trie_addr_sig_tx_ip_overlap(trie_addr_t *ta, scamper_task_sig_t *sig)
+static int trie_addr_sig_tx_ip_overlap(const scamper_task_sig_t *sig)
 {
+  trie_addr_t *ta;
   dlist_node_t *dn;
   s2t_t *s2t;
   s2x_t *s2x;
+
+  /*
+   * if we don't have any measurement to that address, then the port
+   * is clear
+   */
+  if((ta = trie_addr_find(sig->sig_tx_ip_dst)) == NULL)
+    return 0;
 
   for(dn=dlist_head_node(ta->s2t_list); dn != NULL; dn=dlist_node_next(dn))
     {
@@ -657,32 +666,47 @@ static int trie_addr_sig_tx_ip_overlap(trie_addr_t *ta, scamper_task_sig_t *sig)
   return 0;
 }
 
+int scamper_task_sig_icmpid_used(scamper_addr_t *dst, uint8_t type, uint16_t id)
+{
+  scamper_task_sig_t sig;
+
+  sig.sig_tx_ip_dst = dst;
+  if(SCAMPER_ADDR_TYPE_IS_IPV4(dst))
+    {
+      if(type == ICMP_ECHO)
+	SCAMPER_TASK_SIG_ICMP_ECHO(&sig, id);
+      else if(type == ICMP_TSTAMP)
+	SCAMPER_TASK_SIG_ICMP_TIME(&sig, id);
+      else
+	return -1;
+    }
+  else if(SCAMPER_ADDR_TYPE_IS_IPV6(dst))
+    {
+      if(type == ICMP6_ECHO_REQUEST)
+	SCAMPER_TASK_SIG_ICMP_ECHO(&sig, id);
+      else
+	return -1;
+    }
+
+  /* check to see if there's an overlapping signature */
+  return trie_addr_sig_tx_ip_overlap(&sig);
+}
+
 int scamper_task_sig_sport_used(scamper_addr_t *dst, uint8_t proto,
 				uint16_t sport, uint16_t dport)
 {
   scamper_task_sig_t sig;
-  trie_addr_t *ta;
 
   sig.sig_tx_ip_dst = dst;
   if(proto == IPPROTO_TCP)
     SCAMPER_TASK_SIG_TCP(&sig, sport, dport);
   else if(proto == IPPROTO_UDP)
     SCAMPER_TASK_SIG_UDP(&sig, sport, dport);
-  else if((proto == IPPROTO_ICMP && SCAMPER_ADDR_TYPE_IS_IPV4(dst)) ||
-	  (proto == IPPROTO_ICMPV6 && SCAMPER_ADDR_TYPE_IS_IPV6(dst)))
-    SCAMPER_TASK_SIG_ICMP_ECHO(&sig, sport);
   else
     return -1;
 
-  /*
-   * if we don't have any measurement to that address, then the port
-   * is clear
-   */
-  if((ta = trie_addr_find(dst)) == NULL)
-    return 0;
-
   /* check to see if there's an overlapping signature */
-  return trie_addr_sig_tx_ip_overlap(ta, &sig);
+  return trie_addr_sig_tx_ip_overlap(&sig);
 }
 
 scamper_task_t *scamper_task_find(scamper_task_sig_t *sig)
