@@ -5,7 +5,7 @@
  *
  * Author: Matthew Luckie
  *
- * $Id: scamper_udpprobe_warts.c,v 1.6 2024/09/06 01:34:54 mjl Exp $
+ * $Id: scamper_udpprobe_warts.c,v 1.7 2025/04/20 07:34:23 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -346,6 +346,7 @@ static int warts_udpprobe_params_read(scamper_udpprobe_t *up,
 				      warts_state_t *state, uint8_t *buf,
 				      uint32_t *off, uint32_t len)
 {
+  uint8_t probe_sent = 1, probe_count = 1;
   warts_param_reader_t handlers[] = {
     {&up->list,         (wpr_t)extract_list,         state},
     {&up->cycle,        (wpr_t)extract_cycle,        state},
@@ -361,8 +362,8 @@ static int warts_udpprobe_params_read(scamper_udpprobe_t *up,
     {&up->len,          (wpr_t)extract_uint16,       NULL},
     {&up->data,         (wpr_t)extract_bytes_alloc,  &up->len},
     {p0_replyc,         (wpr_t)extract_byte,         NULL},
-    {&up->probe_count,  (wpr_t)extract_byte,         NULL},
-    {&up->probe_sent,   (wpr_t)extract_byte,         NULL},
+    {&probe_count,      (wpr_t)extract_byte,         NULL},
+    {&probe_sent,       (wpr_t)extract_byte,         NULL},
     {&up->stop_count,   (wpr_t)extract_byte,         NULL},
     {&up->sport,        (wpr_t)extract_uint16,       NULL},
     {&up->wait_probe,   (wpr_t)extract_rtt,          NULL},
@@ -372,10 +373,8 @@ static int warts_udpprobe_params_read(scamper_udpprobe_t *up,
   if(warts_params_read(buf, off, len, handlers, handler_cnt) != 0)
     return -1;
 
-  if(up->probe_sent == 0)
-    up->probe_sent = 1;
-  if(up->probe_count == 0)
-    up->probe_count = 1;
+  up->probe_count = probe_count;
+  up->probe_sent = probe_sent;
 
   return 0;
 }
@@ -390,7 +389,8 @@ static int warts_udpprobe_params_write(const scamper_udpprobe_t *up,
 {
   uint16_t up_len = up->len;
   uint32_t list_id, cycle_id;
-  uint8_t p0_replyc = 0, p0_sport = 0;
+  uint8_t p0_replyc = 0;
+  uint16_t p0_sport = 0;
   warts_param_writer_t handlers[] = {
     {&list_id,            (wpw_t)insert_uint32,       NULL},
     {&cycle_id,           (wpw_t)insert_uint32,       NULL},
@@ -434,7 +434,7 @@ int scamper_file_warts_udpprobe_read(scamper_file_t *sf,
 {
   warts_state_t *state = scamper_file_getstate(sf);
   scamper_udpprobe_t *up = NULL;
-  scamper_udpprobe_probe_t *probe;
+  scamper_udpprobe_probe_t *probe = NULL;
   uint8_t *buf = NULL;
   uint32_t off = 0, pN_urc = 0, px;
   uint8_t i, j, p0_replyc = 0;
@@ -461,31 +461,29 @@ int scamper_file_warts_udpprobe_read(scamper_file_t *sf,
   if(warts_udpprobe_params_read(up, &p0_replyc, &p0_sport, state, buf, &off, hdr->len) != 0)
     goto done;
 
-  if(up->probe_sent == 0)
-    up->probe_sent = 1;
-  if(up->probe_count == 0)
-    up->probe_count = 1;
-
-  x = sizeof(scamper_udpprobe_probe_t *) * up->probe_sent;
-  if((up->probes = malloc_zero(x)) == NULL ||
-     (up->probes[0] = scamper_udpprobe_probe_alloc()) == NULL)
-    goto done;
-  probe = up->probes[0];
-  probe->sport = p0_sport;
-  probe->replyc = p0_replyc;
-  timeval_cpy(&probe->tx, &up->start);
-
-  if(p0_replyc > 0)
+  if(up->probe_sent > 0)
     {
-      x = sizeof(scamper_udpprobe_reply_t *) * p0_replyc;
-      if((probe->replies = malloc_zero(x)) == NULL)
+      x = sizeof(scamper_udpprobe_probe_t *) * up->probe_sent;
+      if((up->probes = malloc_zero(x)) == NULL ||
+	 (up->probes[0] = scamper_udpprobe_probe_alloc()) == NULL)
 	goto done;
-      for(i=0; i<p0_replyc; i++)
+      probe = up->probes[0];
+      probe->sport = p0_sport;
+      probe->replyc = p0_replyc;
+      timeval_cpy(&probe->tx, &up->start);
+
+      if(p0_replyc > 0)
 	{
-	  if((probe->replies[i] = scamper_udpprobe_reply_alloc()) == NULL ||
-	     warts_udpprobe_reply_read(probe->replies[i], ifntable, buf,
-				       &off, hdr->len) != 0)
+	  x = sizeof(scamper_udpprobe_reply_t *) * p0_replyc;
+	  if((probe->replies = malloc_zero(x)) == NULL)
 	    goto done;
+	  for(i=0; i<p0_replyc; i++)
+	    {
+	      if((probe->replies[i] = scamper_udpprobe_reply_alloc()) == NULL ||
+		 warts_udpprobe_reply_read(probe->replies[i], ifntable, buf,
+					   &off, hdr->len) != 0)
+		goto done;
+	    }
 	}
     }
 

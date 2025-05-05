@@ -1,12 +1,12 @@
 /*
  * common_ping : common functions for unit testing ping
  *
- * $Id: common_ping.h,v 1.1 2025/02/13 01:23:45 mjl Exp $
+ * $Id: common_ping.h,v 1.2 2025/04/20 07:31:58 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
  *
- * Copyright (C) 2024 Matthew Luckie
+ * Copyright (C) 2024-2025 Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -23,6 +23,6 @@
  *
  */
 
+scamper_ping_t *ping_makers(size_t i);
+size_t ping_makerc(void);
 int ping_ok(const scamper_ping_t *in, const scamper_ping_t *out);
-scamper_ping_t *ping_1(void);
-scamper_ping_t *ping_2(void);

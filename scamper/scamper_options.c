@@ -1,7 +1,7 @@
 /*
  * scamper_options.c: code to handle parsing of options
  *
- * $Id: scamper_options.c,v 1.18 2024/02/12 20:35:36 mjl Exp $
+ * $Id: scamper_options.c,v 1.19 2025/04/27 02:41:38 mjl Exp $
  *
  * Copyright (C) 2006-2010 The University of Waikato
  * Copyright (C) 2014-2015 The Regents of the University of California
@@ -83,7 +83,7 @@ static int opt_parse_param(int type, char **str, char **next)
       if(*tmp == '-')
 	tmp++;
       c = 0;
-      while(isdigit((int)*tmp) != 0)
+      while(isdigit((unsigned char)*tmp) != 0)
 	{
 	  tmp++;
 	  c++;
@@ -94,7 +94,7 @@ static int opt_parse_param(int type, char **str, char **next)
 	goto err;
 
       /* if the character we stopped on is not whitespace */
-      if(*tmp != '\0' && isspace((int)*tmp) == 0)
+      if(*tmp != '\0' && isspace((unsigned char)*tmp) == 0)
 	goto err;
     }
   else if(type == SCAMPER_OPTION_TYPE_STR)
@@ -157,7 +157,7 @@ static int opt_parse_param(int type, char **str, char **next)
    * skip past whitespace and advance to the next string in the option.
    * if there is nothing else, then *next is set to NULL.
    */
-  while(isspace((int)*tmp) != 0)
+  while(isspace((unsigned char)*tmp) != 0)
     tmp++;
   if(*tmp != '\0')
     *next = tmp;
@@ -207,7 +207,7 @@ int scamper_options_parse(char *str,
   size_t i;
 
   /* to begin with, get to the first non-whitespace character */
-  while(*str != '\0' && isspace((int)*str) != 0)
+  while(*str != '\0' && isspace((unsigned char)*str) != 0)
     {
       str++;
     }

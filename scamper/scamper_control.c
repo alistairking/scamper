@@ -1,12 +1,12 @@
 /*
  * scamper_control.c
  *
- * $Id: scamper_control.c,v 1.289 2025/04/01 06:59:40 mjl Exp $
+ * $Id: scamper_control.c,v 1.290 2025/04/20 07:29:14 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2012-2014 The Regents of the University of California
- * Copyright (C) 2014-2024 Matthew Luckie
+ * Copyright (C) 2014-2025 Matthew Luckie
  * Copyright (C) 2023      The Regents of the University of California
  * Author: Matthew Luckie
  *
@@ -136,7 +136,7 @@ typedef struct client_message
 typedef struct control_remote
 {
   char               *server_name;
-  int                 server_port;
+  uint16_t            server_port;
   int                 server_ssl;
   scamper_fd_t       *fd;
   scamper_writebuf_t *wb;
@@ -291,7 +291,7 @@ extern SSL_CTX *remote_tls_ctx;
 static int remote_reconnect(void *param);
 static int remote_tx_ka(void *param);
 static int remote_rx_abort(void *param);
-static control_remote_t *remote_find(const char *name, int port);
+static control_remote_t *remote_find(const char *name, uint16_t port);
 static void remote_free(control_remote_t *rm, int mode);
 
 #define REMOTE_FREE_ALL    0
@@ -858,7 +858,7 @@ static char *client_tostr(void *param, char *buf, size_t len)
   if(client->type == CLIENT_TYPE_SOCKET)
     string_concaf(buf,len,&off,"fd %d", scamper_fd_fd_get(client->un.sock.fdn));
   else
-    string_concaf(buf,len,&off,"chan %u", client->un.chan.id);
+    string_concat_u32(buf, len, &off, "chan ", client->un.chan.id);
 
   return buf;
 }
@@ -1150,7 +1150,7 @@ static int command_remote_add(client_t *client, char *buf)
     {"ssl", &ssl},
   };
   int handler_cnt = sizeof(handlers) / sizeof(param_t);
-  int server_port;
+  uint16_t server_port;
   int server_ssl = 0;
   long lo;
 
@@ -1185,7 +1185,7 @@ static int command_remote_add(client_t *client, char *buf)
     }
   if(remote_find(server_name, server_port) != NULL)
     {
-      client_send(client, "ERR %s:%d already exists", server_name, server_port);
+      client_send(client, "ERR %s:%u already exists", server_name, server_port);
       goto done;
     }
 
@@ -1235,7 +1235,7 @@ static int command_remote_delete(client_t *client, char *buf)
   control_remote_t *rm;
   char *params[1], *server, *server_name = NULL;
   int cnt = sizeof(params) / sizeof(char *);
-  int server_port;
+  uint16_t server_port;
 
   if(remote_list == NULL)
     {
@@ -1262,7 +1262,7 @@ static int command_remote_delete(client_t *client, char *buf)
     }
   if((rm = remote_find(server_name, server_port)) == NULL)
     {
-      client_send(client, "ERR %s:%d not found", server_name, server_port);
+      client_send(client, "ERR %s:%u not found", server_name, server_port);
       goto done;
     }
 
@@ -1292,8 +1292,9 @@ static int command_remote_list(client_t *client, char *buf)
 	{
 	  rm = dlist_node_item(dn);
 	  off = 0;
-	  string_concaf(tmp, sizeof(tmp), &off,
-			"INFO %s:%d", rm->server_name, rm->server_port);
+
+	  string_concat2(tmp, sizeof(tmp), &off, "INFO ", rm->server_name);
+	  string_concat_u16(tmp, sizeof(tmp), &off, ":", rm->server_port);
 	  if(rm->alias != NULL)
 	    string_concat2(tmp, sizeof(tmp), &off, " alias ", rm->alias);
 	  client_send(client, "%s", tmp);
@@ -1903,7 +1904,7 @@ static void client_write(const int fd, client_t *client)
  * check if we already have a connection to the supplied remote control
  * server.
  */
-static control_remote_t *remote_find(const char *name, int port)
+static control_remote_t *remote_find(const char *name, uint16_t port)
 {
   dlist_node_t *dn;
   control_remote_t *rm;
@@ -3264,7 +3265,7 @@ static void control_accept(SOCKET fd, void *param)
   return;
 }
 
-int scamper_control_add_remote(const char *name, int port, int ssl)
+int scamper_control_add_remote(const char *name, uint16_t port, int ssl)
 {
   control_remote_t *rm = NULL;
   uint32_t u32;
@@ -3318,7 +3319,7 @@ int scamper_control_add_unix(const char *file)
   return -1;
 }
 
-int scamper_control_add_inet(const char *ip, int port)
+int scamper_control_add_inet(const char *ip, uint16_t port)
 {
   struct sockaddr_storage sas;
   struct sockaddr *sa = (struct sockaddr *)&sas;

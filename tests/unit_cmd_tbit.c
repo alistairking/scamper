@@ -1,7 +1,7 @@
 /*
  * unit_cmd_tbit : unit tests for tbit commands
  *
- * $Id: unit_cmd_tbit.c,v 1.3 2024/05/20 08:16:31 mjl Exp $
+ * $Id: unit_cmd_tbit.c,v 1.4 2025/05/02 04:39:00 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -150,7 +150,7 @@ int main(int argc, char *argv[])
 	{
 	  snprintf(filename, sizeof(filename),
 		   "%s/tbit-%03x.txt", argv[2], (int)i);
-	  if(dump_cmd(tests[i].cmd, filename) != 0)
+	  if(dump_string(tests[i].cmd, filename) != 0)
 	    break;
 	}
     }

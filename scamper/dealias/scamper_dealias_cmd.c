@@ -1,7 +1,7 @@
 /*
  * scamper_dealias_cmd.c
  *
- * $Id: scamper_dealias_cmd.c,v 1.30 2024/05/02 02:33:38 mjl Exp $
+ * $Id: scamper_dealias_cmd.c,v 1.31 2025/04/30 07:59:54 mjl Exp $
  *
  * Copyright (C) 2008-2011 The University of Waikato
  * Copyright (C) 2012-2013 Matthew Luckie
@@ -710,7 +710,9 @@ static int dealias_alloc_ally(scamper_dealias_t *d, dealias_options_t *o,
       pd[i].id = i;
     }
 
-  if((ally = scamper_dealias_ally_alloc()) == NULL)
+  if((ally = scamper_dealias_ally_alloc()) == NULL ||
+     (ally->probedefs[0] = scamper_dealias_probedef_alloc()) == NULL ||
+     (ally->probedefs[1] = scamper_dealias_probedef_alloc()) == NULL)
     {
       snprintf(errbuf, errlen, "could not alloc %s structure", meth);
       goto err;

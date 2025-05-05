@@ -1,7 +1,7 @@
 /*
  * sc_radargun : scamper driver to do radargun-style probing.
  *
- * $Id: sc_radargun.c,v 1.25 2025/02/24 06:59:36 mjl Exp $
+ * $Id: sc_radargun.c,v 1.26 2025/04/21 03:24:13 mjl Exp $
  *
  * Copyright (C) 2014      The Regents of the University of California
  * Copyright (C) 2016      The University of Waikato
@@ -985,7 +985,7 @@ static int do_method_radargun(sc_test_t *test, char **cmd_out, size_t *len_out)
   string_concat(cmd, len, &off, header);
   for(i=0; i<incrc; i++)
     string_concat(cmd, len, &off, defs[i]);
-  string_concat(cmd, len, &off, "\n");
+  string_concatc(cmd, len, &off, '\n');
 
   for(i=0; i<incrc; i++)
     if(defs[i] != NULL)

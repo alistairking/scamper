@@ -1,11 +1,11 @@
 /*
  * scamper_http_warts.c
  *
- * Copyright (C) 2023-2024 The Regents of the University of California
+ * Copyright (C) 2023-2025 The Regents of the University of California
  *
  * Author: Matthew Luckie
  *
- * $Id: scamper_http_warts.c,v 1.5 2024/09/22 05:27:49 mjl Exp $
+ * $Id: scamper_http_warts.c,v 1.6 2025/04/21 22:05:36 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -34,6 +34,8 @@
 #include "scamper_file.h"
 #include "scamper_file_warts.h"
 #include "scamper_http_warts.h"
+
+#include "mjl_list.h"
 #include "utils.h"
 
 /*
@@ -340,10 +342,6 @@ static int warts_http_params_read(scamper_http_t *http, warts_state_t *state,
   if(warts_params_read(buf, off, len, handlers, handler_cnt) != 0)
     return -1;
 
-  if(http->bufc > 0 &&
-     (http->bufs=malloc_zero(sizeof(scamper_http_buf_t *)*http->bufc)) == NULL)
-    return -1;
-
   if(flag_isset(&buf[o], WARTS_HTTP_DPORT) == 0)
     {
       if(http->type == SCAMPER_HTTP_TYPE_HTTPS)
@@ -399,9 +397,12 @@ int scamper_file_warts_http_read(scamper_file_t *sf, const warts_hdr_t *hdr,
 {
   warts_state_t *state = scamper_file_getstate(sf);
   scamper_http_t *http = NULL;
+  scamper_http_buf_t *htb = NULL;
+  slist_t *list = NULL;
   uint8_t *buf = NULL;
-  uint32_t i, off = 0;
+  uint32_t i, off = 0, bufc;
   int rc = -1;
+  size_t sz;
 
   if(warts_read(sf, &buf, hdr->len) != 0)
     goto done;
@@ -420,12 +421,23 @@ int scamper_file_warts_http_read(scamper_file_t *sf, const warts_hdr_t *hdr,
 
   if(http->bufc > 0)
     {
-      for(i=0; i<http->bufc; i++)
+      bufc = http->bufc; http->bufc = 0;
+      if((list = slist_alloc()) == NULL)
+	goto done;
+      for(i=0; i<bufc; i++)
 	{
-	  if((http->bufs[i] = scamper_http_buf_alloc()) == NULL ||
-	     warts_http_buf_read(http->bufs[i], buf, &off, hdr->len) != 0)
+	  if((htb = scamper_http_buf_alloc()) == NULL ||
+	     warts_http_buf_read(htb, buf, &off, hdr->len) != 0 ||
+	     slist_tail_push(list, htb) == NULL)
 	    goto done;
+	  htb = NULL;
 	}
+
+      sz = sizeof(scamper_http_buf_t *) * bufc;
+      if((http->bufs = malloc_zero(sz)) == NULL)
+	goto done;
+      while((htb = slist_head_pop(list)) != NULL)
+	http->bufs[http->bufc++] = htb;
     }
 
   *http_out = http; http = NULL;
@@ -433,6 +445,8 @@ int scamper_file_warts_http_read(scamper_file_t *sf, const warts_hdr_t *hdr,
 
  done:
   if(buf != NULL) free(buf);
+  if(htb != NULL) scamper_http_buf_free(htb);
+  if(list != NULL) slist_free_cb(list, (slist_free_t)scamper_http_buf_free);
   if(http != NULL) scamper_http_free(http);
   return rc;
 }

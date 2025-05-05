@@ -1,7 +1,7 @@
 /*
  * scamper_trace_cmd.c
  *
- * $Id: scamper_trace_cmd.c,v 1.25 2024/07/17 02:11:58 mjl Exp $
+ * $Id: scamper_trace_cmd.c,v 1.26 2025/04/29 01:07:12 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -614,9 +614,10 @@ void *scamper_do_trace_alloc(char *str, char *errbuf, size_t errlen)
 	  goto err;
 	}
       if(type != SCAMPER_TRACE_TYPE_UDP &&
-	 type != SCAMPER_TRACE_TYPE_UDP_PARIS)
+	 type != SCAMPER_TRACE_TYPE_UDP_PARIS &&
+	 type != SCAMPER_TRACE_TYPE_TCP_ACK)
 	{
-	  snprintf(errbuf, errlen, "cannot do pmtud without a UDP method");
+	  snprintf(errbuf, errlen, "cannot do pmtud with this probe method");
 	  goto err;
 	}
     }

@@ -1,0 +1,17 @@
+include scamper.pyx
+include clibscamperctrl.pxd
+include cscamper_addr.pxd
+include cscamper_dealias.pxd
+include cscamper_file.pxd
+include cscamper_host.pxd
+include cscamper_http.pxd
+include cscamper_icmpext.pxd
+include cscamper_list.pxd
+include cscamper_neighbourdisc.pxd
+include cscamper_ping.pxd
+include cscamper_sniff.pxd
+include cscamper_sting.pxd
+include cscamper_tbit.pxd
+include cscamper_tracelb.pxd
+include cscamper_trace.pxd
+include cscamper_udpprobe.pxd

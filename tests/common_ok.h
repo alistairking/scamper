@@ -1,7 +1,7 @@
 /*
  * common_ok.h : functions common to unit tests that do comparisons
  *
- * $Id: common_ok.h,v 1.1 2025/02/13 18:48:55 mjl Exp $
+ * $Id: common_ok.h,v 1.3 2025/04/23 09:54:19 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -24,9 +24,13 @@
  */
 
 int addr_ok(const scamper_addr_t *a, const scamper_addr_t *b);
-int ifname_ok(const scamper_ifname_t *a, const scamper_ifname_t *b);
 int buf_ok(const uint8_t *a, const uint8_t *b, size_t len);
 int str_ok(const char *a, const char *b);
+int ptr_ok(const void *a, const void *b);
+
+#ifdef __SCAMPER_IFNAME_H
+int ifname_ok(const scamper_ifname_t *a, const scamper_ifname_t *b);
+#endif
 
 #ifdef __SCAMPER_ICMPEXT_H
 int icmpexts_ok(const scamper_icmpexts_t *a, const scamper_icmpexts_t *b);

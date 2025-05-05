@@ -1,7 +1,7 @@
 /*
  * scamper_do_ping.h
  *
- * $Id: scamper_ping_do.h,v 1.16 2024/02/27 03:34:02 mjl Exp $
+ * $Id: scamper_ping_do.h,v 1.17 2025/04/27 00:49:24 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2010 The University of Waikato
@@ -29,8 +29,13 @@ scamper_task_t *scamper_do_ping_alloctask(void *data,
 					  scamper_list_t *list,
 					  scamper_cycle_t *cycle,
 					  char *errbuf, size_t errlen);
-uint32_t scamper_do_ping_userid(void *data);
+
 void scamper_do_ping_free(void *data);
+
+uint32_t scamper_do_ping_userid(void *data);
+
+int scamper_do_ping_enabled(void);
+
 void scamper_do_ping_cleanup(void);
 int scamper_do_ping_init(void);
 

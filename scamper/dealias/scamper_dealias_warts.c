@@ -5,10 +5,10 @@
  * Copyright (C) 2012      Matthew Luckie
  * Copyright (C) 2012-2014 The Regents of the University of California
  * Copyright (C) 2015-2025 Matthew Luckie
- * Copyright (C) 2023      The Regents of the University of California
+ * Copyright (C) 2023,2025 The Regents of the University of California
  * Author: Matthew Luckie
  *
- * $Id: scamper_dealias_warts.c,v 1.47 2025/02/11 14:31:43 mjl Exp $
+ * $Id: scamper_dealias_warts.c,v 1.50 2025/04/30 07:59:54 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -42,6 +42,7 @@
 #include "scamper_dealias_warts.h"
 
 #include "mjl_splaytree.h"
+#include "mjl_list.h"
 #include "utils.h"
 
 #define WARTS_DEALIAS_LIST_ID  1
@@ -495,6 +496,36 @@ static int warts_dealias_probedef_read(scamper_dealias_probedef_t *p,
   return 0;
 }
 
+static slist_t *warts_dealias_probedefs_read(warts_state_t *state,
+					     warts_addrtable_t *table,
+					     uint32_t probedefc, uint8_t *buf,
+					     uint32_t *off, uint32_t len)
+{
+  scamper_dealias_probedef_t *pd = NULL;
+  slist_t *list = NULL;
+  uint32_t i;
+
+  if((list = slist_alloc()) == NULL)
+    goto err;
+
+  for(i=0; i<probedefc; i++)
+    {
+      if((pd = scamper_dealias_probedef_alloc()) == NULL ||
+	 warts_dealias_probedef_read(pd, state, table, buf, off, len) != 0 ||
+	 slist_tail_push(list, pd) == NULL)
+	goto err;
+      pd = NULL;
+    }
+
+  return list;
+
+ err:
+  if(pd != NULL) scamper_dealias_probedef_free(pd);
+  if(list != NULL)
+    slist_free_cb(list, (slist_free_t)scamper_dealias_probedef_free);
+  return NULL;
+}
+
 static void warts_dealias_probedef_write(const scamper_dealias_probedef_t *p,
 					 warts_dealias_probedef_t *state,
 					 const scamper_file_t *sf,
@@ -847,13 +878,14 @@ static int warts_dealias_radargun_read(scamper_dealias_t *dealias,
 				       uint8_t *buf,uint32_t *off,uint32_t len)
 {
   scamper_dealias_radargun_t *rg = NULL;
+  scamper_dealias_probedef_t *pd;
   uint32_t probedefc = 0;
   uint16_t rounds = 0;
   uint16_t wait_probe = 0;
   uint32_t wait_round = 0;
   uint8_t  wait_timeout = 0;
   uint8_t  flags = 0;
-  uint32_t i;
+  slist_t *list = NULL;
   warts_param_reader_t handlers[] = {
     {&probedefc,    (wpr_t)extract_uint32, NULL},
     {&rounds,       (wpr_t)extract_uint16, NULL},
@@ -866,36 +898,33 @@ static int warts_dealias_radargun_read(scamper_dealias_t *dealias,
 
   if(warts_params_read(buf, off, len, handlers, handler_cnt) != 0 ||
      probedefc == 0 ||
+     (list = warts_dealias_probedefs_read(state, table, probedefc,
+					  buf, off, len)) == NULL ||
      (rg = scamper_dealias_radargun_alloc()) == NULL ||
      scamper_dealias_radargun_probedefs_alloc(rg, probedefc) != 0)
     goto err;
 
-  rg->probedefc    = probedefc;
-  rg->rounds       = rounds;
-  rg->flags        = flags;
-
+  while((pd = slist_head_pop(list)) != NULL)
+    rg->probedefs[rg->probedefc++] = pd;
+  rg->rounds = rounds;
+  rg->flags = flags;
   rg->wait_probe.tv_sec = wait_probe / 1000;
   rg->wait_probe.tv_usec = (wait_probe % 1000) * 1000;
   rg->wait_round.tv_sec = wait_round / 1000;
   rg->wait_round.tv_usec = (wait_round % 1000) * 1000;
   rg->wait_timeout.tv_sec = wait_timeout;
 
-  for(i=0; i<probedefc; i++)
-    {
-      if((rg->probedefs[i] = scamper_dealias_probedef_alloc()) == NULL ||
-	 warts_dealias_probedef_read(rg->probedefs[i], state, table,
-				     buf, off, len) != 0)
-	goto err;
-    }
-
   dealias->data = rg;
 
   *defs = rg->probedefs;
   *defc = rg->probedefc;
+  slist_free(list);
   return 0;
 
  err:
   if(rg != NULL) scamper_dealias_radargun_free(rg);
+  if(list != NULL)
+    slist_free_cb(list, (slist_free_t)scamper_dealias_probedef_free);
   return -1;
 }
 
@@ -975,8 +1004,10 @@ static int warts_dealias_midarest_read(scamper_dealias_t *dealias,
 				       uint8_t *buf,uint32_t *off,uint32_t len)
 {
   scamper_dealias_midarest_t *me = NULL;
-  uint16_t i, probedefc = 0;
-  uint8_t  rounds = 0;
+  scamper_dealias_probedef_t *pd;
+  uint16_t probedefc = 0;
+  uint8_t rounds = 0;
+  slist_t *list = NULL;
   struct timeval wait_probe, wait_round, wait_timeout;
   warts_param_reader_t handlers[] = {
     {&probedefc,    (wpr_t)extract_uint16, NULL},
@@ -993,32 +1024,30 @@ static int warts_dealias_midarest_read(scamper_dealias_t *dealias,
 
   if(warts_params_read(buf, off, len, handlers, handler_cnt) != 0 ||
      probedefc == 0 ||
+     (list = warts_dealias_probedefs_read(state, table, probedefc,
+					  buf, off, len)) == NULL ||
      (me = scamper_dealias_midarest_alloc()) == NULL ||
      scamper_dealias_midarest_probedefs_alloc(me, probedefc) != 0)
     goto err;
 
-  me->probedefc    = probedefc;
-  me->rounds       = rounds;
+  while((pd = slist_head_pop(list)) != NULL)
+    me->probedefs[me->probedefc++] = pd;
+  me->rounds = rounds;
   timeval_cpy(&me->wait_probe, &wait_probe);
   timeval_cpy(&me->wait_round, &wait_round);
   timeval_cpy(&me->wait_timeout, &wait_timeout);
-
-  for(i=0; i<probedefc; i++)
-    {
-      if((me->probedefs[i] = scamper_dealias_probedef_alloc()) == NULL ||
-	 warts_dealias_probedef_read(me->probedefs[i], state, table,
-				     buf, off, len) != 0)
-	goto err;
-    }
 
   dealias->data = me;
 
   *defs = me->probedefs;
   *defc = me->probedefc;
+  slist_free(list);
   return 0;
 
  err:
   if(me != NULL) scamper_dealias_midarest_free(me);
+  if(list != NULL)
+    slist_free_cb(list, (slist_free_t)scamper_dealias_probedef_free);
   return -1;
 }
 
@@ -1058,25 +1087,50 @@ static int extract_md_sched(const uint8_t *buf, uint32_t *off,
 			    scamper_dealias_midardisc_t *md, void *param)
 {
   scamper_dealias_midardisc_round_t *r = NULL;
-  uint32_t i;
+  uint32_t i, schedc, begin, end;
+  struct timeval start;
+  slist_t *list = NULL;
 
-  if(extract_uint32(buf, off, len, &i, NULL) != 0 ||
-     scamper_dealias_midardisc_sched_alloc(md, i) != 0)
-    return -1;
-  md->schedc = i;
+  if(extract_uint32(buf, off, len, &schedc, NULL) != 0)
+    goto err;
 
-  for(i=0; i<md->schedc; i++)
+  if(schedc == 0)
     {
-      if((r = scamper_dealias_midardisc_round_alloc()) == NULL)
-	return -1;
-      md->sched[i] = r;
-      if(extract_timeval(buf, off, len, &r->start, NULL) != 0 ||
-	 extract_uint32(buf, off, len, &r->begin, NULL) != 0 ||
-	 extract_uint32(buf, off, len, &r->end, NULL) != 0)
-	return -1;
+      md->schedc = schedc;
+      return 0;
     }
 
+  if((list = slist_alloc()) == NULL)
+    goto err;
+
+  for(i=0; i<schedc; i++)
+    {
+      if(extract_timeval(buf, off, len, &start, NULL) != 0 ||
+	 extract_uint32(buf, off, len, &begin, NULL) != 0 ||
+	 extract_uint32(buf, off, len, &end, NULL) != 0 ||
+	 (r = scamper_dealias_midardisc_round_alloc()) == NULL ||
+	 slist_tail_push(list, r) == NULL)
+	goto err;
+      timeval_cpy(&r->start, &start);
+      r->begin = begin;
+      r->end = end;
+      r = NULL;
+    }
+
+  if(scamper_dealias_midardisc_sched_alloc(md, schedc) != 0)
+    goto err;
+  while((r = slist_head_pop(list)) != NULL)
+    md->sched[md->schedc++] = r;
+
+  slist_free(list);
   return 0;
+
+ err:
+  if(list != NULL)
+    slist_free_cb(list, (slist_free_t)scamper_dealias_midardisc_round_free);
+  if(r != NULL)
+    scamper_dealias_midardisc_round_free(r);
+  return -1;
 }
 
 static void insert_md_sched(uint8_t *buf, uint32_t *off, const uint32_t len,
@@ -1146,7 +1200,9 @@ static int warts_dealias_midardisc_read(scamper_dealias_t *dealias,
 					uint8_t *buf,uint32_t *off,uint32_t len)
 {
   scamper_dealias_midardisc_t *md = NULL;
+  scamper_dealias_probedef_t *pd;
   struct timeval startat;
+  uint32_t probedefc = 0;
   warts_param_reader_t handlers[] = {
     {NULL,     (wpr_t)extract_uint32,    NULL}, /* probedefc */
     {NULL,     (wpr_t)extract_rtt,       NULL}, /* wait_timeout */
@@ -1154,37 +1210,38 @@ static int warts_dealias_midardisc_read(scamper_dealias_t *dealias,
     {&startat, (wpr_t)extract_timeval,   NULL}, /* startat */
   };
   const int handler_cnt = sizeof(handlers)/sizeof(warts_param_reader_t);
-  uint32_t i, o = *off;
+  uint32_t o = *off;
+  slist_t *list = NULL;
 
   if((md = scamper_dealias_midardisc_alloc()) == NULL)
     goto err;
-  handlers[0].data = &md->probedefc;
+  handlers[0].data = &probedefc;
   handlers[1].data = &md->wait_timeout;
   handlers[2].data = md; /* schedule */
 
   if(warts_params_read(buf, off, len, handlers, handler_cnt) != 0 ||
-     md->probedefc == 0 ||
-     scamper_dealias_midardisc_probedefs_alloc(md, md->probedefc) != 0 ||
+     probedefc == 0 ||
      (flag_isset(&buf[o], WARTS_DEALIAS_MIDARDISC_STARTAT) &&
-      (md->startat = memdup(&startat, sizeof(struct timeval))) == NULL))
+      (md->startat = memdup(&startat, sizeof(struct timeval))) == NULL) ||
+     (list = warts_dealias_probedefs_read(state, table, probedefc,
+					  buf, off, len)) == NULL ||
+     scamper_dealias_midardisc_probedefs_alloc(md, probedefc) != 0)
     goto err;
 
-  for(i=0; i<md->probedefc; i++)
-    {
-      if((md->probedefs[i] = scamper_dealias_probedef_alloc()) == NULL ||
-	 warts_dealias_probedef_read(md->probedefs[i], state, table,
-				     buf, off, len) != 0)
-	goto err;
-    }
+  while((pd = slist_head_pop(list)) != NULL)
+    md->probedefs[md->probedefc++] = pd;
 
   dealias->data = md;
 
   *defs = md->probedefs;
   *defc = md->probedefc;
+  slist_free(list);
   return 0;
 
  err:
   if(md != NULL) scamper_dealias_midardisc_free(md);
+  if(list != NULL)
+    slist_free_cb(list, (slist_free_t)scamper_dealias_probedef_free);
   return -1;
 }
 
@@ -1366,7 +1423,9 @@ static int warts_dealias_ally_read(scamper_dealias_t *dealias,
   const int handler_cnt = sizeof(handlers)/sizeof(warts_param_reader_t);
 
   if(warts_params_read(buf, off, len, handlers, handler_cnt) != 0 ||
-     (ally = scamper_dealias_ally_alloc()) == NULL)
+     (ally = scamper_dealias_ally_alloc()) == NULL ||
+     (ally->probedefs[0] = scamper_dealias_probedef_alloc()) == NULL ||
+     (ally->probedefs[1] = scamper_dealias_probedef_alloc()) == NULL)
     goto err;
 
   ally->wait_probe.tv_sec = wait_probe / 1000;
@@ -1438,7 +1497,8 @@ static int warts_dealias_mercator_state(const scamper_file_t *sf,
   int max_id = 0;
   size_t i;
 
-  if(warts_dealias_data_pre(state, 1, dealias_mercator_vars_mfb) != 0)
+  if(m->probedef == NULL ||
+     warts_dealias_data_pre(state, 1, dealias_mercator_vars_mfb) != 0)
     return -1;
 
   for(i=0; i<sizeof(dealias_mercator_vars)/sizeof(warts_var_t); i++)
@@ -1843,18 +1903,19 @@ int scamper_file_warts_dealias_read(scamper_file_t *sf, const warts_hdr_t *hdr,
   };
   scamper_dealias_t *dealias = NULL;
   scamper_dealias_probedef_t **defs;
-  scamper_dealias_probe_t *probe;
+  scamper_dealias_probe_t *probe = NULL;
   warts_addrtable_t *table = NULL;
   warts_state_t *state = scamper_file_getstate(sf);
   uint8_t *buf = NULL;
   uint32_t defc = 0;
   uint32_t off = 0;
-  uint32_t i;
+  uint32_t i, probec;
+  slist_t *list = NULL;
+  int rc = -1;
 
   if(warts_read(sf, &buf, hdr->len) != 0)
-    {
-      goto err;
-    }
+    goto done;
+
   if(buf == NULL)
     {
       *dealias_out = NULL;
@@ -1862,64 +1923,64 @@ int scamper_file_warts_dealias_read(scamper_file_t *sf, const warts_hdr_t *hdr,
     }
 
   if((dealias = scamper_dealias_alloc()) == NULL)
-    {
-      goto err;
-    }
+    goto done;
 
   if(warts_dealias_params_read(dealias, state, buf, &off, hdr->len) != 0)
-    goto err;
-  if(dealias->method == 0)
-    goto err;
+    goto done;
 
-  /* bounds check the type, can only read types we know about */
-  if(dealias->method > SCAMPER_DEALIAS_METHOD_MAX)
+  /* can only read types we know about, we're (successfully) done */
+  if(dealias->method == 0 || dealias->method > SCAMPER_DEALIAS_METHOD_MAX)
     {
-      scamper_dealias_free(dealias);
-      dealias = NULL;
+      rc = 0;
       goto done;
     }
 
   if((table = warts_addrtable_alloc_byid()) == NULL)
-    goto err;
+    goto done;
 
   if(read[dealias->method-1](dealias, state, table, &defs, &defc,
 			     buf, &off, hdr->len) != 0)
-    goto err;
-
-  if(dealias->probec == 0)
     goto done;
 
-  if(scamper_dealias_probes_alloc(dealias, dealias->probec) != 0)
+  if(dealias->probec > 0)
     {
-      goto err;
+      probec = dealias->probec; dealias->probec = 0;
+      if((list = slist_alloc()) == NULL)
+	goto done;
+      for(i=0; i<probec; i++)
+	{
+	  if((probe = scamper_dealias_probe_alloc()) == NULL ||
+	     warts_dealias_probe_read(probe, state, defs, defc, table,
+				      buf, &off, hdr->len) != 0 ||
+	     slist_tail_push(list, probe) == NULL)
+	    goto done;
+	  probe = NULL;
+	}
+      if(scamper_dealias_probes_alloc(dealias, probec) != 0)
+	goto done;
+      while((probe = slist_head_pop(list)) != NULL)
+	dealias->probes[dealias->probec++] = probe;
     }
 
-  for(i=0; i<dealias->probec; i++)
-    {
-      if((probe = scamper_dealias_probe_alloc()) == NULL)
-	{
-	  goto err;
-	}
-      dealias->probes[i] = probe;
-
-      if(warts_dealias_probe_read(probe, state, defs, defc, table,
-				  buf, &off, hdr->len) != 0)
-	{
-	  goto err;
-	}
-    }
+  rc = 0;
 
  done:
-  warts_addrtable_free(table);
+  /* are we providing an object to the caller? */
+  if(rc != 0 && dealias != NULL)
+    {
+      scamper_dealias_free(dealias);
+      dealias = NULL;
+    }
   *dealias_out = dealias;
-  free(buf);
-  return 0;
 
- err:
+  /* clean up */
   if(table != NULL) warts_addrtable_free(table);
   if(buf != NULL) free(buf);
-  if(dealias != NULL) scamper_dealias_free(dealias);
-  return -1;
+  if(probe != NULL)
+    scamper_dealias_probe_free(probe);
+  if(list != NULL)
+    slist_free_cb(list, (slist_free_t)scamper_dealias_probe_free);
+  return rc;
 }
 
 static void warts_dealias_probes_free(warts_dealias_probe_t *probes,
@@ -1984,10 +2045,10 @@ int scamper_file_warts_dealias_write(const scamper_file_t *sf,
     goto err;
 
   /* figure out the state that we have to allocate */
-  if(state[dealias->method-1](sf, dealias->data, &data, table, &len) != 0)
-     {
-       goto err;
-     }
+  if(dealias->data == NULL ||
+     dealias->method == 0 || dealias->method > SCAMPER_DEALIAS_METHOD_MAX ||
+     state[dealias->method-1](sf, dealias->data, &data, table, &len) != 0)
+    goto err;
 
   /*
    * figure out the state that we have to allocate to store the

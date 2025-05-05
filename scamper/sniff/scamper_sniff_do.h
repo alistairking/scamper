@@ -1,7 +1,7 @@
 /*
  * scamper_sniff_do.h
  *
- * $Id: scamper_sniff_do.h,v 1.4 2024/02/27 03:34:02 mjl Exp $
+ * $Id: scamper_sniff_do.h,v 1.5 2025/04/27 00:49:24 mjl Exp $
  *
  * Copyright (C) 2011 University of Waikato
  * Author: Matthew Luckie
@@ -32,6 +32,8 @@ scamper_task_t *scamper_do_sniff_alloctask(void *data,
 					   char *errbuf, size_t errlen);
 
 uint32_t scamper_do_sniff_userid(void *data);
+
+int scamper_do_sniff_enabled(void);
 
 void scamper_do_sniff_cleanup(void);
 int scamper_do_sniff_init(void);

@@ -1,7 +1,7 @@
 /*
  * unit_cmd_tracelb : unit tests for tracelb commands
  *
- * $Id: unit_cmd_tracelb.c,v 1.2 2024/09/02 08:01:44 mjl Exp $
+ * $Id: unit_cmd_tracelb.c,v 1.3 2025/05/02 04:39:00 mjl Exp $
  *
  *        Marcus Luckie, Matthew Luckie
  *        mjl@luckie.org.nz
@@ -184,7 +184,7 @@ int main(int argc, char *argv[])
         {
           snprintf(filename, sizeof(filename),
                    "%s/tracelb-%03x.txt", argv[2], (int)i);
-          if(dump_cmd(tests[i].cmd, filename) != 0)
+          if(dump_string(tests[i].cmd, filename) != 0)
             break;
         }
     }

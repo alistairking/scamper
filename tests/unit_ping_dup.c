@@ -1,7 +1,7 @@
 /*
  * unit_ping_dup : unit tests for ping dup functions
  *
- * $Id: unit_ping_dup.c,v 1.1 2025/02/13 01:23:45 mjl Exp $
+ * $Id: unit_ping_dup.c,v 1.2 2025/04/20 07:31:58 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -36,28 +36,24 @@
 #include "mjl_list.h"
 #include "utils.h"
 
-typedef scamper_ping_t * (*test_func_t)(void);
-
 int main(int argc, char *argv[])
 {
-  static test_func_t tests[] = {
-    ping_1,
-    ping_2,
-  };
-  size_t i, testc = sizeof(tests) / sizeof(test_func_t);
   scamper_ping_t *in, *out;
+  size_t i, makerc;
 
 #ifdef DMALLOC
   unsigned long start_mem, stop_mem;
 #endif
 
-  for(i=0; i<testc; i++)
+  makerc = ping_makerc();
+
+  for(i=0; i<makerc; i++)
     {
 #ifdef DMALLOC
       dmalloc_get_stats(NULL, NULL, NULL, NULL, &start_mem, NULL, NULL, NULL, NULL);
 #endif
 
-      if((in = tests[i]()) == NULL)
+      if((in = ping_makers(i)) == NULL)
 	{
 	  printf("could not create ping %d\n", (int)i);
 	  return -1;

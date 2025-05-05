@@ -1,14 +1,14 @@
 /*
  * sc_speedtrap
  *
- * $Id: sc_speedtrap.c,v 1.93 2025/02/25 00:15:21 mjl Exp $
+ * $Id: sc_speedtrap.c,v 1.95 2025/04/20 07:29:14 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
  *
  * Copyright (C) 2013-2015 The Regents of the University of California
  * Copyright (C) 2016,2020 The University of Waikato
- * Copyright (C) 2022-2024 Matthew Luckie
+ * Copyright (C) 2022-2025 Matthew Luckie
  * Copyright (C) 2023-2025 The Regents of the University of California
  *
  * This program is free software; you can redistribute it and/or modify
@@ -64,6 +64,10 @@
 #define OPT_VERSION     0x8000
 #endif
 
+#define IPID_UNCLASS          0
+#define IPID_INCR             1
+#define IPID_INCR_UPPER16BS   2
+
 typedef struct sc_targetipid sc_targetipid_t;
 typedef struct sc_targetset sc_targetset_t;
 
@@ -79,6 +83,7 @@ typedef struct sc_target
   uint32_t            last;      /* last IPID sample */
   sc_targetset_t     *ts;        /* pointer to ts that has probing lock */
   int                 attempt;   /* how many times we've tried this probe */
+  int                 class;     /* IPID classification */
   splaytree_node_t   *tree_node;
 } sc_target_t;
 
@@ -191,7 +196,7 @@ static char                  *addressfile   = NULL;
 static scamper_ctrl_t        *scamper_ctrl  = NULL;
 static scamper_inst_t        *scamper_inst  = NULL;
 static char                  *dst_addr      = NULL;
-static int                    dst_port      = 0;
+static uint16_t               dst_port      = 0;
 static char                  *unix_name     = NULL;
 static splaytree_t           *targets       = NULL;
 static splaytree_t           *addr2routers  = NULL;
@@ -651,6 +656,41 @@ static int ipid_incr(uint32_t *ipids, int ipidc)
   for(i=2; i<ipidc; i++)
     if(ipid_inseq3(ipids[i-2], ipids[i-1], ipids[i]) == 0)
       return 0;
+  return 1;
+}
+
+static int ipid16_inseq3(uint32_t a, uint32_t b, uint32_t c)
+{
+  if(a == b || b == c || a == c)
+    return 0;
+  if(a > b)
+    b += 0x10000UL;
+  if(a > c)
+    c += 0x10000UL;
+  if(a > b || b > c)
+    return 0;
+  if(fudge != 0 && (b - a > fudge || c - b > fudge))
+    return 0;
+  return 1;
+}
+
+static int ipid_incr_upper16bs(uint32_t *ipids, int ipidc)
+{
+  int i;
+  if(ipidc < 3)
+    return 0;
+
+  if((ipids[0] & 0xFFFF) != 0 || (ipids[1] & 0xFFFF) != 0)
+    return 0;
+
+  for(i=2; i<ipidc; i++)
+    {
+      if((ipids[i] & 0xFFFF) != 0 ||
+	 ipid16_inseq3(byteswap16(ipids[i-2] >> 16),
+		       byteswap16(ipids[i-1] >> 16),
+		       byteswap16(ipids[i] >> 16)) == 0)
+	return 0;
+    }
   return 1;
 }
 
@@ -1673,8 +1713,10 @@ static int finish_classify(void)
 static int reply_classify(sc_target_t *target, sc_targetipid_t *p,
 			  uint16_t ipidc, uint16_t rxd)
 {
+  static const char *class[] = {"not inseq", "incr", "incr-upper16bs"};
+  uint32_t *ipids = NULL;
   char addr[64];
-  uint16_t u16;
+  uint16_t i;
 
   scamper_addr_tostr(target->addr, addr, sizeof(addr));
 
@@ -1694,22 +1736,29 @@ static int reply_classify(sc_target_t *target, sc_targetipid_t *p,
       goto done;
     }
 
-  /* check for an incrementing sequence: any break and we're done */
-  for(u16=0; u16+2 < ipidc; u16++)
+  if((ipids = malloc(sizeof(uint32_t) * ipidc)) == NULL)
+    return -1;
+  for(i=0; i<ipidc; i++)
+    ipids[i] = p[i].ipid;
+
+  if(ipid_incr(ipids, ipidc))
+    target->class = IPID_INCR;
+  else if(ipid_incr_upper16bs(ipids, ipidc))
+    target->class = IPID_INCR_UPPER16BS;
+
+  logprint(1, "%s %s\n", addr, class[target->class]);
+
+  if(target->class != IPID_INCR)
     {
-      if(ipid_inseq3(p[u16].ipid, p[u16+1].ipid, p[u16+2].ipid) == 0)
-	{
-	  logprint(1, "%s not inseq %d\n", addr, u16);
-	  sc_target_free(target);
-	  goto done;
-	}
+      sc_target_free(target);
+      goto done;
     }
 
-  logprint(1, "%s incr\n", addr);
   target->last = p[ipidc-1].ipid;
   slist_tail_push(incr, target);
 
  done:
+  if(ipids != NULL) free(ipids);
   return finish_classify();
 }
 
@@ -2637,10 +2686,12 @@ static int process_2_ping(const scamper_ping_t *ping)
     }
   else if(ipidc < 3)
     printf("%s insuff-ipids\n", buf);
-  else if(ipid_incr(ipids, ipidc) == 0)
-    printf("%s random\n", buf);
-  else
+  else if(ipid_incr(ipids, ipidc))
     printf("%s incr\n", buf);
+  else if(ipid_incr_upper16bs(ipids, ipidc))
+    printf("%s incr-upper16bs\n", buf);
+  else
+    printf("%s random\n", buf);
 
   return 0;
 }

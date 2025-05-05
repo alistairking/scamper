@@ -1,7 +1,7 @@
 /*
  * unit_cmd_udpprobe : unit tests for udpprobe commands
  *
- * $Id: unit_cmd_udpprobe.c,v 1.8 2024/09/19 08:14:01 mjl Exp $
+ * $Id: unit_cmd_udpprobe.c,v 1.9 2025/05/02 04:39:00 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -159,7 +159,7 @@ int main(int argc, char *argv[])
 	{
 	  snprintf(filename, sizeof(filename),
 		   "%s/udpprobe-%03x.txt", argv[2], (int)i);
-	  if(dump_cmd(tests[i].cmd, filename) != 0)
+	  if(dump_string(tests[i].cmd, filename) != 0)
 	    break;
 	}
     }

@@ -1,10 +1,11 @@
-# $Id: Makefile.am,v 1.50 2025/03/04 03:39:17 mjl Exp $
+# $Id: Makefile.am,v 1.57 2025/05/03 09:37:13 mjl Exp $
 
 AUTOMAKE_OPTIONS = subdir-objects
 
 AM_CPPFLAGS = -I$(top_srcdir) -I$(top_srcdir)/scamper
 
 noinst_PROGRAMS = \
+	unit_addr \
 	fuzz_cmd_dealias \
 	fuzz_cmd_host \
 	fuzz_cmd_http \
@@ -25,35 +26,32 @@ noinst_PROGRAMS = \
 	unit_cmd_trace \
 	unit_cmd_tracelb \
 	unit_cmd_udpprobe \
-	unit_addr \
-	unit_fds \
-	fuzz_osinfo \
-	unit_osinfo \
+	unit_config \
 	unit_dl_filter_compile \
 	fuzz_dl_parse_arp \
 	unit_dl_parse_arp \
 	fuzz_dl_parse_ip \
 	unit_dl_parse_ip \
+	unit_fds \
 	unit_heap \
 	fuzz_http_lib_chunked \
 	fuzz_http_lib_hdrs \
 	unit_http_lib \
-	unit_http_warts \
 	fuzz_host_rr_list \
 	unit_host_rr_list \
-	unit_host_warts \
+	unit_options \
+	fuzz_osinfo \
+	unit_osinfo \
 	unit_ping_dup \
 	unit_ping_lib \
-	unit_ping_warts \
-	unit_trace_dup \
-	unit_trace_warts \
-	unit_udpprobe_warts \
-	unit_options \
 	unit_prefixtree \
 	unit_splaytree \
 	unit_string \
 	unit_timeval \
-	fuzz_warts
+	unit_trace_dup \
+	unit_warts \
+	fuzz_warts \
+	fuzz_warts2json
 
 noinst_LTLIBRARIES = libcmdtest.la libosinfotest.la libscamperfiletest.la
 
@@ -137,6 +135,12 @@ libscamperfiletest_la_SOURCES = \
 	../scamper/udpprobe/scamper_udpprobe_warts.c \
 	../scamper/udpprobe/scamper_udpprobe_json.c \
 	../scamper/udpprobe/scamper_udpprobe_lib.c
+
+unit_config_CFLAGS = $(AM_CFLAGS)
+unit_config_SOURCES = unit_config.c \
+	../scamper/scamper_config.c \
+	../utils.c \
+	common.c
 
 fuzz_cmd_dealias_CFLAGS = -DFUZZ_DEALIAS -I$(top_srcdir)/scamper/dealias
 fuzz_cmd_dealias_SOURCES = fuzz_cmd.c \
@@ -332,12 +336,6 @@ unit_http_lib_SOURCES = unit_http_lib.c \
 	../scamper/http/scamper_http_lib.c
 unit_http_lib_LDADD = libcmdtest.la
 
-unit_http_warts_CFLAGS = -I$(top_srcdir)/scamper/http
-unit_http_warts_SOURCES = unit_http_warts.c \
-	../utils.c \
-	common_ok.c
-unit_http_warts_LDADD = libscamperfiletest.la
-
 fuzz_host_rr_list_CFLAGS = -I$(top_srcdir)/scamper/host -DTEST_HOST_RR_LIST
 fuzz_host_rr_list_SOURCES = fuzz_host_rr_list.c \
 	../scamper/host/scamper_host_do.c \
@@ -360,14 +358,31 @@ unit_host_rr_list_SOURCES = unit_host_rr_list.c \
 	../utils.c \
 	common.c
 
-unit_host_warts_CFLAGS = -I$(top_srcdir)/scamper/host
-unit_host_warts_SOURCES = unit_host_warts.c \
-	../utils.c
-unit_host_warts_LDADD = libscamperfiletest.la
-
 fuzz_warts_CFLAGS = $(AM_CFLAGS)
 fuzz_warts_SOURCES = fuzz_warts.c
 fuzz_warts_LDADD = libscamperfiletest.la
+
+fuzz_warts2json_CFLAGS = $(AM_CFLAGS)
+fuzz_warts2json_SOURCES = fuzz_warts2json.c
+fuzz_warts2json_LDADD = libscamperfiletest.la
+
+unit_warts_CFLAGS = \
+	-I$(top_srcdir)/scamper/dealias \
+	-I$(top_srcdir)/scamper/host \
+	-I$(top_srcdir)/scamper/http \
+	-I$(top_srcdir)/scamper/ping \
+	-I$(top_srcdir)/scamper/trace \
+	-I$(top_srcdir)/scamper/udpprobe
+unit_warts_SOURCES = unit_warts.c \
+	../utils.c \
+	common_ok.c \
+	common_dealias.c \
+	common_host.c \
+	common_http.c \
+	common_ping.c \
+	common_trace.c \
+	common_udpprobe.c
+unit_warts_LDADD = libscamperfiletest.la
 
 unit_options_CFLAGS = $(AM_CFLAGS)
 unit_options_SOURCES = unit_options.c \
@@ -387,32 +402,12 @@ unit_ping_lib_SOURCES = unit_ping_lib.c \
 	../scamper/ping/scamper_ping_lib.c
 unit_ping_lib_LDADD = libcmdtest.la
 
-unit_ping_warts_CFLAGS = -I$(top_srcdir)/scamper/ping
-unit_ping_warts_SOURCES = unit_ping_warts.c \
-	../utils.c \
-	common_ok.c \
-	common_ping.c
-unit_ping_warts_LDADD = libscamperfiletest.la
-
 unit_trace_dup_CFLAGS = -I$(top_srcdir)/scamper/trace
 unit_trace_dup_SOURCES = unit_trace_dup.c \
 	../utils.c \
 	common_ok.c \
 	common_trace.c
 unit_trace_dup_LDADD = libscamperfiletest.la
-
-unit_trace_warts_CFLAGS = -I$(top_srcdir)/scamper/trace
-unit_trace_warts_SOURCES = unit_trace_warts.c \
-	../utils.c \
-	common_ok.c \
-	common_trace.c
-unit_trace_warts_LDADD = libscamperfiletest.la
-
-unit_udpprobe_warts_CFLAGS = -I$(top_srcdir)/scamper/udpprobe
-unit_udpprobe_warts_SOURCES = unit_udpprobe_warts.c \
-	../utils.c \
-	common_ok.c
-unit_udpprobe_warts_LDADD = libscamperfiletest.la
 
 unit_heap_CFLAGS = $(AM_CFLAGS) -DMJLHEAP_DEBUG
 unit_heap_SOURCES = unit_heap.c \

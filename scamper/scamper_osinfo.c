@@ -1,7 +1,7 @@
 /*
  * scamper_osinfo.c
  *
- * $Id: scamper_osinfo.c,v 1.10 2024/02/28 20:30:43 mjl Exp $
+ * $Id: scamper_osinfo.c,v 1.11 2025/04/27 02:41:38 mjl Exp $
  *
  * Copyright (C) 2006 Matthew Luckie
  * Copyright (C) 2014 The Regents of the University of California
@@ -98,10 +98,10 @@ scamper_osinfo_t *scamper_osinfo_alloc(const char *sysname, char *release)
 	}
 
       str = release;
-      while(isdigit((int)*str))
+      while(isdigit((unsigned char)*str))
 	{
 	  ptr = str; ptr++;
-	  while(isdigit((int)*ptr) != 0)
+	  while(isdigit((unsigned char)*ptr) != 0)
 	    ptr++;
 
 	  if(slist_tail_push(nos, str) == NULL)

@@ -1,7 +1,7 @@
 /*
  * sc_hoiho: Holistic Orthography of Internet Hostname Observations
  *
- * $Id: sc_hoiho.c,v 1.33 2024/12/31 04:17:31 mjl Exp $
+ * $Id: sc_hoiho.c,v 1.35 2025/04/27 03:05:24 mjl Exp $
  *
  *         Matthew Luckie
  *         mjl@luckie.org.nz
@@ -876,7 +876,7 @@ static int check_options(int argc, char *argv[])
 
   string_concat(opts, sizeof(opts), &off, "6d:D:f:g:l:O:r:R:s:S:t:?");
 #ifdef OPT_VERSION
-  string_concat(opts, sizeof(opts), &off, "v");
+  string_concatc(opts, sizeof(opts), &off, 'v');
 #endif
 
   while((ch = getopt(argc, argv, opts)) != -1)
@@ -3012,7 +3012,7 @@ static int sc_geohint_place_tojson(const sc_geohint_t *hint,
   size_t off = 0;
   char tmp[512];
 
-  string_concat(buf, len, &off, "{");
+  string_concatc(buf, len, &off, '{');
   if(hint->facname != NULL)
     {
       if(str_tojson(hint->facname, tmp, sizeof(tmp)) != 0)
@@ -3024,7 +3024,7 @@ static int sc_geohint_place_tojson(const sc_geohint_t *hint,
       if(str_tojson(hint->street, tmp, sizeof(tmp)) != 0)
 	return -1;
       if(off > 1)
-	string_concat(buf, len, &off, ", ");
+	string_concatc(buf, len, &off, ',');
       string_concat3(buf, len, &off, "\"street\":\"", tmp, "\"");
     }
   if(hint->place != NULL)
@@ -3032,24 +3032,24 @@ static int sc_geohint_place_tojson(const sc_geohint_t *hint,
       if(str_tojson(hint->place, tmp, sizeof(tmp)) != 0)
 	return -1;
       if(off > 1)
-	string_concat(buf, len, &off, ", ");
+	string_concatc(buf, len, &off, ',');
       string_concat3(buf, len, &off, "\"place\":\"", tmp, "\"");
     }
   if(hint->st[0] != '\0')
     {
       if(off > 1)
-	string_concat(buf, len, &off, ", ");
+	string_concatc(buf, len, &off, ',');
       string_concat3(buf, len, &off, "\"st\":\"",
 		     string_toupper(tmp, sizeof(tmp), hint->st), "\"");
     }
   if(hint->cc[0] != '\0')
     {
       if(off > 1)
-	string_concat(buf, len, &off, ", ");
+	string_concatc(buf, len, &off, ',');
       string_concat3(buf, len, &off, "\"cc\":\"",
 		     string_toupper(tmp, sizeof(tmp), hint->cc), "\"");
     }
-  string_concat(buf, len, &off, "}");
+  string_concatc(buf, len, &off, '}');
 
   return 0;
 }
@@ -5138,7 +5138,7 @@ static int sc_geomap2hint_tojson(const sc_geomap2hint_t *m2h,
 		      ", \"location\":%s, \"lat\":\"%.6f\", \"lng\":\"%.6f\"",
 		      place, gh->lat, gh->lng);
     }
-  string_concat(buf, len, &off, "}");
+  string_concatc(buf, len, &off, '}');
   return 0;
 }
 
@@ -6537,7 +6537,7 @@ static int sc_segscore_switch2(sc_segscore_t *ss, char *alpha)
      (ss->tree = splaytree_alloc((splaytree_cmp_t)strcmp)) == NULL)
     return -1;
 
-  while(isalpha((unsigned int)alpha[i]) != 0)
+  while(isalpha((unsigned char)alpha[i]) != 0)
     {
       if(i+1 >= sizeof(buf))
 	return 0;
@@ -6750,7 +6750,7 @@ static char *sc_regex_plan_tostr(const sc_regex_t *re, char *buf, size_t len)
   size_t off = 0;
   int i, j;
 
-  string_concat(buf, len, &off, "[");
+  string_concatc(buf, len, &off, '[');
   for(i=0; i<re->regexc; i++)
     {
       ren = re->regexes[i];
@@ -6758,9 +6758,9 @@ static char *sc_regex_plan_tostr(const sc_regex_t *re, char *buf, size_t len)
       for(j=0; j<ren->capc; j++)
 	string_concat2(buf, len, &off, (j > 0) ? ", " : "",
 		       geotype_tostr(ren->plan[j]));
-      string_concat(buf, len, &off, "]");
+      string_concatc(buf, len, &off, ']');
     }
-  string_concat(buf, len, &off, "]");
+  string_concatc(buf, len, &off, ']');
   return buf;
 }
 
@@ -6770,7 +6770,7 @@ static char *sc_regex_plan_tojson(const sc_regex_t *re, char *buf, size_t len)
   size_t off = 0;
   int i, j;
 
-  string_concat(buf, len, &off, "[");
+  string_concatc(buf, len, &off, '[');
   for(i=0; i<re->regexc; i++)
     {
       ren = re->regexes[i];
@@ -6778,10 +6778,10 @@ static char *sc_regex_plan_tojson(const sc_regex_t *re, char *buf, size_t len)
       for(j=0; j<ren->capc; j++)
 	string_concaf(buf, len, &off, "%s\"%s\"", (j > 0) ? ", " : "",
 		      geotype_tostr(ren->plan[j]));
-      string_concat(buf, len, &off, "]");
+      string_concatc(buf, len, &off, ']');
     }
 
-  string_concat(buf, len, &off, "]");
+  string_concatc(buf, len, &off, ']');
   return buf;
 }
 
@@ -18469,7 +18469,7 @@ static sc_regex_t *sc_regex_refine_merge_do(sc_remerge_t *rem)
     {
       ptr = slist_node_item(sn);
       if(i > 0)
-	string_concat(str, len, &off, "|");
+	string_concatc(str, len, &off, '|');
       string_concat(str, len, &off, ptr);
       i++;
     }
