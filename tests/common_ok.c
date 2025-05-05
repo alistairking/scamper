@@ -1,7 +1,7 @@
 /*
  * common_ok.c : functions common to unit tests that do comparisons
  *
- * $Id: common_ok.c,v 1.1 2025/02/13 18:48:55 mjl Exp $
+ * $Id: common_ok.c,v 1.2 2025/04/17 02:43:39 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -68,6 +68,14 @@ int str_ok(const char *a, const char *b)
   if((a == NULL && b != NULL) ||
      (a != NULL && b == NULL) ||
      (a != NULL && strcmp(a, b) != 0))
+    return -1;
+  return 0;
+}
+
+int ptr_ok(const void *a, const void *b)
+{
+  if((a == NULL && b != NULL) ||
+     (a != NULL && b == NULL))
     return -1;
   return 0;
 }

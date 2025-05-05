@@ -9,7 +9,7 @@
  * Copyright (c) 2019-2025 Matthew Luckie
  * Authors: Brian Hammond, Matthew Luckie
  *
- * $Id: scamper_ping_json.c,v 1.48 2025/03/12 19:14:38 mjl Exp $
+ * $Id: scamper_ping_json.c,v 1.50 2025/05/05 03:34:24 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -48,7 +48,7 @@ static char *ping_header(const scamper_ping_t *ping)
 {
   static const char *flags[] = {
     "v4rr", "spoof", "payload", "tsonly", "tsandaddr", "icmpsum", "dl", "tbt",
-    "nosrc", "raw", "sockrx"
+    "nosrc", "raw", "sockrx", "dltx"
   };
   char buf[1024], tmp[512];
   size_t off = 0;
@@ -140,11 +140,18 @@ static char *ping_header(const scamper_ping_t *ping)
   if(ping->tsps != NULL)
     {
       string_concat(buf, sizeof(buf), &off, ", \"probe_tsps\":[");
-      for(u8=0; u8<ping->tsps->ipc; u8++)
+      if(ping->tsps->ips != NULL)
 	{
-	  if(u8 > 0) string_concatc(buf, sizeof(buf), &off, ',');
-	  scamper_addr_tostr(ping->tsps->ips[u8], tmp, sizeof(tmp));
-	  string_concat3(buf, sizeof(buf), &off, "\"", tmp, "\"");
+	  c = 0;
+	  for(u8=0; u8<ping->tsps->ipc; u8++)
+	    {
+	      if(ping->tsps->ips[u8] == NULL)
+		continue;
+	      if(c > 0)
+		string_concatc(buf, sizeof(buf), &off, ',');
+	      scamper_addr_tostr(ping->tsps->ips[u8], tmp, sizeof(tmp));
+	      string_concat3(buf, sizeof(buf), &off, "\"", tmp, "\"");
+	    }
 	}
       string_concatc(buf, sizeof(buf), &off, ']');
     }
@@ -246,9 +253,11 @@ static char *ping_reply(const scamper_ping_t *ping,
   uint8_t i;
   size_t off = 0, off2;
 
-  string_concat2(buf, sizeof(buf), &off, "{\"from\":\"",
-		 scamper_addr_tostr(reply->addr, tmp, sizeof(tmp)));
-  string_concat_u16(buf, sizeof(buf), &off, "\", \"reply_size\":", reply->size);
+  string_concatc(buf, sizeof(buf), &off, '{');
+  if(reply->addr != NULL)
+    string_concat3(buf, sizeof(buf), &off, "\"from\":\"",
+		   scamper_addr_tostr(reply->addr, tmp, sizeof(tmp)), "\", ");
+  string_concat_u16(buf, sizeof(buf), &off, "\"reply_size\":", reply->size);
   string_concat_u8(buf, sizeof(buf), &off, ", \"reply_ttl\":", reply->ttl);
 
   ping_probe_json(buf, sizeof(buf), &off, ping, probe, 1);
@@ -291,16 +300,19 @@ static char *ping_reply(const scamper_ping_t *ping,
   string_concat2(buf, sizeof(buf), &off, ", \"rtt\":",
 		 timeval_tostr_us(&reply->rtt, tmp, sizeof(tmp)));
 
-  if(SCAMPER_ADDR_TYPE_IS_IPV4(reply->addr))
+  if(reply->addr != NULL)
     {
-      string_concat_u16(buf, sizeof(buf), &off, ", \"reply_ipid\":",
-			reply->ipid32 & 0xFFFF);
-    }
-  else if(SCAMPER_ADDR_TYPE_IS_IPV6(reply->addr) &&
-	  (reply->flags & SCAMPER_PING_REPLY_FLAG_REPLY_IPID) != 0)
-    {
-      string_concat_u32(buf, sizeof(buf), &off, ", \"reply_ipid\":",
-			reply->ipid32);
+      if(SCAMPER_ADDR_TYPE_IS_IPV4(reply->addr))
+	{
+	  string_concat_u16(buf, sizeof(buf), &off, ", \"reply_ipid\":",
+			    reply->ipid32 & 0xFFFF);
+	}
+      else if(SCAMPER_ADDR_TYPE_IS_IPV6(reply->addr) &&
+	      (reply->flags & SCAMPER_PING_REPLY_FLAG_REPLY_IPID) != 0)
+	{
+	  string_concat_u32(buf, sizeof(buf), &off, ", \"reply_ipid\":",
+			    reply->ipid32);
+	}
     }
 
   if(reply->flags & SCAMPER_PING_REPLY_FLAG_REPLY_TOS)
@@ -312,6 +324,10 @@ static char *ping_reply(const scamper_ping_t *ping,
 		       reply->icmp_type);
       string_concat_u8(buf, sizeof(buf), &off, ", \"icmp_code\":",
 		       reply->icmp_code);
+
+      if(SCAMPER_PING_REPLY_IS_ICMP_PTB(reply))
+	string_concat_u16(buf, sizeof(buf), &off, ", \"icmp_nhmtu\":",
+			  reply->icmp_nhmtu);
     }
   else if(SCAMPER_PING_REPLY_IS_TCP(reply))
     {
@@ -336,7 +352,7 @@ static char *ping_reply(const scamper_ping_t *ping,
       string_concatc(buf, sizeof(buf), &off, ']');
     }
 
-  if((v4ts = reply->v4ts) != NULL)
+  if((v4ts = reply->v4ts) != NULL && v4ts->tss != NULL)
     {
       if((ping->flags & SCAMPER_PING_FLAG_TSONLY) == 0)
 	{
@@ -344,10 +360,14 @@ static char *ping_reply(const scamper_ping_t *ping,
 	  for(i=0; i<v4ts->tsc; i++)
 	    {
 	      if(i > 0) string_concatc(buf, sizeof(buf), &off, ',');
-	      string_concat2(buf, sizeof(buf), &off, "{\"ip\":\"",
-			     scamper_addr_tostr(v4ts->ips[i],tmp,sizeof(tmp)));
-	      string_concat_u32(buf, sizeof(buf), &off, "\", \"ts\":",
+	      string_concat_u32(buf, sizeof(buf), &off, "{\"ts\":",
 				v4ts->tss[i]);
+	      if(v4ts->ips != NULL && v4ts->ips[i] != NULL)
+		{
+		  scamper_addr_tostr(v4ts->ips[i], tmp, sizeof(tmp));
+		  string_concat3(buf, sizeof(buf), &off, ", \"ip\":\"",
+				 tmp, "\"");
+		}
 	      string_concatc(buf, sizeof(buf), &off, '}');
 	    }
 	  string_concatc(buf, sizeof(buf), &off, ']');

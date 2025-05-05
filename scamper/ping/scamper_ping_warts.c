@@ -7,7 +7,7 @@
  * Copyright (C) 2016-2024 Matthew Luckie
  * Author: Matthew Luckie
  *
- * $Id: scamper_ping_warts.c,v 1.37 2025/02/25 06:31:24 mjl Exp $
+ * $Id: scamper_ping_warts.c,v 1.41 2025/05/05 03:34:24 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -137,6 +137,7 @@ static const warts_var_t ping_vars[] =
 #define WARTS_PING_REPLY_PROBE_SPORT     18
 #define WARTS_PING_REPLY_REPLY_IPTOS     19
 #define WARTS_PING_REPLY_IFNAME          20
+#define WARTS_PING_REPLY_ICMP_NHMTU      21
 
 static const warts_var_t ping_reply_vars[] =
 {
@@ -160,6 +161,7 @@ static const warts_var_t ping_reply_vars[] =
   {WARTS_PING_REPLY_PROBE_SPORT,     2},
   {WARTS_PING_REPLY_REPLY_IPTOS,     1},
   {WARTS_PING_REPLY_IFNAME,         -1},
+  {WARTS_PING_REPLY_ICMP_NHMTU,      2},
 };
 #define ping_reply_vars_mfb WARTS_VAR_MFB(ping_reply_vars)
 
@@ -335,14 +337,14 @@ static int warts_ping_reply_params(const scamper_ping_t *ping,
 	 (var->id == WARTS_PING_REPLY_REPLY_TTL &&
 	  (reply->flags & SCAMPER_PING_REPLY_FLAG_REPLY_TTL) == 0) ||
 	 (var->id == WARTS_PING_REPLY_REPLY_IPID &&
-	  SCAMPER_ADDR_TYPE_IS_IPV4(ping->dst) &&
-	  (reply->flags & SCAMPER_PING_REPLY_FLAG_REPLY_IPID) == 0) ||
+	  (SCAMPER_ADDR_TYPE_IS_IPV4(ping->dst) == 0 ||
+	   (reply->flags & SCAMPER_PING_REPLY_FLAG_REPLY_IPID) == 0)) ||
 	 (var->id == WARTS_PING_REPLY_REPLY_IPID32 &&
-	  SCAMPER_ADDR_TYPE_IS_IPV6(ping->dst) &&
-	  (reply->flags & SCAMPER_PING_REPLY_FLAG_REPLY_IPID) == 0) ||
+	  (SCAMPER_ADDR_TYPE_IS_IPV6(ping->dst) == 0 ||
+	   (reply->flags & SCAMPER_PING_REPLY_FLAG_REPLY_IPID) == 0)) ||
 	 (var->id == WARTS_PING_REPLY_PROBE_IPID &&
-	  SCAMPER_ADDR_TYPE_IS_IPV4(ping->dst) &&
-	  (reply->flags & SCAMPER_PING_REPLY_FLAG_PROBE_IPID) == 0) ||
+	  (SCAMPER_ADDR_TYPE_IS_IPV4(ping->dst) == 0 ||
+	   (reply->flags & SCAMPER_PING_REPLY_FLAG_PROBE_IPID) == 0)) ||
 	 (var->id == WARTS_PING_REPLY_ICMP_TC &&
 	  SCAMPER_PING_REPLY_IS_ICMP(reply) == 0) ||
 	 (var->id == WARTS_PING_REPLY_TCP_FLAGS &&
@@ -353,7 +355,9 @@ static int warts_ping_reply_params(const scamper_ping_t *ping,
 	 (var->id == WARTS_PING_REPLY_TSREPLY && reply->tsreply == NULL) ||
 	 (var->id == WARTS_PING_REPLY_PROBE_SPORT && probe->sport == 0) ||
 	 (var->id == WARTS_PING_REPLY_REPLY_IPTOS && reply->tos == 0) ||
-	 (var->id == WARTS_PING_REPLY_IFNAME && reply->ifname == NULL))
+	 (var->id == WARTS_PING_REPLY_IFNAME && reply->ifname == NULL) ||
+	 (var->id == WARTS_PING_REPLY_ICMP_NHMTU &&
+	  SCAMPER_PING_REPLY_IS_ICMP_PTB(reply) == 0))
 	{
 	  continue;
 	}
@@ -477,6 +481,7 @@ static int warts_ping_reply_read_int(const scamper_ping_t *ping,
     {&probe_sport,            (wpr_t)extract_uint16,               NULL},
     {&reply->tos,             (wpr_t)extract_byte,                 NULL},
     {&reply->ifname,          (wpr_t)extract_ifname,               ifntable},
+    {&reply->icmp_nhmtu,      (wpr_t)extract_uint16,               NULL},
   };
   const int handler_cnt = sizeof(handlers) / sizeof(warts_param_reader_t);
   scamper_ping_probe_t *probe = NULL;
@@ -491,7 +496,7 @@ static int warts_ping_reply_read_int(const scamper_ping_t *ping,
   if(reply->addr == NULL)
     return -1;
 
-  if(ping->ping_sent < probe_id)
+  if(probe_id >= ping->ping_sent)
     return -1;
   if((probe = ping->probes[probe_id]) == NULL)
     {
@@ -511,13 +516,14 @@ static int warts_ping_reply_read_int(const scamper_ping_t *ping,
    */
   if(flag_isset(&buf[o], WARTS_PING_REPLY_REPLY_PROTO) == 0)
     {
-      if(ping->dst->type == SCAMPER_ADDR_TYPE_IPV4)
+      if(SCAMPER_ADDR_TYPE_IS_IPV4(ping->dst))
 	reply->proto = IPPROTO_ICMP;
       else
 	reply->proto = IPPROTO_ICMPV6;
     }
 
-  if(flag_isset(&buf[o], WARTS_PING_REPLY_REPLY_IPID))
+  if(flag_isset(&buf[o], WARTS_PING_REPLY_REPLY_IPID) &&
+     SCAMPER_ADDR_TYPE_IS_IPV4(ping->dst))
     reply->ipid32 = reply_ipid;
 
   if(scamper_ping_probe_reply_append(probe, reply) != 0)
@@ -577,6 +583,7 @@ static void warts_ping_reply_write(const warts_ping_reply_t *state,
     {&probe->sport,           (wpw_t)insert_uint16,                 NULL},
     {&reply->tos,             (wpw_t)insert_byte,                   NULL},
     {reply->ifname,           (wpw_t)insert_ifname,                 ifntable},
+    {&reply->icmp_nhmtu,      (wpw_t)insert_uint16,                 NULL},
   };
   const int handler_cnt = sizeof(handlers) / sizeof(warts_param_writer_t);
 

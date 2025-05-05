@@ -1,14 +1,15 @@
 /*
  * scamper_file_arts.c
  *
- * $Id: scamper_file_arts.c,v 1.74 2024/12/15 21:19:48 mjl Exp $
+ * $Id: scamper_file_arts.c,v 1.82 2025/05/04 03:02:09 mjl Exp $
  *
  * code to read the legacy arts data file format into scamper_hop structures.
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2014      The Regents of the University of California
- * Copyright (C) 2022-2024 Matthew Luckie
+ * Copyright (C) 2022-2025 Matthew Luckie
+ * Copyright (C) 2025      The Regents of the University of California
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -31,7 +32,6 @@
 #endif
 #include "internal.h"
 
-#include "mjl_splaytree.h"
 #include "scamper_addr.h"
 #include "scamper_list.h"
 #include "scamper_list_int.h"
@@ -39,6 +39,10 @@
 #include "trace/scamper_trace_int.h"
 #include "scamper_file.h"
 #include "scamper_file_arts.h"
+
+#include "mjl_splaytree.h"
+#include "mjl_list.h"
+
 #include "utils.h"
 
 typedef struct arts_state
@@ -70,6 +74,13 @@ typedef struct arts_header
 #define ARTS_STOP_LOOP        0x02
 #define ARTS_STOP_GAPLIMIT    0x03
 
+static int tree_to_slist(void *ptr, void *entry)
+{
+  if(slist_tail_push((slist_t *)ptr, entry) != NULL)
+    return 0;
+  return -1;
+}
+
 /*
  * arts_read_hdr:
  *
@@ -80,9 +91,8 @@ static int arts_read_hdr(const scamper_file_t *sf, arts_header_t *ah)
 {
   int      fd = scamper_file_getfd(sf);
   uint8_t  buf[20], *tmp = buf;
-  uint32_t junk32;
-  uint32_t i, attr_len;
-  uint16_t junk16;
+  uint32_t u32, i, attr_len;
+  uint16_t u16;
   int      ret;
   size_t   rc;
 
@@ -97,16 +107,15 @@ static int arts_read_hdr(const scamper_file_t *sf, arts_header_t *ah)
 	  return 0;
 	}
 
-      fprintf(stderr, "arts_read_hdr: read %d of 20 bytes\n", (int)rc);
+      fprintf(stderr, "%s: read %d of 20 bytes\n", __func__, (int)rc);
       goto err;
     }
 
   /* read the magic section of the header */
-  memcpy(&junk16, buf, 2);
-  if((junk16 = ntohs(junk16)) != ARTS_MAGIC)
+  if((u16 = bytes_ntohs(buf)) != ARTS_MAGIC)
     {
-      fprintf(stderr, "arts_read_hdr: expected magic 0x%02x got 0x%02x\n",
-	      ARTS_MAGIC, junk16);
+      fprintf(stderr, "%s: expected magic 0x%02x got 0x%02x\n", __func__,
+	      ARTS_MAGIC, u16);
       goto err;
     }
 
@@ -114,22 +123,14 @@ static int arts_read_hdr(const scamper_file_t *sf, arts_header_t *ah)
    * the arts id field is stored in the upper 28 bits of the 32 bit field.
    * the arts version field takes the lower 4.
    */
-  memcpy(&junk32, buf+2, 4);
-  junk32  = ntohl(junk32);
-  ah->id  = junk32 >> 4;
-  ah->ver = junk32 & 0x0f;
-
-  /* arts flags */
-  memcpy(&junk32, buf+6, 4);
-  ah->flags = ntohl(junk32);
-
-  /* length of data in the arts record */
-  memcpy(&junk32, buf+16, 4);
-  ah->data_length = ntohl(junk32);
+  u32  = bytes_ntohl(buf + 2);
+  ah->id  = u32 >> 4;
+  ah->ver = u32 & 0x0f;
+  ah->flags = bytes_ntohl(buf + 6);
+  ah->data_length = bytes_ntohl(buf + 16);
 
   /* figure out the length of the arts attributes */
-  memcpy(&junk32, buf+12, 4);
-  attr_len = ntohl(junk32);
+  attr_len = bytes_ntohl(buf + 12);
 
   /* allocate a large enough buffer, if necessary */
   if(attr_len > sizeof(buf) && (tmp = malloc_zero(attr_len)) == NULL)
@@ -142,7 +143,7 @@ static int arts_read_hdr(const scamper_file_t *sf, arts_header_t *ah)
     }
 
   /* parse the buffer for recognised arts attributes */
-  for(i = 0; i < attr_len; i += junk32)
+  for(i = 0; i < attr_len; i += u32)
     {
       /* make sure there is enough left for a complete attribute */
       if(attr_len - i < 8)
@@ -151,26 +152,24 @@ static int arts_read_hdr(const scamper_file_t *sf, arts_header_t *ah)
 	}
 
       /* read the type / identifier field */
-      memcpy(&junk32, tmp + i, 4); junk32 = ntohl(junk32);
+      u32 = bytes_ntohl(tmp + i);
 
       /* extract the identifier field */
-      switch(junk32 >> 8)
+      switch(u32 >> 8)
 	{
 	case ARTS_ATTR_CREATION:
 	  /* make sure the type of this field is a unix date */
-	  if((junk32 & 0xff) != ARTS_FORMAT_UNIXDATE || attr_len - i < 12)
+	  if((u32 & 0xff) != ARTS_FORMAT_UNIXDATE || attr_len - i < 12)
 	    {
 	      goto err;
 	    }
-	  memcpy(&junk32, tmp + i + 8, 4);
-	  ah->creation = ntohl(junk32);
+	  ah->creation = bytes_ntohl(tmp + i + 8);
 	  break;
 	}
 
       /* read the length field */
-      memcpy(&junk32, tmp + i + 4, 4);
-      junk32 = ntohl(junk32);
-      if(junk32 < 8 || attr_len - i < junk32)
+      u32 = bytes_ntohl(tmp + i + 4);
+      if(u32 < 8 || attr_len - i < u32)
 	{
 	  goto err;
 	}
@@ -186,54 +185,70 @@ static int arts_read_hdr(const scamper_file_t *sf, arts_header_t *ah)
   return -1;
 }
 
-static scamper_trace_hop_t *arts_hop_reply(scamper_addr_t *addr,
-					   uint32_t rtt, uint8_t distance)
+static int probe_cmp(const scamper_trace_probe_t *a,
+		     const scamper_trace_probe_t *b)
 {
-  scamper_trace_hop_t *hop = scamper_trace_hop_alloc();
+  if(a->ttl < b->ttl) return -1;
+  if(a->ttl > b->ttl) return  1;
+  if(a->id < b->id) return -1;
+  if(a->id > b->id) return  1;
+  return 0;
+}
 
-  if(hop != NULL)
+static scamper_trace_probe_t *probe_get(splaytree_t *probes,
+					uint8_t ttl, uint8_t id)
+{
+  scamper_trace_probe_t fm, *probe;
+
+  fm.ttl = ttl;
+  fm.id  = id;
+  if((probe = splaytree_find(probes, &fm)) == NULL)
     {
-      hop->hop_addr        = scamper_addr_use(addr);
-      hop->hop_flags       = 0;
-      hop->hop_probe_id    = 0;
-      hop->hop_probe_ttl   = distance;
-      hop->hop_probe_size  = 0;
-      hop->hop_reply_ttl   = 0;
-      hop->hop_reply_size  = 0;
-      hop->hop_icmp_type   = ICMP_ECHOREPLY;
-      hop->hop_icmp_code   = 0;
-      hop->hop_rtt.tv_sec  = rtt / 1000000;
-      hop->hop_rtt.tv_usec = rtt % 1000000;
+      if((probe = scamper_trace_probe_alloc()) == NULL)
+	goto err;
+      probe->ttl = ttl;
+      probe->id = id;
+      if(splaytree_insert(probes, probe) == NULL)
+	goto err;
     }
+
+  return probe;
+
+ err:
+  if(probe != NULL) scamper_trace_probe_free(probe);
+  return NULL;
+}
+
+static scamper_trace_reply_t *arts_hop_reply(scamper_addr_t *addr, uint32_t rtt)
+{
+  scamper_trace_reply_t *hop;
+
+  if((hop = scamper_trace_reply_alloc()) == NULL)
+    return NULL;
+  hop->addr = scamper_addr_use(addr);
+  hop->rtt.tv_sec = rtt / 1000000;
+  hop->rtt.tv_usec = rtt % 1000000;
+  hop->reply_icmp_type = ICMP_ECHOREPLY;
 
   return hop;
 }
 
-static int arts_hop_read(scamper_trace_hop_t *hop, const uint8_t *buf,
-			 const arts_header_t *ah)
+static int arts_hop_read(const arts_header_t *ah, const uint8_t *buf,
+			 scamper_trace_probe_t *probe,
+			 scamper_trace_reply_t *hop)
 {
-  uint32_t junk32;
-  int      i = 0;
+  uint32_t u32;
+  int i = 0;
 
-  /* set defaults for data items stored with this hop */
-  hop->hop_addr        = NULL;
-  hop->hop_flags       = 0;
-  hop->hop_probe_id    = 0;
-  hop->hop_probe_ttl   = buf[i++];
-  hop->hop_probe_size  = 0;
-  hop->hop_reply_ttl   = 0;
-  hop->hop_reply_size  = 0;
-  hop->hop_icmp_type   = ICMP_TIMXCEED;
-  hop->hop_icmp_code   = ICMP_TIMXCEED_INTRANS;
-  hop->hop_rtt.tv_sec  = 0;
-  hop->hop_rtt.tv_usec = 0;
-
-  /* read the 1 byte hop number this path entry refers to */
-  if(hop->hop_probe_ttl == 0)
+  probe->ttl = buf[i++]; /* probe ttl */
+  if(probe->ttl == 0)
     return -1;
 
+  hop->reply_icmp_type = ICMP_TIMXCEED;
+  hop->reply_icmp_code = ICMP_TIMXCEED_INTRANS;
+
   /* the IPv4 address of the hop that responded */
-  if((hop->hop_addr = scamper_addr_alloc_ipv4(buf+i)) == NULL)
+  if((hop->addr = scamper_addr_alloc_ipv4(buf+i)) == NULL)
     return -1;
   i += 4;
 
@@ -241,61 +256,45 @@ static int arts_hop_read(scamper_trace_hop_t *hop, const uint8_t *buf,
   if(ah->ver == 1 || (ah->flags & ARTS_IP_PATH_RTT && ah->ver > 1))
     {
       /* RTT, stored in microseconds */
-      memcpy(&junk32, buf+i, 4); i += 4;
-      junk32 = ntohl(junk32);
-      hop->hop_rtt.tv_sec  = junk32 / 1000000;
-      hop->hop_rtt.tv_usec = junk32 % 1000000;
+      u32 = bytes_ntohl(buf+i); i += 4;
+      hop->rtt.tv_sec  = u32 / 1000000;
+      hop->rtt.tv_usec = u32 % 1000000;
 
       /* num tries */
-      hop->hop_probe_id = buf[i++];
+      probe->id = buf[i++];
     }
 
   return i;
 }
 
-static scamper_trace_hop_t *arts_hops_read(const arts_header_t *ah,
-					   const uint8_t *buf,
-					   uint8_t count, uint32_t *off)
+static int arts_hops_read(const arts_header_t *ah, splaytree_t *probes,
+			  const uint8_t *buf, uint8_t count, uint32_t *off)
 {
-  scamper_trace_hop_t *head = NULL, *hop = NULL, *prev = NULL;
-  int i = 0;
+  scamper_trace_probe_t fm, *probe = NULL;
+  scamper_trace_reply_t *hop = NULL;
+  uint32_t i = 0;
   int rc;
 
   if(count == 0)
-    {
-      return NULL;
-    }
+    goto err;
 
   while(count-- > 0)
     {
-      if(hop != NULL)
-	{
-	  prev = hop;
-	  hop->hop_next = scamper_trace_hop_alloc();
-	  hop = hop->hop_next;
-	}
-      else
-	{
-	  head = hop = scamper_trace_hop_alloc();
-	}
-
-      if(hop == NULL)
+      memset(&fm, 0, sizeof(fm));
+      if((hop = scamper_trace_reply_alloc()) == NULL ||
+	 (rc = arts_hop_read(ah, buf+i, &fm, hop)) <= 0 ||
+	 (probe = probe_get(probes, fm.ttl, fm.id)) == NULL ||
+	 scamper_trace_probe_reply_add(probe, hop) != 0)
 	goto err;
-
-      if((rc = arts_hop_read(hop, buf+i, ah)) <= 0)
-	goto err;
-      if(prev != NULL && prev->hop_probe_ttl > hop->hop_probe_ttl)
-	goto err;
-      i += rc;
+      i += (uint32_t)rc;
     }
 
-  *off += (uint32_t)i;
-
-  return head;
+  *off += i;
+  return 0;
 
  err:
-  scamper_trace_hops_free(head);
-  return NULL;
+  if(hop != NULL) scamper_trace_reply_free(hop);
+  return -1;
 }
 
 static int arts_list_cmp(const scamper_list_t *a, const scamper_list_t *b)
@@ -361,40 +360,38 @@ static scamper_cycle_t *arts_cycle_get(arts_state_t *state,
 static scamper_trace_t *arts_read_trace(const scamper_file_t *sf,
 					const arts_header_t *ah)
 {
-  int                  fd = scamper_file_getfd(sf);
-  arts_state_t        *state = scamper_file_getstate(sf);
-  scamper_trace_t     *trace = NULL;
-  uint8_t             *buf = NULL;
-  uint32_t             i, junk32;
-  uint8_t              junk8;
-  uint8_t              hop_distance;
-  uint8_t              halt_reason;
-  uint8_t              halt_reason_data;
-  uint8_t              reply_ttl = 0;
-  uint32_t             rtt;
-  scamper_trace_hop_t *hop, *hops = NULL;
-  uint8_t              num_hop_recs;
-  uint8_t              max_hop;
-  uint8_t              destination_replied;
-  size_t               rc;
+  arts_state_t *state = scamper_file_getstate(sf);
+  scamper_trace_t *trace = NULL;
+  scamper_trace_probettl_t *pttl;
+  scamper_trace_probe_t *probe = NULL;
+  scamper_trace_reply_t *hop = NULL;
+  splaytree_t *probe_tree = NULL;
+  slist_t *probe_list = NULL;
+  uint8_t *buf = NULL;
+  uint32_t i, u32, rtt;
+  uint8_t u8, hop_distance, halt_reason, halt_reason_data, reply_ttl = 0;
+  uint8_t num_hop_recs, max_hop, destination_replied;
+  size_t rc;
+  int fd;
 
   if((buf = malloc_zero(ah->data_length)) == NULL)
     {
-      fprintf(stderr, "arts_read_trace: malloc %d for trace object failed\n",
+      fprintf(stderr, "%s: malloc %d for trace object failed\n", __func__,
 	      ah->data_length);
       goto err;
     }
 
+  fd = scamper_file_getfd(sf);
   if(read_wrap(fd, buf, &rc, ah->data_length) != 0)
     {
-      fprintf(stderr, "arts_read_trace: read %d expected %d\n", (int)rc,
+      fprintf(stderr, "%s: read %d expected %d\n", __func__, (int)rc,
 	      ah->data_length);
       goto err;
     }
 
   if((trace = scamper_trace_alloc()) == NULL)
     {
-      fprintf(stderr, "arts_read_trace: scamper_trace_alloc failed\n");
+      fprintf(stderr, "%s: scamper_trace_alloc failed\n", __func__);
       goto err;
     }
 
@@ -415,30 +412,28 @@ static scamper_trace_t *arts_read_trace(const scamper_file_t *sf,
   if(ah->ver >= 3)
     {
       /* list id */
-      memcpy(&junk32, buf+i, 4); i += 4; junk32 = ntohl(junk32);
-      if((trace->list = arts_list_get(state, junk32)) == NULL)
+      u32 = bytes_ntohl(buf+i); i += 4;
+      if((trace->list = arts_list_get(state, u32)) == NULL)
 	goto err;
       scamper_list_use(trace->list);
 
       /* cycle id */
-      memcpy(&junk32, buf+i, 4); i += 4; junk32 = ntohl(junk32);
-      if((trace->cycle = arts_cycle_get(state, trace->list, junk32)) == NULL)
+      u32 = bytes_ntohl(buf+i); i += 4;
+      if((trace->cycle = arts_cycle_get(state, trace->list, u32)) == NULL)
 	goto err;
       scamper_cycle_use(trace->cycle);
     }
 
   /*
-   * read the RTT of the last hop
-   * arts prior to version 2 stores a timeval struct in the file for
-   * recording RTT, which is wasteful
+   * read the RTT of the last hop.  arts prior to version 2 stores a
+   * timeval struct in the file for recording RTT.
    */
-  memcpy(&junk32, buf+i, 4); i += 4;
-  rtt = ntohl(junk32);
+  rtt = bytes_ntohl(buf + i); i += 4;
   if(ah->ver < 2)
     {
       rtt *= 1000000;
-      memcpy(&junk32, buf+i, 4); i += 4;
-      rtt += ntohl(junk32);
+      u32  = bytes_ntohl(buf+i); i += 4;
+      rtt += u32;
     }
 
   /*
@@ -452,12 +447,12 @@ static scamper_trace_t *arts_read_trace(const scamper_file_t *sf,
    * successful in probing to the end host, and the other 7 bits say
    * how many hops actually responded to a probe.
    */
-  junk8 = buf[i++];
-  destination_replied = junk8 >> 7;
+  u8 = buf[i++];
+  destination_replied = u8 >> 7;
+  num_hop_recs = u8 & 0x7f;
 
   if(destination_replied != 0)
     trace->stop_reason = SCAMPER_TRACE_STOP_COMPLETED;
-  num_hop_recs = junk8 & 0x7f;
 
   /*
    * arts versions after 1 (and arts version 1 conditionally) store
@@ -491,10 +486,10 @@ static scamper_trace_t *arts_read_trace(const scamper_file_t *sf,
     }
 
   if(num_hop_recs == 0 && destination_replied == 0)
-    {
-      free(buf);
-      return trace;
-    }
+    goto done;
+
+  if((probe_tree = splaytree_alloc((splaytree_cmp_t)probe_cmp)) == NULL)
+    goto err;
 
   /*
    * arts >= 2 stores the TTL of reply packet from a destination so we
@@ -504,9 +499,9 @@ static scamper_trace_t *arts_read_trace(const scamper_file_t *sf,
     reply_ttl = buf[i++];
 
   if(num_hop_recs > 0 &&
-     (hops = arts_hops_read(ah, buf+i, num_hop_recs, &i)) == NULL)
+     arts_hops_read(ah, probe_tree, buf+i, num_hop_recs, &i) != 0)
     {
-      fprintf(stderr, "arts_read_trace: arts_hops_read %d failed\n",
+      fprintf(stderr, "%s: arts_hops_read %d failed\n", __func__,
 	      num_hop_recs);
       goto err;
     }
@@ -522,24 +517,21 @@ static scamper_trace_t *arts_read_trace(const scamper_file_t *sf,
    * unreachable was received, then associate the type/code with the last
    * structure read.
    */
-  if((hop = hops) != NULL)
+  if((probe_list = slist_alloc()) == NULL)
+    goto err;
+  splaytree_inorder(probe_tree,
+		    (splaytree_inorder_t)tree_to_slist, probe_list);
+  splaytree_free(probe_tree, NULL); probe_tree = NULL;
+  if((probe = slist_tail_item(probe_list)) != NULL)
     {
-      for(;;)
+      assert(probe->replyc > 0);
+      if(max_hop < probe->ttl)
+	max_hop = probe->ttl;
+      if(trace->stop_reason == SCAMPER_TRACE_STOP_UNREACH)
 	{
-	  if(max_hop < hop->hop_probe_ttl)
-	    max_hop = hop->hop_probe_ttl;
-
-	  if(hop->hop_next == NULL)
-	    {
-	      if(trace->stop_reason == SCAMPER_TRACE_STOP_UNREACH)
-		{
-		  hop->hop_icmp_type = ICMP_UNREACH;
-		  hop->hop_icmp_code = trace->stop_data;
-		}
-	      break;
-	    }
-
-	  hop = hop->hop_next;
+	  hop = probe->replies[probe->replyc-1];
+	  hop->reply_icmp_type = ICMP_UNREACH;
+	  hop->reply_icmp_code = trace->stop_data;
 	}
     }
 
@@ -548,7 +540,7 @@ static scamper_trace_t *arts_read_trace(const scamper_file_t *sf,
   free(buf); buf = NULL;
 
   if(max_hop == 0)
-    return trace;
+    goto done;
 
   if(scamper_trace_hops_alloc(trace, max_hop) == -1)
     goto err;
@@ -559,42 +551,87 @@ static scamper_trace_t *arts_read_trace(const scamper_file_t *sf,
    * and assemble the responses into trace->hops. order them based
    * on the probe's ttl then by attempt
    */
-  if(hops != NULL)
+  while((probe = slist_head_item(probe_list)) != NULL)
     {
-      trace->hops[hops->hop_probe_ttl-1] = hop = hops;
-      while(hop->hop_next != NULL)
+      if((pttl = trace->hops[probe->ttl-1]) == NULL)
 	{
-	  if(hop->hop_probe_ttl != hop->hop_next->hop_probe_ttl)
-	    {
-	      i = hop->hop_next->hop_probe_ttl-1;
-	      trace->hops[i] = hop->hop_next;
-	      hop->hop_next = NULL;
-	      hop = trace->hops[i];
-	    }
-	  else hop = hop->hop_next;
+	  if((pttl = scamper_trace_probettl_alloc()) == NULL)
+	    goto err;
+	  trace->hops[probe->ttl-1] = pttl;
 	}
-      hops = NULL;
+      probe = slist_head_pop(probe_list);
+      if(scamper_trace_probettl_probe_add(pttl, probe) != 0)
+	{
+	  scamper_trace_probe_free(probe);
+	  goto err;
+	}
     }
-
+  
   if(destination_replied != 0 && hop_distance > 0)
     {
-      if((hop = arts_hop_reply(trace->dst, rtt, hop_distance)) == NULL)
-	goto err;
-
-      if(ah->ver >= 2)
+      if((pttl = trace->hops[hop_distance-1]) == NULL)
 	{
-	  hop->hop_reply_ttl = reply_ttl;
-	  hop->hop_flags |= SCAMPER_TRACE_HOP_FLAG_REPLY_TTL;
+	  if((pttl = scamper_trace_probettl_alloc()) == NULL)
+	    goto err;
+	  trace->hops[hop_distance-1] = pttl;
 	}
 
-      hop->hop_next = trace->hops[hop->hop_probe_ttl-1];
-      trace->hops[hop->hop_probe_ttl-1] = hop;
+      if(pttl->probec == 0 || pttl->probes[0]->id > 0)
+	{
+	  if((probe = scamper_trace_probe_alloc()) == NULL)
+	    goto err;
+	  probe->ttl = hop_distance - 1;
+	  if(scamper_trace_probettl_probe_add(pttl, probe) != 0)
+	    {
+	      scamper_trace_probe_free(probe);
+	      goto err;
+	    }
+
+	  /*
+	   * move this probe to the start of the list for consistency
+	   * with prior code
+	   */
+	  if(pttl->probec > 1)
+	    {
+	      memmove(&pttl->probes[1], &pttl->probes[0],
+		      sizeof(scamper_trace_probe_t *) * (pttl->probec - 1));
+	      pttl->probes[0] = probe;
+	    }
+	}
+
+      /*
+       * add reply to probe, and make sure it is the first reply for
+       * consistency with prior code
+       */
+      if((hop = arts_hop_reply(trace->dst, rtt)) == NULL)
+	goto err;
+      if(ah->ver >= 2)
+	{
+	  hop->ttl = reply_ttl;
+	  hop->flags |= SCAMPER_TRACE_REPLY_FLAG_REPLY_TTL;
+	}
+      if(scamper_trace_probe_reply_add(probe, hop) != 0)
+	{
+	  scamper_trace_reply_free(hop);
+	  goto err;
+	}
+      if(probe->replyc > 1)
+	{
+	  memmove(&probe->replies[1], &probe->replies[0],
+		  sizeof(scamper_trace_probe_t *) * (probe->replyc - 1));
+	  probe->replies[0] = hop;
+	}
     }
 
+ done:
+  if(probe_list != NULL)
+    slist_free_cb(probe_list, (slist_free_t)scamper_trace_probe_free);
+  if(buf != NULL) free(buf);
   return trace;
 
  err:
-  scamper_trace_hops_free(hops);
+  if(probe_list != NULL)
+    slist_free_cb(probe_list, (slist_free_t)scamper_trace_probe_free);
   if(trace != NULL) scamper_trace_free(trace);
   if(buf != NULL) free(buf);
   return NULL;

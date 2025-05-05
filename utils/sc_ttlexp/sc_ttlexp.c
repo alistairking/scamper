@@ -1,7 +1,7 @@
 /*
  * sc_ttlexp: dump all unique source IP addresses in TTL expired messages
  *
- * $Id: sc_ttlexp.c,v 1.14 2023/08/27 06:39:31 mjl Exp $
+ * $Id: sc_ttlexp.c,v 1.16 2025/05/01 02:58:04 mjl Exp $
  *
  *         Matthew Luckie
  *         mjl@luckie.org.nz
@@ -172,29 +172,30 @@ static int dump_tracelb(scamper_tracelb_t *trace)
 
 static int dump_trace(scamper_trace_t *trace)
 {
-  const scamper_trace_hop_t *hop;
+  const scamper_trace_reply_t *hop;
+  scamper_trace_hopiter_t *hi;
   scamper_addr_t *dst, *hop_addr;
-  uint16_t u16, hop_count;
   int rc = -1;
 
-  hop_count = scamper_trace_hop_count_get(trace);
-  dst = scamper_trace_dst_get(trace);
-  for(u16=0; u16<hop_count; u16++)
+  if((dst = scamper_trace_dst_get(trace)) == NULL)
+    return 0;
+
+  if((hi = scamper_trace_hopiter_alloc()) == NULL)
+    goto done;
+
+  while((hop = scamper_trace_hopiter_next(trace, hi)) != NULL)
     {
-      for(hop = scamper_trace_hop_get(trace, u16); hop != NULL;
-	  hop = scamper_trace_hop_next_get(hop))
-	{
-	  hop_addr = scamper_trace_hop_addr_get(hop);
-	  if(scamper_trace_hop_is_icmp_ttl_exp(hop) == 0 ||
-	     (no_dst != 0 && scamper_addr_cmp(hop_addr, dst) == 0))
-	    continue;
-	  if(dump_addr(hop_addr) != 0)
-	    goto done;
-	}
+      hop_addr = scamper_trace_reply_addr_get(hop);
+      if(scamper_trace_reply_is_icmp_ttl_exp(hop) == 0 ||
+	 (no_dst != 0 && scamper_addr_cmp(hop_addr, dst) == 0))
+	continue;
+      if(dump_addr(hop_addr) != 0)
+	goto done;
     }
   rc = 0;
 
  done:
+  if(hi != NULL) scamper_trace_hopiter_free(hi);
   scamper_trace_free(trace);
   return rc;
 }

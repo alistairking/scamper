@@ -1,7 +1,7 @@
 /*
  * scamper_ping.h
  *
- * $Id: scamper_ping.h,v 1.85 2025/03/12 19:14:38 mjl Exp $
+ * $Id: scamper_ping.h,v 1.86 2025/05/05 03:34:24 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -73,6 +73,7 @@ typedef struct scamper_ping_stats scamper_ping_stats_t;
 #define SCAMPER_PING_FLAG_NOSRC           0x100 /* -O nosrc: do not embed src */
 #define SCAMPER_PING_FLAG_RAW             0x200 /* -O raw: tx with raw IPv4 */
 #define SCAMPER_PING_FLAG_SOCKRX          0x400 /* -O sockrx: rx from socket */
+#define SCAMPER_PING_FLAG_DLTX            0x800 /* -O dltx: use dl to tx */
 
 char *scamper_ping_tojson(const scamper_ping_t *ping, size_t *len);
 
@@ -152,6 +153,7 @@ uint32_t scamper_ping_reply_flags_get(const scamper_ping_reply_t *reply);
 int scamper_ping_reply_flag_is_reply_ipid(const scamper_ping_reply_t *reply);
 uint8_t scamper_ping_reply_icmp_type_get(const scamper_ping_reply_t *reply);
 uint8_t scamper_ping_reply_icmp_code_get(const scamper_ping_reply_t *reply);
+uint16_t scamper_ping_reply_icmp_nhmtu_get(const scamper_ping_reply_t *reply);
 uint8_t scamper_ping_reply_tcp_flags_get(const scamper_ping_reply_t *reply);
 const char *scamper_ping_reply_ifname_get(const scamper_ping_reply_t *reply);
 int scamper_ping_reply_is_icmp(const scamper_ping_reply_t *reply);
@@ -162,6 +164,7 @@ int scamper_ping_reply_is_icmp_unreach(const scamper_ping_reply_t *reply);
 int scamper_ping_reply_is_icmp_unreach_port(const scamper_ping_reply_t *reply);
 int scamper_ping_reply_is_icmp_ttl_exp(const scamper_ping_reply_t *reply);
 int scamper_ping_reply_is_icmp_tsreply(const scamper_ping_reply_t *reply);
+int scamper_ping_reply_is_icmp_ptb(const scamper_ping_reply_t *reply);
 const struct timeval *scamper_ping_reply_rtt_get(const scamper_ping_reply_t *reply);
 scamper_ping_reply_v4rr_t *scamper_ping_reply_v4rr_get(const scamper_ping_reply_t *reply);
 scamper_ping_reply_v4ts_t *scamper_ping_reply_v4ts_get(const scamper_ping_reply_t *reply);

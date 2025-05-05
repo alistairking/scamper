@@ -1,7 +1,7 @@
 /*
  * scamper_dl: manage BPF/PF_PACKET datalink instances for scamper
  *
- * $Id: scamper_dl.c,v 1.234 2025/03/29 18:46:03 mjl Exp $
+ * $Id: scamper_dl.c,v 1.235 2025/04/08 21:27:02 mjl Exp $
  *
  *          Matthew Luckie
  *          Ben Stasiewicz added fragmentation support.
@@ -2947,7 +2947,7 @@ int scamper_dl_init()
 #elif defined(__linux__)
   return dl_linux_init();
 #elif defined(HAVE_DLPI)
-  return dl_dlpi_init()
+  return dl_dlpi_init();
 #else
   return 0;
 #endif

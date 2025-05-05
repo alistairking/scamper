@@ -1,7 +1,7 @@
 /*
  * scamper_do_dealias.c
  *
- * $Id: scamper_dealias_do.c,v 1.205 2025/03/11 00:31:05 mjl Exp $
+ * $Id: scamper_dealias_do.c,v 1.206 2025/04/27 00:49:24 mjl Exp $
  *
  * Copyright (C) 2008-2011 The University of Waikato
  * Copyright (C) 2012-2013 Matthew Luckie
@@ -35,6 +35,7 @@
 #include "internal.h"
 
 #include "scamper.h"
+#include "scamper_config.h"
 #include "scamper_debug.h"
 #include "scamper_addr.h"
 #include "scamper_addr_int.h"
@@ -66,6 +67,9 @@ static scamper_task_funcs_t funcs;
 /* packet buffer for generating the payload of each packet */
 extern uint8_t             *txbuf;
 extern size_t               txbuf_len;
+
+/* running scamper configuration */
+extern scamper_config_t *config;
 
 /* address cache used to avoid reallocating the same address multiple times */
 extern scamper_addrcache_t *addrcache;
@@ -2899,6 +2903,11 @@ scamper_task_t *scamper_do_dealias_alloctask(void *data,
 uint32_t scamper_do_dealias_userid(void *data)
 {
   return ((scamper_dealias_t *)data)->userid;
+}
+
+int scamper_do_dealias_enabled(void)
+{
+  return config->dealias_enable;
 }
 
 void scamper_do_dealias_cleanup(void)

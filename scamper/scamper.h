@@ -1,7 +1,7 @@
 /*
  * scamper.h
  *
- * $Id: scamper.h,v 1.82.6.1 2025/04/01 09:11:25 mjl Exp $
+ * $Id: scamper.h,v 1.82.8.1 2025/05/05 05:39:12 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -84,6 +84,6 @@ int scamper_pidfile(void);
 uint16_t scamper_sport_default(void);
 uint16_t scamper_pid_u16(void);
 
-#define SCAMPER_VERSION "20250401"
+#define SCAMPER_VERSION "20250505"
 
 #endif /* __SCAMPER_H */

@@ -1,7 +1,7 @@
 /*
  * scamper
  *
- * $Id: scamper.c,v 1.370 2025/04/01 06:59:20 mjl Exp $
+ * $Id: scamper.c,v 1.373 2025/04/27 00:49:24 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -34,6 +34,7 @@
 #include "internal.h"
 
 #include "scamper.h"
+#include "scamper_config.h"
 #include "scamper_debug.h"
 #include "scamper_addr.h"
 #include "scamper_addr_int.h"
@@ -138,6 +139,7 @@
 #define OPT_CTRL_UNIX       0x02000000 /* U: */
 #define OPT_CTRL_REMOTE     0x04000000 /* R: */
 #define OPT_NAMESERVER      0x08000000 /* n: */
+#define OPT_CONFIGFILE      0x10000000 /* g: */
 
 #define FLAG_NOINITNDC       0x00000001
 #define FLAG_SELECT          0x00000004
@@ -205,9 +207,9 @@ static char  *outfile      = "-";
 static char  *outtype      = NULL;
 static char  *intype       = NULL;
 static char  *ctrl_inet_addr = NULL;
-static int    ctrl_inet_port = 0;
+static uint16_t ctrl_inet_port = 0;
 static char  *ctrl_unix    = NULL;
-static int    ctrl_rem_port = 0;
+static uint16_t ctrl_rem_port = 0;
 static char  *ctrl_rem_name = NULL;
 static char  *monitorname  = NULL;
 static char  *nameserver   = NULL;
@@ -218,6 +220,7 @@ static char **arglist      = NULL;
 static int    arglist_len  = 0;
 static char  *firewall     = NULL;
 static char  *pidfile      = NULL;
+static char  *configfile   = NULL;
 
 /* temporary tx buffer shared amongst measurements */
 uint8_t      *txbuf        = NULL;
@@ -312,7 +315,7 @@ static void usage(uint32_t opt_mask)
     "usage: scamper [-?Dv] [-c command] [-p pps] [-w window]\n"
     "               [-M monitorname] [-l listname] [-L listid] [-C cycleid]\n"
     "               [-o outfile] [-O options] [-H holdtime] [-F firewall]\n"
-    "               [-e pidfile] [-n nameserver]\n"
+    "               [-e pidfile] [-g configfile] [-n nameserver]\n"
 #ifndef WITHOUT_DEBUGFILE
     "               [-d debugfile]\n"
 #endif
@@ -358,6 +361,9 @@ static void usage(uint32_t opt_mask)
 
   if((opt_mask & OPT_FIREWALL) != 0)
     usage_str('F', "use the system firewall to install rules as necessary");
+
+  if((opt_mask & OPT_CONFIGFILE) != 0)
+    usage_str('g', "location of config file");
 
   if((opt_mask & OPT_HOLDTIME) != 0)
     usage_str('H', "how long to hold task signature for after completion");
@@ -666,12 +672,12 @@ static int check_options(int argc, char *argv[])
 
   off = 0;
   string_concat(opts, sizeof(opts), &off,
-		"c:C:e:fF:H:iIl:L:M:n:o:O:p:P:R:vw:?");
+		"c:C:e:fF:g:H:iIl:L:M:n:o:O:p:P:R:vw:?");
 #ifndef WITHOUT_DEBUGFILE
   string_concat(opts, sizeof(opts), &off, "d:");
 #endif
 #ifdef HAVE_DAEMON
-  string_concat(opts, sizeof(opts), &off, "D");
+  string_concatc(opts, sizeof(opts), &off, 'D');
 #endif
 #ifdef HAVE_SOCKADDR_UN
   string_concat(opts, sizeof(opts), &off, "U:");
@@ -716,6 +722,11 @@ static int check_options(int argc, char *argv[])
 	case 'F':
 	  options |= OPT_FIREWALL;
 	  opt_firewall = optarg;
+	  break;
+
+	case 'g':
+	  options |= OPT_CONFIGFILE;
+	  configfile = optarg;
 	  break;
 
 	case 'H':
@@ -1932,6 +1943,8 @@ static void cleanup(void)
     }
 #endif
 
+  scamper_config_cleanup();
+
 #ifdef HAVE_TIMEBEGINPERIOD
   timeEndPeriod(1);
 #endif
@@ -2080,6 +2093,9 @@ static int scamper(int argc, char *argv[])
 #endif
 
   scamper_debug(__func__, "version %s", SCAMPER_VERSION);
+
+  if(scamper_config_init(configfile) != 0)
+    goto done;
 
   if(scamper_osinfo_init() != 0)
     goto done;

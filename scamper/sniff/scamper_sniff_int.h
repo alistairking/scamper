@@ -1,7 +1,7 @@
 /*
  * scamper_sniff_int.h
  *
- * $Id: scamper_sniff_int.h,v 1.5 2024/01/02 17:51:46 mjl Exp $
+ * $Id: scamper_sniff_int.h,v 1.6 2025/04/22 01:41:43 mjl Exp $
  *
  * Copyright (C) 2011 The University of Waikato
  * Author: Matthew Luckie
@@ -27,7 +27,7 @@
 scamper_sniff_t *scamper_sniff_alloc(void);
 scamper_sniff_pkt_t *scamper_sniff_pkt_alloc(uint8_t *data, uint16_t len,
 					     struct timeval *tv);
-int scamper_sniff_pkts_alloc(scamper_sniff_t *sniff, int pktc);
+int scamper_sniff_pkts_alloc(scamper_sniff_t *sniff, uint32_t pktc);
 
 struct scamper_sniff_pkt
 {

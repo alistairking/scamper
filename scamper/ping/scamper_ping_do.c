@@ -1,7 +1,7 @@
 /*
  * scamper_do_ping.c
  *
- * $Id: scamper_ping_do.c,v 1.207 2025/03/31 10:14:02 mjl Exp $
+ * $Id: scamper_ping_do.c,v 1.209 2025/05/05 03:34:24 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -30,6 +30,7 @@
 #include "internal.h"
 
 #include "scamper.h"
+#include "scamper_config.h"
 #include "scamper_debug.h"
 #include "scamper_addr.h"
 #include "scamper_addr_int.h"
@@ -56,6 +57,9 @@
 
 /* the callback functions registered with the ping task */
 static scamper_task_funcs_t ping_funcs;
+
+/* running scamper configuration */
+extern scamper_config_t *config;
 
 typedef struct ping_state
 {
@@ -133,6 +137,7 @@ static int ping_dltx(scamper_ping_t *ping)
 {
   if(ping->rtr != NULL || ping->pmtu != 0 ||
      (SCAMPER_ADDR_TYPE_IS_IPV4(ping->dst) && scamper_osinfo_is_sunos()) ||
+     SCAMPER_PING_FLAG_IS_DLTX(ping) ||
      SCAMPER_PING_FLAG_IS_SPOOF(ping))
     return 1;
   return 0;
@@ -564,6 +569,9 @@ static void do_ping_handle_dl(scamper_task_t *task, scamper_dl_rec_t *dl)
 	  scamper_dl_rec_icmp_print(dl);
 	  reply->icmp_type = dl->dl_icmp_type;
 	  reply->icmp_code = dl->dl_icmp_code;
+
+	  if(SCAMPER_DL_IS_ICMP_PACKET_TOO_BIG(dl))
+	    reply->icmp_nhmtu = dl->dl_icmp_nhmtu;
 	}
 
       if(dl->dl_af == AF_INET)
@@ -857,7 +865,11 @@ static void do_ping_handle_icmp(scamper_task_t *task, scamper_icmp_resp_t *ir)
   reply->icmp_type   = ir->ir_icmp_type;
   reply->icmp_code   = ir->ir_icmp_code;
 
-  if(SCAMPER_ICMP_RESP_IS_TIME_REPLY(ir))
+  if(SCAMPER_ICMP_RESP_IS_PACKET_TOO_BIG(ir))
+    {
+      reply->icmp_nhmtu = ir->ir_icmp_nhmtu;
+    }
+  else if(SCAMPER_ICMP_RESP_IS_TIME_REPLY(ir))
     {
       if((reply->tsreply = scamper_ping_reply_tsreply_alloc()) == NULL)
 	goto err;
@@ -1966,6 +1978,11 @@ void scamper_do_ping_free(void *data)
 uint32_t scamper_do_ping_userid(void *data)
 {
   return ((scamper_ping_t *)data)->userid;
+}
+
+int scamper_do_ping_enabled(void)
+{
+  return config->ping_enable;
 }
 
 void scamper_do_ping_cleanup()

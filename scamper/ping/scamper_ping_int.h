@@ -1,7 +1,7 @@
 /*
  * scamper_ping_int.h
  *
- * $Id: scamper_ping_int.h,v 1.17 2025/03/12 19:14:38 mjl Exp $
+ * $Id: scamper_ping_int.h,v 1.18 2025/05/05 03:34:24 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -82,6 +82,15 @@ uint32_t scamper_ping_reply_total(const scamper_ping_t *ping);
  (reply)->addr->type == SCAMPER_ADDR_TYPE_IPV4 &&   \
  (reply)->proto == 1 && (reply)->icmp_type == 14)
 
+#define SCAMPER_PING_REPLY_IS_ICMP_PTB(reply) (		\
+ ((reply)->addr->type == SCAMPER_ADDR_TYPE_IPV4 &&	\
+  (reply)->proto == 1 && 				\
+  (reply)->icmp_type == 3 &&				\
+  (reply)->icmp_code == 4) ||				\
+ ((reply)->addr->type == SCAMPER_ADDR_TYPE_IPV6 &&	\
+  (reply)->proto == 58 &&				\
+  (reply)->icmp_type == 2)) 
+
 #define SCAMPER_PING_METHOD_IS_ICMP(ping) (         \
  (ping)->method == SCAMPER_PING_METHOD_ICMP_ECHO || \
  (ping)->method == SCAMPER_PING_METHOD_ICMP_TIME)
@@ -132,6 +141,9 @@ uint32_t scamper_ping_reply_total(const scamper_ping_t *ping);
 
 #define SCAMPER_PING_FLAG_IS_SPOOF(ping) (	\
  (ping)->flags & SCAMPER_PING_FLAG_SPOOF)
+
+#define SCAMPER_PING_FLAG_IS_DLTX(ping) (	\
+ (ping)->flags & SCAMPER_PING_FLAG_DLTX)
 
 #define SCAMPER_PING_FLAG_IS_PAYLOAD(ping) (	\
  (ping)->flags & SCAMPER_PING_FLAG_PAYLOAD)
@@ -258,6 +270,7 @@ struct scamper_ping_reply
   /* the icmp type / code returned */
   uint8_t                    icmp_type;
   uint8_t                    icmp_code;
+  uint16_t                   icmp_nhmtu;
 
   /* the tcp flags returned */
   uint16_t                   tcp_mss;

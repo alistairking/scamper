@@ -3,7 +3,7 @@
  *
  * Author: Matthew Luckie
  *
- * $Id: scamper_udpprobe_json.c,v 1.7 2024/12/31 04:17:31 mjl Exp $
+ * $Id: scamper_udpprobe_json.c,v 1.10 2025/05/03 09:01:57 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -52,19 +52,26 @@ static char *reply_tostr(const scamper_udpprobe_probe_t *probe,
     }
 
   timeval_diff_tv(&rtt, &probe->tx, &reply->rx);
-  string_concaf(buf, sizeof(buf), &off,
-		"{\"rx\":{\"sec\":%ld,\"usec\":%d}"
-		", \"rtt\":{\"sec\":%ld,\"usec\":%d}"
-		", \"len\":%u, \"data\":\"",
-		(long)reply->rx.tv_sec, (int)reply->rx.tv_usec,
-		(long)rtt.tv_sec, (int)rtt.tv_usec,
-		reply->len);
-  string_byte2hex(buf, sizeof(buf), &off, reply->data, reply->len);
-  string_concat(buf, sizeof(buf), &off, "\"");
+
+  string_concat_u32(buf, sizeof(buf), &off, "{\"rx\":{\"sec\":",
+		    (uint32_t)reply->rx.tv_sec);
+  string_concat_u32(buf, sizeof(buf), &off, ", \"usec\":",
+		    (uint32_t)reply->rx.tv_usec);
+  string_concat_u32(buf, sizeof(buf), &off, "}, \"rtt\":{\"sec\":",
+		    (uint32_t)rtt.tv_sec);
+  string_concat_u32(buf, sizeof(buf), &off, ", \"usec\":",
+		    (uint32_t)rtt.tv_usec);
+  string_concat_u16(buf, sizeof(buf), &off, "}, \"len\":", reply->len);
+  if(reply->data != NULL && reply->len > 0)
+    {
+      string_concat(buf, sizeof(buf), &off, ", \"data\":\"");
+      string_byte2hex(buf, sizeof(buf), &off, reply->data, reply->len);
+      string_concatc(buf, sizeof(buf), &off, '"');
+    }
   if(reply->ifname != NULL && reply->ifname->ifname != NULL)
     string_concat3(buf, sizeof(buf), &off, ", \"ifname\":\"",
 		   reply->ifname->ifname, "\"");
-  string_concat(buf, sizeof(buf), &off, "}");
+  string_concatc(buf, sizeof(buf), &off, '}');
 
   *len = off;
   return strdup(buf);
@@ -72,19 +79,22 @@ static char *reply_tostr(const scamper_udpprobe_probe_t *probe,
 
 static char *probe_tostr(const scamper_udpprobe_probe_t *probe)
 {
-  char header[256], **replies = NULL, *str = NULL, *rc = NULL;
-  size_t len, wc = 0, header_len = 0, rl, *reply_lens = NULL;
+  char buf[256], **replies = NULL, *str = NULL, *rc = NULL;
+  size_t off = 0, len, wc = 0, header_len = 0, rl, *reply_lens = NULL;
   uint16_t i;
 
   if(probe == NULL)
     return strdup("{}");
 
-  string_concaf(header, sizeof(header), &header_len,
-		"{\"tx\":{\"sec\":%ld,\"usec\":%d}, \"sport\":%u,"
-		" \"replyc\":%u, \"replies\":[",
-		(long)probe->tx.tv_sec, (int)probe->tx.tv_usec,
-		probe->sport, probe->replyc);
-  len = header_len;
+  string_concat_u32(buf, sizeof(buf), &off, "{\"tx\":{\"sec\":",
+		    (uint32_t)probe->tx.tv_sec);
+  string_concat_u32(buf, sizeof(buf), &off, ", \"usec\":",
+		    (uint32_t)probe->tx.tv_usec);
+  string_concat_u16(buf, sizeof(buf), &off, "}, \"sport\":", probe->sport);
+  string_concat_u16(buf, sizeof(buf), &off, ", \"replyc\":", probe->replyc);
+  string_concat(buf, sizeof(buf), &off, ", \"replies\":[");
+
+  len = header_len = off;
 
   if(probe->replyc > 0)
     {
@@ -104,7 +114,7 @@ static char *probe_tostr(const scamper_udpprobe_probe_t *probe)
 
   if((str = malloc_zero(len)) == NULL)
     goto done;
-  memcpy(str, header, header_len); wc += header_len;
+  memcpy(str, buf, header_len); wc += header_len;
   if(probe->replyc > 0)
     {
       for(i=0; i<probe->replyc; i++)
@@ -118,7 +128,7 @@ static char *probe_tostr(const scamper_udpprobe_probe_t *probe)
 	  wc += reply_lens[i];
 	}
     }
-  memcpy(str+wc, "]}\0", 3); wc += 3;
+  memcpy(str+wc, "]}", 3); wc += 3;
   assert(wc == len);
 
   rc = str;
@@ -151,31 +161,42 @@ static char *header_tostr(const scamper_udpprobe_t *up)
   if(up->dst != NULL)
     string_concat3(buf, sizeof(buf), &off, ", \"dst\":\"",
 		   scamper_addr_tostr(up->dst, tmp, sizeof(tmp)), "\"");
-  string_concaf(buf, sizeof(buf), &off,
-		", \"userid\":%u, \"start\":{\"sec\":%ld,\"usec\":%d}"
-		", \"sport\":%u, \"dport\":%u"
-		", \"wait_timeout\":{\"sec\":%ld,\"usec\":%d}",
-		up->userid, (long)up->start.tv_sec, (int)up->start.tv_usec,
-		up->sport, up->dport,
-		(long)up->wait_timeout.tv_sec, (int)up->wait_timeout.tv_usec);
+
+  string_concat_u32(buf, sizeof(buf), &off, ", \"userid\":", up->userid);
+  string_concat_u32(buf, sizeof(buf), &off, ", \"start\":{\"sec\":",
+		    (uint32_t)up->start.tv_sec);
+  string_concat_u32(buf, sizeof(buf), &off, ", \"usec\":",
+		    (uint32_t)up->start.tv_usec);
+  string_concat_u16(buf, sizeof(buf), &off, "}, \"sport\":", up->sport);
+  string_concat_u16(buf, sizeof(buf), &off, ", \"dport\":", up->dport);
+  string_concat_u32(buf, sizeof(buf), &off, ", \"wait_timeout\":{\"sec\":",
+		    (uint32_t)up->wait_timeout.tv_sec);
+  string_concat_u32(buf, sizeof(buf), &off, ", \"usec\":",
+		    (uint32_t)up->wait_timeout.tv_usec);
+  string_concatc(buf, sizeof(buf), &off, '}');
 
   if(up->flags & SCAMPER_UDPPROBE_FLAG_EXITFIRST)
     string_concat(buf, sizeof(buf), &off, ", \"flags\":[\"exitfirst\"]");
 
-  string_concat(buf, sizeof(buf), &off, ", \"stop_reason\":\"");
   if(up->stop >= sizeof(stop_m) / sizeof(char *))
-    string_concaf(buf, sizeof(buf), &off, "%d", up->stop);
+    string_concat_u8(buf, sizeof(buf), &off, ", \"stop_reason\":\"", up->stop);
   else
-    string_concat(buf, sizeof(buf), &off, stop_m[up->stop]);
-  string_concat(buf, sizeof(buf), &off, "\"");
+    string_concat2(buf, sizeof(buf), &off, ", \"stop_reason\":\"",
+		   stop_m[up->stop]);
+  string_concatc(buf, sizeof(buf), &off, '"');
 
-  string_concat(buf, sizeof(buf), &off, ", \"data\":\"");
-  string_byte2hex(buf, sizeof(buf), &off, up->data, up->len);
-  string_concaf(buf, sizeof(buf), &off, "\", \"len\":%u", up->len);
+  if(up->data != NULL && up->len > 0)
+    {
+      string_concat(buf, sizeof(buf), &off, ", \"data\":\"");
+      string_byte2hex(buf, sizeof(buf), &off, up->data, up->len);
+      string_concatc(buf, sizeof(buf), &off, '"');
+    }
+  string_concat_u16(buf, sizeof(buf), &off, ", \"len\":", up->len);
 
-  string_concaf(buf, sizeof(buf), &off,
-		", \"probe_count\":%u, \"probe_sent\":%u, \"stop_count\":%u",
-		up->probe_count, up->probe_sent, up->stop_count);
+  string_concat_u8(buf, sizeof(buf), &off, ", \"probe_count\":",
+		   up->probe_count);
+  string_concat_u8(buf, sizeof(buf), &off, ", \"probe_sent\":", up->probe_sent);
+  string_concat_u8(buf, sizeof(buf), &off, ", \"stop_count\":", up->stop_count);
 
   return strdup(buf);
 }
@@ -208,7 +229,6 @@ char *scamper_udpprobe_tojson(const scamper_udpprobe_t *up, size_t *len_out)
 	  len += (probe_lens[i] = strlen(probes[i]));
 	}
     }
-
   len += 3; /* ]}\0 */
 
   if((str = malloc_zero(len)) == NULL)
@@ -224,7 +244,7 @@ char *scamper_udpprobe_tojson(const scamper_udpprobe_t *up, size_t *len_out)
       wc += probe_lens[i];
     }
 
-  memcpy(str+wc, "]}\0", 3); wc += 3;
+  memcpy(str+wc, "]}", 3); wc += 3;
 
   assert(wc == len);
   rc = 0;

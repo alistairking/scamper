@@ -1,7 +1,7 @@
 /*
  * scamper_do_host.h
  *
- * $Id: scamper_host_do.h,v 1.7 2024/02/27 03:34:02 mjl Exp $
+ * $Id: scamper_host_do.h,v 1.8 2025/04/27 00:49:24 mjl Exp $
  *
  * Copyright (C) 2018-2020 Matthew Luckie
  * Author: Matthew Luckie
@@ -50,6 +50,8 @@ const scamper_addr_t *scamper_do_host_getns(void);
 int scamper_do_host_setns(const char *nsip);
 
 uint32_t scamper_do_host_userid(void *data);
+
+int scamper_do_host_enabled(void);
 
 void scamper_do_host_cleanup(void);
 int scamper_do_host_init(void);

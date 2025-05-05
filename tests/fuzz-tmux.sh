@@ -6,9 +6,9 @@ FUZZDIR=${1?}
 
 mkdir -p ${FUZZDIR}
 
-if [ -r "/proc/sys/kernel/core_pattern" ]; then
+if [ -r "/proc/sys/kernel/core_pattern" ] ; then
     line=$(head -n 1 /proc/sys/kernel/core_pattern)
-    if [ "$line" != "core" ]; then
+    if [ "$line" != "core" ] ; then
 	echo "unexpected core pattern $line"
 	exit 1
     fi
@@ -17,21 +17,15 @@ fi
 prepare()
 {
     ARG_TYPE=$1
-
     mkdir -p ${FUZZDIR}/${ARG_TYPE}/input
-    ./unit_${ARG_TYPE} dump ${FUZZDIR}/${ARG_TYPE}/input
-    afl-cmin -i ${FUZZDIR}/${ARG_TYPE}/input -o ${FUZZDIR}/${ARG_TYPE}/testcases -- ./fuzz_${ARG_TYPE} @@
-}
 
-prepare_warts()
-{
-    mkdir -p ${FUZZDIR}/warts/input
-    ./unit_host_warts dump ${FUZZDIR}/warts/input
-    ./unit_http_warts dump ${FUZZDIR}/warts/input
-    ./unit_ping_warts dump ${FUZZDIR}/warts/input
-    ./unit_trace_warts dump ${FUZZDIR}/warts/input
-    ./unit_udpprobe_warts dump ${FUZZDIR}/warts/input
-    afl-cmin -i ${FUZZDIR}/warts/input -o ${FUZZDIR}/warts/testcases -- ./fuzz_warts @@
+    if [ "$ARG_TYPE" = "warts2json" ] ; then
+	./unit_warts dump ${FUZZDIR}/${ARG_TYPE}/input
+    else
+	./unit_${ARG_TYPE} dump ${FUZZDIR}/${ARG_TYPE}/input
+    fi
+
+    afl-cmin -i ${FUZZDIR}/${ARG_TYPE}/input -o ${FUZZDIR}/${ARG_TYPE}/testcases -- ./fuzz_${ARG_TYPE} @@
 }
 
 fuzz_tmux()
@@ -55,7 +49,8 @@ prepare cmd_udpprobe
 prepare dl_parse_arp
 prepare dl_parse_ip
 prepare host_rr_list
-prepare_warts
+prepare warts
+prepare warts2json
 
 WIN=0
 tmux new-session -d -s fuzz-scamper
@@ -113,3 +108,7 @@ fuzz_tmux host_rr_list fuzz-scamper:${WIN}
 WIN=`expr ${WIN} + 1`
 tmux new-window -t fuzz-scamper:${WIN} -n 'fuzz-warts'
 fuzz_tmux warts fuzz-scamper:${WIN}
+
+WIN=`expr ${WIN} + 1`
+tmux new-window -t fuzz-scamper:${WIN} -n 'fuzz-warts2json'
+fuzz_tmux warts2json fuzz-scamper:${WIN}

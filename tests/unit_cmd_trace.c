@@ -1,7 +1,7 @@
 /*
  * unit_cmd_trace : unit tests for trace commands
  *
- * $Id: unit_cmd_trace.c,v 1.13 2024/03/04 19:36:41 mjl Exp $
+ * $Id: unit_cmd_trace.c,v 1.14 2025/05/02 04:39:00 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -370,7 +370,7 @@ int main(int argc, char *argv[])
 	{
 	  snprintf(filename, sizeof(filename),
 		   "%s/trace-%03x.txt", argv[2], (int)i);
-	  if(dump_cmd(tests[i].cmd, filename) != 0)
+	  if(dump_string(tests[i].cmd, filename) != 0)
 	    break;
 	}
     }

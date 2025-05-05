@@ -1,7 +1,7 @@
 /*
  * scamper_sniff.c
  *
- * $Id: scamper_sniff.c,v 1.7 2023/07/25 08:46:24 mjl Exp $
+ * $Id: scamper_sniff.c,v 1.8 2025/04/22 01:41:43 mjl Exp $
  *
  * Copyright (C) 2011 The University of Waikato
  * Author: Matthew Luckie
@@ -104,11 +104,10 @@ void scamper_sniff_free(scamper_sniff_t *sniff)
   return;
 }
 
-int scamper_sniff_pkts_alloc(scamper_sniff_t *sniff, int pktc)
+int scamper_sniff_pkts_alloc(scamper_sniff_t *sniff, uint32_t pktc)
 {
   size_t size = pktc * sizeof(scamper_sniff_pkt_t *);
   if((sniff->pkts = (scamper_sniff_pkt_t **)malloc_zero(size)) == NULL)
     return -1;
-  sniff->pktc = pktc;
   return 0;
 }

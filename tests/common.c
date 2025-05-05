@@ -1,7 +1,7 @@
 /*
  * common.c: common functions that we might need for linking unit tests
  *
- * $Id: common.c,v 1.8 2024/08/01 05:16:40 mjl Exp $
+ * $Id: common.c,v 1.9 2025/05/02 04:39:00 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -59,7 +59,7 @@ int check_addr(const scamper_addr_t *sa, const char *str)
 }
 #endif
 
-int dump_cmd(const char *cmd, const char *filename)
+int dump_string(const char *str, const char *filename)
 {
   size_t len, wc;
   uint8_t *buf = NULL;
@@ -73,8 +73,8 @@ int dump_cmd(const char *cmd, const char *filename)
       goto done;
     }
 
-  len = strlen(cmd);
-  if(write_wrap(fd, cmd, &wc, len) != 0 || wc != len)
+  len = strlen(str);
+  if(write_wrap(fd, str, &wc, len) != 0 || wc != len)
     {
       fprintf(stderr, "%s: could not write %s: %s\n",
 	      __func__, filename, strerror(errno));

@@ -1,11 +1,11 @@
 /*
  * scamper_control.h
  *
- * $Id: scamper_control.h,v 1.12 2020/03/07 01:40:24 mjl Exp $
+ * $Id: scamper_control.h,v 1.13 2025/04/20 07:29:14 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2010 The University of Waikato
- * Copyright (C) 2014-2016 Matthew Luckie
+ * Copyright (C) 2014-2025 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -26,9 +26,9 @@
 #ifndef __SCAMPER_CONTROL_H
 #define __SCAMPER_CONTROL_H
 
-int scamper_control_add_inet(const char *addr, int port);
+int scamper_control_add_inet(const char *addr, uint16_t port);
 int scamper_control_add_unix(const char *name);
-int scamper_control_add_remote(const char *name, int port, int ssl);
+int scamper_control_add_remote(const char *name, uint16_t port, int ssl);
 
 int scamper_control_init(void);
 void scamper_control_cleanup(void);

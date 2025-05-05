@@ -2,7 +2,7 @@
  * sc_pinger : scamper driver to probe destinations with various ping
  *             methods
  *
- * $Id: sc_pinger.c,v 1.40 2025/02/24 21:35:33 mjl Exp $
+ * $Id: sc_pinger.c,v 1.41 2025/04/21 03:24:13 mjl Exp $
  *
  * Copyright (C) 2020      The University of Waikato
  * Copyright (C) 2022-2025 Matthew Luckie
@@ -286,7 +286,7 @@ static int check_options(int argc, char *argv[])
 
   string_concat(opts, sizeof(opts), &off, "a:b:c:Dl:m:M:o:p:R:t:U:?");
 #ifdef OPT_VERSION
-  string_concat(opts, sizeof(opts), &off, "v");
+  string_concatc(opts, sizeof(opts), &off, 'v');
 #endif
 
   if((list = slist_alloc()) == NULL)

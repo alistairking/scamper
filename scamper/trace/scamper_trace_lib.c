@@ -1,7 +1,7 @@
 /*
  * scamper_trace_lib.c
  *
- * $Id: scamper_trace_lib.c,v 1.10 2025/02/11 14:31:43 mjl Exp $
+ * $Id: scamper_trace_lib.c,v 1.19 2025/05/01 02:58:04 mjl Exp $
  *
  * Copyright (C) 2023-2025 Matthew Luckie
  *
@@ -34,6 +34,24 @@
 #include "scamper_trace.h"
 #include "scamper_trace_int.h"
 
+#include "utils.h"
+
+scamper_trace_hopiter_t *scamper_trace_hopiter_dup(scamper_trace_hopiter_t *in)
+{
+  return memdup(in, sizeof(scamper_trace_hopiter_t));
+}
+
+scamper_trace_hopiter_t *scamper_trace_hopiter_alloc(void)
+{
+  return malloc_zero(sizeof(scamper_trace_hopiter_t));
+}
+
+void scamper_trace_hopiter_free(scamper_trace_hopiter_t *hi)
+{
+  free(hi);
+  return;
+}
+
 scamper_trace_pmtud_t *scamper_trace_pmtud_get(const scamper_trace_t *trace)
 {
   return trace->pmtud;
@@ -64,34 +82,64 @@ uint8_t scamper_trace_pmtud_notec_get(const scamper_trace_pmtud_t *pmtud)
   return pmtud->notec;
 }
 
-scamper_trace_hop_t *scamper_trace_pmtud_hops_get(const scamper_trace_pmtud_t *pmtud)
+scamper_trace_pmtud_note_t *
+scamper_trace_pmtud_note_get(const scamper_trace_pmtud_t *pmtud, uint8_t note)
 {
-  return pmtud->hops;
-}
-
-scamper_trace_pmtud_n_t *scamper_trace_pmtud_note_get(const scamper_trace_pmtud_t *pmtud, uint8_t note)
-{
+  if(note >= pmtud->notec || pmtud->notes == NULL)
+    return NULL;
   return pmtud->notes[note];
 }
 
-scamper_trace_hop_t *scamper_trace_pmtud_n_hop_get(const scamper_trace_pmtud_n_t *n)
+uint16_t scamper_trace_pmtud_probec_get(const scamper_trace_pmtud_t *pmtud)
 {
-  return n->hop;
+  return pmtud->probec;
 }
 
-uint16_t scamper_trace_pmtud_n_nhmtu_get(const scamper_trace_pmtud_n_t *n)
+scamper_trace_probe_t *
+scamper_trace_pmtud_probe_get(const scamper_trace_pmtud_t *pmtud, uint16_t p)
+{
+  if(p >= pmtud->probec || pmtud->probes == NULL)
+    return NULL;
+  return pmtud->probes[p];
+}
+
+scamper_trace_probe_t *
+scamper_trace_pmtud_note_probe_get(const scamper_trace_pmtud_note_t *n)
+{
+  return n->probe;
+}
+
+scamper_trace_reply_t *
+scamper_trace_pmtud_note_reply_get(const scamper_trace_pmtud_note_t *n)
+{
+  return n->reply;
+}
+
+uint16_t scamper_trace_pmtud_note_nhmtu_get(const scamper_trace_pmtud_note_t *n)
 {
   return n->nhmtu;
 }
 
-uint8_t scamper_trace_pmtud_n_type_get(const scamper_trace_pmtud_n_t *n)
+uint8_t scamper_trace_pmtud_note_type_get(const scamper_trace_pmtud_note_t *n)
 {
   return n->type;
 }
 
-scamper_trace_hop_t *scamper_trace_lastditch_get(const scamper_trace_t *trace)
+scamper_trace_lastditch_t *scamper_trace_lastditch_get(const scamper_trace_t *trace)
 {
   return trace->lastditch;
+}
+
+uint8_t scamper_trace_lastditch_probec_get(const scamper_trace_lastditch_t *ld)
+{
+  return ld->probec;
+}
+
+scamper_trace_probe_t *scamper_trace_lastditch_probe_get(const scamper_trace_lastditch_t *ld, uint8_t p)
+{
+  if(p >= ld->probec || ld->probes == NULL)
+    return NULL;
+  return ld->probes[p];
 }
 
 scamper_trace_dtree_t *scamper_trace_dtree_get(const scamper_trace_t *trace)
@@ -119,19 +167,19 @@ const char *scamper_trace_dtree_lss_get(const scamper_trace_dtree_t *dtree)
   return dtree->lss;
 }
 
-scamper_addr_t *scamper_trace_hop_addr_get(const scamper_trace_hop_t *hop)
+scamper_addr_t *scamper_trace_reply_addr_get(const scamper_trace_reply_t *reply)
 {
-  return hop->hop_addr;
+  return reply->addr;
 }
 
-const char *scamper_trace_hop_name_get(const scamper_trace_hop_t *hop)
+const char *scamper_trace_reply_name_get(const scamper_trace_reply_t *reply)
 {
-  return hop->hop_name;
+  return reply->name;
 }
 
-uint32_t scamper_trace_hop_flags_get(const scamper_trace_hop_t *hop)
+uint32_t scamper_trace_reply_flags_get(const scamper_trace_reply_t *reply)
 {
-  return hop->hop_flags;
+  return reply->flags;
 }
 
 uint16_t scamper_trace_payload_len_get(const scamper_trace_t *trace)
@@ -144,130 +192,159 @@ const uint8_t *scamper_trace_payload_get(const scamper_trace_t *trace)
   return trace->payload;
 }
 
-const struct timeval *scamper_trace_hop_tx_get(const scamper_trace_hop_t *hop)
+const struct timeval *
+scamper_trace_reply_rtt_get(const scamper_trace_reply_t *reply)
 {
-  return &hop->hop_tx;
+  return &reply->rtt;
 }
 
-const struct timeval *scamper_trace_hop_rtt_get(const scamper_trace_hop_t *hop)
+uint8_t scamper_trace_reply_ttl_get(const scamper_trace_reply_t *reply)
 {
-  return &hop->hop_rtt;
+  return reply->ttl;
 }
 
-uint8_t scamper_trace_hop_probe_id_get(const scamper_trace_hop_t *hop)
+uint8_t scamper_trace_reply_tos_get(const scamper_trace_reply_t *reply)
 {
-  return hop->hop_probe_id;
+  return reply->tos;
 }
 
-uint8_t scamper_trace_hop_probe_ttl_get(const scamper_trace_hop_t *hop)
+uint16_t scamper_trace_reply_size_get(const scamper_trace_reply_t *reply)
 {
-  return hop->hop_probe_ttl;
+  return reply->size;
 }
 
-uint16_t scamper_trace_hop_probe_size_get(const scamper_trace_hop_t *hop)
+uint16_t scamper_trace_reply_ipid_get(const scamper_trace_reply_t *reply)
 {
-  return hop->hop_probe_size;
+  return reply->ipid;
 }
 
-uint8_t scamper_trace_hop_reply_ttl_get(const scamper_trace_hop_t *hop)
+int scamper_trace_reply_is_icmp_q(const scamper_trace_reply_t *reply)
 {
-  return hop->hop_reply_ttl;
+  return SCAMPER_TRACE_REPLY_IS_ICMP_Q(reply);
 }
 
-uint8_t scamper_trace_hop_reply_tos_get(const scamper_trace_hop_t *hop)
+int scamper_trace_reply_is_icmp_unreach_port(const scamper_trace_reply_t *reply)
 {
-  return hop->hop_reply_tos;
+  return SCAMPER_TRACE_REPLY_IS_ICMP_UNREACH_PORT(reply);
 }
 
-uint16_t scamper_trace_hop_reply_size_get(const scamper_trace_hop_t *hop)
+int scamper_trace_reply_is_icmp_echo_reply(const scamper_trace_reply_t *reply)
 {
-  return hop->hop_reply_size;
+  return SCAMPER_TRACE_REPLY_IS_ICMP_ECHO_REPLY(reply);
 }
 
-uint16_t scamper_trace_hop_reply_ipid_get(const scamper_trace_hop_t *hop)
+int scamper_trace_reply_is_icmp_ttl_exp(const scamper_trace_reply_t *reply)
 {
-  return hop->hop_reply_ipid;
+  return SCAMPER_TRACE_REPLY_IS_ICMP_TTL_EXP(reply);
 }
 
-int scamper_trace_hop_is_icmp_q(const scamper_trace_hop_t *hop)
+int scamper_trace_reply_is_icmp_ptb(const scamper_trace_reply_t *reply)
 {
-  return SCAMPER_TRACE_HOP_IS_ICMP_Q(hop);
+  return SCAMPER_TRACE_REPLY_IS_ICMP_PTB(reply);
 }
 
-int scamper_trace_hop_is_icmp_unreach_port(const scamper_trace_hop_t *hop)
+int scamper_trace_reply_is_tcp(const scamper_trace_reply_t *reply)
 {
-  return SCAMPER_TRACE_HOP_IS_ICMP_UNREACH_PORT(hop);
+  return SCAMPER_TRACE_REPLY_IS_TCP(reply);
 }
 
-int scamper_trace_hop_is_icmp_echo_reply(const scamper_trace_hop_t *hop)
+int scamper_trace_reply_is_icmp(const scamper_trace_reply_t *reply)
 {
-  return SCAMPER_TRACE_HOP_IS_ICMP_ECHO_REPLY(hop);
+  return SCAMPER_TRACE_REPLY_IS_ICMP(reply);
 }
 
-int scamper_trace_hop_is_icmp_ttl_exp(const scamper_trace_hop_t *hop)
+uint16_t scamper_trace_reply_icmp_nhmtu_get(const scamper_trace_reply_t *reply)
 {
-  return SCAMPER_TRACE_HOP_IS_ICMP_TTL_EXP(hop);
+  return reply->reply_icmp_nhmtu;
 }
 
-int scamper_trace_hop_is_icmp_ptb(const scamper_trace_hop_t *hop)
+uint8_t scamper_trace_reply_icmp_q_ttl_get(const scamper_trace_reply_t *reply)
 {
-  return SCAMPER_TRACE_HOP_IS_ICMP_PTB(hop);
+  return reply->reply_icmp_q_ttl;
 }
 
-int scamper_trace_hop_is_tcp(const scamper_trace_hop_t *hop)
+uint8_t scamper_trace_reply_icmp_q_tos_get(const scamper_trace_reply_t *reply)
 {
-  return SCAMPER_TRACE_HOP_IS_TCP(hop);
+  return reply->reply_icmp_q_tos;
 }
 
-int scamper_trace_hop_is_icmp(const scamper_trace_hop_t *hop)
+uint16_t scamper_trace_reply_icmp_q_ipl_get(const scamper_trace_reply_t *reply)
 {
-  return SCAMPER_TRACE_HOP_IS_ICMP(hop);
+  return reply->reply_icmp_q_ipl;
 }
 
-uint16_t scamper_trace_hop_icmp_nhmtu_get(const scamper_trace_hop_t *hop)
+uint8_t scamper_trace_reply_tcp_flags_get(const scamper_trace_reply_t *reply)
 {
-  return hop->hop_icmp_nhmtu;
+  return reply->reply_tcp_flags;
 }
 
-uint8_t scamper_trace_hop_icmp_q_ttl_get(const scamper_trace_hop_t *hop)
+uint8_t scamper_trace_reply_icmp_type_get(const scamper_trace_reply_t *reply)
 {
-  return hop->hop_icmp_q_ttl;
+  return reply->reply_icmp_type;
 }
 
-uint8_t scamper_trace_hop_icmp_q_tos_get(const scamper_trace_hop_t *hop)
+uint8_t scamper_trace_reply_icmp_code_get(const scamper_trace_reply_t *reply)
 {
-  return hop->hop_icmp_q_tos;
-}
-
-uint16_t scamper_trace_hop_icmp_q_ipl_get(const scamper_trace_hop_t *hop)
-{
-  return hop->hop_icmp_q_ipl;
-}
-
-uint8_t scamper_trace_hop_tcp_flags_get(const scamper_trace_hop_t *hop)
-{
-  return hop->hop_tcp_flags;
-}
-
-uint8_t scamper_trace_hop_icmp_type_get(const scamper_trace_hop_t *hop)
-{
-  return hop->hop_icmp_type;
-}
-
-uint8_t scamper_trace_hop_icmp_code_get(const scamper_trace_hop_t *hop)
-{
-  return hop->hop_icmp_code;
+  return reply->reply_icmp_code;
 }
 
 scamper_icmpexts_t *
-scamper_trace_hop_icmp_exts_get(const scamper_trace_hop_t *hop)
+scamper_trace_reply_icmp_exts_get(const scamper_trace_reply_t *reply)
 {
-  return hop->hop_icmp_exts;
+  return reply->icmp_exts;
 }
 
-scamper_trace_hop_t *scamper_trace_hop_next_get(const scamper_trace_hop_t *hop)
+scamper_trace_probettl_t *
+scamper_trace_probettl_get(const scamper_trace_t *trace, uint8_t ttl)
 {
-  return hop->hop_next;
+  if(trace->hops == NULL || ttl == 0 || ttl > trace->hop_count)
+    return NULL;
+  return trace->hops[ttl-1];
+}
+
+scamper_trace_probe_t *scamper_trace_probettl_probe_get(const scamper_trace_probettl_t *pttl, uint8_t i)
+{
+  if(i >= pttl->probec || pttl->probes == NULL)
+    return NULL;
+  return pttl->probes[i];
+}
+
+uint8_t scamper_trace_probettl_probec_get(const scamper_trace_probettl_t *pttl)
+{
+  return pttl->probec;
+}
+
+uint16_t scamper_trace_probe_replyc_get(const scamper_trace_probe_t *probe)
+{
+  return probe->replyc;
+}
+
+scamper_trace_reply_t *scamper_trace_probe_reply_get(const scamper_trace_probe_t *probe, uint16_t i)
+{
+  if(i >= probe->replyc || probe->replies == NULL)
+    return NULL;
+  return probe->replies[i];
+}
+
+const struct timeval *
+scamper_trace_probe_tx_get(const scamper_trace_probe_t *probe)
+{
+  return &probe->tx;
+}
+
+uint8_t scamper_trace_probe_id_get(const scamper_trace_probe_t *probe)
+{
+  return probe->id;
+}
+
+uint8_t scamper_trace_probe_ttl_get(const scamper_trace_probe_t *probe)
+{
+  return probe->ttl;
+}
+
+uint16_t scamper_trace_probe_size_get(const scamper_trace_probe_t *probe)
+{
+  return probe->size;
 }
 
 uint8_t scamper_trace_type_get(const scamper_trace_t *trace)
@@ -360,14 +437,6 @@ uint8_t scamper_trace_stop_hop_get(const scamper_trace_t *trace)
   return trace->stop_hop;
 }
 
-scamper_trace_hop_t *scamper_trace_hop_get(const scamper_trace_t *trace,
-					   uint8_t i)
-{
-  if(trace->hop_count <= i)
-    return NULL;
-  return trace->hops[i];
-}
-
 uint8_t scamper_trace_firsthop_get(const scamper_trace_t *trace)
 {
   return trace->firsthop;
@@ -403,7 +472,7 @@ uint8_t scamper_trace_confidence_get(const scamper_trace_t *trace)
   return trace->confidence;
 }
 
-uint16_t scamper_trace_probe_size_get(const scamper_trace_t *trace)
+uint16_t scamper_trace_size_get(const scamper_trace_t *trace)
 {
   return trace->probe_size;
 }
@@ -454,13 +523,20 @@ int scamper_trace_flag_is_icmpcsumdp(const scamper_trace_t *trace)
 }
 
 #ifdef BUILDING_LIBSCAMPERFILE
+scamper_trace_lastditch_t *scamper_trace_lastditch_use(scamper_trace_lastditch_t *ld)
+{
+  ld->refcnt++;
+  return ld;
+}
+
 scamper_trace_pmtud_t *scamper_trace_pmtud_use(scamper_trace_pmtud_t *pmtud)
 {
   pmtud->refcnt++;
   return pmtud;
 }
 
-scamper_trace_pmtud_n_t *scamper_trace_pmtud_n_use(scamper_trace_pmtud_n_t *n)
+scamper_trace_pmtud_note_t *
+scamper_trace_pmtud_note_use(scamper_trace_pmtud_note_t *n)
 {
   n->refcnt++;
   return n;
@@ -472,9 +548,15 @@ scamper_trace_dtree_t *scamper_trace_dtree_use(scamper_trace_dtree_t *dt)
   return dt;
 }
 
-scamper_trace_hop_t *scamper_trace_hop_use(scamper_trace_hop_t *hop)
+scamper_trace_reply_t *scamper_trace_reply_use(scamper_trace_reply_t *hop)
 {
   hop->refcnt++;
   return hop;
+}
+
+scamper_trace_probe_t *scamper_trace_probe_use(scamper_trace_probe_t *probe)
+{
+  probe->refcnt++;
+  return probe;
 }
 #endif

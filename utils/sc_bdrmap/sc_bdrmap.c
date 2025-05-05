@@ -1,7 +1,7 @@
 /*
  * sc_bdrmap: driver to map first hop border routers of networks
  *
- * $Id: sc_bdrmap.c,v 1.57 2025/02/26 02:07:42 mjl Exp $
+ * $Id: sc_bdrmap.c,v 1.62 2025/05/01 02:58:04 mjl Exp $
  *
  *         Matthew Luckie
  *         mjl@caida.org / mjl@wand.net.nz
@@ -11,7 +11,7 @@
  * Copyright (C) 2017      The Regents of the University of California
  * Copyright (C) 2018-2020 The University of Waikato
  * Copyright (C) 2020-2024 Matthew Luckie
- * Copyright (C) 2023      The Regents of the University of California
+ * Copyright (C) 2023-2025 The Regents of the University of California
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -916,7 +916,7 @@ static int check_options(int argc, char *argv[])
   string_concat(opts, sizeof(opts), &off,
 		"?6a:A:c:C:d:Df:g:il:M:n:o:O:p:r:R:S:U:V:x:");
 #ifdef OPT_VERSION
-  string_concat(opts, sizeof(opts), &off, "v");
+  string_concatc(opts, sizeof(opts), &off, 'v');
 #endif
 
   while((ch = getopt(argc, argv, opts)) != -1)
@@ -1436,6 +1436,15 @@ static int is_vpas(uint32_t as)
     if(as == vpas[i])
       return 1;
   return 0;
+}
+
+static scamper_trace_reply_t *trace_reply_get(const scamper_trace_t *trace,
+					      uint8_t i)
+{
+  scamper_trace_probettl_t *pttl;
+  if(i == 255 || (pttl = scamper_trace_probettl_get(trace, i+1)) == NULL)
+    return NULL;
+  return scamper_trace_probettl_reply_get(pttl);
 }
 
 static sc_indir_t *sc_indir_alloc(void)
@@ -3808,7 +3817,7 @@ static char *rtt_tostr(const struct timeval *rtt, char *str, size_t len)
 
 static void trace_dump(const scamper_trace_t *trace, sc_routerset_t *rtrset_in)
 {
-  const scamper_trace_hop_t *hop;
+  const scamper_trace_reply_t *hop;
   scamper_addr_t *dst_addr, *hop_addr;
   sc_prefix_t *pfx;
   sc_router_t *rtr;
@@ -3827,18 +3836,18 @@ static void trace_dump(const scamper_trace_t *trace, sc_routerset_t *rtrset_in)
   for(i=scamper_trace_firsthop_get(trace)-1; i<hop_count; i++)
     {
       printf("%2d ", i+1);
-      if((hop = scamper_trace_hop_get(trace,i)) == NULL)
+      if((hop = trace_reply_get(trace, i)) == NULL)
 	{
 	  printf("*\n");
 	  continue;
 	}
 
-      hop_addr = scamper_trace_hop_addr_get(hop);
+      hop_addr = scamper_trace_reply_addr_get(hop);
       printf("%s <%u,%u> %s %d",
 	     scamper_addr_tostr(hop_addr, buf, sizeof(buf)),
-	     scamper_trace_hop_icmp_type_get(hop),
-	     scamper_trace_hop_icmp_code_get(hop),
-	     rtt_tostr(scamper_trace_hop_rtt_get(hop), rtt, sizeof(rtt)),
+	     scamper_trace_reply_icmp_type_get(hop),
+	     scamper_trace_reply_icmp_code_get(hop),
+	     rtt_tostr(scamper_trace_reply_rtt_get(hop), rtt, sizeof(rtt)),
 	     is_vp(hop_addr));
       if(is_ixp(hop_addr) != 0)
 	printf(" ixp");
@@ -3955,7 +3964,7 @@ static int do_method_ping(sc_test_t *test, char *cmd, size_t len)
 		     scamper_addr_tostr(ping->addr, buf, sizeof(buf)));
       
     }
-  string_concat(cmd, len, &off, "\n");
+  string_concatc(cmd, len, &off, '\n');
 
   return off;
 }
@@ -4240,7 +4249,7 @@ static int do_method_ally(sc_test_t *test, char *cmd, size_t len)
       do_method_ally_indir_P(cmd, len, &off, aseq);
       do_method_ally_indir_P(cmd, len, &off, bseq);
     }
-  string_concat(cmd, len, &off, "\n");
+  string_concatc(cmd, len, &off, '\n');
 
   return off;
 }
@@ -4316,7 +4325,7 @@ static int do_method_allyconf(sc_test_t *test, char *cmd, size_t len)
       do_method_ally_indir_P(cmd, len, &off, aseq);
       do_method_ally_indir_P(cmd, len, &off, bseq);
     }
-  string_concat(cmd, len, &off, "\n");
+  string_concatc(cmd, len, &off, '\n');
 
   return off;
 }
@@ -4822,7 +4831,7 @@ static int ping_classify(const scamper_addr_t *dst, const scamper_ping_t *ping)
  */
 static int trace_lasthop(scamper_trace_t *trace)
 {
-  const scamper_trace_hop_t *hop, *hop2;
+  const scamper_trace_reply_t *hop, *hop2;
   uint16_t hop_count = scamper_trace_hop_count_get(trace);
   uint8_t fh = scamper_trace_firsthop_get(trace);
   int i, j, v, L = 0, V = 0;
@@ -4834,9 +4843,9 @@ static int trace_lasthop(scamper_trace_t *trace)
    */
   for(i=fh-1; i<hop_count; i++)
     {
-      if((hop = scamper_trace_hop_get(trace, i)) == NULL)
+      if((hop = trace_reply_get(trace, i)) == NULL)
 	continue;
-      v = is_vp(scamper_trace_hop_addr_get(hop));
+      v = is_vp(scamper_trace_reply_addr_get(hop));
       if(v == 0)
 	V = 1;
       else if(v == 1 && V == 1)
@@ -4845,12 +4854,12 @@ static int trace_lasthop(scamper_trace_t *trace)
 
   for(i=fh-1; i<hop_count; i++)
     {
-      if((hop = scamper_trace_hop_get(trace, i)) == NULL)
+      if((hop = trace_reply_get(trace, i)) == NULL)
 	continue;
       for(j=i+1; j<hop_count; j++)
 	{
-	  if((hop2 = scamper_trace_hop_get(trace, j)) == NULL ||
-	     scamper_trace_hop_addr_cmp(hop, hop2) != 0)
+	  if((hop2 = trace_reply_get(trace, j)) == NULL ||
+	     scamper_trace_reply_addr_cmp(hop, hop2) != 0)
 	    continue;
 
 	  if(i + 1 == j)
@@ -4942,7 +4951,7 @@ static int do_decoderead_ping(scamper_ping_t *ping)
 
 static int do_decoderead_trace(scamper_trace_t *trace)
 {
-  const scamper_trace_hop_t *hop, *x, *y, *lv_hop;
+  const scamper_trace_reply_t *hop, *x, *y, *lv_hop;
   scamper_addr_t *addr, *dst, *lv_addr, *hop_addr, *x_a, *y_a;
   sc_tracetest_t *tt;
   sc_astraces_t *astraces;
@@ -4978,8 +4987,8 @@ static int do_decoderead_trace(scamper_trace_t *trace)
   lv = -1;
   fh = scamper_trace_firsthop_get(trace);
   for(i=fh-1; i<lh; i++)
-    if((hop = scamper_trace_hop_get(trace, i)) != NULL &&
-       is_vp(scamper_trace_hop_addr_get(hop)) == 1)
+    if((hop = trace_reply_get(trace, i)) != NULL &&
+       is_vp(scamper_trace_reply_addr_get(hop)) == 1)
       lv = i;
 
   /* figure out if we need to probe another address in the same subnet */
@@ -4990,9 +4999,9 @@ static int do_decoderead_trace(scamper_trace_t *trace)
     i = fh - 1;
   while(i < lh)
     {
-      if((hop = scamper_trace_hop_get(trace, i)) != NULL)
+      if((hop = trace_reply_get(trace, i)) != NULL)
 	{
-	  hop_addr = scamper_trace_hop_addr_get(hop);
+	  hop_addr = scamper_trace_reply_addr_get(hop);
 	  if(is_vp(hop_addr) == 0)
 	    {
 	      if(scamper_addr_cmp(dst, hop_addr) != 0)
@@ -5018,15 +5027,15 @@ static int do_decoderead_trace(scamper_trace_t *trace)
 
   for(i=fh-1; i<=lv; i++)
     {
-      if((hop = scamper_trace_hop_get(trace, i)) == NULL)
+      if((hop = trace_reply_get(trace, i)) == NULL)
 	continue;
 
       /*
        * check if the hop being examined might be a fake hop caused by
        * zero-ttl forwarding
        */
-      if(i+1 < lh && (y = scamper_trace_hop_get(trace, i+1)) != NULL &&
-	 scamper_trace_hop_addr_cmp(hop, y) == 0)
+      if(i+1 < lh && (y = trace_reply_get(trace, i+1)) != NULL &&
+	 scamper_trace_reply_addr_cmp(hop, y) == 0)
 	zttl = 1;
       else
 	zttl = 0;
@@ -5037,45 +5046,45 @@ static int do_decoderead_trace(scamper_trace_t *trace)
        * examined might not be adjacent to X because of zero-ttl
        * forwarding
        */
-      if(i-1 >= fh-1 && (x = scamper_trace_hop_get(trace,i-1)) != NULL &&
-	 scamper_trace_hop_addr_cmp(x, hop) != 0 && zttl == 0)
+      if(i-1 >= fh-1 && (x = trace_reply_get(trace, i-1)) != NULL &&
+	 scamper_trace_reply_addr_cmp(x, hop) != 0 && zttl == 0)
 	{
-	  indir.ttl = scamper_trace_hop_probe_ttl_get(x);
+	  indir.ttl = i; /* scamper_trace_hop_probe_ttl_get(x) */
 	  if(sc_astraces_link_add(astraces,
-				  scamper_trace_hop_addr_get(x),
-				  scamper_trace_hop_addr_get(hop),
+				  scamper_trace_reply_addr_get(x),
+				  scamper_trace_reply_addr_get(hop),
 				  &indir) != 0)
 	    goto err;
 	}
     }
 
   /* linktest the apparent last hop in the VP network */
-  lv_hop = scamper_trace_hop_get(trace, lv); assert(lv_hop != NULL);
-  lv_addr = scamper_trace_hop_addr_get(lv_hop);
-  if(sa_type == SCAMPER_ADDR_TYPE_IPV4 && lv-1 >= fh-1 && no_alias == 0 &&
-     (x = scamper_trace_hop_get(trace, lv-1)) != NULL &&
-     scamper_trace_hop_addr_cmp(x, lv_hop) != 0 &&
-     sc_linktest_alloc(scamper_trace_hop_addr_get(x), lv_addr) != 0)
+  lv_hop = trace_reply_get(trace, lv); assert(lv_hop != NULL);
+  lv_addr = scamper_trace_reply_addr_get(lv_hop);
+  if(sa_type == SCAMPER_ADDR_TYPE_IPV4 && lv >= fh && no_alias == 0 &&
+     (x = trace_reply_get(trace, lv-1)) != NULL &&
+     scamper_trace_reply_addr_cmp(x, lv_hop) != 0 &&
+     sc_linktest_alloc(scamper_trace_reply_addr_get(x), lv_addr) != 0)
     goto err;
 
-  if(lv+1 < lh && (x = scamper_trace_hop_get(trace, lv+1)) != NULL)
+  if(lv+1 < lh && (x = trace_reply_get(trace, lv+1)) != NULL)
     {
-      assert(scamper_trace_hop_addr_cmp(lv_hop, x) != 0);
+      assert(scamper_trace_reply_addr_cmp(lv_hop, x) != 0);
       y = NULL;
       y_a = NULL;
-      if(lv+2 < lh && (y = scamper_trace_hop_get(trace, lv+2)) != NULL)
-	y_a = scamper_trace_hop_addr_get(y);
+      if(lv+2 < lh && (y = trace_reply_get(trace, lv+2)) != NULL)
+	y_a = scamper_trace_reply_addr_get(y);
 
-      if(y == NULL || scamper_trace_hop_addr_cmp(x, y) != 0)
+      if(y == NULL || scamper_trace_reply_addr_cmp(x, y) != 0)
 	{
 	  /* linktest the apparent first hop in the neighbor network */
-	  x_a = scamper_trace_hop_addr_get(x);
+	  x_a = scamper_trace_reply_addr_get(x);
 	  if(sa_type == SCAMPER_ADDR_TYPE_IPV4 && no_alias == 0 &&
 	     sc_linktest_alloc(lv_addr, x_a) != 0)
 	    goto err;
 
 	  /* make note of apparent links to help with alias resolution */
-	  indir.ttl = scamper_trace_hop_probe_ttl_get(lv_hop);
+	  indir.ttl = lv + 1; /* scamper_trace_hop_probe_ttl_get(lv_hop) */
 	  if(sc_astraces_link_add(astraces, lv_addr, x_a, &indir) != 0)
 	    goto err;
 
@@ -5085,14 +5094,14 @@ static int do_decoderead_trace(scamper_trace_t *trace)
 	   */
 	  if(y != NULL)
 	    {
-	      indir.ttl = scamper_trace_hop_probe_ttl_get(x);
+	      indir.ttl = lv + 2; /* scamper_trace_hop_probe_ttl_get(x) */
 	      if(sc_astraces_link_add(astraces, x_a, y_a, &indir) != 0)
 		goto err;
 	    }
 	}
 
       /* add the second hop past the last VP address to the GSS */
-      if(y != NULL && scamper_trace_hop_is_icmp_ttl_exp(y) &&
+      if(y != NULL && scamper_trace_reply_is_icmp_ttl_exp(y) &&
 	 scamper_addr_cmp(dst, y_a) != 0 &&
 	 slist_count(astraces->dsts) > 0 &&
 	 is_reserved(y_a) == 0 && is_vp(y_a) == 0 &&
@@ -6582,12 +6591,12 @@ static int process_1_dealias(scamper_dealias_t *dealias)
   return rc;
 }
 
-static sc_link_t *process_1_link(const scamper_trace_hop_t *x,
-				 const scamper_trace_hop_t *y, sc_asmap_t *dst)
+static sc_link_t *process_1_link(const scamper_trace_reply_t *x,
+				 const scamper_trace_reply_t *y,
+				 uint8_t x_probe_ttl, sc_asmap_t *dst)
 {
-  scamper_addr_t *x_a = scamper_trace_hop_addr_get(x);
-  scamper_addr_t *y_a = scamper_trace_hop_addr_get(y);
-  uint8_t x_probe_ttl = scamper_trace_hop_probe_ttl_get(x);
+  scamper_addr_t *x_a = scamper_trace_reply_addr_get(x);
+  scamper_addr_t *y_a = scamper_trace_reply_addr_get(y);
   sc_link_t *link;
   sc_link4_t *link4;
   sc_asmapc_t *asmapc;
@@ -6635,7 +6644,7 @@ static sc_link_t *process_1_link(const scamper_trace_hop_t *x,
  */
 static int process_1_trace_unrouted(scamper_trace_t *trace, int lh)
 {
-  const scamper_trace_hop_t *x;
+  const scamper_trace_reply_t *x;
   scamper_addr_t *addr, *x_hop_addr;
   sc_delegated_t *dg;
   slist_t *list = NULL;
@@ -6653,11 +6662,11 @@ static int process_1_trace_unrouted(scamper_trace_t *trace, int lh)
   for(i=scamper_trace_firsthop_get(trace)-1; i<lh; i++)
     {
       /* if there is no address at this hop, skip */
-      if((x = scamper_trace_hop_get(trace, i)) == NULL)
+      if((x = trace_reply_get(trace, i)) == NULL)
 	continue;
 
       /* if we have come to an external hop, stop */
-      x_hop_addr = scamper_trace_hop_addr_get(x);
+      x_hop_addr = scamper_trace_reply_addr_get(x);
       if((vp = is_vp(x_hop_addr)) == 0)
 	break;
 
@@ -6728,7 +6737,7 @@ static int process_1_trace_unrouted(scamper_trace_t *trace, int lh)
 
 static int process_1_trace_work(scamper_trace_t *trace, int lh)
 {
-  const scamper_trace_hop_t *x, *y, *z;
+  const scamper_trace_reply_t *x, *y, *z;
   scamper_addr_t *x_hop_addr, *y_hop_addr, *z_hop_addr, *dst_addr;
   sc_traceset_t *ts;
   sc_link_t *link;
@@ -6744,14 +6753,14 @@ static int process_1_trace_work(scamper_trace_t *trace, int lh)
 
   for(i=scamper_trace_firsthop_get(trace)-1; i<lh-1; i++)
     {
-      if((x = scamper_trace_hop_get(trace, i)) == NULL ||
-	 (y = scamper_trace_hop_get(trace, i+1)) == NULL ||
-	 scamper_trace_hop_addr_cmp(x, y) == 0 ||
-	 scamper_trace_hop_is_icmp_ttl_exp(x) == 0 ||
-	 scamper_trace_hop_is_icmp_ttl_exp(y) == 0)
+      if((x = trace_reply_get(trace, i)) == NULL ||
+	 (y = trace_reply_get(trace, i+1)) == NULL ||
+	 scamper_trace_reply_addr_cmp(x, y) == 0 ||
+	 scamper_trace_reply_is_icmp_ttl_exp(x) == 0 ||
+	 scamper_trace_reply_is_icmp_ttl_exp(y) == 0)
 	continue;
-      x_hop_addr = scamper_trace_hop_addr_get(x);
-      y_hop_addr = scamper_trace_hop_addr_get(y);
+      x_hop_addr = scamper_trace_reply_addr_get(x);
+      y_hop_addr = scamper_trace_reply_addr_get(y);
       if(scamper_addr_cmp(y_hop_addr, dst_addr) == 0 ||
 	 is_reserved(y_hop_addr) ||
 	 is_reserved(x_hop_addr))
@@ -6765,9 +6774,9 @@ static int process_1_trace_work(scamper_trace_t *trace, int lh)
        * the TTL is not zero at hop Z.
        */
       if(i < lh-2 &&
-	 (z = scamper_trace_hop_get(trace, i+2)) != NULL &&
-	 scamper_trace_hop_addr_cmp(y, z) == 0 &&
-	 scamper_trace_hop_is_icmp_ttl_exp(z))
+	 (z = trace_reply_get(trace, i+2)) != NULL &&
+	 scamper_trace_reply_addr_cmp(y, z) == 0 &&
+	 scamper_trace_reply_is_icmp_ttl_exp(z))
 	continue;
 
       /*
@@ -6781,7 +6790,7 @@ static int process_1_trace_work(scamper_trace_t *trace, int lh)
 	}
 
       /* get a link for the hop, annotated with the destinations probed */
-      if((link = process_1_link(x, y, dst->asmap)) == NULL)
+      if((link = process_1_link(x, y, i+1, dst->asmap)) == NULL)
 	return -1;
       link4 = link->data;
 
@@ -6796,10 +6805,10 @@ static int process_1_trace_work(scamper_trace_t *trace, int lh)
 	{
 	  for(j=i+2; j<lh; j++)
 	    {
-	      if((z = scamper_trace_hop_get(trace, j)) == NULL ||
-		 scamper_trace_hop_is_icmp_ttl_exp(z) == 0)
+	      if((z = trace_reply_get(trace, j)) == NULL ||
+		 scamper_trace_reply_is_icmp_ttl_exp(z) == 0)
 		continue;
-	      z_hop_addr = scamper_trace_hop_addr_get(z);
+	      z_hop_addr = scamper_trace_reply_addr_get(z);
 	      if(is_reserved(z_hop_addr) ||
 		 (pfx = sc_prefix_find(z_hop_addr)) == NULL)
 		continue;
@@ -6818,13 +6827,13 @@ static int process_1_trace_work(scamper_trace_t *trace, int lh)
        * if there is a gap in this trace at the next hop, make a note
        * of the AS seen next
        */
-      if(i+2 < lh && scamper_trace_hop_get(trace, i+2) == NULL)
+      if(i+2 < lh && trace_reply_get(trace, i+2) == NULL)
 	{
 	  for(j = i+2; j < lh; j++)
 	    {
-	      if((z = scamper_trace_hop_get(trace, j)) != NULL)
+	      if((z = trace_reply_get(trace, j)) != NULL)
 		{
-		  z_hop_addr = scamper_trace_hop_addr_get(z);
+		  z_hop_addr = scamper_trace_reply_addr_get(z);
 		  if((pfx = sc_prefix_find(z_hop_addr)) != NULL &&
 		     sc_link4_addgap(link4, pfx) != 0)
 		    return -1;
@@ -7272,7 +7281,7 @@ static int owner_1_thirdparty(sc_router_t *y, uint32_t *owner, uint32_t *tp)
 static int owner_1_traceset(sc_routerset_t *set, sc_traceset_t *ts)
 {
   sc_router_t *near_rtr = NULL, *last_rtr, *rtr;
-  const scamper_trace_hop_t *p_hop, *far_hop = NULL, *hop;
+  const scamper_trace_reply_t *p_hop, *far_hop = NULL, *hop;
   scamper_trace_t *trace;
   scamper_addr_t *far_hop_addr;
   slist_t *fars = NULL;
@@ -7289,17 +7298,17 @@ static int owner_1_traceset(sc_routerset_t *set, sc_traceset_t *ts)
       last_rtr = NULL;
       for(i=0; i<hop_count; i++)
 	{
-	  if((hop = scamper_trace_hop_get(trace, i)) == NULL)
+	  if((hop = trace_reply_get(trace, i)) == NULL)
 	    continue;
-	  if(scamper_trace_hop_is_icmp_ttl_exp(hop) == 0)
+	  if(scamper_trace_reply_is_icmp_ttl_exp(hop) == 0)
 	    {
-	      if(i > 0 && (p_hop = scamper_trace_hop_get(trace,i-1)) != NULL &&
+	      if(i > 0 && (p_hop = trace_reply_get(trace, i-1)) != NULL &&
 		 sc_routerset_find(set,
-				   scamper_trace_hop_addr_get(p_hop)) == last_rtr)
+				   scamper_trace_reply_addr_get(p_hop)) == last_rtr)
 		slist_tail_push(fars, (void *)hop);
 	      break;
 	    }
-	  if((rtr = sc_routerset_find(set, scamper_trace_hop_addr_get(hop))) == NULL)
+	  if((rtr = sc_routerset_find(set, scamper_trace_reply_addr_get(hop))) == NULL)
 	    continue;
 	  if(is_vpas(rtr->owner_as))
 	    last_rtr = rtr;
@@ -7333,12 +7342,12 @@ static int owner_1_traceset(sc_routerset_t *set, sc_traceset_t *ts)
       hop = slist_node_item(sn);
       if(far_hop == NULL)
 	far_hop = hop;
-      else if(scamper_trace_hop_addr_cmp(far_hop, hop) != 0)
+      else if(scamper_trace_reply_addr_cmp(far_hop, hop) != 0)
 	break;
     }
   if(sn != NULL || far_hop == NULL)
     goto done;
-  far_hop_addr = scamper_trace_hop_addr_get(far_hop);
+  far_hop_addr = scamper_trace_reply_addr_get(far_hop);
   if((rtr = sc_routerset_find(set, far_hop_addr)) != NULL)
     {
       if(rtr->owner_as != 0)

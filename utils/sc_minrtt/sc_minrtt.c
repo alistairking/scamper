@@ -1,7 +1,7 @@
 /*
  * sc_minrtt: dump RTT values by node for use by sc_hoiho
  *
- * $Id: sc_minrtt.c,v 1.22 2025/02/24 06:59:36 mjl Exp $
+ * $Id: sc_minrtt.c,v 1.23 2025/04/21 03:24:13 mjl Exp $
  *
  *         Matthew Luckie
  *         mjl@luckie.org.nz
@@ -262,7 +262,7 @@ static int check_options(int argc, char *argv[])
   string_concat(opts, sizeof(opts), &off, "t:");
 #endif
 #ifdef OPT_VERSION
-  string_concat(opts, sizeof(opts), &off, "v");
+  string_concatc(opts, sizeof(opts), &off, 'v');
 #endif
 
   while((ch = getopt(argc, argv, opts)) != -1)

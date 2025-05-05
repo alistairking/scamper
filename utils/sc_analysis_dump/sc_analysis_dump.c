@@ -1,7 +1,7 @@
 /*
  * sc_analysis_dump
  *
- * $Id: sc_analysis_dump.c,v 1.71 2025/02/11 14:31:43 mjl Exp $
+ * $Id: sc_analysis_dump.c,v 1.83 2025/05/01 02:58:04 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -11,6 +11,7 @@
  * Copyright (C) 2012-2013 The Regents of the University of California
  * Copyright (C) 2012      Matthew Luckie
  * Copyright (C) 2023-2025 Matthew Luckie
+ * Copyright (C) 2025      The Regents of the University of California
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -199,141 +200,109 @@ static char *rtt_tostr(char *str, const size_t len, const struct timeval *rtt)
   return str;
 }
 
+static scamper_trace_reply_t *trace_reply_get(const scamper_trace_t *trace,
+					  uint8_t i)
+{
+  scamper_trace_probettl_t *pttl;
+  if(i == 255 || (pttl = scamper_trace_probettl_get(trace, i+1)) == NULL)
+    return NULL;
+  return scamper_trace_probettl_reply_get(pttl);
+}
+
 /*
  * trace_hop_firstaddr
  *
+ * return 1 if this hop record is the first instance of the address at
+ * the TTL.
  */
-static int trace_hop_firstaddr(const scamper_trace_t *trace,
-			       const scamper_trace_hop_t *hop)
+static int trace_hop_firstaddr(const scamper_trace_t *trace, uint8_t probe_ttl,
+			       const scamper_trace_reply_t *hop)
 {
-  const scamper_trace_hop_t *tmp;
-  uint8_t probe_ttl;
+  const scamper_trace_reply_t *tmp;
+  scamper_trace_hopiter_t *hi = NULL;
+  int rc = -1;
 
-  probe_ttl = scamper_trace_hop_probe_ttl_get(hop);
-  tmp = scamper_trace_hop_get(trace, probe_ttl-1);
+  if((hi = scamper_trace_hopiter_alloc()) == NULL ||
+     scamper_trace_hopiter_ttl_set(hi, probe_ttl, probe_ttl) != 0)
+    goto done;
 
-  while(tmp != hop)
+  while((tmp = scamper_trace_hopiter_next(trace, hi)) != NULL)
     {
-      if(scamper_trace_hop_addr_cmp(tmp, hop) == 0)
-	return 0;
-      tmp = scamper_trace_hop_next_get(tmp);
+      if(tmp == hop)
+	{
+	  rc = 1;
+	  break;
+	}
+      if(scamper_trace_reply_addr_cmp(tmp, hop) == 0)
+	{
+	  rc = 0;
+	  break;
+	}
     }
 
-  return 1;
+ done:
+  if(hi != NULL) scamper_trace_hopiter_free(hi);
+  return rc;
 }
 
 /*
  * trace_loop:
  *
- * find the nth instance of a loop in the trace.  if 'a' or 'b' are non-null,
- * on exit they hold the start and end of the loop.  if '*b' is non-null on
- * entry, it specifies the hop at which to commence looking for the next
- * instance of a loop.
+ * find the nth instance of a loop in the trace.
  */
-static int trace_loop(const scamper_trace_t *trace, int n,
-		      const scamper_trace_hop_t **a,
-		      const scamper_trace_hop_t **b)
+static int trace_loop(const scamper_trace_t *trace, int n)
 {
-  const scamper_trace_hop_t *hop, *tmp;
-  uint16_t hop_count;
-  uint8_t i, firsthop, probe_ttl;
-  int j, loopc = 0;
+  scamper_trace_hopiter_t *hi = NULL, *hi2 = NULL;
+  const scamper_trace_probe_t *probe;
+  const scamper_trace_reply_t *hop, *tmp;
+  int loopc = 0, rc = -1;
+  uint8_t probe_ttl, ttl;
 
-  firsthop = scamper_trace_firsthop_get(trace);
-  hop_count = scamper_trace_hop_count_get(trace);
-  assert(firsthop != 0);
+  if((hi = scamper_trace_hopiter_alloc()) == NULL ||
+     (hi2 = scamper_trace_hopiter_alloc()) == NULL)
+    goto done;
 
-  if(b != NULL && *b != NULL)
+  while((hop = scamper_trace_hopiter_next(trace, hi)) != NULL)
     {
-      /* to start with, make sure that the hop supplied is in the trace */
-      hop = *b;
-      probe_ttl = scamper_trace_hop_probe_ttl_get(hop);
-      if(probe_ttl >= hop_count)
-	return -1;
-      tmp = scamper_trace_hop_get(trace, probe_ttl-1);
-      while(tmp != NULL)
-	{
-	  if(tmp == hop) break;
-	  tmp = scamper_trace_hop_next_get(tmp);
-	}
-      if(tmp == NULL)
-	return -1;
+      /*
+       * if this address was already checked for loops earlier, then
+       * continue with the next hop record
+       */
+      probe = scamper_trace_hopiter_probe_get(hi);
+      if((probe_ttl = scamper_trace_probe_ttl_get(probe)) == 0)
+	break;
+      if(trace_hop_firstaddr(trace, probe_ttl, hop) == 0)
+	continue;
 
-      /* find the next place to consider new hop records */
-      i = probe_ttl - 1;
-      if((hop = scamper_trace_hop_next_get(hop)) == NULL)
+      ttl = probe_ttl - 1;
+      while(ttl > 0)
 	{
-	  i++;
-	}
-    }
-  else
-    {
-      i = firsthop;
-      hop = NULL;
-    }
-
-  while(i < hop_count)
-    {
-      if(hop == NULL)
-	{
-	  /* find the next hop record to start with, if necessary */
-	  while(i < hop_count)
+	  scamper_trace_hopiter_ttl_set(hi2, ttl, ttl);
+	  while((tmp = scamper_trace_hopiter_next(trace, hi2)) != NULL)
 	    {
-	      if((hop = scamper_trace_hop_get(trace, i)) != NULL)
-		break;
-	      i++;
-	    }
-	  if(i == hop_count)
-	    return 0;
-	}
-
-      /* the next loop requires hop not be null */
-      assert(hop != NULL);
-
-      do
-	{
-	  /*
-	   * if this address was already checked for loops earlier, then
-	   * continue with the next hop record
-	   */
-	  if(trace_hop_firstaddr(trace, hop) == 0)
-	    {
-	      hop = scamper_trace_hop_next_get(hop);
-	      continue;
-	    }
-
-	  /* check prior hop records leading up to this hop */
-	  for(j=i-1; j>=firsthop-1; j--)
-	    {
-	      /* check all hop records in this hop */
-	      for(tmp = scamper_trace_hop_get(trace, j); tmp != NULL;
-		  tmp = scamper_trace_hop_next_get(tmp))
+	      /*
+	       * if there's a loop (and this is the first instance of
+	       * this address in at this distance into the traceroute)
+	       * then we found a new loop.
+	       */
+	      if(scamper_trace_reply_addr_cmp(tmp, hop) == 0 &&
+		 trace_hop_firstaddr(trace, ttl, tmp) != 0 && ++loopc == n)
 		{
-		  /*
-		   * if there's a loop (and this is the first instance of
-		   * this address in the list) then a new loop is found.
-		   */
-		  if(scamper_trace_hop_addr_cmp(tmp, hop) == 0 &&
-		     trace_hop_firstaddr(trace, tmp) != 0)
-		    {
-		      if(++loopc == n)
-			{
-			  if(a != NULL) *a = tmp;
-			  if(b != NULL) *b = hop;
-			  return i-j;
-			}
-		    }
+		  rc = probe_ttl - ttl;
+		  goto done;
 		}
 	    }
 
-	  hop = scamper_trace_hop_next_get(hop);
+	  ttl--;
 	}
-      while(hop != NULL);
-
-      i++;
     }
 
-  return 0;
+  rc = 0;
+
+ done:
+  if(hi != NULL) scamper_trace_hopiter_free(hi);
+  if(hi2 != NULL) scamper_trace_hopiter_free(hi2);
+  return rc;
 }
 
 static void print_help()
@@ -627,16 +596,17 @@ static void print_header_fields(const scamper_trace_t *trace)
   return;
 }
 
-static void print_reply_fields(const scamper_trace_hop_t *dst)
+static void print_reply_fields(const scamper_trace_probe_t *probe,
+			       const scamper_trace_reply_t *reply)
 {
   char rtt[64];
 
-  if(dst != NULL)
+  if(reply != NULL)
     {
-      rtt_tostr(rtt, sizeof(rtt), scamper_trace_hop_rtt_get(dst));
+      rtt_tostr(rtt, sizeof(rtt), scamper_trace_reply_rtt_get(reply));
       fprintf(out, "\tR\t%s\t%d\t%d", rtt,
-	      scamper_trace_hop_probe_ttl_get(dst),
-	      scamper_trace_hop_reply_ttl_get(dst));
+	      scamper_trace_probe_ttl_get(probe),
+	      scamper_trace_reply_ttl_get(reply));
     }
   else
     {
@@ -663,7 +633,7 @@ static void print_halt_fields(const scamper_trace_t *trace)
 
     case SCAMPER_TRACE_STOP_LOOP:
       if((l = scamper_trace_stop_data_get(trace)) == 0)
-	l = trace_loop(trace, 1, NULL, NULL);
+	l = trace_loop(trace, 1);
       fprintf(out, "\tL\t%d", l);
       break;
 
@@ -679,7 +649,7 @@ static void print_halt_fields(const scamper_trace_t *trace)
 }
 
 static void print_old_fields(const scamper_trace_t *trace,
-			     const scamper_trace_hop_t *hop)
+			     const scamper_trace_reply_t *hop)
 {
   const struct timeval *start = scamper_trace_start_get(trace);
   char src[256], dst[256], rtt[256];
@@ -689,40 +659,40 @@ static void print_old_fields(const scamper_trace_t *trace,
 	  scamper_addr_tostr(scamper_trace_dst_get(trace), dst, sizeof(dst)),
 	  (long)start->tv_sec,
 	  rtt_tostr(rtt, sizeof(rtt),
-		    (hop != NULL) ? scamper_trace_hop_rtt_get(hop) : NULL),
+		    (hop != NULL) ? scamper_trace_reply_rtt_get(hop) : NULL),
 	  scamper_trace_hop_count_get(trace));
 
   return;
 }
 
-static char *hop_tostr(const scamper_trace_hop_t *hop, char *buf, size_t len)
+static char *hop_tostr(const scamper_trace_probe_t *probe,
+		       const scamper_trace_reply_t *hop, char *buf, size_t len)
 {
   const scamper_icmpexts_t *exts;
   const scamper_icmpext_t *ie;
-  const scamper_addr_t *hop_addr = scamper_trace_hop_addr_get(hop);
+  const scamper_addr_t *ha;
   char rtt[128], addr[128];
   size_t off = 0;
   uint16_t u16;
   int i;
 
-  string_concat(buf, len, &off,
-		scamper_addr_tostr(hop_addr, addr, sizeof(addr)));
+  if((ha = scamper_trace_reply_addr_get(hop)) != NULL)
+    string_concat(buf, len, &off, scamper_addr_tostr(ha, addr, sizeof(addr)));
 
   if((options & OPT_HIDEIRTT) == 0)
     string_concaf(buf, len, &off, ",%s,%d",
-		  rtt_tostr(rtt, sizeof(rtt), scamper_trace_hop_rtt_get(hop)),
-		  scamper_trace_hop_probe_id_get(hop));
+		  rtt_tostr(rtt, sizeof(rtt), scamper_trace_reply_rtt_get(hop)),
+		  scamper_trace_probe_id_get(probe));
 
-  if((options & OPT_SHOWQTTL) != 0 && scamper_trace_hop_is_icmp_q(hop))
+  if((options & OPT_SHOWQTTL) != 0 && scamper_trace_reply_is_icmp_q(hop))
     string_concaf(buf, len, &off, ",Q|%d",
-		  scamper_trace_hop_icmp_q_ttl_get(hop));
+		  scamper_trace_reply_icmp_q_ttl_get(hop));
 
   if((options & OPT_SHOWIPTTL) != 0)
-    string_concaf(buf, len, &off, ",T|%d",
-		  scamper_trace_hop_reply_ttl_get(hop));
+    string_concaf(buf, len, &off, ",T|%d", scamper_trace_reply_ttl_get(hop));
 
   if((options & OPT_SHOWMPLS) != 0 &&
-     (exts = scamper_trace_hop_icmp_exts_get(hop)) != NULL)
+     (exts = scamper_trace_reply_icmp_exts_get(hop)) != NULL)
     {
       for(u16=0; u16 < scamper_icmpexts_count_get(exts); u16++)
 	{
@@ -745,9 +715,12 @@ static char *hop_tostr(const scamper_trace_hop_t *hop, char *buf, size_t len)
 }
 
 static void print_path_fields(const scamper_trace_t *trace,
-			      const scamper_trace_hop_t *dst)
+			      const scamper_trace_probe_t *dst_probe,
+			      const scamper_trace_reply_t *dst)
 {
-  const scamper_trace_hop_t *hop, *hop_next;
+  const scamper_trace_probe_t *probe;
+  const scamper_trace_reply_t *hop;
+  scamper_trace_hopiter_t *hi = NULL;
   char buf[256], path_complete;
   int i, j, unresponsive = 0;
 
@@ -760,9 +733,9 @@ static void print_path_fields(const scamper_trace_t *trace,
   path_complete = 'I';
   if(dst != NULL)
     {
-      j = scamper_trace_hop_probe_ttl_get(dst);
+      j = scamper_trace_probe_ttl_get(dst_probe);
       for(i=0; i<j; i++)
-	if(scamper_trace_hop_get(trace, i) == NULL)
+	if(trace_reply_get(trace, i) == NULL)
 	  break;
 
       if(i == j && (options & OPT_OLDFORMAT) == 0)
@@ -787,96 +760,108 @@ static void print_path_fields(const scamper_trace_t *trace,
       print_old_fields(trace, dst);
     }
 
-  j = scamper_trace_hop_count_get(trace);
+  if((j = scamper_trace_hop_count_get(trace)) > 255 ||
+     (hi = scamper_trace_hopiter_alloc()) == NULL)
+    goto done;
+
   for(i=0; i<j; i++)
     {
-      if((hop = scamper_trace_hop_get(trace, i)) != NULL)
-	{
-	  /* don't print out the hop corresponding to the destination */
-	  if(hop == dst)
-	    {
-	      if((hop_next = scamper_trace_hop_next_get(hop)) == NULL)
-		break;
-	      hop = hop_next;
-	    }
+      /* look at hop records just for this TTL value */
+      scamper_trace_hopiter_ttl_set(hi, i+1, i+1);
 
-	  while(unresponsive > 0)
-	    {
-	      fprintf(out, "%c", options & OPT_OLDFORMAT ? ' ' : '\t');
-	      fprintf(out, "q");
-	      unresponsive--;
-	    }
-
-	  fprintf(out, "%c", options & OPT_OLDFORMAT ? ' ' : '\t');
-
-	  for(;;)
-	    {
-	      if((options & OPT_OLDFORMAT) == 0)
-		fprintf(out, "%s", hop_tostr(hop, buf, sizeof(buf)));
-
-	      if((hop = scamper_trace_hop_next_get(hop)) != NULL && hop != dst)
-		{
-		  if((options & OPT_OLDFORMAT) == 0)
-		    fprintf(out, ";");
-		  else
-		    fprintf(out, ",");
-		}
-	      else break;
-	    }
-	}
-      else
+      /* no hop at this index, count up unresponsive hops */
+      if((hop = scamper_trace_hopiter_next(trace, hi)) == NULL)
 	{
 	  unresponsive++;
+	  continue;
+	}
+
+      /* don't print out the hop corresponding to the destination */
+      if(hop == dst && (hop = scamper_trace_hopiter_next(trace, hi)) == NULL)
+	break;
+
+      /* print out unresponsive hops leading up to this hop records */
+      while(unresponsive > 0)
+	{
+	  fprintf(out, "%c", options & OPT_OLDFORMAT ? ' ' : '\t');
+	  fprintf(out, "q");
+	  unresponsive--;
+	}
+
+      fprintf(out, "%c", options & OPT_OLDFORMAT ? ' ' : '\t');
+
+      for(;;)
+	{
+	  probe = scamper_trace_hopiter_probe_get(hi);
+	  if((options & OPT_OLDFORMAT) == 0)
+	    fprintf(out, "%s", hop_tostr(probe, hop, buf, sizeof(buf)));
+
+	  if((hop = scamper_trace_hopiter_next(trace, hi)) == NULL ||
+	     hop == dst)
+	    break;
+
+	  if((options & OPT_OLDFORMAT) == 0)
+	    fprintf(out, ";");
+	  else
+	    fprintf(out, ",");
 	}
     }
 
   if(dst != NULL && options & OPT_DSTEND)
     {
-      while(i < scamper_trace_hop_probe_ttl_get(dst) - 1)
+      while(i < scamper_trace_probe_ttl_get(dst_probe) - 1)
         {
 	  i++;
-          fprintf(out, "\tq");
+	  fprintf(out, "\tq");
 	}
 
-      fprintf(out, "\t%s", hop_tostr(dst, buf, sizeof(buf)));
+      fprintf(out, "\t%s", hop_tostr(dst_probe, dst, buf, sizeof(buf)));
     }
 
+ done:
+  if(hi != NULL) scamper_trace_hopiter_free(hi);
   return;
 }
 
 static void print_trace(const scamper_trace_t *trace)
 {
-  const scamper_trace_hop_t *dst = NULL, *hop;
+  const scamper_trace_reply_t *dst = NULL, *hop;
+  scamper_trace_probe_t *dst_probe = NULL;
+  scamper_trace_hopiter_t *hi;
   uint16_t hop_count = scamper_trace_hop_count_get(trace);
   uint8_t stop_reason = scamper_trace_stop_reason_get(trace);
   int i;
 
-  if(hop_count == 0 && stop_reason == SCAMPER_TRACE_STOP_ERROR)
-    {
-      return;
-    }
+  if((hop_count == 0 && stop_reason == SCAMPER_TRACE_STOP_ERROR) ||
+     hop_count > 255)
+    return;
 
-  /* try and determine the hop that corresponds to the destination */
+  /* try to determine the hop that corresponds to the destination */
   if(hop_count > 0 && stop_reason != SCAMPER_TRACE_STOP_ERROR)
     {
-      for(i=hop_count-1; i>=0 && dst == NULL; i--)
+      if((hi = scamper_trace_hopiter_alloc()) == NULL)
+	return;
+
+      for(i=hop_count; i>0 && dst == NULL; i--)
 	{
-	  for(hop = scamper_trace_hop_get(trace, i); hop != NULL;
-	      hop = scamper_trace_hop_next_get(hop))
+	  scamper_trace_hopiter_ttl_set(hi, i, i);
+	  while((hop = scamper_trace_hopiter_next(trace, hi)) != NULL)
 	    {
-	      if((scamper_trace_hop_is_icmp_unreach_port(hop) &&
+	      if((scamper_trace_reply_is_icmp_unreach_port(hop) &&
 		  (scamper_trace_type_is_udp(trace) ||
 		   scamper_trace_type_is_tcp(trace))) ||
-		 (scamper_trace_hop_is_icmp_echo_reply(hop) &&
+		 (scamper_trace_reply_is_icmp_echo_reply(hop) &&
 		  scamper_trace_type_is_icmp(trace)) ||
-		 (scamper_trace_hop_is_tcp(hop) &&
+		 (scamper_trace_reply_is_tcp(hop) &&
 		  scamper_trace_type_is_tcp(trace)))
 		{
+		  dst_probe = scamper_trace_hopiter_probe_get(hi);
 		  dst = hop;
 		  break;
 		}
 	    }
 	}
+      scamper_trace_hopiter_free(hi);
     }
 
   if((options & OPT_OLDFORMAT) == 0)
@@ -886,7 +871,7 @@ static void print_trace(const scamper_trace_t *trace)
 
       if((options & OPT_HIDEREPLY) == 0)
 	{
-	  print_reply_fields(dst);
+	  print_reply_fields(dst_probe, dst);
 	}
 
       if((options & OPT_HIDEHALT) == 0)
@@ -897,7 +882,7 @@ static void print_trace(const scamper_trace_t *trace)
 
   if((options & OPT_HIDEPATH) == 0 || (options & OPT_OLDFORMAT))
     {
-      print_path_fields(trace, dst);
+      print_path_fields(trace, dst_probe, dst);
     }
 
   fprintf(out, "\n");

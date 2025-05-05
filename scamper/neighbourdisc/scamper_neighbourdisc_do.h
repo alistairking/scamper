@@ -1,7 +1,7 @@
 /*
  * scamper_do_neighbourdisc.h
  *
- * $Id: scamper_neighbourdisc_do.h,v 1.8 2024/02/27 03:34:02 mjl Exp $
+ * $Id: scamper_neighbourdisc_do.h,v 1.9 2025/04/27 00:49:24 mjl Exp $
  *
  * Copyright (C) 2009-2010 Matthew Luckie
  *
@@ -39,6 +39,8 @@ scamper_neighbourdisc_do_t *scamper_do_neighbourdisc_do(
 void scamper_neighbourdisc_do_free(scamper_neighbourdisc_do_t *nddo);
 
 uint32_t scamper_do_neighbourdisc_userid(void *data);
+
+int scamper_do_neighbourdisc_enabled(void);
 
 void scamper_do_neighbourdisc_cleanup(void);
 int scamper_do_neighbourdisc_init(void);
