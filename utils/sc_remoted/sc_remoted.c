@@ -1,7 +1,7 @@
 /*
  * sc_remoted
  *
- * $Id: sc_remoted.c,v 1.140 2025/03/29 08:22:51 mjl Exp $
+ * $Id: sc_remoted.c,v 1.142 2025/04/21 03:24:13 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -538,7 +538,7 @@ typedef struct sc_message
 static uint16_t     options        = 0;
 static char        *unix_dir       = NULL;
 static char        *ss_addr        = NULL;
-static int          ss_port        = 0;
+static uint16_t     ss_port        = 0;
 static char        *metadata_file  = NULL;
 static splaytree_t *metadata       = NULL;
 static splaytree_t *mstree         = NULL;
@@ -706,7 +706,7 @@ static int check_options(int argc, char *argv[])
 
   string_concat(opts, sizeof(opts), &off, "?46DO:c:C:e:m:M:p:P:U:Z:");
 #ifdef OPT_VERSION
-  string_concat(opts, sizeof(opts), &off, "v");
+  string_concatc(opts, sizeof(opts), &off, 'v');
 #endif
 
   while((ch = getopt(argc, argv, opts)) != -1)

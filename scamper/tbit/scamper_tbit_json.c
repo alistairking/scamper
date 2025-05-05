@@ -7,7 +7,7 @@
  *
  * Author: Matthew Luckie
  *
- * $Id: scamper_tbit_json.c,v 1.36 2024/12/31 04:17:31 mjl Exp $
+ * $Id: scamper_tbit_json.c,v 1.37 2025/04/21 03:24:13 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -61,7 +61,7 @@ static char *tbit_bits_encode(char *buf, size_t len, uint32_t flags, int bits,
   for(i=0; i<bits; i++)
     {
       if((u32 = flags & (0x1 << i)) == 0) continue;
-      if(f > 0) string_concat(buf, len, &off, ",");
+      if(f > 0) string_concatc(buf, len, &off, ',');
       if(i < f2sc)
 	string_concat3(buf, len, &off, "\"", f2s[i], "\"");
       else
@@ -129,7 +129,7 @@ static char *tbit_header_tostr(const scamper_tbit_t *tbit,
       string_concat(buf, sizeof(buf), &off, ", \"fo_cookie\":\"");
       string_byte2hex(buf, sizeof(buf), &off,
 		      tbit->client_fo_cookie, tbit->client_fo_cookielen);
-      string_concat(buf, sizeof(buf), &off, "\"");
+      string_concatc(buf, sizeof(buf), &off, '"');
     }
 
   if(state->flags & TBIT_STATE_FLAG_CISN)
@@ -415,7 +415,7 @@ static char *tbit_pkt_tostr(const scamper_tbit_t *tbit,
 
 	  u8 += pp[1];
 	}
-      string_concat(buf, sizeof(buf), &off, "]");
+      string_concatc(buf, sizeof(buf), &off, ']');
 
       if(pkt->dir == SCAMPER_TBIT_PKT_DIR_TX)
 	{
@@ -438,7 +438,7 @@ static char *tbit_pkt_tostr(const scamper_tbit_t *tbit,
     }
 
  done:
-  string_concat(buf, sizeof(buf), &off, "}");
+  string_concatc(buf, sizeof(buf), &off, '}');
   return strdup(buf);
 }
 

@@ -2,7 +2,7 @@
  * sc_prefixprober : scamper driver to probe addresses in specified
  *                   prefixes
  *
- * $Id: sc_prefixprober.c,v 1.46 2025/02/18 23:02:07 mjl Exp $
+ * $Id: sc_prefixprober.c,v 1.48 2025/04/27 02:41:38 mjl Exp $
  *
  * Copyright (C) 2023 The Regents of the University of California
  * Copyright (C) 2024 Matthew Luckie
@@ -279,7 +279,7 @@ static int check_options(int argc, char *argv[])
 
   string_concat(opts, sizeof(opts), &off, "a:c:d:Dl:L:m:o:O:p:R:t:U:x:?");
 #ifdef OPT_VERSION
-  string_concat(opts, sizeof(opts), &off, "v");
+  string_concatc(opts, sizeof(opts), &off, 'v');
 #endif
 
   while((ch = getopt(argc, argv, opts)) != -1)
@@ -842,7 +842,7 @@ static int sc_prefix_add(slist_t *list, char *str, uint8_t dnp,
   if(str[0] == '-')
     {
       str++;
-      while(*str != '\0' && isspace((int)*str) != 0)
+      while(*str != '\0' && isspace((unsigned char)*str) != 0)
 	str++;
       dnp = 1;
       if(*str == '\0')

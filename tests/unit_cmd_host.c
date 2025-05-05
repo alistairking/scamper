@@ -1,7 +1,7 @@
 /*
  * unit_cmd_host : unit tests for host commands
  *
- * $Id: unit_cmd_host.c,v 1.6 2024/09/04 07:36:24 mjl Exp $
+ * $Id: unit_cmd_host.c,v 1.7 2025/05/02 04:39:00 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -249,7 +249,7 @@ int main(int argc, char *argv[])
 	{
 	  snprintf(filename, sizeof(filename),
 		   "%s/host-%03x.txt", argv[2], (int)i);
-	  if(dump_cmd(tests[i].cmd, filename) != 0)
+	  if(dump_string(tests[i].cmd, filename) != 0)
 	    break;
 	}
     }

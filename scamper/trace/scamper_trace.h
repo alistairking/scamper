@@ -1,7 +1,7 @@
 /*
  * scamper_trace.h
  *
- * $Id: scamper_trace.h,v 1.166 2025/03/16 21:15:27 mjl Exp $
+ * $Id: scamper_trace.h,v 1.176 2025/05/04 23:58:33 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -30,114 +30,6 @@
 
 #ifndef __SCAMPER_TRACE_H
 #define __SCAMPER_TRACE_H
-
-/*
- * the structures underlying the following typedefs are defined and allocated
- * in scamper_trace_int.h
- *
- * there are get functions below for obtaining values held in those structs.
- * only internal scamper components should include scamper_trace_int.h
- */
-typedef struct scamper_trace scamper_trace_t;
-typedef struct scamper_trace_hop scamper_trace_hop_t;
-typedef struct scamper_trace_pmtud_n scamper_trace_pmtud_n_t;
-typedef struct scamper_trace_pmtud scamper_trace_pmtud_t;
-typedef struct scamper_trace_dtree scamper_trace_dtree_t;
-
-char *scamper_trace_tojson(const scamper_trace_t *trace, size_t *len);
-
-scamper_trace_t *scamper_trace_dup(scamper_trace_t *trace);
-void scamper_trace_free(scamper_trace_t *trace);
-scamper_addr_t *scamper_trace_src_get(const scamper_trace_t *trace);
-scamper_addr_t *scamper_trace_dst_get(const scamper_trace_t *trace);
-int scamper_trace_dst_is_ipv4(const scamper_trace_t *trace);
-scamper_addr_t *scamper_trace_rtr_get(const scamper_trace_t *trace);
-scamper_list_t *scamper_trace_list_get(const scamper_trace_t *trace);
-scamper_cycle_t *scamper_trace_cycle_get(const scamper_trace_t *trace);
-uint32_t scamper_trace_userid_get(const scamper_trace_t *trace);
-const struct timeval *scamper_trace_start_get(const scamper_trace_t *trace);
-uint8_t scamper_trace_stop_reason_get(const scamper_trace_t *trace);
-uint8_t scamper_trace_stop_data_get(const scamper_trace_t *trace);
-char *scamper_trace_stop_tostr(const scamper_trace_t *trace,
-			       char *buf, size_t len);
-scamper_trace_hop_t *scamper_trace_hop_get(const scamper_trace_t *trace,
-					   uint8_t i);
-uint16_t scamper_trace_hop_count_get(const scamper_trace_t *trace);
-uint8_t scamper_trace_stop_hop_get(const scamper_trace_t *trace);
-
-uint8_t scamper_trace_type_get(const scamper_trace_t *trace);
-char *scamper_trace_type_tostr(const scamper_trace_t *trace,
-			       char *buf, size_t len);
-
-uint8_t scamper_trace_attempts_get(const scamper_trace_t *trace);
-uint8_t scamper_trace_hoplimit_get(const scamper_trace_t *trace);
-uint8_t scamper_trace_squeries_get(const scamper_trace_t *trace);
-uint8_t scamper_trace_gaplimit_get(const scamper_trace_t *trace);
-uint8_t scamper_trace_gapaction_get(const scamper_trace_t *trace);
-char *scamper_trace_gapaction_tostr(const scamper_trace_t *trace,
-				    char *buf, size_t len);
-uint8_t scamper_trace_firsthop_get(const scamper_trace_t *trace);
-uint8_t scamper_trace_tos_get(const scamper_trace_t *trace);
-const struct timeval *scamper_trace_wait_timeout_get(const scamper_trace_t *trace);
-const struct timeval *scamper_trace_wait_probe_get(const scamper_trace_t *trace);
-uint8_t scamper_trace_loops_get(const scamper_trace_t *trace);
-uint8_t scamper_trace_loopaction_get(const scamper_trace_t *trace);
-uint8_t scamper_trace_confidence_get(const scamper_trace_t *trace);
-uint16_t scamper_trace_probe_size_get(const scamper_trace_t *trace);
-uint16_t scamper_trace_sport_get(const scamper_trace_t *trace);
-uint16_t scamper_trace_dport_get(const scamper_trace_t *trace);
-uint16_t scamper_trace_offset_get(const scamper_trace_t *trace);
-uint32_t scamper_trace_flags_get(const scamper_trace_t *trace);
-uint16_t scamper_trace_payload_len_get(const scamper_trace_t *trace);
-const uint8_t *scamper_trace_payload_get(const scamper_trace_t *trace);
-uint16_t scamper_trace_probec_get(const scamper_trace_t *trace);
-scamper_trace_hop_t *scamper_trace_lastditch_get(const scamper_trace_t *trace);
-int scamper_trace_type_is_udp(const scamper_trace_t *trace);
-int scamper_trace_type_is_tcp(const scamper_trace_t *trace);
-int scamper_trace_type_is_icmp(const scamper_trace_t *trace);
-int scamper_trace_flag_is_icmpcsumdp(const scamper_trace_t *trace);
-
-/* use and free hop structures */
-scamper_trace_hop_t *scamper_trace_hop_dup(const scamper_trace_hop_t *hop);
-scamper_trace_hop_t *scamper_trace_hop_use(scamper_trace_hop_t *hop);
-void scamper_trace_hop_free(scamper_trace_hop_t *hop);
-
-/* sorting order for two hops by their address */
-int scamper_trace_hop_addr_cmp(const scamper_trace_hop_t *a,
-			       const scamper_trace_hop_t *b);
-
-scamper_addr_t *scamper_trace_hop_addr_get(const scamper_trace_hop_t *hop);
-const char *scamper_trace_hop_name_get(const scamper_trace_hop_t *hop);
-uint32_t scamper_trace_hop_flags_get(const scamper_trace_hop_t *hop);
-const struct timeval *scamper_trace_hop_tx_get(const scamper_trace_hop_t *hop);
-const struct timeval *scamper_trace_hop_rtt_get(const scamper_trace_hop_t *hop);
-uint8_t scamper_trace_hop_probe_id_get(const scamper_trace_hop_t *hop);
-uint8_t scamper_trace_hop_probe_ttl_get(const scamper_trace_hop_t *hop);
-uint16_t scamper_trace_hop_probe_size_get(const scamper_trace_hop_t *hop);
-uint8_t scamper_trace_hop_reply_ttl_get(const scamper_trace_hop_t *hop);
-uint8_t scamper_trace_hop_reply_tos_get(const scamper_trace_hop_t *hop);
-uint8_t scamper_trace_hop_icmp_type_get(const scamper_trace_hop_t *hop);
-uint8_t scamper_trace_hop_icmp_code_get(const scamper_trace_hop_t *hop);
-uint16_t scamper_trace_hop_reply_size_get(const scamper_trace_hop_t *hop);
-uint16_t scamper_trace_hop_reply_ipid_get(const scamper_trace_hop_t *hop);
-int scamper_trace_hop_is_tcp(const scamper_trace_hop_t *hop);
-int scamper_trace_hop_is_icmp(const scamper_trace_hop_t *hop);
-int scamper_trace_hop_is_icmp_q(const scamper_trace_hop_t *hop);
-int scamper_trace_hop_is_icmp_unreach_port(const scamper_trace_hop_t *hop);
-int scamper_trace_hop_is_icmp_echo_reply(const scamper_trace_hop_t *hop);
-int scamper_trace_hop_is_icmp_ttl_exp(const scamper_trace_hop_t *hop);
-int scamper_trace_hop_is_icmp_ptb(const scamper_trace_hop_t *hop);
-uint16_t scamper_trace_hop_icmp_nhmtu_get(const scamper_trace_hop_t *hop);
-uint8_t scamper_trace_hop_icmp_q_ttl_get(const scamper_trace_hop_t *hop);
-uint8_t scamper_trace_hop_icmp_q_tos_get(const scamper_trace_hop_t *hop);
-uint16_t scamper_trace_hop_icmp_q_ipl_get(const scamper_trace_hop_t *hop);
-uint8_t scamper_trace_hop_tcp_flags_get(const scamper_trace_hop_t *hop);
-scamper_trace_hop_t *scamper_trace_hop_next_get(const scamper_trace_hop_t *hop);
-
-#ifdef __SCAMPER_ICMPEXT_H
-scamper_icmpexts_t *
-scamper_trace_hop_icmp_exts_get(const scamper_trace_hop_t *hop);
-#endif
 
 #define SCAMPER_TRACE_STOP_NONE         0 /* null reason */
 #define SCAMPER_TRACE_STOP_COMPLETED    1 /* got an ICMP port unreach */
@@ -172,28 +64,152 @@ scamper_trace_hop_icmp_exts_get(const scamper_trace_hop_t *hop);
 #define SCAMPER_TRACE_GAPACTION_LASTDITCH 0x02 /* send TTL-255 probes */
 
 /*
- * scamper hop flags:
- * these flags give extra meaning to fields found in the hop structure
- * by default.
+ * scamper reply flags:
+ * these flags give extra meaning to fields found in the reply structure
  */
-#define SCAMPER_TRACE_HOP_FLAG_TS_SOCK_RX 0x01 /* socket rx timestamp */
-#define SCAMPER_TRACE_HOP_FLAG_TS_DL_TX   0x02 /* datalink tx timestamp */
-#define SCAMPER_TRACE_HOP_FLAG_TS_DL_RX   0x04 /* datalink rx timestamp */
-#define SCAMPER_TRACE_HOP_FLAG_REPLY_TTL  0x10 /* reply ttl included */
-#define SCAMPER_TRACE_HOP_FLAG_TCP        0x20 /* reply is TCP */
-#define SCAMPER_TRACE_HOP_FLAG_UDP        0x40 /* reply is UDP */
+#define SCAMPER_TRACE_REPLY_FLAG_TS_SOCK_RX 0x01 /* socket rx timestamp */
+#define SCAMPER_TRACE_REPLY_FLAG_TS_DL_TX   0x02 /* datalink tx timestamp */
+#define SCAMPER_TRACE_REPLY_FLAG_TS_DL_RX   0x04 /* datalink rx timestamp */
+#define SCAMPER_TRACE_REPLY_FLAG_REPLY_TTL  0x10 /* reply ttl included */
+#define SCAMPER_TRACE_REPLY_FLAG_TCP        0x20 /* reply is TCP */
+#define SCAMPER_TRACE_REPLY_FLAG_UDP        0x40 /* reply is UDP */
 
-#define SCAMPER_TRACE_PMTUD_N_TYPE_PTB      1
-#define SCAMPER_TRACE_PMTUD_N_TYPE_PTB_BAD  2
-#define SCAMPER_TRACE_PMTUD_N_TYPE_SILENCE  3
+#define SCAMPER_TRACE_PMTUD_NOTE_TYPE_PTB      1
+#define SCAMPER_TRACE_PMTUD_NOTE_TYPE_PTB_BAD  2
+#define SCAMPER_TRACE_PMTUD_NOTE_TYPE_SILENCE  3
 
 #define SCAMPER_TRACE_DTREE_FLAG_NOBACK 0x01
 
 /*
- * scamper_trace_pmtud_free:
- *  free the attached pmtud record from the trace structure
+ * the structures underlying the following typedefs are defined and allocated
+ * in scamper_trace_int.h
+ *
+ * there are get functions below for obtaining values held in those structs.
+ * only internal scamper components should include scamper_trace_int.h
  */
-void scamper_trace_pmtud_free(scamper_trace_pmtud_t *trace);
+typedef struct scamper_trace scamper_trace_t;
+typedef struct scamper_trace_probe scamper_trace_probe_t;
+typedef struct scamper_trace_probettl scamper_trace_probettl_t;
+typedef struct scamper_trace_reply scamper_trace_reply_t;
+typedef struct scamper_trace_pmtud_note scamper_trace_pmtud_note_t;
+typedef struct scamper_trace_pmtud scamper_trace_pmtud_t;
+typedef struct scamper_trace_dtree scamper_trace_dtree_t;
+typedef struct scamper_trace_lastditch scamper_trace_lastditch_t;
+typedef struct scamper_trace_hopiter scamper_trace_hopiter_t;
+
+char *scamper_trace_tojson(const scamper_trace_t *trace, size_t *len);
+
+scamper_trace_t *scamper_trace_dup(scamper_trace_t *trace);
+void scamper_trace_free(scamper_trace_t *trace);
+scamper_addr_t *scamper_trace_src_get(const scamper_trace_t *trace);
+scamper_addr_t *scamper_trace_dst_get(const scamper_trace_t *trace);
+int scamper_trace_dst_is_ipv4(const scamper_trace_t *trace);
+scamper_addr_t *scamper_trace_rtr_get(const scamper_trace_t *trace);
+scamper_list_t *scamper_trace_list_get(const scamper_trace_t *trace);
+scamper_cycle_t *scamper_trace_cycle_get(const scamper_trace_t *trace);
+uint32_t scamper_trace_userid_get(const scamper_trace_t *trace);
+const struct timeval *scamper_trace_start_get(const scamper_trace_t *trace);
+uint8_t scamper_trace_stop_reason_get(const scamper_trace_t *trace);
+uint8_t scamper_trace_stop_data_get(const scamper_trace_t *trace);
+char *scamper_trace_stop_tostr(const scamper_trace_t *trace,
+			       char *buf, size_t len);
+scamper_trace_probettl_t *scamper_trace_probettl_get(const scamper_trace_t *trace, uint8_t i);
+uint16_t scamper_trace_hop_count_get(const scamper_trace_t *trace);
+uint8_t scamper_trace_stop_hop_get(const scamper_trace_t *trace);
+
+uint8_t scamper_trace_type_get(const scamper_trace_t *trace);
+char *scamper_trace_type_tostr(const scamper_trace_t *trace,
+			       char *buf, size_t len);
+
+uint8_t scamper_trace_attempts_get(const scamper_trace_t *trace);
+uint8_t scamper_trace_hoplimit_get(const scamper_trace_t *trace);
+uint8_t scamper_trace_squeries_get(const scamper_trace_t *trace);
+uint8_t scamper_trace_gaplimit_get(const scamper_trace_t *trace);
+uint8_t scamper_trace_gapaction_get(const scamper_trace_t *trace);
+char *scamper_trace_gapaction_tostr(const scamper_trace_t *trace,
+				    char *buf, size_t len);
+uint8_t scamper_trace_firsthop_get(const scamper_trace_t *trace);
+uint8_t scamper_trace_tos_get(const scamper_trace_t *trace);
+const struct timeval *scamper_trace_wait_timeout_get(const scamper_trace_t *trace);
+const struct timeval *scamper_trace_wait_probe_get(const scamper_trace_t *trace);
+uint8_t scamper_trace_loops_get(const scamper_trace_t *trace);
+uint8_t scamper_trace_loopaction_get(const scamper_trace_t *trace);
+uint8_t scamper_trace_confidence_get(const scamper_trace_t *trace);
+uint16_t scamper_trace_size_get(const scamper_trace_t *trace);
+uint16_t scamper_trace_sport_get(const scamper_trace_t *trace);
+uint16_t scamper_trace_dport_get(const scamper_trace_t *trace);
+uint16_t scamper_trace_offset_get(const scamper_trace_t *trace);
+uint32_t scamper_trace_flags_get(const scamper_trace_t *trace);
+uint16_t scamper_trace_payload_len_get(const scamper_trace_t *trace);
+const uint8_t *scamper_trace_payload_get(const scamper_trace_t *trace);
+uint16_t scamper_trace_probec_get(const scamper_trace_t *trace);
+int scamper_trace_type_is_udp(const scamper_trace_t *trace);
+int scamper_trace_type_is_tcp(const scamper_trace_t *trace);
+int scamper_trace_type_is_icmp(const scamper_trace_t *trace);
+int scamper_trace_flag_is_icmpcsumdp(const scamper_trace_t *trace);
+
+scamper_trace_probe_t *scamper_trace_probettl_probe_get(const scamper_trace_probettl_t *pttl, uint8_t i);
+uint8_t scamper_trace_probettl_probec_get(const scamper_trace_probettl_t *pttl);
+scamper_trace_reply_t *scamper_trace_probettl_reply_get(const scamper_trace_probettl_t *pttl);
+
+/*
+ * functions for interacting with traceroute probe structures
+ */
+scamper_trace_probe_t *scamper_trace_probe_dup(const scamper_trace_probe_t *probe);
+scamper_trace_probe_t *scamper_trace_probe_use(scamper_trace_probe_t *probe);
+uint16_t scamper_trace_probe_replyc_get(const scamper_trace_probe_t *probe);
+void scamper_trace_probe_free(scamper_trace_probe_t *probe);
+scamper_trace_reply_t *scamper_trace_probe_reply_get(const scamper_trace_probe_t *probe, uint16_t i);
+int scamper_trace_probe_reply_add(scamper_trace_probe_t *probe,
+				  scamper_trace_reply_t *reply);
+const struct timeval *scamper_trace_probe_tx_get(const scamper_trace_probe_t *probe);
+uint8_t scamper_trace_probe_id_get(const scamper_trace_probe_t *probe);
+uint8_t scamper_trace_probe_ttl_get(const scamper_trace_probe_t *probe);
+uint16_t scamper_trace_probe_size_get(const scamper_trace_probe_t *probe);
+
+/* use and free reply structures */
+scamper_trace_reply_t *scamper_trace_reply_dup(const scamper_trace_reply_t *reply);
+scamper_trace_reply_t *scamper_trace_reply_use(scamper_trace_reply_t *reply);
+void scamper_trace_reply_free(scamper_trace_reply_t *reply);
+
+/* sorting order for two replies by their address */
+int scamper_trace_reply_addr_cmp(const scamper_trace_reply_t *a,
+				 const scamper_trace_reply_t *b);
+
+scamper_addr_t *scamper_trace_reply_addr_get(const scamper_trace_reply_t *reply);
+const char *scamper_trace_reply_name_get(const scamper_trace_reply_t *reply);
+uint32_t scamper_trace_reply_flags_get(const scamper_trace_reply_t *reply);
+
+const struct timeval *scamper_trace_reply_rtt_get(const scamper_trace_reply_t *reply);
+
+uint8_t scamper_trace_reply_ttl_get(const scamper_trace_reply_t *reply);
+uint8_t scamper_trace_reply_tos_get(const scamper_trace_reply_t *reply);
+uint8_t scamper_trace_reply_icmp_type_get(const scamper_trace_reply_t *reply);
+uint8_t scamper_trace_reply_icmp_code_get(const scamper_trace_reply_t *reply);
+uint16_t scamper_trace_reply_size_get(const scamper_trace_reply_t *reply);
+uint16_t scamper_trace_reply_ipid_get(const scamper_trace_reply_t *reply);
+int scamper_trace_reply_is_tcp(const scamper_trace_reply_t *reply);
+int scamper_trace_reply_is_icmp(const scamper_trace_reply_t *reply);
+int scamper_trace_reply_is_icmp_q(const scamper_trace_reply_t *reply);
+int scamper_trace_reply_is_icmp_unreach_port(const scamper_trace_reply_t *reply);
+int scamper_trace_reply_is_icmp_echo_reply(const scamper_trace_reply_t *reply);
+int scamper_trace_reply_is_icmp_ttl_exp(const scamper_trace_reply_t *reply);
+int scamper_trace_reply_is_icmp_ptb(const scamper_trace_reply_t *reply);
+uint16_t scamper_trace_reply_icmp_nhmtu_get(const scamper_trace_reply_t *reply);
+uint8_t scamper_trace_reply_icmp_q_ttl_get(const scamper_trace_reply_t *reply);
+uint8_t scamper_trace_reply_icmp_q_tos_get(const scamper_trace_reply_t *reply);
+uint16_t scamper_trace_reply_icmp_q_ipl_get(const scamper_trace_reply_t *reply);
+uint8_t scamper_trace_reply_tcp_flags_get(const scamper_trace_reply_t *reply);
+
+#ifdef __SCAMPER_ICMPEXT_H
+scamper_icmpexts_t *
+scamper_trace_reply_icmp_exts_get(const scamper_trace_reply_t *reply);
+#endif
+
+/*
+ * functions for processing pmtud data
+ */
+void scamper_trace_pmtud_free(scamper_trace_pmtud_t *pmtud);
 scamper_trace_pmtud_t *scamper_trace_pmtud_use(scamper_trace_pmtud_t *pmtud);
 scamper_trace_pmtud_t *scamper_trace_pmtud_get(const scamper_trace_t *trace);
 uint8_t scamper_trace_pmtud_ver_get(const scamper_trace_pmtud_t *pmtud);
@@ -201,17 +217,34 @@ uint16_t scamper_trace_pmtud_pmtu_get(const scamper_trace_pmtud_t *pmtud);
 uint16_t scamper_trace_pmtud_ifmtu_get(const scamper_trace_pmtud_t *pmtud);
 uint16_t scamper_trace_pmtud_outmtu_get(const scamper_trace_pmtud_t *pmtud);
 uint8_t scamper_trace_pmtud_notec_get(const scamper_trace_pmtud_t *pmtud);
-scamper_trace_hop_t *
-scamper_trace_pmtud_hops_get(const scamper_trace_pmtud_t *pmtud);
-scamper_trace_pmtud_n_t *
+scamper_trace_pmtud_note_t *
 scamper_trace_pmtud_note_get(const scamper_trace_pmtud_t *pmtud, uint8_t note);
+uint16_t scamper_trace_pmtud_probec_get(const scamper_trace_pmtud_t *pmtud);
+scamper_trace_probe_t *
+scamper_trace_pmtud_probe_get(const scamper_trace_pmtud_t *pmtud, uint16_t p);
 
-scamper_trace_pmtud_n_t *scamper_trace_pmtud_n_use(scamper_trace_pmtud_n_t *n);
-void scamper_trace_pmtud_n_free(scamper_trace_pmtud_n_t *n);
-scamper_trace_hop_t *
-scamper_trace_pmtud_n_hop_get(const scamper_trace_pmtud_n_t *n);
-uint16_t scamper_trace_pmtud_n_nhmtu_get(const scamper_trace_pmtud_n_t *n);
-uint8_t scamper_trace_pmtud_n_type_get(const scamper_trace_pmtud_n_t *n);
+scamper_trace_pmtud_note_t *
+scamper_trace_pmtud_note_use(scamper_trace_pmtud_note_t *n);
+void scamper_trace_pmtud_note_free(scamper_trace_pmtud_note_t *n);
+scamper_trace_probe_t *
+scamper_trace_pmtud_note_probe_get(const scamper_trace_pmtud_note_t *n);
+scamper_trace_reply_t *
+scamper_trace_pmtud_note_reply_get(const scamper_trace_pmtud_note_t *n);
+uint16_t scamper_trace_pmtud_note_nhmtu_get(const scamper_trace_pmtud_note_t *n);
+uint8_t scamper_trace_pmtud_note_type_get(const scamper_trace_pmtud_note_t *n);
+char *scamper_trace_pmtud_note_type_tostr(const scamper_trace_pmtud_note_t *n,
+					  char *buf, size_t len);
+
+/*
+ * functions for processing last-ditch probing data
+ */
+void scamper_trace_lastditch_free(scamper_trace_lastditch_t *ld);
+scamper_trace_lastditch_t *scamper_trace_lastditch_use(scamper_trace_lastditch_t *ld);
+scamper_trace_lastditch_t *
+scamper_trace_lastditch_get(const scamper_trace_t *trace);
+uint8_t scamper_trace_lastditch_probec_get(const scamper_trace_lastditch_t *ld);
+scamper_trace_probe_t *
+scamper_trace_lastditch_probe_get(const scamper_trace_lastditch_t *ld, uint8_t p);
 
 /*
  * functions for helping with doubletree
@@ -227,5 +260,25 @@ scamper_trace_dtree_gss_stop_get(const scamper_trace_dtree_t *dt);
 uint8_t scamper_trace_dtree_firsthop_get(const scamper_trace_dtree_t *dtree);
 const char *scamper_trace_dtree_lss_get(const scamper_trace_dtree_t *dtree);
 
+/*
+ * functions for iterating through replies in a traceroute
+ */
+scamper_trace_hopiter_t *scamper_trace_hopiter_alloc(void);
+void scamper_trace_hopiter_free(scamper_trace_hopiter_t *hi);
+void scamper_trace_hopiter_reset(scamper_trace_hopiter_t *hi);
+int scamper_trace_hopiter_ttl_set(scamper_trace_hopiter_t *hi,
+				  uint8_t ttl, uint8_t max);
+scamper_trace_probe_t *
+scamper_trace_hopiter_probe_get(const scamper_trace_hopiter_t *hi);
+
+scamper_trace_reply_t *
+scamper_trace_hopiter_next(const scamper_trace_t *trace,
+			   scamper_trace_hopiter_t *hi);
+scamper_trace_reply_t *
+scamper_trace_lastditch_hopiter_next(const scamper_trace_lastditch_t *ld,
+				     scamper_trace_hopiter_t *hi);
+scamper_trace_reply_t *
+scamper_trace_pmtud_hopiter_next(const scamper_trace_pmtud_t *pmtud,
+				 scamper_trace_hopiter_t *hi);
 
 #endif /* __SCAMPER_TRACE_H */

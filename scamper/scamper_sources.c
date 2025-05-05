@@ -1,7 +1,7 @@
 /*
  * scamper_source
  *
- * $Id: scamper_sources.c,v 1.86 2025/03/11 02:07:52 mjl Exp $
+ * $Id: scamper_sources.c,v 1.89 2025/04/27 02:41:38 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -166,6 +166,7 @@ typedef struct command_func
 			       char *errbuf, size_t errlen);
   void            (*freedata)(void *data);
   uint32_t        (*userid)(void *data);
+  int             (*enabled)(void);
 } command_func_t;
 
 static const command_func_t command_funcs[] = {
@@ -176,6 +177,7 @@ static const command_func_t command_funcs[] = {
     scamper_do_trace_alloctask,
     scamper_do_trace_free,
     scamper_do_trace_userid,
+    scamper_do_trace_enabled,
   },
 #endif
 #ifndef DISABLE_SCAMPER_PING
@@ -185,6 +187,7 @@ static const command_func_t command_funcs[] = {
     scamper_do_ping_alloctask,
     scamper_do_ping_free,
     scamper_do_ping_userid,
+    scamper_do_ping_enabled,
   },
 #endif
 #ifndef DISABLE_SCAMPER_TRACELB
@@ -194,6 +197,7 @@ static const command_func_t command_funcs[] = {
     scamper_do_tracelb_alloctask,
     scamper_do_tracelb_free,
     scamper_do_tracelb_userid,
+    scamper_do_tracelb_enabled,
   },
 #endif
 #ifndef DISABLE_SCAMPER_DEALIAS
@@ -203,6 +207,7 @@ static const command_func_t command_funcs[] = {
     scamper_do_dealias_alloctask,
     scamper_do_dealias_free,
     scamper_do_dealias_userid,
+    scamper_do_dealias_enabled,
   },
 #endif
   {
@@ -211,6 +216,7 @@ static const command_func_t command_funcs[] = {
     scamper_do_neighbourdisc_alloctask,
     scamper_do_neighbourdisc_free,
     scamper_do_neighbourdisc_userid,
+    scamper_do_neighbourdisc_enabled,
   },
 #ifndef DISABLE_SCAMPER_TBIT
   {
@@ -219,6 +225,7 @@ static const command_func_t command_funcs[] = {
     scamper_do_tbit_alloctask,
     scamper_do_tbit_free,
     scamper_do_tbit_userid,
+    scamper_do_tbit_enabled,
   },
 #endif
 #ifndef DISABLE_SCAMPER_STING
@@ -228,6 +235,7 @@ static const command_func_t command_funcs[] = {
     scamper_do_sting_alloctask,
     scamper_do_sting_free,
     scamper_do_sting_userid,
+    scamper_do_sting_enabled,
   },
 #endif
 #ifndef DISABLE_SCAMPER_SNIFF
@@ -237,6 +245,7 @@ static const command_func_t command_funcs[] = {
     scamper_do_sniff_alloctask,
     scamper_do_sniff_free,
     scamper_do_sniff_userid,
+    scamper_do_sniff_enabled,
   },
 #endif
 #ifndef DISABLE_SCAMPER_HOST
@@ -246,6 +255,7 @@ static const command_func_t command_funcs[] = {
     scamper_do_host_alloctask,
     scamper_do_host_free,
     scamper_do_host_userid,
+    scamper_do_host_enabled,
   },
 #endif
 #ifndef DISABLE_SCAMPER_HTTP
@@ -255,6 +265,7 @@ static const command_func_t command_funcs[] = {
     scamper_do_http_alloctask,
     scamper_do_http_free,
     scamper_do_http_userid,
+    scamper_do_http_enabled,
   },
 #endif
 #ifndef DISABLE_SCAMPER_UDPPROBE
@@ -264,6 +275,7 @@ static const command_func_t command_funcs[] = {
     scamper_do_udpprobe_alloctask,
     scamper_do_udpprobe_free,
     scamper_do_udpprobe_userid,
+    scamper_do_udpprobe_enabled,
   },
 #endif
 };
@@ -1181,7 +1193,7 @@ char *scamper_source_tostr(const scamper_source_t *src, char *buf, size_t len)
   string_concat2(buf, len, &off, "name ", src->list->name);
   if(src->tostr != NULL && src->tostr(src->data, tmp, sizeof(tmp)) != NULL)
     {
-      string_concat(buf, len, &off, " ");
+      string_concatc(buf, len, &off, ' ');
       string_concat(buf, len, &off, tmp);
     }
 
@@ -1231,7 +1243,8 @@ static const command_func_t *command_func_get(const char *command)
     {
       func = &command_funcs[i];
       if(strncasecmp(command, func->command, func->len) == 0 &&
-	 isspace((int)command[func->len]) && command[func->len] != '\0')
+	 isspace((unsigned char)command[func->len]) &&
+	 command[func->len] != '\0')
 	{
 	  return func;
 	}
@@ -1323,6 +1336,11 @@ int scamper_source_command2(scamper_source_t *s, const char *command,
       snprintf(errbuf, errlen, "could not determine command type");
       goto err;
     }
+  if(f->enabled() == 0)
+    {
+      snprintf(errbuf, errlen, "%s disabled", f->command);
+      goto err;
+    }
   if((data = command_func_allocdata(f, command, errbuf, errlen)) == NULL)
     goto err;
   if((task = f->alloctask(data, s->list, s->cycle, errbuf, errlen)) == NULL)
@@ -1392,6 +1410,12 @@ int scamper_source_command(scamper_source_t *source, const char *command)
 
   if((func = command_func_get(command)) == NULL)
     goto err;
+  if(func->enabled() == 0)
+    {
+      printerror_msg(__func__, "%s disabled", func->command);
+      goto err;
+    }
+
   errbuf[0] = '\0';
   if((data = command_func_allocdata(func, command,
 				    errbuf, sizeof(errbuf))) == NULL)

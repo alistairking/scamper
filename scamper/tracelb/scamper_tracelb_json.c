@@ -1,11 +1,11 @@
 /*
  * scamper_tracelb_json.c
  *
- * Copyright (C) 2018-2024 Matthew Luckie
+ * Copyright (C) 2018-2025 Matthew Luckie
  *
  * Authors: Matthew Luckie
  *
- * $Id: scamper_tracelb_json.c,v 1.22 2024/12/31 04:17:31 mjl Exp $
+ * $Id: scamper_tracelb_json.c,v 1.25 2025/05/04 02:50:06 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -53,7 +53,7 @@ static char *header_tostr(const scamper_tracelb_t *trace)
 
   string_concat(buf, sizeof(buf), &off,
 		"\"type\":\"tracelb\", \"version\":\"0.1\"");
-  string_concaf(buf, sizeof(buf), &off, ", \"userid\":%u", trace->userid);
+  string_concat_u32(buf, sizeof(buf), &off, ", \"userid\":", trace->userid);
   string_concat3(buf, sizeof(buf), &off, ", \"method\":\"",
 		 scamper_tracelb_type_tostr(trace, tmp, sizeof(tmp)), "\"");
   if(trace->src != NULL)
@@ -104,12 +104,12 @@ static char *reply_tostr(const scamper_tracelb_probe_t *probe,
 		reply->reply_ttl, timeval_tostr_us(&rtt, tmp, sizeof(tmp)));
 
   if(SCAMPER_ADDR_TYPE_IS_IPV4(reply->reply_from))
-    string_concaf(buf, sizeof(buf), &off, ", \"ipid\":%u", reply->reply_ipid);
+    string_concat_u16(buf, sizeof(buf), &off, ", \"ipid\":", reply->reply_ipid);
 
   if(SCAMPER_TRACELB_REPLY_IS_TCP(reply))
     {
-      string_concaf(buf, sizeof(buf), &off, ", \"tcp_flags\":%u",
-		    reply->reply_tcp_flags);
+      string_concat_u8(buf, sizeof(buf), &off, ", \"tcp_flags\":",
+		       reply->reply_tcp_flags);
     }
   else
     {
@@ -119,10 +119,10 @@ static char *reply_tostr(const scamper_tracelb_probe_t *probe,
 		    reply->reply_icmp_q_tos);
       if(SCAMPER_TRACELB_REPLY_IS_ICMP_UNREACH(reply) ||
 	 SCAMPER_TRACELB_REPLY_IS_ICMP_TTL_EXP(reply))
-	string_concaf(buf, sizeof(buf), &off, ", \"icmp_q_ttl\":%u",
-		      reply->reply_icmp_q_ttl);
+	string_concat_u8(buf, sizeof(buf), &off, ", \"icmp_q_ttl\":",
+			 reply->reply_icmp_q_ttl);
     }
-  string_concat(buf, sizeof(buf), &off, "}");
+  string_concatc(buf, sizeof(buf), &off, '}');
 
   return strdup(buf);
 }
@@ -180,13 +180,13 @@ static char *probe_tostr(const scamper_tracelb_probe_t *probe,
     {
       for(i=0; i<rxc; i++)
 	{
-	  if(i > 0) string_concat(dup, len, &off, ",");
+	  if(i > 0) string_concatc(dup, len, &off, ',');
 	  string_concat(dup, len, &off, rxs[i]);
 	  free(rxs[i]);
 	}
-      string_concat(dup, len, &off, "]");
+      string_concatc(dup, len, &off, ']');
     }
-  string_concat(dup, len, &off, "}");
+  string_concatc(dup, len, &off, '}');
   assert(off+1 == len);
 
   if(rxs != NULL) free(rxs);
@@ -323,7 +323,7 @@ static char *node_tostr(const scamper_tracelb_node_t *node)
     string_concat3(buf, sizeof(buf), &off, ", \"name\":\"",
 		   json_esc(node->name, tmp, sizeof(tmp)), "\"");
   if(SCAMPER_TRACELB_NODE_QTTL(node))
-    string_concaf(buf, sizeof(buf), &off, ", \"q_ttl\":%u", node->q_ttl);
+    string_concat_u8(buf, sizeof(buf), &off, ", \"q_ttl\":", node->q_ttl);
   string_concaf(buf, sizeof(buf), &off, ", \"linkc\":%u, \"links\":[",
 		node->linkc);
 
@@ -339,23 +339,30 @@ static char *node_tostr(const scamper_tracelb_node_t *node)
       for(j=0; j<node->linkc; j++)
 	{
 	  link = node->links[j];
-	  scamper_addr_tostr(link->to->addr, tmp, sizeof(tmp));
 	  off = 0;
-	  if(j > 0) string_concat(buf, sizeof(buf), &off, ",");
-	  string_concat3(buf, sizeof(buf), &off, "{\"addr\":\"", tmp,
-			 "\", \"probes\":[");
+	  if(j > 0) string_concatc(buf, sizeof(buf), &off, ',');
+	  string_concatc(buf, sizeof(buf), &off, '{');
+	  if(link->to != NULL && link->to->addr != NULL)
+	    {
+	      scamper_addr_tostr(link->to->addr, tmp, sizeof(tmp));
+	      string_concat3(buf, sizeof(buf), &off, "\"addr\":\"",
+			     tmp, "\", ");
+	    }
+	  string_concat(buf, sizeof(buf), &off, "\"probes\":[");
 	  if(strlist_add(&tail, buf, &len) != 0)
 	    goto err;
-
-	  for(k=0; k<link->sets[0]->probec; k++)
+	  if(link->sets != NULL && link->sets[0] != NULL)
 	    {
-	      if(k > 0 && strlist_add(&tail, ",", &len) != 0)
-		goto err;
-	      probe = link->sets[0]->probes[k];
-	      dup = probe_tostr(probe, link->to->addr);
-	      if(strlist_add(&tail, dup, &len) != 0)
-		goto err;
-	      free(dup); dup = NULL;
+	      for(k=0; k<link->sets[0]->probec; k++)
+		{
+		  if(k > 0 && strlist_add(&tail, ",", &len) != 0)
+		    goto err;
+		  probe = link->sets[0]->probes[k];
+		  dup = probe_tostr(probe, link->to->addr);
+		  if(strlist_add(&tail, dup, &len) != 0)
+		    goto err;
+		  free(dup); dup = NULL;
+		}
 	    }
 	  if(strlist_add(&tail, "]}", &len) != 0)
 	    goto err;
@@ -373,8 +380,8 @@ static char *node_tostr(const scamper_tracelb_node_t *node)
 	    return NULL;
 
 	  off = 0;
-	  if(j > 0) string_concat(buf, sizeof(buf), &off, ",");
-	  string_concat(buf, sizeof(buf), &off, "[");
+	  if(j > 0) string_concatc(buf, sizeof(buf), &off, ',');
+	  string_concatc(buf, sizeof(buf), &off, '[');
 	  if(strlist_add(&tail, buf, &len) != 0)
 	    goto err;
 	  if((dup = probeset_summary_tojson(sum, set)) == NULL)
@@ -467,7 +474,6 @@ char *scamper_tracelb_tojson(const scamper_tracelb_t *trace, size_t *len_out)
   nodec = 0;
   if(trace->nodec > 0)
     {
-      len += 12; /* , "nodes":[] */
       if((nodes = malloc_zero(sizeof(char *) * trace->nodec)) == NULL)
 	goto cleanup;
       for(i=0; i<trace->nodec; i++)
@@ -482,6 +488,9 @@ char *scamper_tracelb_tojson(const scamper_tracelb_t *trace, size_t *len_out)
 	}
     }
 
+  if(nodec > 0)
+    len += 12; /* , "nodes":[] */
+
   len += 3; /* {}\0 */
   if((str = malloc_zero(len)) == NULL)
     goto cleanup;
@@ -493,12 +502,12 @@ char *scamper_tracelb_tojson(const scamper_tracelb_t *trace, size_t *len_out)
       string_concat(str, len, &off, ", \"nodes\":[");
       for(i=0; i<nodec; i++)
 	{
-	  if(i > 0) string_concat(str, len, &off, ",");
+	  if(i > 0) string_concatc(str, len, &off, ',');
 	  string_concat(str, len, &off, nodes[i]);
 	}
-      string_concat(str, len, &off, "]");
+      string_concatc(str, len, &off, ']');
     }
-  string_concat(str, len, &off, "}");
+  string_concatc(str, len, &off, '}');
   assert(off+1 == len);
   rc = 0;
 

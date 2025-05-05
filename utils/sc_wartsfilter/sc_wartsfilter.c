@@ -1,7 +1,7 @@
 /*
  * sc_wartsfilter
  *
- * $Id: sc_wartsfilter.c,v 1.21 2023/05/29 21:22:27 mjl Exp $
+ * $Id: sc_wartsfilter.c,v 1.23 2025/05/01 02:58:04 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -476,9 +476,9 @@ static void process_tbit(scamper_tbit_t *tbit)
 
 static void process_trace(scamper_trace_t *trace)
 {
-  const scamper_trace_hop_t *hop;
+  scamper_trace_hopiter_t *hi = NULL;
+  const scamper_trace_reply_t *reply;
   scamper_addr_t *addr;
-  uint16_t i, hop_count;
 
   if(addrc == 0)
     {
@@ -494,23 +494,21 @@ static void process_trace(scamper_trace_t *trace)
 
   if(check_hops != 0)
     {
-      hop_count = scamper_trace_hop_count_get(trace);
-      for(i=0; i<hop_count; i++)
+      if((hi = scamper_trace_hopiter_alloc()) == NULL)
+	goto done;
+      while((reply = scamper_trace_hopiter_next(trace, hi)) != NULL)
 	{
-	  for(hop = scamper_trace_hop_get(trace, i); hop != NULL;
-	      hop = scamper_trace_hop_next_get(hop))
+	  addr = scamper_trace_reply_addr_get(reply);
+	  if(addr_matched(addr) != 0)
 	    {
-	      addr = scamper_trace_hop_addr_get(hop);
-	      if(addr_matched(addr) != 0)
-		{
-		  scamper_file_write_trace(outfile, trace, NULL);
-		  goto done;
-		}
+	      scamper_file_write_trace(outfile, trace, NULL);
+	      goto done;
 	    }
 	}
     }
 
  done:
+  if(hi != NULL) scamper_trace_hopiter_free(hi);
   scamper_trace_free(trace);
   return;
 }

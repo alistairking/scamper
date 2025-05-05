@@ -1,7 +1,7 @@
 /*
  * scamper_do_sting.c
  *
- * $Id: scamper_sting_do.c,v 1.62 2024/11/30 01:43:32 mjl Exp $
+ * $Id: scamper_sting_do.c,v 1.63 2025/04/27 00:49:24 mjl Exp $
  *
  * Copyright (C) 2008-2011 The University of Waikato
  * Copyright (C) 2012      The Regents of the University of California
@@ -36,6 +36,7 @@
 #include "internal.h"
 
 #include "scamper.h"
+#include "scamper_config.h"
 #include "scamper_debug.h"
 #include "scamper_addr.h"
 #include "scamper_list.h"
@@ -89,6 +90,9 @@ static const uint8_t MODE_RST    = 7;
 
 /* the callback functions registered with the sting task */
 static scamper_task_funcs_t sting_funcs;
+
+/* running scamper configuration */
+extern scamper_config_t *config;
 
 static scamper_sting_t *sting_getdata(const scamper_task_t *task)
 {
@@ -815,6 +819,11 @@ scamper_task_t *scamper_do_sting_alloctask(void *data,
 uint32_t scamper_do_sting_userid(void *data)
 {
   return ((scamper_sting_t *)data)->userid;
+}
+
+int scamper_do_sting_enabled(void)
+{
+  return config->sting_enable;
 }
 
 void scamper_do_sting_cleanup(void)

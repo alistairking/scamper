@@ -1,7 +1,7 @@
 /*
  * unit_cmd_dealias : unit tests for dealias commands
  *
- * $Id: unit_cmd_dealias.c,v 1.29 2024/03/04 19:36:41 mjl Exp $
+ * $Id: unit_cmd_dealias.c,v 1.30 2025/05/02 04:39:00 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -791,7 +791,7 @@ int main(int argc, char *argv[])
 	{
 	  snprintf(filename, sizeof(filename),
 		   "%s/dealias-%03x.txt", argv[2], (int)i);
-	  if(dump_cmd(tests[i].cmd, filename) != 0)
+	  if(dump_string(tests[i].cmd, filename) != 0)
 	    break;
 	}
     }

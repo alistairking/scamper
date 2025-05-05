@@ -21,7 +21,7 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
- * $Id: sc_tbitpmtud.c,v 1.41 2025/02/07 16:52:31 mjl Exp $
+ * $Id: sc_tbitpmtud.c,v 1.42 2025/04/21 03:24:13 mjl Exp $
  */
 
 #ifdef HAVE_CONFIG_H
@@ -1532,7 +1532,7 @@ static int do_ip2as(void)
 static char *percentage(char *buf, size_t len, uint32_t a, uint32_t x)
 {
   size_t off = 0;
-  if(x == 0) string_concat(buf, len, &off, "-");
+  if(x == 0) string_concatc(buf, len, &off, '-');
   else if(a == x) string_concat(buf, len, &off, "100%");
   else string_concaf(buf, len, &off, "%.1f%%", (float)(a * 100) / x);
   return buf;

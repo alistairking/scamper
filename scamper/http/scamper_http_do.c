@@ -1,7 +1,7 @@
 /*
  * scamper_http_do.c
  *
- * $Id: scamper_http_do.c,v 1.20 2025/02/07 16:38:51 mjl Exp $
+ * $Id: scamper_http_do.c,v 1.21 2025/04/27 00:49:24 mjl Exp $
  *
  * Copyright (C) 2023-2024 The Regents of the University of California
  * Copyright (C) 2024      Matthew Luckie
@@ -29,6 +29,7 @@
 #include "internal.h"
 
 #include "scamper.h"
+#include "scamper_config.h"
 #include "scamper_addr.h"
 #include "scamper_addr_int.h"
 #include "scamper_list.h"
@@ -57,6 +58,9 @@ extern scamper_addrcache_t *addrcache;
 #ifdef HAVE_OPENSSL
 extern SSL_CTX *default_tls_ctx;
 #endif
+
+/* running scamper configuration */
+extern scamper_config_t *config;
 
 typedef struct http_state
 {
@@ -842,6 +846,11 @@ scamper_task_t *scamper_do_http_alloctask(void *data,
 uint32_t scamper_do_http_userid(void *data)
 {
   return ((scamper_http_t *)data)->userid;
+}
+
+int scamper_do_http_enabled(void)
+{
+  return config->http_enable;
 }
 
 void scamper_do_http_cleanup(void)

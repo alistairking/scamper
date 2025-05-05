@@ -1,7 +1,7 @@
 /*
  * scamper_rtsock: code to deal with a route socket or equivalent
  *
- * $Id: scamper_rtsock.c,v 1.102 2025/03/29 18:46:03 mjl Exp $
+ * $Id: scamper_rtsock.c,v 1.103 2025/04/21 03:24:13 mjl Exp $
  *
  *          Matthew Luckie
  *
@@ -194,7 +194,7 @@ static void rtmsg_dump(const uint8_t *buf, size_t len)
 	}
 
       if(k != 0 && (k % 4) == 0)
-	string_concat(str, sizeof(str), &off, " ");
+	string_concatc(str, sizeof(str), &off, ' ');
       string_concaf(str, sizeof(str), &off, "%02x", buf[i]);
       k++;
     }

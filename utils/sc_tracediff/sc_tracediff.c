@@ -1,7 +1,7 @@
 /*
  * sc_tracediff
  *
- * $Id: sc_tracediff.c,v 1.20 2024/12/31 04:17:31 mjl Exp $
+ * $Id: sc_tracediff.c,v 1.24 2025/05/01 02:58:04 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -108,6 +108,15 @@ static int check_options(int argc, char *argv[])
   return 0;
 }
 
+static scamper_trace_reply_t *trace_reply_get(const scamper_trace_t *trace,
+					      uint8_t i)
+{
+  scamper_trace_probettl_t *pttl;
+  if(i == 255 || (pttl = scamper_trace_probettl_get(trace, i+1)) == NULL)
+    return NULL;
+  return scamper_trace_probettl_reply_get(pttl);
+}
+
 static char *addr_toname(const scamper_addr_t *addr, char *buf, size_t len)
 {
   const void *va = scamper_addr_addr_get(addr);
@@ -140,7 +149,7 @@ static char *addr_toname(const scamper_addr_t *addr, char *buf, size_t len)
 static char *hop_tostr(const scamper_trace_t *trace, int i,
 		       char *buf, size_t *len_out)
 {
-  const scamper_trace_hop_t *hop;
+  const scamper_trace_reply_t *hop;
   scamper_addr_t *hop_addr;
   char addr[128];
   size_t len = *len_out, off = 0;
@@ -149,31 +158,31 @@ static char *hop_tostr(const scamper_trace_t *trace, int i,
   if(i < scamper_trace_firsthop_get(trace)-1 ||
      scamper_trace_hop_count_get(trace) <= i)
     {
-      string_concat(buf, len, &off, "-");
+      string_concatc(buf, len, &off, '-');
       goto done;
     }
-  else if((hop = scamper_trace_hop_get(trace, i)) == NULL)
+  else if((hop = trace_reply_get(trace, i)) == NULL)
     {
-      string_concat(buf, len, &off, "*");
+      string_concatc(buf, len, &off, '*');
       goto done;
     }
 
-  hop_addr = scamper_trace_hop_addr_get(hop);
+  hop_addr = scamper_trace_reply_addr_get(hop);
   if((options & OPT_NAMES) == 0 ||
      addr_toname(hop_addr, addr, sizeof(addr)) == NULL)
     scamper_addr_tostr(hop_addr, addr, sizeof(addr));
 
   string_concat(buf, len, &off, addr);
 
-  if(scamper_trace_hop_is_icmp_ttl_exp(hop) ||
-     scamper_trace_hop_is_icmp_echo_reply(hop) ||
-     scamper_trace_hop_is_tcp(hop))
+  if(scamper_trace_reply_is_icmp_ttl_exp(hop) ||
+     scamper_trace_reply_is_icmp_echo_reply(hop) ||
+     scamper_trace_reply_is_tcp(hop))
     {
       goto done;
     }
 
-  icmp_type = scamper_trace_hop_icmp_type_get(hop);
-  icmp_code = scamper_trace_hop_icmp_code_get(hop);
+  icmp_type = scamper_trace_reply_icmp_type_get(hop);
+  icmp_code = scamper_trace_reply_icmp_code_get(hop);
   if(scamper_addr_isipv4(hop_addr))
     {
       if(icmp_type == ICMP_UNREACH)
@@ -382,7 +391,7 @@ static void tracepair_dump(const tracepair_t *pair)
 
 static int tracepair_isdiff(const tracepair_t *pair)
 {
-  const scamper_trace_hop_t *a_hop, *b_hop;
+  const scamper_trace_reply_t *a_hop, *b_hop;
   scamper_trace_t *a = pair->traces[0];
   scamper_trace_t *b = pair->traces[1];
   scamper_trace_t *x = NULL;
@@ -398,10 +407,10 @@ static int tracepair_isdiff(const tracepair_t *pair)
 
   for(i=0; i<hopc; i++)
     {
-      if((a_hop = scamper_trace_hop_get(a, i)) == NULL ||
-	 (b_hop = scamper_trace_hop_get(b, i)) == NULL)
+      if((a_hop = trace_reply_get(a, i)) == NULL ||
+	 (b_hop = trace_reply_get(b, i)) == NULL)
 	continue;
-      if(scamper_trace_hop_addr_cmp(a_hop, b_hop) != 0)
+      if(scamper_trace_reply_addr_cmp(a_hop, b_hop) != 0)
 	return 1;
     }
 
@@ -414,7 +423,7 @@ static int tracepair_isdiff(const tracepair_t *pair)
     {
       x_hopc = scamper_trace_hop_count_get(x);
       for(i=hopc; i<x_hopc; i++)
-	if(scamper_trace_hop_get(x, i) != NULL)
+	if(trace_reply_get(x, i) != NULL)
 	  return 1;
     }
 

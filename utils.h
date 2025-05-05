@@ -1,7 +1,7 @@
 /*
  * utils.h
  *
- * $Id: utils.h,v 1.173 2025/03/29 07:39:33 mjl Exp $
+ * $Id: utils.h,v 1.174 2025/04/20 07:29:14 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -198,10 +198,10 @@ const char *addr_tostr(int af, const void *addr, char *buf, size_t len)
 /*
  * Functions for dealing with sockaddr addresses
  */
-int sockaddr_compose(struct sockaddr *sa, int af, const void *addr, int port);
+int sockaddr_compose(struct sockaddr *sa, int af, const void *addr, uint16_t port);
 int sockaddr_compose_un(struct sockaddr *sa, const char *name)
   ATTRIBUTE_NONNULL;
-int sockaddr_compose_str(struct sockaddr *sa, int af, const char *ip, int port)
+int sockaddr_compose_str(struct sockaddr *sa, int af, const char *ip, uint16_t port)
   ATTRIBUTE_NONNULL;
 int sockaddr_len(const struct sockaddr *sa)
   ATTRIBUTE_NONNULL_PURE;
@@ -283,10 +283,11 @@ void string_byte2hex(char *str, size_t len, size_t *off,
 
 const char *string_findlc(const char *str, const char *find)
   ATTRIBUTE_NONNULL_PURE;
-int   string_addrport(const char *in, char **addr, int *port)
+
+int string_addrport(const char *in, char **addr, uint16_t *port)
   ATTRIBUTE_NONNULL;
-int   string_endswith(const char *in, const char *ending)
-  ATTRIBUTE_NONNULL_PURE;
+
+int string_endswith(const char *in, const char *ending) ATTRIBUTE_NONNULL_PURE;
 
 #ifndef NDEBUG
 int string_isdash(const char *str) ATTRIBUTE_NONNULL_PURE;

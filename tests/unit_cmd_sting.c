@@ -1,7 +1,7 @@
 /*
  * unit_cmd_sting : unit tests for sting commands
  *
- * $Id: unit_cmd_sting.c,v 1.4 2024/02/13 04:59:48 mjl Exp $
+ * $Id: unit_cmd_sting.c,v 1.5 2025/05/02 04:39:00 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -143,7 +143,7 @@ int main(int argc, char *argv[])
 	{
 	  snprintf(filename, sizeof(filename),
 		   "%s/sting-%03x.txt", argv[2], (int)i);
-	  if(dump_cmd(tests[i].cmd, filename) != 0)
+	  if(dump_string(tests[i].cmd, filename) != 0)
 	    break;
 	}
     }

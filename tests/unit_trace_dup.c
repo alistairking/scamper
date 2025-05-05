@@ -1,7 +1,7 @@
 /*
  * unit_trace_dup : unit tests for trace dup functions
  *
- * $Id: unit_trace_dup.c,v 1.1 2025/02/13 04:56:22 mjl Exp $
+ * $Id: unit_trace_dup.c,v 1.3 2025/04/20 07:31:29 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -36,27 +36,24 @@
 #include "mjl_list.h"
 #include "utils.h"
 
-typedef scamper_trace_t * (*test_func_t)(void);
-
 int main(int argc, char *argv[])
 {
-  static test_func_t tests[] = {
-    trace_1,
-  };
-  size_t i, testc = sizeof(tests) / sizeof(test_func_t);
   scamper_trace_t *in, *out;
+  size_t i, makerc;
 
 #ifdef DMALLOC
   unsigned long start_mem, stop_mem;
 #endif
 
-  for(i=0; i<testc; i++)
+  makerc = trace_makerc();
+
+  for(i=0; i<makerc; i++)
     {
 #ifdef DMALLOC
       dmalloc_get_stats(NULL, NULL, NULL, NULL, &start_mem, NULL, NULL, NULL, NULL);
 #endif
 
-      if((in = tests[i]()) == NULL)
+      if((in = trace_makers(i)) == NULL)
 	{
 	  printf("could not create trace %d\n", (int)i);
 	  return -1;

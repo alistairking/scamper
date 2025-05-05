@@ -1,7 +1,7 @@
 /*
  * sc_wartsdump
  *
- * $Id: sc_wartsdump.c,v 1.310 2025/03/16 21:15:27 mjl Exp $
+ * $Id: sc_wartsdump.c,v 1.317 2025/05/05 03:34:49 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -168,9 +168,10 @@ static void dump_wait(const char *label, const struct timeval *tv)
 }
 
 static void dump_trace_hop(const scamper_trace_t *trace,
-			   const scamper_trace_hop_t *hop)
+			   const scamper_trace_probe_t *probe,
+			   const scamper_trace_reply_t *hop)
 {
-  scamper_addr_t *hop_addr = scamper_trace_hop_addr_get(hop);
+  scamper_addr_t *hop_addr = scamper_trace_reply_addr_get(hop);
   const struct timeval *start, *tx, *rtt;
   const scamper_icmpexts_t *exts;
   const scamper_icmpext_t *ie;
@@ -182,62 +183,61 @@ static void dump_trace_hop(const scamper_trace_t *trace,
   char buf[256];
   char *comma = "";
 
-  printf("hop %2d  %s", scamper_trace_hop_probe_ttl_get(hop),
+  printf("hop %2d  %s", scamper_trace_probe_ttl_get(probe),
 	 scamper_addr_tostr(hop_addr, buf, sizeof(buf)));
-  if((str = scamper_trace_hop_name_get(hop)) != NULL)
+  if((str = scamper_trace_reply_name_get(hop)) != NULL)
     printf(" name %s", str);
   printf("\n");
 
-  printf(" attempt: %d", scamper_trace_hop_probe_id_get(hop));
-  tx = scamper_trace_hop_tx_get(hop);
+  printf(" attempt: %d", scamper_trace_probe_id_get(probe));
+  tx = scamper_trace_probe_tx_get(probe);
   if(tx->tv_sec != 0)
     {
       start = scamper_trace_start_get(trace);
       timeval_diff_tv(&tv, start, tx);
       printf(", tx: %d.%06ds", (int)tv.tv_sec, (int)tv.tv_usec);
     }
-  rtt = scamper_trace_hop_rtt_get(hop);
+  rtt = scamper_trace_reply_rtt_get(hop);
   printf(", rtt: %d.%06ds, probe-size: %d\n",
 	 (int)rtt->tv_sec, (int)rtt->tv_usec,
-	 scamper_trace_hop_probe_size_get(hop));
+	 scamper_trace_probe_size_get(probe));
 
-  hop_flags = scamper_trace_hop_flags_get(hop);
-  if(hop_flags & SCAMPER_TRACE_HOP_FLAG_REPLY_TTL)
+  hop_flags = scamper_trace_reply_flags_get(hop);
+  if(hop_flags & SCAMPER_TRACE_REPLY_FLAG_REPLY_TTL)
     {
-      printf("%s reply-ttl: %d", comma, scamper_trace_hop_reply_ttl_get(hop));
+      printf("%s reply-ttl: %d", comma, scamper_trace_reply_ttl_get(hop));
       comma = ",";
     }
 
   if((scamper_trace_flags_get(trace) & SCAMPER_TRACE_FLAG_RXERR) == 0)
     {
-      printf("%s reply-size: %d", comma, scamper_trace_hop_reply_size_get(hop));
+      printf("%s reply-size: %d", comma, scamper_trace_reply_size_get(hop));
       comma = ",";
       if(scamper_addr_isipv4(hop_addr))
-	printf("%s reply-ipid: 0x%04x", comma,
-	       scamper_trace_hop_reply_ipid_get(hop));
+	printf(", reply-ipid: 0x%04x", scamper_trace_reply_ipid_get(hop));
     }
 
-  printf("%s reply-tos: 0x%02x\n", comma, scamper_trace_hop_reply_tos_get(hop));
+  printf("%s reply-tos: 0x%02x\n", comma, scamper_trace_reply_tos_get(hop));
 
-  if(scamper_trace_hop_is_icmp(hop))
+  if(scamper_trace_reply_is_icmp(hop))
     {
       printf(" icmp-type: %d, icmp-code: %d",
-	     scamper_trace_hop_icmp_type_get(hop),
-	     scamper_trace_hop_icmp_code_get(hop));
-      if(scamper_trace_hop_is_icmp_q(hop))
+	     scamper_trace_reply_icmp_type_get(hop),
+	     scamper_trace_reply_icmp_code_get(hop));
+      if(scamper_trace_reply_is_icmp_q(hop))
 	{
 	  printf(", q-ttl: %d, q-len: %d, q-tos %d",
-		 scamper_trace_hop_icmp_q_ttl_get(hop),
-		 scamper_trace_hop_icmp_q_ipl_get(hop),
-		 scamper_trace_hop_icmp_q_tos_get(hop));
+		 scamper_trace_reply_icmp_q_ttl_get(hop),
+		 scamper_trace_reply_icmp_q_ipl_get(hop),
+		 scamper_trace_reply_icmp_q_tos_get(hop));
 	}
-      if(scamper_trace_hop_is_icmp_ptb(hop))
-	printf(", nhmtu: %d", scamper_trace_hop_icmp_nhmtu_get(hop));
+      if(scamper_trace_reply_is_icmp_ptb(hop))
+	printf(", nhmtu: %d", scamper_trace_reply_icmp_nhmtu_get(hop));
       printf("\n");
     }
-  else if(scamper_trace_hop_is_tcp(hop))
+  else if(scamper_trace_reply_is_tcp(hop))
     {
-      u8 = scamper_trace_hop_tcp_flags_get(hop);
+      u8 = scamper_trace_reply_tcp_flags_get(hop);
       printf(" tcp-flags: 0x%02x", u8);
       dump_tcp_flags(u8);
       printf("\n");
@@ -247,19 +247,19 @@ static void dump_trace_hop(const scamper_trace_t *trace,
   if(hop_flags != 0)
     {
       printf(" (");
-      if(hop_flags & SCAMPER_TRACE_HOP_FLAG_TS_SOCK_RX)
+      if(hop_flags & SCAMPER_TRACE_REPLY_FLAG_TS_SOCK_RX)
 	printf(" sockrxts");
-      if(hop_flags & SCAMPER_TRACE_HOP_FLAG_TS_DL_TX)
+      if(hop_flags & SCAMPER_TRACE_REPLY_FLAG_TS_DL_TX)
 	printf(" dltxts");
-      if(hop_flags & SCAMPER_TRACE_HOP_FLAG_TS_DL_RX)
+      if(hop_flags & SCAMPER_TRACE_REPLY_FLAG_TS_DL_RX)
 	printf(" dlrxts");
-      if(hop_flags & SCAMPER_TRACE_HOP_FLAG_REPLY_TTL)
+      if(hop_flags & SCAMPER_TRACE_REPLY_FLAG_REPLY_TTL)
 	printf(" replyttl");
       printf(" )");
     }
   printf("\n");
 
-  if((exts = scamper_trace_hop_icmp_exts_get(hop)) != NULL)
+  if((exts = scamper_trace_reply_icmp_exts_get(hop)) != NULL)
     {
       for(i=0; i<scamper_icmpexts_count_get(exts); i++)
 	{
@@ -285,10 +285,13 @@ static void dump_trace_hop(const scamper_trace_t *trace,
 
 static void dump_trace(scamper_trace_t *trace)
 {
-  const scamper_trace_hop_t *hop;
+  scamper_trace_hopiter_t *hi = NULL;
+  const scamper_trace_probe_t *probe;
+  const scamper_trace_reply_t *hop;
   const scamper_trace_dtree_t *dt;
+  const scamper_trace_lastditch_t *ld;
   const scamper_trace_pmtud_t *pmtud;
-  const scamper_trace_pmtud_n_t *n;
+  const scamper_trace_pmtud_note_t *n;
   const struct timeval *tv;
   scamper_addr_t *addr, *dst;
   const char *str;
@@ -296,6 +299,9 @@ static void dump_trace(scamper_trace_t *trace)
   uint16_t u16, sport, dport, hop_count;
   uint8_t u8, stop_reason, stop_data, notec, n_type;
   char buf[256];
+
+  if((hi = scamper_trace_hopiter_alloc()) == NULL)
+    return;
 
   dst = scamper_trace_dst_get(trace);
 
@@ -473,15 +479,23 @@ static void dump_trace(scamper_trace_t *trace)
     }
   printf("\n");
 
-  for(u16=0; u16<hop_count; u16++)
-    for(hop = scamper_trace_hop_get(trace, u16); hop != NULL;
-	hop = scamper_trace_hop_next_get(hop))
-      dump_trace_hop(trace, hop);
+  scamper_trace_hopiter_reset(hi);
+  while((hop = scamper_trace_hopiter_next(trace, hi)) != NULL)
+    {
+      probe = scamper_trace_hopiter_probe_get(hi);
+      dump_trace_hop(trace, probe, hop);
+    }
 
   /* dump any last-ditch probing hops */
-  for(hop = scamper_trace_lastditch_get(trace); hop != NULL;
-      hop = scamper_trace_hop_next_get(hop))
-    dump_trace_hop(trace, hop);
+  if((ld = scamper_trace_lastditch_get(trace)) != NULL)
+    {
+      scamper_trace_hopiter_reset(hi);
+      while((hop = scamper_trace_lastditch_hopiter_next(ld, hi)) != NULL)
+	{
+	  probe = scamper_trace_hopiter_probe_get(hi);
+	  dump_trace_hop(trace, probe, hop);
+	}
+    }
 
   if((pmtud = scamper_trace_pmtud_get(trace)) != NULL)
     {
@@ -497,36 +511,54 @@ static void dump_trace(scamper_trace_t *trace)
       for(u8=0; u8<notec; u8++)
 	{
 	  n = scamper_trace_pmtud_note_get(pmtud, u8);
-	  hop = scamper_trace_pmtud_n_hop_get(n);
+	  probe = scamper_trace_pmtud_note_probe_get(n);
+	  hop = scamper_trace_pmtud_note_reply_get(n);
 	  printf(" note %d: nhmtu %d, ", u8,
-		 scamper_trace_pmtud_n_nhmtu_get(n));
+		 scamper_trace_pmtud_note_nhmtu_get(n));
 
 	  if(hop != NULL)
-	    scamper_addr_tostr(scamper_trace_hop_addr_get(hop),buf,sizeof(buf));
+	    scamper_addr_tostr(scamper_trace_reply_addr_get(hop),
+			       buf, sizeof(buf));
 	  else
 	    buf[0] = '\0';
 
-	  n_type = scamper_trace_pmtud_n_type_get(n);
-	  if(n_type == SCAMPER_TRACE_PMTUD_N_TYPE_PTB)
-	    printf("ptb %s", buf);
-	  else if(n_type == SCAMPER_TRACE_PMTUD_N_TYPE_PTB_BAD && hop != NULL)
-	    printf("ptb-bad %s mtu %d", buf,
-		   scamper_trace_hop_icmp_nhmtu_get(hop));
-	  else if(n_type == SCAMPER_TRACE_PMTUD_N_TYPE_SILENCE)
-	    printf("silence > ttl %d",
-		   hop != NULL ? scamper_trace_hop_probe_ttl_get(hop) : 0);
-	  else
-	    printf("type-%d", n_type);
+	  n_type = scamper_trace_pmtud_note_type_get(n);
+	  switch(n_type)
+	    {
+	    case SCAMPER_TRACE_PMTUD_NOTE_TYPE_PTB:
+	      printf("ptb %s", buf);
+	      break;
+
+	    case SCAMPER_TRACE_PMTUD_NOTE_TYPE_PTB_BAD:
+	      if(hop != NULL)
+		printf("ptb-bad %s mtu %d", buf,
+		       scamper_trace_reply_icmp_nhmtu_get(hop));
+	      break;
+
+	    case SCAMPER_TRACE_PMTUD_NOTE_TYPE_SILENCE:
+	      printf("silence > ttl %d",
+		     probe != NULL ? scamper_trace_probe_ttl_get(probe) : 0);
+	      break;
+
+	    default:
+	      printf("type-%d", n_type);
+	      break;
+	    }
 	  printf("\n");
 	}
-      for(hop = scamper_trace_pmtud_hops_get(pmtud); hop != NULL;
-	  hop = scamper_trace_hop_next_get(hop))
-	dump_trace_hop(trace, hop);
+
+      scamper_trace_hopiter_reset(hi);
+      while((hop = scamper_trace_pmtud_hopiter_next(pmtud, hi)) != NULL)
+	{
+	  probe = scamper_trace_hopiter_probe_get(hi);
+	  dump_trace_hop(trace, probe, hop);
+	}
     }
 
   printf("\n");
 
   scamper_trace_free(trace);
+  scamper_trace_hopiter_free(hi);
 
   return;
 }
@@ -828,9 +860,12 @@ static void dump_ping_reply(const scamper_ping_t *ping,
 
   if(scamper_ping_reply_is_icmp(reply))
     {
-      printf(" icmp type: %d, code: %d\n",
+      printf(" icmp type: %d, code: %d",
 	     scamper_ping_reply_icmp_type_get(reply),
 	     scamper_ping_reply_icmp_code_get(reply));
+      if(scamper_ping_reply_is_icmp_ptb(reply))
+	printf(", nhmtu: %d", scamper_ping_reply_icmp_nhmtu_get(reply));
+      printf("\n");
     }
   else if(scamper_ping_reply_is_tcp(reply))
     {
@@ -902,7 +937,7 @@ static void dump_ping(scamper_ping_t *ping)
 {
   static const char *flagstr[] = {
     "v4rr", "spoof", "payload", "tsonly", "tsandaddr", "icmpsum", "dl", "tbt",
-    "nosrc", "raw", "sockrx"
+    "nosrc", "raw", "sockrx", "dltx"
   };
   const scamper_ping_probe_t *probe;
   const scamper_ping_reply_t *reply;
@@ -1824,11 +1859,14 @@ static void dump_tbit(scamper_tbit_t *tbit)
 
 		  string_concat(sack, sizeof(sack), &soff, " {");
 		  for(u16=0; u16<(tmp[1]-2)/8; u16++)
-		    string_concaf(sack, sizeof(sack), &soff, "%s%u:%u",
-				  u16 != 0 ? "," : "",
-				  bytes_ntohl(tmp+2+(u16*8)) - u32,
-				  bytes_ntohl(tmp+2+(u16*8)+4) - u32);
-		  string_concat(sack, sizeof(sack), &soff, "}");
+		    {
+		      string_concat_u32(sack, sizeof(sack), &soff,
+					u16 != 0 ? "," : "",
+					bytes_ntohl(tmp+2+(u16*8)) - u32);
+		      string_concat_u32(sack, sizeof(sack), &soff, ":",
+					bytes_ntohl(tmp+2+(u16*8)+4) - u32);
+		    }
+		  string_concatc(sack, sizeof(sack), &soff, '}');
 		}
 
 	      u8 += tmp[1];
@@ -1850,11 +1888,14 @@ static void dump_tbit(scamper_tbit_t *tbit)
 
 	  printf("%-13s %4d%s", tfstr, len, frag != 0 ? "F" : " ");
 	  soff = 0;
-	  string_concaf(buf, sizeof(buf), &soff, " %u", seq);
+	  string_concat_u32(buf, sizeof(buf), &soff, " ", seq);
 	  if(flags & TH_ACK)
-	    string_concaf(buf, sizeof(buf), &soff, ":%u", ack);
+	    string_concat_u32(buf, sizeof(buf), &soff, ":", ack);
 	  if(datalen != 0)
-	    string_concaf(buf, sizeof(buf), &soff, "(%d)", datalen);
+	    {
+	      string_concat_u16(buf, sizeof(buf), &soff, "(", datalen);
+	      string_concatc(buf, sizeof(buf), &soff, ')');
+	    }
 	  printf("%-17s%s", buf, ipid);
 	  if(frag != 0) printf("%s", fstr);
 	  if(datalen > 0 && (pkt_data[0] >> 4) == 4 && pkt_data[6] & 0x40)

@@ -4,10 +4,11 @@
  * Copyright (C) 2010-2011 The University of Waikato
  * Copyright (C) 2012-2014 The Regents of the University of California
  * Copyright (C) 2016-2023 Matthew Luckie
+ * Copyright (C) 2025      The Regents of the University of California
  *
  * Author: Matthew Luckie
  *
- * $Id: scamper_sting_warts.c,v 1.17 2023/12/24 00:03:21 mjl Exp $
+ * $Id: scamper_sting_warts.c,v 1.18 2025/04/22 01:41:43 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -37,6 +38,8 @@
 #include "scamper_file.h"
 #include "scamper_file_warts.h"
 #include "scamper_sting_warts.h"
+
+#include "mjl_list.h"
 #include "utils.h"
 
 #define WARTS_STING_LIST      1
@@ -354,11 +357,13 @@ int scamper_file_warts_sting_read(scamper_file_t *sf, const warts_hdr_t *hdr,
 				 scamper_sting_t **sting_out)
 {
   scamper_sting_t *sting = NULL;
+  scamper_sting_pkt_t *pkt = NULL;
   warts_addrtable_t *table = NULL;
   warts_state_t *state = scamper_file_getstate(sf);
   uint8_t *buf = NULL;
   uint32_t off = 0;
-  uint32_t i;
+  uint32_t i, pktc;
+  slist_t *list = NULL;
 
   /* Read in the header */
   if(warts_read(sf, &buf, hdr->len) != 0)
@@ -390,24 +395,23 @@ int scamper_file_warts_sting_read(scamper_file_t *sf, const warts_hdr_t *hdr,
   /* Determine how many sting pkts to read */
   if(sting->pktc > 0)
     {
-      /* Allocate the sting pkts array */
-      if(scamper_sting_pkts_alloc(sting, sting->pktc) != 0)
+      pktc = sting->pktc; sting->pktc = 0;
+      if((list = slist_alloc()) == NULL)
+	goto err;
+      for(i=0; i<pktc; i++)
 	{
-	  goto err;
+	  if((pkt = warts_sting_pkt_read(state, buf, &off, hdr->len)) == NULL ||
+	     slist_tail_push(list, pkt) == NULL)
+	    goto err;
+	  pkt = NULL;
 	}
 
-      /*
-       * for each sting packet, read it and insert it into the sting
-       * structure
-       */
-      for(i=0; i<sting->pktc; i++)
-        {
-	  sting->pkts[i] = warts_sting_pkt_read(state, buf, &off, hdr->len);
-	  if(sting->pkts[i] == NULL)
-	    {
-	      goto err;
-	    }
-        }
+      /* Allocate the sting pkts array */
+      if(scamper_sting_pkts_alloc(sting, pktc) != 0)
+	goto err;
+      while((pkt = slist_head_pop(list)) != NULL)
+	sting->pkts[sting->pktc++] = pkt;
+      slist_free(list); list = NULL;
     }
 
   warts_addrtable_free(table);
@@ -416,6 +420,8 @@ int scamper_file_warts_sting_read(scamper_file_t *sf, const warts_hdr_t *hdr,
   return 0;
 
  err:
+  if(list != NULL) slist_free_cb(list, (slist_free_t)scamper_sting_pkt_free);
+  if(pkt != NULL) scamper_sting_pkt_free(pkt);
   if(table != NULL) warts_addrtable_free(table);
   if(buf != NULL) free(buf);
   if(sting != NULL) scamper_sting_free(sting);

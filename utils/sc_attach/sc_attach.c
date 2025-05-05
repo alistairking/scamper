@@ -6,7 +6,7 @@
  *
  * Copyright (C) 2008-2011 The University of Waikato
  * Copyright (C) 2012-2015 Regents of the University of California
- * Copyright (C) 2015-2024 Matthew Luckie
+ * Copyright (C) 2015-2025 Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -21,7 +21,7 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
- * $Id: sc_attach.c,v 1.47 2024/12/31 04:17:31 mjl Exp $
+ * $Id: sc_attach.c,v 1.49 2025/04/21 03:24:13 mjl Exp $
  *
  */
 
@@ -69,7 +69,7 @@ static uint32_t               options       = 0;
 static uint8_t                flags         = 0;
 static char                  *infile_name   = NULL;
 static char                  *dst_addr      = NULL;
-static int                    dst_port      = 0;
+static uint16_t               dst_port      = 0;
 #ifdef HAVE_SOCKADDR_UN
 static char                  *unix_name     = NULL;
 #endif
@@ -238,7 +238,7 @@ static int check_options(int argc, char *argv[])
 #endif
 
 #ifdef PACKAGE_VERSION
-  string_concat(opts, sizeof(opts), &off, "v");
+  string_concatc(opts, sizeof(opts), &off, 'v');
 #endif
 
   while((ch = getopt(argc, argv, opts)) != -1)
@@ -406,7 +406,7 @@ static int command_new(char *line, void *param)
 	return -1;
       string_concat(buf, len, &off, line);
     }
-  string_concat(buf, len, &off, "\n");
+  string_concatc(buf, len, &off, '\n');
 
   if(slist_tail_push(commands, buf) == NULL)
     {
@@ -728,7 +728,7 @@ static int do_scamperconnect(void)
       string_concat(buf, sizeof(buf), &off, "attach");
       if((options & OPT_PRIORITY) != 0)
 	string_concaf(buf, sizeof(buf), &off, " priority %d", priority);
-      string_concat(buf, sizeof(buf), &off, "\n");
+      string_concatc(buf, sizeof(buf), &off, '\n');
       if(scamper_writebuf_send(scamper_wb, buf, off) != 0)
 	{
 	  fprintf(stderr, "%s: could not attach to scamper process: %s\n",

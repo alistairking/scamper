@@ -4,7 +4,7 @@
  * Copyright (C) 2014 The Regents of the University of California
  * Copyright (C) 2023 Matthew Luckie
  *
- * $Id: sc_warts2csv.c,v 1.6 2023/05/13 23:29:58 mjl Exp $
+ * $Id: sc_warts2csv.c,v 1.11 2025/05/01 02:58:04 mjl Exp $
  *
  * Authors: Vaibhav Bajpai, Matthew Luckie
  *
@@ -37,28 +37,19 @@
 static void csv_trace(scamper_trace_t *trace)
 {
   char src[128], dst[128], addr[128], rtt[32], type[32], stop[32];
+  scamper_trace_hopiter_t *hi = NULL;
   const struct timeval *start, *hop_rtt;
-  const scamper_trace_hop_t *hop;
+  const scamper_trace_probe_t *probe;
+  const scamper_trace_reply_t *hop;
   const char *tptr, *sptr;
   scamper_addr_t *hop_addr;
   uint32_t userid;
-  uint16_t hop_count;
   uint8_t firsthop;
-  int i, hopc = 0;
 
   firsthop = scamper_trace_firsthop_get(trace);
-  hop_count = scamper_trace_hop_count_get(trace);
-  for(i=firsthop-1; i<hop_count; i++)
-    {
-      for(hop = scamper_trace_hop_get(trace, i); hop != NULL;
-	  hop = scamper_trace_hop_next_get(hop))
-	{
-	  hopc++;
-	  break;
-	}
-    }
-
-  if(hopc == 0)
+  if((hi = scamper_trace_hopiter_alloc()) == NULL ||
+     scamper_trace_hopiter_ttl_set(hi, firsthop, 0) != 0 ||
+     scamper_trace_hopiter_next(trace, hi) == NULL)
     goto done;
 
   printf("version;userID;timestamp;src;dst;method;stop;ttl;hopaddr;rtt\n");
@@ -70,22 +61,21 @@ static void csv_trace(scamper_trace_t *trace)
   userid = scamper_trace_userid_get(trace);
   start = scamper_trace_start_get(trace);
 
-  for(i=firsthop-1; i<hop_count; i++)
+  scamper_trace_hopiter_ttl_set(hi, firsthop, 0);
+  while((hop = scamper_trace_hopiter_next(trace, hi)) != NULL)
     {
-      for(hop = scamper_trace_hop_get(trace, i); hop != NULL;
-	  hop = scamper_trace_hop_next_get(hop))
-	{
-	  hop_addr = scamper_trace_hop_addr_get(hop);
-	  hop_rtt = scamper_trace_hop_rtt_get(hop);
-	  printf("scamper.%s;%u;%d;%s;%s;%s;%s;%u;%s;%s\n", PACKAGE_VERSION,
-		 userid, (int)start->tv_sec, src, dst, tptr, sptr,
-		 scamper_trace_hop_probe_ttl_get(hop),
-		 scamper_addr_tostr(hop_addr, addr, sizeof(addr)),
-		 timeval_tostr_us(hop_rtt, rtt, sizeof(rtt)));
-	}
+      probe = scamper_trace_hopiter_probe_get(hi);
+      hop_addr = scamper_trace_reply_addr_get(hop);
+      hop_rtt = scamper_trace_reply_rtt_get(hop);
+      printf("scamper.%s;%u;%d;%s;%s;%s;%s;%u;%s;%s\n", PACKAGE_VERSION,
+	     userid, (int)start->tv_sec, src, dst, tptr, sptr,
+	     scamper_trace_probe_ttl_get(probe),
+	     scamper_addr_tostr(hop_addr, addr, sizeof(addr)),
+	     timeval_tostr_us(hop_rtt, rtt, sizeof(rtt)));
     }
 
  done:
+  if(hi != NULL) scamper_trace_hopiter_free(hi);
   scamper_trace_free(trace);
   return;
 }

@@ -10,9 +10,9 @@
 .\" Copyright (c) 2024      The Regents of the University of California
 .\"                         All rights reserved
 .\"
-.\" $Id: scamper.1,v 1.153 2025/04/01 06:59:40 mjl Exp $
+.\" $Id: scamper.1,v 1.154 2025/05/05 04:02:07 mjl Exp $
 .\"
-.Dd April 1, 2025
+.Dd May 5, 2025
 .Dt SCAMPER 1
 .Os
 .\""""""""""""
@@ -32,6 +32,7 @@
 .Op Fl C Ar cycleid
 .Op Fl o Ar outfile
 .Op Fl F Ar firewall
+.Op Fl g Ar configfile
 .Op Fl H Ar holdtime
 .Op Fl n Ar nameserver
 .Op Fl d Ar debugfile
@@ -204,6 +205,8 @@ anchor for
 to use, and <num> specifies the number of rules
 .Nm
 is allowed to use.
+.It Fl g Ar configfile
+specifies the name of a file to load configuration from.
 .It Fl H Ar holdtime
 specifies the length of time, in seconds, to prevent a followup task
 from using the same probe signature as a previous task.
@@ -640,6 +643,9 @@ The current choices for this option are:
 .Sy dl:
 specifies that the datalink socket should be used to timestamp sent
 and received packets.
+.It
+.Sy dltx:
+specifies that a datalink socket should be used to transmit packets.
 .It
 .Sy nosrc:
 specifies that the real address of the host should not be embedded in

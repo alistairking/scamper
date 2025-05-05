@@ -3,10 +3,10 @@
  *
  * Copyright (c) 2013      Matthew Luckie
  * Copyright (c) 2013-2014 The Regents of the University of California
- * Copyright (c) 2022-2024 Matthew Luckie
+ * Copyright (c) 2022-2025 Matthew Luckie
  * Author: Matthew Luckie
  *
- * $Id: scamper_dealias_json.c,v 1.28 2024/12/31 04:17:31 mjl Exp $
+ * $Id: scamper_dealias_json.c,v 1.30 2025/05/03 21:22:34 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -50,14 +50,14 @@ static char *dealias_flags_encode(char *buf, size_t len, uint8_t flags,
   for(i=0; i<8; i++)
     {
       if((u8 = flags & (0x1 << i)) == 0) continue;
-      if(f > 0) string_concat(buf, len, &off, ",");
+      if(f > 0) string_concatc(buf, len, &off, ',');
       if(i < f2sc)
 	string_concat3(buf, len, &off, "\"", f2s[i], "\"");
       else
-	string_concaf(buf, len, &off, "%u", u8);
+	string_concat_u8(buf, len, &off, NULL, u8);
       f++;
     }
-  string_concat(buf, len, &off, "]");
+  string_concatc(buf, len, &off, ']');
 
   return buf;
 }
@@ -75,34 +75,39 @@ static char *dealias_header_tostr(const scamper_dealias_t *dealias)
   char buf[512], tmp[64];
   size_t off = 0;
   uint16_t u16;
+  int x;
 
   string_concat3(buf, sizeof(buf), &off,
 		 "{\"type\":\"dealias\",\"version\":\"0.2\",\"method\":\"",
 		 scamper_dealias_method_tostr(dealias->method,tmp,sizeof(tmp)),
 		 "\"");
-  string_concaf(buf, sizeof(buf), &off, ", \"userid\":%u, \"result\":\"%s\"",
-		dealias->userid,
-		scamper_dealias_result_tostr(dealias->result,tmp,sizeof(tmp)));
-  string_concaf(buf, sizeof(buf), &off,
-		", \"start\":{\"sec\":%ld, \"usec\":%d}",
-		(long)dealias->start.tv_sec, (int)dealias->start.tv_usec);
+  string_concat_u32(buf, sizeof(buf), &off, ", \"userid\":", dealias->userid);
+  scamper_dealias_result_tostr(dealias->result, tmp, sizeof(tmp));
+  string_concat2(buf, sizeof(buf), &off, ", \"result\":\"", tmp);
+  string_concat_u32(buf, sizeof(buf), &off, "\", \"start\":{\"sec\":",
+		    (uint32_t)dealias->start.tv_sec);
+  string_concat_u32(buf, sizeof(buf), &off, ", \"usec\":",
+		    (uint32_t)dealias->start.tv_usec);
+  string_concatc(buf, sizeof(buf), &off, '}');
 
-  if(SCAMPER_DEALIAS_METHOD_IS_MERCATOR(dealias))
+  if(SCAMPER_DEALIAS_METHOD_IS_MERCATOR(dealias) &&
+     (mc = dealias->data) != NULL)
     {
-      mc = dealias->data;
-      string_concaf(buf, sizeof(buf), &off,
-		    ", \"attempts\":%u, \"wait_timeout\":%u",
-		    mc->attempts, (uint32_t)mc->wait_timeout.tv_sec);
+      string_concat_u8(buf, sizeof(buf), &off, ", \"attempts\":",
+		       mc->attempts);
+      string_concat_u32(buf, sizeof(buf), &off, ", \"wait_timeout\":",
+			(uint32_t)mc->wait_timeout.tv_sec);
     }
-  else if(SCAMPER_DEALIAS_METHOD_IS_ALLY(dealias))
+  else if(SCAMPER_DEALIAS_METHOD_IS_ALLY(dealias) &&
+	  (ally = dealias->data) != NULL)
     {
-      ally = dealias->data;
       u16 = (ally->wait_probe.tv_sec * 1000)+(ally->wait_probe.tv_usec / 1000);
-      string_concaf(buf, sizeof(buf), &off,
-		    ", \"wait_probe\":%u, \"wait_timeout\":%u",
-		    u16, (uint32_t)ally->wait_timeout.tv_sec);
-      string_concaf(buf, sizeof(buf), &off, ", \"attempts\":%u, \"fudge\":%u",
-		    ally->attempts, ally->fudge);
+      string_concat_u16(buf, sizeof(buf), &off, ", \"wait_probe\":", u16);
+      string_concat_u32(buf, sizeof(buf), &off, ", \"wait_timeout\":",
+			(uint32_t)ally->wait_timeout.tv_sec);
+      string_concat_u8(buf, sizeof(buf), &off, ", \"attempts\":",
+		       ally->attempts);
+      string_concat_u16(buf, sizeof(buf), &off, ", \"fudge\":", ally->fudge);
       if(ally->flags != 0)
 	{
 	  dealias_flags_encode(tmp, sizeof(tmp), ally->flags, ally_flags,
@@ -110,62 +115,78 @@ static char *dealias_header_tostr(const scamper_dealias_t *dealias)
 	  string_concat(buf, sizeof(buf), &off, tmp);
 	}
     }
-  else if(SCAMPER_DEALIAS_METHOD_IS_RADARGUN(dealias))
+  else if(SCAMPER_DEALIAS_METHOD_IS_RADARGUN(dealias) &&
+	  (rg = dealias->data) != NULL)
     {
-      rg = dealias->data;
+      string_concat_u16(buf, sizeof(buf), &off, ", \"attempts\":", rg->rounds);
       u16 = (rg->wait_probe.tv_sec * 1000) + (rg->wait_probe.tv_usec / 1000);
-      string_concaf(buf, sizeof(buf), &off,
-		    ", \"attempts\":%u, \"wait_probe\":%u",
-		    rg->rounds, u16);
+      string_concat_u16(buf, sizeof(buf), &off, ", \"wait_probe\":", u16);
       u16 = (rg->wait_round.tv_sec * 1000) + (rg->wait_round.tv_usec / 1000);
-      string_concaf(buf, sizeof(buf), &off,
-		    ", \"wait_round\":%u, \"wait_timeout\":%u",
-		    u16, (uint32_t)rg->wait_timeout.tv_sec);
+      string_concat_u16(buf, sizeof(buf), &off, ", \"wait_round\":", u16);
+      string_concat_u32(buf, sizeof(buf), &off, ", \"wait_timeout\":",
+			(uint32_t)rg->wait_timeout.tv_sec);
       if(rg->flags != 0)
 	string_concat(buf, sizeof(buf), &off,
 		      dealias_flags_encode(tmp,sizeof(tmp),rg->flags,rg_flags,
 					   sizeof(rg_flags)/sizeof(char *)));
     }
-  else if(SCAMPER_DEALIAS_METHOD_IS_PREFIXSCAN(dealias))
+  else if(SCAMPER_DEALIAS_METHOD_IS_PREFIXSCAN(dealias) &&
+	  (pf = dealias->data) != NULL)
     {
-      pf = dealias->data;
-      string_concat3(buf, sizeof(buf), &off, ", \"a\":\"",
-		     scamper_addr_tostr(pf->a, tmp, sizeof(tmp)), "\"");
-      string_concaf(buf, sizeof(buf), &off, ", \"b\":\"%s/%u\"",
-		    scamper_addr_tostr(pf->b, tmp, sizeof(tmp)), pf->prefix);
-      if(pf->ab != NULL)
-	string_concaf(buf, sizeof(buf), &off, ", \"ab\":\"%s/%u\"",
-		      scamper_addr_tostr(pf->ab, tmp, sizeof(tmp)),
-		      scamper_addr_prefixhosts(pf->b, pf->ab));
-      if(pf->xc > 0)
+      if(pf->a != NULL)
+	string_concat3(buf, sizeof(buf), &off, ", \"a\":\"",
+		       scamper_addr_tostr(pf->a, tmp, sizeof(tmp)), "\"");
+      if(pf->b != NULL)
 	{
-	  string_concat3(buf, sizeof(buf), &off, ", \"xs\":[\"",
-			 scamper_addr_tostr(pf->xs[0], tmp, sizeof(tmp)), "\"");
-	  for(u16=1; u16 < pf->xc; u16++)
-	    string_concat3(buf, sizeof(buf), &off, ", \"",
-			   scamper_addr_tostr(pf->xs[u16], tmp, sizeof(tmp)),
-			   "\"");
-	  string_concat(buf, sizeof(buf), &off, "]");
+	  scamper_addr_tostr(pf->b, tmp, sizeof(tmp));
+	  string_concat2(buf, sizeof(buf), &off, ", \"b\":\"", tmp);
+	  string_concat_u8(buf, sizeof(buf), &off, "/", pf->prefix);
+	  string_concatc(buf, sizeof(buf), &off, '"');
 	}
-      string_concaf(buf, sizeof(buf), &off,
-		    ", \"attempts\":%u, \"replyc\":%u, \"fudge\":%u",
-		    pf->attempts, pf->replyc, pf->fudge);
+      if(pf->b != NULL && pf->ab != NULL &&
+	 (x = scamper_addr_prefixhosts(pf->b, pf->ab)) >= 0)
+	{
+	  string_concat2(buf, sizeof(buf), &off, ", \"ab\":\"",
+			 scamper_addr_tostr(pf->ab, tmp, sizeof(tmp)));
+	  string_concat_u8(buf, sizeof(buf), &off, "/", (uint8_t)x);
+	  string_concatc(buf, sizeof(buf), &off, '"');
+	}
+      if(pf->xc > 0 && pf->xs != NULL)
+	{
+	  x = 0;
+	  string_concat(buf, sizeof(buf), &off, ", \"xs\":[");
+	  for(u16=0; u16 < pf->xc; u16++)
+	    {
+	      if(pf->xs[u16] == NULL)
+		continue;
+	      scamper_addr_tostr(pf->xs[u16], tmp, sizeof(tmp));
+	      if(x > 0) string_concatc(buf, sizeof(buf), &off, ',');
+	      string_concat3(buf, sizeof(buf), &off, "\"", tmp, "\"");
+	      x++;
+	    }
+	  string_concatc(buf, sizeof(buf), &off, ']');
+	}
+      string_concat_u8(buf,sizeof(buf),&off, ", \"attempts\":", pf->attempts);
+      string_concat_u8(buf, sizeof(buf), &off, ", \"replyc\":", pf->replyc);
+      string_concat_u16(buf, sizeof(buf), &off, ", \"fudge\":", pf->fudge);
       u16 = (pf->wait_probe.tv_sec * 1000) + (pf->wait_probe.tv_usec / 1000);
-      string_concaf(buf, sizeof(buf), &off,
-		    ", \"wait_probe\":%u, \"wait_timeout\":%u",
-		    u16, (uint32_t)pf->wait_timeout.tv_sec);
+      string_concat_u16(buf, sizeof(buf), &off, ", \"wait_probe\":", u16);
+      string_concat_u32(buf, sizeof(buf), &off, ", \"wait_timeout\":",
+			(uint32_t)pf->wait_timeout.tv_sec);
       if(pf->flags != 0)
 	string_concat(buf, sizeof(buf), &off,
 		      dealias_flags_encode(tmp,sizeof(tmp),pf->flags,pf_flags,
 					   sizeof(pf_flags)/sizeof(char *)));
     }
-  else if(SCAMPER_DEALIAS_METHOD_IS_BUMP(dealias))
+  else if(SCAMPER_DEALIAS_METHOD_IS_BUMP(dealias) &&
+	  (bump = dealias->data) != NULL)
     {
-      bump = dealias->data;
       u16 = (bump->wait_probe.tv_sec * 1000)+(bump->wait_probe.tv_usec / 1000);
-      string_concaf(buf, sizeof(buf), &off,
-		    ", \"wait_probe\":%u, \"bump_limit\":%u, \"attempts\":%u",
-		    u16, bump->bump_limit, bump->attempts);
+      string_concat_u16(buf, sizeof(buf), &off, ", \"wait_probe\":", u16);
+      string_concat_u16(buf, sizeof(buf), &off, ", \"bump_limit\":",
+			bump->bump_limit);
+      string_concat_u8(buf, sizeof(buf), &off, ", \"attempts\":",
+		       bump->attempts);
     }
 
   return strdup(buf);
@@ -175,30 +196,44 @@ static char *dealias_probedef_tostr(const scamper_dealias_probedef_t *def)
 {
   char buf[256], tmp[64];
   size_t off = 0;
-  string_concaf(buf, sizeof(buf), &off, "{\"id\":%u", def->id);
+  string_concat_u32(buf, sizeof(buf), &off, "{\"id\":", def->id);
   if(def->src != NULL)
     string_concat3(buf, sizeof(buf), &off, ", \"src\":\"",
 		   scamper_addr_tostr(def->src, tmp, sizeof(tmp)), "\"");
   if(def->dst != NULL)
     string_concat3(buf, sizeof(buf), &off, ", \"dst\":\"",
 		   scamper_addr_tostr(def->dst, tmp, sizeof(tmp)), "\"");
-  string_concaf(buf, sizeof(buf), &off,
-		", \"ttl\":%u, \"size\":%u, \"method\":\"%s\"",
-		def->ttl, def->size,
-		scamper_dealias_probedef_method_tostr(def, tmp, sizeof(tmp)));
+  string_concat_u8(buf, sizeof(buf), &off, ", \"ttl\":", def->ttl);
+  string_concat_u16(buf, sizeof(buf), &off, ", \"size\":", def->size);
+  string_concat3(buf, sizeof(buf), &off, ", \"method\":\"",
+		 scamper_dealias_probedef_method_tostr(def, tmp, sizeof(tmp)),
+		 "\"");
   if(SCAMPER_DEALIAS_PROBEDEF_PROTO_IS_ICMP(def))
-    string_concaf(buf, sizeof(buf), &off, ", \"icmp_id\":%u, \"icmp_csum\":%u",
-		  def->un.icmp.id, def->un.icmp.csum);
+    {
+      string_concat_u16(buf, sizeof(buf), &off, ", \"icmp_id\":",
+			def->un.icmp.id);
+      string_concat_u16(buf, sizeof(buf), &off, ", \"icmp_csum\":",
+			def->un.icmp.csum);
+    }
   else if(SCAMPER_DEALIAS_PROBEDEF_PROTO_IS_UDP(def))
-    string_concaf(buf, sizeof(buf), &off,", \"udp_sport\":%u, \"udp_dport\":%u",
-		  def->un.udp.sport, def->un.udp.dport);
+    {
+      string_concat_u16(buf, sizeof(buf), &off, ", \"udp_sport\":",
+			def->un.udp.sport);
+      string_concat_u16(buf, sizeof(buf), &off, ", \"udp_dport\":",
+			def->un.udp.dport);
+    }
   else if(SCAMPER_DEALIAS_PROBEDEF_PROTO_IS_TCP(def))
-    string_concaf(buf, sizeof(buf), &off,
-		  ", \"tcp_sport\":%u, \"tcp_dport\":%u, \"tcp_flags\":%u",
-		  def->un.tcp.sport, def->un.tcp.dport, def->un.tcp.flags);
+    {
+      string_concat_u16(buf, sizeof(buf), &off, ", \"tcp_sport\":",
+			def->un.tcp.sport);
+      string_concat_u16(buf, sizeof(buf), &off, ", \"tcp_dport\":",
+			def->un.tcp.dport);
+      string_concat_u8(buf, sizeof(buf), &off, ", \"tcp_flags\":",
+		       def->un.tcp.flags);
+    }
   if(def->mtu > 0)
-    string_concaf(buf, sizeof(buf), &off, ", \"mtu\":%u", def->mtu);
-  string_concat(buf, sizeof(buf), &off, "}");
+    string_concat_u16(buf, sizeof(buf), &off, ", \"mtu\":", def->mtu);
+  string_concatc(buf, sizeof(buf), &off, '}');
   return strdup(buf);
 }
 
@@ -249,78 +284,98 @@ static char *dealias_reply_tostr(const scamper_dealias_reply_t *reply)
 {
   char buf[256], tmp[64];
   size_t off = 0;
-  string_concaf(buf, sizeof(buf), &off,
-		"{\"src\":\"%s\",\"rx\":{\"sec\":%ld,\"usec\":%d},\"ttl\":%u",
-		scamper_addr_tostr(reply->src, tmp, sizeof(tmp)),
-		(long)reply->rx.tv_sec, (int)reply->rx.tv_usec,
-		reply->ttl);
+
+  string_concatc(buf, sizeof(buf), &off, '{');
+  if(reply->src != NULL)
+    string_concat3(buf, sizeof(buf), &off, "\"src\":\"",
+		   scamper_addr_tostr(reply->src, tmp, sizeof(tmp)), "\"");
+  string_concat_u32(buf, sizeof(buf), &off, ",\"rx\":{\"sec\":",
+		    (uint32_t)reply->rx.tv_sec);
+  string_concat_u32(buf, sizeof(buf), &off, ",\"usec\":",
+		    (uint32_t)reply->rx.tv_usec);
+  string_concat_u8(buf, sizeof(buf), &off, "},\"ttl\":", reply->ttl);
   if(reply->size != 0)
-    string_concaf(buf, sizeof(buf), &off, ", \"size\":%u", reply->size);
-  if(SCAMPER_ADDR_TYPE_IS_IPV4(reply->src))
-    string_concaf(buf, sizeof(buf), &off, ", \"ipid\":%u", reply->ipid);
+    string_concat_u16(buf, sizeof(buf), &off, ", \"size\":", reply->size);
+  if(reply->src != NULL && SCAMPER_ADDR_TYPE_IS_IPV4(reply->src))
+    string_concat_u16(buf, sizeof(buf), &off, ", \"ipid\":", reply->ipid);
   else if(reply->flags & SCAMPER_DEALIAS_REPLY_FLAG_IPID32)
-    string_concaf(buf, sizeof(buf), &off, ", \"ipid\":%u", reply->ipid32);
-  string_concaf(buf, sizeof(buf), &off, ", \"proto\":%u", reply->proto);
+    string_concat_u32(buf, sizeof(buf), &off, ", \"ipid\":", reply->ipid32);
+  string_concat_u8(buf, sizeof(buf), &off, ", \"proto\":", reply->proto);
 
   if(SCAMPER_DEALIAS_REPLY_IS_ICMP(reply))
     {
-      string_concaf(buf, sizeof(buf), &off,
-		    ", \"icmp_type\":%u, \"icmp_code\":%u",
-		    reply->icmp_type, reply->icmp_code);
-
+      string_concat_u8(buf, sizeof(buf), &off, ", \"icmp_type\":",
+		       reply->icmp_type);
+      string_concat_u8(buf, sizeof(buf), &off, ", \"icmp_code\":",
+		       reply->icmp_code);
       if(SCAMPER_DEALIAS_REPLY_IS_ICMP_UNREACH(reply) ||
 	 SCAMPER_DEALIAS_REPLY_IS_ICMP_TTL_EXP(reply))
-	string_concaf(buf, sizeof(buf), &off, ", \"icmp_q_ttl\":%u",
-		      reply->icmp_q_ttl);
+	string_concat_u8(buf, sizeof(buf), &off, ", \"icmp_q_ttl\":",
+			 reply->icmp_q_ttl);
     }
   else if(SCAMPER_DEALIAS_REPLY_IS_TCP(reply))
     {
-      string_concaf(buf, sizeof(buf), &off, ", \"tcp_flags\":%u",
-		    reply->tcp_flags);
+      string_concat_u8(buf, sizeof(buf), &off, ", \"tcp_flags\":",
+		       reply->tcp_flags);
     }
 
-  string_concat(buf, sizeof(buf), &off, "}");
+  string_concatc(buf, sizeof(buf), &off, '}');
   return strdup(buf);
 }
 
 static char *dealias_probe_tostr(const scamper_dealias_probe_t *probe)
 {
-  char header[256], **replies = NULL, *rc = NULL, *str = NULL;
-  size_t len, wc = 0, header_len = 0, *reply_lens = NULL;
-  int i;
+  char hdr[256], **replies = NULL, *rc = NULL, *str = NULL;
+  size_t len, wc = 0, hdr_len = 0, *reply_lens = NULL;
+  int i, x;
 
-  string_concaf(header, sizeof(header), &header_len,
-	"{\"probedef_id\":%u,\"seq\":%u,\"tx\":{\"sec\":%ld,\"usec\":%d}",
-	probe->def->id, probe->seq,
-	(long)probe->tx.tv_sec, (int)probe->tx.tv_usec);
-  if(SCAMPER_ADDR_TYPE_IS_IPV4(probe->def->dst))
-    string_concaf(header, sizeof(header), &header_len, ", \"ipid\":%u",
-		  probe->ipid);
-  string_concat(header, sizeof(header), &header_len, ", \"replies\":[");
-  len = header_len;
-  if(probe->replyc > 0)
+  string_concatc(hdr, sizeof(hdr), &hdr_len, '{');
+  if(probe->def != NULL)
+    {
+      string_concat_u32(hdr, sizeof(hdr), &hdr_len,
+			"\"probedef_id\":", probe->def->id);
+      string_concatc(hdr, sizeof(hdr), &hdr_len, ',');
+    }
+  string_concat_u32(hdr, sizeof(hdr), &hdr_len, "\"seq\":", probe->seq);
+  string_concat_u32(hdr, sizeof(hdr), &hdr_len, ",\"tx\":{\"sec\":",
+		    (uint32_t)probe->tx.tv_sec);
+  string_concat_u32(hdr, sizeof(hdr), &hdr_len, ",\"usec\":",
+		    (uint32_t)probe->tx.tv_usec);
+  string_concatc(hdr, sizeof(hdr), &hdr_len, '}');
+  if(probe->def != NULL && probe->def->dst != NULL &&
+     SCAMPER_ADDR_TYPE_IS_IPV4(probe->def->dst))
+    string_concat_u16(hdr, sizeof(hdr), &hdr_len, ", \"ipid\":", probe->ipid);
+  string_concat(hdr, sizeof(hdr), &hdr_len, ", \"replies\":[");
+  len = hdr_len;
+  if(probe->replyc > 0 && probe->replies != NULL)
     {
       if((replies = malloc_zero(sizeof(char *) * probe->replyc)) == NULL ||
 	 (reply_lens = malloc_zero(sizeof(size_t) * probe->replyc)) == NULL)
 	goto done;
+      x = 0;
       for(i=0; i<probe->replyc; i++)
 	{
-	  if(i > 0) len += 2; /* , */
-	  if((replies[i] = dealias_reply_tostr(probe->replies[i])) == NULL)
+	  if(probe->replies[i] == NULL)
+	    continue;
+	  if((replies[x] = dealias_reply_tostr(probe->replies[i])) == NULL)
 	    goto done;
-	  reply_lens[i] = strlen(replies[i]);
-	  len += reply_lens[i];
+	  if(x > 0) len += 2; /* , */
+	  reply_lens[x] = strlen(replies[x]);
+	  len += reply_lens[x];
+	  x++;
 	}
     }
   len += 3; /* ]}\0 */
 
   if((str = malloc_zero(len)) == NULL)
     goto done;
-  memcpy(str, header, header_len); wc += header_len;
+  memcpy(str, hdr, hdr_len); wc += hdr_len;
   if(probe->replyc > 0)
     {
       for(i=0; i<probe->replyc; i++)
 	{
+	  if(replies[i] == NULL)
+	    continue;
 	  if(i > 0)
 	    {
 	      memcpy(str+wc, ", ", 2);
@@ -330,7 +385,7 @@ static char *dealias_probe_tostr(const scamper_dealias_probe_t *probe)
 	  wc += reply_lens[i];
 	}
     }
-  memcpy(str+wc, "]}\0", 3); wc += 3;
+  memcpy(str+wc, "]}", 3); wc += 3;
   assert(wc == len);
 
   rc = str;

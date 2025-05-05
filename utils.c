@@ -1,7 +1,7 @@
 /*
  * utils.c
  *
- * $Id: utils.c,v 1.262 2025/03/29 07:39:33 mjl Exp $
+ * $Id: utils.c,v 1.264 2025/04/27 03:05:24 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -59,14 +59,11 @@ int sockaddr_len(const struct sockaddr *sa)
 }
 #endif
 
-int sockaddr_compose(struct sockaddr *sa, int af, const void *addr, int port)
+int sockaddr_compose(struct sockaddr *sa, int af, const void *addr, uint16_t port)
 {
   socklen_t len;
   struct sockaddr_in  *sin4;
   struct sockaddr_in6 *sin6;
-
-  assert(port >= 0);
-  assert(port <= 65535);
 
   if(af == AF_INET)
     {
@@ -133,7 +130,8 @@ int sockaddr_compose_un(struct sockaddr *sa, const char *file)
 #endif
 }
 
-int sockaddr_compose_str(struct sockaddr *sa,int af,const char *addr,int port)
+int sockaddr_compose_str(struct sockaddr *sa, int af, const char *addr,
+			 uint16_t port)
 {
   struct sockaddr_in *sin;
   struct sockaddr_in6 *sin6;
@@ -1326,7 +1324,7 @@ int url_parse(const char *url, uint16_t *port,
   while(*ptr != '\0')
     {
       if(*ptr == '/' || *ptr == ':') break;
-      if(isalnum((int)*ptr) == 0 && *ptr != '-' && *ptr != '.')
+      if(isalnum((unsigned char)*ptr) == 0 && *ptr != '-' && *ptr != '.')
 	goto err;
       ptr++;
     }
@@ -2017,7 +2015,7 @@ void string_byte2hex(char *str, size_t len, size_t *off,
  * (if present) and the port number in the second.  do some basic sanity
  * checking as well.
  */
-int string_addrport(const char *in, char **first, int *port)
+int string_addrport(const char *in, char **first, uint16_t *port)
 {
   char *ptr, *dup = NULL, *first_tmp = NULL;
   long lo;
@@ -2027,7 +2025,7 @@ int string_addrport(const char *in, char **first, int *port)
       if(string_tolong(in, &lo) == -1 || lo < 1 || lo > 65535)
 	goto err;
       *first = NULL;
-      *port  = lo;
+      *port  = (uint16_t)lo;
       return 0;
     }
 
@@ -2052,7 +2050,7 @@ int string_addrport(const char *in, char **first, int *port)
     goto err;
 
   *first = first_tmp;
-  *port  = lo;
+  *port  = (uint16_t)lo;
   free(dup);
   return 0;
 

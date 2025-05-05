@@ -1,7 +1,7 @@
 /*
  * scamper_do_trace.h
  *
- * $Id: scamper_trace_do.h,v 1.19 2024/02/27 03:34:02 mjl Exp $
+ * $Id: scamper_trace_do.h,v 1.20 2025/04/27 00:49:24 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2010 The University of Waikato
@@ -35,6 +35,8 @@ void scamper_do_trace_free(void *data);
 int scamper_do_trace_dtree_lss_clear(char *name);
 
 uint32_t scamper_do_trace_userid(void *data);
+
+int scamper_do_trace_enabled(void);
 
 void scamper_do_trace_cleanup(void);
 int scamper_do_trace_init(void);

@@ -4,7 +4,7 @@
  * Copyright (c) 2023-2025 Matthew Luckie
  * Author: Matthew Luckie
  *
- * $Id: scamper_host_json.c,v 1.16 2025/02/25 22:45:05 mjl Exp $
+ * $Id: scamper_host_json.c,v 1.18 2025/05/03 09:01:57 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -74,8 +74,9 @@ static char *header_tostr(const scamper_host_t *host)
   string_concaf(buf, sizeof(buf), &off,
 		", \"wait\":%u, \"retries\":%u, \"stop\":\"%s\"", ms,
 		host->retries, scamper_host_stop_tostr(host, tmp, sizeof(tmp)));
-  string_concat3(buf, sizeof(buf), &off, ", \"qname\":\"",
-		 json_esc(host->qname, tmp, sizeof(tmp)), "\"");
+  if(host->qname != NULL)
+    string_concat3(buf, sizeof(buf), &off, ", \"qname\":\"",
+		   json_esc(host->qname, tmp, sizeof(tmp)), "\"");
   string_concat3(buf, sizeof(buf), &off, ", \"qclass\":\"",
 		 scamper_host_qclass_tostr(host->qclass,tmp,sizeof(tmp)),"\"");
   string_concat3(buf, sizeof(buf), &off, ", \"qtype\":\"",
@@ -89,7 +90,7 @@ static char *header_tostr(const scamper_host_t *host)
 
 static char *rr_tostr(const scamper_host_rr_t *rr)
 {
-  char *out = NULL, buf[1024], tmp[512], tmp2[256];
+  char *out = NULL, buf[1024], tmp[512];
   size_t off = 0, len, *lens = NULL;
   uint16_t i;
 
@@ -105,11 +106,15 @@ static char *rr_tostr(const scamper_host_rr_t *rr)
   switch(scamper_host_rr_data_type(rr->class, rr->type))
     {
     case SCAMPER_HOST_RR_DATA_TYPE_ADDR:
+      if(rr->un.addr == NULL)
+	break;
       string_concat3(buf, sizeof(buf), &off, ", \"address\":\"",
 		     scamper_addr_tostr(rr->un.addr, tmp, sizeof(tmp)), "\"");
       break;
 
     case SCAMPER_HOST_RR_DATA_TYPE_STR:
+      if(rr->un.str == NULL)
+	break;
       string_concat3(buf, sizeof(buf), &off, ", \"",
 		     scamper_host_rr_data_str_typestr(rr->class, rr->type),
 		     "\":\"");
@@ -118,25 +123,39 @@ static char *rr_tostr(const scamper_host_rr_t *rr)
       break;
 
     case SCAMPER_HOST_RR_DATA_TYPE_MX:
-      string_concaf(buf, sizeof(buf), &off,
-		    ", \"preference\":%u, \"exchange\":\"%s\"",
-		    rr->un.mx->preference,
-		    json_esc(rr->un.mx->exchange, tmp, sizeof(tmp)));
+      if(rr->un.mx == NULL)
+	break;
+      string_concat_u16(buf, sizeof(buf), &off, ", \"preference\":",
+			rr->un.mx->preference);
+      if(rr->un.mx->exchange != NULL)
+	string_concat3(buf, sizeof(buf), &off, ", \"exchange\":\"",
+		       json_esc(rr->un.mx->exchange, tmp, sizeof(tmp)), "\"");
       break;
 
     case SCAMPER_HOST_RR_DATA_TYPE_SOA:
-      string_concaf(buf, sizeof(buf), &off,
-		    ", \"mname\":\"%s\", \"rname\":\"%s\""
-		    ", \"serial\":%u, \"refresh\":%u, \"retry\":%u"
-		    ", \"expire\":%u, \"minimum\":%u",
-		    json_esc(rr->un.soa->mname, tmp, sizeof(tmp)),
-		    json_esc(rr->un.soa->rname, tmp2, sizeof(tmp2)),
-		    rr->un.soa->serial, rr->un.soa->refresh,
-		    rr->un.soa->retry, rr->un.soa->expire,
-		    rr->un.soa->minimum);
+      if(rr->un.soa == NULL)
+	break;
+      if(rr->un.soa->mname != NULL)
+	string_concat3(buf, sizeof(buf), &off, ", \"mname\":\"",
+		       json_esc(rr->un.soa->mname, tmp, sizeof(tmp)), "\"");
+      if(rr->un.soa->rname != NULL)
+	string_concat3(buf, sizeof(buf), &off, ", \"rname\":\"",
+		       json_esc(rr->un.soa->rname, tmp, sizeof(tmp)), "\"");
+      string_concat_u32(buf, sizeof(buf), &off, ", \"serial\":",
+			rr->un.soa->serial);
+      string_concat_u32(buf, sizeof(buf), &off, ", \"refresh\":",
+			rr->un.soa->refresh);
+      string_concat_u32(buf, sizeof(buf), &off, ", \"retry\":",
+			rr->un.soa->retry);
+      string_concat_u32(buf, sizeof(buf), &off, ", \"expire\":",
+			rr->un.soa->expire);
+      string_concat_u32(buf, sizeof(buf), &off, ", \"minimum\":",
+			rr->un.soa->minimum);
       break;
 
     case SCAMPER_HOST_RR_DATA_TYPE_TXT:
+      if(rr->un.txt == NULL)
+	break;
       string_concaf(buf, sizeof(buf), &off, ", \"strc\":%u, \"strs\":[",
 		    rr->un.txt->strc);
 
@@ -145,13 +164,16 @@ static char *rr_tostr(const scamper_host_rr_t *rr)
        * that much memory
        */
       len = off;
-      if(rr->un.txt->strc > 0)
+      if(rr->un.txt->strc > 0 && rr->un.txt->strs != NULL)
 	{
 	  if((lens = malloc(sizeof(size_t) * rr->un.txt->strc)) == NULL)
 	    goto err;
 	  for(i=0; i<rr->un.txt->strc; i++)
 	    {
-	      lens[i] = json_esc_len(rr->un.txt->strs[i]);
+	      if(rr->un.txt->strs[i] != NULL)
+		lens[i] = json_esc_len(rr->un.txt->strs[i]);
+	      else
+		lens[i] = 0;
 	      len += (lens[i] > 0 ? lens[i]-1 : 0) + 2; /* "" */
 	    }
 	  len += (2 * (rr->un.txt->strc-1)); /* , */
@@ -165,13 +187,15 @@ static char *rr_tostr(const scamper_host_rr_t *rr)
       if(lens != NULL)
 	{
 	  out[off++] = '"';
-	  json_esc(rr->un.txt->strs[0], out+off, len-off);
+	  if(rr->un.txt->strs[0] != NULL)
+	    json_esc(rr->un.txt->strs[0], out+off, len-off);
 	  off += (lens[0] > 0 ? lens[0]-1 : 0);
 	  out[off++] = '"';
 	  for(i=1; i<rr->un.txt->strc; i++)
 	    {
 	      out[off++] = ','; out[off++] = ' '; out[off++] = '"';
-	      json_esc(rr->un.txt->strs[i], out+off, len-off);
+	      if(rr->un.txt->strs[i] != NULL)
+		json_esc(rr->un.txt->strs[i], out+off, len-off);
 	      off += (lens[i] > 0 ? lens[i]-1 : 0);
 	      out[off++] = '"';
 	    }
@@ -184,7 +208,7 @@ static char *rr_tostr(const scamper_host_rr_t *rr)
       return out;
     }
 
-  string_concat(buf, sizeof(buf), &off, "}");
+  string_concatc(buf, sizeof(buf), &off, '}');
   return strdup(buf);
 
  err:
@@ -220,16 +244,17 @@ static char *query_tostr(const scamper_host_query_t *query)
 	{
 	  if((query->flags & (0x1 << i)) == 0)
 	    continue;
-	  if(x > 0) string_concat(header, sizeof(header), &off, ",");
+	  if(x > 0)
+	    string_concatc(header, sizeof(header), &off, ',');
 	  string_concat3(header, sizeof(header), &off, "\"", flags[i], "\"");
 	  x++;
 	}
-      string_concat(header, sizeof(header), &off, "]");
+      string_concatc(header, sizeof(header), &off, ']');
     }
 
   if((c = query->ancount + query->nscount + query->arcount) == 0)
     {
-      string_concat(header, sizeof(header), &off, "}");
+      string_concatc(header, sizeof(header), &off, '}');
       return strdup(header);
     }
 
