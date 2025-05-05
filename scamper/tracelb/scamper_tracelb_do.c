@@ -1,7 +1,7 @@
 /*
  * scamper_tracelb_do.c
  *
- * $Id: scamper_tracelb_do.c,v 1.317 2025/02/11 14:31:43 mjl Exp $
+ * $Id: scamper_tracelb_do.c,v 1.319 2025/04/27 00:49:24 mjl Exp $
  *
  * Copyright (C) 2008-2011 The University of Waikato
  * Copyright (C) 2012      The Regents of the University of California
@@ -34,6 +34,7 @@
 #include "internal.h"
 
 #include "scamper.h"
+#include "scamper_config.h"
 #include "scamper_debug.h"
 #include "scamper_addr.h"
 #include "scamper_addr_int.h"
@@ -248,6 +249,9 @@ typedef struct tracelb_state
 /* temporary buffer shared amongst measurements */
 extern uint8_t            *txbuf;
 extern size_t              txbuf_len;
+
+/* running scamper configuration */
+extern scamper_config_t *config;
 
 /* the callback functions registered with the tracelb task */
 static scamper_task_funcs_t funcs;
@@ -508,7 +512,7 @@ static void tracelb_links_dump(tracelb_state_t *state)
 	    string_concaf(buf, sizeof(buf), &off, ",%d", node->q_ttl);
 	}
       else
-	string_concat(buf, sizeof(buf), &off, "*");
+	string_concatc(buf, sizeof(buf), &off, '*');
 
       for(j=1; j<link->hopc; j++)
 	string_concat(buf, sizeof(buf), &off, " +");
@@ -4467,6 +4471,11 @@ void scamper_do_tracelb_free(void *data)
 uint32_t scamper_do_tracelb_userid(void *data)
 {
   return ((scamper_tracelb_t *)data)->userid;
+}
+
+int scamper_do_tracelb_enabled(void)
+{
+  return config->tracelb_enable;
 }
 
 void scamper_do_tracelb_cleanup(void)

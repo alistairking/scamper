@@ -1,7 +1,7 @@
 /*
  * scamper_host_do
  *
- * $Id: scamper_host_do.c,v 1.90 2025/03/29 18:46:03 mjl Exp $
+ * $Id: scamper_host_do.c,v 1.91 2025/04/27 00:49:24 mjl Exp $
  *
  * Copyright (C) 2018-2025 Matthew Luckie
  *
@@ -26,6 +26,7 @@
 #include "internal.h"
 
 #include "scamper.h"
+#include "scamper_config.h"
 #include "scamper_addr.h"
 #include "scamper_addr_int.h"
 #include "scamper_list.h"
@@ -54,6 +55,9 @@ static scamper_queue_t *dns6_sq = NULL;
 static uint16_t dns_id = 1;
 
 scamper_addr_t *default_ns = NULL;
+
+/* running scamper configuration */
+extern scamper_config_t *config;
 
 /* when using a TCP socket */
 #define STATE_MODE_CONNECT   0 /* not connected */
@@ -2027,6 +2031,11 @@ int scamper_do_host_setns(const char *nsip)
 const scamper_addr_t *scamper_do_host_getns(void)
 {
   return default_ns;
+}
+
+int scamper_do_host_enabled(void)
+{
+  return config->host_enable;
 }
 
 int scamper_do_host_init()

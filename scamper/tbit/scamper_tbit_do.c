@@ -1,7 +1,7 @@
 /*
  * scamper_do_tbit.c
  *
- * $Id: scamper_tbit_do.c,v 1.214 2025/01/17 06:45:28 mjl Exp $
+ * $Id: scamper_tbit_do.c,v 1.215 2025/04/27 00:49:24 mjl Exp $
  *
  * Copyright (C) 2009-2010 Ben Stasiewicz
  * Copyright (C) 2009-2010 Stephen Eichler
@@ -43,6 +43,7 @@
 #include "internal.h"
 
 #include "scamper.h"
+#include "scamper_config.h"
 #include "scamper_debug.h"
 #include "scamper_addr.h"
 #include "scamper_addr_int.h"
@@ -234,6 +235,9 @@ static scamper_task_funcs_t tbit_funcs;
 
 /* Address cache used to avoid reallocating the same address multiple times */
 extern scamper_addrcache_t *addrcache;
+
+/* running scamper configuration */
+extern scamper_config_t *config;
 
 #define TBIT_STATE_FLAG_FIN_SEEN      0x0001
 #define TBIT_STATE_FLAG_FIN_ACKED     0x0002
@@ -3858,6 +3862,11 @@ scamper_task_t *scamper_do_tbit_alloctask(void *data, scamper_list_t *list,
 uint32_t scamper_do_tbit_userid(void *data)
 {
   return ((scamper_tbit_t *)data)->userid;
+}
+
+int scamper_do_tbit_enabled(void)
+{
+  return config->tbit_enable;
 }
 
 void scamper_do_tbit_cleanup(void)

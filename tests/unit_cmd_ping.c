@@ -1,7 +1,7 @@
 /*
  * unit_cmd_ping : unit tests for ping commands
  *
- * $Id: unit_cmd_ping.c,v 1.18 2025/03/12 19:14:38 mjl Exp $
+ * $Id: unit_cmd_ping.c,v 1.19 2025/05/02 04:39:00 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -443,7 +443,7 @@ int main(int argc, char *argv[])
 	{
 	  snprintf(filename, sizeof(filename),
 		   "%s/ping-%03x.txt", argv[2], (int)i);
-	  if(dump_cmd(tests[i].cmd, filename) != 0)
+	  if(dump_string(tests[i].cmd, filename) != 0)
 	    break;
 	}
     }

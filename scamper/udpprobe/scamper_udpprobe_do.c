@@ -1,7 +1,7 @@
 /*
  * scamper_udpprobe_do.c
  *
- * $Id: scamper_udpprobe_do.c,v 1.17 2025/03/11 00:31:05 mjl Exp $
+ * $Id: scamper_udpprobe_do.c,v 1.19 2025/04/28 20:44:24 mjl Exp $
  *
  * Copyright (C) 2023-2024 The Regents of the University of California
  *
@@ -28,6 +28,7 @@
 #include "internal.h"
 
 #include "scamper.h"
+#include "scamper_config.h"
 #include "scamper_addr.h"
 #include "scamper_addr_int.h"
 #include "scamper_ifname.h"
@@ -47,6 +48,9 @@
 #include "mjl_list.h"
 
 static scamper_task_funcs_t udpprobe_funcs;
+
+/* running scamper configuration */
+extern scamper_config_t *config;
 
 typedef struct udpprobe_state
 {
@@ -88,12 +92,12 @@ static void udpprobe_stop(scamper_task_t *task, uint8_t reason)
 	up->probes[i++] = probe;
       up->probe_sent = i;
 
-      for(i=0; i<pc; i++)
+      for(i=0; i<up->probe_sent; i++)
 	{
-	  probe = up->probes[i];
-	  rc = slist_count(state->replies[i]);
-	  if(rc == 0)
+	  if(state->replies[i] == NULL ||
+	     (rc = slist_count(state->replies[i])) == 0)
 	    continue;
+	  probe = up->probes[i];
 	  probe->replies = malloc_zero(sizeof(scamper_udpprobe_reply_t *) * rc);
 	  if(probe->replies != NULL)
 	    {
@@ -428,6 +432,11 @@ scamper_task_t *scamper_do_udpprobe_alloctask(void *data,
 uint32_t scamper_do_udpprobe_userid(void *data)
 {
   return ((scamper_udpprobe_t *)data)->userid;
+}
+
+int scamper_do_udpprobe_enabled(void)
+{
+  return config->udpprobe_enable;
 }
 
 void scamper_do_udpprobe_cleanup(void)

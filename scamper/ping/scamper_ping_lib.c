@@ -4,7 +4,7 @@
  * Copyright (C) 2023-2025 Matthew Luckie
  * Author: Matthew Luckie
  *
- * $Id: scamper_ping_lib.c,v 1.14 2025/03/12 19:14:38 mjl Exp $
+ * $Id: scamper_ping_lib.c,v 1.15 2025/05/05 03:34:24 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -108,10 +108,12 @@ int scamper_ping_method_is_icmp(const scamper_ping_t *ping)
 {
   return SCAMPER_PING_METHOD_IS_ICMP(ping);
 }
+
 int scamper_ping_method_is_icmp_time(const scamper_ping_t *ping)
 {
   return SCAMPER_PING_METHOD_IS_ICMP_TIME(ping);
 }
+
 int scamper_ping_method_is_tcp(const scamper_ping_t *ping)
 {
   return SCAMPER_PING_METHOD_IS_TCP(ping);
@@ -313,6 +315,11 @@ uint8_t scamper_ping_reply_icmp_code_get(const scamper_ping_reply_t *reply)
   return reply->icmp_code;
 }
 
+uint16_t scamper_ping_reply_icmp_nhmtu_get(const scamper_ping_reply_t *reply)
+{
+  return reply->icmp_nhmtu;
+}
+
 uint8_t scamper_ping_reply_tcp_flags_get(const scamper_ping_reply_t *reply)
 {
   return reply->tcp_flags;
@@ -353,6 +360,11 @@ int scamper_ping_reply_is_icmp_unreach(const scamper_ping_reply_t *reply)
 int scamper_ping_reply_is_icmp_unreach_port(const scamper_ping_reply_t *reply)
 {
   return SCAMPER_PING_REPLY_IS_ICMP_UNREACH_PORT(reply);
+}
+
+int scamper_ping_reply_is_icmp_ptb(const scamper_ping_reply_t *reply)
+{
+  return SCAMPER_PING_REPLY_IS_ICMP_PTB(reply);
 }
 
 int scamper_ping_reply_is_icmp_ttl_exp(const scamper_ping_reply_t *reply)

@@ -1,7 +1,7 @@
 /*
  * scamper_sniff_do.c
  *
- * $Id: scamper_sniff_do.c,v 1.27 2024/08/13 05:14:13 mjl Exp $
+ * $Id: scamper_sniff_do.c,v 1.29 2025/04/27 00:49:24 mjl Exp $
  *
  * Copyright (C) 2011      The University of Waikato
  * Copyright (C) 2022-2023 Matthew Luckie
@@ -28,6 +28,7 @@
 #include "internal.h"
 
 #include "scamper.h"
+#include "scamper_config.h"
 #include "scamper_debug.h"
 #include "scamper_addr.h"
 #include "scamper_addr_int.h"
@@ -53,6 +54,9 @@ typedef struct sniff_state
 /* the callback functions registered with the sniff task */
 static scamper_task_funcs_t sniff_funcs;
 
+/* running scamper configuration */
+extern scamper_config_t *config;
+
 static scamper_sniff_t *sniff_getdata(const scamper_task_t *task)
 {
   return scamper_task_getdata(task);
@@ -68,7 +72,7 @@ static void sniff_finish(scamper_task_t *task, int reason)
   scamper_sniff_t *sniff = sniff_getdata(task);
   sniff_state_t *state = sniff_getstate(task);
   scamper_sniff_pkt_t *pkt;
-  int i, rc;
+  int rc;
 
   gettimeofday_wrap(&sniff->finish);
 
@@ -81,10 +85,9 @@ static void sniff_finish(scamper_task_t *task, int reason)
 	  return;
 	}
 
-      i = 0;
       while((pkt = slist_head_pop(state->list)) != NULL)
-	sniff->pkts[i++] = pkt;
-      assert(i == rc);
+	sniff->pkts[sniff->pktc++] = pkt;
+      assert(sniff->pktc == (uint32_t)rc);
     }
 
   sniff->stop_reason = reason;
@@ -303,6 +306,11 @@ void scamper_do_sniff_free(void *data)
 uint32_t scamper_do_sniff_userid(void *data)
 {
   return ((scamper_sniff_t *)data)->userid;
+}
+
+int scamper_do_sniff_enabled(void)
+{
+  return config->sniff_enable;
 }
 
 void scamper_do_sniff_cleanup()

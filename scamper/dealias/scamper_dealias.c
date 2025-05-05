@@ -1,7 +1,7 @@
 /*
  * scamper_dealias.c
  *
- * $Id: scamper_dealias.c,v 1.77 2025/02/11 14:31:43 mjl Exp $
+ * $Id: scamper_dealias.c,v 1.78 2025/04/30 07:59:54 mjl Exp $
  *
  * Copyright (C) 2008-2010 The University of Waikato
  * Copyright (C) 2012-2013 The Regents of the University of California
@@ -257,19 +257,12 @@ int scamper_dealias_reply_add(scamper_dealias_probe_t *probe,
 scamper_dealias_ally_t *scamper_dealias_ally_alloc(void)
 {
   scamper_dealias_ally_t *ally;
-  if((ally = malloc_zero(sizeof(scamper_dealias_ally_t))) == NULL)
-    return NULL;
+  ally = malloc_zero(sizeof(scamper_dealias_ally_t));
 #ifdef BUILDING_LIBSCAMPERFILE
-  ally->refcnt = 1;
+  if(ally != NULL)
+    ally->refcnt = 1;
 #endif
-  if((ally->probedefs[0] = scamper_dealias_probedef_alloc()) == NULL ||
-     (ally->probedefs[1] = scamper_dealias_probedef_alloc()) == NULL)
-    goto err;
   return ally;
-
- err:
-  if(ally != NULL) scamper_dealias_ally_free(ally);
-  return NULL;
 }
 
 void scamper_dealias_ally_free(scamper_dealias_ally_t *ally)

@@ -1,4 +1,4 @@
-# $Id: Makefile.am,v 1.82 2025/03/29 19:55:24 mjl Exp $
+# $Id: Makefile.am,v 1.83 2025/04/27 00:49:24 mjl Exp $
 
 AUTOMAKE_OPTIONS = subdir-objects
 
@@ -13,6 +13,7 @@ scamper_SOURCES = \
 	../mjl_patricia.c \
 	../utils.c \
 	scamper.c \
+	scamper_config.c \
 	scamper_osinfo.c \
 	scamper_addr.c \
 	scamper_list.c \

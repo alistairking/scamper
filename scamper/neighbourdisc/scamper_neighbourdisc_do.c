@@ -1,7 +1,7 @@
 /*
  * scamper_do_neighbourdisc
  *
- * $Id: scamper_neighbourdisc_do.c,v 1.52 2024/12/30 03:59:35 mjl Exp $
+ * $Id: scamper_neighbourdisc_do.c,v 1.53 2025/04/27 00:49:24 mjl Exp $
  *
  * Copyright (C) 2009-2024 Matthew Luckie
  *
@@ -26,6 +26,7 @@
 #include "internal.h"
 
 #include "scamper.h"
+#include "scamper_config.h"
 #include "scamper_debug.h"
 #include "scamper_addr.h"
 #include "scamper_addr_int.h"
@@ -47,6 +48,9 @@
 
 static scamper_task_funcs_t nd_funcs;
 extern scamper_addrcache_t *addrcache;
+
+/* running scamper configuration */
+extern scamper_config_t *config;
 
 typedef struct nd_state
 {
@@ -668,6 +672,11 @@ void scamper_do_neighbourdisc_free(void *data)
 uint32_t scamper_do_neighbourdisc_userid(void *data)
 {
   return ((scamper_neighbourdisc_t *)data)->userid;
+}
+
+int scamper_do_neighbourdisc_enabled(void)
+{
+  return config->neighbourdisc_enable;
 }
 
 void scamper_do_neighbourdisc_cleanup()

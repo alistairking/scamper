@@ -1,7 +1,7 @@
 /*
  * sc_ipiddump
  *
- * $Id: sc_ipiddump.c,v 1.26 2025/02/24 06:59:36 mjl Exp $
+ * $Id: sc_ipiddump.c,v 1.29 2025/05/01 02:58:04 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -386,57 +386,59 @@ static int process_ping(scamper_ping_t *ping)
 
 static int process_trace(scamper_trace_t *trace)
 {
-  const scamper_trace_hop_t *hop;
+  scamper_trace_hopiter_t *hi = NULL;
+  const scamper_trace_probe_t *probe;
+  const scamper_trace_reply_t *hop;
   const struct timeval *tv;
   scamper_addr_t *hop_addr, *src_addr;
   ipid_sample_t *sample;
-  uint16_t u16;
-  uint8_t hop_count;
+  int rc = -1;
 
-  /* only grab IPID values from IPv4 traceroutes */
-  if(scamper_trace_dst_is_ipv4(trace) == 0)
-    goto done;
-
-  /* only include traceroutes for specified userids */
-  if(useridc > 0 && uint32_find(userids, useridc,
-				scamper_trace_userid_get(trace)) == 0)
-    goto done;
-
-  hop_count = scamper_trace_hop_count_get(trace);
-  src_addr = scamper_trace_src_get(trace);
-  for(u16=scamper_trace_firsthop_get(trace)-1; u16<hop_count; u16++)
+  /*
+   * - only grab IPID values from IPv4 traceroutes
+   * - only include traceroutes for specified userids
+   */
+  if(scamper_trace_dst_is_ipv4(trace) == 0 ||
+     (useridc > 0 && uint32_find(userids, useridc,
+				 scamper_trace_userid_get(trace)) == 0))
     {
-      for(hop = scamper_trace_hop_get(trace, u16); hop != NULL;
-	  hop = scamper_trace_hop_next_get(hop))
-	{
-	  tv = scamper_trace_hop_tx_get(hop);
-	  if(tv->tv_sec == 0)
-	    continue;
-	  hop_addr = scamper_trace_hop_addr_get(hop);
-	  if(ipc > 0 && ip_find(ips, ipc, hop_addr) == 0)
-	    continue;
-
-	  if((sample = malloc_zero(sizeof(ipid_sample_t))) == NULL)
-	    goto err;
-	  sample->probe_src = scamper_addr_use(src_addr);
-	  sample->addr = scamper_addr_use(hop_addr);
-	  sample->ipid = scamper_trace_hop_reply_ipid_get(hop);
-	  timeval_cpy(&sample->tx, tv);
-	  tv = scamper_trace_hop_rtt_get(hop);
-	  timeval_add_tv3(&sample->rx, &sample->tx, tv);
-
-	  if(slist_tail_push(list, sample) == NULL)
-	    goto err;
-	}
+      rc = 0;
+      goto done;
     }
 
- done:
-  scamper_trace_free(trace);
-  return 0;
+  if((hi = scamper_trace_hopiter_alloc()) == NULL)
+    goto done;
 
- err:
+  src_addr = scamper_trace_src_get(trace);
+  while((hop = scamper_trace_hopiter_next(trace, hi)) != NULL)
+    {
+      probe = scamper_trace_hopiter_probe_get(hi);
+      tv = scamper_trace_probe_tx_get(probe);
+      if(tv->tv_sec == 0)
+	continue;
+      hop_addr = scamper_trace_reply_addr_get(hop);
+      if(ipc > 0 && ip_find(ips, ipc, hop_addr) == 0)
+	continue;
+
+      if((sample = malloc_zero(sizeof(ipid_sample_t))) == NULL)
+	goto done;
+      sample->probe_src = scamper_addr_use(src_addr);
+      sample->addr = scamper_addr_use(hop_addr);
+      sample->ipid = scamper_trace_reply_ipid_get(hop);
+      timeval_cpy(&sample->tx, tv);
+      tv = scamper_trace_reply_rtt_get(hop);
+      timeval_add_tv3(&sample->rx, &sample->tx, tv);
+
+      if(slist_tail_push(list, sample) == NULL)
+	goto done;
+    }
+
+  rc = 0;
+
+ done:
+  if(hi != NULL) scamper_trace_hopiter_free(hi);
   scamper_trace_free(trace);
-  return -1;
+  return rc;
 }
 
 static void process(scamper_file_t *file)

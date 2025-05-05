@@ -6,7 +6,7 @@
  * Copyright (C) 2022-2024 Matthew Luckie
  * Author: Matthew Luckie
  *
- * $Id: scamper_tracelb_text.c,v 1.11 2024/12/31 04:17:31 mjl Exp $
+ * $Id: scamper_tracelb_text.c,v 1.12 2025/04/21 03:24:13 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -45,7 +45,7 @@ static void probeset_summary_tostr(scamper_tracelb_probeset_summary_t *sum,
 
   if(sum->nullc > 0 && sum->addrc == 0)
     {
-      string_concat(buf, len, off, "*");
+      string_concatc(buf, len, off, '*');
       return;
     }
 
@@ -59,7 +59,7 @@ static void probeset_summary_tostr(scamper_tracelb_probeset_summary_t *sum,
   if(sum->nullc > 0)
     string_concat(buf, len, off, ", *)");
   else
-    string_concat(buf, len, off, ")");
+    string_concatc(buf, len, off, ')');
 
   return;
 }
@@ -135,7 +135,7 @@ int scamper_file_text_tracelb_write(const scamper_file_t *sf,
 	      scamper_tracelb_probeset_summary_free(sum); sum = NULL;
 	    }
 
-	  string_concat(buf, sizeof(buf), &off, "\n");
+	  string_concatc(buf, sizeof(buf), &off, '\n');
 	  write_wrap(fd, buf, NULL, off);
 	}
     }

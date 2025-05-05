@@ -324,7 +324,7 @@ SCAMPER_CTRL_TYPE_FATAL = 5
 # from scamper_trace.h
 SCAMPER_TRACE_TYPE_ICMP_ECHO_PARIS = 4
 SCAMPER_TRACE_FLAG_RXERR           = 0x80
-SCAMPER_TRACE_HOP_FLAG_REPLY_TTL   = 0x10
+SCAMPER_TRACE_REPLY_FLAG_REPLY_TTL   = 0x10
 
 class ScamperTraceStop(enum.IntEnum):
     NoReason = 0x00
@@ -1110,22 +1110,24 @@ cdef class ScamperTraceHop:
     :class:`ScamperTraceHop` is used by scamper to store information about a
     traceroute response.
     """
-    cdef cscamper_trace.scamper_trace_hop_t *_c
-    cdef uint32_t _c_t_flags
+    cdef cscamper_trace.scamper_trace_probe_t *_p
+    cdef cscamper_trace.scamper_trace_reply_t *_r
+    cdef uint32_t _t_flags
 
     def __init__(self):
         raise TypeError("This class cannot be instantiated directly.")
 
     def __dealloc__(self):
-        cscamper_trace.scamper_trace_hop_free(self._c)
+        cscamper_trace.scamper_trace_probe_free(self._p)
+        cscamper_trace.scamper_trace_reply_free(self._r)
 
     def __str__(self):
         cdef char buf[128]
-        if self._c == NULL:
+        if self._r == NULL:
             return "*"
-        c_a = cscamper_trace.scamper_trace_hop_addr_get(self._c)
-        c_rtt = cscamper_trace.scamper_trace_hop_rtt_get(self._c)
-        c_name = cscamper_trace.scamper_trace_hop_name_get(self._c)
+        c_a = cscamper_trace.scamper_trace_reply_addr_get(self._r)
+        c_rtt = cscamper_trace.scamper_trace_reply_rtt_get(self._r)
+        c_name = cscamper_trace.scamper_trace_reply_name_get(self._r)
         usec = (c_rtt.tv_sec * 1000000) + (c_rtt.tv_usec)
         cscamper_addr.scamper_addr_tostr(c_a, buf, sizeof(buf))
         return "%s%s %d.%03d ms" % (
@@ -1133,14 +1135,16 @@ cdef class ScamperTraceHop:
             buf.decode('UTF-8', 'strict'), usec / 1000, usec % 1000)
 
     @staticmethod
-    cdef ScamperTraceHop from_ptr(cscamper_trace.scamper_trace_hop_t *ptr,
-                                  cscamper_trace.scamper_trace_t *trace):
-        cdef ScamperTraceHop hop = ScamperTraceHop.__new__(ScamperTraceHop)
-        if ptr == NULL:
+    cdef ScamperTraceHop from_ptr(cscamper_trace.scamper_trace_t *trace,
+                                  cscamper_trace.scamper_trace_probe_t *p,
+                                  cscamper_trace.scamper_trace_reply_t *r):
+        cdef ScamperTraceHop hop
+        if r == NULL:
             return None
         hop = ScamperTraceHop.__new__(ScamperTraceHop)
-        hop._c = cscamper_trace.scamper_trace_hop_use(ptr)
-        hop._c_t_flags = cscamper_trace.scamper_trace_flags_get(trace)
+        hop._p = cscamper_trace.scamper_trace_probe_use(p)
+        hop._r = cscamper_trace.scamper_trace_reply_use(r)
+        hop._t_flags = cscamper_trace.scamper_trace_flags_get(trace)
         return hop
 
     @property
@@ -1151,9 +1155,9 @@ cdef class ScamperTraceHop:
         :returns: the address object
         :rtype: ScamperAddr
         """
-        if self._c == NULL:
+        if self._r == NULL:
             return None
-        c = cscamper_trace.scamper_trace_hop_addr_get(self._c)
+        c = cscamper_trace.scamper_trace_reply_addr_get(self._r)
         return ScamperAddr.from_ptr(c)
 
     @property
@@ -1165,9 +1169,9 @@ cdef class ScamperTraceHop:
         :returns: the name
         :rtype: string
         """
-        if self._c == NULL:
+        if self._r == NULL:
             return None
-        c = cscamper_trace.scamper_trace_hop_name_get(self._c)
+        c = cscamper_trace.scamper_trace_reply_name_get(self._r)
         if c == NULL:
             return None
         return c.decode('UTF-8', 'strict')
@@ -1180,9 +1184,9 @@ cdef class ScamperTraceHop:
         :returns: a timestamp, or None if scamper did not record a timestamp
         :rtype: datetime
         """
-        if self._c == NULL:
+        if self._p == NULL:
             return None
-        c = cscamper_trace.scamper_trace_hop_tx_get(self._c)
+        c = cscamper_trace.scamper_trace_probe_tx_get(self._p)
         if c == NULL:
             return None
         t = time.gmtime(c.tv_sec)
@@ -1197,9 +1201,9 @@ cdef class ScamperTraceHop:
         :returns: the round trip time
         :rtype: timedelta
         """
-        if self._c == NULL:
+        if self._r == NULL:
             return None
-        c = cscamper_trace.scamper_trace_hop_rtt_get(self._c)
+        c = cscamper_trace.scamper_trace_reply_rtt_get(self._r)
         return datetime.timedelta(seconds=c.tv_sec, microseconds=c.tv_usec)
 
     @property
@@ -1211,9 +1215,9 @@ cdef class ScamperTraceHop:
         :returns: the attempt number
         :rtype: int
         """
-        if self._c == NULL:
+        if self._p == NULL:
             return None
-        return cscamper_trace.scamper_trace_hop_probe_id_get(self._c)
+        return cscamper_trace.scamper_trace_probe_id_get(self._p)
 
     @property
     def probe_ttl(self):
@@ -1223,9 +1227,9 @@ cdef class ScamperTraceHop:
         :returns: probe TTL
         :rtype: int
         """
-        if self._c == NULL:
+        if self._p == NULL:
             return None
-        return cscamper_trace.scamper_trace_hop_probe_ttl_get(self._c)
+        return cscamper_trace.scamper_trace_probe_ttl_get(self._p)
 
     @property
     def probe_size(self):
@@ -1235,9 +1239,9 @@ cdef class ScamperTraceHop:
         :returns: probe size
         :rtype: int
         """
-        if self._c == NULL:
+        if self._p == NULL:
             return None
-        return cscamper_trace.scamper_trace_hop_probe_size_get(self._c)
+        return cscamper_trace.scamper_trace_probe_size_get(self._p)
 
     @property
     def reply_ttl(self):
@@ -1248,11 +1252,11 @@ cdef class ScamperTraceHop:
         :returns: reply TTL
         :rtype: int
         """
-        if (self._c == NULL or
-            (cscamper_trace.scamper_trace_hop_flags_get(self._c) &
-             SCAMPER_TRACE_HOP_FLAG_REPLY_TTL) == 0):
+        if (self._r == NULL or
+            (cscamper_trace.scamper_trace_reply_flags_get(self._r) &
+             SCAMPER_TRACE_REPLY_FLAG_REPLY_TTL) == 0):
             return None
-        return cscamper_trace.scamper_trace_hop_reply_ttl_get(self._c)
+        return cscamper_trace.scamper_trace_reply_ttl_get(self._r)
 
     @property
     def reply_tos(self):
@@ -1263,12 +1267,12 @@ cdef class ScamperTraceHop:
         :returns: reply TOS
         :rtype: int
         """
-        if self._c == NULL:
+        if self._r == NULL:
             return None
-        sa = cscamper_trace.scamper_trace_hop_addr_get(self._c)
+        sa = cscamper_trace.scamper_trace_reply_addr_get(self._r)
         if sa == NULL or not cscamper_addr.scamper_addr_isipv4(sa):
             return None
-        return cscamper_trace.scamper_trace_hop_reply_tos_get(self._c)
+        return cscamper_trace.scamper_trace_reply_tos_get(self._r)
 
     @property
     def icmp_type(self):
@@ -1279,9 +1283,11 @@ cdef class ScamperTraceHop:
         :returns: ICMP type
         :rtype: int
         """
-        if self._c == NULL or not cscamper_trace.scamper_trace_hop_is_icmp(self._c):
+        if self._r == NULL:
             return None
-        return cscamper_trace.scamper_trace_hop_icmp_type_get(self._c)
+        if not cscamper_trace.scamper_trace_reply_is_icmp(self._r):
+            return None
+        return cscamper_trace.scamper_trace_reply_icmp_type_get(self._r)
 
     @property
     def icmp_code(self):
@@ -1292,9 +1298,11 @@ cdef class ScamperTraceHop:
         :returns: ICMP code
         :rtype: int
         """
-        if self._c == NULL or not cscamper_trace.scamper_trace_hop_is_icmp(self._c):
+        if self._r == NULL:
             return None
-        return cscamper_trace.scamper_trace_hop_icmp_code_get(self._c)
+        if not cscamper_trace.scamper_trace_reply_is_icmp(self._r):
+            return None
+        return cscamper_trace.scamper_trace_reply_icmp_code_get(self._r)
 
     @property
     def reply_size(self):
@@ -1304,11 +1312,11 @@ cdef class ScamperTraceHop:
         :returns: reply size
         :rtype: int
         """
-        if self._c == NULL:
+        if self._r == NULL:
             return None
-        if self._c_t_flags & SCAMPER_TRACE_FLAG_RXERR != 0:
+        if self._t_flags & SCAMPER_TRACE_FLAG_RXERR != 0:
             return None
-        return cscamper_trace.scamper_trace_hop_reply_size_get(self._c)
+        return cscamper_trace.scamper_trace_reply_size_get(self._r)
 
     @property
     def reply_ipid(self):
@@ -1319,14 +1327,14 @@ cdef class ScamperTraceHop:
         :returns: reply IPID
         :rtype: int
         """
-        if self._c == NULL:
+        if self._r == NULL:
             return None
-        sa = cscamper_trace.scamper_trace_hop_addr_get(self._c)
+        sa = cscamper_trace.scamper_trace_reply_addr_get(self._r)
         if sa == NULL or not cscamper_addr.scamper_addr_isipv4(sa):
             return None
-        if self._c_t_flags & SCAMPER_TRACE_FLAG_RXERR != 0:
+        if self._t_flags & SCAMPER_TRACE_FLAG_RXERR != 0:
             return None
-        return cscamper_trace.scamper_trace_hop_reply_ipid_get(self._c)
+        return cscamper_trace.scamper_trace_reply_ipid_get(self._r)
 
     def is_tcp(self):
         """
@@ -1335,9 +1343,9 @@ cdef class ScamperTraceHop:
         :returns: True if the response was a TCP packet.
         :rtype: bool
         """
-        if self._c == NULL:
+        if self._r == NULL:
             return False
-        return cscamper_trace.scamper_trace_hop_is_tcp(self._c)
+        return cscamper_trace.scamper_trace_reply_is_tcp(self._r)
 
     def is_icmp(self):
         """
@@ -1346,9 +1354,9 @@ cdef class ScamperTraceHop:
         :returns: True if the response was an ICMP packet.
         :rtype: bool
         """
-        if self._c == NULL:
+        if self._r == NULL:
             return False
-        return cscamper_trace.scamper_trace_hop_is_icmp(self._c)
+        return cscamper_trace.scamper_trace_reply_is_icmp(self._r)
 
     def is_icmp_q(self):
         """
@@ -1357,9 +1365,9 @@ cdef class ScamperTraceHop:
         :returns: True if the response had an ICMP quotation
         :rtype: bool
         """
-        if self._c == NULL:
+        if self._r == NULL:
             return False
-        return cscamper_trace.scamper_trace_hop_is_icmp_q(self._c)
+        return cscamper_trace.scamper_trace_reply_is_icmp_q(self._r)
 
     def is_icmp_unreach_port(self):
         """
@@ -1369,9 +1377,9 @@ cdef class ScamperTraceHop:
         :returns: True if the response was an ICMP port unreachable
         :rtype: bool
         """
-        if self._c == NULL:
+        if self._r == NULL:
             return False
-        return cscamper_trace.scamper_trace_hop_is_icmp_unreach_port(self._c)
+        return cscamper_trace.scamper_trace_reply_is_icmp_unreach_port(self._r)
 
     def is_icmp_echo_reply(self):
         """
@@ -1380,9 +1388,9 @@ cdef class ScamperTraceHop:
         :returns: True if the response was an ICMP echo reply
         :rtype: bool
         """
-        if self._c == NULL:
+        if self._r == NULL:
             return False
-        return cscamper_trace.scamper_trace_hop_is_icmp_echo_reply(self._c)
+        return cscamper_trace.scamper_trace_reply_is_icmp_echo_reply(self._r)
 
     def is_icmp_ttl_exp(self):
         """
@@ -1392,9 +1400,9 @@ cdef class ScamperTraceHop:
         :returns: True if the response was an ICMP TTL expired message
         :rtype: bool
         """
-        if self._c == NULL:
+        if self._r == NULL:
             return False
-        return cscamper_trace.scamper_trace_hop_is_icmp_ttl_exp(self._c)
+        return cscamper_trace.scamper_trace_reply_is_icmp_ttl_exp(self._r)
 
     def is_icmp_ptb(self):
         """
@@ -1404,9 +1412,9 @@ cdef class ScamperTraceHop:
         :returns: True if the response was an ICMP packet too big
         :rtype: bool
         """
-        if self._c == NULL:
+        if self._r == NULL:
             return False
-        return cscamper_trace.scamper_trace_hop_is_icmp_ptb(self._c)
+        return cscamper_trace.scamper_trace_reply_is_icmp_ptb(self._r)
 
     @property
     def icmp_nhmtu(self):
@@ -1417,11 +1425,11 @@ cdef class ScamperTraceHop:
         :returns: the next hop MTU value
         :rtype: int
         """
-        if self._c == NULL:
+        if self._r == NULL:
             return None
-        if not cscamper_trace.scamper_trace_hop_is_icmp_ptb(self._c):
+        if not cscamper_trace.scamper_trace_reply_is_icmp_ptb(self._r):
             return None
-        return cscamper_trace.scamper_trace_hop_icmp_nhmtu_get(self._c)
+        return cscamper_trace.scamper_trace_reply_icmp_nhmtu_get(self._r)
 
     @property
     def icmp_q_ttl(self):
@@ -1432,11 +1440,11 @@ cdef class ScamperTraceHop:
         :returns: the quoted TTL value
         :rtype: int
         """
-        if self._c == NULL:
+        if self._r == NULL:
             return None
-        if not cscamper_trace.scamper_trace_hop_is_icmp_q(self._c):
+        if not cscamper_trace.scamper_trace_reply_is_icmp_q(self._r):
             return None
-        return cscamper_trace.scamper_trace_hop_icmp_q_ttl_get(self._c)
+        return cscamper_trace.scamper_trace_reply_icmp_q_ttl_get(self._r)
 
     @property
     def icmp_q_tos(self):
@@ -1447,14 +1455,14 @@ cdef class ScamperTraceHop:
         :returns: the quoted TOS value
         :rtype: int
         """
-        if self._c == NULL:
+        if self._r == NULL:
             return None
-        if not cscamper_trace.scamper_trace_hop_is_icmp_q(self._c):
+        if not cscamper_trace.scamper_trace_reply_is_icmp_q(self._r):
             return None
-        sa = cscamper_trace.scamper_trace_hop_addr_get(self._c)
+        sa = cscamper_trace.scamper_trace_reply_addr_get(self._r)
         if sa == NULL or not cscamper_addr.scamper_addr_isipv4(sa):
             return None
-        return cscamper_trace.scamper_trace_hop_icmp_q_tos_get(self._c)
+        return cscamper_trace.scamper_trace_reply_icmp_q_tos_get(self._r)
 
     @property
     def icmp_q_ipl(self):
@@ -1465,11 +1473,11 @@ cdef class ScamperTraceHop:
         :returns: the quoted IP length
         :rtype: int
         """
-        if self._c == NULL:
+        if self._r == NULL:
             return None
-        if not cscamper_trace.scamper_trace_hop_is_icmp_q(self._c):
+        if not cscamper_trace.scamper_trace_reply_is_icmp_q(self._r):
             return None
-        return cscamper_trace.scamper_trace_hop_icmp_q_ipl_get(self._c)
+        return cscamper_trace.scamper_trace_reply_icmp_q_ipl_get(self._r)
 
     @property
     def tcp_flags(self):
@@ -1479,11 +1487,11 @@ cdef class ScamperTraceHop:
         :returns: the TCP flags
         :rtype: int
         """
-        if self._c == NULL:
+        if self._r == NULL:
             return None
-        if not cscamper_trace.scamper_trace_hop_is_tcp(self._c):
+        if not cscamper_trace.scamper_trace_reply_is_tcp(self._r):
             return None
-        return cscamper_trace.scamper_trace_hop_tcp_flags_get(self._c)
+        return cscamper_trace.scamper_trace_reply_tcp_flags_get(self._r)
 
     @property
     def icmp_exts(self):
@@ -1493,9 +1501,9 @@ cdef class ScamperTraceHop:
         :returns: the ICMP extensions
         :rtype: ScamperIcmpExts
         """
-        if self._c == NULL:
+        if self._r == NULL:
             return None
-        ext = cscamper_trace.scamper_trace_hop_icmp_exts_get(self._c)
+        ext = cscamper_trace.scamper_trace_reply_icmp_exts_get(self._r)
         return ScamperIcmpExts.from_ptr(ext)
 
 class _ScamperTraceHopIterator:
@@ -1728,10 +1736,20 @@ cdef class ScamperTrace:
         :returns: the nominated hop
         :rtype: ScamperTraceHop
         """
-        if i < 0 or i > 255:
+        if i < 0 or i >= 255:
             raise ValueError("invalid hop index: " + i)
-        c_h = cscamper_trace.scamper_trace_hop_get(self._c, i)
-        return ScamperTraceHop.from_ptr(c_h, self._c)
+        hi = cscamper_trace.scamper_trace_hopiter_alloc()
+        if hi == NULL:
+            raise MemoryError("could not allocate hopiter")
+        if cscamper_trace.scamper_trace_hopiter_ttl_set(hi, i+1, i+1) != 0:
+            cscamper_trace.scamper_trace_hopiter_free(hi)
+            return None
+        r = cscamper_trace.scamper_trace_hopiter_next(self._c, hi)
+        p = cscamper_trace.scamper_trace_hopiter_probe_get(hi)
+        cscamper_trace.scamper_trace_hopiter_free(hi)
+        if p == NULL or r == NULL:
+            return None
+        return ScamperTraceHop.from_ptr(self._c, p, r)
 
     @property
     def hop_count(self):
@@ -1893,12 +1911,12 @@ cdef class ScamperTrace:
     @property
     def probe_size(self):
         """
-        get method to obtain the probe size to used for this traceroute.
+        get method to obtain the probe size used for this traceroute.
 
         :returns: the probe size used.
         :rtype: int
         """
-        return cscamper_trace.scamper_trace_probe_size_get(self._c)
+        return cscamper_trace.scamper_trace_size_get(self._c)
 
     @property
     def payload(self):
@@ -2414,6 +2432,16 @@ cdef class ScamperPingReply:
         """
         return cscamper_ping.scamper_ping_reply_is_icmp_tsreply(self._r)
 
+    def is_icmp_ptb(self):
+        """
+        get method to determine if the reply was an ICMP packet too big
+        message.
+
+        :return: True if the reply was an ICMP packet too big message.
+        :rtype: bool
+        """
+        return cscamper_ping.scamper_ping_reply_is_icmp_ptb(self._r)
+
     @property
     def icmp_type(self):
         """
@@ -2439,6 +2467,19 @@ cdef class ScamperPingReply:
         if not cscamper_ping.scamper_ping_reply_is_icmp(self._r):
             return None
         return cscamper_ping.scamper_ping_reply_icmp_code_get(self._r)
+
+    @property
+    def icmp_nhmtu(self):
+        """
+        get method to obtain the next hop MTU value encoded in the reply,
+        if the reply was an ICMP packet too big message.
+
+        :returns: the next hop MTU value.
+        :rtype: int
+        """
+        if not cscamper_ping.scamper_ping_reply_is_icmp_ptb(self._r):
+            return None
+        return cscamper_ping.scamper_ping_reply_icmp_nhmtu_get(self._r)
 
     @property
     def tcp_flags(self):
@@ -4157,7 +4198,7 @@ cdef class ScamperDealiasMidardiscRound:
 
         self._c = cscamper_dealias.scamper_dealias_midardisc_round_alloc()
         if self._c == NULL:
-            raise MemoryError
+            raise MemoryError()
 
         if not isinstance(start, datetime.timedelta):
             raise TypeError("expected timedelta for start")
@@ -4246,7 +4287,7 @@ cdef class ScamperDealiasProbedef:
 
         self._c = cscamper_dealias.scamper_dealias_probedef_alloc()
         if self._c == NULL:
-            raise MemoryError
+            raise MemoryError()
 
         # check that the method is valid; the rest of the methods depend
         # on the method
@@ -9425,15 +9466,17 @@ cdef class ScamperCtrl:
                 icmp_id=None, icmp_seq=None, icmp_sum=None, dport=None,
                 sport=None, wait_probe=None, ttl=None, mtu=None,
                 stop_count=None, method=None, payload=None, rtr=None,
-                recordroute=None, size=None, src=None, wait_timeout=None,
-                tos=None, userid=None, inst=None, sync=False):
+                recordroute=None, dltx=None, size=None, src=None,
+                wait_timeout=None, tos=None,
+                userid=None, inst=None, sync=False):
         """
         do_ping(dst, tcp_ack=None, tcp_seq=None, attempts=None,\
                 icmp_id=None, icmp_seq=None, icmp_sum=None, dport=None,\
                 sport=None, wait_probe=None, ttl=None, mtu=None,\
                 stop_count=None, method=None, payload=None, rtr=None,\
-                recordroute=None, size=None, src=None, wait_timeout=None,\
-                tos=None, userid=None, inst=None, sync=False)
+                recordroute=None, dltx=None, size=None, src=None,\
+                wait_timeout=None, tos=None,\
+                userid=None, inst=None, sync=False)
         conduct a ping guided by the assembled parameters.
         Only the dst parameter is required; scamper will use built-in
         defaults for the other optional parameters if they are not
@@ -9457,9 +9500,10 @@ cdef class ScamperCtrl:
             than this value will cause ping to send an ICMP packet-too-big to
             the destination.
         :param bytes payload: the payload to include in probes.
-        :param bool recordroute: Include the IP record-route option in probes
-        :param int stop_count: Stop pinging after receiving this many replies
-        :param int rtr: The first-hop router to send packets through
+        :param bool recordroute: Include the IP record-route option in probes.
+        :param bool dltx: use datalink interface to transmit probe.
+        :param int stop_count: Stop pinging after receiving this many replies.
+        :param int rtr: The first-hop router to send packets through.
         :param int size: The size of packets to send.
         :param int sport: The TCP/UDP source port to use in probes.
         :param string src: The source IP address to use in probes.
@@ -9467,11 +9511,11 @@ cdef class ScamperCtrl:
             for tcp-ack, tcp-ack-sport, and tcp-synack methods.
         :param int tcp_seq: The TCP sequence value to use in probes,
             for tcp-syn, tcp-syn-sport, and tcp-rst methods.
-        :param int tos: The byte to use in the field formally known as IP TOS
-        :param int userid: The userid value to tag with the traceroute
-        :param timedelta wait_probe: The minimum length of time between probes
+        :param int tos: The byte to use in the field formally known as IP TOS.
+        :param int userid: The userid value to tag with the traceroute.
+        :param timedelta wait_probe: The minimum length of time between probes.
         :param timedelta wait_timeout: The length of time to wait for response
-            for a probe
+            for a probe.
         :param bool sync: operate the measurement synchronously
             (the method returns when the measurement completes).
         :returns: a task object representing the ping
@@ -9552,6 +9596,8 @@ cdef class ScamperCtrl:
             args.append(f"-r {rtr}")
         if recordroute is not None and recordroute:
             args.append("-R")
+        if dltx is not None and dltx:
+            args.append("-O dltx")
         if size is not None:
             args.append(f"-s {size}")
         if src is not None:

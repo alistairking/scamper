@@ -6,7 +6,7 @@
  *
  * Authors: Ben Stasiewicz, Matthew Luckie
  *
- * $Id: scamper_tbit_text.c,v 1.24 2024/12/31 04:17:31 mjl Exp $
+ * $Id: scamper_tbit_text.c,v 1.25 2025/04/21 03:24:13 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -82,7 +82,7 @@ int scamper_file_text_tbit_write(const scamper_file_t *sf,
 		      str, http->host);
       else
 	string_concat2(buf, sizeof(buf), &soff, ", file: ", http->file);
-      string_concat(buf, sizeof(buf), &soff, "\n");
+      string_concatc(buf, sizeof(buf), &soff, '\n');
     }
 
   client_isn = 0;
@@ -229,7 +229,7 @@ int scamper_file_text_tbit_write(const scamper_file_t *sf,
 				  u16 != 0 ? "," : "",
 				  bytes_ntohl(ptr+2+(u16*8)) - u32,
 				  bytes_ntohl(ptr+2+(u16*8)+4) - u32);
-		  string_concat(sack, sizeof(sack), &toff, "}");
+		  string_concatc(sack, sizeof(sack), &toff, '}');
 		}
 
 	      u8 += ptr[1];
@@ -282,7 +282,7 @@ int scamper_file_text_tbit_write(const scamper_file_t *sf,
 	    }
 	}
 
-      string_concat(buf, sizeof(buf), &soff, "\n");
+      string_concatc(buf, sizeof(buf), &soff, '\n');
     }
 
   write_wrap(fd, buf, NULL, soff);

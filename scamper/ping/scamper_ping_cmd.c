@@ -1,7 +1,7 @@
 /*
  * scamper_ping_cmd.c
  *
- * $Id: scamper_ping_cmd.c,v 1.29 2025/03/12 19:14:38 mjl Exp $
+ * $Id: scamper_ping_cmd.c,v 1.31 2025/05/05 03:34:24 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -259,6 +259,8 @@ static int ping_arg_param_validate(int optid, char *param, long long *out,
 	tmp = SCAMPER_PING_FLAG_SPOOF;
       else if(strcasecmp(param, "tbt") == 0)
 	tmp = SCAMPER_PING_FLAG_TBT;
+      else if(strcasecmp(param, "dltx") == 0)
+	tmp = SCAMPER_PING_FLAG_DLTX;
       else if(strncasecmp(param, "mss=", 4) == 0)
 	{
 	  if(string_tollong(param+4, &mss, NULL, 0) != 0 ||
@@ -343,7 +345,7 @@ static int ping_tsopt(scamper_ping_t *ping, uint32_t *flags, char *tsopt)
 
 	  ips[i++] = ptr;
 
-	  while(isdigit((int)*ptr) || *ptr == '.')
+	  while(isdigit((unsigned char)*ptr) || *ptr == '.')
 	    ptr++;
 
 	  if(*ptr == '\0')

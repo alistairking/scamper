@@ -3,7 +3,7 @@
  *
  * the warts file format
  *
- * $Id: scamper_file_warts.c,v 1.285 2025/02/11 14:31:43 mjl Exp $
+ * $Id: scamper_file_warts.c,v 1.286 2025/05/05 03:32:38 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -447,7 +447,7 @@ int extract_ifname(const uint8_t *buf, uint32_t *off, uint32_t len,
      (ifn = scamper_ifname_alloc(NULL)) == NULL ||
      (ifn->ifname = memdup(buf + *off, (size_t)(o - *off + 1))) == NULL)
     goto err;
-  *off += (o + 1);
+  *off += (o - *off + 1);
 
   /* an ID of zero means that this entry does not go into the table */
   if(id == 0)

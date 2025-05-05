@@ -1,7 +1,7 @@
 /*
  * common_ping : common functions for unit testing ping
  *
- * $Id: common_ping.c,v 1.4 2025/02/25 06:31:24 mjl Exp $
+ * $Id: common_ping.c,v 1.6 2025/04/20 07:31:58 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -38,6 +38,8 @@
 #include "common_ok.h"
 #include "common_ping.h"
 #include "utils.h"
+
+typedef scamper_ping_t * (*scamper_ping_makefunc_t)(void);
 
 static int v4rr_ok(const scamper_ping_reply_v4rr_t *in,
 		   const scamper_ping_reply_v4rr_t *out)
@@ -167,7 +169,7 @@ int ping_ok(const scamper_ping_t *in, const scamper_ping_t *out)
   return 0;
 }
 
-scamper_ping_t *ping_1(void)
+static scamper_ping_t *ping_1(void)
 {
   scamper_ping_t *ping = NULL;
   scamper_ping_probe_t *probe;
@@ -210,12 +212,21 @@ scamper_ping_t *ping_1(void)
   probe->id          = 3;
   probe->tx.tv_sec   = 1724828853;
   probe->tx.tv_usec  = 123567;
+  probe->sport       = 0x7654;
+  probe->flags       = SCAMPER_PING_REPLY_FLAG_DLTX;
   reply->proto       = IPPROTO_ICMPV6;
   reply->tos         = 0x1f;
-  reply->size        = 1400;
+  reply->size        = 1280;
   reply->icmp_type   = ICMP6_ECHO_REPLY;
+  reply->ttl         = 187;
   reply->rtt.tv_sec  = 0;
   reply->rtt.tv_usec = 1423;
+  reply->flags       = (SCAMPER_PING_REPLY_FLAG_REPLY_TOS |
+			SCAMPER_PING_REPLY_FLAG_REPLY_TTL |
+			SCAMPER_PING_REPLY_FLAG_REPLY_IPID |
+			SCAMPER_PING_REPLY_FLAG_DLTX |
+			SCAMPER_PING_REPLY_FLAG_DLRX);
+  reply->ipid32      = 0x12345678;
 
   return ping;
 
@@ -224,7 +235,7 @@ scamper_ping_t *ping_1(void)
   return NULL;
 }
 
-scamper_ping_t *ping_2(void)
+static scamper_ping_t *ping_2(void)
 {
   scamper_ping_t *ping = NULL;
   scamper_ping_probe_t *probe;
@@ -266,16 +277,22 @@ scamper_ping_t *ping_2(void)
      (reply->v4rr->ip[4] = scamper_addr_fromstr_ipv4("192.0.31.20")) == NULL)
     goto err;
   probe->id          = 0;
-  probe->flags      |= SCAMPER_PING_REPLY_FLAG_PROBE_IPID;
+  probe->flags       = (SCAMPER_PING_REPLY_FLAG_PROBE_IPID |
+			SCAMPER_PING_REPLY_FLAG_DLTX);
   probe->ipid        = 0xaabb;
   probe->tx.tv_sec   = 1724828854;
   probe->tx.tv_usec  = 234789;
+  probe->sport       = 0x4321;
 
-  reply->flags      |= SCAMPER_PING_REPLY_FLAG_PROBE_IPID;
+  reply->flags       = (SCAMPER_PING_REPLY_FLAG_PROBE_IPID |
+			SCAMPER_PING_REPLY_FLAG_REPLY_TOS |
+			SCAMPER_PING_REPLY_FLAG_REPLY_TTL |
+			SCAMPER_PING_REPLY_FLAG_REPLY_IPID |
+			SCAMPER_PING_REPLY_FLAG_DLTX |
+			SCAMPER_PING_REPLY_FLAG_DLRX);
   reply->proto       = IPPROTO_ICMP;
   reply->tos         = 1;
   reply->size        = 192;
-  reply->flags      |= SCAMPER_PING_REPLY_FLAG_REPLY_IPID;
   reply->ipid32      = 0xbbaa;
   reply->icmp_type   = ICMP_ECHOREPLY;
   reply->rtt.tv_sec  = 0;
@@ -286,4 +303,21 @@ scamper_ping_t *ping_2(void)
  err:
   if(ping != NULL) scamper_ping_free(ping);
   return NULL;
+}
+
+static scamper_ping_makefunc_t makers[] = {
+  ping_1,
+  ping_2,
+};
+
+scamper_ping_t *ping_makers(size_t i)
+{
+  if(i >= sizeof(makers) / sizeof(scamper_ping_makefunc_t))
+    return NULL;
+  return makers[i]();
+}
+
+size_t ping_makerc(void)
+{
+  return sizeof(makers) / sizeof(scamper_ping_makefunc_t);
 }
