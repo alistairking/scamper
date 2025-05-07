@@ -1607,6 +1607,7 @@ static scamper_trace_reply_t *trace_icmp_hop(const scamper_task_t *task,
   assert(tp->probe->replyc < UINT16_MAX);
   if(scamper_trace_probe_reply_add(tp->probe, hop) != 0)
     goto err;
+  tp->probe->flags &= ~SCAMPER_TRACE_REPLY_FLAG_PENDING;
 
   return hop;
 
@@ -1649,6 +1650,7 @@ static scamper_trace_reply_t *trace_dl_hop(scamper_task_t *task,
   assert(tp->probe->replyc < UINT16_MAX);
   if(scamper_trace_probe_reply_add(tp->probe, hop) != 0)
     goto err;
+  tp->probe->flags &= ~SCAMPER_TRACE_REPLY_FLAG_PENDING;
 
   return hop;
 
@@ -3757,6 +3759,45 @@ static void trace_handle_rt(scamper_route_t *rt)
   return;
 }
 
+static void trace_clear_pending(scamper_task_t *task, const struct timeval *now)
+{
+  scamper_trace_t *trace = trace_getdata(task);
+  scamper_trace_probettl_t *pttl;
+  scamper_trace_probe_t *probe;
+  struct timeval floor;
+  uint16_t h;
+  uint8_t p;
+
+  timeval_cpy(&floor, now);
+  timeval_sub_tv(&floor, &trace->wait_timeout);
+
+  for(h=0; h<trace->hop_count; h++)
+    {
+      if((pttl = trace->hops[h]) == NULL)
+	continue;
+      for(p=0; p<pttl->probec; p++)
+	{
+	  if((probe = pttl->probes[p]) != NULL &&
+	     (probe->flags & SCAMPER_TRACE_REPLY_FLAG_PENDING) &&
+	     timeval_cmp(&probe->tx, &floor) <= 0)
+	    probe->flags &= ~SCAMPER_TRACE_REPLY_FLAG_PENDING;
+	}
+    }
+
+  if(trace->pmtud != NULL)
+    {
+      for(h=0; h<trace->pmtud->probec; h++)
+	{
+	  if((probe = pttl->probes[p]) != NULL &&
+	     (probe->flags & SCAMPER_TRACE_REPLY_FLAG_PENDING) &&
+	     timeval_cmp(&probe->tx, &floor) <= 0)
+	    probe->flags &= ~SCAMPER_TRACE_REPLY_FLAG_PENDING;
+	}
+    }
+
+  return;
+}
+
 static void do_trace_write(scamper_file_t *sf, scamper_task_t *task)
 {
   scamper_trace_t *trace = trace_getdata(task);
@@ -3764,6 +3805,10 @@ static void do_trace_write(scamper_file_t *sf, scamper_task_t *task)
   scamper_trace_hopiter_t hi;
   trace_state_t *state;
   uint8_t stop_reason, stop_data;
+  struct timeval now;
+
+  gettimeofday_wrap(&now);
+  trace_clear_pending(task, &now);
 
   if(trace->squeries > 1 && (state = trace_getstate(task)) != NULL)
     {
@@ -4071,11 +4116,12 @@ static void do_trace_free(scamper_task_t *task)
   return;
 }
 
-static void trace_stream(scamper_task_t *task)
+static void trace_stream(scamper_task_t *task, const struct timeval *now)
 {
   scamper_task_t *dup;
   scamper_trace_t *trace;
 
+  trace_clear_pending(task, now);
   if((dup = scamper_task_dup(task)) == NULL)
     return;
   trace = trace_getdata(dup);
@@ -4463,6 +4509,8 @@ static void do_trace_probe(scamper_task_t *task)
   /* another probe sent */
   trace->probec++;
 
+  stp->flags = SCAMPER_TRACE_REPLY_FLAG_PENDING;
+
   tp->probe = stp;
   timeval_cpy(&tp->probe->tx, &probe.pr_tx);
   tp->probe->ttl = probe.pr_ip_ttl;
@@ -4514,7 +4562,7 @@ static void do_trace_probe(scamper_task_t *task)
   timeval_cpy(&state->last_tx, &probe.pr_tx);
 
   if(trace->stream > 0 && (trace->probec % trace->stream) == 0)
-    trace_stream(task);
+    trace_stream(task, &probe.pr_tx);
 
   trace_queue(task, &probe.pr_tx);
   return;
