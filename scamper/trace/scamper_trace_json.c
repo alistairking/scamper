@@ -57,6 +57,8 @@ static scamper_trace_reply_t *trace_reply_get(const scamper_trace_t *trace,
 static void probe_json(char *buf, size_t len, size_t *off,
 		       const scamper_trace_probe_t *probe, int reply)
 {
+  int x = 0;
+
   string_concatc(buf, len, off, reply == 0 ? '{' : ',');
 
   string_concat_u8(buf, len, off, "\"probe_ttl\":", probe->ttl);
@@ -69,6 +71,22 @@ static void probe_json(char *buf, size_t len, size_t *off,
       string_concat_u32(buf, len, off, ", \"usec\":",
 			(uint32_t)probe->tx.tv_usec);
       string_concatc(buf, len, off, '}');
+    }
+
+  if(reply == 0 && probe->flags != 0)
+    {
+      string_concat(buf, len, off, ", \"flags\":[");
+      if(probe->flags & SCAMPER_TRACE_REPLY_FLAG_PENDING)
+	{
+	  string_concat(buf, len, off, "\"pending\"");
+	  x++;
+	}
+      if(probe->flags & SCAMPER_TRACE_REPLY_FLAG_TS_DL_TX)
+	{
+	  if(x > 0) string_concatc(buf, len, off, ',');
+	  string_concat(buf, len, off, "\"dltxts\"");
+	}
+      string_concatc(buf, len, off, ']');
     }
 
   if(reply == 0)

@@ -205,10 +205,10 @@ scamper_trace_reply_t *scamper_trace_reply_dup(const scamper_trace_reply_t *in)
 
   if(in->addr != NULL)
     out->addr = scamper_addr_use(in->addr);
-  if(in->name != NULL && (out->name = strdup(in->name)))
+  if(in->name != NULL && (out->name = strdup(in->name)) == NULL)
     goto err;
   if(in->icmp_exts != NULL &&
-     (out->icmp_exts = scamper_icmpexts_dup(in->icmp_exts)) != NULL)
+     (out->icmp_exts = scamper_icmpexts_dup(in->icmp_exts)) == NULL)
     goto err;
 
   return out;

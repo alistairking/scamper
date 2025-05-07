@@ -71,6 +71,7 @@
 #define SCAMPER_TRACE_REPLY_FLAG_TS_SOCK_RX 0x01 /* socket rx timestamp */
 #define SCAMPER_TRACE_REPLY_FLAG_TS_DL_TX   0x02 /* datalink tx timestamp */
 #define SCAMPER_TRACE_REPLY_FLAG_TS_DL_RX   0x04 /* datalink rx timestamp */
+#define SCAMPER_TRACE_REPLY_FLAG_PENDING    0x80 /* response pending */
 #define SCAMPER_TRACE_REPLY_FLAG_REPLY_TTL  0x10 /* reply ttl included */
 #define SCAMPER_TRACE_REPLY_FLAG_TCP        0x20 /* reply is TCP */
 #define SCAMPER_TRACE_REPLY_FLAG_UDP        0x40 /* reply is UDP */
