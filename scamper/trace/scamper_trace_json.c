@@ -571,7 +571,9 @@ char *scamper_trace_tojson(const scamper_trace_t *trace, size_t *len_out)
   scamper_trace_reply_t *reply;
   size_t len, off = 0;
   char *str = NULL, *header = NULL, **hops = NULL, **no_hops = NULL;
-  size_t h, nh, hopc = 0, hops_hopc = 0, extra_hopc = 0, no_hopc = 0;
+  size_t h, nh, x;
+  size_t hops_hopc = 0, no_hopc = 0;
+  size_t extra_hopc = 0, extra_no_hopc = 0;
   char *pmtud = NULL;
   uint16_t i, hop_count, r;
   uint8_t p;
@@ -612,7 +614,10 @@ char *scamper_trace_tojson(const scamper_trace_t *trace, size_t *len_out)
 		{
 		  if((probe = pttl->probes[p]) == NULL)
 		    continue;
-		  extra_hopc += probe->replyc;
+		  if(probe->replyc > 0)
+		    extra_hopc += probe->replyc;
+		  else
+		    extra_no_hopc++;
 		}
 	    }
 	  i++;
@@ -620,12 +625,14 @@ char *scamper_trace_tojson(const scamper_trace_t *trace, size_t *len_out)
     }
 
   /* structure around hops arrays */
-  if((hopc = hops_hopc + extra_hopc) > 0)
+  if(hops_hopc + extra_hopc > 0)
     {
-      len += 11; /* , "hops":[] */
+      if(hops_hopc > 0)
+	len += 11; /* , "hops":[] */
       if(extra_hopc > 0)
 	len += 17; /* , "extra_hops":[] */
-      if((hops = malloc_zero(sizeof(char *) * hopc)) == NULL)
+      x = sizeof(char *) * (hops_hopc + extra_hopc);
+      if((hops = malloc_zero(x)) == NULL)
 	goto cleanup;
 
       /* comma separators for the two hops arrays */
@@ -635,13 +642,21 @@ char *scamper_trace_tojson(const scamper_trace_t *trace, size_t *len_out)
 	len += (extra_hopc - 1); /* , */
     }
 
-  /* structure around no_hops array */
-  if(no_hopc > 0)
+  /* structure around no_hops arrays */
+  if(no_hopc + extra_no_hopc > 0)
     {
-      len += 14; /* , "no_hops":[] */
-      if((no_hops = malloc_zero(sizeof(char *) * no_hopc)) == NULL)
+      if(no_hopc > 0)
+	len += 14; /* , "no_hops":[] */
+      if(extra_no_hopc > 0)
+	len += 20; /* , "extra_no_hops":[] */
+      x = sizeof(char *) * (no_hopc + extra_no_hopc);
+      if((no_hops = malloc_zero(x)) == NULL)
 	goto cleanup;
-      len += (no_hopc - 1); /* , */
+
+      if(no_hopc > 1)
+	len += (no_hopc - 1); /* , */
+      if(extra_no_hopc > 1)
+	len += (extra_no_hopc - 1); /* , */
     }
 
   h = nh = 0;
@@ -658,6 +673,7 @@ char *scamper_trace_tojson(const scamper_trace_t *trace, size_t *len_out)
 	      for(r=0; r<probe->replyc; r++)
 		{
 		  reply = probe->replies[r];
+		  assert(h < hops_hopc + extra_hopc);
 		  if((hops[h] = hop_tostr(trace, probe, reply)) == NULL)
 		    goto cleanup;
 		  len += strlen(hops[h]);
@@ -666,6 +682,7 @@ char *scamper_trace_tojson(const scamper_trace_t *trace, size_t *len_out)
 	    }
 	  else
 	    {
+	      assert(nh < no_hopc + extra_no_hopc);
 	      if((no_hops[nh] = probe_tostr(probe)) == NULL)
 		goto cleanup;
 	      len += strlen(no_hops[nh]);
@@ -673,6 +690,9 @@ char *scamper_trace_tojson(const scamper_trace_t *trace, size_t *len_out)
 	    }
 	}
     }
+
+  assert(h == hops_hopc + extra_hopc);
+  assert(nh == no_hopc + extra_no_hopc);
 
   if(trace->pmtud != NULL && trace->pmtud->ver == 2)
     {
@@ -688,7 +708,7 @@ char *scamper_trace_tojson(const scamper_trace_t *trace, size_t *len_out)
 
   str[off++] = '{';
   string_concat(str, len, &off, header);
-  if(hopc > 0)
+  if(hops_hopc > 0)
     {
       string_concat(str, len, &off, ", \"hops\":[");
       for(h=0; h<hops_hopc; h++)
@@ -721,6 +741,17 @@ char *scamper_trace_tojson(const scamper_trace_t *trace, size_t *len_out)
       string_concatc(str, len, &off, ']');
     }
 
+  if(extra_no_hopc > 0)
+    {
+      string_concat(str, len, &off, ", \"extra_no_hops\":[");
+      for(h=0; h<extra_no_hopc; h++)
+	{
+	  if(h > 0) string_concatc(str, len, &off, ',');
+	  string_concat(str, len, &off, no_hops[no_hopc + h]);
+	}
+      string_concatc(str, len, &off, ']');
+    }
+
   if(pmtud != NULL)
     string_concat(str, len, &off, pmtud);
 
@@ -732,14 +763,14 @@ char *scamper_trace_tojson(const scamper_trace_t *trace, size_t *len_out)
  cleanup:
   if(hops != NULL)
     {
-      for(h=0; h<hopc; h++)
+      for(h=0; h < hops_hopc + extra_hopc; h++)
 	if(hops[h] != NULL)
 	  free(hops[h]);
       free(hops);
     }
   if(no_hops != NULL)
     {
-      for(h=0; h<no_hopc; h++)
+      for(h=0; h < no_hopc + extra_no_hopc; h++)
 	if(no_hops[h] != NULL)
 	  free(no_hops[h]);
       free(no_hops);
