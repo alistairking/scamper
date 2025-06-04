@@ -1,7 +1,7 @@
 /*
  * sc_wartsdump
  *
- * $Id: sc_wartsdump.c,v 1.317 2025/05/05 03:34:49 mjl Exp $
+ * $Id: sc_wartsdump.c,v 1.318 2025/05/28 06:53:57 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -499,9 +499,10 @@ static void dump_trace(scamper_trace_t *trace)
 
   if((pmtud = scamper_trace_pmtud_get(trace)) != NULL)
     {
-      printf("pmtud: ver %d ifmtu %d, pmtu %d",
+      printf("pmtud: ver %d ifmtu %d, outmtu %d, pmtu %d",
 	     scamper_trace_pmtud_ver_get(pmtud),
 	     scamper_trace_pmtud_ifmtu_get(pmtud),
+	     scamper_trace_pmtud_outmtu_get(pmtud),
 	     scamper_trace_pmtud_pmtu_get(pmtud));
       if((u16 = scamper_trace_pmtud_outmtu_get(pmtud)) != 0)
 	printf(", outmtu %d", u16);

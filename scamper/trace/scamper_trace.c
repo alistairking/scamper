@@ -1,7 +1,7 @@
 /*
  * scamper_trace.c
  *
- * $Id: scamper_trace.c,v 1.136 2025/05/04 23:58:33 mjl Exp $
+ * $Id: scamper_trace.c,v 1.140 2025/05/29 11:10:11 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2003-2011 The University of Waikato
@@ -39,6 +39,106 @@
 #include "scamper_trace.h"
 #include "scamper_trace_int.h"
 #include "utils.h"
+
+scamper_trace_pmtud_note_t *
+scamper_trace_pmtud_noteiter_next(const scamper_trace_t *trace,
+				  scamper_trace_pmtud_noteiter_t *ni)
+{
+  scamper_trace_pmtud_note_t *note = NULL;
+
+  if(trace != NULL && trace->pmtud != NULL && trace->pmtud->notes != NULL &&
+     ni->n < trace->pmtud->notec)
+    note = trace->pmtud->notes[ni->n++];
+
+  ni->dist = 0;
+  ni->note = note;
+  return note;
+}
+
+uint8_t
+scamper_trace_pmtud_noteiter_dist_get(const scamper_trace_t *trace,
+				      scamper_trace_pmtud_noteiter_t *ni)
+{
+  scamper_trace_pmtud_note_t *note = ni->note;
+  scamper_trace_reply_t *hop = NULL, *trace_hop;
+  scamper_trace_hopiter_t hi;
+  uint8_t i, hop_count, dist = 0;
+
+  if(note == NULL)
+    goto done;
+
+  if(ni->dist != 0)
+    return ni->dist;
+
+  /* sanity check stop_hop and hop_count */
+  if(trace->stop_hop == 0 || trace->stop_hop > trace->hop_count)
+    {
+      if(trace->hop_count > 255)
+	goto done;
+      hop_count = trace->hop_count;
+    }
+  else hop_count = trace->stop_hop;
+  if(hop_count == 0)
+    goto done;
+
+  /* distance for silence condition is the last responding probe's ttl */
+  if(note->type == SCAMPER_TRACE_PMTUD_NOTE_TYPE_SILENCE)
+    {
+      if(note->probe != NULL && note->probe->ttl < hop_count)
+	dist = note->probe->ttl;
+      goto done;
+    }
+
+  /* all other conditions should have a reply of some sort */
+  if((hop = note->reply) == NULL)
+    goto done;
+
+  /*
+   * if we observed the address in traceroute, then return the hop
+   * where that address is observed
+   */
+  scamper_trace_hopiter_ttl_set(&hi, ni->start+1, hop_count);
+  while((trace_hop = scamper_trace_hopiter_next(trace, &hi)) != NULL)
+    {
+      if(scamper_trace_reply_addr_cmp(trace_hop, hop) == 0)
+	{
+	  dist = hi.probe->ttl;
+	  goto done;
+	}
+    }
+
+  if(note->probe == NULL || note->probe->ttl <= hop->reply_icmp_q_ttl)
+    goto done;
+
+  /* kludge to figure out which hop to put the PTB on */
+  i = note->probe->ttl - hop->reply_icmp_q_ttl;
+
+  /*
+   * shift the predicted hop back one if the alignment is
+   * analytically unlikely.
+   */
+  if(i < hop_count && trace->hops[i] != NULL &&
+     (trace_hop = scamper_trace_probettl_reply_get(trace->hops[i])) != NULL &&
+     ((SCAMPER_ADDR_TYPE_IS_IPV4(hop->addr) &&
+       scamper_addr_prefix(trace_hop->addr, hop->addr) >= 30) ||
+      (SCAMPER_ADDR_TYPE_IS_IPV6(hop->addr) &&
+       scamper_addr_prefix(trace_hop->addr, hop->addr) >= 126)))
+    dist = i;
+  else
+    dist = i + 1;
+
+  if(dist >= hop_count)
+    dist = hop_count-1;
+  assert(dist < hop_count);
+
+ done:
+  if(dist != 0)
+    {
+      ni->dist = dist;
+      ni->start = dist;
+    }
+  return dist;
+}
 
 scamper_trace_reply_t *
 scamper_trace_lastditch_hopiter_next(const scamper_trace_lastditch_t *ld,
@@ -594,7 +694,7 @@ scamper_trace_pmtud_t *scamper_trace_pmtud_dup(const scamper_trace_pmtud_t *in)
 	  if(out->notes[i] == NULL)
 	    goto err;
 
-	  if(in->notes[i]->probe == NULL)
+	  if(in->notes[i]->probe == NULL || in->probes == NULL)
 	    continue;
 
 	  for(p=0; p<in->probec; p++)

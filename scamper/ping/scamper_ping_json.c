@@ -9,7 +9,7 @@
  * Copyright (c) 2019-2025 Matthew Luckie
  * Authors: Brian Hammond, Matthew Luckie
  *
- * $Id: scamper_ping_json.c,v 1.50 2025/05/05 03:34:24 mjl Exp $
+ * $Id: scamper_ping_json.c,v 1.53 2025/05/29 20:01:52 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -164,9 +164,8 @@ static void ping_probe_json(char *buf, size_t len, size_t *off,
 			    const scamper_ping_probe_t *probe, int reply)
 {
   uint16_t sport, dport;
-  char *pt = "bug";
+  char tmp[64], *pt;
   size_t off2;
-  char tmp[64];
 
   string_concatc(buf, len, off, reply == 0 ? '{' : ',');
   string_concat_u16(buf, len, off, "\"seq\":", probe->id);
@@ -202,8 +201,10 @@ static void ping_probe_json(char *buf, size_t len, size_t *off,
     {
       if(SCAMPER_PING_METHOD_IS_UDP(ping))
 	pt = "udp";
-      else
+      else if(SCAMPER_PING_METHOD_IS_TCP(ping))
 	pt = "tcp";
+      else
+	pt = "bug";
 
       if(probe->sport == 0)
 	{
@@ -407,9 +408,9 @@ static char *ping_stats(const scamper_ping_t *ping)
       total = ping->ping_sent - stats->npend;
       string_concat(buf, sizeof(buf), &off, ", \"loss\":");
       if(stats->nreplies == 0)
-	string_concat(buf, sizeof(buf), &off, "1");
+	string_concatc(buf, sizeof(buf), &off, '1');
       else if(stats->nreplies == total)
-	string_concat(buf, sizeof(buf), &off, "0");
+	string_concatc(buf, sizeof(buf), &off, '0');
       else
 	string_concaf(buf, sizeof(buf), &off, "%.2f",
 		      (float)(total - stats->nreplies) / total);

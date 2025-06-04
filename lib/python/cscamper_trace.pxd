@@ -46,13 +46,20 @@ cdef extern from "scamper_trace.h":
  ctypedef struct scamper_trace_reply_t:
   pass
 
- ctypedef struct scamper_trace_pmtud_t:
-  pass
-
  ctypedef struct scamper_trace_hopiter_t:
   pass
 
+ ctypedef struct scamper_trace_pmtud_t:
+  pass
+
+ ctypedef struct scamper_trace_pmtud_note_t:
+  pass
+
+ ctypedef struct scamper_trace_pmtud_noteiter_t:
+  pass
+
  char *scamper_trace_tojson(const scamper_trace_t *trace, size_t *l)
+ char *scamper_trace_totext(const scamper_trace_t *trace, size_t *l)
 
  void scamper_trace_free(scamper_trace_t *trace)
 
@@ -144,3 +151,16 @@ cdef extern from "scamper_trace.h":
  uint16_t scamper_trace_pmtud_pmtu_get(const scamper_trace_pmtud_t *pmtud)
  uint16_t scamper_trace_pmtud_ifmtu_get(const scamper_trace_pmtud_t *pmtud)
  uint16_t scamper_trace_pmtud_outmtu_get(const scamper_trace_pmtud_t *pmtud)
+
+ scamper_trace_pmtud_note_t *scamper_trace_pmtud_note_use(scamper_trace_pmtud_note_t *n)
+ void scamper_trace_pmtud_note_free(scamper_trace_pmtud_note_t *n)
+ scamper_trace_probe_t *scamper_trace_pmtud_note_probe_get(const scamper_trace_pmtud_note_t *n)
+ scamper_trace_reply_t *scamper_trace_pmtud_note_reply_get(const scamper_trace_pmtud_note_t *n)
+ uint16_t scamper_trace_pmtud_note_nhmtu_get(const scamper_trace_pmtud_note_t *n)
+ uint8_t scamper_trace_pmtud_note_type_get(const scamper_trace_pmtud_note_t *n)
+ char *scamper_trace_pmtud_note_type_tostr(const scamper_trace_pmtud_note_t *n, char *buf, size_t len)
+
+ scamper_trace_pmtud_noteiter_t *scamper_trace_pmtud_noteiter_alloc()
+ void scamper_trace_pmtud_noteiter_free(scamper_trace_pmtud_noteiter_t *ni)
+ scamper_trace_pmtud_note_t *scamper_trace_pmtud_noteiter_next(const scamper_trace_t *trace, scamper_trace_pmtud_noteiter_t *ni)
+ uint8_t scamper_trace_pmtud_noteiter_dist_get(const scamper_trace_t *trace, scamper_trace_pmtud_noteiter_t *ni)

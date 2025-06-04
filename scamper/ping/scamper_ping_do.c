@@ -1,7 +1,7 @@
 /*
  * scamper_do_ping.c
  *
- * $Id: scamper_ping_do.c,v 1.209 2025/05/05 03:34:24 mjl Exp $
+ * $Id: scamper_ping_do.c,v 1.210 2025/05/29 07:44:16 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -527,16 +527,6 @@ static void do_ping_handle_dl(scamper_task_t *task, scamper_dl_rec_t *dl)
 
   if(direction == DIR_INBOUND)
     {
-#if 0
-      /*
-       * if we expect to see the packet outbound on the datalink
-       * socket (because we did not transmit it on the datalink) and
-       * we have not yet seen it, then don't match this packet.
-       */
-      if(probe->dlts == 0 && probe->dltx == 0)
-	return;
-#endif
-
       /* allocate a reply structure for the response */
       if((reply = scamper_ping_reply_alloc()) == NULL)
 	{

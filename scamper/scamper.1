@@ -10,9 +10,9 @@
 .\" Copyright (c) 2024      The Regents of the University of California
 .\"                         All rights reserved
 .\"
-.\" $Id: scamper.1,v 1.154 2025/05/05 04:02:07 mjl Exp $
+.\" $Id: scamper.1,v 1.156 2025/06/02 23:27:55 mjl Exp $
 .\"
-.Dd May 5, 2025
+.Dd June 3, 2025
 .Dt SCAMPER 1
 .Os
 .\""""""""""""
@@ -430,6 +430,7 @@ trace
 .Op Fl U Ar userid
 .Op Fl w Ar wait-timeout
 .Op Fl W Ar wait-probe
+.Op Fl y Ar stream
 .Op Fl z Ar gss-entry
 .Op Fl Z Ar lss-name
 .Ek
@@ -554,6 +555,11 @@ of 5 is used.
 .It Fl W Ar wait-probe
 specifies the minimum time to wait, in 10s of milliseconds, between sending
 consecutive probes.  By default the next probe is sent as soon as possible.
+.It Fl y Ar stream
+specifies the number of packets to send before reporting in-progress
+results.  By default,
+.Nm
+sends results once the traceroute has completed.
 .It Fl z Ar gss-entry
 specifies an IP address to halt probing when encountered; used with the
 double-tree algorithm.
@@ -592,6 +598,7 @@ ping
 .Op Fl T Ar timestamp
 .Op Fl U Ar userid
 .Op Fl W Ar wait-timeout
+.Op Fl y Ar stream
 .Op Fl z Ar tos
 .Ek
 .Bl -tag -width Ds
@@ -708,6 +715,11 @@ of ping.
 .It Fl W Ar wait-timeout
 specifies how long to wait for responses after the last ping is sent.  By
 default this is one second.
+.It Fl y Ar stream
+specifies the number of packets to send before reporting in-progress
+results.  By default,
+.Nm
+sends results once the ping has completed.
 .It Fl z Ar tos
 specifies the value to use in the IPv4 ToS/DSCP + ECN byte.  By default, this
 byte is set to zero.
@@ -1371,6 +1383,37 @@ file,
 .Nm
 records details of the list and cycle that each measurement task belongs
 to.
+.\""""""""""""
+.Sh SIGNALS
+On receipt of a SIGINT or SIGTERM,
+.Nm
+will exit immediately and cleanly, deleting any unix domain sockets
+from the file system that belong to the
+.Nm
+process.
+.Nm
+immediately stops any in-progress measurements and any data
+collected for those measurements is discarded.
+.Pp
+On receipt of a SIGHUP,
+.Nm
+will reload any TLS key material, and the configuration file.
+.Pp
+.Nm
+will run privilege separated unless compiled without privilege separation.
+The user that started
+.Nm
+can send signals to the privileged process which runs as the user-id
+that started scamper, but not the unprivileged process which runs as
+user-id nobody.
+The privileged process ID is the process ID that
+.Nm
+writes to the pidfile on start, if
+.Nm
+is told to write a pidfile with the
+.Fl e
+option.
+Send signals to that process ID.
 .\""""""""""""
 .Sh CONTROL SOCKET
 When started with a
