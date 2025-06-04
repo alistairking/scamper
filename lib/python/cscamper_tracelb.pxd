@@ -53,6 +53,7 @@ cdef extern from "scamper_tracelb.h":
   pass
 
  char *scamper_tracelb_tojson(const scamper_tracelb_t *tracelb, size_t *l)
+ char *scamper_tracelb_totext(const scamper_tracelb_t *tracelb, size_t *l)
 
  void scamper_tracelb_free(scamper_tracelb_t *tracelb)
  char *scamper_tracelb_type_tostr(const scamper_tracelb_t *trace, char *buf, size_t len)

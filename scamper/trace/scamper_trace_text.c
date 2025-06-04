@@ -7,7 +7,7 @@
  * Copyright (C) 2020-2025 Matthew Luckie
  * Author: Matthew Luckie
  *
- * $Id: scamper_trace_text.c,v 1.44 2025/05/04 23:58:58 mjl Exp $
+ * $Id: scamper_trace_text.c,v 1.52 2025/05/30 22:42:40 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -417,14 +417,22 @@ static char *hop_tostr(const scamper_trace_t *trace, int h)
   return str;
 }
 
-static char *mtu_tostr(int mtu, int size)
+static int mtu_tostr(char **mtus, uint8_t h, int mtu, int size)
 {
-  char str[24];
+  char *ptr, str[24];
+
   if(mtu != size)
     snprintf(str, sizeof(str), " [*mtu: %d]", size);
   else
     snprintf(str, sizeof(str), " [mtu: %d]", mtu);
-  return strdup(str);
+
+  if((ptr = strdup(str)) == NULL)
+    return -1;
+  if(mtus[h] != NULL)
+    free(mtus[h]);
+  mtus[h] = ptr;
+
+  return 0;
 }
 
 static int pmtud_ver1(const scamper_trace_t *trace, char **mtus)
@@ -476,7 +484,7 @@ static int pmtud_ver1(const scamper_trace_t *trace, char **mtus)
        */
       if(scamper_trace_reply_addr_cmp(hop, trace_hop) == 0)
 	{
-	  if((mtus[i] = mtu_tostr(mtu, size)) == NULL)
+	  if(mtu_tostr(mtus, i, mtu, size) != 0)
 	    return -1;
 
 	  if(SCAMPER_TRACE_REPLY_IS_ICMP_PTB(hop))
@@ -502,7 +510,7 @@ static int pmtud_ver1(const scamper_trace_t *trace, char **mtus)
 	  if(SCAMPER_TRACE_REPLY_IS_ICMP_PTB(hop))
 	    size = mtu = hop->reply_icmp_nhmtu;
 
-	  if((mtus[i] = mtu_tostr(mtu, size)) == NULL)
+	  if(mtu_tostr(mtus, i, mtu, size) != 0)
 	    return -1;
 
 	  if((hop = scamper_trace_pmtud_hopiter_next(pmtud, &hi)) != NULL)
@@ -514,7 +522,7 @@ static int pmtud_ver1(const scamper_trace_t *trace, char **mtus)
 	  continue;
 	}
 
-      if((mtus[i] = mtu_tostr(mtu, size)) == NULL)
+      if(mtu_tostr(mtus, i, mtu, size) != 0)
 	return -1;
     }
 
@@ -525,89 +533,44 @@ static int pmtud_ver2(const scamper_trace_t *trace, char **mtus)
 {
   const scamper_trace_pmtud_t *pmtud = trace->pmtud;
   const scamper_trace_pmtud_note_t *note;
+  scamper_trace_pmtud_noteiter_t ni;
   const scamper_trace_reply_t *hop, *trace_hop;
   char buf[256], addr[128];
   size_t off;
   uint16_t mtu, size;
-  uint8_t n = 0;
-  uint8_t h = 0;
-  int i;
+  uint8_t h = 0, i, hop_count;
 
   mtu = size = pmtud->ifmtu;
+  memset(&ni, 0, sizeof(ni));
 
   if(pmtud->outmtu != 0)
     {
       /* the first note should be for a silent first hop */
-      assert(pmtud->notec > 0);
-      assert(pmtud->notes[0]->reply == NULL);
-      assert(pmtud->notes[0]->type == SCAMPER_TRACE_PMTUD_NOTE_TYPE_SILENCE);
       size = pmtud->outmtu;
-      n++;
+      scamper_trace_pmtud_noteiter_next(trace, &ni);
     }
 
-  if(n == pmtud->notec)
-    {
-      for(h=0; h<trace->hop_count; h++)
-	if(trace_reply_get(trace, h) != NULL &&
-	   (mtus[h] = mtu_tostr(mtu, size)) == NULL)
-	  return -1;
-      return 0;
-    }
+  if(trace->stop_hop == 0 || trace->stop_hop > trace->hop_count)
+    hop_count = trace->hop_count;
+  else
+    hop_count = trace->stop_hop;
 
-  while(n < pmtud->notec)
+  while((note = scamper_trace_pmtud_noteiter_next(trace, &ni)) != NULL)
     {
-      note = pmtud->notes[n]; n++;
       if((hop = note->reply) == NULL)
 	{
 	  size = note->nhmtu;
 	  continue;
 	}
 
-      if(note->probe == NULL)
-	return -1;
-
-      if(note->type == SCAMPER_TRACE_PMTUD_NOTE_TYPE_SILENCE)
-	{
-	  i = note->probe->ttl - 1;
-	}
-      else
-	{
-	  for(i=h; i<trace->hop_count; i++)
-	    {
-	      if((trace_hop = trace_reply_get(trace, i)) == NULL)
-		continue;
-	      if(scamper_trace_reply_addr_cmp(trace_hop, hop) == 0)
-		break;
-	    }
-
-	  /* kludge to figure out which hop to put the PTB on */
-	  if(i == trace->hop_count)
-	    {
-	      i = note->probe->ttl - hop->reply_icmp_q_ttl;
-
-	      /*
-	       * shift the predicted hop back one if the alignment is
-	       * analytically unlikely.
-	       */
-	      if((trace_hop = trace_reply_get(trace, i)) != NULL &&
-		 ((SCAMPER_ADDR_TYPE_IS_IPV4(hop->addr) &&
-		   scamper_addr_prefix(trace_hop->addr, hop->addr) >= 30) ||
-		  (SCAMPER_ADDR_TYPE_IS_IPV6(hop->addr) &&
-		   scamper_addr_prefix(trace_hop->addr, hop->addr) >= 126)))
-		i--;
-
-	      /* handle wrap */
-	      if(i >= (trace->hop_count-1))
-		i = trace->hop_count-2;
-	      if(i < 0)
-		i = 0;
-	    }
-	}
+      if((i = scamper_trace_pmtud_noteiter_dist_get(trace, &ni)) == 0)
+	continue;
+      i--;
 
       while(h <= i)
 	{
 	  if(trace_reply_get(trace, h) != NULL &&
-	     (mtus[h] = mtu_tostr(mtu, size)) == NULL)
+	     mtu_tostr(mtus, h, mtu, size) != 0)
 	    return -1;
 	  h++;
 	}
@@ -615,7 +578,7 @@ static int pmtud_ver2(const scamper_trace_t *trace, char **mtus)
       if(SCAMPER_TRACE_REPLY_IS_ICMP_PTB(hop))
 	{
 	  if(trace_reply_get(trace, i) == NULL &&
-	     (mtus[i] = mtu_tostr(mtu, size)) == NULL)
+	     mtu_tostr(mtus, i, mtu, size) != 0)
 	    return -1;
 
 	  if((trace_hop = trace_reply_get(trace, i)) == NULL ||
@@ -647,10 +610,10 @@ static int pmtud_ver2(const scamper_trace_t *trace, char **mtus)
       size = note->nhmtu;
     }
 
-  while(h < trace->hop_count)
+  while(h < hop_count)
     {
       if(trace_reply_get(trace, h) != NULL &&
-	 (mtus[h] = mtu_tostr(mtu, size)) == NULL)
+	 mtu_tostr(mtus, h, mtu, size) != 0)
 	return -1;
       h++;
     }
@@ -658,47 +621,21 @@ static int pmtud_ver2(const scamper_trace_t *trace, char **mtus)
   return 0;
 }
 
-/*
- * scamper_file_text_trace_write
- *
- * return 0 on successful write, -1 otherwise.
- */
-int scamper_file_text_trace_write(const scamper_file_t *sf,
-				  const scamper_trace_t *trace, void *p)
+char *scamper_trace_totext(const scamper_trace_t *trace, size_t *len_out)
 {
   static int (*const pmtud_tostr[])(const scamper_trace_t *, char **) = {
     NULL,
     pmtud_ver1,
     pmtud_ver2,
   };
-
-  /* current return code */
-  int rc = -1;
-
-  /* variables for creating the string representing the trace */
+  char *str = NULL, *header = NULL, **hops = NULL, **mtus = NULL;
   uint16_t i, hop_count;
-  size_t   off, len;
-  char    *str      = NULL;
-  char    *header   = NULL;
-  char   **hops     = NULL;
-  char   **mtus     = NULL;
-
-  /* variables for writing to the file */
-  off_t  foff = 0;
-  int    fd;
-  size_t wc;
-
-  /*
-   * get the current offset into the file, incase the write fails and a
-   * truncation is required
-   */
-  fd = scamper_file_getfd(sf);
-  if(fd != STDOUT_FILENO && (foff = lseek(fd, 0, SEEK_CUR)) == -1)
-    goto cleanup;
+  size_t off, len;
+  int rc = -1;
 
   /* get a string that specifies the source and destination of the trace */
   header = header_tostr(trace);
-  len = strlen(header) + 2;
+  len = strlen(header) + 2; /* \n for header and \0 */
 
   if(trace->hop_count > 0)
     {
@@ -730,18 +667,16 @@ int scamper_file_text_trace_write(const scamper_file_t *sf,
       len += trace->hop_count; /* \n on each line */
     }
 
-  len += 1; /* final \0 */
-
-  if((str = malloc_zero(len)) == NULL)
+  if((str = malloc(len)) == NULL)
     goto cleanup;
 
   off = 0;
   string_concat(str, len, &off, header);
-  str[off++] = '\n';
+  string_concatc(str, len, &off, '\n');
 
   if(hops != NULL)
     {
-      if(trace->stop_hop == 0)
+      if(trace->stop_hop == 0 || trace->stop_hop > trace->hop_count)
 	hop_count = trace->hop_count;
       else
 	hop_count = trace->stop_hop;
@@ -750,25 +685,18 @@ int scamper_file_text_trace_write(const scamper_file_t *sf,
 	  string_concat(str, len, &off, hops[i]);
 	  if(mtus != NULL && mtus[i] != NULL)
 	    string_concat(str, len, &off, mtus[i]);
-	  str[off++] = '\n';
+	  string_concatc(str, len, &off, '\n');
 	}
     }
 
-  /*
-   * try and write the string to disk.  if it fails, then truncate the
-   * write and fail
-   */
-  if(write_wrap(fd, str, &wc, off) != 0)
-    {
-      if(fd != STDOUT_FILENO)
-	{
-	  if(ftruncate(fd, foff) != 0)
-	    goto cleanup;
-	}
-      goto cleanup;
-    }
+  assert(off > 0);
+  assert(off+1 == len);
 
-  rc = 0; /* we succeeded */
+  /* remove the trailing \n */
+  str[off-1] = '\0';
+
+  /* we succeeded */
+  rc = 0;
 
  cleanup:
   if(hops != NULL)
@@ -786,7 +714,62 @@ int scamper_file_text_trace_write(const scamper_file_t *sf,
       free(mtus);
     }
   if(header != NULL) free(header);
-  if(str != NULL) free(str);
 
+  if(rc != 0)
+    {
+      if(str != NULL)
+	free(str);
+      return NULL;
+    }
+
+  if(len_out != NULL)
+    *len_out = off;
+  return str;
+}
+
+/*
+ * scamper_file_text_trace_write
+ *
+ * return 0 on successful write, -1 otherwise.
+ */
+int scamper_file_text_trace_write(const scamper_file_t *sf,
+				  const scamper_trace_t *trace, void *p)
+{
+  /* variables for writing to the file */
+  size_t wc, len;
+  off_t foff = 0;
+  char *str = NULL;
+  int fd, rc = -1;
+
+  /*
+   * get the current offset into the file, incase the write fails and a
+   * truncation is required
+   */
+  fd = scamper_file_getfd(sf);
+  if(fd != STDOUT_FILENO && (foff = lseek(fd, 0, SEEK_CUR)) == -1)
+    goto cleanup;
+
+  if((str = scamper_trace_totext(trace, &len)) == NULL)
+    goto cleanup;
+  str[len-1] = '\n';
+
+  /*
+   * try and write the string to disk.  if it fails, then truncate the
+   * write and fail
+   */
+  if(write_wrap(fd, str, &wc, len) != 0)
+    {
+      if(fd != STDOUT_FILENO)
+	{
+	  if(ftruncate(fd, foff) != 0)
+	    goto cleanup;
+	}
+      goto cleanup;
+    }
+
+  rc = 0;
+
+ cleanup:
+  if(str != NULL) free(str);
   return rc;
 }

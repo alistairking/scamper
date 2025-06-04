@@ -10,7 +10,7 @@
  *
  * Authors: Brian Hammond, Matthew Luckie
  *
- * $Id: scamper_trace_json.c,v 1.45 2025/05/05 00:01:21 mjl Exp $
+ * $Id: scamper_trace_json.c,v 1.50 2025/05/29 07:57:39 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -57,6 +57,8 @@ static scamper_trace_reply_t *trace_reply_get(const scamper_trace_t *trace,
 static void probe_json(char *buf, size_t len, size_t *off,
 		       const scamper_trace_probe_t *probe, int reply)
 {
+  int x = 0;
+
   string_concatc(buf, len, off, reply == 0 ? '{' : ',');
 
   string_concat_u8(buf, len, off, "\"probe_ttl\":", probe->ttl);
@@ -69,6 +71,22 @@ static void probe_json(char *buf, size_t len, size_t *off,
       string_concat_u32(buf, len, off, ", \"usec\":",
 			(uint32_t)probe->tx.tv_usec);
       string_concatc(buf, len, off, '}');
+    }
+
+  if(reply == 0 && probe->flags != 0)
+    {
+      string_concat(buf, len, off, ", \"flags\":[");
+      if(probe->flags & SCAMPER_TRACE_REPLY_FLAG_PENDING)
+	{
+	  string_concat(buf, len, off, "\"pending\"");
+	  x++;
+	}
+      if(probe->flags & SCAMPER_TRACE_REPLY_FLAG_TS_DL_TX)
+	{
+	  if(x > 0) string_concatc(buf, len, off, ',');
+	  string_concat(buf, len, off, "\"dltxts\"");
+	}
+      string_concatc(buf, len, off, ']');
     }
 
   if(reply == 0)
@@ -203,6 +221,7 @@ static char *header_tostr(const scamper_trace_t *trace)
   size_t off = 0;
   time_t tt = trace->start.tv_sec;
   uint32_t cs;
+  uint16_t hop_count;
 
   string_concat(buf,sizeof(buf),&off,"\"type\":\"trace\",\"version\":\"0.1\"");
   string_concat_u32(buf, sizeof(buf), &off, ", \"userid\":", trace->userid);
@@ -234,8 +253,11 @@ static char *header_tostr(const scamper_trace_t *trace)
 		    (uint32_t)trace->start.tv_usec);
   strftime(tmp, sizeof(tmp), "%Y-%m-%d %H:%M:%S", localtime(&tt));
   string_concat2(buf, sizeof(buf), &off, ", \"ftime\":\"", tmp);
-  string_concat_u16(buf, sizeof(buf), &off, "\"}, \"hop_count\":",
-		    trace->stop_hop == 0 ? trace->hop_count : trace->stop_hop);
+  if(trace->stop_hop == 0 || trace->stop_hop > trace->hop_count)
+    hop_count = trace->hop_count;
+  else
+    hop_count = trace->stop_hop;
+  string_concat_u16(buf, sizeof(buf), &off, "\"}, \"hop_count\":", hop_count);
   string_concat_u8(buf, sizeof(buf), &off, ", \"attempts\":", trace->attempts);
   string_concat_u8(buf, sizeof(buf), &off, ", \"hoplimit\":", trace->hoplimit);
   string_concat_u8(buf, sizeof(buf), &off, ", \"firsthop\":", trace->firsthop);
@@ -292,7 +314,7 @@ static uint8_t pmtud_note_dist(const scamper_trace_t *trace, uint8_t start,
   if((hop = note->reply) == NULL)
     return 0;
 
-  if(trace->stop_hop == 0)
+  if(trace->stop_hop == 0 || trace->stop_hop > trace->hop_count)
     hop_count = trace->hop_count;
   else
     hop_count = trace->stop_hop;
@@ -311,6 +333,9 @@ static uint8_t pmtud_note_dist(const scamper_trace_t *trace, uint8_t start,
 
   /* kludge to figure out which hop to put the PTB on */
   i = note->probe->ttl - hop->reply_icmp_q_ttl;
+
+  if(i >= hop_count)
+    return 0;
 
   /*
    * shift the predicted hop back one if the alignment is
@@ -477,7 +502,7 @@ static char *pmtud_tostr(const scamper_trace_t *trace)
     goto cleanup;
   off = 0;
   string_concat(str, len, &off, hdr);
-  if(notec > 0)
+  if(notec > 0 && notes != NULL)
     {
       string_concat(str, len, &off, ", \"notes\":[");
       for(n=0; n<notec; n++)
@@ -489,7 +514,7 @@ static char *pmtud_tostr(const scamper_trace_t *trace)
       string_concatc(str, len, &off, ']');
     }
 
-  if(hops_hopc > 0)
+  if(hops_hopc > 0 && hops != NULL)
     {
       string_concat(str, len, &off, ", \"hops\":[");
       for(h=0; h<hops_hopc; h++)
@@ -500,7 +525,7 @@ static char *pmtud_tostr(const scamper_trace_t *trace)
       string_concatc(str, len, &off, ']');
     }
 
-  if(no_hopc > 0)
+  if(no_hopc > 0 && no_hops != NULL)
     {
       string_concat(str, len, &off, ", \"no_hops\":[");
       for(h=0; h<no_hopc; h++)
@@ -553,7 +578,9 @@ char *scamper_trace_tojson(const scamper_trace_t *trace, size_t *len_out)
   scamper_trace_reply_t *reply;
   size_t len, off = 0;
   char *str = NULL, *header = NULL, **hops = NULL, **no_hops = NULL;
-  size_t h, nh, hopc = 0, hops_hopc = 0, extra_hopc = 0, no_hopc = 0;
+  size_t h, nh, x;
+  size_t hops_hopc = 0, no_hopc = 0;
+  size_t extra_hopc = 0, extra_no_hopc = 0;
   char *pmtud = NULL;
   uint16_t i, hop_count, r;
   uint8_t p;
@@ -564,7 +591,7 @@ char *scamper_trace_tojson(const scamper_trace_t *trace, size_t *len_out)
   len = strlen(header);
 
   /* how many responses do we include in the hops array */
-  if(trace->stop_hop == 0)
+  if(trace->stop_hop == 0 || trace->stop_hop > trace->hop_count)
     hop_count = trace->hop_count;
   else
     hop_count = trace->stop_hop;
@@ -584,7 +611,7 @@ char *scamper_trace_tojson(const scamper_trace_t *trace, size_t *len_out)
     }
 
   /* how many responses do we include in the extra_hops array */
-  if(trace->stop_hop != 0)
+  if(trace->stop_hop != 0 && trace->stop_hop < trace->hop_count)
     {
       while(i < trace->hop_count)
 	{
@@ -594,7 +621,10 @@ char *scamper_trace_tojson(const scamper_trace_t *trace, size_t *len_out)
 		{
 		  if((probe = pttl->probes[p]) == NULL)
 		    continue;
-		  extra_hopc += probe->replyc;
+		  if(probe->replyc > 0)
+		    extra_hopc += probe->replyc;
+		  else
+		    extra_no_hopc++;
 		}
 	    }
 	  i++;
@@ -602,12 +632,14 @@ char *scamper_trace_tojson(const scamper_trace_t *trace, size_t *len_out)
     }
 
   /* structure around hops arrays */
-  if((hopc = hops_hopc + extra_hopc) > 0)
+  if(hops_hopc + extra_hopc > 0)
     {
-      len += 11; /* , "hops":[] */
+      if(hops_hopc > 0)
+	len += 11; /* , "hops":[] */
       if(extra_hopc > 0)
 	len += 17; /* , "extra_hops":[] */
-      if((hops = malloc_zero(sizeof(char *) * hopc)) == NULL)
+      x = sizeof(char *) * (hops_hopc + extra_hopc);
+      if((hops = malloc_zero(x)) == NULL)
 	goto cleanup;
 
       /* comma separators for the two hops arrays */
@@ -617,13 +649,21 @@ char *scamper_trace_tojson(const scamper_trace_t *trace, size_t *len_out)
 	len += (extra_hopc - 1); /* , */
     }
 
-  /* structure around no_hops array */
-  if(no_hopc > 0)
+  /* structure around no_hops arrays */
+  if(no_hopc + extra_no_hopc > 0)
     {
-      len += 14; /* , "no_hops":[] */
-      if((no_hops = malloc_zero(sizeof(char *) * no_hopc)) == NULL)
+      if(no_hopc > 0)
+	len += 14; /* , "no_hops":[] */
+      if(extra_no_hopc > 0)
+	len += 20; /* , "extra_no_hops":[] */
+      x = sizeof(char *) * (no_hopc + extra_no_hopc);
+      if((no_hops = malloc_zero(x)) == NULL)
 	goto cleanup;
-      len += (no_hopc - 1); /* , */
+
+      if(no_hopc > 1)
+	len += (no_hopc - 1); /* , */
+      if(extra_no_hopc > 1)
+	len += (extra_no_hopc - 1); /* , */
     }
 
   h = nh = 0;
@@ -640,6 +680,7 @@ char *scamper_trace_tojson(const scamper_trace_t *trace, size_t *len_out)
 	      for(r=0; r<probe->replyc; r++)
 		{
 		  reply = probe->replies[r];
+		  assert(h < hops_hopc + extra_hopc);
 		  if((hops[h] = hop_tostr(trace, probe, reply)) == NULL)
 		    goto cleanup;
 		  len += strlen(hops[h]);
@@ -648,6 +689,7 @@ char *scamper_trace_tojson(const scamper_trace_t *trace, size_t *len_out)
 	    }
 	  else
 	    {
+	      assert(nh < no_hopc + extra_no_hopc);
 	      if((no_hops[nh] = probe_tostr(probe)) == NULL)
 		goto cleanup;
 	      len += strlen(no_hops[nh]);
@@ -655,6 +697,9 @@ char *scamper_trace_tojson(const scamper_trace_t *trace, size_t *len_out)
 	    }
 	}
     }
+
+  assert(h == hops_hopc + extra_hopc);
+  assert(nh == no_hopc + extra_no_hopc);
 
   if(trace->pmtud != NULL && trace->pmtud->ver == 2)
     {
@@ -670,7 +715,7 @@ char *scamper_trace_tojson(const scamper_trace_t *trace, size_t *len_out)
 
   str[off++] = '{';
   string_concat(str, len, &off, header);
-  if(hopc > 0)
+  if(hops_hopc > 0)
     {
       string_concat(str, len, &off, ", \"hops\":[");
       for(h=0; h<hops_hopc; h++)
@@ -703,6 +748,17 @@ char *scamper_trace_tojson(const scamper_trace_t *trace, size_t *len_out)
       string_concatc(str, len, &off, ']');
     }
 
+  if(extra_no_hopc > 0)
+    {
+      string_concat(str, len, &off, ", \"extra_no_hops\":[");
+      for(h=0; h<extra_no_hopc; h++)
+	{
+	  if(h > 0) string_concatc(str, len, &off, ',');
+	  string_concat(str, len, &off, no_hops[no_hopc + h]);
+	}
+      string_concatc(str, len, &off, ']');
+    }
+
   if(pmtud != NULL)
     string_concat(str, len, &off, pmtud);
 
@@ -714,14 +770,14 @@ char *scamper_trace_tojson(const scamper_trace_t *trace, size_t *len_out)
  cleanup:
   if(hops != NULL)
     {
-      for(h=0; h<hopc; h++)
+      for(h=0; h < hops_hopc + extra_hopc; h++)
 	if(hops[h] != NULL)
 	  free(hops[h]);
       free(hops);
     }
   if(no_hops != NULL)
     {
-      for(h=0; h<no_hopc; h++)
+      for(h=0; h < no_hopc + extra_no_hopc; h++)
 	if(no_hops[h] != NULL)
 	  free(no_hops[h]);
       free(no_hops);

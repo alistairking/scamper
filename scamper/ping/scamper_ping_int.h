@@ -1,7 +1,7 @@
 /*
  * scamper_ping_int.h
  *
- * $Id: scamper_ping_int.h,v 1.18 2025/05/05 03:34:24 mjl Exp $
+ * $Id: scamper_ping_int.h,v 1.20 2025/05/29 07:50:34 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -182,6 +182,7 @@ struct scamper_ping_stats
   uint32_t       ndups;
   uint32_t       nloss;
   uint32_t       nerrs;
+  uint32_t       npend;
   struct timeval min_rtt;
   struct timeval max_rtt;
   struct timeval avg_rtt;
@@ -342,6 +343,7 @@ struct scamper_ping
   uint8_t                method;           /* -P */
   uint8_t                ttl;              /* -m */
   uint8_t                tos;              /* -z */
+  uint8_t                stream;           /* -y */
   uint16_t               sport;            /* -F */
   uint16_t               dport;            /* -d */
   uint16_t               icmpsum;          /* -C */

@@ -1,7 +1,7 @@
 /*
- * fuzz_warts2json : fuzzer for reading warts and converting to json
+ * fuzz_warts2text : fuzzer for reading warts and converting to text
  *
- * $Id: fuzz_warts2json.c,v 1.2 2025/06/02 08:56:48 mjl Exp $
+ * $Id: fuzz_warts2text.c,v 1.3 2025/05/18 03:39:53 mjl Exp $
  *
  *        Marcus Luckie, Matthew Luckie
  *        mjl@luckie.org.nz
@@ -32,25 +32,25 @@
 #include "scamper_list.h"
 #include "scamper_addr.h"
 #include "scamper_file.h"
+#include "dealias/scamper_dealias.h"
 #include "host/scamper_host.h"
-#include "trace/scamper_trace.h"
-#include "tracelb/scamper_tracelb.h"
-#include "sniff/scamper_sniff.h"
 #include "http/scamper_http.h"
 #include "neighbourdisc/scamper_neighbourdisc.h"
 #include "ping/scamper_ping.h"
-#include "dealias/scamper_dealias.h"
-#include "udpprobe/scamper_udpprobe.h"
-#include "tbit/scamper_tbit.h"
+#include "sniff/scamper_sniff.h"
 #include "sting/scamper_sting.h"
+#include "tbit/scamper_tbit.h"
+#include "trace/scamper_trace.h"
+#include "tracelb/scamper_tracelb.h"
+#include "udpprobe/scamper_udpprobe.h"
 
 static void check(const char *filename)
 {
   scamper_file_t *file = NULL;
   uint16_t obj_type;
   void *obj_data = NULL;
-  size_t json_len;
-  char *json;
+  size_t text_len;
+  char *text;
 
   if((file = scamper_file_open(filename, 'r', "warts")) == NULL)
     {
@@ -62,7 +62,7 @@ static void check(const char *filename)
     {
       if(obj_data == NULL)
 	break;
-      json = NULL;
+      text = NULL;
       switch(obj_type)
 	{
 	case SCAMPER_FILE_OBJ_LIST:
@@ -76,22 +76,22 @@ static void check(const char *filename)
 	  break;
 
 	case SCAMPER_FILE_OBJ_TRACE:
-	  json = scamper_trace_tojson(obj_data, &json_len);
+	  text = scamper_trace_totext(obj_data, &text_len);
 	  scamper_trace_free(obj_data);
 	  break;
 
 	case SCAMPER_FILE_OBJ_PING:
-	  json = scamper_ping_tojson(obj_data, &json_len);
+	  text = scamper_ping_totext(obj_data, &text_len);
 	  scamper_ping_free(obj_data);
 	  break;
 
 	case SCAMPER_FILE_OBJ_TRACELB:
-	  json = scamper_tracelb_tojson(obj_data, &json_len);
+	  text = scamper_tracelb_totext(obj_data, &text_len);
 	  scamper_tracelb_free(obj_data);
 	  break;
 
 	case SCAMPER_FILE_OBJ_DEALIAS:
-	  json = scamper_dealias_tojson(obj_data, &json_len);
+	  text = scamper_dealias_totext(obj_data, &text_len);
 	  scamper_dealias_free(obj_data);
 	  break;
 
@@ -100,7 +100,6 @@ static void check(const char *filename)
 	  break;
 
 	case SCAMPER_FILE_OBJ_TBIT:
-	  json = scamper_tbit_tojson(obj_data, &json_len);
 	  scamper_tbit_free(obj_data);
 	  break;
 
@@ -113,7 +112,6 @@ static void check(const char *filename)
 	  break;
 
 	case SCAMPER_FILE_OBJ_HOST:
-	  json = scamper_host_tojson(obj_data, &json_len);
 	  scamper_host_free(obj_data);
 	  break;
 
@@ -122,13 +120,12 @@ static void check(const char *filename)
 	  break;
 
 	case SCAMPER_FILE_OBJ_UDPPROBE:
-	  json = scamper_udpprobe_tojson(obj_data, &json_len);
 	  scamper_udpprobe_free(obj_data);
 	  break;
 	}
 
-      if(json != NULL)
-	free(json);
+      if(text != NULL)
+	free(text);
     }
 
   scamper_file_close(file);
@@ -140,8 +137,6 @@ int main(int argc, char *argv[])
 #ifdef DMALLOC
   unsigned long start_mem, stop_mem;
   int assert_mem = 1;
-  time_t tt = 1746761704;
-  char tmp[128];
 #endif
 
   if(argc < 2)
@@ -162,7 +157,6 @@ int main(int argc, char *argv[])
     }
 
 #ifdef DMALLOC
-  strftime(tmp, sizeof(tmp), "%Y-%m-%d %H:%M:%S", localtime(&tt));
   dmalloc_get_stats(NULL, NULL, NULL, NULL, &start_mem, NULL, NULL, NULL, NULL);
 #endif
 

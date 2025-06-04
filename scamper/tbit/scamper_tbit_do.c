@@ -1,7 +1,7 @@
 /*
  * scamper_do_tbit.c
  *
- * $Id: scamper_tbit_do.c,v 1.215 2025/04/27 00:49:24 mjl Exp $
+ * $Id: scamper_tbit_do.c,v 1.216 2025/05/10 19:39:40 mjl Exp $
  *
  * Copyright (C) 2009-2010 Ben Stasiewicz
  * Copyright (C) 2009-2010 Stephen Eichler
@@ -1166,11 +1166,11 @@ static void timeout_generic_error(scamper_task_t *task)
 }
 
 /*
- * dl_syn:
+ * tbit_syn:
  *
  * handles the response to a SYN - It should be a SYN/ACK.
  */
-static void dl_syn(scamper_task_t *task, scamper_dl_rec_t *dl)
+static void tbit_syn(scamper_task_t *task, scamper_dl_rec_t *dl)
 {
   scamper_tbit_t *tbit = tbit_getdata(task);
   tbit_state_t *state = tbit_getstate(task);
@@ -1367,7 +1367,7 @@ static void timeout_syn(scamper_task_t *task)
   return;
 }
 
-static void dl_fin(scamper_task_t *task, scamper_dl_rec_t *dl)
+static void tbit_fin(scamper_task_t *task, scamper_dl_rec_t *dl)
 {
   scamper_tbit_t *tbit = tbit_getdata(task);
   tbit_state_t *state = tbit_getstate(task);
@@ -1489,7 +1489,7 @@ static void timeout_fin(scamper_task_t *task)
  * we send the PTB and then go into a mode where this function will never
  * be called again.
  */
-static int dl_data_pmtud(scamper_task_t *task, scamper_dl_rec_t *dl)
+static int tbit_data_pmtud(scamper_task_t *task, scamper_dl_rec_t *dl)
 {
   scamper_tbit_t *tbit = tbit_getdata(task);
   tbit_state_t *state = tbit_getstate(task);
@@ -1619,11 +1619,11 @@ static void timeout_data_pmtud(scamper_task_t *task)
 }
 
 /*
- * dl_data_ecn
+ * tbit_data_ecn
  *
  * read packets until we get an ECN-echo for our CE packet.
  */
-static int dl_data_ecn(scamper_task_t *task, scamper_dl_rec_t *dl)
+static int tbit_data_ecn(scamper_task_t *task, scamper_dl_rec_t *dl)
 {
   tbit_state_t *state = tbit_getstate(task);
   tbit_probe_t *tp = NULL;
@@ -1723,11 +1723,11 @@ static void timeout_data_generic(scamper_task_t *task)
 }
 
 /*
- * dl_data_null
+ * tbit_data_null
  *
  * read packets until FIN.
  */
-static int dl_data_null(scamper_task_t *task, scamper_dl_rec_t *dl)
+static int tbit_data_null(scamper_task_t *task, scamper_dl_rec_t *dl)
 {
   tbit_state_t *state = tbit_getstate(task);
   tbit_probe_t *tp = NULL;
@@ -1856,12 +1856,12 @@ static int sack_rcvr_next(scamper_task_t *task)
 }
 
 /*
- * dl_data_sack_rcvr
+ * tbit_data_sack_rcvr
  *
  * send sequence of six packets that are out of sequence to solict SACK
  * blocks, each time an ack is received.
  */
-static int dl_data_sack_rcvr(scamper_task_t *task, scamper_dl_rec_t *dl)
+static int tbit_data_sack_rcvr(scamper_task_t *task, scamper_dl_rec_t *dl)
 {
   tbit_state_t *state = tbit_getstate(task);
   uint32_t edge;
@@ -1940,14 +1940,14 @@ static void timeout_data_sack_rcvr(scamper_task_t *task)
 }
 
 /*
- * dl_data_icw
+ * tbit_data_icw
  *
  * this function reads from the stream until the first segment is seen
  * again.  at that point, the function sends a FIN to accelerate a
  * classification.  a successful classification is made in dl_icw.
  *
  */
-static int dl_data_icw(scamper_task_t *task, scamper_dl_rec_t *dl)
+static int tbit_data_icw(scamper_task_t *task, scamper_dl_rec_t *dl)
 {
   scamper_tbit_t *tbit = tbit_getdata(task);
   tbit_state_t *state = tbit_getstate(task);
@@ -2075,7 +2075,7 @@ static int dl_data_icw(scamper_task_t *task, scamper_dl_rec_t *dl)
   return -1;
 }
 
-static int dl_data_blinddata(scamper_task_t *task, scamper_dl_rec_t *dl)
+static int tbit_data_blinddata(scamper_task_t *task, scamper_dl_rec_t *dl)
 {
   scamper_tbit_t *tbit = tbit_getdata(task);
   tbit_state_t *state = tbit_getstate(task);
@@ -2084,7 +2084,7 @@ static int dl_data_blinddata(scamper_task_t *task, scamper_dl_rec_t *dl)
   tbit_probe_t *tp;
 
   if(state->mode == MODE_DATA)
-    return dl_data_null(task, dl);
+    return tbit_data_null(task, dl);
   if(state->mode != MODE_BLIND)
     return 0;
 
@@ -2098,7 +2098,7 @@ static int dl_data_blinddata(scamper_task_t *task, scamper_dl_rec_t *dl)
 	state->blind_flags |= TBIT_STATE_BLIND_FLAG_ACCEPTED;
       state->mode = MODE_DATA;
       tp_flush(state, NULL);
-      return dl_data_null(task, dl);
+      return tbit_data_null(task, dl);
     }
 
   /* skip over unexpected data */
@@ -2161,14 +2161,14 @@ static int dl_data_blinddata(scamper_task_t *task, scamper_dl_rec_t *dl)
 }
 
 /*
- * dl_data_blindfin
+ * tbit_data_blindfin
  *
  * step 0: send the first part
  * step 1: send a fin, leaving a hole in receiver's window
  * step 2: fill the hole
  * step 3: wait to see if the server ack's the FIN beyond acking the data
  */
-static int dl_data_blindfin(scamper_task_t *task, scamper_dl_rec_t *dl)
+static int tbit_data_blindfin(scamper_task_t *task, scamper_dl_rec_t *dl)
 {
   scamper_tbit_t *tbit = tbit_getdata(task);
   tbit_state_t *state = tbit_getstate(task);
@@ -2177,7 +2177,7 @@ static int dl_data_blindfin(scamper_task_t *task, scamper_dl_rec_t *dl)
   tbit_probe_t *tp;
 
   if(state->mode == MODE_DATA)
-    return dl_data_null(task, dl);
+    return tbit_data_null(task, dl);
   if(state->mode != MODE_BLIND)
     return 0;
 
@@ -2298,12 +2298,12 @@ static int dl_data_blindfin(scamper_task_t *task, scamper_dl_rec_t *dl)
 }
 
 /*
- * dl_data_blindrst:
+ * tbit_data_blindrst:
  *
  * try and reset the connection three times for the first three data packets,
  * by sending blinded syn/rst.
  */
-static int dl_data_blindrst(scamper_task_t *task, scamper_dl_rec_t *dl)
+static int tbit_data_blindrst(scamper_task_t *task, scamper_dl_rec_t *dl)
 {
   scamper_tbit_t *tbit = tbit_getdata(task);
   tbit_state_t *state = tbit_getstate(task);
@@ -2415,7 +2415,7 @@ static int dl_data_blindrst(scamper_task_t *task, scamper_dl_rec_t *dl)
   else if((state->flags & TBIT_STATE_FLAG_NOMOREDATA) == 0 ||
 	  state->mode == MODE_DATA)
     {
-      return dl_data_null(task, dl);
+      return tbit_data_null(task, dl);
     }
 
   return 0;
@@ -2425,21 +2425,21 @@ static int dl_data_blindrst(scamper_task_t *task, scamper_dl_rec_t *dl)
   return -1;
 }
 
-static void dl_data(scamper_task_t *task, scamper_dl_rec_t *dl)
+static void tbit_data(scamper_task_t *task, scamper_dl_rec_t *dl)
 {
   static int (* const func[])(scamper_task_t *, scamper_dl_rec_t *) =
     {
       NULL,
-      dl_data_pmtud,
-      dl_data_ecn,
-      dl_data_null,
-      dl_data_sack_rcvr,
-      dl_data_icw,
+      tbit_data_pmtud,
+      tbit_data_ecn,
+      tbit_data_null,
+      tbit_data_sack_rcvr,
+      tbit_data_icw,
       NULL,
-      dl_data_blinddata,
-      dl_data_blindrst,
-      dl_data_blindrst,
-      dl_data_blindfin,
+      tbit_data_blinddata,
+      tbit_data_blindrst,
+      tbit_data_blindrst,
+      tbit_data_blindfin,
     };
   scamper_tbit_t *tbit = tbit_getdata(task);
   tbit_state_t *state = tbit_getstate(task);
@@ -2558,7 +2558,7 @@ static void timeout_pmtud(scamper_task_t *task)
 /*
  * Checks the response to a PTB message.
  */
-static void dl_pmtud(scamper_task_t *task, scamper_dl_rec_t *dl)
+static void tbit_pmtud(scamper_task_t *task, scamper_dl_rec_t *dl)
 {
   scamper_tbit_t *tbit = tbit_getdata(task);
   tbit_state_t *state = tbit_getstate(task);
@@ -2639,7 +2639,7 @@ static void dl_pmtud(scamper_task_t *task, scamper_dl_rec_t *dl)
   return;
 }
 
-static void dl_blackhole(scamper_task_t *task, scamper_dl_rec_t *dl)
+static void tbit_blackhole(scamper_task_t *task, scamper_dl_rec_t *dl)
 {
   scamper_tbit_t *tbit = tbit_getdata(task);
   tbit_state_t *state = tbit_getstate(task);
@@ -2718,7 +2718,7 @@ static void timeout_zerowin(scamper_task_t *task)
  * packet received, hopefully advertising a receive window sufficient
  * to send our data.
  */
-static void dl_zerowin(scamper_task_t *task, scamper_dl_rec_t *dl)
+static void tbit_zerowin(scamper_task_t *task, scamper_dl_rec_t *dl)
 {
   scamper_tbit_t *tbit = tbit_getdata(task);
   tbit_state_t *state = tbit_getstate(task);
@@ -2779,13 +2779,13 @@ static void timeout_moredata(scamper_task_t *task)
 }
 
 /*
- * dl_moredata
+ * tbit_moredata
  *
  * this function exists to make note of when a new data packet arrives
- * from beyond the last flight.  dl_data_icw has previously sent
+ * from beyond the last flight.  tbit_data_icw has previously sent
  * FIN-ack packets to encourage a fast resolution to the measurement.
  */
-static void dl_moredata(scamper_task_t *task, scamper_dl_rec_t *dl)
+static void tbit_moredata(scamper_task_t *task, scamper_dl_rec_t *dl)
 {
   scamper_tbit_t *tbit = tbit_getdata(task);
   tbit_state_t *state = tbit_getstate(task);
@@ -3105,18 +3105,18 @@ static void do_tbit_handle_dl(scamper_task_t *task, scamper_dl_rec_t *dl)
   static void (* const func[])(scamper_task_t *, scamper_dl_rec_t *) =
     {
       NULL,
-      NULL,          /* MODE_RTSOCK */
-      NULL,          /* MODE_DLHDR */
-      NULL,          /* MODE_FIREWALL */
-      NULL,          /* MODE_DONE */
-      dl_syn,        /* MODE_SYN */
-      dl_fin,        /* MODE_FIN */
-      dl_data,       /* MODE_DATA */
-      dl_pmtud,      /* MODE_PMTUD */
-      dl_blackhole,  /* MODE_BLACKHOLE */
-      dl_zerowin,    /* MODE_ZEROWIN */
-      dl_moredata,   /* MODE_MOREDATA */
-      dl_data,       /* MODE_BLIND */
+      NULL,            /* MODE_RTSOCK */
+      NULL,            /* MODE_DLHDR */
+      NULL,            /* MODE_FIREWALL */
+      NULL,            /* MODE_DONE */
+      tbit_syn,        /* MODE_SYN */
+      tbit_fin,        /* MODE_FIN */
+      tbit_data,       /* MODE_DATA */
+      tbit_pmtud,      /* MODE_PMTUD */
+      tbit_blackhole,  /* MODE_BLACKHOLE */
+      tbit_zerowin,    /* MODE_ZEROWIN */
+      tbit_moredata,   /* MODE_MOREDATA */
+      tbit_data,       /* MODE_BLIND */
     };
 
   scamper_tbit_t *tbit = tbit_getdata(task);

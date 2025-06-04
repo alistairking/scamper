@@ -1,11 +1,11 @@
 /*
  * scamper_dealias.h
  *
- * $Id: scamper_dealias.h,v 1.71 2024/11/07 18:15:39 mjl Exp $
+ * $Id: scamper_dealias.h,v 1.72 2025/05/17 06:58:48 mjl Exp $
  *
  * Copyright (C) 2008-2011 The University of Waikato
  * Copyright (C) 2012-2013 The Regents of the University of California
- * Copyright (C) 2023-2024 Matthew Luckie
+ * Copyright (C) 2023-2025 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This code implements alias resolution techniques published by others
@@ -77,6 +77,7 @@ typedef struct scamper_dealias_reply scamper_dealias_reply_t;
 #define SCAMPER_DEALIAS_REPLY_FLAG_IPID32 1
 
 char *scamper_dealias_tojson(const scamper_dealias_t *dealias, size_t *len);
+char *scamper_dealias_totext(const scamper_dealias_t *dealias, size_t *len);
 
 /* get basic properties of the alias resolution method */
 scamper_list_t *scamper_dealias_list_get(const scamper_dealias_t *dealias);

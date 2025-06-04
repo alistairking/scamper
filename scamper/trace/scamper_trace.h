@@ -1,7 +1,7 @@
 /*
  * scamper_trace.h
  *
- * $Id: scamper_trace.h,v 1.176 2025/05/04 23:58:33 mjl Exp $
+ * $Id: scamper_trace.h,v 1.179 2025/05/29 07:56:15 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -41,6 +41,7 @@
 #define SCAMPER_TRACE_STOP_HOPLIMIT     7 /* hoplimit reached */
 #define SCAMPER_TRACE_STOP_GSS          8 /* found hop in global stop set */
 #define SCAMPER_TRACE_STOP_HALTED       9 /* halted */
+#define SCAMPER_TRACE_STOP_INPROGRESS  10 /* in-progress */
 
 #define SCAMPER_TRACE_FLAG_ALLATTEMPTS  0x01 /* send all allotted attempts */
 #define SCAMPER_TRACE_FLAG_PMTUD        0x02 /* conduct PMTU discovery */
@@ -70,6 +71,7 @@
 #define SCAMPER_TRACE_REPLY_FLAG_TS_SOCK_RX 0x01 /* socket rx timestamp */
 #define SCAMPER_TRACE_REPLY_FLAG_TS_DL_TX   0x02 /* datalink tx timestamp */
 #define SCAMPER_TRACE_REPLY_FLAG_TS_DL_RX   0x04 /* datalink rx timestamp */
+#define SCAMPER_TRACE_REPLY_FLAG_PENDING    0x80 /* response pending */
 #define SCAMPER_TRACE_REPLY_FLAG_REPLY_TTL  0x10 /* reply ttl included */
 #define SCAMPER_TRACE_REPLY_FLAG_TCP        0x20 /* reply is TCP */
 #define SCAMPER_TRACE_REPLY_FLAG_UDP        0x40 /* reply is UDP */
@@ -96,8 +98,10 @@ typedef struct scamper_trace_pmtud scamper_trace_pmtud_t;
 typedef struct scamper_trace_dtree scamper_trace_dtree_t;
 typedef struct scamper_trace_lastditch scamper_trace_lastditch_t;
 typedef struct scamper_trace_hopiter scamper_trace_hopiter_t;
+typedef struct scamper_trace_pmtud_noteiter scamper_trace_pmtud_noteiter_t;
 
 char *scamper_trace_tojson(const scamper_trace_t *trace, size_t *len);
+char *scamper_trace_totext(const scamper_trace_t *trace, size_t *len);
 
 scamper_trace_t *scamper_trace_dup(scamper_trace_t *trace);
 void scamper_trace_free(scamper_trace_t *trace);
@@ -280,5 +284,17 @@ scamper_trace_lastditch_hopiter_next(const scamper_trace_lastditch_t *ld,
 scamper_trace_reply_t *
 scamper_trace_pmtud_hopiter_next(const scamper_trace_pmtud_t *pmtud,
 				 scamper_trace_hopiter_t *hi);
+
+/*
+ * functions for working with pmtud notes
+ */
+scamper_trace_pmtud_noteiter_t *scamper_trace_pmtud_noteiter_alloc(void);
+void scamper_trace_pmtud_noteiter_free(scamper_trace_pmtud_noteiter_t *ni);
+scamper_trace_pmtud_note_t *
+scamper_trace_pmtud_noteiter_next(const scamper_trace_t *trace,
+				  scamper_trace_pmtud_noteiter_t *ni);
+uint8_t
+scamper_trace_pmtud_noteiter_dist_get(const scamper_trace_t *trace,
+				      scamper_trace_pmtud_noteiter_t *ni);
 
 #endif /* __SCAMPER_TRACE_H */

@@ -1,7 +1,7 @@
 /*
  * common_trace : common functions for unit testing trace
  *
- * $Id: common_trace.c,v 1.12 2025/05/05 05:20:20 mjl Exp $
+ * $Id: common_trace.c,v 1.14 2025/05/09 09:13:30 mjl Exp $
  *
  *        Marcus Luckie, Matthew Luckie
  *        mjl@luckie.org.nz
@@ -67,9 +67,12 @@ static int trace_reply_ok(const scamper_trace_reply_t *in,
      in->reply_tcp_flags != out->reply_tcp_flags ||
      timeval_cmp(&in->rtt, &out->rtt) != 0 ||
      icmpexts_ok(in->icmp_exts, out->icmp_exts) != 0)
-    return -1;
+    goto err;
 
   return 0;
+
+ err:
+  return -1;
 }
 
 static int trace_probe_ok(const scamper_trace_probe_t *in,
@@ -78,7 +81,7 @@ static int trace_probe_ok(const scamper_trace_probe_t *in,
   uint32_t r;
 
   if(ptr_ok(in, out) != 0)
-    return -1;
+    goto err;
   if(in == NULL)
     return 0;
 
@@ -88,13 +91,16 @@ static int trace_probe_ok(const scamper_trace_probe_t *in,
      in->replyc != out->replyc ||
      in->flags != out->flags ||
      timeval_cmp(&in->tx, &out->tx) != 0)
-    return -1;
+    goto err;
 
   for(r=0; r<in->replyc; r++)
     if(trace_reply_ok(in->replies[r], out->replies[r]) != 0)
-      return -1;
+      goto err;
 
   return 0;
+
+ err:
+  return -1;
 }
 
 static int trace_lastditch_ok(const scamper_trace_lastditch_t *in,
@@ -162,20 +168,47 @@ static int trace_pmtud_ok(const scamper_trace_pmtud_t *in,
 int trace_probettl_ok(const scamper_trace_probettl_t *in,
 		      const scamper_trace_probettl_t *out)
 {
-  uint16_t p;
+  uint8_t p = 0, q = 0, out_probec = 0;
 
-  if(ptr_ok(in, out) != 0)
-    return -1;
   if(in == NULL)
-    return 0;
+    {
+      if(out != NULL)
+	goto err;
+      return 0;
+    }
 
-  if(in->probec != out->probec)
-    return -1;
-  for(p=0; p<in->probec; p++)
-    if(trace_probe_ok(in->probes[p], out->probes[p]) != 0)
-      return -1;
+  if(out != NULL && out->probes != NULL)
+    out_probec = out->probec;
+
+  if(in->probec < out_probec)
+    goto err;
+
+  if(in->probec == out_probec)
+    {
+      for(p=0; p<in->probec; p++)
+	if(trace_probe_ok(in->probes[p], out->probes[p]) != 0)
+	  goto err;
+    }
+  else
+    {
+      q = 0;
+      for(p=0; p<in->probec; p++)
+	{
+	  if(in->probes[p]->replyc == 0)
+	    continue;
+	  if(q >= out_probec ||
+	     trace_probe_ok(in->probes[p], out->probes[q]) != 0)
+	    goto err;
+	  q++;
+	}
+      if(q != out_probec)
+	goto err;
+    }
 
   return 0;
+
+ err:
+  return -1;
 }
 
 int trace_ok(const scamper_trace_t *in, const scamper_trace_t *out)
@@ -304,14 +337,13 @@ static int probe_reply_alloc(const char *str,
   return -1;
 }
 
-static int trace_probe_reply_add(scamper_trace_t *trace, const char *str,
-				 uint8_t probe_id,
-				 uint8_t probe_ttl, uint16_t probe_size,
-				 uint8_t reply_ttl, uint16_t reply_size,
-				 time_t tx_sec, uint32_t tx_usec,
-				 time_t rtt_sec, uint32_t rtt_usec,
-				 scamper_trace_probe_t **p_out,
-				 scamper_trace_reply_t **r_out)
+static int trace_prply_add(scamper_trace_t *trace, uint8_t probe_id,
+			   uint8_t probe_ttl, uint16_t probe_size,
+			   time_t tx_sec, uint32_t tx_usec, const char *str,
+			   uint8_t reply_ttl, uint16_t reply_size,
+			   time_t rtt_sec, uint32_t rtt_usec,
+			   scamper_trace_probe_t **p_out,
+			   scamper_trace_reply_t **r_out)
 {
   scamper_trace_probe_t *probe = NULL;
   scamper_trace_reply_t *reply = NULL;
@@ -333,14 +365,32 @@ static int trace_probe_reply_add(scamper_trace_t *trace, const char *str,
   return -1;
 }
 
-static int lastditch_probe_reply_add(scamper_trace_t *trace, const char *str,
-				     uint8_t probe_id,
-				     uint8_t probe_ttl, uint16_t probe_size,
-				     uint8_t reply_ttl, uint16_t reply_size,
-				     time_t tx_sec, uint32_t tx_usec,
-				     time_t rtt_sec, uint32_t rtt_usec,
-				     scamper_trace_probe_t **p_out,
-				     scamper_trace_reply_t **r_out)
+static int trace_probe_add(scamper_trace_t *trace, uint8_t probe_id,
+			   uint8_t probe_ttl, uint16_t probe_size,
+			   time_t tx_sec, uint32_t tx_usec)
+{
+  scamper_trace_probe_t *probe = NULL;
+
+  if((probe =
+      probe_alloc(probe_id, probe_ttl, probe_size, tx_sec, tx_usec)) == NULL ||
+     scamper_trace_probettl_probe_add(trace->hops[probe_ttl-1], probe) != 0)
+    goto err;
+
+  return 0;
+
+ err:
+  if(probe != NULL) scamper_trace_probe_free(probe);
+  return -1;
+}
+
+static int lastditch_prply_add(scamper_trace_t *trace, uint8_t probe_id,
+			       uint8_t probe_ttl, uint16_t probe_size,
+			       time_t tx_sec, uint32_t tx_usec,
+			       const char *str,
+			       uint8_t reply_ttl, uint16_t reply_size,
+			       time_t rtt_sec, uint32_t rtt_usec,
+			       scamper_trace_probe_t **p_out,
+			       scamper_trace_reply_t **r_out)
 {
   scamper_trace_probe_t *probe = NULL;
   scamper_trace_reply_t *reply = NULL;
@@ -364,14 +414,13 @@ static int lastditch_probe_reply_add(scamper_trace_t *trace, const char *str,
   return -1;
 }
 
-static int pmtud_probe_reply_add(scamper_trace_t *trace, const char *str,
-				 uint8_t probe_id,
-				 uint8_t probe_ttl, uint16_t probe_size,
-				 uint8_t reply_ttl, uint16_t reply_size,
-				 time_t tx_sec, uint32_t tx_usec,
-				 time_t rtt_sec, uint32_t rtt_usec,
-				 scamper_trace_probe_t **p_out,
-				 scamper_trace_reply_t **r_out)
+static int pmtud_prply_add(scamper_trace_t *trace, uint8_t probe_id,
+			   uint8_t probe_ttl, uint16_t probe_size,
+			   time_t tx_sec, uint32_t tx_usec, const char *str,
+			   uint8_t reply_ttl, uint16_t reply_size,
+			   time_t rtt_sec, uint32_t rtt_usec,
+			   scamper_trace_probe_t **p_out,
+			   scamper_trace_reply_t **r_out)
 {
   scamper_trace_probe_t *probe = NULL;
   scamper_trace_reply_t *reply = NULL;
@@ -435,14 +484,14 @@ scamper_trace_t *trace_1(void)
   trace->stop_reason          = SCAMPER_TRACE_STOP_GAPLIMIT;
   trace->type                 = SCAMPER_TRACE_TYPE_ICMP_ECHO_PARIS;
 
-  if(trace_probe_reply_add(trace, "192.0.2.4", 1, 1, 44, 255, 56,
-			   1724828853, 123456, 0, 253421, NULL, NULL) != 0 ||
-     trace_probe_reply_add(trace, "192.0.2.4", 2, 1, 44, 255, 56,
-			   1724828853, 423112, 0, 224313, NULL, NULL) != 0 ||
-     trace_probe_reply_add(trace, "192.0.2.5", 1, 2, 44, 254, 72,
-			   1724828853, 734231, 0, 234287, NULL, NULL) != 0 ||
-     trace_probe_reply_add(trace, "192.0.2.5", 2, 2, 44, 254, 72,
-			   1724828853, 992312, 0, 279734, NULL, NULL) != 0)
+  if(trace_prply_add(trace, 1, 1, 44, 1724828853, 123456,
+		     "192.0.2.4", 255, 56, 0, 253421, NULL, NULL) != 0 ||
+     trace_prply_add(trace, 2, 1, 44, 1724828853, 423112,
+		     "192.0.2.4", 255, 56, 0, 224313, NULL, NULL) != 0 ||
+     trace_prply_add(trace, 1, 2, 44, 1724828853, 734231,
+		     "192.0.2.5", 254, 72, 0, 234287, NULL, NULL) != 0 ||
+     trace_prply_add(trace, 2, 2, 44, 1724828853, 992312,
+		     "192.0.2.5", 254, 72, 0, 279734, NULL, NULL) != 0)
     goto err;
 
   return trace;
@@ -461,8 +510,8 @@ static scamper_trace_t *trace_2(void)
     goto err;
 
   trace->gapaction = 2;
-  if(lastditch_probe_reply_add(trace, "192.0.2.2", 1, 255, 44, 240, 44,
-			       1724828860, 534234, 0, 534223, NULL, &r) != 0)
+  if(lastditch_prply_add(trace, 1, 255, 44, 1724828860, 534234,
+			 "192.0.2.2", 240, 44, 0, 534223, NULL, &r) != 0)
     goto err;
 
   r->reply_icmp_type = ICMP_ECHOREPLY;
@@ -506,16 +555,16 @@ static scamper_trace_t *trace_3_base(void)
   trace->stop_reason          = SCAMPER_TRACE_STOP_COMPLETED;
   trace->type                 = SCAMPER_TRACE_TYPE_UDP_PARIS;
 
-  if(trace_probe_reply_add(trace, "192.0.2.4", 1, 1, 44, 255, 56,
-			   1724828853, 123456, 0, 253421, NULL, NULL) != 0 ||
-     trace_probe_reply_add(trace, "192.0.2.5", 1, 2, 44, 254, 72,
-			   1724828853, 423112, 0, 234287, NULL, NULL) != 0 ||
-     trace_probe_reply_add(trace, "192.0.2.6", 1, 3, 44, 253, 56,
-			   1724828853, 734231, 0, 224313, NULL, NULL) != 0 ||
-     trace_probe_reply_add(trace, "192.0.2.7", 1, 4, 44, 252, 72,
-			   1724828853, 992312, 0, 279734, NULL, NULL) != 0 ||
-     trace_probe_reply_add(trace, "192.0.2.2", 1, 5, 44, 251, 72,
-			   1724828854, 243542, 0, 269439, NULL, &r) != 0)
+  if(trace_prply_add(trace, 1, 1, 44, 1724828853, 123456,
+		     "192.0.2.4", 255, 56, 0, 253421, NULL, NULL) != 0 ||
+     trace_prply_add(trace, 1, 2, 44, 1724828853, 423112,
+		     "192.0.2.5", 254, 72, 0, 234287, NULL, NULL) != 0 ||
+     trace_prply_add(trace, 1, 3, 44, 1724828853, 734231,
+		     "192.0.2.6", 253, 56, 0, 224313, NULL, NULL) != 0 ||
+     trace_prply_add(trace, 1, 4, 44, 1724828853, 992312,
+		     "192.0.2.7", 252, 72, 0, 279734, NULL, NULL) != 0 ||
+     trace_prply_add(trace, 1, 5, 44, 1724828854, 243542,
+		     "192.0.2.2", 251, 72, 0, 269439, NULL, &r) != 0)
     goto err;
 
   r->reply_icmp_type = ICMP_UNREACH;
@@ -542,8 +591,8 @@ static scamper_trace_t *trace_4(void)
   scamper_trace_pmtud_note_t *n = NULL;
 
   if((trace = trace_3_base()) == NULL ||
-     pmtud_probe_reply_add(trace, "192.0.2.4", 1, 1, 1500, 255, 596,
-			   1724828860, 472568, 0, 219732, &p, &r) != 0 ||
+     pmtud_prply_add(trace, 1, 1, 1500, 1724828860, 472568,
+		     "192.0.2.4", 255, 596, 0, 219732, &p, &r) != 0 ||
      (n = scamper_trace_pmtud_note_alloc()) == NULL)
     goto err;
 
@@ -582,12 +631,12 @@ static scamper_trace_t *trace_5(void)
   memset(rs, 0, sizeof(rs));
 
   if((trace = trace_3_base()) == NULL ||
-     pmtud_probe_reply_add(trace, "192.0.2.5", 1, 255, 1500, 254, 72,
-			   1724828860, 472568, 0, 219732, &ps[0],&rs[0]) != 0 ||
-     pmtud_probe_reply_add(trace, "192.0.2.7", 1, 255, 1492, 252, 72,
-			   1724828860, 701252, 0, 223927, &ps[1],&rs[1]) != 0 ||
-     pmtud_probe_reply_add(trace, "192.0.2.2", 1, 255, 1480, 251, 72,
-			   1724828860, 952023, 0, 252342, &ps[2],&rs[2]) != 0)
+     pmtud_prply_add(trace, 1, 255, 1500, 1724828860, 472568,
+		     "192.0.2.5", 254, 72, 0, 219732, &ps[0], &rs[0]) != 0 ||
+     pmtud_prply_add(trace, 1, 255, 1492, 1724828860, 701252,
+		     "192.0.2.7", 252, 72, 0, 223927, &ps[1], &rs[1]) != 0 ||
+     pmtud_prply_add(trace, 1, 255, 1480, 1724828860, 952023,
+		     "192.0.2.2", 251, 72, 0, 252342, &ps[2], &rs[2]) != 0)
     goto err;
 
   trace->flags |= SCAMPER_TRACE_FLAG_PMTUD;
@@ -625,12 +674,92 @@ static scamper_trace_t *trace_5(void)
   return NULL;
 }
 
+scamper_trace_t *trace_6(void)
+{
+  scamper_trace_t *trace = NULL;
+  scamper_trace_reply_t *r, *rs[3];
+  size_t i;
+
+  memset(rs, 0, sizeof(rs));
+
+  if((trace = scamper_trace_alloc()) == NULL ||
+     (trace->src = scamper_addr_fromstr_ipv4("192.0.2.1")) == NULL ||
+     (trace->dst = scamper_addr_fromstr_ipv4("192.0.2.2")) == NULL ||
+     scamper_trace_hops_alloc(trace, 7) != 0 ||
+     probettl_alloc(trace, 7) != 0)
+    goto err;
+
+  trace->userid               = 69;
+  trace->sport                = 120;
+  trace->dport                = 154;
+  trace->start.tv_sec         = 1724828853;
+  trace->start.tv_usec        = 123456;
+  trace->wait_timeout.tv_sec  = 1;
+  trace->wait_timeout.tv_usec = 0;
+  trace->wait_probe.tv_sec    = 0;
+  trace->wait_probe.tv_usec   = 0;
+  trace->flags                = 0;
+  trace->stop_hop             = 5;
+  trace->hop_count            = 7;
+  trace->firsthop             = 1;
+  trace->squeries             = 3;
+  trace->gaplimit             = 3;
+  trace->attempts             = 2;
+  trace->probec               = 14;
+  trace->flags               |= SCAMPER_TRACE_FLAG_ALLATTEMPTS;
+  trace->stop_reason          = SCAMPER_TRACE_STOP_COMPLETED;
+  trace->type                 = SCAMPER_TRACE_TYPE_ICMP_ECHO_PARIS;
+
+  /* probe id, ttl, size, tx; reply addr, ttl, size, rtt */
+  if(trace_prply_add(trace, 1, 1, 44, 1724828853, 123456,         /* ttl: 1 */
+		     "192.0.2.4", 255, 56, 0,   1021, NULL, NULL) != 0 ||
+     trace_prply_add(trace, 2, 1, 44, 1724828853, 125002,
+		     "192.0.2.4", 255, 56, 0,   1021, NULL, NULL) != 0 ||
+     trace_prply_add(trace, 1, 2, 44, 1724828853, 128231,         /* ttl: 2 */
+		     "192.0.2.5", 254, 72, 0,   4287, NULL, NULL) != 0 ||
+     trace_probe_add(trace, 2, 2, 44, 1724828853, 134231) != 0 ||
+     trace_prply_add(trace, 1, 3, 44, 1724828853, 135231,         /* ttl: 3 */
+		     "192.0.2.6", 253, 56, 0,   8201, NULL, NULL) != 0 ||
+     trace_prply_add(trace, 2, 3, 44, 1724828853, 145231,
+		     "192.0.2.6", 253, 56, 0,   7521, NULL, NULL) != 0 ||
+     trace_prply_add(trace, 1, 4, 44, 1724828853, 138312,         /* ttl: 4 */
+		     "192.0.2.7", 252, 72, 0, 279734, NULL, NULL) != 0 ||
+     trace_prply_add(trace, 2, 4, 44, 1724828853, 419853,
+		     "192.0.2.7", 252, 72, 0, 279734, NULL, NULL) != 0 ||
+     trace_probe_add(trace, 1, 5, 44, 1724828853, 143542) != 0 || /* ttl: 5 */
+     trace_prply_add(trace, 1, 5, 44, 1724828854, 147032,
+		     "192.0.2.2", 252, 72, 0, 290129, NULL, &rs[0]) != 0 ||
+     trace_probe_add(trace, 1, 6, 44, 1724828853, 148739) != 0 || /* ttl: 6 */
+     trace_probe_add(trace, 2, 6, 44, 1724828854, 152105) != 0 ||
+     trace_prply_add(trace, 1, 7, 44, 1724828853, 159739,         /* ttl: 7 */
+		     "192.0.2.2", 252, 72, 0, 289201, NULL, &rs[1]) != 0 ||
+     trace_prply_add(trace, 2, 7, 44, 1724828853, 450621,
+		     "192.0.2.2", 252, 72, 0, 288329, NULL, &rs[2]) != 0)
+    goto err;
+
+  for(i=0; i<3; i++)
+    {
+      r = rs[i];
+      r->reply_icmp_type = ICMP_ECHOREPLY;
+      r->reply_icmp_code = 0;
+      r->reply_icmp_q_ipl = 0;
+      r->reply_icmp_q_ttl = 0;
+    }
+
+  return trace;
+
+ err:
+  if(trace != NULL) scamper_trace_free(trace);
+  return NULL;
+}
+
 static scamper_trace_makefunc_t makers[] = {
   trace_1,
   trace_2,
   trace_3,
   trace_4,
   trace_5,
+  trace_6,
 };
 
 scamper_trace_t *trace_makers(size_t i)

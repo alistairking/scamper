@@ -1,4 +1,4 @@
-# $Id: Makefile.am,v 1.57 2025/05/03 09:37:13 mjl Exp $
+# $Id: Makefile.am,v 1.60 2025/05/17 09:07:56 mjl Exp $
 
 AUTOMAKE_OPTIONS = subdir-objects
 
@@ -39,6 +39,7 @@ noinst_PROGRAMS = \
 	unit_http_lib \
 	fuzz_host_rr_list \
 	unit_host_rr_list \
+	unit_json \
 	unit_options \
 	fuzz_osinfo \
 	unit_osinfo \
@@ -47,11 +48,13 @@ noinst_PROGRAMS = \
 	unit_prefixtree \
 	unit_splaytree \
 	unit_string \
+	unit_text \
 	unit_timeval \
 	unit_trace_dup \
 	unit_warts \
 	fuzz_warts \
-	fuzz_warts2json
+	fuzz_warts2json \
+	fuzz_warts2text
 
 noinst_LTLIBRARIES = libcmdtest.la libosinfotest.la libscamperfiletest.la
 
@@ -358,6 +361,22 @@ unit_host_rr_list_SOURCES = unit_host_rr_list.c \
 	../utils.c \
 	common.c
 
+unit_json_CFLAGS = \
+	-I$(top_srcdir)/scamper/dealias \
+	-I$(top_srcdir)/scamper/host \
+	-I$(top_srcdir)/scamper/ping \
+	-I$(top_srcdir)/scamper/trace \
+	-I$(top_srcdir)/scamper/udpprobe
+unit_json_SOURCES = unit_json.c \
+	../utils.c \
+	common_ok.c \
+	common_dealias.c \
+	common_host.c \
+	common_ping.c \
+	common_trace.c \
+	common_udpprobe.c
+unit_json_LDADD = libscamperfiletest.la
+
 fuzz_warts_CFLAGS = $(AM_CFLAGS)
 fuzz_warts_SOURCES = fuzz_warts.c
 fuzz_warts_LDADD = libscamperfiletest.la
@@ -365,6 +384,10 @@ fuzz_warts_LDADD = libscamperfiletest.la
 fuzz_warts2json_CFLAGS = $(AM_CFLAGS)
 fuzz_warts2json_SOURCES = fuzz_warts2json.c
 fuzz_warts2json_LDADD = libscamperfiletest.la
+
+fuzz_warts2text_CFLAGS = $(AM_CFLAGS)
+fuzz_warts2text_SOURCES = fuzz_warts2text.c
+fuzz_warts2text_LDADD = libscamperfiletest.la
 
 unit_warts_CFLAGS = \
 	-I$(top_srcdir)/scamper/dealias \
@@ -426,6 +449,18 @@ unit_splaytree_SOURCES = unit_splaytree.c \
 unit_string_CFLAGS = $(AM_CFLAGS)
 unit_string_SOURCES = unit_string.c \
 	../utils.c
+
+unit_text_CFLAGS = \
+	-I$(top_srcdir)/scamper/dealias \
+	-I$(top_srcdir)/scamper/ping \
+	-I$(top_srcdir)/scamper/trace
+unit_text_SOURCES = unit_text.c \
+	../utils.c \
+	common_ok.c \
+	common_dealias.c \
+	common_ping.c \
+	common_trace.c
+unit_text_LDADD = libscamperfiletest.la
 
 unit_timeval_CFLAGS = $(AM_CFLAGS)
 unit_timeval_SOURCES = unit_timeval.c \

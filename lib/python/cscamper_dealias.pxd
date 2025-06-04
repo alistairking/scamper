@@ -59,6 +59,7 @@ cdef extern from "scamper_dealias.h":
   pass
 
  char *scamper_dealias_tojson(const scamper_dealias_t *dealias, size_t *l)
+ char *scamper_dealias_totext(const scamper_dealias_t *dealias, size_t *l)
 
  void scamper_dealias_free(scamper_dealias_t *dealias)
 

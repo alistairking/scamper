@@ -1,7 +1,7 @@
 /*
  * scamper_ping.h
  *
- * $Id: scamper_ping.h,v 1.86 2025/05/05 03:34:24 mjl Exp $
+ * $Id: scamper_ping.h,v 1.88 2025/05/29 07:44:16 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -40,6 +40,7 @@ typedef struct scamper_ping_stats scamper_ping_stats_t;
 #define SCAMPER_PING_STOP_COMPLETED    1 /* sent all probes */
 #define SCAMPER_PING_STOP_ERROR        2 /* error occured during ping */
 #define SCAMPER_PING_STOP_HALTED       3 /* halted */
+#define SCAMPER_PING_STOP_INPROGRESS   4 /* measurement in-progress */
 
 #define SCAMPER_PING_REPLY_FLAG_REPLY_TTL  0x01 /* reply ttl included */
 #define SCAMPER_PING_REPLY_FLAG_REPLY_IPID 0x02 /* reply ipid included */
@@ -47,6 +48,7 @@ typedef struct scamper_ping_stats scamper_ping_stats_t;
 #define SCAMPER_PING_REPLY_FLAG_DLTX       0x08 /* datalink tx timestamp */
 #define SCAMPER_PING_REPLY_FLAG_DLRX       0x10 /* datalink rx timestamp */
 #define SCAMPER_PING_REPLY_FLAG_REPLY_TOS  0x20 /* reply tos included */
+#define SCAMPER_PING_REPLY_FLAG_PENDING    0x40 /* no reply, not timed out */
 
 #define SCAMPER_PING_METHOD_ICMP_ECHO     0
 #define SCAMPER_PING_METHOD_TCP_ACK       1
@@ -74,6 +76,7 @@ typedef struct scamper_ping_stats scamper_ping_stats_t;
 #define SCAMPER_PING_FLAG_DLTX            0x800 /* -O dltx: use dl to tx */
 
 char *scamper_ping_tojson(const scamper_ping_t *ping, size_t *len);
+char *scamper_ping_totext(const scamper_ping_t *ping, size_t *len);
 
 /* basic routines to use and free scamper_ping structures */
 scamper_ping_t *scamper_ping_dup(const scamper_ping_t *ping);

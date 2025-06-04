@@ -1,7 +1,7 @@
 /*
  * scamper_task.c
  *
- * $Id: scamper_task.c,v 1.107 2025/03/31 10:25:38 mjl Exp $
+ * $Id: scamper_task.c,v 1.108 2025/05/28 07:18:59 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -1033,6 +1033,45 @@ int scamper_task_onhold(scamper_task_t *blocker, scamper_task_t *blocked)
  err:
   if(toh != NULL) free(toh);
   return -1;
+}
+
+int scamper_task_is_inprog(scamper_task_t *task)
+{
+  if(task->funcs->data_inprog == NULL)
+    return 0;
+  return task->funcs->data_inprog(task->data);
+}
+
+scamper_task_t *scamper_task_dup(scamper_task_t *task)
+{
+  scamper_task_t *dup = NULL;
+  scamper_source_t *source = NULL;
+  void *data = NULL;
+  uint32_t id;
+
+  if(task->funcs->data_dup == NULL || task->sourcetask == NULL ||
+     (source = scamper_task_getsource(task)) == NULL ||
+     (data = task->funcs->data_dup(task->data)) == NULL ||
+     (dup = scamper_task_alloc(data, task->funcs)) == NULL)
+    goto err;
+
+  /* dup holds reference to data, is responsible for calling free */
+  data = NULL;
+
+  /*
+   * add the duplicate to the source's set of tasks with the same ID as the
+   * current task.
+   */
+  id = scamper_sourcetask_getid(task->sourcetask);
+  if(scamper_source_add_dup(source, dup, id) != 0)
+    goto err;
+
+  return dup;
+
+ err:
+  if(dup != NULL) scamper_task_free(dup);
+  if(data != NULL) task->funcs->data_free(data);
+  return NULL;
 }
 
 /*

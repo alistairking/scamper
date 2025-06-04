@@ -1,7 +1,7 @@
 /*
  * scamper_source
  *
- * $Id: scamper_sources.h,v 1.21 2025/03/11 02:07:52 mjl Exp $
+ * $Id: scamper_sources.h,v 1.23 2025/05/28 07:10:37 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -112,10 +112,14 @@ int scamper_source_command2(scamper_source_t *source, const char *command,
 			    uint32_t *id, char *errbuf, size_t errlen);
 int scamper_source_halttask(scamper_source_t *source, uint32_t id);
 
+/* function for adding a snapshot of a current task to source */
+int scamper_source_add_dup(scamper_source_t *source,
+			   scamper_task_t *task, uint32_t id);
+
 /* function for advising source that an active task has completed */
 void scamper_sourcetask_free(scamper_sourcetask_t *st);
 scamper_source_t *scamper_sourcetask_getsource(scamper_sourcetask_t *st);
-uint32_t scamper_sourcetask_getid(scamper_sourcetask_t *st);
+uint32_t scamper_sourcetask_getid(const scamper_sourcetask_t *st);
 
 void scamper_source_task_unhold(struct scamper_task *task);
 

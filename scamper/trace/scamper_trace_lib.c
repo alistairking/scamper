@@ -1,7 +1,7 @@
 /*
  * scamper_trace_lib.c
  *
- * $Id: scamper_trace_lib.c,v 1.19 2025/05/01 02:58:04 mjl Exp $
+ * $Id: scamper_trace_lib.c,v 1.20 2025/05/27 10:03:08 mjl Exp $
  *
  * Copyright (C) 2023-2025 Matthew Luckie
  *
@@ -35,6 +35,17 @@
 #include "scamper_trace_int.h"
 
 #include "utils.h"
+
+scamper_trace_pmtud_noteiter_t *scamper_trace_pmtud_noteiter_alloc(void)
+{
+  return malloc_zero(sizeof(scamper_trace_pmtud_noteiter_t));
+}
+
+void scamper_trace_pmtud_noteiter_free(scamper_trace_pmtud_noteiter_t *ni)
+{
+  free(ni);
+  return;
+}
 
 scamper_trace_hopiter_t *scamper_trace_hopiter_dup(scamper_trace_hopiter_t *in)
 {
