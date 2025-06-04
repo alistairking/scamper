@@ -1,7 +1,7 @@
 /*
  * scamper_config.h
  *
- * $Id: scamper_config.h,v 1.1 2025/04/27 00:49:24 mjl Exp $
+ * $Id: scamper_config.h,v 1.2 2025/06/02 08:22:35 mjl Exp $
  *
  * Copyright (C) 2025 Matthew Luckie
  *
@@ -40,7 +40,7 @@ typedef struct scamper_config
   uint8_t   udpprobe_enable;
 } scamper_config_t;
 
-int scamper_config_read(const char *filename);
+int scamper_config_reload(const char *filename);
 void scamper_config_cleanup(void);
 int scamper_config_init(const char *filename);
 

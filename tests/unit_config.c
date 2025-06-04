@@ -1,7 +1,7 @@
 /*
  * unit_config : unit test for config system
  *
- * $Id: unit_config.c,v 1.1 2025/05/03 04:45:03 mjl Exp $
+ * $Id: unit_config.c,v 1.2 2025/06/02 08:22:35 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -66,8 +66,7 @@ static int trace_ping_disable(void)
 
 static int check_config(const char *file, int (*check)(void))
 {
-  if(scamper_config_init(NULL) != 0 ||
-     scamper_config_read(file) != 0 ||
+  if(scamper_config_reload(file) != 0 ||
      check() != 0)
     return -1;
 

@@ -1,7 +1,7 @@
 /*
  * scamper_control.c
  *
- * $Id: scamper_control.c,v 1.290 2025/04/20 07:29:14 mjl Exp $
+ * $Id: scamper_control.c,v 1.291 2025/05/28 07:22:42 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato

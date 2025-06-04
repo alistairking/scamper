@@ -1,7 +1,7 @@
 /*
  * scamper_trace.h
  *
- * $Id: scamper_trace.h,v 1.176 2025/05/04 23:58:33 mjl Exp $
+ * $Id: scamper_trace.h,v 1.179 2025/05/29 07:56:15 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -98,8 +98,10 @@ typedef struct scamper_trace_pmtud scamper_trace_pmtud_t;
 typedef struct scamper_trace_dtree scamper_trace_dtree_t;
 typedef struct scamper_trace_lastditch scamper_trace_lastditch_t;
 typedef struct scamper_trace_hopiter scamper_trace_hopiter_t;
+typedef struct scamper_trace_pmtud_noteiter scamper_trace_pmtud_noteiter_t;
 
 char *scamper_trace_tojson(const scamper_trace_t *trace, size_t *len);
+char *scamper_trace_totext(const scamper_trace_t *trace, size_t *len);
 
 scamper_trace_t *scamper_trace_dup(scamper_trace_t *trace);
 void scamper_trace_free(scamper_trace_t *trace);
@@ -282,5 +284,17 @@ scamper_trace_lastditch_hopiter_next(const scamper_trace_lastditch_t *ld,
 scamper_trace_reply_t *
 scamper_trace_pmtud_hopiter_next(const scamper_trace_pmtud_t *pmtud,
 				 scamper_trace_hopiter_t *hi);
+
+/*
+ * functions for working with pmtud notes
+ */
+scamper_trace_pmtud_noteiter_t *scamper_trace_pmtud_noteiter_alloc(void);
+void scamper_trace_pmtud_noteiter_free(scamper_trace_pmtud_noteiter_t *ni);
+scamper_trace_pmtud_note_t *
+scamper_trace_pmtud_noteiter_next(const scamper_trace_t *trace,
+				  scamper_trace_pmtud_noteiter_t *ni);
+uint8_t
+scamper_trace_pmtud_noteiter_dist_get(const scamper_trace_t *trace,
+				      scamper_trace_pmtud_noteiter_t *ni);
 
 #endif /* __SCAMPER_TRACE_H */

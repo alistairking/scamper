@@ -10,7 +10,7 @@
  *
  * Authors: Brian Hammond, Matthew Luckie
  *
- * $Id: scamper_trace_json.c,v 1.45 2025/05/05 00:01:21 mjl Exp $
+ * $Id: scamper_trace_json.c,v 1.50 2025/05/29 07:57:39 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -221,6 +221,7 @@ static char *header_tostr(const scamper_trace_t *trace)
   size_t off = 0;
   time_t tt = trace->start.tv_sec;
   uint32_t cs;
+  uint16_t hop_count;
 
   string_concat(buf,sizeof(buf),&off,"\"type\":\"trace\",\"version\":\"0.1\"");
   string_concat_u32(buf, sizeof(buf), &off, ", \"userid\":", trace->userid);
@@ -252,8 +253,11 @@ static char *header_tostr(const scamper_trace_t *trace)
 		    (uint32_t)trace->start.tv_usec);
   strftime(tmp, sizeof(tmp), "%Y-%m-%d %H:%M:%S", localtime(&tt));
   string_concat2(buf, sizeof(buf), &off, ", \"ftime\":\"", tmp);
-  string_concat_u16(buf, sizeof(buf), &off, "\"}, \"hop_count\":",
-		    trace->stop_hop == 0 ? trace->hop_count : trace->stop_hop);
+  if(trace->stop_hop == 0 || trace->stop_hop > trace->hop_count)
+    hop_count = trace->hop_count;
+  else
+    hop_count = trace->stop_hop;
+  string_concat_u16(buf, sizeof(buf), &off, "\"}, \"hop_count\":", hop_count);
   string_concat_u8(buf, sizeof(buf), &off, ", \"attempts\":", trace->attempts);
   string_concat_u8(buf, sizeof(buf), &off, ", \"hoplimit\":", trace->hoplimit);
   string_concat_u8(buf, sizeof(buf), &off, ", \"firsthop\":", trace->firsthop);
@@ -310,7 +314,7 @@ static uint8_t pmtud_note_dist(const scamper_trace_t *trace, uint8_t start,
   if((hop = note->reply) == NULL)
     return 0;
 
-  if(trace->stop_hop == 0)
+  if(trace->stop_hop == 0 || trace->stop_hop > trace->hop_count)
     hop_count = trace->hop_count;
   else
     hop_count = trace->stop_hop;
@@ -329,6 +333,9 @@ static uint8_t pmtud_note_dist(const scamper_trace_t *trace, uint8_t start,
 
   /* kludge to figure out which hop to put the PTB on */
   i = note->probe->ttl - hop->reply_icmp_q_ttl;
+
+  if(i >= hop_count)
+    return 0;
 
   /*
    * shift the predicted hop back one if the alignment is
@@ -495,7 +502,7 @@ static char *pmtud_tostr(const scamper_trace_t *trace)
     goto cleanup;
   off = 0;
   string_concat(str, len, &off, hdr);
-  if(notec > 0)
+  if(notec > 0 && notes != NULL)
     {
       string_concat(str, len, &off, ", \"notes\":[");
       for(n=0; n<notec; n++)
@@ -507,7 +514,7 @@ static char *pmtud_tostr(const scamper_trace_t *trace)
       string_concatc(str, len, &off, ']');
     }
 
-  if(hops_hopc > 0)
+  if(hops_hopc > 0 && hops != NULL)
     {
       string_concat(str, len, &off, ", \"hops\":[");
       for(h=0; h<hops_hopc; h++)
@@ -518,7 +525,7 @@ static char *pmtud_tostr(const scamper_trace_t *trace)
       string_concatc(str, len, &off, ']');
     }
 
-  if(no_hopc > 0)
+  if(no_hopc > 0 && no_hops != NULL)
     {
       string_concat(str, len, &off, ", \"no_hops\":[");
       for(h=0; h<no_hopc; h++)
@@ -584,7 +591,7 @@ char *scamper_trace_tojson(const scamper_trace_t *trace, size_t *len_out)
   len = strlen(header);
 
   /* how many responses do we include in the hops array */
-  if(trace->stop_hop == 0)
+  if(trace->stop_hop == 0 || trace->stop_hop > trace->hop_count)
     hop_count = trace->hop_count;
   else
     hop_count = trace->stop_hop;
@@ -604,7 +611,7 @@ char *scamper_trace_tojson(const scamper_trace_t *trace, size_t *len_out)
     }
 
   /* how many responses do we include in the extra_hops array */
-  if(trace->stop_hop != 0)
+  if(trace->stop_hop != 0 && trace->stop_hop < trace->hop_count)
     {
       while(i < trace->hop_count)
 	{

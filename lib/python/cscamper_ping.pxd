@@ -49,6 +49,7 @@ cdef extern from "scamper_ping.h":
   pass
 
  char *scamper_ping_tojson(const scamper_ping_t *ping, size_t *l)
+ char *scamper_ping_totext(const scamper_ping_t *ping, size_t *l)
 
  void scamper_ping_free(scamper_ping_t *ping)
 

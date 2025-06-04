@@ -1,7 +1,7 @@
 /*
  * scamper_ping_int.h
  *
- * $Id: scamper_ping_int.h,v 1.18 2025/05/05 03:34:24 mjl Exp $
+ * $Id: scamper_ping_int.h,v 1.20 2025/05/29 07:50:34 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -175,9 +175,6 @@ uint32_t scamper_ping_reply_total(const scamper_ping_t *ping);
 #define SCAMPER_PING_PROBE_FLAGS_MASK(reply) ( \
  (reply)->flags & (SCAMPER_PING_REPLY_FLAG_PROBE_IPID | \
 		   SCAMPER_PING_REPLY_FLAG_DLTX))
-
-#define SCAMPER_PING_FLAG_IS_INPROGRESS(ping) (	\
- ((ping)->flags & SCAMPER_PING_FLAG_INPROGRESS))
 
 struct scamper_ping_stats
 {

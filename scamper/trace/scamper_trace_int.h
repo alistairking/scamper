@@ -1,7 +1,7 @@
 /*
  * scamper_trace_int.h
  *
- * $Id: scamper_trace_int.h,v 1.16 2025/05/01 02:58:04 mjl Exp $
+ * $Id: scamper_trace_int.h,v 1.18 2025/05/29 07:54:07 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -45,8 +45,6 @@ scamper_trace_reply_t *scamper_trace_reply_alloc_dm(const char *file, int line);
 #define scamper_trace_reply_alloc() \
   scamper_trace_reply_alloc_dm(__FILE__, __LINE__)
 #endif
-
-scamper_trace_t *scamper_trace_dup(scamper_trace_t *trace);
 
 scamper_trace_probe_t *scamper_trace_probe_alloc(void);
 
@@ -450,6 +448,14 @@ struct scamper_trace_hopiter
   uint8_t                max;
   uint16_t               p;
   uint16_t               r;
+};
+
+struct scamper_trace_pmtud_noteiter
+{
+  scamper_trace_pmtud_note_t *note;
+  uint8_t                     n;
+  uint8_t                     start;
+  uint8_t                     dist;
 };
 
 #endif /* __SCAMPER_TRACE_INT_H */

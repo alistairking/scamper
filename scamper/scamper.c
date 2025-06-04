@@ -1,7 +1,7 @@
 /*
  * scamper
  *
- * $Id: scamper.c,v 1.373 2025/04/27 00:49:24 mjl Exp $
+ * $Id: scamper.c,v 1.375 2025/06/02 08:22:35 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -2395,6 +2395,8 @@ static int scamper(int argc, char *argv[])
 #if defined(HAVE_OPENSSL) && defined(HAVE_SIGACTION)
       if(sighup_rx != 0)
 	{
+	  if(configfile != NULL)
+	    scamper_config_reload(configfile);
 	  scamper_loadcerts();
 	  sighup_rx = 0;
 	}
