@@ -1,7 +1,7 @@
 /*
  * scamper_do_trace.c
  *
- * $Id: scamper_trace_do.c,v 1.414 2025/05/03 01:40:35 mjl Exp $
+ * $Id: scamper_trace_do.c,v 1.418 2025/05/29 10:47:40 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -1009,8 +1009,10 @@ static int pmtud_TTL_init(scamper_task_t *task)
    * fragmentation required message
    */
   hop = pmtud->last_fragmsg;
-  if(hop == NULL || (lower = hop->probe->ttl - hop->reply_icmp_q_ttl) < 1)
+  if(hop == NULL || hop->probe->ttl > hop->reply_icmp_q_ttl)
     lower = 0;
+  else
+    lower = hop->probe->ttl - hop->reply_icmp_q_ttl;
 
   /*
    * the upper bound of TTLs to search is set by closest response past
@@ -1607,6 +1609,7 @@ static scamper_trace_reply_t *trace_icmp_hop(const scamper_task_t *task,
   assert(tp->probe->replyc < UINT16_MAX);
   if(scamper_trace_probe_reply_add(tp->probe, hop) != 0)
     goto err;
+  tp->probe->flags &= ~SCAMPER_TRACE_REPLY_FLAG_PENDING;
 
   return hop;
 
@@ -1649,6 +1652,7 @@ static scamper_trace_reply_t *trace_dl_hop(scamper_task_t *task,
   assert(tp->probe->replyc < UINT16_MAX);
   if(scamper_trace_probe_reply_add(tp->probe, hop) != 0)
     goto err;
+  tp->probe->flags &= ~SCAMPER_TRACE_REPLY_FLAG_PENDING;
 
   return hop;
 
@@ -3757,6 +3761,45 @@ static void trace_handle_rt(scamper_route_t *rt)
   return;
 }
 
+static void trace_clear_pending(scamper_task_t *task, const struct timeval *now)
+{
+  scamper_trace_t *trace = trace_getdata(task);
+  scamper_trace_probettl_t *pttl;
+  scamper_trace_probe_t *probe;
+  struct timeval floor;
+  uint16_t u16;
+  uint8_t u8;
+
+  timeval_cpy(&floor, now);
+  timeval_sub_tv(&floor, &trace->wait_timeout);
+
+  for(u16=0; u16<trace->hop_count; u16++)
+    {
+      if((pttl = trace->hops[u16]) == NULL)
+	continue;
+      for(u8=0; u8<pttl->probec; u8++)
+	{
+	  if((probe = pttl->probes[u8]) != NULL &&
+	     (probe->flags & SCAMPER_TRACE_REPLY_FLAG_PENDING) &&
+	     timeval_cmp(&probe->tx, &floor) <= 0)
+	    probe->flags &= ~SCAMPER_TRACE_REPLY_FLAG_PENDING;
+	}
+    }
+
+  if(trace->pmtud != NULL && trace->pmtud->probes != NULL)
+    {
+      for(u16=0; u16<trace->pmtud->probec; u16++)
+	{
+	  if((probe = trace->pmtud->probes[u16]) != NULL &&
+	     (probe->flags & SCAMPER_TRACE_REPLY_FLAG_PENDING) &&
+	     timeval_cmp(&probe->tx, &floor) <= 0)
+	    probe->flags &= ~SCAMPER_TRACE_REPLY_FLAG_PENDING;
+	}
+    }
+
+  return;
+}
+
 static void do_trace_write(scamper_file_t *sf, scamper_task_t *task)
 {
   scamper_trace_t *trace = trace_getdata(task);
@@ -3764,6 +3807,10 @@ static void do_trace_write(scamper_file_t *sf, scamper_task_t *task)
   scamper_trace_hopiter_t hi;
   trace_state_t *state;
   uint8_t stop_reason, stop_data;
+  struct timeval now;
+
+  gettimeofday_wrap(&now);
+  trace_clear_pending(task, &now);
 
   if(trace->squeries > 1 && (state = trace_getstate(task)) != NULL)
     {
@@ -4069,6 +4116,38 @@ static void do_trace_free(scamper_task_t *task)
     scamper_trace_free(trace);
 
   return;
+}
+
+static void trace_stream(scamper_task_t *task, const struct timeval *now)
+{
+  scamper_task_t *dup;
+  scamper_trace_t *trace;
+
+  trace_clear_pending(task, now);
+  if((dup = scamper_task_dup(task)) == NULL)
+    return;
+  trace = trace_getdata(dup);
+  trace->stop_reason = SCAMPER_TRACE_STOP_INPROGRESS;
+  trace_queue_done(dup);
+
+  return;
+}
+
+static void *do_trace_data_dup(void *data)
+{
+  return scamper_trace_dup(data);
+}
+
+static void do_trace_data_free(void *data)
+{
+  scamper_trace_free(data);
+  return;
+}
+
+static int do_trace_data_inprog(void *data)
+{
+  scamper_trace_t *trace = data;
+  return trace->stop_reason == SCAMPER_TRACE_STOP_INPROGRESS ? 1 : 0;
 }
 
 /*
@@ -4432,10 +4511,10 @@ static void do_trace_probe(scamper_task_t *task)
   /* another probe sent */
   trace->probec++;
 
-  tp->probe = stp;
-  timeval_cpy(&tp->probe->tx, &probe.pr_tx);
-  tp->probe->ttl = probe.pr_ip_ttl;
-  tp->probe->size = probe.pr_len + state->header_size;
+  stp->ttl = probe.pr_ip_ttl;
+  stp->size = probe.pr_len + state->header_size;
+  timeval_cpy(&stp->tx, &probe.pr_tx);
+
   tp->mode = state->mode;
   tp->id = state->id_next;
 
@@ -4477,10 +4556,16 @@ static void do_trace_probe(scamper_task_t *task)
       tp->flags |= TRACE_PROBE_FLAG_STORED;
     }
 
+  stp->flags = SCAMPER_TRACE_REPLY_FLAG_PENDING;
+
+  tp->probe = stp;
   state->probes[state->id_next] = tp;
   state->id_next++;
 
   timeval_cpy(&state->last_tx, &probe.pr_tx);
+
+  if(trace->stream > 0 && (trace->probec % trace->stream) == 0)
+    trace_stream(task, &probe.pr_tx);
 
   trace_queue(task, &probe.pr_tx);
   return;
@@ -4732,6 +4817,9 @@ int scamper_do_trace_init(void)
   trace_funcs.task_free      = do_trace_free;
   trace_funcs.halt           = do_trace_halt;
   trace_funcs.sigs           = do_trace_sigs;
+  trace_funcs.data_dup       = do_trace_data_dup;
+  trace_funcs.data_free      = do_trace_data_free;
+  trace_funcs.data_inprog    = do_trace_data_inprog;
 
   return 0;
 }

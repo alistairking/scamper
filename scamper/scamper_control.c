@@ -1,7 +1,7 @@
 /*
  * scamper_control.c
  *
- * $Id: scamper_control.c,v 1.290 2025/04/20 07:29:14 mjl Exp $
+ * $Id: scamper_control.c,v 1.291 2025/05/28 07:22:42 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -245,6 +245,7 @@ typedef struct client
 #define CLIENT_FORMAT_JSON      1
 
 #define CLIENT_OBJ_FLAG_ID      0x01
+#define CLIENT_OBJ_FLAG_INPROG  0x02
 
 #define REMOTE_MODE_CONNECT     0
 #define REMOTE_MODE_GO          1
@@ -812,6 +813,9 @@ static int client_data_send(void *wf_param, const void *vdata, size_t len,
       st = scamper_task_getsourcetask(task);
       obj->id = scamper_sourcetask_getid(st);
       obj->flags |= CLIENT_OBJ_FLAG_ID;
+
+      if(scamper_task_is_inprog(task))
+	obj->flags |= CLIENT_OBJ_FLAG_INPROG;
     }
 
   if(slist_tail_push(client->sof_objs, obj) == NULL)
@@ -1804,7 +1808,9 @@ static int client_write_do(client_t *client,
 	    x = o->len;
 
 	  if(o->flags & CLIENT_OBJ_FLAG_ID)
-	    len = snprintf(str, sizeof(str), "DATA %d id-%u\n", (int)x, o->id);
+	    len = snprintf(str, sizeof(str), "DATA %d id-%u%s\n",
+			   (int)x, o->id,
+			   o->flags & CLIENT_OBJ_FLAG_INPROG ? " inprog" : "");
 	  else
 	    len = snprintf(str, sizeof(str), "DATA %d\n", (int)x);
 

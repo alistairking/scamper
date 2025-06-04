@@ -1,7 +1,7 @@
 /*
  * scamper_config.c
  *
- * $Id: scamper_config.c,v 1.5 2025/05/03 01:44:03 mjl Exp $
+ * $Id: scamper_config.c,v 1.8 2025/06/03 00:14:59 mjl Exp $
  *
  * Copyright (C) 2025 Matthew Luckie
  *
@@ -29,6 +29,7 @@
 
 #include "scamper.h"
 #include "scamper_config.h"
+#include "scamper_priv.h"
 #include "scamper_debug.h"
 
 #include "utils.h"
@@ -215,37 +216,7 @@ static void config_free(scamper_config_t *cf)
   return;
 }
 
-static scamper_config_t *config_dup(const scamper_config_t *cf)
-{
-  return memdup(cf, sizeof(scamper_config_t));
-}
-
-int scamper_config_read(const char *filename)
-{
-  scamper_config_t *newconfig = NULL;
-
-  if((newconfig = config_dup(config)) == NULL ||
-     file_lines(filename, config_line, newconfig) != 0)
-    goto err;
-
-  config_free(config);
-  config = newconfig;
-
-  return 0;
-
- err:
-  if(newconfig != NULL) config_free(newconfig);
-  return -1;
-}
-
-void scamper_config_cleanup(void)
-{
-  if(config != NULL)
-    config_free(config);
-  return;
-}
-
-int scamper_config_init(const char *filename)
+static scamper_config_t *config_alloc(void)
 {
   scamper_config_t *cf = NULL;
 
@@ -262,13 +233,78 @@ int scamper_config_init(const char *filename)
   cf->http_enable = 1;
   cf->host_enable = 1;
 
-  if(filename != NULL && file_lines(filename, config_line, cf) != 0)
+  return cf;
+
+ err:
+  if(cf != NULL) config_free(cf);
+  return NULL;
+}
+
+int scamper_config_reload(const char *filename)
+{
+  scamper_config_t *newconfig = NULL;
+
+#ifdef BUILDING_SCAMPER
+  int fd = -1;
+#endif
+
+  if((newconfig = config_alloc()) == NULL)
     goto err;
+
+#ifdef BUILDING_SCAMPER
+  if((fd = scamper_priv_open(filename, O_RDONLY, 0)) == -1 ||
+     fd_lines(fd, config_line, newconfig) != 0)
+    goto err;
+  close(fd);
+#else
+  if(file_lines(filename, config_line, newconfig) != 0)
+    goto err;
+#endif
+
+  if(config != NULL)
+    config_free(config);
+  config = newconfig;
+
+  return 0;
+
+ err:
+#ifdef BUILDING_SCAMPER
+  if(fd != -1) close(fd);
+#endif
+  if(newconfig != NULL) config_free(newconfig);
+  return -1;
+}
+
+void scamper_config_cleanup(void)
+{
+  if(config != NULL)
+    {
+      config_free(config);
+      config = NULL;
+    }
+  return;
+}
+
+int scamper_config_init(const char *filename)
+{
+  scamper_config_t *cf = NULL;
+
+  if((cf = config_alloc()) == NULL)
+    {
+      scamper_debug(__func__, "could not allocate config");
+      goto err;
+    }
+
+  if(filename != NULL && file_lines(filename, config_line, cf) != 0)
+    {
+      scamper_debug(__func__, "could not read config file");
+      goto err;
+    }
 
   config = cf;
   return 0;
 
  err:
-  if(cf != NULL) config_free(config);
+  if(cf != NULL) config_free(cf);
   return -1;
 }

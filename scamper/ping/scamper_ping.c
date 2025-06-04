@@ -7,7 +7,7 @@
  * Copyright (C) 2020-2023 Matthew Luckie
  * Author: Matthew Luckie
  *
- * $Id: scamper_ping.c,v 1.60 2025/02/25 06:31:24 mjl Exp $
+ * $Id: scamper_ping.c,v 1.62 2025/05/29 07:50:34 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -70,6 +70,7 @@ char *scamper_ping_stop_tostr(const scamper_ping_t *ping, char *buf, size_t len)
     "done",
     "error",
     "halted",
+    "inprogress",
   };
   size_t off = 0;
 
@@ -106,6 +107,12 @@ scamper_ping_stats_t *scamper_ping_stats_alloc(const scamper_ping_t *ping)
     {
       if((probe = ping->probes[i]) == NULL)
 	continue;
+
+      if(probe->flags & SCAMPER_PING_REPLY_FLAG_PENDING)
+	{
+	  stats->npend++;
+	  continue;
+	}
 
       rxc = 0;
       err = 0;

@@ -1,7 +1,7 @@
 /*
  * scamper_trace_cmd.c
  *
- * $Id: scamper_trace_cmd.c,v 1.26 2025/04/29 01:07:12 mjl Exp $
+ * $Id: scamper_trace_cmd.c,v 1.27 2025/05/29 07:54:07 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -75,6 +75,7 @@
 #define TRACE_OPT_RTRADDR     25
 #define TRACE_OPT_SQUERIES    26
 #define TRACE_OPT_WAITPROBE_HOP 27
+#define TRACE_OPT_STREAM      28
 
 static const scamper_option_in_t opts[] = {
   {'c', NULL, TRACE_OPT_CONFIDENCE,  SCAMPER_OPTION_TYPE_NUM},
@@ -101,6 +102,7 @@ static const scamper_option_in_t opts[] = {
   {'U', NULL, TRACE_OPT_USERID,      SCAMPER_OPTION_TYPE_NUM},
   {'w', NULL, TRACE_OPT_WAITTIMEOUT, SCAMPER_OPTION_TYPE_STR},
   {'W', NULL, TRACE_OPT_WAITPROBE,   SCAMPER_OPTION_TYPE_STR},
+  {'y', NULL, TRACE_OPT_STREAM,      SCAMPER_OPTION_TYPE_NUM},
   {'z', NULL, TRACE_OPT_GSSENTRY,    SCAMPER_OPTION_TYPE_STR},
   {'Z', NULL, TRACE_OPT_LSSNAME,     SCAMPER_OPTION_TYPE_STR},
 };
@@ -142,6 +144,7 @@ static const opt_limit_t limits[] = {
   {NULL, 0, 0}, /* rtr-addr */
   {NULL, 1, 255}, /* squeries */
   {NULL, 0, 0}, /* wait-probe-hop */
+  {"stream", 0, 20},
 };
 
 extern scamper_addrcache_t *addrcache;
@@ -154,7 +157,7 @@ const char *scamper_do_trace_usage(void)
     "      [-m maxttl] [-N squeries] [-o offset] [-O options] [-p payload]\n"
     "      [-P method] [-q attempts] [-r rtraddr] [-s sport] [-S srcaddr]\n"
     "      [-t tos] [-U userid] [-w wait-timeout] [-W wait-probe]\n"
-    "      [-z gss-entry] [-Z lss-name]";
+    "      [-y stream] [-z gss-entry] [-Z lss-name]";
 }
 
 static int trace_arg_param_validate(int optid, char *param, long long *out,
@@ -182,6 +185,7 @@ static int trace_arg_param_validate(int optid, char *param, long long *out,
     case TRACE_OPT_SQUERIES:
     case TRACE_OPT_TOS:
     case TRACE_OPT_USERID:
+    case TRACE_OPT_STREAM:
       if(string_tolong(param, &tmp) != 0 ||
 	 tmp < limits[optid].min || tmp > limits[optid].max)
 	{
@@ -376,6 +380,7 @@ void *scamper_do_trace_alloc(char *str, char *errbuf, size_t errlen)
   uint8_t  loops       = 1;
   uint8_t  confidence  = 0;
   uint8_t  dtree_flags = 0;
+  uint8_t  stream      = 0;
   int      sport       = -1;
   uint16_t dport       = (32768+666+1);
   uint16_t offset      = 0;
@@ -548,6 +553,10 @@ void *scamper_do_trace_alloc(char *str, char *errbuf, size_t errlen)
 	  wait_probe_hop.tv_usec = tmp % 1000000;
 	  break;
 
+	case TRACE_OPT_STREAM:
+	  stream = (uint8_t)tmp;
+	  break;
+
 	case TRACE_OPT_LSSNAME:
 	  lss = opt->str;
 	  break;
@@ -651,6 +660,7 @@ void *scamper_do_trace_alloc(char *str, char *errbuf, size_t errlen)
   trace->confidence  = confidence;
   trace->offset      = offset;
   trace->userid      = userid;
+  trace->stream      = stream;
 
   timeval_cpy(&trace->wait_timeout, &wait_timeout);
   timeval_cpy(&trace->wait_probe, &wait_probe);

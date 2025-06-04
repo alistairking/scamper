@@ -1,7 +1,7 @@
 /*
  * sc_hoiho: Holistic Orthography of Internet Hostname Observations
  *
- * $Id: sc_hoiho.c,v 1.35 2025/04/27 03:05:24 mjl Exp $
+ * $Id: sc_hoiho.c,v 1.36 2025/05/29 20:05:45 mjl Exp $
  *
  *         Matthew Luckie
  *         mjl@luckie.org.nz
@@ -756,11 +756,13 @@ static int              dump_funcc = sizeof(dump_funcs) / sizeof(sc_dump_t);
 
 static void usage(uint32_t opts)
 {
-  const char *v = "";
+  const char *v;
   int i;
 
 #ifdef OPT_VERSION
   v = "v";
+#else
+  v = "";
 #endif
 
   fprintf(stderr,

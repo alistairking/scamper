@@ -7,7 +7,7 @@
  * Copyright (C) 2022-2024 Matthew Luckie
  * Author: Matthew Luckie
  *
- * $Id: scamper_ping_text.c,v 1.27 2025/03/08 05:40:43 mjl Exp $
+ * $Id: scamper_ping_text.c,v 1.30 2025/06/02 22:40:41 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -154,27 +154,34 @@ static char *ping_stats(const scamper_ping_t *ping)
 {
   scamper_ping_stats_t *stats;
   size_t off = 0;
+  uint32_t total;
   char str[64], *dup;
   char buf[512];
-  int rp = 0;
 
   if((stats = scamper_ping_stats_alloc(ping)) == NULL)
     return NULL;
-
-  if(ping->ping_sent != 0)
-    rp = ((ping->ping_sent - stats->nreplies) * 100) / ping->ping_sent;
 
   string_concat3(buf, sizeof(buf), &off, "--- ",
 		 scamper_addr_tostr(ping->dst, str, sizeof(str)),
 		 " ping statistics ---\n");
   string_concaf(buf, sizeof(buf), &off,
-		"%d packets transmitted, %d packets received, ",
+		"%d packets transmitted, %d packets received",
 		ping->ping_sent, stats->nreplies);
   if(stats->ndups > 0)
-    string_concaf(buf, sizeof(buf), &off, "+%d duplicates, ", stats->ndups);
+    string_concaf(buf, sizeof(buf), &off, ", +%d duplicates", stats->ndups);
   if(stats->nerrs > 0)
-    string_concaf(buf, sizeof(buf), &off, "+%d errors, ", stats->nerrs);
-  string_concaf(buf, sizeof(buf), &off, "%d%% packet loss\n", rp);
+    string_concaf(buf, sizeof(buf), &off, ", +%d errors", stats->nerrs);
+  if(stats->npend > 0)
+    string_concaf(buf, sizeof(buf), &off, ", +%d pending", stats->npend);
+
+  if(ping->ping_sent > stats->npend)
+    {
+      total = ping->ping_sent - stats->npend;
+      string_concaf(buf, sizeof(buf), &off, ", %d%% packet loss",
+		    ((total - stats->nreplies) * 100) / total);
+    }
+  string_concatc(buf, sizeof(buf), &off, '\n');
+
   if(stats->nreplies > 0)
     {
       string_concat(buf, sizeof(buf), &off, "round-trip min/avg/max/stddev =");
@@ -195,13 +202,10 @@ static char *ping_stats(const scamper_ping_t *ping)
   return dup;
 }
 
-int scamper_file_text_ping_write(const scamper_file_t *sf,
-				 const scamper_ping_t *ping, void *p)
+char *scamper_ping_totext(const scamper_ping_t *ping, size_t *len_out)
 {
   scamper_ping_probe_t *probe;
   scamper_ping_reply_t *reply;
-  int       fd          = scamper_file_getfd(sf);
-  off_t     off         = 0;
   uint32_t  reply_count = scamper_ping_reply_total(ping);
   char     *header      = NULL;
   size_t    header_len  = 0;
@@ -212,12 +216,8 @@ int scamper_file_text_ping_write(const scamper_file_t *sf,
   char     *str         = NULL;
   size_t    len         = 0;
   size_t    wc          = 0;
-  int       ret         = -1;
+  int       rc          = -1;
   uint32_t  i, j, k;
-
-  /* get current position incase trunction is required */
-  if(fd != 1 && (off = lseek(fd, 0, SEEK_CUR)) == -1)
-    return -1;
 
   /* get the header string */
   if((header = ping_header(ping)) == NULL)
@@ -271,24 +271,16 @@ int scamper_file_text_ping_write(const scamper_file_t *sf,
       wc += stats_len;
     }
 
-  /*
-   * try and write the string to disk.  if it fails, then truncate the
-   * write and fail
-   */
-  if(write_wrap(fd, str, &wc, len) != 0)
-    {
-      if(fd != 1)
-	{
-	  if(ftruncate(fd, off) != 0)
-	    goto cleanup;
-	}
-      goto cleanup;
-    }
+  assert(wc > 0);
+  assert(wc == len);
 
-  ret = 0; /* we succeeded */
+  /* remove the trailing \n */
+  str[wc-1] = '\0';
+
+  /* we succeeded */
+  rc = 0;
 
  cleanup:
-  if(str != NULL) free(str);
   if(header != NULL) free(header);
   if(stats != NULL) free(stats);
   if(reply_lens != NULL) free(reply_lens);
@@ -300,5 +292,52 @@ int scamper_file_text_ping_write(const scamper_file_t *sf,
       free(replies);
     }
 
-  return ret;
+  if(rc != 0)
+    {
+      if(str != NULL)
+	free(str);
+      return NULL;
+    }
+
+  if(len_out != NULL)
+    *len_out = len;
+  return str;
+}
+
+int scamper_file_text_ping_write(const scamper_file_t *sf,
+				 const scamper_ping_t *ping, void *p)
+{
+  size_t wc, len;
+  off_t off = 0;
+  char *str = NULL;
+  int fd, rc = -1;
+
+  /* get current position incase trunction is required */
+  fd = scamper_file_getfd(sf);
+  if(fd != STDOUT_FILENO && (off = lseek(fd, 0, SEEK_CUR)) == -1)
+    goto cleanup;
+
+  if((str = scamper_ping_totext(ping, &len)) == NULL)
+    goto cleanup;
+  str[len-1] = '\n';
+
+  /*
+   * try and write the string to disk.  if it fails, then truncate the
+   * write and fail
+   */
+  if(write_wrap(fd, str, &wc, len) != 0)
+    {
+      if(fd != STDOUT_FILENO)
+	{
+	  if(ftruncate(fd, off) != 0)
+	    goto cleanup;
+	}
+      goto cleanup;
+    }
+
+  rc = 0;
+
+ cleanup:
+  if(str != NULL) free(str);
+  return rc;
 }

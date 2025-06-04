@@ -1135,16 +1135,16 @@ cdef class ScamperTraceHop:
             buf.decode('UTF-8', 'strict'), usec / 1000, usec % 1000)
 
     @staticmethod
-    cdef ScamperTraceHop from_ptr(cscamper_trace.scamper_trace_t *trace,
-                                  cscamper_trace.scamper_trace_probe_t *p,
-                                  cscamper_trace.scamper_trace_reply_t *r):
+    cdef ScamperTraceHop from_ptr(cscamper_trace.scamper_trace_probe_t *p,
+                                  cscamper_trace.scamper_trace_reply_t *r,
+                                  uint32_t t_flags):
         cdef ScamperTraceHop hop
         if r == NULL:
             return None
         hop = ScamperTraceHop.__new__(ScamperTraceHop)
         hop._p = cscamper_trace.scamper_trace_probe_use(p)
         hop._r = cscamper_trace.scamper_trace_reply_use(r)
-        hop._t_flags = cscamper_trace.scamper_trace_flags_get(trace)
+        hop._t_flags = t_flags
         return hop
 
     @property
@@ -1522,12 +1522,88 @@ class _ScamperTraceHopIterator:
             return hop
         raise StopIteration
 
+cdef class ScamperTracePmtudNote:
+    """
+    :class:`ScamperTracePmtudNote` is used by scamper to store information
+    about a path MTU inference on a path.
+    """
+    cdef cscamper_trace.scamper_trace_pmtud_note_t *_c
+    cdef uint32_t _t_flags
+    cdef uint8_t _dist
+
+    def __init__(self):
+        raise TypeError("This class cannot be instantiated directly.")
+
+    def __dealloc__(self):
+        if self._c != NULL:
+            cscamper_trace.scamper_trace_pmtud_note_free(self._c)
+
+    @staticmethod
+    cdef ScamperTracePmtudNote from_ptr(cscamper_trace.scamper_trace_pmtud_note_t *ptr, uint8_t dist, uint32_t t_flags):
+        cdef ScamperTracePmtudNote n
+        if ptr == NULL:
+            return None
+        n = ScamperTracePmtudNote.__new__(ScamperTracePmtudNote)
+        n._c = cscamper_trace.scamper_trace_pmtud_note_use(ptr)
+        n._dist = dist
+        n._t_flags = t_flags
+        return n
+
+    @property
+    def type_str(self):
+        """
+        method to obtain the type of this PMTUD note
+
+        :returns: the type (ptb, ptb-bad, or silent)
+        :rtype: string
+        """
+        cdef char buf[128]
+        cscamper_trace.scamper_trace_pmtud_note_type_tostr(self._c, buf, sizeof(buf))
+        return buf.decode('UTF-8', 'strict')
+
+    @property
+    def nhmtu(self):
+        """
+        method to obtain the MTU to the next hop.
+
+        :returns: the MTU to the next hop
+        :rtype: int
+        """
+        return cscamper_trace.scamper_trace_pmtud_note_nhmtu_get(self._c)
+
+    @property
+    def distance(self):
+        """
+        method to obtain the distance into the path where the note
+        applies.  a distance of zero means the note applies to the
+        system conducting the measurement.
+
+        :returns: the distance
+        :rtype: int
+        """
+        return self._dist
+
+    def hop(self):
+        """
+        method to obtain information about a PMTUD probe and response
+        associated with the note, if there is one.
+
+        :returns: information about the probe / response
+        :rtype: ScamperTraceHop
+        """
+        probe = cscamper_trace.scamper_trace_pmtud_note_probe_get(self._c)
+        reply = cscamper_trace.scamper_trace_pmtud_note_reply_get(self._c)
+        if probe == NULL or reply == NULL:
+            return None
+        return ScamperTraceHop.from_ptr(probe, reply, self._t_flags)
+
 cdef class ScamperTracePmtud:
     """
     :class:`ScamperTracePmtud` is used by scamper to store results from
     a path MTU discovery measurement.
     """
     cdef cscamper_trace.scamper_trace_pmtud_t *_c
+    cdef ScamperTrace _trace
 
     def __init__(self):
         raise TypeError("This class cannot be instantiated directly.")
@@ -1537,12 +1613,14 @@ cdef class ScamperTracePmtud:
             cscamper_trace.scamper_trace_pmtud_free(self._c)
 
     @staticmethod
-    cdef ScamperTracePmtud from_ptr(cscamper_trace.scamper_trace_pmtud_t *ptr):
+    cdef ScamperTracePmtud from_ptr(ScamperTrace trace):
         cdef ScamperTracePmtud p
-        if ptr == NULL:
+        pmtud = cscamper_trace.scamper_trace_pmtud_get(trace._c)
+        if pmtud == NULL:
             return None
         p = ScamperTracePmtud.__new__(ScamperTracePmtud)
-        p._c = cscamper_trace.scamper_trace_pmtud_use(ptr)
+        p._c = cscamper_trace.scamper_trace_pmtud_use(pmtud)
+        p._trace = trace
         return p
 
     @property
@@ -1578,6 +1656,28 @@ cdef class ScamperTracePmtud:
             return out_mtu
         return cscamper_trace.scamper_trace_pmtud_ifmtu_get(self._c)
 
+    def notes(self):
+        """
+        a generator that yields ScamperTracePmtudNote structures
+        """
+        cdef cscamper_trace.scamper_trace_pmtud_noteiter_t *nit
+        cdef cscamper_trace.scamper_trace_pmtud_note_t *note
+
+        nit = cscamper_trace.scamper_trace_pmtud_noteiter_alloc()
+        if nit == NULL:
+            return
+
+        t_flags = cscamper_trace.scamper_trace_flags_get(self._trace._c)
+
+        while 1:
+            note = cscamper_trace.scamper_trace_pmtud_noteiter_next(self._trace._c, nit)
+            if note == NULL:
+                break
+            dist = cscamper_trace.scamper_trace_pmtud_noteiter_dist_get(self._trace._c, nit)
+            yield ScamperTracePmtudNote.from_ptr(note, dist, t_flags)
+
+        cscamper_trace.scamper_trace_pmtud_noteiter_free(nit)
+
 cdef class ScamperTrace:
     """
     :class:`ScamperTrace` is used by scamper to store results from a traceroute
@@ -1592,6 +1692,14 @@ cdef class ScamperTrace:
     def __dealloc__(self):
         if self._c != NULL:
             cscamper_trace.scamper_trace_free(self._c)
+
+    def __str__(self):
+        c = cscamper_trace.scamper_trace_totext(self._c, NULL)
+        if c == NULL:
+            return None
+        out = c.decode('UTF-8', 'strict')
+        free(c)
+        return out
 
     @staticmethod
     cdef ScamperTrace from_ptr(cscamper_trace.scamper_trace_t *ptr):
@@ -1749,7 +1857,8 @@ cdef class ScamperTrace:
         cscamper_trace.scamper_trace_hopiter_free(hi)
         if p == NULL or r == NULL:
             return None
-        return ScamperTraceHop.from_ptr(self._c, p, r)
+        t_flags = cscamper_trace.scamper_trace_flags_get(self._c)
+        return ScamperTraceHop.from_ptr(p, r, t_flags)
 
     @property
     def hop_count(self):
@@ -2006,8 +2115,7 @@ cdef class ScamperTrace:
         :returns: path MTU information.
         :rtype: ScamperTracePmtud
         """
-        c = cscamper_trace.scamper_trace_pmtud_get(self._c)
-        return ScamperTracePmtud.from_ptr(c)
+        return ScamperTracePmtud.from_ptr(self)
 
     def is_udp(self):
         """
@@ -2565,6 +2673,14 @@ cdef class ScamperPing:
             cscamper_ping.scamper_ping_stats_free(self._c_s)
         if self._c != NULL:
             cscamper_ping.scamper_ping_free(self._c)
+
+    def __str__(self):
+        c = cscamper_ping.scamper_ping_totext(self._c, NULL)
+        if c == NULL:
+            return None
+        out = c.decode('UTF-8', 'strict')
+        free(c)
+        return out
 
     def __iter__(self):
         return _ScamperPingIterator(self)
@@ -3625,6 +3741,14 @@ cdef class ScamperTracelb:
     def __dealloc__(self):
         if self._c != NULL:
             cscamper_tracelb.scamper_tracelb_free(self._c)
+
+    def __str__(self):
+        c = cscamper_tracelb.scamper_tracelb_totext(self._c, NULL)
+        if c == NULL:
+            return None
+        out = c.decode('UTF-8', 'strict')
+        free(c)
+        return out
 
     @staticmethod
     cdef ScamperTracelb from_ptr(cscamper_tracelb.scamper_tracelb_t *ptr):

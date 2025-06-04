@@ -1,7 +1,7 @@
 /*
  * sc_minrtt: dump RTT values by node for use by sc_hoiho
  *
- * $Id: sc_minrtt.c,v 1.23 2025/04/21 03:24:13 mjl Exp $
+ * $Id: sc_minrtt.c,v 1.24 2025/06/03 02:12:54 mjl Exp $
  *
  *         Matthew Luckie
  *         mjl@luckie.org.nz
@@ -216,15 +216,18 @@ static sqlite3_blob   *blob = NULL;
 
 static void usage(uint32_t opt_mask)
 {
-  const char *v = "";
-  const char *t = "";
+  const char *t, *v;
 
 #ifdef OPT_VERSION
   v = "v";
+#else
+  v = "";
 #endif
 
 #ifdef HAVE_PTHREAD
   t = " [-t threadc]";
+#else
+  t = "";
 #endif
   
   fprintf(stderr,

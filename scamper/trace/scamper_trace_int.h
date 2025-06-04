@@ -1,7 +1,7 @@
 /*
  * scamper_trace_int.h
  *
- * $Id: scamper_trace_int.h,v 1.16 2025/05/01 02:58:04 mjl Exp $
+ * $Id: scamper_trace_int.h,v 1.18 2025/05/29 07:54:07 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -235,6 +235,9 @@ struct scamper_trace
   /* if we did a parallel traceroute */
   uint8_t                stop_hop;
 
+  /* how regularly to stream in-progress results */
+  uint8_t                stream;
+
   /* trace parameters */
   uint8_t                type;
   uint8_t                attempts;
@@ -445,6 +448,14 @@ struct scamper_trace_hopiter
   uint8_t                max;
   uint16_t               p;
   uint16_t               r;
+};
+
+struct scamper_trace_pmtud_noteiter
+{
+  scamper_trace_pmtud_note_t *note;
+  uint8_t                     n;
+  uint8_t                     start;
+  uint8_t                     dist;
 };
 
 #endif /* __SCAMPER_TRACE_INT_H */
