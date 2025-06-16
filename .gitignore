@@ -111,3 +111,4 @@ lib/python/scamper.c
 
 # Local build artifacts
 build/
+.idea/
