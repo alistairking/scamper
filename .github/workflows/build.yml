@@ -57,9 +57,14 @@ jobs:
 
   build-macos:
     name: Build (macos)
-    runs-on: macos-latest
-    env:
-      platform: darwin-amd64
+    strategy:
+      matrix:
+        include:
+          - runner: macos-latest
+            platform: darwin-arm64
+          - runner: macos-13
+            platform: darwin-amd64
+    runs-on: ${{ matrix.runner }}
     steps:
       # SETUP
       - name: Checkout code
@@ -79,15 +84,15 @@ jobs:
           autoreconf -vfi
           ./configure --disable-libs --disable-utils --with-openssl=disabled
           make
-          mkdir -p ./build/${{env.platform}}
-          cp scamper/scamper ./build/${{env.platform}}
+          mkdir -p ./build/${{matrix.platform}}
+          cp scamper/scamper ./build/${{matrix.platform}}
           echo "Successfully built scamper version: $(./scamper/scamper -v)"
 
       # STORE BINARIES
       - name: Archive compiled binaries
         uses: actions/upload-artifact@v4
         with:
-          name: scamper-build-${{ env.platform }}
+          name: scamper-build-${{ matrix.platform }}
           path: build/**/scamper
 
   docs:
