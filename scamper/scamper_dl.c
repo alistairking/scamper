@@ -1406,6 +1406,9 @@ static int linux_read_sll(scamper_dl_rec_t *dl, struct sockaddr_ll *sll,
 #if defined(ARPHRD_VOID)
     case ARPHRD_VOID:
 #endif
+#ifdef ARPHRD_NONE
+    case ARPHRD_NONE:
+#endif
     case ARPHRD_PPP:
       rc = dl_parse_ip(dl, buf, len);
       break;
@@ -1741,6 +1744,9 @@ static int dl_linux_node_init(const scamper_fd_t *fdn, scamper_dl_t *node)
 
 #if defined(ARPHRD_SIT)
     case ARPHRD_SIT:
+#endif
+#ifdef ARPHRD_NONE
+    case ARPHRD_NONE:
 #endif
     case ARPHRD_PPP:
       node->dlt_cb = dlt_raw_cb;
