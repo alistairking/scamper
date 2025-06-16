@@ -1406,6 +1406,9 @@ static int linux_read_sll(scamper_dl_rec_t *dl, struct sockaddr_ll *sll,
 #if defined(ARPHRD_VOID)
     case ARPHRD_VOID:
 #endif
+#ifdef ARPHRD_NONE
+    case ARPHRD_NONE:
+#endif
     case ARPHRD_PPP:
       rc = dl_parse_ip(dl, buf, len);
       break;
@@ -1452,6 +1455,13 @@ static void ring_stats(scamper_dl_t *node)
 	   "fd=%d, pkts=%u, pkts_total=%u, drops=%u, drops_total=%u",
 	   fd, stats.tp_packets, ring->accepted_pkts,
 	   stats.tp_drops, ring->dropped_pkts);
+
+  /*
+   * Log this to stderr iff we have newly dropped packets and this isn't the
+   * first time we've logged drops
+   */
+  if(stats.tp_drops > 0 && ring->accepted_pkts > stats.tp_packets)
+    fprintf(stderr, "scamper_dl_stats: %s\n", buf);
 
   scamper_debug(__func__, "%s", buf);
   return;
@@ -1734,6 +1744,9 @@ static int dl_linux_node_init(const scamper_fd_t *fdn, scamper_dl_t *node)
 
 #if defined(ARPHRD_SIT)
     case ARPHRD_SIT:
+#endif
+#ifdef ARPHRD_NONE
+    case ARPHRD_NONE:
 #endif
     case ARPHRD_PPP:
       node->dlt_cb = dlt_raw_cb;
