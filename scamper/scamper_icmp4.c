@@ -1,7 +1,7 @@
 /*
  * scamper_icmp4.c
  *
- * $Id: scamper_icmp4.c,v 1.146 2025/03/29 18:46:03 mjl Exp $
+ * $Id: scamper_icmp4.c,v 1.147 2025/06/10 22:32:49 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -270,7 +270,7 @@ static uint16_t icmp4_quote_ip_len(const struct icmp *icmp)
 {
   uint16_t len;
 
-#if defined(__linux__) || defined(__OpenBSD__) || defined(__sun__) || defined(_WIN32)
+#if defined(__linux__) || defined(__OpenBSD__) || defined(__sun) || defined(_WIN32)
   len = ntohs(icmp->icmp_ip.ip_len);
 #elif defined(__FreeBSD__) && __FreeBSD_version >= 1000022
   len = ntohs(icmp->icmp_ip.ip_len);
@@ -340,7 +340,7 @@ static uint16_t icmp4_ip_len(const struct ip *ip)
 {
   uint16_t len;
 
-#if defined(__linux__) || defined(__OpenBSD__) || defined(__sun__) || defined(_WIN32)
+#if defined(__linux__) || defined(__OpenBSD__) || defined(__sun) || defined(_WIN32)
   len = ntohs(ip->ip_len);
 #elif defined(__FreeBSD__) && __FreeBSD_version >= 1100030
   len = ntohs(ip->ip_len);

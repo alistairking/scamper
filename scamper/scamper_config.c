@@ -1,7 +1,7 @@
 /*
  * scamper_config.c
  *
- * $Id: scamper_config.c,v 1.8 2025/06/03 00:14:59 mjl Exp $
+ * $Id: scamper_config.c,v 1.9 2025/06/23 21:05:45 mjl Exp $
  *
  * Copyright (C) 2025 Matthew Luckie
  *
@@ -62,59 +62,11 @@ static int check_enable(const char *key_in, const char *key, const char *val,
   return 0;
 }
 
-static int trace_cb(const char *key_in, char *val, scamper_config_t *cf)
-{
-  const char *key = key_in + 6;
-  int rc;
-  rc = check_enable(key_in, key, val, &cf->trace_enable);
-  return rc < 0 ? rc : 0;
-}
-
-static int ping_cb(const char *key_in, char *val, scamper_config_t *cf)
-{
-  const char *key = key_in + 5;
-  int rc;
-  rc = check_enable(key_in, key, val, &cf->ping_enable);
-  return rc < 0 ? rc : 0;
-}
-
 static int dealias_cb(const char *key_in, char *val, scamper_config_t *cf)
 {
   const char *key = key_in + 8;
   int rc;
   rc = check_enable(key_in, key, val, &cf->dealias_enable);
-  return rc < 0 ? rc : 0;
-}
-
-static int tracelb_cb(const char *key_in, char *val, scamper_config_t *cf)
-{
-  const char *key = key_in + 8;
-  int rc;
-  rc = check_enable(key_in, key, val, &cf->tracelb_enable);
-  return rc < 0 ? rc : 0;
-}
-
-static int sting_cb(const char *key_in, char *val, scamper_config_t *cf)
-{
-  const char *key = key_in + 6;
-  int rc;
-  rc = check_enable(key_in, key, val, &cf->sting_enable);
-  return rc < 0 ? rc : 0;
-}
-
-static int tbit_cb(const char *key_in, char *val, scamper_config_t *cf)
-{
-  const char *key = key_in + 5;
-  int rc;
-  rc = check_enable(key_in, key, val, &cf->tbit_enable);
-  return rc < 0 ? rc : 0;
-}
-
-static int udpprobe_cb(const char *key_in, char *val, scamper_config_t *cf)
-{
-  const char *key = key_in + 9;
-  int rc;
-  rc = check_enable(key_in, key, val, &cf->udpprobe_enable);
   return rc < 0 ? rc : 0;
 }
 
@@ -134,18 +86,84 @@ static int host_cb(const char *key_in, char *val, scamper_config_t *cf)
   return rc < 0 ? rc : 0;
 }
 
+static int neighbourdisc_cb(const char *key_in, char *val, scamper_config_t *cf)
+{
+  const char *key = key_in + 14;
+  int rc;
+  rc = check_enable(key_in, key, val, &cf->neighbourdisc_enable);
+  return rc < 0 ? rc : 0;
+}
+
+static int ping_cb(const char *key_in, char *val, scamper_config_t *cf)
+{
+  const char *key = key_in + 5;
+  int rc;
+  rc = check_enable(key_in, key, val, &cf->ping_enable);
+  return rc < 0 ? rc : 0;
+}
+
+static int sniff_cb(const char *key_in, char *val, scamper_config_t *cf)
+{
+  const char *key = key_in + 6;
+  int rc;
+  rc = check_enable(key_in, key, val, &cf->sniff_enable);
+  return rc < 0 ? rc : 0;
+}
+
+static int sting_cb(const char *key_in, char *val, scamper_config_t *cf)
+{
+  const char *key = key_in + 6;
+  int rc;
+  rc = check_enable(key_in, key, val, &cf->sting_enable);
+  return rc < 0 ? rc : 0;
+}
+
+static int tbit_cb(const char *key_in, char *val, scamper_config_t *cf)
+{
+  const char *key = key_in + 5;
+  int rc;
+  rc = check_enable(key_in, key, val, &cf->tbit_enable);
+  return rc < 0 ? rc : 0;
+}
+
+static int trace_cb(const char *key_in, char *val, scamper_config_t *cf)
+{
+  const char *key = key_in + 6;
+  int rc;
+  rc = check_enable(key_in, key, val, &cf->trace_enable);
+  return rc < 0 ? rc : 0;
+}
+
+static int tracelb_cb(const char *key_in, char *val, scamper_config_t *cf)
+{
+  const char *key = key_in + 8;
+  int rc;
+  rc = check_enable(key_in, key, val, &cf->tracelb_enable);
+  return rc < 0 ? rc : 0;
+}
+
+static int udpprobe_cb(const char *key_in, char *val, scamper_config_t *cf)
+{
+  const char *key = key_in + 9;
+  int rc;
+  rc = check_enable(key_in, key, val, &cf->udpprobe_enable);
+  return rc < 0 ? rc : 0;
+}
+
 static int config_line(char *line, void *param)
 {
   conf_cb_t cbs[] = {
-    {"dealias.",  8, dealias_cb},
-    {"host.",     5, host_cb},
-    {"http.",     5, http_cb},
-    {"ping.",     5, ping_cb},
-    {"sting.",    6, sting_cb},
-    {"tbit.",     5, tbit_cb},
-    {"trace.",    6, trace_cb},
-    {"tracelb.",  8, tracelb_cb},
-    {"udpprobe.", 9, udpprobe_cb},
+    {"dealias.",        8, dealias_cb},
+    {"host.",           5, host_cb},
+    {"http.",           5, http_cb},
+    {"neighbourdisc.", 14, neighbourdisc_cb},
+    {"ping.",           5, ping_cb},
+    {"sniff.",          6, sniff_cb},
+    {"sting.",          6, sting_cb},
+    {"tbit.",           5, tbit_cb},
+    {"trace.",          6, trace_cb},
+    {"tracelb.",        8, tracelb_cb},
+    {"udpprobe.",       9, udpprobe_cb},
   };
   size_t i, cbc = sizeof(cbs) / sizeof(conf_cb_t);
   scamper_config_t *cf = param;
@@ -232,6 +250,8 @@ static scamper_config_t *config_alloc(void)
   cf->udpprobe_enable = 1;
   cf->http_enable = 1;
   cf->host_enable = 1;
+  cf->neighbourdisc_enable = 1;
+  cf->sniff_enable = 1;
 
   return cf;
 

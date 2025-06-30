@@ -1,7 +1,7 @@
 /*
  * unit_config : unit test for config system
  *
- * $Id: unit_config.c,v 1.2 2025/06/02 08:22:35 mjl Exp $
+ * $Id: unit_config.c,v 1.3 2025/06/23 21:05:45 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -40,10 +40,91 @@ typedef struct sc_test
   int (*check)(void);
 } sc_test_t;
 
+static int defaults(void)
+{
+  if(config->dealias_enable != 1 ||
+     config->host_enable != 1 ||
+     config->http_enable != 1 ||
+     config->neighbourdisc_enable != 1 ||
+     config->ping_enable != 1 ||
+     config->sniff_enable != 1 ||
+     config->sting_enable != 1 ||
+     config->tbit_enable != 1 ||
+     config->trace_enable != 1 ||
+     config->tracelb_enable != 1 ||
+     config->udpprobe_enable != 1)
+    return -1;
+  return 0;
+}
+
+static int dealias_disable(void)
+{
+  if(config->dealias_enable != 0)
+    return -1;
+  return 0;
+}
+
+static int host_disable(void)
+{
+  if(config->host_enable != 0)
+    return -1;
+  return 0;
+}
+
+static int http_disable(void)
+{
+  if(config->http_enable != 0)
+    return -1;
+  return 0;
+}
+
+static int neighbourdisc_disable(void)
+{
+  if(config->neighbourdisc_enable != 0)
+    return -1;
+  return 0;
+}
+
+static int ping_disable(void)
+{
+  if(config->ping_enable != 0)
+    return -1;
+  return 0;
+}
+
+static int sniff_disable(void)
+{
+  if(config->sniff_enable != 0)
+    return -1;
+  return 0;
+}
+
+static int sting_disable(void)
+{
+  if(config->sting_enable != 0)
+    return -1;
+  return 0;
+}
+
+static int tbit_disable(void)
+{
+  if(config->tbit_enable != 0)
+    return -1;
+  return 0;
+}
+
 static int trace_disable(void)
 {
   if(config->trace_enable != 0 ||
      config->tracelb_enable == 0)
+    return -1;
+  return 0;
+}
+
+static int trace_ping_disable(void)
+{
+  if(config->trace_enable != 0 ||
+     config->ping_enable != 0)
     return -1;
   return 0;
 }
@@ -56,10 +137,9 @@ static int tracelb_disable(void)
   return 0;
 }
 
-static int trace_ping_disable(void)
+static int udpprobe_disable(void)
 {
-  if(config->trace_enable != 0 ||
-     config->ping_enable != 0)
+  if(config->udpprobe_enable != 0)
     return -1;
   return 0;
 }
@@ -77,6 +157,24 @@ static int check_config(const char *file, int (*check)(void))
 int main(int argc, char *argv[])
 {
   sc_test_t tests[] = {
+    {"",
+     defaults},
+    {"dealias.enable=0\n",
+     dealias_disable},
+    {"host.enable=0\n",
+     host_disable},
+    {"http.enable=0\n",
+     http_disable},
+    {"neighbourdisc.enable=0\n",
+     neighbourdisc_disable},
+    {"ping.enable=0\n",
+     ping_disable},
+    {"sniff.enable=0\n",
+     sniff_disable},
+    {"sting.enable=0\n",
+     sting_disable},
+    {"tbit.enable=0\n",
+     tbit_disable},
     {"# disable traceroute\n"
      "trace.enable=0",
      trace_disable},
@@ -98,6 +196,8 @@ int main(int argc, char *argv[])
      "trace.enable=0\n"
      "ping.enable=0\n",
      trace_ping_disable},
+    {"udpprobe.enable=0\n",
+     udpprobe_disable},
   };
   size_t i, testc = sizeof(tests) / sizeof(sc_test_t);
   char filename[128];

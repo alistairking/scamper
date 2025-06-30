@@ -1,7 +1,7 @@
 /*
  * scamper_tracelb_do.c
  *
- * $Id: scamper_tracelb_do.c,v 1.319 2025/04/27 00:49:24 mjl Exp $
+ * $Id: scamper_tracelb_do.c,v 1.320 2025/06/27 02:29:51 mjl Exp $
  *
  * Copyright (C) 2008-2011 The University of Waikato
  * Copyright (C) 2012      The Regents of the University of California
@@ -1725,7 +1725,7 @@ static int tracelb_node_ptr(scamper_task_t *task, scamper_tracelb_node_t *node)
   tracelb_host_t *th = NULL;
 
   if((trace->flags & SCAMPER_TRACELB_FLAG_PTR) == 0 ||
-     node->addr == NULL)
+     node->addr == NULL || config->host_enable == 0)
     return 0;
 
   if((state->ths == NULL && (state->ths = dlist_alloc()) == NULL))

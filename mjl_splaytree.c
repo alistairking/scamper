@@ -3,7 +3,7 @@
  * By Matthew Luckie
  * U of Waikato 0657.317b 1999
  *
- * Copyright (C) 1999-2024 Matthew Luckie. All rights reserved.
+ * Copyright (C) 1999-2025 Matthew Luckie. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -867,13 +867,10 @@ void splaytree_empty(splaytree_t *tree, splaytree_free_t free_ptr)
   return;
 }
 
-void *splaytree_gethead(splaytree_t *tree)
+void *splaytree_gethead(const splaytree_t *tree)
 {
   if(tree == NULL || tree->head == NULL)
-    {
-      return NULL;
-    }
-
+    return NULL;
   return tree->head->item;
 }
 
@@ -895,20 +892,30 @@ void *splaytree_pophead(splaytree_t *tree)
  *
  * return the right-most item on the left branch of the tree
  */
-void *splaytree_getrmlb(splaytree_t *tree)
+void *splaytree_getrmlb(const splaytree_t *tree)
 {
   splaytree_node_t *tn;
 
   if(tree == NULL || tree->head == NULL || tree->head->left == NULL)
-    {
-      return NULL;
-    }
+    return NULL;
 
   tn = tree->head->left;
   while(tn->right != NULL)
-    {
-      tn = tn->right;
-    }
+    tn = tn->right;
+
+  return tn->item;
+}
+
+void *splaytree_getrmrb(const splaytree_t *tree)
+{
+  splaytree_node_t *tn;
+
+  if(tree == NULL || tree->head == NULL)
+    return NULL;
+
+  tn = tree->head;
+  while(tn->right != NULL)
+    tn = tn->left;
 
   return tn->item;
 }
@@ -918,20 +925,30 @@ void *splaytree_getrmlb(splaytree_t *tree)
  *
  * return the left-most item on the right branch of the tree
  */
-void *splaytree_getlmrb(splaytree_t *tree)
+void *splaytree_getlmrb(const splaytree_t *tree)
 {
   splaytree_node_t *tn;
 
   if(tree == NULL || tree->head == NULL || tree->head->right == NULL)
-    {
-      return NULL;
-    }
+    return NULL;
 
   tn = tree->head->right;
   while(tn->left != NULL)
-    {
-      tn = tn->left;
-    }
+    tn = tn->left;
+
+  return tn->item;
+}
+
+void *splaytree_getlmlb(const splaytree_t *tree)
+{
+  splaytree_node_t *tn;
+
+  if(tree == NULL || tree->head == NULL)
+    return NULL;
+
+  tn = tree->head;
+  while(tn->left != NULL)
+    tn = tn->left;
 
   return tn->item;
 }
