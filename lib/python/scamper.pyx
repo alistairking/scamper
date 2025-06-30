@@ -5374,6 +5374,21 @@ cdef class ScamperNeighbourdisc:
         """
         return self._inst
 
+    def to_json(self):
+        """
+        get method to obtain a JSON rendering of this neighbourdisc
+        measurement.
+
+        :returns: json representation
+        :rtype: string
+        """
+        c = cscamper_neighbourdisc.scamper_neighbourdisc_tojson(self._c, NULL)
+        if c == NULL:
+            return None
+        out = c.decode('UTF-8', 'strict')
+        free(c)
+        return out
+
 ####
 #### Scamper Tbit Object
 ####
@@ -8708,6 +8723,11 @@ class ScamperInstError(Exception):
         super().__init__(message)
         self.inst = inst
 
+class _ScamperInstData:
+    def __init__(self, inst, data):
+        self._inst = inst
+        self._data = data
+
 cdef void _ctrl_cb(clibscamperctrl.scamper_inst_t *c_inst,
                    uint8_t cb_type, clibscamperctrl.scamper_task_t *c_task,
                    const void *data, size_t datalen) noexcept:
@@ -8790,10 +8810,12 @@ cdef void _ctrl_cb(clibscamperctrl.scamper_inst_t *c_inst,
                     pass
             if not isinstance(obj, (ScamperList, ScamperCycle)):
                 obj._inst = inst
+            onion = _ScamperInstData(inst, obj)
             if ctrl._c_synctask != NULL and ctrl._c_synctask == c_task:
-                ctrl._syncdata = obj
+                ctrl._syncdata = onion
             else:
-                ctrl._objs.append(obj)
+                ctrl._objs.append(onion)
+            inst._queued += 1
 
     elif cb_type == SCAMPER_CTRL_TYPE_MORE:
         if ctrl._morecb is not None:
@@ -8830,7 +8852,7 @@ cdef void _ctrl_cb(clibscamperctrl.scamper_inst_t *c_inst,
         # remove the instance from the set of instances managed by ctrl
         # and call the eofcb if one provided by the user.
         ctrl._insts.remove(inst)
-        if ctrl._eofcb is not None:
+        if ctrl._eofcb is not None and inst._queued == 0:
             try:
                 ctrl._eofcb(ctrl, inst, ctrl._param)
             except Exception as e:
@@ -9123,9 +9145,20 @@ cdef class ScamperCtrl:
             # - return all objects in the queue
             # - exit when there are no outstanding tasks left
             while len(self._objs) > 0:
-                o = self._objs.pop(0)
+                onion = self._objs.pop(0)
+                inst = onion._inst
+                o = onion._data
+
+                inst._queued -= 1
+                if inst._eof and inst._queued == 0 and self._eofcb is not None:
+                    try:
+                        self._eofcb(self, inst, self._param)
+                    except Exception as e:
+                        self._exceptions.append(e)
+
                 if self._meta or not isinstance(o, (ScamperList, ScamperCycle)):
                     yield o
+
             if len(self._tasks) == 0:
                 break
 
@@ -9167,7 +9200,14 @@ cdef class ScamperCtrl:
         if len(self._exceptions) > 0:
             raise self._exceptions.pop(0)
         while len(self._objs) > 0:
-            o = self._objs.pop(0)
+            onion = self._objs.pop(0)
+
+            inst = onion._inst
+            o = onion._data
+            inst._queued -= 1
+            if inst._eof and inst._queued == 0 and self._eofcb is not None:
+                self._eofcb(self, inst, self._param)
+
             if self._meta or not isinstance(o, (ScamperList, ScamperCycle)):
                 return o
 
@@ -9191,7 +9231,13 @@ cdef class ScamperCtrl:
             if len(self._exceptions) > 0:
                 raise self._exceptions.pop(0)
             while len(self._objs) > 0:
-                o = self._objs.pop(0)
+                onion = self._objs.pop(0)
+                inst = onion._inst
+                o = onion._data
+                inst._queued -= 1
+                if inst._eof and inst._queued == 0 and self._eofcb is not None:
+                    self._eofcb(self, inst, self._param)
+
                 if self._meta or not isinstance(o, (ScamperList, ScamperCycle)):
                     return o
 
@@ -9330,10 +9376,11 @@ cdef class ScamperCtrl:
                 if len(self._exceptions) > 0:
                     raise self._exceptions.pop(0)
                 clibscamperctrl.scamper_ctrl_wait(self._c, NULL)
-            o = self._syncdata
+            onion = self._syncdata
             self._c_synctask = NULL
             self._syncdata = None
-            return o
+            onion.inst._queued -= 1
+            return onion.data
         else:
             t = ScamperTask.from_ptr(task, inst)
             self._tasks.append(t)
@@ -10652,7 +10699,12 @@ cdef class ScamperInst:
     cdef cscamper_file.scamper_file_t *_c_f
     cdef cscamper_file.scamper_file_readbuf_t *_c_rb
     cdef object _tasks  # = []
+
+    # has the remote instance disconnected?
     cdef public bint _eof
+
+    # how many objects are queued on the associated ScamperCtrl
+    cdef public int _queued
 
     def __init__(self):
         raise TypeError("This class cannot be instantiated directly.")
@@ -10702,6 +10754,7 @@ cdef class ScamperInst:
         inst._c_rb = cscamper_file.scamper_file_readbuf_alloc()
         inst._tasks = []
         inst._eof = False
+        inst._queued = 0
         cscamper_file.scamper_file_setreadfunc(inst._c_f, inst._c_rb,
                                                cscamper_file.scamper_file_readbuf_read)
         clibscamperctrl.scamper_inst_param_set(ptr, <PyObject *>inst)
@@ -10809,6 +10862,14 @@ cdef class ScamperInst:
         for this :class:`ScamperInst` object.
         """
         return len(self._tasks)
+
+    @property
+    def resultc(self):
+        """
+        get method that returns the total number of tasks with a result
+        queued but not yet delivered.
+        """
+        return self._queued
 
     def done(self):
         """

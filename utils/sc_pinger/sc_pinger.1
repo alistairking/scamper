@@ -7,9 +7,9 @@
 .\" Copyright (c) 2023-2025 The Regents of the University of California
 .\"                    All rights reserved
 .\"
-.\" $Id: sc_pinger.1,v 1.7 2025/02/24 21:35:33 mjl Exp $
+.\" $Id: sc_pinger.1,v 1.10 2025/06/26 22:01:58 mjl Exp $
 .\"
-.Dd February 25, 2025
+.Dd June 27, 2025
 .Dt SC_PINGER 1
 .Os
 .Sh NAME
@@ -21,6 +21,7 @@
 .Op Fl ?Dv
 .Op Fl a Ar infile
 .Op Fl b Ar batch-size
+.Op Fl B Ar bad-spec
 .Op Fl c Ar probe-count
 .Op Fl l Ar limit
 .Op Fl m Ar method
@@ -30,6 +31,7 @@
 .Op Fl R Ar unix-remote
 .Op Fl t Ar logfile
 .Op Fl U Ar unix-local
+.Op Fl Z Ar zombie-time
 .Ek
 .\""""""""""""
 .Sh DESCRIPTION
@@ -77,6 +79,38 @@ instance is, can restrict throughput.
 By default,
 .Nm
 sends a single address at a time.
+
+.It Fl B Ar bad-spec
+specifies that
+.Nm
+should detect and remove bad probe methods at run time.
+A probe method is bad if
+.Nm
+receives an unlikely run of a single reply TTL value for a given probe
+method, suggesting that a middlebox close to
+.Xr scamper 1
+synthesized responses.
+The available specifications are:
+.Bl -dash -offset 2n -compact -width 1n
+.It
+.Sy rxttl-thresh=value:
+specifies the threshold that must be reached before declaring a run of
+single reply TTL values indicates a bad probe method.
+.It
+.Sy rxttl-window=value:
+specifies the size of the window
+.Nm
+should use to order probe responses.
+This parameter is necessary because probe responses can come back from
+.Xr scamper 1
+out of order depending on how
+.Xr scamper 1
+multiplexes workload.
+You should size this window large enough so that
+.Nm
+is likely to consider all responses in order.
+.El
+Both specifications are necessary if either are used.
 .It Fl c Ar probe-count
 specifies the number of probes to send for each method.
 .Nm
@@ -138,6 +172,17 @@ generated at run time.
 specifies the name of a unix domain socket on the local host where a local
 .Xr scamper 1
 instance is accepting commands.
+.It Fl Z Ar zombie-time
+specifies the length of time, in seconds, before deciding
+.Xr scamper 1
+has gone unresponsive and exiting.
+The minimum length of time is ten seconds.
+By default,
+.Nm
+will wait indefinitely.
+This option is useful when using
+.Nm
+with a remote scamper process.
 .El
 .\""""""""""""
 .Sh EXAMPLES

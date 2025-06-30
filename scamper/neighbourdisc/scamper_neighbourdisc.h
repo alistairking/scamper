@@ -1,9 +1,9 @@
 /*
  * scamper_neighbourdisc
  *
- * $Id: scamper_neighbourdisc.h,v 1.12 2023/12/24 00:19:25 mjl Exp $
+ * $Id: scamper_neighbourdisc.h,v 1.13 2025/06/24 07:05:29 mjl Exp $
  *
- * Copyright (C) 2009-2023 Matthew Luckie
+ * Copyright (C) 2009-2025 Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -33,6 +33,8 @@ typedef struct scamper_neighbourdisc scamper_neighbourdisc_t;
 typedef struct scamper_neighbourdisc_probe scamper_neighbourdisc_probe_t;
 typedef struct scamper_neighbourdisc_reply scamper_neighbourdisc_reply_t;
 
+char *scamper_neighbourdisc_tojson(const scamper_neighbourdisc_t *nd, size_t *len);
+
 void scamper_neighbourdisc_free(scamper_neighbourdisc_t *nd);
 scamper_list_t *scamper_neighbourdisc_list_get(const scamper_neighbourdisc_t *nd);
 scamper_cycle_t *scamper_neighbourdisc_cycle_get(const scamper_neighbourdisc_t *nd);
@@ -40,6 +42,8 @@ uint32_t scamper_neighbourdisc_userid_get(const scamper_neighbourdisc_t *nd);
 const struct timeval *scamper_neighbourdisc_start_get(const scamper_neighbourdisc_t *nd);
 const char *scamper_neighbourdisc_ifname_get(const scamper_neighbourdisc_t *nd);
 uint8_t scamper_neighbourdisc_method_get(const scamper_neighbourdisc_t *nd);
+char *scamper_neighbourdisc_method_tostr(const scamper_neighbourdisc_t *nd,
+					 char *buf, size_t len);
 uint8_t scamper_neighbourdisc_flags_get(const scamper_neighbourdisc_t *nd);
 const struct timeval *scamper_neighbourdisc_wait_timeout_get(const scamper_neighbourdisc_t *nd);
 uint16_t scamper_neighbourdisc_attempts_get(const scamper_neighbourdisc_t *nd);

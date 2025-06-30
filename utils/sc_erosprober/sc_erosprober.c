@@ -606,7 +606,7 @@ static int do_scamperconnect(void)
 {
   struct sockaddr *sa;
   struct sockaddr_in sin;
-  struct sockaddr_un sun;
+  struct sockaddr_un sn;
   struct in_addr in;
   socklen_t sl;
 
@@ -625,7 +625,7 @@ static int do_scamperconnect(void)
     }
   else if(unix_name != NULL)
     {
-      if(sockaddr_compose_un((struct sockaddr *)&sun, unix_name) != 0)
+      if(sockaddr_compose_un((struct sockaddr *)&sn, unix_name) != 0)
 	{
 	  fprintf(stderr, "%s: could not build sockaddr_un: %s\n",
 		  __func__, strerror(errno));
@@ -637,8 +637,8 @@ static int do_scamperconnect(void)
 		  __func__, strerror(errno));
 	  return -1;
 	}
-      sa = (struct sockaddr *)&sun;
-      sl = sizeof(sun);
+      sa = (struct sockaddr *)&sn;
+      sl = sizeof(sn);
     }
   else return -1;
 

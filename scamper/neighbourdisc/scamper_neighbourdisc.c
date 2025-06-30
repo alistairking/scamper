@@ -1,7 +1,7 @@
 /*
  * scamper_neighbourdisc.c
  *
- * $Id: scamper_neighbourdisc.c,v 1.10 2023/07/28 21:08:58 mjl Exp $
+ * $Id: scamper_neighbourdisc.c,v 1.11 2025/06/24 07:05:29 mjl Exp $
  *
  * Copyright (C) 2009-2023 Matthew Luckie
  *
@@ -31,6 +31,23 @@
 #include "scamper_neighbourdisc_int.h"
 
 #include "utils.h"
+
+char *scamper_neighbourdisc_method_tostr(const scamper_neighbourdisc_t *nd,
+					 char *buf, size_t len)
+{
+  static char *m[] = {
+    "arp",
+    "nd-nsol",
+  };
+  size_t off = 0;
+
+  if(nd->method == 0 || nd->method > sizeof(m) / sizeof(char *))
+    string_concat_u8(buf, len, &off, NULL, nd->method);
+  else
+    string_concat(buf, len, &off, m[nd->method-1]);
+
+  return buf;
+}
 
 scamper_neighbourdisc_reply_t *scamper_neighbourdisc_reply_alloc(void)
 {
