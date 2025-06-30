@@ -1,7 +1,7 @@
 /*
  * unit_warts : unit tests for warts storage
  *
- * $Id: unit_warts.c,v 1.4 2025/04/23 09:56:28 mjl Exp $
+ * $Id: unit_warts.c,v 1.5 2025/06/29 21:52:12 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -41,6 +41,9 @@
 
 #include "scamper_http.h"
 #include "common_http.h"
+
+#include "scamper_neighbourdisc.h"
+#include "common_neighbourdisc.h"
 
 #include "scamper_ping.h"
 #include "common_ping.h"
@@ -139,6 +142,15 @@ int main(int argc, char *argv[])
       (write_func_t)scamper_file_write_http,
       (check_func_t)http_ok,
       (free_func_t)scamper_http_free,
+    },
+    {
+      "neighbourdisc",
+      SCAMPER_FILE_OBJ_NEIGHBOURDISC,
+      neighbourdisc_makerc,
+      (makers_func_t)neighbourdisc_makers,
+      (write_func_t)scamper_file_write_neighbourdisc,
+      (check_func_t)neighbourdisc_ok,
+      (free_func_t)scamper_neighbourdisc_free,
     },
     {
       "ping",

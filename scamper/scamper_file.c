@@ -1,7 +1,7 @@
 /*
  * scamper_file.c
  *
- * $Id: scamper_file.c,v 1.127 2024/03/21 22:44:03 mjl Exp $
+ * $Id: scamper_file.c,v 1.128 2025/06/24 07:05:29 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -63,6 +63,7 @@
 #endif
 #include "neighbourdisc/scamper_neighbourdisc.h"
 #include "neighbourdisc/scamper_neighbourdisc_warts.h"
+#include "neighbourdisc/scamper_neighbourdisc_json.h"
 #if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_TBIT)
 #include "tbit/scamper_tbit.h"
 #include "tbit/scamper_tbit_text.h"
@@ -268,7 +269,7 @@ static write_handlers_t json_write_handlers =
 #if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_DEALIAS)
   scamper_file_json_dealias_write,        /* dealias */
 #endif
-  NULL,                                   /* neighbourdisc */
+  scamper_file_json_neighbourdisc_write,  /* neighbourdisc */
 #if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_TBIT)
   scamper_file_json_tbit_write,           /* tbit */
 #endif

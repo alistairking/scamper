@@ -1,7 +1,7 @@
 /*
  * sc_remoted
  *
- * $Id: sc_remoted.c,v 1.142 2025/04/21 03:24:13 mjl Exp $
+ * $Id: sc_remoted.c,v 1.144 2025/06/28 04:58:42 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -621,10 +621,12 @@ static int sc_mux_unix_send(sc_mux_t *mux, uint8_t *buf, size_t len);
 
 static void usage(uint32_t opt_mask)
 {
-  const char *v = "";
+  const char *v;
 
 #ifdef OPT_VERSION
   v = "v";
+#else
+  v = "";
 #endif
 
   fprintf(stderr,
@@ -1511,30 +1513,16 @@ static void sc_master_mux_notify(const sc_master_t *ms)
   return;
 }
 
-/*
- * sc_master_unix_create
- *
- * create a unix domain socket for the scamper instance, that local
- * users can connect to in order to interact with the remote scamper
- * instance.  The name of the socket is derived from getpeername on the
- * Internet socket, and the monitorname if the remote scamper supplied
- * that variable.
- */
-static int sc_master_unix_create(sc_master_t *ms)
+static int sc_master_nameit(sc_master_t *ms)
 {
-  char sab[128], filename[65535], tmp[512];
-  int fd;
+  char sab[128], tmp[512];
 
   /*
-   * these are set so that we know whether or not to take
-   * responsibility for cleaning them up upon a failure condition.
+   * figure out the name for the unix domain socket.
+   * fd_peername calls remote_debug itself on error.
    */
-  fd = -1;
-  filename[0] = '\0';
-
-  /* figure out the name for the unix domain socket */
   if(fd_peername(ms->inet_fd.fd, sab, sizeof(sab), 1) != 0)
-    goto err;
+    return -1;
   if(ms->monitorname != NULL)
     {
       snprintf(tmp, sizeof(tmp), "%s-%s", ms->monitorname, sab);
@@ -1547,8 +1535,25 @@ static int sc_master_unix_create(sc_master_t *ms)
   if(ms->name == NULL)
     {
       remote_debug(__func__, "could not strdup ms->name: %s", strerror(errno));
-      goto err;
+      return -1;
     }
+
+  return 0;
+}
+
+/*
+ * sc_master_unix_create
+ *
+ * create a unix domain socket for the scamper instance, that local
+ * users can connect to in order to interact with the remote scamper
+ * instance.  The name of the socket is derived from getpeername on the
+ * Internet socket, and the monitorname if the remote scamper supplied
+ * that variable.
+ */
+static int sc_master_unix_create(sc_master_t *ms)
+{
+  char filename[65535];
+  int fd;
 
   snprintf(filename, sizeof(filename), "%s/%s", unix_dir, ms->name);
   if((fd = unix_create(filename)) == -1)
@@ -1760,6 +1765,10 @@ static int sc_master_control_master(sc_master_t *ms, uint8_t *buf, size_t len)
       remote_debug(__func__, "could not insert magic node into tree");
       goto err;
     }
+
+  /* set ms->name */
+  if(sc_master_nameit(ms) != 0)
+    goto err;
 
   /* create the unix domain socket for the scamper instance */
   if(unix_dir != NULL && sc_master_unix_create(ms) != 0)
@@ -2022,6 +2031,10 @@ static int sc_master_control_resume(sc_master_t *ms, uint8_t *buf, size_t len)
       sc_fd_write_del(&ms2->inet_fd);
       sc_fd_write_add(&ms2->inet_fd);
     }
+
+  /* set ms2->name */
+  if(sc_master_nameit(ms2) != 0)
+    goto err;
 
   /* create a new unix domain socket */
   if(unix_dir != NULL && sc_master_unix_create(ms2) != 0)

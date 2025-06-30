@@ -21,7 +21,7 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
- * $Id: sc_attach.c,v 1.49 2025/04/21 03:24:13 mjl Exp $
+ * $Id: sc_attach.c,v 1.50 2025/06/10 07:10:03 mjl Exp $
  *
  */
 
@@ -639,7 +639,7 @@ static int do_scamperwrite(void)
 static int do_scamperconnect(void)
 {
 #ifdef HAVE_SOCKADDR_UN
-  struct sockaddr_un sun;
+  struct sockaddr_un sn;
 #endif
   struct sockaddr_storage sas;
   struct sockaddr *sa = (struct sockaddr *)&sas;
@@ -680,7 +680,7 @@ static int do_scamperconnect(void)
 #ifdef HAVE_SOCKADDR_UN
   else if(unix_name != NULL)
     {
-      if(sockaddr_compose_un((struct sockaddr *)&sun, unix_name) != 0)
+      if(sockaddr_compose_un((struct sockaddr *)&sn, unix_name) != 0)
 	{
 	  fprintf(stderr, "%s: could not build sockaddr_un: %s\n",
 		  __func__, strerror(errno));
@@ -692,7 +692,7 @@ static int do_scamperconnect(void)
 		  __func__, strerror(errno));
 	  return -1;
 	}
-      if(connect(scamper_fd, (const struct sockaddr *)&sun, sizeof(sun)) != 0)
+      if(connect(scamper_fd, (const struct sockaddr *)&sn, sizeof(sn)) != 0)
 	{
 	  fprintf(stderr, "%s: could not connect to scamper process: %s\n",
 		  __func__, strerror(errno));

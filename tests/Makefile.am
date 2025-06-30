@@ -1,4 +1,4 @@
-# $Id: Makefile.am,v 1.60 2025/05/17 09:07:56 mjl Exp $
+# $Id: Makefile.am,v 1.63 2025/06/29 21:52:12 mjl Exp $
 
 AUTOMAKE_OPTIONS = subdir-objects
 
@@ -118,6 +118,7 @@ libscamperfiletest_la_SOURCES = \
 	../scamper/sting/scamper_sting_lib.c \
 	../scamper/neighbourdisc/scamper_neighbourdisc.c \
 	../scamper/neighbourdisc/scamper_neighbourdisc_warts.c \
+	../scamper/neighbourdisc/scamper_neighbourdisc_json.c \
 	../scamper/neighbourdisc/scamper_neighbourdisc_lib.c \
 	../scamper/tbit/scamper_tbit.c \
 	../scamper/tbit/scamper_tbit_warts.c \
@@ -364,6 +365,7 @@ unit_host_rr_list_SOURCES = unit_host_rr_list.c \
 unit_json_CFLAGS = \
 	-I$(top_srcdir)/scamper/dealias \
 	-I$(top_srcdir)/scamper/host \
+	-I$(top_srcdir)/scamper/neighbourdisc \
 	-I$(top_srcdir)/scamper/ping \
 	-I$(top_srcdir)/scamper/trace \
 	-I$(top_srcdir)/scamper/udpprobe
@@ -372,6 +374,7 @@ unit_json_SOURCES = unit_json.c \
 	common_ok.c \
 	common_dealias.c \
 	common_host.c \
+	common_neighbourdisc.c \
 	common_ping.c \
 	common_trace.c \
 	common_udpprobe.c
@@ -393,6 +396,7 @@ unit_warts_CFLAGS = \
 	-I$(top_srcdir)/scamper/dealias \
 	-I$(top_srcdir)/scamper/host \
 	-I$(top_srcdir)/scamper/http \
+	-I$(top_srcdir)/scamper/neighbourdisc \
 	-I$(top_srcdir)/scamper/ping \
 	-I$(top_srcdir)/scamper/trace \
 	-I$(top_srcdir)/scamper/udpprobe
@@ -402,6 +406,7 @@ unit_warts_SOURCES = unit_warts.c \
 	common_dealias.c \
 	common_host.c \
 	common_http.c \
+	common_neighbourdisc.c \
 	common_ping.c \
 	common_trace.c \
 	common_udpprobe.c
@@ -476,4 +481,11 @@ unit_fds_SOURCES = unit_fds.c \
 	../mjl_splaytree.c \
 	common.c
 
-CLEANFILES = *~ *.core
+CLEANFILES = *~ *.core config-*.txt \
+	dealias-*.warts \
+	host-*.warts \
+	http-*.warts \
+	neighbourdisc-*.warts \
+	ping-*warts \
+	trace-*.warts \
+	udpprobe-*.warts
