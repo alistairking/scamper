@@ -2,7 +2,7 @@
  * sc_pinger : scamper driver to probe destinations with various ping
  *             methods
  *
- * $Id: sc_pinger.c,v 1.41 2025/04/21 03:24:13 mjl Exp $
+ * $Id: sc_pinger.c,v 1.49 2025/06/29 22:32:14 mjl Exp $
  *
  * Copyright (C) 2020      The University of Waikato
  * Copyright (C) 2022-2025 Matthew Luckie
@@ -35,8 +35,11 @@
 #include "scamper_dealias.h"
 #include "scamper_file.h"
 #include "libscamperctrl.h"
+#include "mjl_splaytree.h"
 #include "mjl_list.h"
 #include "utils.h"
+
+typedef struct sc_methstats sc_methstats_t;
 
 static uint32_t               options       = 0;
 static char                  *addrfile_name = NULL;
@@ -60,8 +63,8 @@ static scamper_file_readbuf_t *decode_rb    = NULL;
 static int                    probing       = 0;
 static int                    more          = 0;
 static int                    completed     = 0;
-static int                    probe_count   = 5;
-static int                    reply_count   = 3;
+static long                   probe_count   = 5;
+static long                   reply_count   = 3;
 static int                    batch_count   = 0;
 static uint32_t               limit         = 0;
 static uint32_t               outfile_u     = 0;
@@ -70,7 +73,13 @@ static slist_t               *virgin        = NULL;
 static slist_t               *waiting       = NULL;
 static char                 **methods       = NULL;
 static int                    methodc       = 0;
+static int                    methodc_ok    = 0;
 static int                    error         = 0;
+static struct timeval         zombie;
+static int                    ctrlcb_called = 0;
+static sc_methstats_t       **method_stats  = NULL;
+static size_t                 rxttl_window  = 0;
+static size_t                 rxttl_thresh  = 0;
 
 #define OPT_HELP        0x0001
 #define OPT_ADDRFILE    0x0002
@@ -85,9 +94,11 @@ static int                    error         = 0;
 #define OPT_MOVE        0x0400
 #define OPT_BATCH       0x0800
 #define OPT_METHOD      0x1000
+#define OPT_ZOMBIE      0x2000
+#define OPT_BAD         0x4000
 
 #ifdef PACKAGE_VERSION
-#define OPT_VERSION     0x2000
+#define OPT_VERSION     0x8000
 #endif
 
 /*
@@ -112,19 +123,44 @@ typedef struct sc_cmdstate
   } un;
 } sc_cmdstate_t;
 
+typedef struct sc_sample
+{
+  suseconds_t    usec;
+  uint8_t        rxttl;
+} sc_sample_t;
+
+typedef struct sc_rxsec
+{
+  time_t         sec;      /* the second portion of a timestamp */
+  slist_t       *samples;  /* list of sc_sample, ordered by usec */
+} sc_rxsec_t;
+
+struct sc_methstats
+{
+  struct timeval  left;    /* earlier timestamps have been discarded */
+  splaytree_t    *tree;    /* tree of sc_rxsec_t, by sec */
+  uint8_t         rxttl;   /* current rxttl */
+  size_t          runlen;  /* current runlen of rxttl */
+  size_t          samplec; /* number of samples in tree */
+  int             sorted;  /* lmlb rxsec samples are sorted */
+};
+
 static void usage(uint32_t opt_mask)
 {
-  const char *v = "";
+  const char *v;
 
 #ifdef OPT_VERSION
   v = "v";
+#else
+  v = "";
 #endif
 
   fprintf(stderr,
-	  "usage: sc_pinger [-D%s?]\n"
-	  "                 [-a infile] [-o outfile] [-p port] [-R unix]\n"
-	  "                 [-U unix] [-b batch-count] [-c probe-count]\n"
-	  "                 [-l limit] [-m method] [-M dir] [-t logfile]\n",v);
+	  "usage: sc_pinger [-D%s?] [-a infile] [-o outfile]\n"
+	  "                 [-p port] [-R unix] [-U unix]\n"
+	  "                 [-b batch-count] [-B bad-spec] [-c probe-count]\n"
+	  "                 [-l limit] [-m method] [-M dir] [-t logfile]\n"
+	  "                 [-Z zombie]\n", v);
 
   if(opt_mask == 0)
     {
@@ -156,6 +192,9 @@ static void usage(uint32_t opt_mask)
   if(opt_mask & OPT_BATCH)
     fprintf(stderr, "     -b number of destinations to probe in batch\n");
 
+  if(opt_mask & OPT_BAD)
+    fprintf(stderr, "     -B how to detect and remove bad probe methods\n");
+
   if(opt_mask & OPT_COUNT)
     fprintf(stderr, "     -c [replyc]/probec\n");
 
@@ -170,6 +209,9 @@ static void usage(uint32_t opt_mask)
 
   if(opt_mask & OPT_LOG)
     fprintf(stderr, "     -t logfile\n");
+
+  if(opt_mask & OPT_ZOMBIE)
+    fprintf(stderr, "     -Z time to wait before declaring scamper silent\n");
 
 #ifdef OPT_VERSION
   if(opt_mask & OPT_VERSION)
@@ -233,10 +275,9 @@ static int check_printf(const char *name)
   return 1;
 }
 
-static int parse_count(const char *opt)
+static int parse_count(const char *opt, long *enumerator, long *denominator)
 {
   char *dup, *ptr;
-  long lo_rc, lo_pc;
   int rc = -1;
 
   if((dup = strdup(opt)) == NULL)
@@ -251,20 +292,16 @@ static int parse_count(const char *opt)
       ptr++;
 
       if(string_isdigit(ptr) == 0 || string_isdigit(dup) == 0 ||
-	 string_tolong(dup, &lo_rc) != 0 ||
-	 string_tolong(ptr, &lo_pc) != 0 ||
-	 lo_rc > lo_pc || lo_pc > 30 || lo_rc < 1 || lo_pc < 1)
+	 string_tolong(dup, enumerator) != 0 ||
+	 string_tolong(ptr, denominator) != 0 ||
+	 *enumerator > *denominator || *enumerator < 1 || *denominator < 1)
 	goto done;
-      reply_count = lo_rc;
-      probe_count = lo_pc;
     }
   else
     {
-      if(string_isdigit(dup) == 0 ||
-	 string_tolong(dup, &lo_pc) != 0)
+      if(string_isdigit(dup) == 0 || string_tolong(dup, enumerator) != 0)
 	goto done;
-      reply_count = lo_pc;
-      probe_count = lo_pc;
+      *denominator = *enumerator;
     }
   rc = 0;
 
@@ -275,21 +312,22 @@ static int parse_count(const char *opt)
 
 static int check_options(int argc, char *argv[])
 {
-  char opts[32], *ptr, *dup = NULL;
+  char opts[64], *ptr, *dup = NULL;
   char *opt_count = NULL, *opt_port = NULL, *opt_limit = NULL;
-  char *opt_batch = NULL;
+  char *opt_batch = NULL, *opt_zombie = NULL;
+  slist_t *method_list = NULL, *bad_list = NULL;
+  long lo, enumerator, denominator;
   struct stat sb;
-  slist_t *list = NULL;
   size_t off = 0;
-  long lo;
   int i, ch, rc = -1;
 
-  string_concat(opts, sizeof(opts), &off, "a:b:c:Dl:m:M:o:p:R:t:U:?");
+  string_concat(opts, sizeof(opts), &off, "a:b:B:c:Dl:m:M:o:p:R:t:U:Z:?");
 #ifdef OPT_VERSION
   string_concatc(opts, sizeof(opts), &off, 'v');
 #endif
 
-  if((list = slist_alloc()) == NULL)
+  if((method_list = slist_alloc()) == NULL ||
+     (bad_list = slist_alloc()) == NULL)
     goto done;
 
   while((ch = getopt(argc, argv, opts)) != -1)
@@ -302,6 +340,13 @@ static int check_options(int argc, char *argv[])
 
 	case 'b':
 	  opt_batch = optarg;
+	  break;
+
+	case 'B':
+	  if((dup = strdup(optarg)) == NULL ||
+	     slist_tail_push(bad_list, dup) == NULL)
+	    goto done;
+	  dup = NULL;
 	  break;
 
 	case 'c':
@@ -319,7 +364,7 @@ static int check_options(int argc, char *argv[])
 
 	case 'm':
 	  if((dup = strdup(optarg)) == NULL ||
-	     slist_tail_push(list, dup) == NULL)
+	     slist_tail_push(method_list, dup) == NULL)
 	    goto done;
 	  dup = NULL;
 	  break;
@@ -358,6 +403,11 @@ static int check_options(int argc, char *argv[])
 	  rc = 0;
 	  goto done;
 #endif
+
+	case 'Z':
+	  options |= OPT_ZOMBIE;
+	  opt_zombie = optarg;
+	  break;
 
 	case '?':
 	default:
@@ -417,10 +467,16 @@ static int check_options(int argc, char *argv[])
       scamper_port = lo;
     }
 
-  if(opt_count != NULL && parse_count(opt_count) != 0)
+  if(opt_count != NULL)
     {
-      usage(OPT_COUNT);
-      goto done;
+      if(parse_count(opt_count, &enumerator, &denominator) != 0 ||
+	 denominator > 30)
+	{
+	  usage(OPT_COUNT);
+	  goto done;
+	}
+      reply_count = enumerator;
+      probe_count = denominator;
     }
 
   if(opt_batch != NULL)
@@ -428,7 +484,7 @@ static int check_options(int argc, char *argv[])
       if(opt_count != NULL && probe_count != reply_count)
 	{
 	  usage(OPT_BATCH | OPT_COUNT);
-	  fprintf(stderr, "cannot specify both reply_count probe batches\n");
+	  fprintf(stderr, "cannot use both reply_count and probe batches\n");
 	  goto done;
 	}
       if(string_tolong(opt_batch, &lo) != 0 || lo < 2)
@@ -440,12 +496,12 @@ static int check_options(int argc, char *argv[])
       probe_count = reply_count;
     }
 
-  if((methodc = slist_count(list)) > 0)
+  if((methodc = slist_count(method_list)) > 0)
     {
       if((methods = malloc_zero(sizeof(char *) * methodc)) == NULL)
 	goto done;
       i = 0;
-      while((ptr = slist_head_pop(list)) != NULL)
+      while((ptr = slist_head_pop(method_list)) != NULL)
 	methods[i++] = ptr;
     }
   else
@@ -457,6 +513,7 @@ static int check_options(int argc, char *argv[])
 	 (methods[2] = strdup("tcp-ack-sport -d 80")) == NULL)
 	goto done;
     }
+  methodc_ok = methodc;
 
   /*
    * if the user specifies a directory to move completed files into,
@@ -501,10 +558,59 @@ static int check_options(int argc, char *argv[])
 	}
     }
 
+  if(opt_zombie != NULL &&
+     (timeval_fromstr(&zombie, opt_zombie, 1000000) != 0 ||
+      timeval_cmp_lt(&zombie, 10, 0) != 0))
+    {
+      usage(OPT_ZOMBIE);
+      goto done;
+    }
+
+  if(slist_count(bad_list) > 0)
+    {
+      while((dup = slist_head_pop(bad_list)) != NULL)
+	{
+	  if(strncasecmp(dup, "rxttl-window=", 13) == 0)
+	    {
+	      if(string_isdigit(dup+13) == 0 || string_tolong(dup+13, &lo) != 0)
+		{
+		  usage(OPT_BAD);
+		  goto done;
+		}
+	      rxttl_window = lo;
+	    }
+	  else if(strncasecmp(dup, "rxttl-thresh=", 13) == 0)
+	    {
+	      if(string_isdigit(dup+13) == 0 || string_tolong(dup+13, &lo) != 0)
+		{
+		  usage(OPT_BAD);
+		  goto done;
+		}
+	      rxttl_thresh = lo;
+	    }
+	  else
+	    {
+	      usage(OPT_BAD);
+	      goto done;
+	    }
+
+	  free(dup); dup = NULL;
+	}
+
+      if((rxttl_window != 0 || rxttl_thresh != 0) &&
+	 (rxttl_window == 0 || rxttl_thresh == 0))
+	{
+	  usage(OPT_BAD);
+	  goto done;
+	}
+    }
+
   rc = 0;
 
  done:
-  if(list != NULL) slist_free_cb(list, free);
+  if(bad_list != NULL) slist_free_cb(bad_list, free);
+  if(method_list != NULL) slist_free_cb(method_list, free);
+  if(dup != NULL) free(dup);
   return rc;
 }
 
@@ -612,6 +718,195 @@ static int rotatefile(void)
  done:
   if(fn != NULL) free(fn);
   return rc;
+}
+
+static int sc_sample_cmp(const sc_sample_t *a, const sc_sample_t *b)
+{
+  if(a->usec < b->usec) return -1;
+  if(a->usec > b->usec) return  1;
+  return 0;
+}
+
+static int sc_rxsec_cmp(const sc_rxsec_t *a, const sc_rxsec_t *b)
+{
+  if(a->sec < b->sec) return -1;
+  if(a->sec > b->sec) return  1;
+  return 0;
+}
+
+static void sc_rxsec_free(sc_rxsec_t *rxs)
+{
+  if(rxs->samples != NULL)
+    slist_free_cb(rxs->samples, free);
+  free(rxs);
+  return;
+}
+
+static sc_rxsec_t *sc_rxsec_alloc(time_t sec)
+{
+  sc_rxsec_t *rxs = NULL;
+  if((rxs = malloc_zero(sizeof(sc_rxsec_t))) == NULL ||
+     (rxs->samples = slist_alloc()) == NULL)
+    goto err;
+  rxs->sec = sec;
+  return rxs;
+
+ err:
+  if(rxs != NULL) sc_rxsec_free(rxs);
+  return NULL;
+}
+
+static sc_rxsec_t *sc_rxsec_get(splaytree_t *tree, time_t sec)
+{
+  sc_rxsec_t *rxs, fm;
+
+  fm.sec = sec;
+  if((rxs = splaytree_find(tree, &fm)) != NULL)
+    return rxs;
+  if((rxs = sc_rxsec_alloc(sec)) == NULL ||
+     splaytree_insert(tree, rxs) == NULL)
+    goto err;
+
+  return rxs;
+
+ err:
+  if(rxs != NULL) sc_rxsec_free(rxs);
+  return NULL;
+}
+
+static void sc_methstats_free(sc_methstats_t *ms)
+{
+  if(ms->tree != NULL)
+    splaytree_free(ms->tree, (splaytree_free_t)sc_rxsec_free);
+  free(ms);
+  return;
+}
+
+static sc_methstats_t *sc_methstats_alloc(void)
+{
+  sc_methstats_t *ms;
+
+  if((ms = malloc_zero(sizeof(sc_methstats_t))) == NULL ||
+     (ms->tree = splaytree_alloc((splaytree_cmp_t)sc_rxsec_cmp)) == NULL)
+    goto err;
+
+  return ms;
+
+ err:
+  if(ms != NULL) sc_methstats_free(ms);
+  return NULL;
+}
+
+static int sc_methstats_process(sc_methstats_t *ms,
+				const struct timeval *tv, uint8_t rxttl)
+{
+  static int window_warned = 0;
+  sc_sample_t *smpl = NULL;
+  sc_rxsec_t *rxs;
+
+  /* ignore samples before our window */
+  if(timeval_cmp(tv, &ms->left) < 0)
+    {
+      if(window_warned == 0)
+	{
+	  print("warning: sample is before left of window, increase window");
+	  window_warned = 1;
+	}
+      return 0;
+    }
+
+  /* put the sample on the appropriate list */
+  if((rxs = sc_rxsec_get(ms->tree, tv->tv_sec)) == NULL ||
+     (smpl = malloc(sizeof(sc_sample_t))) == NULL ||
+     slist_tail_push(rxs->samples, smpl) == NULL)
+    {
+      print("%s: could not store sample", __func__);
+      goto err;
+    }
+  smpl->usec = tv->tv_usec;
+  smpl->rxttl = rxttl;
+  ms->samplec++;
+
+  /* if we put the sample on the left most list, flag for re-sorting */
+  if(ms->left.tv_sec != 0 && ms->left.tv_sec == tv->tv_sec)
+    ms->sorted = 0;
+
+  return 0;
+
+ err:
+  if(smpl != NULL) free(smpl);
+  return -1;
+}
+
+static int sc_methstats_rxttl_check(sc_methstats_t *ms)
+{
+  sc_rxsec_t *rxs;
+  sc_sample_t *smpl;
+  int bad = 0;
+
+  if(rxttl_window >= ms->samplec)
+    return 0;
+
+  while(ms->samplec > rxttl_window && bad == 0)
+    {
+      rxs = splaytree_getlmlb(ms->tree); assert(rxs != NULL);
+
+      if(ms->sorted == 0)
+	{
+	  if(slist_qsort(rxs->samples, (slist_cmp_t)sc_sample_cmp) != 0)
+	    {
+	      print("%s: could not sort", __func__);
+	      return -1;
+	    }
+	  ms->sorted = 1;
+	}
+
+      do
+	{
+	  if((smpl = slist_head_pop(rxs->samples)) == NULL)
+	    {
+	      splaytree_remove_item(ms->tree, rxs);
+	      sc_rxsec_free(rxs);
+	      ms->sorted = 0;
+	      break;
+	    }
+	  ms->samplec--;
+	  ms->left.tv_sec = rxs->sec;
+	  ms->left.tv_usec = smpl->usec;
+	  if(smpl->rxttl != ms->rxttl)
+	    {
+	      ms->runlen = 1;
+	      ms->rxttl  = smpl->rxttl;
+	    }
+	  else
+	    {
+	      ms->runlen++;
+	      if(ms->runlen >= rxttl_thresh)
+		bad = 1;
+	    }
+	  free(smpl);
+	}
+      while(ms->samplec > rxttl_window && bad == 0);
+    }
+
+  return bad;
+}
+
+static int sc_pinger_nextstep(sc_pinger_t *pinger)
+{
+  if(method_stats != NULL)
+    {
+      while(++pinger->step < methodc)
+	if(method_stats[pinger->step] != NULL)
+	  break;
+    }
+  else
+    {
+      pinger->step++;
+    }
+  if(pinger->step == methodc)
+    return 0;
+  return 1;
 }
 
 static void sc_pinger_free(sc_pinger_t *pinger)
@@ -737,10 +1032,10 @@ static int do_method_ping_cmd(sc_pinger_t *pinger)
 
   scamper_addr_tostr(pinger->dst, addr, sizeof(addr));
   if(probe_count != reply_count)
-    string_concaf(cmd, sizeof(cmd), &off, "ping -c %d -o %d -P %s %s",
+    string_concaf(cmd, sizeof(cmd), &off, "ping -c %ld -o %ld -P %s %s",
 		  probe_count, reply_count, methods[pinger->step], addr);
   else
-    string_concaf(cmd, sizeof(cmd), &off, "ping -c %d -P %s %s",
+    string_concaf(cmd, sizeof(cmd), &off, "ping -c %ld -P %s %s",
 		  probe_count, methods[pinger->step], addr);
 
   if((cs = sc_cmdstate_alloc(0, pinger)) == NULL)
@@ -762,20 +1057,44 @@ static int do_method_ping_cmd(sc_pinger_t *pinger)
   return 0;
 }
 
+static int do_method_getpinger(sc_pinger_t **out)
+{
+  sc_pinger_t *pinger;
+  
+  if((pinger = slist_head_pop(waiting)) != NULL)
+    goto done;
+
+  if((pinger = slist_head_pop(virgin)) == NULL)
+    {
+      if(addrfile_fd == -1)
+	goto done;
+      if(do_addrfile() != 0)
+	return -1;
+      if((pinger = slist_head_pop(virgin)) == NULL)
+	goto done;
+    }
+
+  if(method_stats != NULL)
+    {
+      while(method_stats[pinger->step] == NULL && pinger->step < methodc)
+	pinger->step++;
+      if(pinger->step == methodc)
+	return -1;
+    }
+
+ done:
+  *out = pinger;
+  return 0;
+}
+
 static int do_method_ping(void)
 {
   sc_pinger_t *pinger;
 
-  if((pinger = slist_head_pop(waiting)) == NULL &&
-     (pinger = slist_head_pop(virgin)) == NULL)
-    {
-      if(addrfile_fd == -1)
-	return 0;
-      if(do_addrfile() != 0)
-	return -1;
-      if((pinger = slist_head_pop(virgin)) == NULL)
-	return 0;
-    }
+  if(do_method_getpinger(&pinger) != 0)
+    return -1;
+  if(pinger == NULL)
+    return 0;
 
   return do_method_ping_cmd(pinger);
 }
@@ -799,7 +1118,7 @@ static int do_method_radargun(void)
   /* put the first part of the probe command on the list */
   off = 0;
   string_concaf(part, sizeof(part), &off,
-		"dealias -w 1s -r 1s -m radargun -q %d", reply_count);
+		"dealias -w 1s -r 1s -m radargun -q %ld", reply_count);
   if((dup = memdup(part, off+1)) == NULL ||
      slist_tail_push(cmd_parts, dup) == NULL)
     goto done;
@@ -808,16 +1127,10 @@ static int do_method_radargun(void)
 
   while(slist_count(batch) < batch_count)
     {
-      if((pinger = slist_head_pop(waiting)) == NULL &&
-	 (pinger = slist_head_pop(virgin)) == NULL)
-	{
-	  if(addrfile_fd == -1)
-	    break;
-	  if(do_addrfile() != 0)
-	    return -1;
-	  if((pinger = slist_head_pop(virgin)) == NULL)
-	    break;
-	}
+      if(do_method_getpinger(&pinger) != 0)
+	return -1;
+      if(pinger == NULL)
+	break;
 
       off = 0;
       scamper_addr_tostr(pinger->dst, addr, sizeof(addr));
@@ -886,6 +1199,14 @@ static int do_method_radargun(void)
 
 static int do_method(void)
 {
+  if(methodc_ok == 0)
+    {
+      slist_empty_cb(waiting, (slist_free_t)sc_pinger_free);
+      slist_empty_cb(virgin, (slist_free_t)sc_pinger_free);
+      close(addrfile_fd); addrfile_fd = -1;
+      return 0;
+    }
+
   if(more < 1)
     return 0;
   if(batch_count >= 2)
@@ -897,8 +1218,11 @@ static int process_pinger(sc_pinger_t *pinger, scamper_ping_t *ping)
 {
   const scamper_ping_probe_t *probe;
   const scamper_ping_reply_t *reply;
+  const struct timeval *tx;
   scamper_addr_t *dst, *r_addr;
+  sc_methstats_t *ms = NULL;
   uint16_t i, ping_sent;
+  uint8_t rttl;
   char buf[128];
   int replyc = 0;
 
@@ -908,6 +1232,8 @@ static int process_pinger(sc_pinger_t *pinger, scamper_ping_t *ping)
     {
       ping_sent = scamper_ping_sent_get(ping);
       dst = scamper_ping_dst_get(ping);
+      if(method_stats != NULL)
+	ms = method_stats[pinger->step];
       for(i=0; i<ping_sent; i++)
 	{
 	  if((probe = scamper_ping_probe_get(ping, i)) == NULL ||
@@ -916,9 +1242,26 @@ static int process_pinger(sc_pinger_t *pinger, scamper_ping_t *ping)
 	     (scamper_addr_cmp(dst, r_addr) != 0 &&
 	      scamper_ping_reply_is_from_target(ping, reply) == 0))
 	    continue;
+
+	  if(rxttl_thresh > 0 && ms != NULL)
+	    {
+	      tx = scamper_ping_probe_tx_get(probe);
+	      rttl = scamper_ping_reply_ttl_get(reply);
+	      sc_methstats_process(ms, tx, rttl);
+	    }
+
 	  replyc++;
 	}
       scamper_ping_free(ping);
+
+      if(rxttl_thresh > 0 && replyc > 0 && ms != NULL &&
+	 sc_methstats_rxttl_check(ms) != 0)
+	{
+	  methodc_ok--;
+	  print("%s: detected %s bad, %d methods left",
+		__func__, methods[pinger->step], methodc_ok);
+	  sc_methstats_free(ms); method_stats[pinger->step] = NULL;
+	}
 
       /* successful ping, we're done */
       if(replyc >= reply_count)
@@ -926,7 +1269,7 @@ static int process_pinger(sc_pinger_t *pinger, scamper_ping_t *ping)
     }
 
   /* try with the next method, if there is another method to try */
-  if(++pinger->step < methodc)
+  if(sc_pinger_nextstep(pinger) != 0)
     {
       if(slist_tail_push(waiting, pinger) == NULL)
 	{
@@ -955,19 +1298,27 @@ static int process_radargun(slist_t *batch, scamper_dealias_t *dealias)
   scamper_dealias_probe_t *probe;
   scamper_dealias_reply_t *reply;
   scamper_dealias_probedef_t *def;
-  sc_pinger_t *pinger;
-  int *replyc = NULL;
+  const struct timeval *tx;
+  sc_pinger_t *pinger, **pingers = NULL;
+  int x, batchc, *replyc = NULL, replies = 0;
   uint32_t i, probec, id;
-  int x, batchc;
+  sc_methstats_t *ms;
+  uint8_t rttl;
   char buf[128];
   int rc = -1;
 
+  /* figure out how many targets in this batch */
   if((batchc = slist_count(batch)) < 1)
     goto done;
   probing -= batchc;
 
-  if((replyc = malloc_zero(batchc * sizeof(int))) == NULL)
+  /* structures to help process radargun probes */
+  if((pingers = malloc_zero(batchc * sizeof(sc_pinger_t *))) == NULL ||
+     (replyc = malloc_zero(batchc * sizeof(int))) == NULL)
     goto done;
+  for(x=0; x<batchc; x++)
+    pingers[x] = slist_head_pop(batch);
+  slist_free(batch); batch = NULL;
 
   if(dealias != NULL)
     {
@@ -987,7 +1338,41 @@ static int process_radargun(slist_t *batch, scamper_dealias_t *dealias)
 	  id = scamper_dealias_probedef_id_get(def);
 	  if(id >= (uint32_t)batchc)
 	    goto done;
+
+	  if(method_stats != NULL && rxttl_thresh > 0)
+	    {
+	      pinger = pingers[id];
+	      if((ms = method_stats[pinger->step]) != NULL)
+		{
+		  tx = scamper_dealias_probe_tx_get(probe);
+		  rttl = scamper_dealias_reply_ttl_get(reply);
+		  sc_methstats_process(ms, tx, rttl);
+		}
+	    }
+
+	  replies++;
 	  replyc[id]++;
+	}
+
+      /*
+       * check method stats for all methods if we got any reply at
+       * all.  easier code than checking just the methods that got a
+       * reply this round.
+       */
+      if(method_stats != NULL && rxttl_thresh > 0 && replies > 0)
+	{
+	  for(x=0; x<methodc; x++)
+	    {
+	      if((ms = method_stats[x]) != NULL &&
+		 sc_methstats_rxttl_check(ms) != 0)
+		{
+		  methodc_ok--;
+		  print("%s: detected %s bad, %d methods left",
+			__func__, methods[x], methodc_ok);
+		  sc_methstats_free(ms);
+		  method_stats[x] = NULL;
+		}
+	    }
 	}
 
       scamper_dealias_free(dealias);
@@ -995,14 +1380,14 @@ static int process_radargun(slist_t *batch, scamper_dealias_t *dealias)
 
   for(x=0; x<batchc; x++)
     {
-      pinger = slist_head_pop(batch);
+      pinger = pingers[x];
 
       /* successful ping, we're done */
       if(replyc[x] >= reply_count)
 	goto completed;
 
       /* try with the next method, if there is another method to try */
-      if(++pinger->step < methodc)
+      if(sc_pinger_nextstep(pinger) != 0)
 	{
 	  if(slist_tail_push(waiting, pinger) == NULL)
 	    {
@@ -1024,12 +1409,13 @@ static int process_radargun(slist_t *batch, scamper_dealias_t *dealias)
     {
       outfile_c += batchc;
       if(outfile_c >= limit && rotatefile() != 0)
-	return -1;
+	goto done;
     }
 
   rc = 0;
 
  done:
+  if(pingers != NULL) free(pingers);
   if(replyc != NULL) free(replyc);
   if(batch != NULL) slist_free(batch);
   return rc;
@@ -1041,6 +1427,8 @@ static void ctrlcb(scamper_inst_t *inst, uint8_t type, scamper_task_t *task,
   sc_cmdstate_t *cs = NULL;
   uint16_t obj_type;
   void *obj_data;
+
+  ctrlcb_called = 1;
 
   if(type == SCAMPER_CTRL_TYPE_MORE)
     {
@@ -1214,9 +1602,11 @@ static int pinger_data(void)
 		      SCAMPER_FILE_OBJ_CYCLE_STOP,
 		      SCAMPER_FILE_OBJ_PING,
 		      SCAMPER_FILE_OBJ_DEALIAS};
-  int typec = sizeof(types) / sizeof(uint16_t);
+  int i, typec = sizeof(types) / sizeof(uint16_t);
+  struct timeval *timeout = NULL, tv_in, tv_out, tv_diff;
   int done = 0, rc = -1;
   char *fn = NULL;
+  size_t len;
 
 #ifdef HAVE_DAEMON
   /* start a daemon if asked to */
@@ -1233,6 +1623,25 @@ static int pinger_data(void)
   if(batch_count < 2)
     typec--;
 
+  if(rxttl_thresh > 0)
+    {
+      len = sizeof(sc_methstats_t *) * methodc;
+      if((method_stats = malloc_zero(len)) == NULL)
+	{
+	  print("%s: could not init", __func__);
+	  return -1;
+	}
+
+      for(i=0; i<methodc; i++)
+	{
+	  if((method_stats[i] = sc_methstats_alloc()) == NULL)
+	    {
+	      print("%s: could not init", __func__);
+	      return -1;
+	    }
+	}
+    }
+
   if((logfile_name != NULL && (logfile_fd=fopen(logfile_name, "w")) == NULL) ||
      (addrfile_fd = open(addrfile_name, O_RDONLY)) < 0 ||
      (addrfile_buf = malloc(addrfile_len)) == NULL ||
@@ -1245,6 +1654,14 @@ static int pinger_data(void)
       print("%s: could not init", __func__);
       return -1;
     }
+
+  /*
+   * when we use a timeout, we copy the timeout value into a scratch
+   * timeval, as select can overwrite the timeout we supply with how
+   * much time is left
+   */
+  if(timeval_iszero(&zombie) == 0)
+    timeout = &tv_diff;
 
   scamper_file_setreadfunc(decode_sf, decode_rb, scamper_file_readbuf_read);
 
@@ -1266,7 +1683,25 @@ static int pinger_data(void)
 	  done = 1;
 	}
 
-      scamper_ctrl_wait(scamper_ctrl, NULL);
+      if(timeout != NULL)
+	{
+	  ctrlcb_called = 0;
+	  timeval_cpy(&tv_diff, &zombie);
+	  gettimeofday_wrap(&tv_in);
+	}
+      scamper_ctrl_wait(scamper_ctrl, timeout);
+      if(timeout != NULL && ctrlcb_called == 0)
+	{
+	  gettimeofday_wrap(&tv_out);
+	  if(timeval_cmp(&tv_in, &tv_out) > 0)
+	    continue;
+	  timeval_diff_tv(&tv_diff, &tv_in, &tv_out);
+	  if(timeval_cmp(&tv_diff, &zombie) >= 0)
+	    {
+	      print("%s: timed out", __func__);
+	      break;
+	    }
+	}
     }
 
   /* close the file and move it to a completed directory */
@@ -1297,6 +1732,15 @@ static void cleanup(void)
 	  free(methods[i]);
       free(methods);
       methods = NULL;
+    }
+
+  if(method_stats != NULL)
+    {
+      for(i=0; i<methodc; i++)
+	if(method_stats[i] != NULL)
+	  sc_methstats_free(method_stats[i]);
+      free(method_stats);
+      method_stats = NULL;
     }
 
   if(virgin != NULL)

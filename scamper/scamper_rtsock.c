@@ -1,7 +1,7 @@
 /*
  * scamper_rtsock: code to deal with a route socket or equivalent
  *
- * $Id: scamper_rtsock.c,v 1.103 2025/04/21 03:24:13 mjl Exp $
+ * $Id: scamper_rtsock.c,v 1.108 2025/06/10 22:33:46 mjl Exp $
  *
  *          Matthew Luckie
  *
@@ -257,7 +257,7 @@ static int scamper_rtsock_getifindex(int fd, scamper_addr_t *dst)
 			       scamper_rtsock_roundup(slen));
   sdl->sdl_family = AF_LINK;
 
-#if !defined(__sun__)
+#ifndef __sun
   sdl->sdl_len    = sizeof(struct sockaddr_dl);
 #endif
 
@@ -786,6 +786,8 @@ int scamper_rtsock_init()
     roundup_v = sizeof(long);
 #elif defined(__NetBSD_Version__) && __NetBSD_Version__ >= 599004500
   roundup_v = sizeof(uint64_t);
+#elif defined(__sun)
+  roundup_v = sizeof(uint32_t);
 #elif defined(HAVE_BSD_ROUTE_SOCKET)
   roundup_v = sizeof(long);
 #endif

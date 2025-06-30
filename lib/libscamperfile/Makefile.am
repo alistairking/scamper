@@ -1,4 +1,4 @@
-# $Id: Makefile.am,v 1.6.4.1 2025/06/03 02:55:16 mjl Exp $
+# $Id: Makefile.am,v 1.9 2025/06/29 22:19:01 mjl Exp $
 
 AUTOMAKE_OPTIONS = subdir-objects
 
@@ -8,7 +8,7 @@ lib_LTLIBRARIES = libscamperfile.la
 
 libscamperfile_la_CFLAGS = -DBUILDING_LIBSCAMPERFILE
 
-libscamperfile_la_LDFLAGS = -version-info 14:0:1 \
+libscamperfile_la_LDFLAGS = -version-info 15:0:2 \
 	-export-symbols-regex '^scamper_'
 
 libscamperfile_la_LIBADD = @ZLIB_LIBS@ @LIBBZ2_LIBS@ @LIBLZMA_LIBS@ \
@@ -53,6 +53,7 @@ libscamperfile_la_SOURCES = \
 	$(top_srcdir)/scamper/sting/scamper_sting_lib.c \
 	$(top_srcdir)/scamper/neighbourdisc/scamper_neighbourdisc.c \
 	$(top_srcdir)/scamper/neighbourdisc/scamper_neighbourdisc_warts.c \
+	$(top_srcdir)/scamper/neighbourdisc/scamper_neighbourdisc_json.c \
 	$(top_srcdir)/scamper/neighbourdisc/scamper_neighbourdisc_lib.c \
 	$(top_srcdir)/scamper/tbit/scamper_tbit.c \
 	$(top_srcdir)/scamper/tbit/scamper_tbit_warts.c \

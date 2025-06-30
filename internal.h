@@ -1,7 +1,7 @@
 /*
  * internal.h
  *
- * $Id: internal.h,v 1.68 2025/03/30 00:12:47 mjl Exp $
+ * $Id: internal.h,v 1.70 2025/06/10 22:32:49 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -112,7 +112,7 @@ typedef unsigned short sa_family_t;
 #define __FAVOR_BSD
 #endif
 
-#if defined(__sun__)
+#ifdef __sun
 #define BSD_COMP
 #define _XPG4_2
 #define __EXTENSIONS__
@@ -130,7 +130,7 @@ typedef unsigned short sa_family_t;
 #include <sys/epoll.h>
 #endif
 
-#if defined(HAVE_SYS_EPOLL_H) && defined(HAVE_EPOLL_WAIT)
+#if defined(HAVE_SYS_EPOLL_H) && defined(HAVE_EPOLL_WAIT) && !defined(__sun)
 #define HAVE_EPOLL
 #endif
 
@@ -221,7 +221,7 @@ typedef unsigned short sa_family_t;
 #define HAVE_IPTABLES
 #endif
 
-#if defined(__sun__)
+#ifdef __sun
 #define HAVE_DLPI
 #define MAXDLBUF 8192
 #include <sys/bufmod.h>
@@ -257,7 +257,7 @@ typedef unsigned short sa_family_t;
 #define HAVE_SOCKADDR_UN
 #endif
 
-#if defined(_WIN32) || defined(__sun__) || defined(__linux__)
+#if defined(_WIN32) || defined(__sun) || defined(__linux__)
 #define IP_HDR_HTONS
 #endif
 #if defined(__OpenBSD__) && OpenBSD >= 199706
@@ -322,7 +322,7 @@ typedef unsigned short sa_family_t;
 
 #include <assert.h>
 
-#if defined(__sun__) || defined(_WIN32) /* define ip6_ext on sun and windows */
+#if defined(__sun) || defined(_WIN32) /* define ip6_ext on sun and windows */
 struct ip6_ext
 {
   uint8_t ip6e_nxt;
@@ -430,7 +430,7 @@ struct iovec
 #define icmp6_seq    icmp6un.data16[1]
 #endif
 
-#if defined(__sun__)
+#if defined(__sun)
 # define s6_addr32 _S6_un._S6_u32
 #elif !defined(s6_addr32)
 # define s6_addr32 __u6_addr.__u6_addr32

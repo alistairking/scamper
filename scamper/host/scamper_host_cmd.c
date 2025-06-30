@@ -1,7 +1,7 @@
 /*
  * scamper_host_cmd
  *
- * $Id: scamper_host_cmd.c,v 1.17 2025/02/23 05:38:14 mjl Exp $
+ * $Id: scamper_host_cmd.c,v 1.18 2025/06/21 04:59:15 mjl Exp $
  *
  * Copyright (C) 2018-2025 Matthew Luckie
  *
@@ -69,6 +69,24 @@ const char *scamper_do_host_usage(void)
     "     [-t type] [-U userid] [-W wait] name\n";
 }
 
+static scamper_addr_t *host_arg_server(const char *param,
+				       char *errbuf, size_t errlen)
+{
+  scamper_addr_t *addr;
+
+  if((addr = scamper_addr_fromstr_unspec(param)) == NULL ||
+     (scamper_addr_isipv4(addr) == 0 &&
+      scamper_addr_isipv6(addr) == 0))
+    {
+      snprintf(errbuf, errlen, "server must be an IP address");
+      if(addr != NULL)
+	scamper_addr_free(addr);
+      return NULL;
+    }
+
+  return addr;
+}
+
 static int host_arg_param_validate(int optid, char *param, long long *out,
 				   char *errbuf, size_t errlen)
 {
@@ -96,11 +114,8 @@ static int host_arg_param_validate(int optid, char *param, long long *out,
       break;
 
     case HOST_OPT_SERVER:
-      if((addr = scamper_addr_fromstr_ipv4(param)) == NULL)
-	{
-	  snprintf(errbuf, errlen, "server must be an IPv4 address");
-	  goto err;
-	}
+      if((addr = host_arg_server(param, errbuf, errlen)) == NULL)
+	goto err;
       scamper_addr_free(addr);
       break;
 
@@ -283,11 +298,8 @@ void *scamper_do_host_alloc(char *str, char *errbuf, size_t errlen)
 	  break;
 
 	case HOST_OPT_SERVER:
-	  if((server = scamper_addr_fromstr_ipv4(opt->str)) == NULL)
-	    {
-	      snprintf(errbuf, errlen, "server must be an IPv4 address");
-	      goto err;
-	    }
+	  if((server = host_arg_server(opt->str, errbuf, errlen)) == NULL)
+	    goto err;
 	  break;
 
 	case HOST_OPT_CLASS:

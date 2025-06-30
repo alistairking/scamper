@@ -1,7 +1,7 @@
 /*
  * libscamperctrl
  *
- * $Id: libscamperctrl.c,v 1.91 2025/03/12 02:58:09 mjl Exp $
+ * $Id: libscamperctrl.c,v 1.93 2025/06/10 22:32:49 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -28,6 +28,11 @@
 #endif
 
 #include <sys/types.h>
+
+#ifdef __sun
+#define _XPG4_2 
+#define __EXTENSIONS__
+#endif
 
 #ifndef _WIN32 /* include headers that are not on windows */
 #include <sys/uio.h>
@@ -399,22 +404,22 @@ static int sa_fromstr(struct sockaddr *sa, const char *addr, uint16_t port)
 #ifdef HAVE_SOCKADDR_UN
 static int unix_fd(const char *path, char *err, size_t errlen)
 {
-  struct sockaddr_un sun;
+  struct sockaddr_un sn;
   int fd = -1;
 
   /* make sure the filename can fit in the space available */
-  if(strlen(path) + 1 > sizeof(sun.sun_path))
+  if(strlen(path) + 1 > sizeof(sn.sun_path))
     {
       snprintf(err, errlen, "path too long");
       goto err;
     }
 
   /* build the sockaddr_un */
-  memset(&sun, 0, sizeof(struct sockaddr_un));
-  sun.sun_family = AF_UNIX;
-  snprintf(sun.sun_path, sizeof(sun.sun_path), "%s", path);
+  memset(&sn, 0, sizeof(struct sockaddr_un));
+  sn.sun_family = AF_UNIX;
+  snprintf(sn.sun_path, sizeof(sn.sun_path), "%s", path);
 #if defined(HAVE_STRUCT_SOCKADDR_SA_LEN)
-  sun.sun_len = sizeof(struct sockaddr_un);
+  sn.sun_len = sizeof(struct sockaddr_un);
 #endif
 
   if((fd = socket(AF_UNIX, SOCK_STREAM, 0)) == -1)
@@ -425,7 +430,7 @@ static int unix_fd(const char *path, char *err, size_t errlen)
     }
 
   /* connect to the scamper instance */
-  if(connect(fd, (const struct sockaddr *)&sun, sizeof(sun)) != 0)
+  if(connect(fd, (const struct sockaddr *)&sn, sizeof(sn)) != 0)
     {
       snprintf(err, errlen, "could not connect: %s", strerror(errno));
       goto err;

@@ -7,7 +7,7 @@
  * Copyright (C) 2020-2025 Matthew Luckie
  * Author: Matthew Luckie
  *
- * $Id: scamper_trace_text.c,v 1.52 2025/05/30 22:42:40 mjl Exp $
+ * $Id: scamper_trace_text.c,v 1.53 2025/06/24 08:19:57 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -637,6 +637,11 @@ char *scamper_trace_totext(const scamper_trace_t *trace, size_t *len_out)
   header = header_tostr(trace);
   len = strlen(header) + 2; /* \n for header and \0 */
 
+  if(trace->stop_hop == 0 || trace->stop_hop > trace->hop_count)
+    hop_count = trace->hop_count;
+  else
+    hop_count = trace->stop_hop;
+
   if(trace->hop_count > 0)
     {
       if((hops = malloc_zero(sizeof(char *) * trace->hop_count)) == NULL)
@@ -659,7 +664,7 @@ char *scamper_trace_totext(const scamper_trace_t *trace, size_t *len_out)
 	  if(pmtud_tostr[trace->pmtud->ver](trace, mtus) != 0)
 	    goto cleanup;
 
-	  for(i=0; i<trace->hop_count; i++)
+	  for(i=0; i<hop_count; i++)
 	    if(mtus[i] != NULL)
 	      len += strlen(mtus[i]);
 	}
@@ -676,14 +681,10 @@ char *scamper_trace_totext(const scamper_trace_t *trace, size_t *len_out)
 
   if(hops != NULL)
     {
-      if(trace->stop_hop == 0 || trace->stop_hop > trace->hop_count)
-	hop_count = trace->hop_count;
-      else
-	hop_count = trace->stop_hop;
-      for(i=0; i < hop_count; i++)
+      for(i=0; i < trace->hop_count; i++)
 	{
 	  string_concat(str, len, &off, hops[i]);
-	  if(mtus != NULL && mtus[i] != NULL)
+	  if(mtus != NULL && i < hop_count && mtus[i] != NULL)
 	    string_concat(str, len, &off, mtus[i]);
 	  string_concatc(str, len, &off, '\n');
 	}

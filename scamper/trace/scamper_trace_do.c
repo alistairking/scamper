@@ -1,7 +1,7 @@
 /*
  * scamper_do_trace.c
  *
- * $Id: scamper_trace_do.c,v 1.418 2025/05/29 10:47:40 mjl Exp $
+ * $Id: scamper_trace_do.c,v 1.419 2025/06/27 02:29:51 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -1428,7 +1428,7 @@ static int trace_hop_ptr(const scamper_task_t *task, scamper_trace_reply_t *hop)
   trace_state_t *state = trace_getstate(task);
   trace_host_t fm, *th = NULL;
 
-  if((trace->flags & SCAMPER_TRACE_FLAG_PTR) == 0)
+  if((trace->flags & SCAMPER_TRACE_FLAG_PTR) == 0 || config->host_enable == 0)
     return 0;
 
   /* if we don't have a trace_host tree yet, create one */

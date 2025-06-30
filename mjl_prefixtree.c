@@ -31,7 +31,7 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  *
- * $Id: mjl_prefixtree.c,v 1.22 2024/12/29 18:34:16 mjl Exp $
+ * $Id: mjl_prefixtree.c,v 1.23 2025/06/10 22:32:49 mjl Exp $
  *
  */
 
@@ -60,7 +60,7 @@ typedef unsigned __int32 uint32_t;
 #include <dmalloc.h>
 #endif
 
-#if defined(__sun__)
+#if defined(__sun)
 # define s6_addr32 _S6_un._S6_u32
 #elif !defined(s6_addr32)
 # define s6_addr32 __u6_addr.__u6_addr32

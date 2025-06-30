@@ -2,7 +2,7 @@
 #
 # process source code looking for #ifdef-related bugs.
 #
-# $Id: check-ifdef.pl,v 1.8 2024/11/30 06:50:38 mjl Exp $
+# $Id: check-ifdef.pl,v 1.9 2025/06/16 19:42:30 mjl Exp $
 
 use strict;
 use warnings;
@@ -14,7 +14,7 @@ my %defs;
 # we can find stale ifdefs in this file.
 $defs{$_} = 0 foreach (
     "AF_LINK", "AF_UNIX",
-    "ARPHRD_IEEE1394", "ARPHRD_SIT", "ARPHRD_VOID",
+    "ARPHRD_IEEE1394", "ARPHRD_SIT", "ARPHRD_VOID", "ARPHRD_NONE",
     "DLT_APPLE_IP_OVER_IEEE1394",
     "BIOCSETFNR", "DIOCGETSTATUSNV", "SIOCGSTAMP",
     "ICMP6_FILTER", "ICMP_FILTER",
@@ -35,7 +35,7 @@ $defs{$_} = 0 foreach (
     "DMALLOC",
     "HAVE_CONFIG_H", "HAVE_PCRE2", "HAVE_WINGETOPT_H",
     "_IPFW2_H", "_IP_FW_H",
-    "__linux__", "__sun__", "__ANDROID__", "__APPLE__", "_WIN32",
+    "__linux__", "__sun", "__ANDROID__", "__APPLE__", "_WIN32",
     "__FreeBSD__", "__NetBSD__", "__OpenBSD__", "__DragonFly__",
     "__NetBSD_Version__",
     "COMMON_CHECK_ADDR",

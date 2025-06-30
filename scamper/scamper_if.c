@@ -1,7 +1,7 @@
 /*
  * scamper_if.c
  *
- * $Id: scamper_if.c,v 1.31 2025/03/29 18:46:03 mjl Exp $
+ * $Id: scamper_if.c,v 1.32 2025/06/10 22:32:49 mjl Exp $
  *
  * Copyright (C) 2008-2011 The University of Waikato
  * Copyright (C) 2014      The Regents of the University of California
@@ -127,7 +127,7 @@ int scamper_if_getmtu(const int ifindex, uint16_t *ifmtu)
     }
   scamper_fd_free(fd);
 
-#if defined(__sun__)
+#ifdef __sun
   mtu = ifr.ifr_metric;
 #else
   mtu = ifr.ifr_mtu;
@@ -203,7 +203,7 @@ int scamper_if_getmac(const int ifindex, uint8_t *mac)
   memcpy(mac, row.bPhysAddr, 6);
   return 0;
 }
-#elif defined(__sun__)
+#elif defined(__sun)
 int scamper_if_getmac(const int ifindex, uint8_t *mac)
 {
   union	DL_primitives *dlp;

@@ -9,7 +9,7 @@
  * Copyright (C) 2023      The Regents of the University of California
  * Copyright (C) 2023-2025 Matthew Luckie
  *
- * $Id: sc_uptime.c,v 1.93 2025/02/24 06:59:36 mjl Exp $
+ * $Id: sc_uptime.c,v 1.94 2025/06/10 07:10:03 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -1160,7 +1160,7 @@ static int do_scamperread(void)
 static int do_scamperconnect(void)
 {
   struct sockaddr *sa;
-  struct sockaddr_un sun;
+  struct sockaddr_un sn;
   struct sockaddr_in sin;
   struct in_addr in;
   socklen_t sl;
@@ -1178,12 +1178,12 @@ static int do_scamperconnect(void)
     }
   else if(options & OPT_UNIX)
     {
-      if(sockaddr_compose_un((struct sockaddr *)&sun, unix_name) != 0)
+      if(sockaddr_compose_un((struct sockaddr *)&sn, unix_name) != 0)
 	{
 	  fprintf(stderr, "%s: could not build sockaddr_un\n", __func__);
 	  return -1;
 	}
-      sa = (struct sockaddr *)&sun; sl = sizeof(sun);
+      sa = (struct sockaddr *)&sn; sl = sizeof(sn);
       if((scamper_fd = socket(AF_UNIX, SOCK_STREAM, 0)) == -1)
 	{
 	  fprintf(stderr, "%s: could not allocate unix domain socket\n",

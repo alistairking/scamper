@@ -1,7 +1,7 @@
 /*
  * scamper_control.c
  *
- * $Id: scamper_control.c,v 1.291 2025/05/28 07:22:42 mjl Exp $
+ * $Id: scamper_control.c,v 1.292 2025/06/27 02:09:58 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -2447,6 +2447,7 @@ static int remote_read_control_channel_fin(control_remote_t *rm,
       return -1;
     }
   scamper_source_control_finish(client->source);
+  scamper_source_abandon(client->source);
 
   return 0;
 }

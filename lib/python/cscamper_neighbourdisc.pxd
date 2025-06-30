@@ -2,7 +2,7 @@
 #
 # Author: Matthew Luckie
 #
-# Copyright (C) 2023 The Regents of the University of California
+# Copyright (C) 2023-2025 The Regents of the University of California
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -20,5 +20,7 @@
 cdef extern from "scamper_neighbourdisc.h":
  ctypedef struct scamper_neighbourdisc_t:
   pass
+
+ char *scamper_neighbourdisc_tojson(const scamper_neighbourdisc_t *nd, size_t *l)
 
  void scamper_neighbourdisc_free(scamper_neighbourdisc_t *nd)

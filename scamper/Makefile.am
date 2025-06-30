@@ -1,4 +1,4 @@
-# $Id: Makefile.am,v 1.83 2025/04/27 00:49:24 mjl Exp $
+# $Id: Makefile.am,v 1.84 2025/06/24 07:05:29 mjl Exp $
 
 AUTOMAKE_OPTIONS = subdir-objects
 
@@ -103,6 +103,7 @@ endif
 scamper_SOURCES += \
 	neighbourdisc/scamper_neighbourdisc.c \
 	neighbourdisc/scamper_neighbourdisc_warts.c \
+	neighbourdisc/scamper_neighbourdisc_json.c \
 	neighbourdisc/scamper_neighbourdisc_cmd.c \
 	neighbourdisc/scamper_neighbourdisc_do.c
 if ENABLE_SCAMPER_TBIT

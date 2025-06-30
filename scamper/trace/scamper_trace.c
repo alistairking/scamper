@@ -1,7 +1,7 @@
 /*
  * scamper_trace.c
  *
- * $Id: scamper_trace.c,v 1.140 2025/05/29 11:10:11 mjl Exp $
+ * $Id: scamper_trace.c,v 1.141 2025/06/27 10:44:16 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2003-2011 The University of Waikato
@@ -97,13 +97,15 @@ scamper_trace_pmtud_noteiter_dist_get(const scamper_trace_t *trace,
    * if we observed the address in traceroute, then return the hop
    * where that address is observed
    */
-  scamper_trace_hopiter_ttl_set(&hi, ni->start+1, hop_count);
-  while((trace_hop = scamper_trace_hopiter_next(trace, &hi)) != NULL)
+  if(scamper_trace_hopiter_ttl_set(&hi, ni->start+1, hop_count) == 0)
     {
-      if(scamper_trace_reply_addr_cmp(trace_hop, hop) == 0)
+      while((trace_hop = scamper_trace_hopiter_next(trace, &hi)) != NULL)
 	{
-	  dist = hi.probe->ttl;
-	  goto done;
+	  if(scamper_trace_reply_addr_cmp(trace_hop, hop) == 0)
+	    {
+	      dist = hi.probe->ttl;
+	      goto done;
+	    }
 	}
     }
 
