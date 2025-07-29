@@ -1,10 +1,10 @@
 /*
  * scamper_http_do.c
  *
- * $Id: scamper_http_do.c,v 1.21 2025/04/27 00:49:24 mjl Exp $
+ * $Id: scamper_http_do.c,v 1.22 2025/07/04 23:34:23 mjl Exp $
  *
  * Copyright (C) 2023-2024 The Regents of the University of California
- * Copyright (C) 2024      Matthew Luckie
+ * Copyright (C) 2024-2025 Matthew Luckie
  *
  * Authors: Matthew Luckie
  *
@@ -134,7 +134,7 @@ static void http_stop(scamper_task_t *task, uint8_t reason)
 	}
     }
 
-  scamper_task_queue_done(task, 0);
+  scamper_task_queue_done(task);
   return;
 }
 
@@ -790,7 +790,7 @@ static void do_http_halt(scamper_task_t *task)
 {
   scamper_http_t *http = http_getdata(task);
   http->stop = SCAMPER_HTTP_STOP_HALTED;
-  scamper_task_queue_done(task, 0);
+  scamper_task_queue_done(task);
   return;
 }
 

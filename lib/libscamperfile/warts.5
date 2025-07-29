@@ -1,4 +1,4 @@
-.Dd April 2, 2020
+.Dd July 29, 2025
 .Dt WARTS 5
 .Os
 .Sh NAME
@@ -43,6 +43,12 @@ object they map to, are as follows:
 0x000c: Sting (scamper_sting_t)
 .It
 0x000d: Sniff (scamper_sniff_t)
+.It
+0x000e: Host (scamper_host_t)
+.It
+0x000f: HTTP (scamper_http_t)
+.It
+0x0010: UDP probe (scamper_udpprobe_t)
 .El
 A new type number can be requested by emailing the author of scamper.
 The structure of each warts record beyond the header is arbitrary, though
@@ -138,12 +144,21 @@ Bytes, unsigned 16-bit integers, and unsigned 32 bit integers are embedded
 directly, using network byte order where appropriate.
 ASCII strings are also embedded directly, including the trailing null byte
 to terminate the string.
+.Pp
 Time values (timeval) are embedded as two unsigned 32 bit integers; the first
 number counts the number of seconds that have elapsed since the Unix epoch,
 the second number counts the number of microseconds that have elapsed in the
 current second.
+.Pp
 Round-trip-time (RTT) values are embedded as a single unsigned 32 bit
 integer that counts the number of microseconds that elapsed.
+.Pp
+Interface names (ifnames) are embedded with a per-record unsigned 8
+bit integer representing a unique ID value, followed by the ASCII
+string containing the name including the trailing null byte to
+terminate the string.
+Future per-record references to the same ifname only embed the ID
+value.
 .Pp
 Several measurements record ICMP extension data, so there is a standardised
 method to record a set of ICMP extensions.
@@ -319,6 +334,14 @@ uint32_t: User ID assigned to the traceroute, included if flag 28 is set
 uint16_t: IP offset value used in probes, included if flag 29 is set
 .It
 address: Router address used to send probes, included if flag 30 is set
+.It
+uint8_t: Number of unresponsive hops permitted before stopping to wait
+for a response (squeries), included if flag 31 is set
+.It
+uint32_t: Trace flags, included if flag 32 is set
+.It
+uint8_t: Hop number that contains the response that caused scamper to
+stop probing, included if flag 33 is set
 .El
 .Pp
 The traceroute flags field has the following fields:
@@ -337,7 +360,18 @@ If bit 5 is set, traceroute should use Doubletree to reduce redundant probing.
 .It
 If bit 6 is set, the ICMP checksum used in echo probes can be found is stored
 where the UDP destination port value is.
+.It
+If bit 7 is set, the payload was not modified to obtain a desired checksum
+value.
+.It
+If bit 8 is set, the traceroute used recverr cmsgs to receive ICMP responses.
+.It
+If bit 9 is set, the traceroute did PTR record lookups for observed IP
+addresses.
+.It
+If bit 10 is set, the traceroute used raw IP sockets to send probes.
 .El
+Bit values after 8 have to be stored in a 32-bit flags value.
 .Pp
 Hop records are written in series.
 Each hop record takes the following form:
@@ -398,6 +432,8 @@ icmpext: ICMP extension data, included if flag 17 is set.
 address: Hop address, included if flag 18 is set.
 .It
 timeval: Hop tx, included if flag 19 is set.
+.It
+String: Hop name in PTR record, included if flag 20 is set.
 .El
 .Pp
 Optional traceroute data, such as PMTUD and doubletree control and result
@@ -573,21 +609,79 @@ uint16_t: Probe ICMP checksum, included if flag 25 is set
 .It
 uint16_t: Reply psuedo Path MTU, included if flag 26 is set
 .It
-uint8_t: Probe timeout, included if flag 27 is set
+uint8_t: Probe timeout in seconds, included if flag 27 is set
 .It
 uint32_t: Probe wait (microseconds), included if flag 28 is set
 .It
 uint32_t: Probe TCP acknowledgment value, included if flag 29 is set
 .It
-uint16_t: Ping flags, included if flag 30 is set.
+uint16_t: Ping flags, included if flag 30 is set
 .It
 uint32_t: Probe TCP sequence number value, included if flag 31 is set
 .It
 address: Router address used to send probes, included if flag 32 is set
+.It
+uint32_t: Microseconds for probe timeout, included if flag 33 is set
 .El
 .Pp
 Ping response records are written in series.  Each record takes the following
 form:
+.Bl -dash -offset 2n -compact -width 1n
+.It
+Variable: Flags describing which reply parameters were recorded
+.It
+uint16_t: Parameter length, included if any flags are set
+.It
+uint32_t: Hop address, ID corresponding to global warts address;
+included if flag 1 is set
+.It
+uint8_t: Ping reply flags, included if flag 2 is set
+.It
+uint8_t: Ping reply TTL, included if flag 3 is set
+.It
+uint16_t: Ping reply size, included if flag 4 is set
+.It
+uint16_t: Ping reply ICMP type and code, included if flag 5 is set
+.It
+RTT: Ping reply round trip time in microseconds, included if flag 6 is set
+.It
+uint16_t: Ping probe ID for the associated reply, included if flag 7 is set
+.It
+uint16_t: Ping reply IP ID value, included if flag 8 is set
+.It
+uint16_t: Ping probe IP ID value for IPv4 responses, included if flag 9 is set
+.It
+uint8_t: Ping reply IP protocol, included if flag 10 is set
+.It
+uint8_t: Ping reply TCP flags, included if flag 11 is set
+.It
+address: Ping reply address, included if flag 12 is set
+.It
+variable: IPv4 Record Route (RR) structure, included if flag 13 is set.
+The first byte reports how many addresses are contained in the RR structure.
+The remainder of the structure contains IPv4 addresses.
+.It
+variable: IPv4 timestamp (TS) reply structure, included if flag 14 is set.
+The first byte reports how many timestamps are contained in the TS structure,
+followed by a byte that reports how many IPv4 addresses are contained.
+The remainder of the structure begins with the 32-bit timestamps recorded
+in the TS structure, followed by any IPv4 addresses.
+.It
+uint32_t: Ping probe IP ID value for IPv6 responses, included if flag 15 is set
+.It
+timeval: Ping probe transmit time, included if flag 16 is set
+.It
+12 bytes: ICMP timestamp reply structure, included if flag 17 is set
+.It
+uint16_t: Ping probe source port, included if flag 18 is set
+.It
+uint8_t: Ping reply IP ToS byte, included if flag 19 is set
+.It
+ifname: Name of interface reply received on, included if flag 20 is set
+.It
+uint16_t: Next hop MTU value reported in packet too big message, included
+if flag 21 is set
+.El
 .Sh SEE ALSO
 .Xr scamper 1 ,
 .Xr libscamperfile 3 ,

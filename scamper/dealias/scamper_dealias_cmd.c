@@ -1,12 +1,12 @@
 /*
  * scamper_dealias_cmd.c
  *
- * $Id: scamper_dealias_cmd.c,v 1.31 2025/04/30 07:59:54 mjl Exp $
+ * $Id: scamper_dealias_cmd.c,v 1.33 2025/07/11 23:01:34 mjl Exp $
  *
  * Copyright (C) 2008-2011 The University of Waikato
  * Copyright (C) 2012-2013 Matthew Luckie
  * Copyright (C) 2012-2014 The Regents of the University of California
- * Copyright (C) 2016-2023 Matthew Luckie
+ * Copyright (C) 2016-2025 Matthew Luckie
  * Copyright (C) 2023-2024 The Regents of the University of California
  * Author: Matthew Luckie
  *
@@ -911,11 +911,7 @@ static int dealias_alloc_radargun(scamper_dealias_t *d, dealias_options_t *o,
   timeval_cpy(&rg->wait_probe, &o->wait_probe);
   timeval_cpy(&rg->wait_timeout, &o->wait_timeout);
   if(timeval_iszero(&o->wait_round))
-    {
-      i = ((o->wait_probe.tv_sec * 1000000)+o->wait_probe.tv_usec) * probedefc;
-      o->wait_round.tv_sec = i / 1000000;
-      o->wait_round.tv_usec = i % 1000000;
-    }
+    timeval_mul(&o->wait_round, &o->wait_probe, probedefc);
   timeval_cpy(&rg->wait_round, &o->wait_round);
 
   i=0;
@@ -1194,7 +1190,6 @@ static int dealias_alloc_midarest(scamper_dealias_t *d, dealias_options_t *o,
   struct timeval tv;
   char *a1, *a2, *pdstr;
   uint32_t id;
-  uint32_t u32;
   int probedefc;
 
   /*
@@ -1316,33 +1311,21 @@ static int dealias_alloc_midarest(scamper_dealias_t *d, dealias_options_t *o,
   if(timeval_iszero(&o->wait_probe))
     {
       if(timeval_iszero(&o->wait_round))
-	{
-	  me->wait_round.tv_sec = 10;
-	  me->wait_round.tv_usec = 0;
-	}
+	timeval_add_s(&me->wait_round, &o->wait_round, 10);
       else
-	{
-	  timeval_cpy(&me->wait_round, &o->wait_round);
-	}
-      u32 = (me->wait_round.tv_sec * 1000000) + me->wait_round.tv_usec;
-      u32 /= me->probedefc;
-      me->wait_probe.tv_sec = u32 / 1000000;
-      me->wait_probe.tv_usec = u32 % 1000000;
+	timeval_cpy(&me->wait_round, &o->wait_round);
+      timeval_div(&me->wait_probe, &me->wait_round, me->probedefc);
     }
   else
     {
       timeval_cpy(&me->wait_probe, &o->wait_probe);
-      u32 = (me->wait_probe.tv_sec * 1000000) + me->wait_probe.tv_usec;
-      u32 *= me->probedefc;
       if(timeval_iszero(&o->wait_round))
 	{
-	  me->wait_round.tv_sec = u32 / 1000000;
-	  me->wait_round.tv_usec = u32 % 1000000;
+	  timeval_mul(&me->wait_round, &me->wait_probe, me->probedefc);
 	}
       else
 	{
-	  tv.tv_sec = u32 / 1000000;
-	  tv.tv_usec = u32 % 1000000;
+	  timeval_mul(&tv, &me->wait_probe, me->probedefc);
 	  timeval_cpy(&me->wait_round, &o->wait_round);
 	  if(timeval_cmp(&tv, &me->wait_round) > 0)
 	    {

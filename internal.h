@@ -1,7 +1,7 @@
 /*
  * internal.h
  *
- * $Id: internal.h,v 1.70 2025/06/10 22:32:49 mjl Exp $
+ * $Id: internal.h,v 1.72 2025/07/23 07:37:47 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -318,6 +318,14 @@ typedef unsigned short sa_family_t;
 #define strcasecmp _stricmp
 #define strncasecmp _strnicmp
 #define write _write
+#endif
+
+#if defined(HAVE_BPF) || defined(__linux__)
+#define HAVE_BPF_FILTER
+#endif
+
+#if defined(BIOCSETFNR) || (defined(__linux__) && defined(SKF_AD_HATYPE))
+#define HAVE_BPF_DYN_FILTER
 #endif
 
 #include <assert.h>
@@ -784,6 +792,14 @@ struct sockaddr_nl
 
 #ifndef UINT16_MAX
 #define UINT16_MAX 65535U
+#endif
+
+#ifndef LLONG_MAX
+#define LLONG_MAX 0x7fffffffffffffffLL
+#endif
+
+#ifndef LLONG_MIN
+#define LLONG_MIN (-LLONG_MAX - 1LL)
 #endif
 
 #ifndef SEQ_LT

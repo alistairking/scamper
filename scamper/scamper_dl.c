@@ -1,7 +1,7 @@
 /*
  * scamper_dl: manage BPF/PF_PACKET datalink instances for scamper
  *
- * $Id: scamper_dl.c,v 1.236 2025/06/16 05:02:09 mjl Exp $
+ * $Id: scamper_dl.c,v 1.237 2025/07/23 07:37:47 mjl Exp $
  *
  *          Matthew Luckie
  *          Ben Stasiewicz added fragmentation support.
@@ -40,14 +40,6 @@
 #include "config.h"
 #endif
 #include "internal.h"
-
-#if defined(HAVE_BPF) || defined(__linux__)
-#define HAVE_BPF_FILTER
-#endif
-
-#if defined(BIOCSETFNR) || defined(__linux__)
-#define HAVE_BPF_DYN_FILTER
-#endif
 
 #if defined(HAVE_BPF_DYN_FILTER) || defined(TEST_DL_FILTER_COMPILE)
 #define DYN_FILTER_PORT_MAX 20

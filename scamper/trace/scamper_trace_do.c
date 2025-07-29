@@ -1,7 +1,7 @@
 /*
  * scamper_do_trace.c
  *
- * $Id: scamper_trace_do.c,v 1.419 2025/06/27 02:29:51 mjl Exp $
+ * $Id: scamper_trace_do.c,v 1.421 2025/07/05 02:30:25 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -537,7 +537,7 @@ static int trace_queue_probe(scamper_task_t *task, const struct timeval *now)
 
 static int trace_queue_done(scamper_task_t *task)
 {
-  scamper_task_queue_done(task, 0);
+  scamper_task_queue_done(task);
   return 0;
 }
 
@@ -3230,11 +3230,9 @@ static void dlin_trace(scamper_trace_t *trace,
    * matching issues for extra responses without further logic
    */
   hop = tp->probe->replies[0];
-  scamper_debug(__func__,
-		"hop %ld.%06d dl_rec %ld.%06d diff %d",
+  scamper_debug(__func__, "hop %ld.%06d dl_rec %ld.%06d",
 		(long)hop->rtt.tv_sec, (int)hop->rtt.tv_usec,
-		(long)new_rtt.tv_sec, (int)new_rtt.tv_usec,
-		timeval_diff_us(&new_rtt, &hop->rtt));
+		(long)new_rtt.tv_sec, (int)new_rtt.tv_usec);
 
   hop->flags &= ~(SCAMPER_TRACE_REPLY_FLAG_TS_SOCK_RX);
   hop->flags |= SCAMPER_TRACE_REPLY_FLAG_TS_DL_RX;

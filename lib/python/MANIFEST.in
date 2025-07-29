@@ -1,4 +1,5 @@
 include scamper.pyx
+include scamper.pyi
 include clibscamperctrl.pxd
 include cscamper_addr.pxd
 include cscamper_dealias.pxd

@@ -2,10 +2,10 @@
  * sc_prefixprober : scamper driver to probe addresses in specified
  *                   prefixes
  *
- * $Id: sc_prefixprober.c,v 1.48 2025/04/27 02:41:38 mjl Exp $
+ * $Id: sc_prefixprober.c,v 1.54 2025/07/29 01:08:36 mjl Exp $
  *
  * Copyright (C) 2023 The Regents of the University of California
- * Copyright (C) 2024 Matthew Luckie
+ * Copyright (C) 2024-2025 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -125,19 +125,17 @@ typedef struct sc_prefix_nest
 
 static void usage(uint32_t opt_mask)
 {
-  const char *v = "";
-
-#ifdef OPT_VERSION
-  v = "v";
-#endif
-
   fprintf(stderr,
-        "usage: sc_prefixprober [-D%s?]\n"
-        "                       [-a infile] [-o outfile] [-p port] [-R unix]\n"
+	"usage: sc_prefixprober [-D"
+#ifdef OPT_VERSION
+	"v"
+#endif
+	"?]\n"
+	"                       [-a infile] [-o outfile] [-p port] [-R unix]\n"
 	"                       [-U unix] [-c cmd] [-d duration] [-l limit]\n"
 	"                       [-L list] [-m dir] [-O options] [-t logfile]\n"
-        "                       [-x dnpfile]\n"
-        "\n", v);
+	"                       [-x dnpfile]\n"
+	"\n");
 
   if(opt_mask == 0)
     {
@@ -494,9 +492,10 @@ static int check_options(int argc, char *argv[])
 	}
       while((opt = slist_head_pop(list)) != NULL)
 	{
-	  if((dup = strdup(opt)) == NULL ||
-	     string_nullterm_char(dup, '=', &param) == NULL ||
-	     param == NULL)
+	  if((dup = strdup(opt)) == NULL)
+	    goto done;
+	  string_nullterm_char(dup, '=', &param);
+	  if(param == NULL)
 	    goto done;
 	  if(strcasecmp(dup, "id") == 0)
 	    {
@@ -1033,7 +1032,7 @@ static int rec_target_4_addrs(sc_prefix_t *p,
 static int rec_target_4(sc_prefix_nest_t *nest)
 {
   static const uint32_t add[] = {
-    4294967295, 2147483647, 1073741823, 536870911, 268435455, 134217727,
+    UINT32_MAX, 2147483647, 1073741823, 536870911, 268435455, 134217727,
     67108863, 33554431, 16777215, 8388607, 4194303, 2097151, 1048575, 524287,
     262143, 131071, 65535, 32767, 16383, 8191, 4095, 2047, 1023, 511, 255,
     127, 63, 31, 15, 7, 3, 1, 0
@@ -1631,7 +1630,6 @@ static int pp_data(void)
   slist_t *list;
   char *fn = NULL;
   int done = 0, rc = -1;
-  uint32_t u32;
 
 #ifdef HAVE_DAEMON
   /* start a daemon if asked to */
@@ -1710,11 +1708,9 @@ static int pp_data(void)
   if(duration != 0)
     {
       /* work out the inter-prefix gap */
-      memset(&gap, 0, sizeof(gap));
-      u32 = (duration * 1000) / (uint64_t)slist_count(prefix_list);
-      if(u32 == 0)
-	u32 = 1;
-      timeval_add_ms(&gap, &gap, u32);
+      gap.tv_sec = duration;
+      gap.tv_usec = 0;
+      timeval_div(&gap, &gap, slist_count(prefix_list));
 
       /* start probing straight away */
       gettimeofday_wrap(&now);

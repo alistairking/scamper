@@ -1,7 +1,7 @@
 /*
  * sc_bdrmap: driver to map first hop border routers of networks
  *
- * $Id: sc_bdrmap.c,v 1.63 2025/06/10 07:10:03 mjl Exp $
+ * $Id: sc_bdrmap.c,v 1.64 2025/07/04 19:26:21 mjl Exp $
  *
  *         Matthew Luckie
  *         mjl@caida.org / mjl@wand.net.nz
@@ -6164,7 +6164,7 @@ static int ixp_line(char *line, void *param)
   struct sockaddr_storage sas;
   struct sockaddr *sa = (struct sockaddr *)&sas;
   prefix4_t *p4; prefix6_t *p6;
-  char *pf;
+  char *pf, *spare;
   void *va;
   long lo;
 
@@ -6174,7 +6174,7 @@ static int ixp_line(char *line, void *param)
   string_nullterm_char(line, '/', &pf);
   if(pf == NULL)
     return -1;
-  string_nullterm_char(pf, ' ', NULL);
+  string_nullterm_char(pf, ' ', &spare);
 
   if(string_tolong(pf, &lo) != 0 || lo < 0)
     return -1;

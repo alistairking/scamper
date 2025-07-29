@@ -1,7 +1,7 @@
 /*
  * scamper_writebuf.c: use in combination with select to send without blocking
  *
- * $Id: scamper_writebuf.c,v 1.53 2025/01/17 06:45:28 mjl Exp $
+ * $Id: scamper_writebuf.c,v 1.54 2025/07/21 05:15:24 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2010 The University of Waikato
@@ -147,11 +147,7 @@ static int writebuf_tx(scamper_writebuf_t *wb, int fd)
     {
       node = slist_head_node(wb->iovs);
       for(i=0; i<iovs; i++)
-	{
-	  assert(node != NULL);
-	  memcpy(&iov[i], slist_node_item(node), sizeof(struct iovec));
-	  node = slist_node_next(node);
-	}
+	memcpy(&iov[i], slist_node_iter(&node), sizeof(struct iovec));
     }
 
   /* fill out the msghdr and set the send buf to be the iovecs */
@@ -250,12 +246,8 @@ size_t scamper_writebuf_len(const scamper_writebuf_t *wb)
   struct iovec *iov;
   size_t len = 0;
 
-  while(node != NULL)
-    {
-      iov = slist_node_item(node);
-      len += iov->iov_len;
-      node = slist_node_next(node);
-    }
+  while((iov = slist_node_iter(&node)) != NULL)
+    len += iov->iov_len;
 
   return len;
 }
@@ -265,21 +257,23 @@ size_t scamper_writebuf_len2(const scamper_writebuf_t *wb,char *str,size_t len)
   slist_node_t *node;
   struct iovec *iov;
   size_t k = 0, off = 0;
-  int c = 0;
+  uint32_t c = 0;
 
-  for(node=slist_head_node(wb->iovs); node != NULL; node=slist_node_next(node))
+  node = slist_head_node(wb->iovs);
+  while((iov = slist_node_iter(&node)) != NULL)
     {
-      iov = slist_node_item(node);
       k += iov->iov_len;
       c++;
     }
 
-  string_concaf(str, len, &off, "%d,%d%s", (int)k, c, (k != 0) ? ":" : "");
-  for(node=slist_head_node(wb->iovs); node != NULL; node=slist_node_next(node))
-    {
-      iov = slist_node_item(node);
-      string_concaf(str, len, &off, " %d", (int)iov->iov_len);
-    }
+  string_concat_u32(str, len, &off, NULL, (uint32_t)k);
+  string_concatc(str, len, &off, ',');
+  string_concat_u32(str, len, &off, NULL, c);
+  if(k != 0)
+    string_concatc(str, len, &off, ':');
+  node = slist_head_node(wb->iovs);
+  while((iov = slist_node_iter(&node)) != NULL)
+    string_concat_u32(str, len, &off, " ", (uint32_t)iov->iov_len);
 
   return k;
 }

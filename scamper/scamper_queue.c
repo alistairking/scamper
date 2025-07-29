@@ -1,11 +1,11 @@
 /*
  * scamper_queue.c
  *
- * $Id: scamper_queue.c,v 1.49 2024/12/15 07:08:14 mjl Exp $
+ * $Id: scamper_queue.c,v 1.51 2025/07/04 23:34:23 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
- * Copyright (C) 2015-2024 Matthew Luckie
+ * Copyright (C) 2015-2025 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -261,14 +261,6 @@ int scamper_queue_isprobe(scamper_queue_t *sq)
   return 0;
 }
 
-int scamper_queue_wait(scamper_queue_t *sq, int msec)
-{
-  queue_unlink(sq);
-  gettimeofday_wrap(&sq->timeout);
-  timeval_add_ms(&sq->timeout, &sq->timeout, msec);
-  return queue_link(sq, wait_queue);
-}
-
 int scamper_queue_iswait(scamper_queue_t *sq)
 {
   if(sq->queue == wait_queue)
@@ -283,11 +275,9 @@ int scamper_queue_wait_tv(scamper_queue_t *sq, const struct timeval *tv)
   return queue_link(sq, wait_queue);
 }
 
-int scamper_queue_done(scamper_queue_t *sq, int msec)
+int scamper_queue_done(scamper_queue_t *sq)
 {
   queue_unlink(sq);
-  gettimeofday_wrap(&sq->timeout);
-  timeval_add_ms(&sq->timeout, &sq->timeout, msec);
   return queue_link(sq, done_queue);
 }
 

@@ -1,7 +1,7 @@
 /*
- * unit_cmd_dealias : unit tests for dealias commands
+ * unit_addr : unit tests for scamper_addr
  *
- * $Id: unit_addr.c,v 1.4 2025/02/20 19:07:21 mjl Exp $
+ * $Id: unit_addr.c,v 1.8 2025/07/12 07:10:06 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -31,12 +31,19 @@
 #include "scamper_addr.h"
 #include "scamper_addr_int.h"
 
-typedef struct sc_test
+typedef struct sc_reserved
 {
   int type;
   const char *addr;
   int (*func)(scamper_addr_t *addr);
-} sc_test_t;
+} sc_reserved_t;
+
+typedef struct sc_cmp
+{
+  const char *a;
+  const char *b;
+  int         rc;
+} sc_cmp_t;
 
 scamper_addrcache_t *addrcache = NULL;
 
@@ -50,9 +57,9 @@ static int is_not_reserved(scamper_addr_t *addr)
   return (scamper_addr_isreserved(addr) == 0) ? 0 : -1;
 }
 
-int main(int argc, char *argv[])
+static int reserved_tests(void)
 {
-  sc_test_t tests[] = {
+  sc_reserved_t tests[] = {
     {SCAMPER_ADDR_TYPE_IPV6, "::", is_reserved},
     {SCAMPER_ADDR_TYPE_IPV6, "1000::", is_reserved},
     {SCAMPER_ADDR_TYPE_IPV6, "2000::", is_not_reserved},
@@ -70,32 +77,218 @@ int main(int argc, char *argv[])
     {SCAMPER_ADDR_TYPE_IPV6, "4000::", is_reserved},
   };
   scamper_addr_t *sa;
-  size_t i, testc = sizeof(tests) / sizeof(sc_test_t);
+  size_t i, testc = sizeof(tests) / sizeof(sc_reserved_t);
   int rc;
-
-  if((addrcache = scamper_addrcache_alloc()) == NULL)
-    return -1;
 
   for(i=0; i<testc; i++)
     {
       if((sa = scamper_addr_fromstr(tests[i].type, tests[i].addr)) == NULL)
 	{
-	  printf("resolve fail %ld: %s\n", i, tests[i].addr);
+	  printf("reserved resolve fail %ld: %s\n", i, tests[i].addr);
 	  break;
 	}
       rc = tests[i].func(sa);
       scamper_addr_free(sa);
       if(rc != 0)
 	{
-	  printf("unit fail %ld: %s\n", i, tests[i].addr);
+	  printf("reserved fail %ld: %s\n", i, tests[i].addr);
 	  break;
 	}
     }
 
-  scamper_addrcache_free(addrcache);
+  if(i != testc)
+    return -1;
+
+  return 0;
+}
+
+static int cmp_tests(int human)
+{
+  sc_cmp_t tests[] = {
+    {"192.0.2.1",                "192.0.2.4",                -1},
+    {"192.0.2.3",                "192.0.2.2",                 1},
+    {"192.0.2.8",                "192.0.2.8",                 0},
+    {"2001:db8::",               "2001::",                    1},
+    {"2001::",                   "2001:db8::",               -1},
+    {"2001:db8::",               "2001:db8::",                0},
+    {"192.0.2.1",                "2001:db8::",               -1},
+    {"2001:db8::",               "192.0.2.1",                 1},
+    {"2001:db8:face:feed::",     "2001:db8:feed:face::",     -1},
+    {"2001:db8:feed:face::",     "2001:db8:face:feed::",      1},
+    {"2001:db8:feed:feed::",     "2001:db8:feed:feed::",      0},
+    {"2001:db8:0:0:face:feed::", "2001:db8:0:0:feed:face::", -1},
+    {"2001:db8:0:0:feed:face::", "2001:db8:0:0:face:feed::",  1},
+    {"2001:db8:0:0:feed:feed::", "2001:db8:0:0:feed:feed::",  0},
+    {"2001:db8::face:feed",      "2001:db8::feed:face",      -1},
+    {"2001:db8::feed:face",      "2001:db8::face:feed",       1},
+    {"2001:db8::feed:feed",      "2001:db8::feed:feed",       0},
+  };
+  scamper_addr_t *sa, *sb;
+  size_t i, testc = sizeof(tests) / sizeof(sc_cmp_t);
+  int rc;
+
+  for(i=0; i<testc; i++)
+    {
+      if((sa = scamper_addr_fromstr_unspec(tests[i].a)) == NULL ||
+	 (sb = scamper_addr_fromstr_unspec(tests[i].b)) == NULL)
+	{
+	  printf("cmp resolve fail %ld\n", i);
+	  break;
+	}
+
+      if(human == 0)
+	rc = scamper_addr_cmp(sa, sb);
+      else
+	rc = scamper_addr_human_cmp(sa, sb);
+
+      scamper_addr_free(sa);
+      scamper_addr_free(sb);
+
+      if((human == 0 && ((tests[i].rc == 0 && rc != 0) ||
+			 (tests[i].rc != 0 && rc == 0))) ||
+	 (human == 1 && tests[i].rc != rc))
+	{
+	  printf("cmp human %d test %ld fail\n", human, i);
+	  break;
+	}
+    }
 
   if(i != testc)
     return -1;
+
+  return 0;
+}
+
+static int prefix_tests(void)
+{
+  sc_cmp_t tests[] = {
+    {"192.0.2.1",                "192.0.2.254",               24},
+    {"192.0.2.0",                "192.0.2.254",               24},
+    {"192.0.2.0",                "192.0.2.255",               24},
+    {"192.0.2.1",                "192.0.2.2",                 30},
+    {"192.0.2.1",                "192.0.2.0",                 31},
+    {"192.0.2.1",                "192.0.2.1",                 32},
+    {"2001:db8:8000::",          "2001:db8::",                32},
+    {"2001:db8:4000::",          "2001:db8::",                33},
+    {"2001:db8:2000::",          "2001:db8::",                34},
+    {"2001:db8:1000::",          "2001:db8::",                35},
+    {"2001:db8::1",              "2001:db8::2",               126},
+    {"2001:db8::0",              "2001:db8::1",               127},
+    {"0.0.0.0",                  "255.255.255.255",           0},
+  };
+  scamper_addr_t *sa, *sb;
+  size_t i, testc = sizeof(tests) / sizeof(sc_cmp_t);
+  int rc;
+
+  for(i=0; i<testc; i++)
+    {
+      rc = -2;
+      if((sa = scamper_addr_fromstr_unspec(tests[i].a)) == NULL ||
+	 (sb = scamper_addr_fromstr_unspec(tests[i].b)) == NULL ||
+	 (rc = scamper_addr_prefix(sa, sb)) != tests[i].rc)
+	{
+	  printf("prefix fail %ld %d\n", i, rc);
+	  break;
+	}
+
+      scamper_addr_free(sa);
+      scamper_addr_free(sb);
+    }
+
+  if(i != testc)
+    return -1;
+
+  return 0;
+}
+
+static int prefix_host_tests(void)
+{
+  sc_cmp_t tests[] = {
+    {"192.0.2.1",                "192.0.2.254",               24},
+    {"192.0.3.0",                "192.0.3.254",               23},
+    {"192.0.2.254",              "192.0.3.254",               23},
+    {"192.0.3.0",                "192.0.3.254",               23},
+    {"192.0.3.0",                "192.0.3.255",               21},
+    {"192.0.2.1",                "192.0.2.2",                 30},
+  };
+  scamper_addr_t *sa, *sb;
+  size_t i, testc = sizeof(tests) / sizeof(sc_cmp_t);
+  int rc;
+
+  for(i=0; i<testc; i++)
+    {
+      rc = -2;
+      if((sa = scamper_addr_fromstr_unspec(tests[i].a)) == NULL ||
+	 (sb = scamper_addr_fromstr_unspec(tests[i].b)) == NULL ||
+	 (rc = scamper_addr_prefixhosts(sa, sb)) != tests[i].rc)
+	{
+	  printf("prefix hosts fail %ld %d\n", i, rc);
+	  break;
+	}
+
+      scamper_addr_free(sa);
+      scamper_addr_free(sb);
+    }
+
+  if(i != testc)
+    return -1;
+
+  return 0;
+}
+
+static int fbd_tests(void)
+{
+  sc_cmp_t tests[] = {
+    {"192.0.2.1",                "192.0.2.254",               25},
+    {"192.0.2.0",                "192.0.2.254",               25},
+    {"192.0.2.0",                "192.0.2.255",               25},
+    {"192.0.2.1",                "192.0.2.2",                 31},
+    {"192.0.2.1",                "192.0.2.0",                 32},
+    {"192.0.2.1",                "192.0.2.1",                 32},
+    {"2001:db8:8000::",          "2001:db8::",                33},
+    {"2001:db8:4000::",          "2001:db8::",                34},
+    {"2001:db8:2000::",          "2001:db8::",                35},
+    {"2001:db8:1000::",          "2001:db8::",                36},
+    {"2001:db8::1",              "2001:db8::2",               127},
+    {"2001:db8::0",              "2001:db8::1",               128},
+    {"0.0.0.0",                  "255.255.255.255",           1},
+    {"192.0.2.1",                "192.0.2.1",                 32},
+  };
+  scamper_addr_t *sa, *sb;
+  size_t i, testc = sizeof(tests) / sizeof(sc_cmp_t);
+  int rc;
+
+  for(i=0; i<testc; i++)
+    {
+      rc = -2;
+      if((sa = scamper_addr_fromstr_unspec(tests[i].a)) == NULL ||
+	 (sb = scamper_addr_fromstr_unspec(tests[i].b)) == NULL ||
+	 (rc = scamper_addr_fbd(sa, sb)) != tests[i].rc)
+	{
+	  printf("fbd fail %ld %d\n", i, rc);
+	  break;
+	}
+
+      scamper_addr_free(sa);
+      scamper_addr_free(sb);
+    }
+
+  if(i != testc)
+    return -1;
+
+  return 0;
+}  
+
+int main(int argc, char *argv[])
+{
+  if((addrcache = scamper_addrcache_alloc()) == NULL)
+    return -1;
+
+  if(reserved_tests() != 0 || cmp_tests(0) != 0 || cmp_tests(1) != 0 ||
+     prefix_tests() != 0 || prefix_host_tests() != 0 || fbd_tests() != 0)
+    return -1;
+
+  scamper_addrcache_free(addrcache);
 
   printf("OK\n");
   return 0;

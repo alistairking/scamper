@@ -58,6 +58,10 @@ cdef extern from "scamper_trace.h":
  ctypedef struct scamper_trace_pmtud_noteiter_t:
   pass
 
+ cdef uint8_t  SCAMPER_TRACE_TYPE_ICMP_ECHO_PARIS
+ cdef uint32_t SCAMPER_TRACE_FLAG_RXERR
+ cdef uint8_t  SCAMPER_TRACE_REPLY_FLAG_REPLY_TTL
+
  char *scamper_trace_tojson(const scamper_trace_t *trace, size_t *l)
  char *scamper_trace_totext(const scamper_trace_t *trace, size_t *l)
 
