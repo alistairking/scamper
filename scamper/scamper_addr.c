@@ -1,12 +1,12 @@
 /*
  * scamper_addr.c
  *
- * $Id: scamper_addr.c,v 1.87 2025/02/20 00:27:29 mjl Exp $
+ * $Id: scamper_addr.c,v 1.90 2025/07/12 07:17:15 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2013-2014 The Regents of the University of California
- * Copyright (C) 2016-2024 Matthew Luckie
+ * Copyright (C) 2016-2025 Matthew Luckie
  * Copyright (C) 2025      The Regents of the University of California
  * Author: Matthew Luckie
  *
@@ -212,10 +212,7 @@ static int ipv4_cmp(const scamper_addr_t *sa, const scamper_addr_t *sb)
   a = (struct in_addr *)sa->addr;
   b = (struct in_addr *)sb->addr;
 
-  if(a->s_addr < b->s_addr) return -1;
-  if(a->s_addr > b->s_addr) return  1;
-
-  return 0;
+  return (a->s_addr > b->s_addr) - (a->s_addr < b->s_addr);
 }
 
 static int ipv4_human_cmp(const scamper_addr_t *sa, const scamper_addr_t *sb)
@@ -228,10 +225,7 @@ static int ipv4_human_cmp(const scamper_addr_t *sa, const scamper_addr_t *sb)
   a = ntohl(((struct in_addr *)sa->addr)->s_addr);
   b = ntohl(((struct in_addr *)sb->addr)->s_addr);
 
-  if(a < b) return -1;
-  if(a > b) return  1;
-
-  return 0;
+  return (a > b) - (a < b);
 }
 
 static void ipv4_tostr(const scamper_addr_t *addr, char *buf, const size_t len)
@@ -261,15 +255,24 @@ static int ipv4_prefix(const scamper_addr_t *sa, const scamper_addr_t *sb)
 {
   const struct in_addr *a = sa->addr;
   const struct in_addr *b = sb->addr;
-  int i;
+  uint32_t v, r;
 
-  for(i=32; i>0; i--)
-    {
-      if(((a->s_addr ^ b->s_addr) & htonl(uint32_netmask[i-1])) == 0)
-	break;
-    }
+  if((v = ntohl(a->s_addr ^ b->s_addr)) == 0)
+    return 32;
 
-  return i;
+#ifdef HAVE___BUILTIN_CLZ
+  r = __builtin_clz(v);
+#else
+  r = 0;
+  if(v & 0xFFFF0000) { v >>= 16; r += 16; }
+  if(v & 0xFF00)     { v >>= 8;  r += 8;  }
+  if(v & 0xF0)       { v >>= 4;  r += 4;  }
+  if(v & 0xC)        { v >>= 2;  r += 2;  }
+  if(v & 0x2)        {           r += 1;  }
+  r = 31 - r;
+#endif
+
+  return r;
 }
 
 static int ipv4_prefixhosts(const scamper_addr_t *sa, const scamper_addr_t *sb)
@@ -279,12 +282,7 @@ static int ipv4_prefixhosts(const scamper_addr_t *sa, const scamper_addr_t *sb)
   struct in_addr c;
   int i;
 
-  for(i=32; i>0; i--)
-    {
-      if(((a->s_addr ^ b->s_addr) & htonl(uint32_netmask[i-1])) == 0)
-	break;
-    }
-  if(i >= 31)
+  if((i = ipv4_prefix(sa, sb)) >= 31)
     return i;
 
   while(i>0)
@@ -412,8 +410,15 @@ static int ipv4_fbd(const scamper_addr_t *sa, const scamper_addr_t *sb)
 
 static int ipv6_cmp(const scamper_addr_t *sa, const scamper_addr_t *sb)
 {
+#if SIZEOF_LONG == 8
+  uint64_t *ap, *bp;
+#else
+  uint32_t *ap, *bp;
+  int c;
+#endif
+
   struct in6_addr *a, *b;
-  int i;
+  int upper, lower;
 
   assert(sa->type == SCAMPER_ADDR_TYPE_IPV6);
   assert(sb->type == SCAMPER_ADDR_TYPE_IPV6);
@@ -421,21 +426,34 @@ static int ipv6_cmp(const scamper_addr_t *sa, const scamper_addr_t *sb)
   a = (struct in6_addr *)sa->addr;
   b = (struct in6_addr *)sb->addr;
 
+#if SIZEOF_LONG == 8
 #ifndef _WIN32 /* windows does not have s6_addr32 for in6_addr */
-  for(i=0; i<4; i++)
-    {
-      if(a->s6_addr32[i] < b->s6_addr32[i]) return -1;
-      if(a->s6_addr32[i] > b->s6_addr32[i]) return  1;
-    }
+  ap = (uint64_t *)a->s6_addr32;
+  bp = (uint64_t *)b->s6_addr32;
 #else
-  for(i=0; i<8; i++)
-    {
-      if(a->u.Word[i] < b->u.Word[i]) return -1;
-      if(a->u.Word[i] > b->u.Word[i]) return  1;
-    }
+  ap = (uint64_t *)a->u.Word;
+  bp = (uint64_t *)b->u.Word;
 #endif
+  upper = (ap[0] > bp[0]) - (ap[0] < bp[0]);
+  lower = (ap[1] > bp[1]) - (ap[1] < bp[1]);
+#else /* SIZEOF_LONG != 8 */
+#ifndef _WIN32 /* windows does not have s6_addr32 for in6_addr */
+  ap = (uint32_t *)a->s6_addr32;
+  bp = (uint32_t *)b->s6_addr32;
+#else
+  ap = (uint32_t *)a->u.Word;
+  bp = (uint32_t *)b->u.Word;
+#endif
+  upper = (ap[0] > bp[0]) - (ap[0] < bp[0]);
+  lower = (ap[1] > bp[1]) - (ap[1] < bp[1]);
+  c = upper | (lower & -!upper);
+  if(c != 0)
+    return c;
+  upper = (ap[2] > bp[2]) - (ap[2] < bp[2]);
+  lower = (ap[3] > bp[3]) - (ap[3] < bp[3]);
+#endif /* SIZEOF_LONG == 8 */
 
-  return 0;
+  return upper | (lower & -!upper);
 }
 
 static int ipv6_human_cmp(const scamper_addr_t *sa, const scamper_addr_t *sb)
@@ -1309,32 +1327,13 @@ int scamper_addr_cmp(const scamper_addr_t *a, const scamper_addr_t *b)
   assert((size_t)b->type <= sizeof(handlers)/sizeof(struct handler));
 
   /*
-   * if the two address structures point to the same memory, then they are
-   * a match
-   */
-  if(a == b)
-    {
-      return 0;
-    }
-
-  /*
    * if the two address types are the same, then do a comparison on the
    * underlying addresses
    */
   if(a->type == b->type)
-    {
-      return handlers[a->type-1].cmp(a, b);
-    }
+    return handlers[a->type-1].cmp(a, b);
 
-  /* otherwise, return a code based on the difference between the types */
-  if(a->type < b->type)
-    {
-      return -1;
-    }
-  else
-    {
-      return 1;
-    }
+  return (a->type > b->type) - (a->type < b->type);
 }
 
 int scamper_addr_human_cmp(const scamper_addr_t *a, const scamper_addr_t *b)
@@ -1345,32 +1344,14 @@ int scamper_addr_human_cmp(const scamper_addr_t *a, const scamper_addr_t *b)
   assert((size_t)b->type <= sizeof(handlers)/sizeof(struct handler));
 
   /*
-   * if the two address structures point to the same memory, then they are
-   * a match
-   */
-  if(a == b)
-    {
-      return 0;
-    }
-
-  /*
    * if the two address types are the same, then do a comparison on the
    * underlying addresses
    */
   if(a->type == b->type)
-    {
-      return handlers[a->type-1].human_cmp(a, b);
-    }
+    return handlers[a->type-1].human_cmp(a, b);
 
   /* otherwise, return a code based on the difference between the types */
-  if(a->type < b->type)
-    {
-      return -1;
-    }
-  else
-    {
-      return 1;
-    }
+  return (a->type > b->type) - (a->type < b->type);
 }
 
 int scamper_addr_raw_cmp(const scamper_addr_t *a, const void *raw)

@@ -1,12 +1,12 @@
 /*
  * scamper_task.c
  *
- * $Id: scamper_task.c,v 1.108 2025/05/28 07:18:59 mjl Exp $
+ * $Id: scamper_task.c,v 1.112 2025/07/22 07:19:31 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2012-2015 The Regents of the University of California
- * Copyright (C) 2016-2024 Matthew Luckie
+ * Copyright (C) 2016-2025 Matthew Luckie
  * Copyright (C) 2024      The Regents of the University of California
  * Author: Matthew Luckie
  *
@@ -337,10 +337,9 @@ static void tx_ip_check(scamper_dl_rec_t *dl)
 	break;
       if((ta = patricia_find(pt, &fm)) != NULL)
 	{
-	  for(dn=dlist_head_node(ta->s2t_list); dn != NULL;
-	      dn=dlist_node_next(dn))
+	  dn = dlist_head_node(ta->s2t_list);
+	  while((s2t = dlist_node_iter(&dn)) != NULL)
 	    {
-	      s2t = dlist_node_item(dn);
 	      if(s2t->task == last_task)
 		continue;
 	      last_task = s2t->task;
@@ -422,14 +421,13 @@ static void sniff_check(scamper_dl_rec_t *dl)
     return;
   src.addr = dl->dl_ip_dst;
 
-  for(n = dlist_head_node(sniff); n != NULL; n = dlist_node_next(n))
+  n = dlist_head_node(sniff);
+  while((s2t = dlist_node_iter(&n)) != NULL)
     {
-      s2t = dlist_node_item(n); sig = s2t->sig;
-      if(sig->sig_sniff_icmp_id != id)
+      sig = s2t->sig;
+      if(sig->sig_sniff_icmp_id != id ||
+	 scamper_addr_cmp(sig->sig_sniff_src, &src) != 0)
 	continue;
-      if(scamper_addr_cmp(sig->sig_sniff_src, &src) != 0)
-	continue;
-
       if(s2t->task->funcs->handle_dl != NULL)
 	s2t->task->funcs->handle_dl(s2t->task, dl);
     }
@@ -650,18 +648,15 @@ static int trie_addr_sig_tx_ip_overlap(const scamper_task_sig_t *sig)
   if((ta = trie_addr_find(sig->sig_tx_ip_dst)) == NULL)
     return 0;
 
-  for(dn=dlist_head_node(ta->s2t_list); dn != NULL; dn=dlist_node_next(dn))
-    {
-      s2t = dlist_node_item(dn);
-      if(sig_tx_ip_overlap(sig, s2t->sig) != 0)
-	return 1;
-    }
-  for(dn=dlist_head_node(ta->s2x_list); dn != NULL; dn=dlist_node_next(dn))
-    {
-      s2x = dlist_node_item(dn);
-      if(sig_tx_ip_overlap(sig, s2x->sig) != 0)
-	return 1;
-    }
+  dn = dlist_head_node(ta->s2t_list);
+  while((s2t = dlist_node_iter(&dn)) != NULL)
+    if(sig_tx_ip_overlap(sig, s2t->sig) != 0)
+      return 1;
+
+  dn = dlist_head_node(ta->s2x_list);
+  while((s2x = dlist_node_iter(&dn)) != NULL)
+    if(sig_tx_ip_overlap(sig, s2x->sig) != 0)
+      return 1;
 
   return 0;
 }
@@ -719,14 +714,10 @@ scamper_task_t *scamper_task_find(scamper_task_sig_t *sig)
     {
       if((ta = trie_addr_find(sig->sig_tx_ip_dst)) == NULL)
 	return NULL;
-      for(dn=dlist_head_node(ta->s2t_list); dn != NULL; dn=dlist_node_next(dn))
-	{
-	  s2t = dlist_node_item(dn);
-	  if(sig_tx_ip_overlap(sig, s2t->sig) != 0)
-	    break;
-	}
-      if(dn == NULL)
-	s2t = NULL;
+      dn = dlist_head_node(ta->s2t_list);
+      while((s2t = dlist_node_iter(&dn)) != NULL)
+	if(sig_tx_ip_overlap(sig, s2t->sig) != 0)
+	  break;
     }
   else if(sig->sig_type == SCAMPER_TASK_SIG_TYPE_TX_ND)
     {
@@ -867,9 +858,10 @@ int scamper_task_sig_install(scamper_task_t *task)
   if(task->siglist == NULL)
     return 0;
 
-  for(n=slist_head_node(task->siglist); n != NULL; n = slist_node_next(n))
+  n = slist_head_node(task->siglist);
+  while((s2t = slist_node_iter(&n)) != NULL)
     {
-      s2t = slist_node_item(n); sig = s2t->sig;
+      sig = s2t->sig;
 
       /* check if another task has this signature already */
       if((tf = scamper_task_find(sig)) != NULL)
@@ -951,7 +943,6 @@ int scamper_task_sig_install(scamper_task_t *task)
  */
 scamper_task_t *scamper_task_sig_block(scamper_task_t *task)
 {
-  scamper_task_sig_t *sig;
   scamper_task_t *tf;
   slist_node_t *n;
   s2t_t *s2t;
@@ -960,12 +951,10 @@ scamper_task_t *scamper_task_sig_block(scamper_task_t *task)
   if(task->siglist == NULL)
     return NULL;
 
-  for(n=slist_head_node(task->siglist); n != NULL; n = slist_node_next(n))
-    {
-      s2t = slist_node_item(n); sig = s2t->sig;
-      if((tf = scamper_task_find(sig)) != NULL && tf != task)
-	return tf;
-    }
+  n = slist_head_node(task->siglist);
+  while((s2t = slist_node_iter(&n)) != NULL)
+    if((tf = scamper_task_find(s2t->sig)) != NULL && tf != task)
+      return tf;
 
   return NULL;
 }
@@ -1291,9 +1280,9 @@ void scamper_task_handleicmp(scamper_icmp_resp_t *resp)
   if((ta = trie_addr_find(&addr)) == NULL)
     return;
 
-  for(dn=dlist_head_node(ta->s2t_list); dn != NULL; dn=dlist_node_next(dn))
+  dn = dlist_head_node(ta->s2t_list);
+  while((s2t = dlist_node_iter(&dn)) != NULL)
     {
-      s2t = dlist_node_item(dn);
       if(s2t->task == last_task)
 	continue;
       last_task = s2t->task;
@@ -1344,9 +1333,9 @@ void scamper_task_handleudp(scamper_udp_resp_t *ur)
   if((ta = patricia_find(pt, &fm)) == NULL)
     return;
 
-  for(dn=dlist_head_node(ta->s2t_list); dn != NULL; dn=dlist_node_next(dn))
+  dn = dlist_head_node(ta->s2t_list);
+  while((s2t = dlist_node_iter(&dn)) != NULL)
     {
-      s2t = dlist_node_item(dn);
       if(s2t->task == last_task)
 	continue;
       last_task = s2t->task;
@@ -1375,19 +1364,14 @@ int scamper_task_queue_probe_head(scamper_task_t *task)
   return scamper_queue_probe_head(task->queue);
 }
 
-int scamper_task_queue_wait(scamper_task_t *task, int ms)
-{
-  return scamper_queue_wait(task->queue, ms);
-}
-
 int scamper_task_queue_wait_tv(scamper_task_t *task, struct timeval *tv)
 {
   return scamper_queue_wait_tv(task->queue, tv);
 }
 
-int scamper_task_queue_done(scamper_task_t *task, int ms)
+int scamper_task_queue_done(scamper_task_t *task)
 {
-  return scamper_queue_done(task->queue, ms);
+  return scamper_queue_done(task->queue);
 }
 
 int scamper_task_queue_isprobe(scamper_task_t *task)

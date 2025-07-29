@@ -52,6 +52,8 @@ cdef extern from "scamper_host.h":
  ctypedef struct scamper_host_rr_svcb_param_t:
   pass
 
+ cdef uint16_t SCAMPER_HOST_CLASS_IN
+
  char *scamper_host_tojson(const scamper_host_t *host, size_t *l)
 
  void scamper_host_free(scamper_host_t *host)

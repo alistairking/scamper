@@ -2,7 +2,7 @@
  * linked list routines
  * by Matthew Luckie
  *
- * Copyright (C) 2004-2024 Matthew Luckie. All rights reserved.
+ * Copyright (C) 2004-2025 Matthew Luckie. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -25,7 +25,7 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  *
- * $Id: mjl_list.h,v 1.47 2024/12/11 23:01:27 mjl Exp $
+ * $Id: mjl_list.h,v 1.49 2025/07/12 21:36:31 mjl Exp $
  *
  */
 
@@ -86,6 +86,9 @@ slist_node_t *slist_tail_push_dm(slist_t *list, void *item,
 /* concatenate second list onto tail of first */
 void slist_concat(slist_t *first, slist_t *second);
 
+/* copy items from slist into dlist */
+dlist_t *slist_to_dlist(slist_t *in, dlist_t *out);
+
 /* remove item at head of list, free node */
 void *slist_head_pop(slist_t *list);
 
@@ -106,6 +109,9 @@ slist_node_t *slist_tail_node(const slist_t *list);
 
 /* get the node after the provided node */
 slist_node_t *slist_node_next(const slist_node_t *node);
+
+/* return each item in the list, one at a time, beginning with this node */
+void *slist_node_iter(slist_node_t **node);
 
 /* iterate through the list, applying the function on each item */
 int slist_foreach(slist_t *list, const slist_foreach_t func, void *param);
@@ -171,6 +177,9 @@ dlist_node_t *dlist_tail_push_dm(dlist_t *list, void *item,
 /* concatenate second list onto tail of first */
 void dlist_concat(dlist_t *first, dlist_t *second);
 
+/* copy items from dlist into slist */
+slist_t *dlist_to_slist(dlist_t *in, slist_t *out);
+
 /* remove item at head of list, free node */
 void *dlist_head_pop(dlist_t *list);
 
@@ -200,6 +209,9 @@ dlist_node_t *dlist_node_next(const dlist_node_t *node);
 
 /* get the node previous to the provided node */
 dlist_node_t *dlist_node_prev(const dlist_node_t *node);
+
+/* return each item in the list, one at a time, beginning with this node */
+void *dlist_node_iter(dlist_node_t **node);
 
 /* remove the node from the list, do not free node */
 void dlist_node_eject(dlist_t *list, dlist_node_t *node);

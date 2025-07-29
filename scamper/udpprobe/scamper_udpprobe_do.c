@@ -1,7 +1,7 @@
 /*
  * scamper_udpprobe_do.c
  *
- * $Id: scamper_udpprobe_do.c,v 1.19 2025/04/28 20:44:24 mjl Exp $
+ * $Id: scamper_udpprobe_do.c,v 1.20 2025/07/04 23:34:23 mjl Exp $
  *
  * Copyright (C) 2023-2024 The Regents of the University of California
  *
@@ -110,7 +110,7 @@ static void udpprobe_stop(scamper_task_t *task, uint8_t reason)
     }
 
  done:
-  scamper_task_queue_done(task, 0);
+  scamper_task_queue_done(task);
   return;
 }
 
@@ -303,7 +303,7 @@ static void do_udpprobe_halt(scamper_task_t *task)
 {
   scamper_udpprobe_t *up = udpprobe_getdata(task);
   up->stop = SCAMPER_UDPPROBE_STOP_HALTED;
-  scamper_task_queue_done(task, 0);
+  scamper_task_queue_done(task);
   return;
 }
 

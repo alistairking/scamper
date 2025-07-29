@@ -10,7 +10,7 @@
  *
  * Authors: Brian Hammond, Matthew Luckie
  *
- * $Id: scamper_trace_json.c,v 1.50 2025/05/29 07:57:39 mjl Exp $
+ * $Id: scamper_trace_json.c,v 1.51 2025/07/15 06:14:18 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -298,8 +298,8 @@ static size_t pmtud_note_hopid(const scamper_trace_pmtud_t *pmtud,
   return 0;
 }
 
-static uint8_t pmtud_note_dist(const scamper_trace_t *trace, uint8_t start,
-			       const scamper_trace_pmtud_note_t *note)
+static int pmtud_note_dist(const scamper_trace_t *trace, uint8_t start,
+			   const scamper_trace_pmtud_note_t *note)
 {
   const scamper_trace_reply_t *hop, *trace_hop;
   uint16_t i, hop_count;
@@ -312,7 +312,7 @@ static uint8_t pmtud_note_dist(const scamper_trace_t *trace, uint8_t start,
     }
 
   if((hop = note->reply) == NULL)
-    return 0;
+    return -1;
 
   if(trace->stop_hop == 0 || trace->stop_hop > trace->hop_count)
     hop_count = trace->hop_count;
@@ -323,19 +323,21 @@ static uint8_t pmtud_note_dist(const scamper_trace_t *trace, uint8_t start,
    * if we observed the address in traceroute, then return the hop
    * where that address is observed
    */
+  if(start == 0)
+    start = 1;
   for(i = start-1; i < hop_count; i++)
     if((trace_hop = trace_reply_get(trace, i)) != NULL &&
        scamper_trace_reply_addr_cmp(trace_hop, hop) == 0)
       return i + 1;
 
   if(note->probe == NULL || note->probe->ttl <= hop->reply_icmp_q_ttl)
-    return 0;
+    return -1;
 
   /* kludge to figure out which hop to put the PTB on */
   i = note->probe->ttl - hop->reply_icmp_q_ttl;
 
   if(i >= hop_count)
-    return 0;
+    return -1;
 
   /*
    * shift the predicted hop back one if the alignment is
@@ -352,7 +354,7 @@ static uint8_t pmtud_note_dist(const scamper_trace_t *trace, uint8_t start,
 }
 
 static char *pmtud_note_tostr(const scamper_trace_pmtud_note_t *note,
-			      uint8_t dist, size_t hop_id)
+			      int dist, size_t hop_id)
 {
   char buf[256], tmp[256];
   size_t off = 0, len = sizeof(buf);
@@ -360,8 +362,8 @@ static char *pmtud_note_tostr(const scamper_trace_pmtud_note_t *note,
   string_concat_u16(buf, len, &off, "{\"nhmtu\":", note->nhmtu);
   if(hop_id > 0)
     string_concat_u32(buf, len, &off, ", \"hop_id\":", (uint32_t)(hop_id - 1));
-  if(dist > 0)
-    string_concat_u8(buf, len, &off, ", \"dist\":", dist);
+  if(dist >= 0)
+    string_concat_u8(buf, len, &off, ", \"dist\":", (uint8_t)dist);
   scamper_trace_pmtud_note_type_tostr(note, tmp, sizeof(tmp));
   string_concat3(buf, len, &off, ", \"type\":\"", tmp, "\"");
 
@@ -406,41 +408,43 @@ static char *pmtud_tostr(const scamper_trace_t *trace)
   size_t len, off, hops_hopc = 0, no_hopc = 0, h, nh, hop_id;
   char *str = NULL, hdr[256], **notes = NULL, **hops = NULL, **no_hops = NULL;
   uint16_t p, r;
-  uint8_t n, d, dist, notec, x;
+  uint8_t n, notec;
+  int d, dist;
   int rc = -1;
 
   len = pmtud_header_tostr(pmtud, hdr, sizeof(hdr)) + 2; /* }\0 */
 
-  notec = pmtud->notec; n = 0;
-  if(pmtud->outmtu != 0 && notec > 0)
+  notec = pmtud->notec;
+  if(notec > 0)
     {
-      if(pmtud->notec == 0 || pmtud->notes == NULL ||
-	 pmtud->notes[0] == NULL ||
-	 pmtud->notes[0]->type != SCAMPER_TRACE_PMTUD_NOTE_TYPE_SILENCE)
-	notec = 0;
-      else
-	n = 1;
-    }
+      /* the warts read code means that all of this should be true */
+      assert(pmtud->notes != NULL);
+      for(n=0; n<notec; n++)
+	assert(pmtud->notes[n] != NULL);
 
-  if(notec > n && pmtud->notes != NULL)
+      if(pmtud->outmtu != 0 &&
+	 (pmtud->notes[0]->type != SCAMPER_TRACE_PMTUD_NOTE_TYPE_SILENCE ||
+	  pmtud->notes[0]->reply != NULL))
+	notec = 0;
+    }
+  if(notec > 0)
     {
       len += 12; /* , "notes":[] */
       if((notes = malloc_zero(sizeof(char *) * notec)) == NULL)
 	goto cleanup;
-      x = 0; d = 1;
-      while(n < notec)
+      d = 0;
+      for(n=0; n<notec; n++)
 	{
-	  note = pmtud->notes[n++];
-	  if(x > 0)
+	  note = pmtud->notes[n];
+	  if(n > 0)
 	    len++; /* , */
 	  hop_id = pmtud_note_hopid(pmtud, note->reply);
 	  dist = pmtud_note_dist(trace, d, note);
-	  if((notes[x] = pmtud_note_tostr(note, dist, hop_id)) == NULL)
+	  if((notes[n] = pmtud_note_tostr(note, dist, hop_id)) == NULL)
 	    goto cleanup;
-	  if(dist > 0)
+	  if(dist > d)
 	    d = dist;
-	  len += strlen(notes[x]);
-	  x++;
+	  len += strlen(notes[n]);
 	}
     }
 

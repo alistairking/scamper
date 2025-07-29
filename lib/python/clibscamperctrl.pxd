@@ -42,6 +42,12 @@ cdef extern from "libscamperctrl.h":
  ctypedef struct scamper_vp_t:
   pass
 
+ cdef uint8_t SCAMPER_CTRL_TYPE_DATA
+ cdef uint8_t SCAMPER_CTRL_TYPE_MORE
+ cdef uint8_t SCAMPER_CTRL_TYPE_ERR
+ cdef uint8_t SCAMPER_CTRL_TYPE_EOF
+ cdef uint8_t SCAMPER_CTRL_TYPE_FATAL
+
  ctypedef void (*scamper_ctrl_cb_t)(scamper_inst_t *inst, uint8_t type,
 				    scamper_task_t *task,
 				    const void *data, size_t len)

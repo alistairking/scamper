@@ -521,7 +521,6 @@ static int do_addrfile(void)
   scamper_addr_t *sa = NULL;
   struct timeval next, gap;
   slist_t *list = NULL;
-  uint64_t gap64;
   int rc = -1;
 
   if((list = slist_alloc()) == NULL)
@@ -532,13 +531,17 @@ static int do_addrfile(void)
   assert(addrfile_name != NULL);
   if(file_lines(addrfile_name, addrfile_line, list) != 0)
     goto done;
+  if(slist_count(list) < 1)
+    {
+      fprintf(stderr, "empty address list\n");
+      goto done;
+    }
   if(shuffle != 0)
     slist_shuffle(list);
 
+  gap.tv_sec = interval; gap.tv_usec = 0;
+  timeval_div(&gap, &gap, slist_count(list));
   gettimeofday_wrap(&now);
-  gap64 = ((uint64_t)interval * 1000000) / slist_count(list);
-  gap.tv_sec = gap64 / 1000000;
-  gap.tv_usec = gap64 % 1000000;
   timeval_cpy(&next, &now);
 
   while((sa = slist_head_pop(list)) != NULL)

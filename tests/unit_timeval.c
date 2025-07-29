@@ -1,12 +1,12 @@
 /*
  * unit_timeval: unit tests for timeval_* functions in utils.c
  *
- * $Id: unit_timeval.c,v 1.3 2025/02/14 21:07:26 mjl Exp $
+ * $Id: unit_timeval.c,v 1.11 2025/07/11 23:19:00 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
  *
- * Copyright (C) 2023-2024 Matthew Luckie
+ * Copyright (C) 2023-2025 Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -65,7 +65,27 @@ typedef struct sc_cmp_test
   int         rc;
 } sc_cmp_test_t;
 
-int fromstr_tests(void)
+typedef struct sc_div_test
+{
+  time_t      in_sec;
+  suseconds_t in_usec;
+  time_t      out_sec;
+  suseconds_t out_usec;
+  uint32_t    d;
+} sc_div_test_t;
+
+typedef struct sc_inrange_test
+{
+  time_t      a_sec;
+  suseconds_t a_usec;
+  time_t      b_sec;
+  suseconds_t b_usec;
+  time_t      r_sec;
+  suseconds_t r_usec;
+  int         rc;
+} sc_inrange_test_t;
+
+static int fromstr_tests(void)
 {
   sc_fromstr_test_t tests[] = {
     {"10s",               1000000,  0,         10,      0},
@@ -129,13 +149,60 @@ int fromstr_tests(void)
   return 0;
 }
 
-int sub_tests(void)
+static int add_tests(void)
 {
   sc_math_test_t tests[] = {
-    {1708459200, 100000, 0, 900000, 1708459199, 200000},
-    {1708459200, 100000, 0,  50000, 1708459200,  50000},
-    {0,          100000, 0, 100000,          0,      0},
-    {1708459200, 100000, 0, 100000, 1708459200,      0},
+    {1708459200,  100000, 0, 900000, 1708459201, 0},
+    {1708459200,   10000, 0, 900000, 1708459200, 910000},
+    {1708459200,  500000, 0, 812241, 1708459201, 312241},
+    {1708459200, 1000000, 0, 999999, 1708459201, 999999},
+  };
+  size_t i, testc = sizeof(tests) / sizeof(sc_math_test_t);
+  struct timeval in, add, out;
+  for(i=0; i<testc; i++)
+    {
+      in.tv_sec   = tests[i].start_sec;
+      in.tv_usec  = tests[i].start_usec;
+      add.tv_sec  = tests[i].val_sec;
+      add.tv_usec = tests[i].val_usec;
+      timeval_add_tv(&in, &add);
+      if(in.tv_sec != tests[i].finish_sec ||
+	 in.tv_usec != tests[i].finish_usec)
+	{
+	  printf("add_tv fail %lu\n", i);
+	  return -1;
+	}
+
+      in.tv_sec   = tests[i].start_sec;
+      in.tv_usec  = tests[i].start_usec;
+      add.tv_sec  = tests[i].val_sec;
+      add.tv_usec = tests[i].val_usec;
+      timeval_add_tv3(&out, &in, &add);
+      if(out.tv_sec != tests[i].finish_sec ||
+	 out.tv_usec != tests[i].finish_usec)
+	{
+	  printf("add_tv3 fail %lu\n", i);
+	  return -1;
+	}
+    }
+
+  return 0;
+}
+
+static int sub_tests(void)
+{
+  sc_math_test_t tests[] = {
+    /* simple subtractions */
+    {1708459200,  100000, 0,  50000, 1708459200,  50000},
+    {1708459200,  100000, 0, 100000, 1708459200,      0},
+    {1708459200, 1000000, 0, 100000, 1708459200, 900000},
+    /* handle usec wrap */
+    {1708459200,  100000, 0,  900000, 1708459199, 200000},
+    {1708459200,  100000, 0,  999999, 1708459199, 100001},
+    /* subtracting with usec value of 1000000 */
+    {1708459200,  100000, 0, 1000000, 1708459199, 100000},
+    {1708459200,  100000, 1, 1000000, 1708459198, 100000},
+    {1708459200, 1000000, 1, 1000000, 1708459199, 0},
   };
   size_t i, testc = sizeof(tests) / sizeof(sc_math_test_t);
   struct timeval start, val, finish;
@@ -151,7 +218,19 @@ int sub_tests(void)
       timeval_sub_tv(&start, &val);
       if(timeval_cmp(&start, &finish) != 0)
 	{
-	  printf("sub fail %lu\n", i);
+	  printf("sub_tv fail %lu\n", i);
+	  return -1;
+	}
+
+      start.tv_sec = tests[i].start_sec;
+      start.tv_usec = tests[i].start_usec;
+      val.tv_sec = tests[i].val_sec;
+      val.tv_usec = tests[i].val_usec;
+      timeval_sub_tv3(&finish, &start, &val);
+      if(finish.tv_sec != tests[i].finish_sec ||
+	 finish.tv_usec != tests[i].finish_usec)
+	{
+	  printf("sub_tv3 fail %lu\n", i);
 	  return -1;
 	}
     }
@@ -159,10 +238,42 @@ int sub_tests(void)
   return 0;
 }
 
-int cmp_tests(void)
+static int diff_tests(void)
+{
+  sc_math_test_t tests[] = {
+    {1708459200,  100000, 1708459201,       0, 0, 900000},
+    {1708459200,   10000, 1708459200,  910000, 0, 900000},
+    {1708459200,  500000, 1708459201,  312241, 0, 812241},
+    {1708459200, 1000000, 1708459201,  999999, 0, 999999},
+    {1708459200, 1000000, 1708459201, 1000000, 1,      0},
+  };
+  size_t i, testc = sizeof(tests) / sizeof(sc_math_test_t);
+  struct timeval a, b, out;
+  for(i=0; i<testc; i++)
+    {
+      a.tv_sec  = tests[i].start_sec;
+      a.tv_usec = tests[i].start_usec;
+      b.tv_sec  = tests[i].val_sec;
+      b.tv_usec = tests[i].val_usec;
+      timeval_diff_tv(&out, &a, &b);
+      if(out.tv_sec != tests[i].finish_sec ||
+	 out.tv_usec != tests[i].finish_usec)
+	{
+	  printf("diff fail %lu\n", i);
+	  return -1;
+	}
+    }
+
+  return 0;
+}
+
+static int cmp_tests(void)
 {
   sc_cmp_test_t tests[] = {
-    {1708459200, 100000, 1708459201, 100000, -1},
+    {1708459200,  100000, 1708459201,  100000, -1},
+    {1708459200, 1000000, 1708459201,       0, -1},
+    {1708459201,       0, 1708459200, 1000000,  1},
+    {1708459201,       0, 1708459201,       0,  0},
   };
   size_t i, testc = sizeof(tests) / sizeof(sc_cmp_test_t);
   struct timeval a, b;
@@ -183,7 +294,7 @@ int cmp_tests(void)
   return 0;
 }
 
-int tostr_us_tests(void)
+static int tostr_us_tests(void)
 {
   sc_tostr_us_test_t tests[] = {
     {"123.456",  0, 123456},
@@ -214,12 +325,106 @@ int tostr_us_tests(void)
   return 0;
 }
 
+static int div_tests(void)
+{
+  sc_div_test_t tests[] = {
+    {10,    0,    2, 500000,        4},
+    {10000, 0, 2500,      0,        4},
+    {10,    0,    0, 100000,      100},
+    {10,    0,    0,      1, 10000000},
+    {10,    0,    0,      0, 10000001},
+    {43200, 0,    0, 183525,   235390},
+  };
+  size_t i, testc = sizeof(tests) / sizeof(sc_div_test_t);
+  struct timeval in, out;
+
+  for(i=0; i<testc; i++)
+    {
+      in.tv_sec = tests[i].in_sec;
+      in.tv_usec = tests[i].in_usec;
+      timeval_div(&out, &in, tests[i].d);
+      if(out.tv_sec != tests[i].out_sec || out.tv_usec != tests[i].out_usec)
+	{
+	  printf("div fail %lu %ld.%06d\n", i,
+		 (long int)out.tv_sec, (int)out.tv_usec);
+	  return -1;
+	}
+    }
+
+  return 0;
+}
+
+static int mul_tests(void)
+{
+  sc_div_test_t tests[] = {
+    {2,    500000, 10,        0,        4},
+    {2500,      0, 10000,     0,        4},
+    {0,    100000, 10,        0,      100},
+    {0,         1, 10,        0, 10000000},
+    {5000,      0, 500000000, 0,   100000},
+  };
+  size_t i, testc = sizeof(tests) / sizeof(sc_div_test_t);
+  struct timeval in, out;
+
+  for(i=0; i<testc; i++)
+    {
+      in.tv_sec = tests[i].in_sec;
+      in.tv_usec = tests[i].in_usec;
+      timeval_mul(&out, &in, tests[i].d);
+      if(out.tv_sec != tests[i].out_sec || out.tv_usec != tests[i].out_usec)
+	{
+	  printf("mul fail %lu %ld.%06d\n",
+		 i, (long int)out.tv_sec, (int)out.tv_usec);
+	  return -1;
+	}
+    }
+
+  return 0;
+}
+
+static int inrange_tests(void)
+{
+  sc_inrange_test_t tests[] = {
+    {1, 500000, 1, 500000, 0, 250000, 1},
+    {1, 500000, 1, 475000, 0,  25000, 1},
+    {1, 500000, 1, 474000, 0,  25000, 0},
+    {1, 500000, 1, 474999, 0,  25000, 0},
+    {1, 500000, 1, 499999, 0,      1, 1},
+  };
+  size_t i, testc = sizeof(tests) / sizeof(sc_inrange_test_t);
+  struct timeval a, b, r;
+
+  for(i=0; i<testc; i++)
+    {
+      r.tv_sec  = tests[i].r_sec;
+      r.tv_usec = tests[i].r_usec;
+      a.tv_sec  = tests[i].a_sec;
+      a.tv_usec = tests[i].a_usec;
+      b.tv_sec  = tests[i].b_sec;
+      b.tv_usec = tests[i].b_usec;
+
+      if(timeval_inrange_tv(&a, &b, &r) != tests[i].rc)
+	{
+	  printf("inrange fail %lu #1\n", i);
+	  return -1;
+	}
+
+      if(timeval_inrange_tv(&b, &a, &r) != tests[i].rc)
+	{
+	  printf("inrange fail %lu #2\n", i);
+	  return -1;
+	}
+    }
+
+  return 0;
+}
+
 int main(int argc, char *argv[])
 {
-  if(fromstr_tests() != 0 ||
-     sub_tests() != 0 ||
-     cmp_tests() != 0 ||
-     tostr_us_tests() != 0)
+  if(fromstr_tests() != 0 || tostr_us_tests() != 0 ||
+     add_tests() != 0 || sub_tests() != 0 || diff_tests() != 0 ||
+     cmp_tests() != 0 || div_tests() != 0 || mul_tests() != 0 ||
+     inrange_tests() != 0)
     return -1;
 
   printf("OK\n");

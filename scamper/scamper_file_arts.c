@@ -1,7 +1,7 @@
 /*
  * scamper_file_arts.c
  *
- * $Id: scamper_file_arts.c,v 1.82 2025/05/04 03:02:09 mjl Exp $
+ * $Id: scamper_file_arts.c,v 1.84 2025/07/21 05:31:22 mjl Exp $
  *
  * code to read the legacy arts data file format into scamper_hop structures.
  *
@@ -42,6 +42,7 @@
 
 #include "mjl_splaytree.h"
 #include "mjl_list.h"
+#include "mjl_splaytree_to_list.h"
 
 #include "utils.h"
 
@@ -73,13 +74,6 @@ typedef struct arts_header
 #define ARTS_STOP_ICMPUNREACH 0x01
 #define ARTS_STOP_LOOP        0x02
 #define ARTS_STOP_GAPLIMIT    0x03
-
-static int tree_to_slist(void *ptr, void *entry)
-{
-  if(slist_tail_push((slist_t *)ptr, entry) != NULL)
-    return 0;
-  return -1;
-}
 
 /*
  * arts_read_hdr:
@@ -517,10 +511,8 @@ static scamper_trace_t *arts_read_trace(const scamper_file_t *sf,
    * unreachable was received, then associate the type/code with the last
    * structure read.
    */
-  if((probe_list = slist_alloc()) == NULL)
+  if((probe_list = splaytree_to_slist(probe_tree, NULL)) == NULL)
     goto err;
-  splaytree_inorder(probe_tree,
-		    (splaytree_inorder_t)tree_to_slist, probe_list);
   splaytree_free(probe_tree, NULL); probe_tree = NULL;
   if((probe = slist_tail_item(probe_list)) != NULL)
     {
@@ -597,6 +589,10 @@ static scamper_trace_t *arts_read_trace(const scamper_file_t *sf,
 		      sizeof(scamper_trace_probe_t *) * (pttl->probec - 1));
 	      pttl->probes[0] = probe;
 	    }
+	}
+      else
+	{
+	  probe = pttl->probes[0];
 	}
 
       /*

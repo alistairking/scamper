@@ -1,4 +1,4 @@
-# $Id: Makefile.am,v 1.63 2025/06/29 21:52:12 mjl Exp $
+# $Id: Makefile.am,v 1.64 2025/07/21 05:31:22 mjl Exp $
 
 AUTOMAKE_OPTIONS = subdir-objects
 
@@ -82,6 +82,7 @@ libscamperfiletest_la_LIBADD = @ZLIB_LIBS@ @LIBBZ2_LIBS@ @LIBLZMA_LIBS@ \
 libscamperfiletest_la_SOURCES = \
 	../mjl_splaytree.c \
 	../mjl_list.c \
+	../mjl_splaytree_to_list.c \
 	../utils.c \
 	../scamper/scamper_file.c \
 	../scamper/scamper_file_arts.c \

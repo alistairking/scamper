@@ -48,6 +48,10 @@ cdef extern from "scamper_ping.h":
  ctypedef struct scamper_ping_stats_t:
   pass
 
+ cdef uint32_t SCAMPER_PING_REPLY_FLAG_REPLY_TTL
+ cdef uint32_t SCAMPER_PING_REPLY_FLAG_REPLY_IPID
+ cdef uint32_t SCAMPER_PING_REPLY_FLAG_PROBE_IPID
+
  char *scamper_ping_tojson(const scamper_ping_t *ping, size_t *l)
  char *scamper_ping_totext(const scamper_ping_t *ping, size_t *l)
 

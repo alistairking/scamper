@@ -29,7 +29,7 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  *
- * $Id: mjl_splaytree.h,v 1.20 2025/06/27 10:43:20 mjl Exp $
+ * $Id: mjl_splaytree.h,v 1.21 2025/07/03 08:59:47 mjl Exp $
  *
  */
 
@@ -105,6 +105,6 @@ void splaytree_display(splaytree_t *tree, splaytree_display_t disp);
 
 int splaytree_count(const splaytree_t *tree);
 
-void splaytree_inorder(splaytree_t *tree, splaytree_inorder_t func, void *in);
+int splaytree_inorder(splaytree_t *tree, splaytree_inorder_t func, void *in);
 
 #endif /* __MJL_SPLAYTREE_H */

@@ -1,7 +1,7 @@
 /*
  * unit_string: unit tests for string_* functions in utils.c
  *
- * $Id: unit_string.c,v 1.11 2025/02/15 09:20:37 mjl Exp $
+ * $Id: unit_string.c,v 1.13 2025/07/04 19:26:21 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -72,6 +72,14 @@ typedef struct sc_concatc_test
   size_t      off_in;
   size_t      off_out;
 } sc_concatc_test_t;
+
+typedef struct sc_nullterm_test
+{
+  const char *str;
+  const char *delims;
+  size_t      rc;
+  ssize_t     next;
+} sc_nullterm_test_t;
 
 static int byte2hex_tests(void)
 {
@@ -349,12 +357,87 @@ static int concat_c_tests(void)
   return 0;
 }
 
+static int nullterm_tests(void)
+{
+  sc_nullterm_test_t tests[] = {
+    {"foo",         " \t\r#", 3, -1},
+    {"foo#",        " \t\r#", 3,  4},
+    {"foo bar",     " \t\r#", 3,  4},
+    {"foo bar",     "",       7, -1},
+    {"",            "",       0, -1},
+    {"# comment",   " \t\r#", 0,  1},
+  };
+  size_t rc, i, testc = sizeof(tests) / sizeof(sc_nullterm_test_t);
+  char buf[12];
+
+  for(i=0; i<testc; i++)
+    {
+      snprintf(buf, sizeof(buf), "%s", tests[i].str);
+      rc = string_nullterm(buf, tests[i].delims);
+      if(rc != tests[i].rc)
+	{
+	  printf("nullterm %d %d != %d\n", (int)i, (int)rc, (int)tests[i].rc);
+	  return -1;
+	}
+      if(buf[rc] != '\0')
+	{
+	  printf("nullterm %d not nulled\n", (int)i);
+	  return -1;
+	}
+    }
+
+  return 0;
+}
+
+static int nullterm_char_tests(void)
+{
+  sc_nullterm_test_t tests[] = {
+    {"foo",         " ", 3, -1},
+    {"foo#",        "#", 3,  4},
+    {"foo bar",     " ", 3,  4},
+    {"foo:bar",     ":", 3,  4},
+    {"",            " ", 0, -1},
+    {"# comment",   "#", 0,  1},
+  };
+  size_t rc, i, testc = sizeof(tests) / sizeof(sc_nullterm_test_t);
+  char buf[12], *ptr;
+
+  for(i=0; i<testc; i++)
+    {
+      snprintf(buf, sizeof(buf), "%s", tests[i].str);
+      rc = string_nullterm_char(buf, tests[i].delims[0], &ptr);
+      if(rc != tests[i].rc)
+	{
+	  printf("nullterm %d %d != %d\n", (int)i, (int)rc, (int)tests[i].rc);
+	  return -1;
+	}
+      if(tests[i].next == -1 && ptr != NULL)
+	{
+	  printf("nullterm %d ptr != NULL\n", (int)i);
+	  return -1;
+	}
+      if(tests[i].next >= 0 && (ptr == NULL || ptr - buf != tests[i].next))
+	{
+	  printf("nullterm %d ptr does not have expected offset\n", (int)i);
+	  return -1;
+	}
+      if(buf[rc] != '\0')
+	{
+	  printf("nullterm %d not nulled\n", (int)i);
+	  return -1;
+	}
+    }
+
+  return 0;
+}
+
 int main(int argc, char *argv[])
 {
   if(byte2hex_tests() != 0 || jsonesc_tests() != 0 ||
      concat_tests() != 0 || concat_u8_tests() != 0 ||
      concat_u16_tests() != 0 || concat_u32_tests() != 0 ||
-     concat_c_tests() != 0)
+     concat_c_tests() != 0 ||
+     nullterm_tests() != 0 || nullterm_char_tests() != 0)
     return -1;
 
   printf("OK\n");

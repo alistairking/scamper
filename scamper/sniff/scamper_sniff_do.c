@@ -1,10 +1,10 @@
 /*
  * scamper_sniff_do.c
  *
- * $Id: scamper_sniff_do.c,v 1.29 2025/04/27 00:49:24 mjl Exp $
+ * $Id: scamper_sniff_do.c,v 1.30 2025/07/04 23:34:23 mjl Exp $
  *
  * Copyright (C) 2011      The University of Waikato
- * Copyright (C) 2022-2023 Matthew Luckie
+ * Copyright (C) 2022-2025 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -81,7 +81,7 @@ static void sniff_finish(scamper_task_t *task, int reason)
       if(scamper_sniff_pkts_alloc(sniff, rc) != 0)
 	{
 	  sniff->stop_reason = SCAMPER_SNIFF_STOP_ERROR;
-	  scamper_task_queue_done(task, 0);
+	  scamper_task_queue_done(task);
 	  return;
 	}
 
@@ -91,7 +91,7 @@ static void sniff_finish(scamper_task_t *task, int reason)
     }
 
   sniff->stop_reason = reason;
-  scamper_task_queue_done(task, 0);
+  scamper_task_queue_done(task);
   return;
 }
 

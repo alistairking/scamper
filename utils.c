@@ -1,7 +1,7 @@
 /*
  * utils.c
  *
- * $Id: utils.c,v 1.264 2025/04/27 03:05:24 mjl Exp $
+ * $Id: utils.c,v 1.276 2025/07/23 07:16:44 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -365,18 +365,14 @@ int unix_bind_listen(const char *filename, int backlog)
 
 int addr4_cmp(const struct in_addr *a, const struct in_addr *b)
 {
-  if(a->s_addr < b->s_addr) return -1;
-  if(a->s_addr > b->s_addr) return  1;
-  return 0;
+  return (a->s_addr > b->s_addr) - (a->s_addr < b->s_addr);
 }
 
 int addr4_human_cmp(const struct in_addr *a, const struct in_addr *b)
 {
   uint32_t ua = ntohl(a->s_addr);
   uint32_t ub = ntohl(b->s_addr);
-  if(ua < ub) return -1;
-  if(ua > ub) return  1;
-  return 0;
+  return (ua > ub) - (ua < ub);
 }
 
 int addr6_cmp(const struct in6_addr *a, const struct in6_addr *b)
@@ -386,7 +382,7 @@ int addr6_cmp(const struct in6_addr *a, const struct in6_addr *b)
 
 int addr6_human_cmp(const struct in6_addr *a, const struct in6_addr *b)
 {
-  int i;
+  int i, c;
 
 #ifndef _WIN32 /* windows does not have s6_addr32 for in6_addr */
   uint32_t ua, ub;
@@ -394,8 +390,9 @@ int addr6_human_cmp(const struct in6_addr *a, const struct in6_addr *b)
     {
       ua = ntohl(a->s6_addr32[i]);
       ub = ntohl(b->s6_addr32[i]);
-      if(ua < ub) return -1;
-      if(ua > ub) return  1;
+      c = (ua > ub) - (ua < ub);
+      if(c != 0)
+	return c;
     }
 #else
   uint16_t ua, ub;
@@ -403,8 +400,9 @@ int addr6_human_cmp(const struct in6_addr *a, const struct in6_addr *b)
     {
       ua = ntohs(a->u.Word[i]);
       ub = ntohs(b->u.Word[i]);
-      if(ua < ub) return -1;
-      if(ua > ub) return  1;
+      c = (ua > ub) - (ua < ub);
+      if(c != 0)
+	return c;
     }
 #endif
 
@@ -854,13 +852,10 @@ void gettimeofday_wrap(struct timeval *tv)
 
 int timeval_cmp(const struct timeval *a, const struct timeval *b)
 {
-  if(a->tv_sec  < b->tv_sec)  return -1;
-  if(a->tv_sec  > b->tv_sec)  return  1;
-
-  if(a->tv_usec < b->tv_usec) return -1;
-  if(a->tv_usec > b->tv_usec) return  1;
-
-  return 0;
+  int s, us;
+  s  = (a->tv_sec > b->tv_sec)   - (a->tv_sec < b->tv_sec);
+  us = (a->tv_usec > b->tv_usec) - (a->tv_usec < b->tv_usec);
+  return s | (us & -!s);
 }
 
 int timeval_cmp_lt(const struct timeval *tv, time_t s, suseconds_t us)
@@ -877,69 +872,24 @@ int timeval_cmp_gt(const struct timeval *tv, time_t s, suseconds_t us)
   return 0;
 }
 
-static void timeval_handlewrap(struct timeval *tv)
-{
-  if(tv->tv_usec >= 1000000)
-    {
-      tv->tv_sec++;
-      tv->tv_usec -= 1000000;
-    }
-  else if(tv->tv_usec < 0)
-    {
-      tv->tv_sec--;
-      tv->tv_usec += 1000000;
-    }
-  return;
-}
-
-void timeval_add_ms(struct timeval *out, const struct timeval *in, int msec)
-{
-  out->tv_sec  = in->tv_sec  + (msec / 1000);
-  out->tv_usec = in->tv_usec + ((msec % 1000) * 1000);
-  timeval_handlewrap(out);
-  return;
-}
-
-void timeval_add_us(struct timeval *out, const struct timeval *in, int us)
+void timeval_add_us(struct timeval *out, const struct timeval *in, uint32_t us)
 {
   out->tv_sec  = in->tv_sec  + (us / 1000000);
   out->tv_usec = in->tv_usec + (us % 1000000);
-  timeval_handlewrap(out);
+
+  /* check for overflow */
+  if(out->tv_usec >= 1000000)
+    {
+      out->tv_sec++;
+      out->tv_usec -= 1000000;
+    }
   return;
 }
 
-void timeval_add_s(struct timeval *out, const struct timeval *in, int s)
+void timeval_add_s(struct timeval *out, const struct timeval *in, time_t s)
 {
   out->tv_sec  = in->tv_sec + s;
   out->tv_usec = in->tv_usec;
-  return;
-}
-
-void timeval_sub_us(struct timeval *out, const struct timeval *in, int us)
-{
-  out->tv_sec  = in->tv_sec  - (us / 1000000);
-  out->tv_usec = in->tv_usec - (us % 1000000);
-  timeval_handlewrap(out);
-  return;
-}
-
-void timeval_sub_tv(struct timeval *tv, const struct timeval *sub)
-{
-  assert(sub->tv_sec >= 0);
-  assert(sub->tv_usec >= 0); assert(sub->tv_usec < 1000000);
-  assert(timeval_cmp(tv, sub) >= 0);
-
-  tv->tv_sec -= sub->tv_sec;
-  if(tv->tv_usec < sub->tv_usec)
-    {
-      tv->tv_sec--;
-      tv->tv_usec += (1000000 - sub->tv_usec);
-    }
-  else
-    {
-      tv->tv_usec -= sub->tv_usec;
-    }
-
   return;
 }
 
@@ -952,7 +902,7 @@ void timeval_add_tv(struct timeval *tv, const struct timeval *add)
   tv->tv_usec += add->tv_usec;
 
   /* check for overflow */
-  if(tv->tv_usec > 1000000)
+  if(tv->tv_usec >= 1000000)
     {
       tv->tv_sec++;
       tv->tv_usec -= 1000000;
@@ -969,7 +919,8 @@ void timeval_add_tv3(struct timeval *out,
 
   out->tv_sec = in->tv_sec + add->tv_sec;
   out->tv_usec = in->tv_usec + add->tv_usec;
-  if(out->tv_usec > 1000000)
+
+  if(out->tv_usec >= 1000000)
     {
       out->tv_sec++;
       out->tv_usec -= 1000000;
@@ -993,26 +944,66 @@ void timeval_diff_tv(struct timeval *out,
   return;
 }
 
-/*
- * timeval_diff_ms
- * return the millisecond difference between the two timevals.
- */
-int timeval_diff_ms(const struct timeval *from, const struct timeval *to)
+void timeval_sub_tv(struct timeval *tv, const struct timeval *sub)
 {
-  struct timeval tv;
-  timeval_diff_tv(&tv, from, to);
-  return ((int)tv.tv_sec * 1000) + ((int)tv.tv_usec / 1000);
+  timeval_diff_tv(tv, sub, tv);
+  return;
 }
 
-/*
- * timeval_diff_us
- * return the microsecond difference between the two timevals.
- */
-int timeval_diff_us(const struct timeval *from, const struct timeval *to)
+void timeval_sub_tv3(struct timeval *out, const struct timeval *in,
+		     const struct timeval *sub)
 {
-  struct timeval tv;
-  timeval_diff_tv(&tv, from, to);
-  return ((int)tv.tv_sec * 1000000) + tv.tv_usec;
+  timeval_diff_tv(out, sub, in);
+  return;
+}
+
+void timeval_div(struct timeval *out, const struct timeval *in, uint32_t d)
+{
+#if SIZEOF_LONG != 8
+  uint32_t u32;
+#endif
+  uint64_t u64;
+
+  /* do not allow divide by zero */
+  assert(d != 0);
+
+  /* validate input timeval */
+  assert(in->tv_sec >= 0);
+  assert(in->tv_usec >= 0);
+  assert(in->tv_usec < 1000000);
+
+#if SIZEOF_LONG != 8
+  /* 4,294,967,295 */
+  if(in->tv_sec < 4294)
+    {
+      u32 = ((in->tv_sec * 1000000) + in->tv_usec) / d;
+      out->tv_sec  = u32 / 1000000;
+      out->tv_usec = u32 % 1000000;
+      return;
+    }
+#endif
+
+  u64 = ((in->tv_sec * 1000000) + in->tv_usec) / d;
+  out->tv_sec  = u64 / 1000000;
+  out->tv_usec = u64 % 1000000;
+
+  return;
+}
+
+void timeval_mul(struct timeval *out, const struct timeval *in, uint32_t m)
+{
+  uint64_t u64;
+
+  /* validate input timeval */
+  assert(in->tv_sec >= 0);
+  assert(in->tv_usec >= 0);
+  assert(in->tv_usec < 1000000);
+
+  u64 = ((in->tv_sec * 1000000) + in->tv_usec) * m;
+  out->tv_sec  = u64 / 1000000;
+  out->tv_usec = u64 % 1000000;
+
+  return;
 }
 
 void timeval_cpy(struct timeval *dst, const struct timeval *src)
@@ -1021,23 +1012,22 @@ void timeval_cpy(struct timeval *dst, const struct timeval *src)
   return;
 }
 
-int timeval_inrange_us(const struct timeval *a, const struct timeval *b, int c)
+int timeval_inrange_tv(const struct timeval *a, const struct timeval *b,
+		       const struct timeval *range)
 {
   struct timeval tv;
   int rc = timeval_cmp(a, b);
+
   if(rc < 0)
-    {
-      timeval_add_us(&tv, a, c);
-      if(timeval_cmp(&tv, b) < 0)
-	return 0;
-    }
+    timeval_diff_tv(&tv, a, b);
   else if(rc > 0)
-    {
-      timeval_add_us(&tv, b, c);
-      if(timeval_cmp(&tv, a) < 0)
-	return 0;
-    }
-  return 1;
+    timeval_diff_tv(&tv, b, a);
+  else return 1;
+
+  if(timeval_cmp(&tv, range) <= 0)
+    return 1;
+
+  return 0;
 }
 
 char *timeval_tostr_us(const struct timeval *rtt, char *str, size_t len)
@@ -1642,69 +1632,51 @@ const char *string_findlc(const char *str, const char *find)
  * if null termination occurs, this function returns a pointer to the first
  * byte of the buf (i.e. the buf parameter passed)
  */
-char *string_nullterm(char *buf, const char *delim, char **next)
+size_t string_nullterm(char *buf, const char *delim)
 {
-  const char *dtmp;
-  char *tmp;
+  const char *d;
+  size_t off = 0;
 
-  if(delim == NULL || *delim == '\0' || (tmp = buf) == NULL)
-    return NULL;
-
-  while(*tmp != '\0')
+  while(buf[off] != '\0')
     {
-      dtmp = delim;
+      d = delim;
 
-      while(*dtmp != '\0')
+      while(*d != '\0')
 	{
-	  if(*tmp != *dtmp)
+	  if(buf[off] != *d)
 	    {
-	      dtmp++;
+	      d++;
 	      continue;
 	    }
 
-	  *tmp = '\0';
-	  if(next != NULL)
-	    {
-	      tmp++;
-	      *next = tmp;
-	    }
-	  return buf;
+	  buf[off] = '\0';
+	  return off;
 	}
 
-      tmp++;
+      off++;
     }
 
-  if(next != NULL)
-    *next = NULL;
-  return buf;
+  return off;
 }
 
-char *string_nullterm_char(char *buf, char delim, char **next)
+size_t string_nullterm_char(char *buf, char delim, char **next)
 {
-  char *tmp;
+  size_t off = 0;
 
-  if((tmp = buf) == NULL)
-    return NULL;
-
-  while(*tmp != '\0')
+  while(buf[off] != '\0')
     {
-      if(*tmp == delim)
+      if(buf[off] == delim)
 	{
-	  *tmp = '\0';
-	  if(next != NULL)
-	    {
-	      tmp++;
-	      *next = tmp;
-	    }
-	  return buf;
+	  buf[off] = '\0';
+	  *next = buf + off + 1;
+	  return off;
 	}
 
-      tmp++;
+      off++;
     }
 
-  if(next != NULL)
-    *next = NULL;
-  return buf;
+  *next = NULL;
+  return off;
 }
 
 char *string_lastof(char *str, const char *delim)

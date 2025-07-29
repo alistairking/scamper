@@ -988,15 +988,16 @@ void splaytree_display(splaytree_t *tree, splaytree_display_t disp)
 /*
  * splaytree_inorder
  *
- * call a user-provided function on all items in the splay tree in order
+ * call a user-provided function on all items in the splay tree in order.
+ * returns zero on success, -1 on error.
  */
-void splaytree_inorder(splaytree_t *tree, splaytree_inorder_t func, void *in)
+int splaytree_inorder(splaytree_t *tree, splaytree_inorder_t func, void *in)
 {
   splaytree_stack_t *stack = NULL;
   splaytree_node_t *tn;
 
   if(tree == NULL || func == NULL)
-    return;
+    return -1;
 
   tn = tree->head;
 
@@ -1004,18 +1005,24 @@ void splaytree_inorder(splaytree_t *tree, splaytree_inorder_t func, void *in)
     {
       if(tn != NULL)
 	{
-	  stack_push(&stack, tn);
+	  if(stack_push(&stack, tn) != 0)
+	    goto err;
 	  tn = tn->left;
 	}
       else if((tn = stack_pop(&stack)) != NULL)
 	{
-	  func(in, tn->item);
+	  if(func(in, tn->item) != 0)
+	    goto err;
 	  tn = tn->right;
 	}
       else break;
     }
 
-  return;
+  return 0;
+
+ err:
+  if(stack != NULL) stack_free(stack);
+  return -1;
 }
 
 /*
