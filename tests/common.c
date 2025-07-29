@@ -1,7 +1,7 @@
 /*
  * common.c: common functions that we might need for linking unit tests
  *
- * $Id: common.c,v 1.9 2025/05/02 04:39:00 mjl Exp $
+ * $Id: common.c,v 1.10 2025/06/24 06:05:47 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -74,7 +74,7 @@ int dump_string(const char *str, const char *filename)
     }
 
   len = strlen(str);
-  if(write_wrap(fd, str, &wc, len) != 0 || wc != len)
+  if(len > 0 && (write_wrap(fd, str, &wc, len) != 0 || wc != len))
     {
       fprintf(stderr, "%s: could not write %s: %s\n",
 	      __func__, filename, strerror(errno));

@@ -12,7 +12,8 @@ bin_PROGRAMS = sc_pinger
 sc_pinger_SOURCES = \
 	sc_pinger.c \
 	$(top_srcdir)/utils.c \
-	$(top_srcdir)/mjl_list.c
+	$(top_srcdir)/mjl_list.c \
+	$(top_srcdir)/mjl_splaytree.c
 
 sc_pinger_LDADD = \
 	$(top_srcdir)/lib/libscamperfile/libscamperfile.la \

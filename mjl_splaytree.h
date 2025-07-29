@@ -6,7 +6,7 @@
  * this code was written for 0657.317 1999 at the University of Waikato
  * by Matthew Luckie
  *
- * Copyright (C) 1999-2018 Matthew Luckie. All rights reserved.
+ * Copyright (C) 1999-2025 Matthew Luckie. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -29,7 +29,7 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  *
- * $Id: mjl_splaytree.h,v 1.18 2024/12/08 17:25:53 mjl Exp $
+ * $Id: mjl_splaytree.h,v 1.20 2025/06/27 10:43:20 mjl Exp $
  *
  */
 
@@ -80,14 +80,20 @@ void *splaytree_find_ro(const splaytree_t *tree, const void *ptr);
 void *splaytree_findclosest(splaytree_t *tree, const void *ptr,
 			    splaytree_diff_t diff);
 
-/* return the right most node on the left branch of the tree */
-void *splaytree_getrmlb(splaytree_t *tree);
-
-/* return the left most node on the right branch of the tree */
-void *splaytree_getlmrb(splaytree_t *tree);
+/*
+ * return the:
+ *  - left most item on the left branch of the tree
+ *  - left most item on the right branch of the tree
+ *  - right most item on the left branch of the tree
+ *  - right most item on the right branch of the tree
+ */
+void *splaytree_getlmlb(const splaytree_t *tree);
+void *splaytree_getlmrb(const splaytree_t *tree);
+void *splaytree_getrmlb(const splaytree_t *tree);
+void *splaytree_getrmrb(const splaytree_t *tree);
 
 /* return the node at the head of the tree */
-void *splaytree_gethead(splaytree_t *tree);
+void *splaytree_gethead(const splaytree_t *tree);
 
 /* pop the node at the head of the tree */
 void *splaytree_pophead(splaytree_t *tree);

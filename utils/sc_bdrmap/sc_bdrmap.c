@@ -1,7 +1,7 @@
 /*
  * sc_bdrmap: driver to map first hop border routers of networks
  *
- * $Id: sc_bdrmap.c,v 1.62 2025/05/01 02:58:04 mjl Exp $
+ * $Id: sc_bdrmap.c,v 1.63 2025/06/10 07:10:03 mjl Exp $
  *
  *         Matthew Luckie
  *         mjl@caida.org / mjl@wand.net.nz
@@ -5333,7 +5333,7 @@ static int do_scamperread(void)
 static int do_scamperconnect(void)
 {
 #ifdef HAVE_SOCKADDR_UN
-  struct sockaddr_un sun;
+  struct sockaddr_un sn;
 #endif
   struct sockaddr_in sin;
   struct in_addr in;
@@ -5357,7 +5357,7 @@ static int do_scamperconnect(void)
 #ifdef HAVE_SOCKADDR_UN
   else if(options & (OPT_UNIX | OPT_REMOTE))
     {
-      if(sockaddr_compose_un((struct sockaddr *)&sun, unix_name) != 0)
+      if(sockaddr_compose_un((struct sockaddr *)&sn, unix_name) != 0)
 	{
 	  logerr("could not build sockaddr_un\n");
 	  return -1;
@@ -5367,7 +5367,7 @@ static int do_scamperconnect(void)
 	  logerr("%s: could not unix socket: %s\n", __func__, strerror(errno));
 	  return -1;
 	}
-      if(connect(scamper_fd, (const struct sockaddr *)&sun, sizeof(sun)) != 0)
+      if(connect(scamper_fd, (const struct sockaddr *)&sn, sizeof(sn)) != 0)
 	{
 	  logerr("%s: could not unix connect: %s\n", __func__, strerror(errno));
 	  return -1;

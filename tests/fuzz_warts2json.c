@@ -1,7 +1,7 @@
 /*
  * fuzz_warts2json : fuzzer for reading warts and converting to json
  *
- * $Id: fuzz_warts2json.c,v 1.2 2025/06/02 08:56:48 mjl Exp $
+ * $Id: fuzz_warts2json.c,v 1.3 2025/06/27 11:04:39 mjl Exp $
  *
  *        Marcus Luckie, Matthew Luckie
  *        mjl@luckie.org.nz
@@ -96,6 +96,7 @@ static void check(const char *filename)
 	  break;
 
 	case SCAMPER_FILE_OBJ_NEIGHBOURDISC:
+	  json = scamper_neighbourdisc_tojson(obj_data, &json_len);
 	  scamper_neighbourdisc_free(obj_data);
 	  break;
 
