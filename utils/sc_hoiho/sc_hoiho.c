@@ -1,7 +1,7 @@
 /*
  * sc_hoiho: Holistic Orthography of Internet Hostname Observations
  *
- * $Id: sc_hoiho.c,v 1.36 2025/05/29 20:05:45 mjl Exp $
+ * $Id: sc_hoiho.c,v 1.39 2025/07/29 00:42:35 mjl Exp $
  *
  *         Matthew Luckie
  *         mjl@luckie.org.nz
@@ -9,8 +9,8 @@
  *         Marianne Fletcher added code to infer ASN and geo regexes.
  *
  * Copyright (C) 2017-2021 The University of Waikato
- * Copyright (C) 2022-2024 Matthew Luckie
- * Copyright (C) 2023      The Regents of the University of California
+ * Copyright (C) 2022-2025 Matthew Luckie
+ * Copyright (C) 2023-2025 The Regents of the University of California
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -48,6 +48,7 @@
 #include "mjl_threadpool.h"
 #include "mjl_splaytree.h"
 #include "mjl_list.h"
+#include "mjl_splaytree_to_list.h"
 #include "utils.h"
 
 typedef struct sc_router sc_router_t;
@@ -61,8 +62,8 @@ typedef struct sc_state sc_state_t;
 typedef struct sc_css
 {
   char           *css;     /* common substrings, each null terminated */
-  int             cssc;    /* number of common substrings */
   size_t          len;     /* total length of the common substrings */
+  int             cssc;    /* number of common substrings */
   int             count;   /* count variable for counting matches */
 } sc_css_t;
 
@@ -95,6 +96,7 @@ typedef struct sc_regexn
   uint8_t         capc;     /* number of capture elements */
 
   /* these parameters are set during evaluation */
+  uint8_t         single;   /* would this regex by itself be classed single */
   uint32_t        matchc;   /* how many times this regex matched */
   uint32_t        tp_c;     /* number of TPs from this regex */
   uint32_t        rt_c;     /* number of routers this regex matched */
@@ -108,6 +110,8 @@ struct sc_regex
   int             score;   /* regex specificity score */
   uint8_t         class;   /* classification */
   sc_domain_t    *dom;     /* the domain this regex is for */
+
+  slist_t        *infs;    /* optional list of sc_ifaceinf_t */
 
   sc_geohint_t  **geohints; /* learned geohints */
   size_t          geohintc; /* how many learned geohints */
@@ -306,6 +310,7 @@ typedef struct sc_ifacedom
   sc_routerdom_t *rd;      /* backpointer to the router */
   sc_domain_t    *dom;     /* pointer to the domain */
   uint32_t        id;      /* unique ID for the interface in this domain */
+  uint8_t         dnm;     /* do not match */
 } sc_ifacedom_t;
 
 struct sc_routerdom
@@ -335,10 +340,14 @@ typedef struct sc_routerload
 typedef struct sc_ifaceinf
 {
   sc_ifacedom_t  *ifd;     /* interface from training */
-  sc_css_t       *css;     /* inferred name/ASN */
+  sc_css_t       *css;     /* extraction */
   sc_routerinf_t *ri;      /* pointer to inferred router */
-  sc_geohint_t   *geohint; /* pointer to associated geohint */
-  size_t          rtrc;    /* how many interfaces from training routers */
+  union
+  {
+    sc_geohint_t *geohint; /* pointer to associated geohint */
+    size_t        rtrc;    /* how many interfaces from training routers */
+    uint32_t      asn;     /* extracted ASN */
+  } un;
   int             regex;   /* regex id */
   char            class;   /* classification */
   uint8_t         ipm;     /* do we believe extraction contains IP literal */
@@ -384,6 +393,18 @@ typedef struct sc_rttload
 } sc_rttload_t;
 
 /*
+ * sc_domain_sn_t:
+ *
+ * a structure to help when merging regexes into sets for a given domain
+ */
+typedef struct sc_domain_sn
+{
+  slist_t        *work;    /* of sc_regex_sn: current working list of regexes */
+  slist_t        *base;    /* of sc_regex_sn: base list of all regexes */
+  int             done;    /* whether or not we're done with this domain */
+} sc_domain_sn_t;
+
+/*
  * sc_regex_sn
  *
  * a structure to help decide how to merge regexes into sets
@@ -427,13 +448,6 @@ typedef struct sc_regex_mn
   slist_node_t   *sn;
 } sc_regex_mn_t;
 
-typedef struct sc_domain_sn
-{
-  slist_t        *work;    /* of sc_regex_sn: current working list of regexes */
-  slist_t        *base;    /* of sc_regex_sn: base list of all regexes */
-  int             done;    /* whether or not we're done with this domain */
-} sc_domain_fn_t;
-
 typedef struct sc_ifdptr
 {
   sc_ifacedom_t  *ifd;     /* interface */
@@ -445,6 +459,13 @@ typedef struct sc_ptrc
   void           *ptr;
   size_t          c;
 } sc_ptrc_t;
+
+typedef struct sc_abc
+{
+  void           *a;
+  void           *b;
+  size_t          c;
+} sc_abc_t;
 
 typedef struct sc_uint32c
 {
@@ -623,6 +644,8 @@ typedef struct sc_dump
 #define LIGHT_SPEED_DEF      204.190477 /* kilometres per millisecond */
 #define LIGHT_SPEED_MAX      299792458  /* metres per second */
 
+#define IPV4_REPR_CHARS		12
+
 #define SC_IFACE_FLAG_AS     0x01
 #define SC_IFACE_FLAG_AS_ED1 0x02
 #define SC_IFACE_FLAG_IP     0x04
@@ -636,7 +659,7 @@ typedef struct sc_dump
 #define RE_CLASS_PROM      2
 #define RE_CLASS_SINGLE    3
 
-#define STOP_ASN_MAX       4
+#define STOP_ASN_MAX       5
 #define STOP_ASNAMES_MAX   6
 #define STOP_ALIAS_MAX     8
 #define STOP_GEO_MAX       5
@@ -651,10 +674,11 @@ typedef struct sc_dump
 #define REFINE_FP    0x040
 #define REFINE_MERGE 0x080
 #define REFINE_DICT  0x100
+#define REFINE_PREF  0x200
 
 #define REFINE_ALL   (REFINE_TP | REFINE_FNE | REFINE_CLASS | REFINE_FNU | \
 		      REFINE_SETS | REFINE_IP | REFINE_FP | REFINE_MERGE | \
-		      REFINE_DICT)
+		      REFINE_DICT | REFINE_PREF)
 
 #define OPT_THREADC   0x0001
 #define OPT_DUMPID    0x0002
@@ -678,6 +702,9 @@ static int dump_2(void);
 static int dump_3(void);
 static int dump_4(void);
 
+static void sc_ifaceinf_free(sc_ifaceinf_t *ifi);
+static int build_prefix_dom(void); /* XXX: move so declaration not needed */
+
 typedef size_t (*sc_regex_build_t)(const char *,           /* name */
 				   const sc_rebuild_p_t *, /* build params */
 				   const sc_rebuild_t *,   /* build state */
@@ -687,6 +714,7 @@ typedef size_t (*sc_regex_build_t)(const char *,           /* name */
 static char            *router_file  = NULL;
 static char            *suffix_file  = NULL;
 static sc_suffix_t     *suffix_root  = NULL;
+static sc_domain_t     *pfx_dom      = NULL;
 static splaytree_t     *domain_tree  = NULL;    /* of sc_domain_t */
 static slist_t         *domain_list  = NULL;    /* of sc_domain_t */
 static slist_t         *router_list  = NULL;    /* of sc_router_t */
@@ -770,7 +798,14 @@ static void usage(uint32_t opts)
 	  "                [-g dict] [-l light-speed] [-O options]\n"
 	  "                [-r regex] [-R rtts] [-s stopid] [-S siblings]\n"
 	  "                [-t threadc]\n"
-	  "                <public-suffix-list> <router-file>\n\n", v);
+	  "                <public-suffix-list> <router-file>\n", v);
+
+  if(opts == 0)
+    {
+      fprintf(stderr, "\n       sc_hoiho -?\n\n");
+      return;
+    }
+  fprintf(stderr, "\n");
 
   if(opts & OPT_IPV6)
     fprintf(stderr, "       -6: input files are IPv6\n");
@@ -833,6 +868,8 @@ static void usage(uint32_t opts)
 	      "           refine-fp: build FP filters\n"
 	      "           norefine-dict: do not refine the learned dictionary\n"
 	      "           refine-dict: refine the learned dictionary\n"
+	      "           norefine-pref: do not learn prefix regexes\n"
+	      "           refine-pref: learn prefix regexes\n"
 	      "           nothin: do not thin redundant regexes\n"
 	      "           nothin-matchc: do not thin regexes with few matches\n"
 	      "           thin-matchc: thin regexes with few matches\n"
@@ -974,6 +1011,10 @@ static int check_options(int argc, char *argv[])
 	    norefine |= REFINE_DICT;
 	  else if(strcasecmp(optarg, "refine-dict") == 0)
 	    refine |= REFINE_DICT;
+	  else if(strcasecmp(optarg, "norefine-pref") == 0)
+	    norefine |= REFINE_PREF;
+	  else if(strcasecmp(optarg, "refine-pref") == 0)
+	    refine |= REFINE_PREF;
 	  else if(strcasecmp(optarg, "nothin") == 0)
 	    {
 	      thin_matchc = 0;
@@ -1282,6 +1323,31 @@ static void sc_dump4_free(sc_dump4_t *d4)
   return;
 }
 
+static void sc_domain_assign_ids(sc_domain_t *dom)
+{
+  sc_routerdom_t *rd;
+  slist_node_t *sn;
+  int i, rtr_id, ifd_id;
+  uint32_t rtc;
+
+  /* assign router and interface ids to each training router and iface */
+  rtr_id = 1; ifd_id = 1;
+  for(sn=slist_head_node(dom->routers); sn != NULL; sn=slist_node_next(sn))
+    {
+      rd = slist_node_item(sn);
+      rd->id = rtr_id++;
+      for(i=0; i<rd->ifacec; i++)
+	rd->ifaces[i]->id = ifd_id++;
+      dom->ifacec += rd->ifacec;
+    }
+
+  rtc = slist_count(dom->routers);
+  dom->tpmlen = dom->ifacec / 32 + ((dom->ifacec % 32 == 0) ? 0 : 1);
+  dom->rtmlen = rtc / 32 + ((rtc % 32 == 0) ? 0 : 1);
+
+  return;
+}
+
 static int sc_domain_lock(sc_domain_t *dom)
 {
 #ifdef HAVE_PTHREAD
@@ -1338,34 +1404,6 @@ static int tree_mincount(splaytree_t *a, splaytree_t *b)
   bc = splaytree_count(b);
   if(ac <= bc) return ac;
   return bc;
-}
-
-static int slist_to_dlist(void *entry, void *ptr)
-{
-  if(dlist_tail_push((dlist_t *)ptr, entry) != NULL)
-    return 0;
-  return -1;
-}
-
-static int dlist_to_slist(void *entry, void *ptr)
-{
-  if(slist_tail_push((slist_t *)ptr, entry) != NULL)
-    return 0;
-  return -1;
-}
-
-static int tree_to_slist(void *ptr, void *entry)
-{
-  if(slist_tail_push((slist_t *)ptr, entry) != NULL)
-    return 0;
-  return -1;
-}
-
-static int tree_to_dlist(void *ptr, void *entry)
-{
-  if(dlist_tail_push((dlist_t *)ptr, entry) != NULL)
-    return 0;
-  return -1;
 }
 
 static int dlx(int al, int bl, int i, int j)
@@ -1549,6 +1587,56 @@ static sc_ptrc_t *sc_ptrc_get(splaytree_t *tree, void *ptr)
  err:
   if(ptrc != NULL) free(ptrc);
   return NULL;
+}
+
+static int sc_ptrtree_add(splaytree_t *tree, void *ptr)
+{
+  if(splaytree_find(tree, ptr) == NULL && splaytree_insert(tree, ptr) == NULL)
+    return -1;
+  return 0;
+}
+
+static int sc_abc_cmp(const sc_abc_t *a, const sc_abc_t *b)
+{
+  if(a->a < b->a) return -1;
+  if(a->a > b->a) return  1;
+  return 0;
+}
+
+static sc_abc_t *sc_abc_tree_find(splaytree_t *tree, void *a)
+{
+  sc_abc_t fm; fm.a = a;
+  return splaytree_find(tree, &fm);
+}
+
+static sc_abc_t *sc_abc_tree_get(splaytree_t *tree, void *a)
+{
+  sc_abc_t *abc;
+  if((abc = sc_abc_tree_find(tree, a)) != NULL)
+    return abc;
+  if((abc = malloc(sizeof(sc_abc_t))) == NULL)
+    goto err;
+  abc->a = a;
+  abc->b = NULL;
+  abc->c = 0;
+  if(splaytree_insert(tree, abc) == NULL)
+    goto err;
+  return abc;
+
+ err:
+  if(abc != NULL) free(abc);
+  return NULL;
+}
+
+static void sc_abc_tree_free(splaytree_t *tree)
+{
+  splaytree_free(tree, free);
+  return;
+}
+
+static splaytree_t *sc_abc_tree_alloc(void)
+{
+  return splaytree_alloc((splaytree_cmp_t)sc_abc_cmp);
 }
 
 static void sc_strlist_free(sc_strlist_t *sl)
@@ -5181,8 +5269,7 @@ static slist_t *sc_geomap2hint_make(sc_regex_t *re, slist_t *ifi_list)
   sc_geomap2hint_t *m2h;
   sc_geomap_t map;
 
-  if((tree = splaytree_alloc((splaytree_cmp_t)sc_geomap2hint_cmp)) == NULL ||
-     (list = slist_alloc()) == NULL)
+  if((tree = splaytree_alloc((splaytree_cmp_t)sc_geomap2hint_cmp)) == NULL)
     goto err;
 
   for(sn=slist_head_node(ifi_list); sn != NULL; sn=slist_node_next(sn))
@@ -5192,20 +5279,20 @@ static slist_t *sc_geomap2hint_make(sc_regex_t *re, slist_t *ifi_list)
 	 (ifi->class != '+' && ifi->class != '!' && ifi->class != '?'))
 	continue;
       sc_css_geomap(ifi->css, re->regexes[ifi->regex]->plan, &map);
-      if((m2h = sc_geomap2hint_get(tree, &map, ifi->geohint)) == NULL)
+      if((m2h = sc_geomap2hint_get(tree, &map, ifi->un.geohint)) == NULL)
 	goto err;
       if(ifi->class == '+')
 	m2h->tp_c++;
       else if(ifi->class == '!')
 	m2h->fp_c++;
     }
-  splaytree_inorder(tree, tree_to_slist, list);
-  splaytree_free(tree, NULL); tree = NULL;
+  if((list = splaytree_to_slist(tree, NULL)) == NULL)
+    goto err;
+  splaytree_free(tree, NULL);
   return list;
 
  err:
   if(tree != NULL) splaytree_free(tree, free);
-  if(list != NULL) slist_free_cb(list, free);
   return NULL;
 }
 
@@ -5249,9 +5336,22 @@ static sc_remerge_t *sc_remerge_get(splaytree_t *tree, sc_css_t *css)
 
 static int sc_regex_show(const sc_regex_t *re)
 {
-  if(do_show == 0 || (do_show & (1 << re->class)) != 0)
-    return 1;
-  return 0;
+  /* if a user specified which regexes to show, give them what was asked for */
+  if(do_show != 0)
+    {
+      if((do_show & (1 << re->class)) != 0)
+	return 1;
+      return 0;
+    }
+
+  /*
+   * if we have built prefix regexes, make sure that we only show good
+   * or promising prefix regexes
+   */
+  if(pfx_dom != NULL && re->dom == pfx_dom && re->class != RE_CLASS_GOOD)
+    return 0;
+
+  return 1;
 }
 
 /*
@@ -5699,9 +5799,8 @@ static dlist_t *sc_css_reduce_ls(splaytree_t *tree)
   size_t r, off;
 
   if((out = splaytree_alloc((splaytree_cmp_t)sc_css_css_cmp)) == NULL ||
-     (list = slist_alloc()) == NULL)
+     (list = splaytree_to_slist(tree, NULL)) == NULL)
     goto done;
-  splaytree_inorder(tree, tree_to_slist, list);
 
   for(sn = slist_head_node(list); sn != NULL; sn = slist_node_next(sn))
     {
@@ -5826,9 +5925,8 @@ static dlist_t *sc_css_reduce_ls(splaytree_t *tree)
 	goto done;
     }
 
-  if((out_list = dlist_alloc()) == NULL)
+  if((out_list = splaytree_to_dlist(out, NULL)) == NULL)
     goto done;
-  splaytree_inorder(out, tree_to_dlist, out_list);
   splaytree_free(out, NULL); out = NULL;
 
  done:
@@ -5893,7 +5991,8 @@ static int sc_css_reduce(splaytree_t *tree, int trim, int min_z)
    */
   do
     {
-      splaytree_inorder(tree, tree_to_slist, list);
+      if(splaytree_to_slist(tree, list) == NULL)
+	goto done;
       slist_qsort(list, (slist_cmp_t)sc_css_count_min_cmp);
       i = 0;
       while((css = slist_head_pop(list)) != NULL)
@@ -5932,7 +6031,8 @@ static int sc_css_reduce(splaytree_t *tree, int trim, int min_z)
   rc = 0;
 
   /* reset the count variables to zero */
-  splaytree_inorder(tree, tree_to_slist, list);
+  if(splaytree_to_slist(tree, list) == NULL)
+    goto done;
   while((css = slist_head_pop(list)) != NULL)
     css->count = 0;
 
@@ -7138,6 +7238,8 @@ static void sc_regex_free(sc_regex_t *re)
 	  sc_geohint_free(re->geohints[s]);
       free(re->geohints);
     }
+  if(re->infs != NULL)
+    slist_free_cb(re->infs, (slist_free_t)sc_ifaceinf_free);
   if(re->tp_mask != NULL) free(re->tp_mask);
   free(re);
   return;
@@ -7652,9 +7754,26 @@ static int sc_ifaceinf_ifd_rd_cmp(const sc_ifaceinf_t *a,
 
 static int sc_ifaceinf_rtrc_cmp(const sc_ifaceinf_t *a, const sc_ifaceinf_t *b)
 {
-  if(a->rtrc > b->rtrc) return -1;
-  if(a->rtrc < b->rtrc) return  1;
+  if(a->un.rtrc > b->un.rtrc) return -1;
+  if(a->un.rtrc < b->un.rtrc) return  1;
   return ptrcmp(a->ifd->rd, b->ifd->rd);
+}
+
+static int sc_ifaceinf_dup(slist_t *list, const sc_ifaceinf_t *ifi_in, int p)
+{
+  sc_ifaceinf_t *ifi;
+
+  if((ifi = memdup(ifi_in, sizeof(sc_ifaceinf_t))) == NULL)
+    goto err;
+  ifi->css = NULL;
+  ifi->regex = p;
+  if(slist_tail_push(list, ifi) == NULL)
+    goto err;
+  return 0;
+
+ err:
+  if(ifi != NULL) sc_ifaceinf_free(ifi);
+  return -1;
 }
 
 #ifndef DMALLOC
@@ -7677,13 +7796,10 @@ static sc_ifaceinf_t *sc_ifaceinf_get_dm(slist_t *list, sc_ifacedom_t *ifd,
 #endif
   if(ifi == NULL)
     goto err;
+  memset(ifi, 0, sizeof(sc_ifaceinf_t));
   ifi->ifd = ifd;
   ifi->css = css;
-  ifi->ri = NULL;
-  ifi->geohint = NULL;
-  ifi->rtrc = 0;
   ifi->regex = regex;
-  ifi->class = '\0';
   ifi->ipm = ip;
   if(slist_tail_push(list, ifi) == NULL)
     goto err;
@@ -9447,9 +9563,8 @@ static int sc_routercss_geo_rd(splaytree_t *rcss_tree, sc_routerdom_t *rd,
   if(splaytree_count(css_tree) == 0)
     return 0;
 
-  if((list = slist_alloc()) == NULL)
+  if((list = splaytree_to_slist(css_tree, NULL)) == NULL)
     goto done;
-  splaytree_inorder(css_tree, tree_to_slist, list);
   slist_qsort(list, (slist_cmp_t)sc_css_count_cmp);
   css = slist_head_item(list);
 
@@ -9561,9 +9676,8 @@ static sc_routercss_t *sc_routercss_alias(sc_routerdom_t *rd, sc_rework_t *rew)
 
   if(splaytree_count(tree) > 0)
     {
-      if((list = slist_alloc()) == NULL)
+      if((list = splaytree_to_slist(tree, NULL)) == NULL)
 	goto done;
-      splaytree_inorder(tree, tree_to_slist, list);
       slist_qsort(list, (slist_cmp_t)sc_css_count_cmp);
 
       sn = slist_head_node(list);
@@ -9726,6 +9840,22 @@ static void sc_ifacedom_free(sc_ifacedom_t *ifd)
   return;
 }
 
+static sc_ifacedom_t *sc_ifacedom_dup(const sc_ifacedom_t *in)
+{
+  sc_ifacedom_t *out;
+
+  if((out = malloc_zero(sizeof(sc_ifacedom_t))) == NULL ||
+     (out->label = strdup(in->label)) == NULL)
+    goto err;
+  out->len = in->len;
+  out->iface = in->iface;
+  return out;
+
+ err:
+  if(out != NULL) sc_ifacedom_free(out);
+  return NULL;
+}
+
 static sc_ifacedom_t *sc_ifacedom_alloc(const sc_iface_t *iface,
 					const sc_domain_t *dom,
 					const char *suffix)
@@ -9811,14 +9941,14 @@ static int sc_routerinf_finish(sc_routerinf_t *ri)
 	  assert(i >= x);
 	  c = i - x;
 	  while(x != i)
-	    ri->ifaces[x++]->rtrc = c;
+	    ri->ifaces[x++]->un.rtrc = c;
 	  x = i; rd = ri->ifaces[x]->ifd->rd;
 	}
     }
   assert(ri->ifacec >= x);
   c = ri->ifacec - x;
   while(x != ri->ifacec)
-    ri->ifaces[x++]->rtrc = c;
+    ri->ifaces[x++]->un.rtrc = c;
 
   /*
    * sort the interfaces on the inferred router into clusters of
@@ -9827,7 +9957,7 @@ static int sc_routerinf_finish(sc_routerinf_t *ri)
    */
   array_qsort((void **)ri->ifaces, ri->ifacec,
 	      (array_cmp_t)sc_ifaceinf_rtrc_cmp);
-  ri->maxrtrc = ri->ifaces[0]->rtrc;
+  ri->maxrtrc = ri->ifaces[0]->un.rtrc;
 
   /*
    * for the interfaces from the first training router that match,
@@ -9835,7 +9965,7 @@ static int sc_routerinf_finish(sc_routerinf_t *ri)
    * of the extraction.  mark the router accordingly.
    */
   no_ip = 0; ip = 0;
-  for(i=0; i<ri->ifaces[0]->rtrc; i++)
+  for(i=0; i<ri->ifaces[0]->un.rtrc; i++)
     {
       if(ri->ifaces[i]->ipm == 0)
 	{
@@ -9904,6 +10034,41 @@ static double randindex(slist_t *ifp_list)
     }
 
   return ((double)((tp + tn) * 100)) / (tp + fp + fn + tn);
+}
+
+static int sc_regex_domain_mod(sc_regex_t *re, void *param)
+{
+  re->dom = param;
+  return 0;
+}
+
+/*
+ * sc_regex_prefix_mod:
+ *
+ * prepend ^ and append \. to the regex, for prefix regexes.
+ */
+static int sc_regex_prefix_mod(sc_regex_t *re, void *param)
+{
+  char *dup;
+  size_t off, len;
+  int i;
+
+  for(i=0; i<re->regexc; i++)
+    {
+      len = strlen(re->regexes[i]->str);
+      if((dup = malloc(len + 4)) == NULL)
+	return -1;
+      off = 0;
+      dup[off++] = '^';
+      memcpy(dup+off, re->regexes[i]->str, len); off += len;
+      dup[off++] = '\\';
+      dup[off++] = '.';
+      dup[off] = '\0';
+      free(re->regexes[i]->str);
+      re->regexes[i]->str = dup;
+    }
+
+  return 0;
 }
 
 /*
@@ -10800,106 +10965,61 @@ static int sc_reasn_tp(sc_reasn_t *ts, sc_regex_t *re, sc_ifaceinf_t *ifi,
   return 0;
 }
 
-static int sc_regex_asn_ifi_score(sc_regex_t *re, slist_t *ifi_list)
+static int sc_regex_score_init(sc_regex_t *re)
+{
+  size_t len;
+
+  sc_regex_score_reset(re);
+
+  /* sc_regex_score_reset sets tp_mask to NULL */
+  assert(re->tp_mask == NULL);
+
+  /* figure out how many bits are needed for the true positives mask */
+  len = sizeof(uint32_t) * re->dom->tpmlen;
+  if((re->tp_mask = malloc_zero(len)) == NULL)
+    return -1;
+  return 0;
+}
+
+static int sc_regex_asn_ifi_score_byclass(sc_regex_t *re, slist_t *ifi_list)
 {
   sc_reasn_t *ts = NULL;
   slist_t *list = NULL;
   sc_ifaceinf_t *ifi;
   sc_uint32c_t *c;
   slist_node_t *sn;
-  sc_iface_t *iface;
-  long long ll;
-  size_t len, css_len, ed1 = 0;
-  char asstr[16];
+  size_t ed1 = 0;
+  sc_regexn_t *ren;
   int rc = -1;
-  int i, x, ppv;
+  int i, ppv;
 
-  sc_regex_score_reset(re);
-
-  /* figure out how many bits might be needed for the true positives mask */
-  len = sizeof(uint32_t) * re->dom->tpmlen;
-  if(re->tp_mask == NULL && (re->tp_mask = malloc_zero(len)) == NULL)
-    goto done;
-
-  if((ts = sc_reasn_alloc(re->regexc)) == NULL)
+  if(sc_regex_score_init(re) != 0 ||
+     (ts = sc_reasn_alloc(re->regexc)) == NULL)
     goto done;
 
   for(sn=slist_head_node(ifi_list); sn != NULL; sn=slist_node_next(sn))
     {
       ifi = slist_node_item(sn);
-      iface = ifi->ifd->iface;
 
       if(ifi->regex != -1)
 	re->regexes[ifi->regex]->matchc++;
 
-      if(ifi->css != NULL)
+      if(ifi->class == '+' || ifi->class == '=')
 	{
-	  if(string_isnumber(ifi->css->css) == 0 ||
-	     string_tollong(ifi->css->css, &ll, NULL, 10) != 0 ||
-	     ll < 0 || ll > 4294967295)
-	    {
-	      ifi->class = '!';
-	      re->fp_c++;
-	    }
-	  else if((ll >= 64496 && ll <= 65551) || ll >= 4200000000 || ll == 0)
-	    {
-	      ifi->class = '*';
-	      continue;
-	    }
-	  else if(iface->rtr->asn != ll)
-	    {
-	      /*
-	       * if the edit distance between the ASN extracted from
-	       * the hostname and the ASN we believe operates the
-	       * router is only one character, then classify the
-	       * extraction as a true positive, marked with a '=',
-	       * provided the ASNs are at least three characters in
-	       * length and the first and last digits both agree.
-	       * note the final check is to ensure that we extract all
-	       * of the apparent ASN embedded in the hostname.
-	       */
-	      snprintf(asstr, sizeof(asstr), "%u", iface->rtr->asn);
-	      x = dled(ifi->css->css, asstr);
-	      len = strlen(asstr);
-	      css_len = strlen(ifi->css->css);
-	      if(do_ed1 != 0 && x == 1 && len >= 3 && css_len >= 3 &&
-		 ifi->css->css[0] == asstr[0] &&
-		 ifi->css->css[css_len-1] == asstr[len-1] &&
-		 css_len == (size_t)(iface->as_e - iface->as_s + 1))
-		{
-		  if(sc_reasn_tp(ts, re, ifi, ll) != 0)
-		    goto done;
-		  ifi->class = '=';
-		  ed1++;
-		}
-	      else
-		{
-		  ifi->class = '!';
-		  re->fp_c++;
-		}
-	    }
-	  else
-	    {
-	      if(sc_reasn_tp(ts, re, ifi, ll) != 0)
-		goto done;
-	      ifi->class = '+';
-	    }
-
+	  /* sc_regex_tp increments re->tp_c */
+	  if(sc_reasn_tp(ts, re, ifi, ifi->un.asn) != 0)
+	    goto done;
+	  if(ifi->class == '=')
+	    ed1++;
 	  re->matchc++;
 	}
-      else
+      else if(ifi->class == '!')
 	{
-	  if((iface->flags & SC_IFACE_FLAG_AS) != 0 &&
-	     (iface->flags & SC_IFACE_FLAG_AS_ED1) == 0)
-	    {
-	      ifi->class = '~';
-	      re->fnu_c++;
-	    }
-	  else
-	    {
-	      ifi->class = ' ';
-	    }
+	  re->fp_c++;
+	  re->matchc++;
 	}
+      else if(ifi->class == '~')
+	re->fnu_c++;
     }
 
   /*
@@ -10931,7 +11051,17 @@ static int sc_regex_asn_ifi_score(sc_regex_t *re, slist_t *ifi_list)
   if(re->regexc > 1)
     {
       for(i=0; i<re->regexc; i++)
-	re->regexes[i]->rt_c = tree_mincount(ts->infs[i], ts->exts[i]);
+	{
+	  ren = re->regexes[i];
+	  ren->rt_c = tree_mincount(ts->infs[i], ts->exts[i]);
+	  if((list = splaytree_to_slist(ts->infs[i], NULL)) == NULL)
+	    goto done;
+	  slist_qsort(list, (slist_cmp_t)sc_uint32c_c_cmp);
+	  if(((c = slist_head_item(list)) != NULL &&
+	      ren->tp_c > 3 && c->c * 100 / ren->tp_c > 50) || ren->rt_c == 1)
+	    ren->single = 1;
+	  slist_free(list); list = NULL;
+	}
     }
   else
     {
@@ -10939,9 +11069,8 @@ static int sc_regex_asn_ifi_score(sc_regex_t *re, slist_t *ifi_list)
     }
   re->rt_c = tree_mincount(ts->inf, ts->ext);
 
-  if((list = slist_alloc()) == NULL)
+  if((list = splaytree_to_slist(ts->inf, NULL)) == NULL)
     goto done;
-  splaytree_inorder(ts->inf, tree_to_slist, list);
   slist_qsort(list, (slist_cmp_t)sc_uint32c_c_cmp);
   if(re->tp_c != 0)
     ppv = re->tp_c * 100 / (re->tp_c + sc_regex_score_fp(re));
@@ -10960,9 +11089,88 @@ static int sc_regex_asn_ifi_score(sc_regex_t *re, slist_t *ifi_list)
   rc = 0;
 
  done:
-  if(list != NULL) slist_free(list);
   if(ts != NULL) sc_reasn_free(ts, re->regexc);
+  if(list != NULL) slist_free(list);
   return rc;
+}
+
+static int sc_regex_asn_ifi_score(sc_regex_t *re, slist_t *ifi_list)
+{
+  sc_ifaceinf_t *ifi;
+  slist_node_t *sn;
+  sc_iface_t *iface;
+  long long ll;
+  size_t len, css_len;
+  char asstr[16];
+  int x;
+
+  for(sn=slist_head_node(ifi_list); sn != NULL; sn=slist_node_next(sn))
+    {
+      ifi = slist_node_item(sn);
+      iface = ifi->ifd->iface;
+
+      if(ifi->css != NULL)
+	{
+	  if(string_isnumber(ifi->css->css) == 0 ||
+	     string_tollong(ifi->css->css, &ll, NULL, 10) != 0 ||
+	     ll < 0 || ll > 4294967295 || ifi->ifd->dnm != 0)
+	    {
+	      ifi->class = '!'; /* false positive */
+	    }
+	  else if((ll >= 64496 && ll <= 65551) || ll >= 4200000000 || ll == 0)
+	    {
+	      ifi->class = '*'; /* reserved ASN */
+	    }
+	  else if(iface->rtr->asn != ll)
+	    {
+	      /*
+	       * if the edit distance between the ASN extracted from
+	       * the hostname and the ASN we believe operates the
+	       * router is only one character, then classify the
+	       * extraction as a true positive, marked with a '=',
+	       * provided the ASNs are at least three characters in
+	       * length and the first and last digits both agree.
+	       * note the final check is to ensure that we extract all
+	       * of the apparent ASN embedded in the hostname.
+	       */
+	      snprintf(asstr, sizeof(asstr), "%u", iface->rtr->asn);
+	      x = dled(ifi->css->css, asstr);
+	      len = strlen(asstr);
+	      css_len = strlen(ifi->css->css);
+	      if(do_ed1 != 0 && x == 1 && len >= 3 && css_len >= 3 &&
+		 ifi->css->css[0] == asstr[0] &&
+		 ifi->css->css[css_len-1] == asstr[len-1] &&
+		 css_len == (size_t)(iface->as_e - iface->as_s + 1))
+		{
+		  ifi->class = '='; /* true positive with edit distance 1 */
+		  ifi->un.asn = ll;
+		}
+	      else
+		{
+		  ifi->class = '!'; /* false positive */
+		}
+	    }
+	  else
+	    {
+	      ifi->class = '+'; /* true positive */
+	      ifi->un.asn = ll;
+	    }
+	}
+      else
+	{
+	  if((iface->flags & SC_IFACE_FLAG_AS) != 0 &&
+	     (iface->flags & SC_IFACE_FLAG_AS_ED1) == 0)
+	    {
+	      ifi->class = '~'; /* false negative: unmatched */
+	    }
+	  else
+	    {
+	      ifi->class = ' ';
+	    }
+	}
+    }
+
+  return sc_regex_asn_ifi_score_byclass(re, ifi_list);
 }
 
 static int sc_regex_asn_eval(sc_regex_t *re, slist_t *out)
@@ -10980,14 +11188,9 @@ static int sc_regex_asnames_ifi_score(sc_regex_t *re, slist_t *ifi_list)
   slist_node_t *sn;
   sc_iface_t *iface;
   sc_uint32c_t *c;
-  size_t len;
   int i, ppv, rc = -1;
 
-  sc_regex_score_reset(re);
-
-  /* figure out how many bits might be needed for the true positives mask */
-  len = sizeof(uint32_t) * re->dom->tpmlen;
-  if((re->tp_mask == NULL && (re->tp_mask = malloc_zero(len)) == NULL) ||
+  if(sc_regex_score_init(re) != 0 ||
      (ts = sc_reasn_alloc(re->regexc)) == NULL ||
      (rew = sc_rework_alloc(re)) == NULL)
     goto done;
@@ -11034,6 +11237,7 @@ static int sc_regex_asnames_ifi_score(sc_regex_t *re, slist_t *ifi_list)
 		ifi->class = '+';
 	      else
 		ifi->class = '=';
+	      ifi->un.asn = a2t->asn;
 	    }
 	  else
 	    {
@@ -11067,9 +11271,8 @@ static int sc_regex_asnames_ifi_score(sc_regex_t *re, slist_t *ifi_list)
     }
   re->rt_c = tree_mincount(ts->inf, ts->ext);
 
-  if((list = slist_alloc()) == NULL)
+  if((list = splaytree_to_slist(ts->inf, NULL)) == NULL)
     goto done;
-  splaytree_inorder(ts->inf, tree_to_slist, list);
   slist_qsort(list, (slist_cmp_t)sc_uint32c_c_cmp);
   if(re->tp_c != 0)
     ppv = re->tp_c * 100 / (re->tp_c + sc_regex_score_fp(re));
@@ -11113,18 +11316,11 @@ static int sc_regex_geo_ifi_score_do(sc_regex_t *re, slist_t *ifi_list)
   int i, ppv, rc = -1, tp;
   char *ptr, *dup = NULL;
   char *code, three[3];
-  size_t len, s;
   uint8_t u8;
-  size_t min_code_len = 0, max_code_len = 0;
+  size_t s, min_code_len = 0, max_code_len = 0;
 
-  sc_regex_score_reset(re);
-
-  /* figure out how many bits might be needed for the true positives mask */
-  len = sizeof(uint32_t) * re->dom->tpmlen;
-  if(re->tp_mask == NULL && (re->tp_mask = malloc_zero(len)) == NULL)
-    goto done;
-
-  if((geo_tree = splaytree_alloc((splaytree_cmp_t)strcasecmp)) == NULL)
+  if(sc_regex_score_init(re) != 0 ||
+     (geo_tree = splaytree_alloc((splaytree_cmp_t)strcasecmp)) == NULL)
     goto done;
   if(re->regexc > 1)
     {
@@ -11152,7 +11348,7 @@ static int sc_regex_geo_ifi_score_do(sc_regex_t *re, slist_t *ifi_list)
 	  if(iface->geoc > 0)
 	    {
 	      ifi->class = '~';
-	      ifi->geohint = iface->geos[0].hint;
+	      ifi->un.geohint = iface->geos[0].hint;
 	      re->fnu_c++;
 	    }
 	  else
@@ -11226,7 +11422,7 @@ static int sc_regex_geo_ifi_score_do(sc_regex_t *re, slist_t *ifi_list)
 
 	      sc_regex_eval_tp_mask(re, ifi->ifd);
 	      ifi->class = '+';
-	      ifi->geohint = hint;
+	      ifi->un.geohint = hint;
 
 	      assert(map.codelen > 0);
 	      if(min_code_len == 0 || min_code_len > map.codelen)
@@ -11248,7 +11444,7 @@ static int sc_regex_geo_ifi_score_do(sc_regex_t *re, slist_t *ifi_list)
 	  else
 	    {
 	      ifi->class = '~';
-	      ifi->geohint = hint;
+	      ifi->un.geohint = hint;
 	      re->fnu_c++;
 	    }
 	}
@@ -11257,7 +11453,7 @@ static int sc_regex_geo_ifi_score_do(sc_regex_t *re, slist_t *ifi_list)
 	{
 	  /* Might be a geocode */
 	  ifi->class = '!';
-	  ifi->geohint = hint;
+	  ifi->un.geohint = hint;
 	  re->fp_c++;
 	}
       else
@@ -11307,9 +11503,8 @@ static int sc_regex_geo_ifi_score_do(sc_regex_t *re, slist_t *ifi_list)
        */
       if(u8 == GEOHINT_TYPE_IATA && re->rt_c >= 5)
 	{
-	  if((list = slist_alloc()) == NULL)
+	  if((list = splaytree_to_slist(geo_tree, NULL)) == NULL)
 	    goto done;
-	  splaytree_inorder(geo_tree, tree_to_slist, list);
 	  ptr = slist_head_item(list);
 	  three[0] = ptr[0]; three[1] = ptr[1]; three[2] = ptr[2];
 	  for(sn=slist_head_node(list); sn != NULL; sn=slist_node_next(sn))
@@ -11510,6 +11705,110 @@ static int sc_regex_eval(sc_regex_t *re, slist_t *out)
   return -1;
 }
 
+static int sc_regex_permute_lite_score(sc_regex_t *re,
+				       sc_regex_t *re1, sc_regex_t *re2, int p)
+{
+  const sc_ifaceinf_t *ifi1, *ifi2, *ifi;
+  slist_node_t *sn1, *sn2;
+  slist_t *ifi_list = NULL;
+  int x, rc = -1;
+
+  if((ifi_list = slist_alloc()) == NULL)
+    goto done;
+
+  sn1 = slist_head_node(re1->infs); ifi1 = slist_node_iter(&sn1);
+  sn2 = slist_head_node(re2->infs); ifi2 = slist_node_iter(&sn2);
+  while(ifi1 != NULL || ifi2 != NULL)
+    {
+      if(ifi1 != NULL && ifi2 != NULL && ifi1->ifd->id == ifi2->ifd->id)
+	{
+	  if(ifi1->regex != -1 && ifi2->regex == -1)
+	    ifi = ifi1;
+	  else if(ifi1->regex == -1 && ifi2->regex != -1)
+	    ifi = ifi2;
+	  else if(ifi1->class == ifi2->class || ifi1->regex < p)
+	    ifi = ifi1;
+	  else
+	    ifi = ifi2;
+
+	  if(ifi == ifi1)
+	    x = ifi->regex >= p ? ifi->regex + 1 : ifi->regex;
+	  else
+	    x = p;
+
+	  ifi1 = slist_node_iter(&sn1); ifi2 = slist_node_iter(&sn2);
+	}
+      else if(ifi1 != NULL && (ifi2 == NULL || ifi1->ifd->id < ifi2->ifd->id))
+	{
+	  ifi = ifi1;
+	  x = ifi->regex >= p ? ifi->regex + 1 : ifi->regex;
+	  ifi1 = slist_node_iter(&sn1);
+	}
+      else
+	{
+	  assert(ifi2 != NULL &&
+		 (ifi1 == NULL || ifi2->ifd->id < ifi1->ifd->id));
+	  ifi = ifi2;
+	  x = p;
+	  ifi2 = slist_node_iter(&sn2);
+	}
+
+      if(sc_ifaceinf_dup(ifi_list, ifi, x) != 0)
+	goto done;
+    }
+
+  if(sc_regex_asn_ifi_score_byclass(re, ifi_list) != 0)
+    goto done;
+
+  rc = 0;
+
+ done:
+  if(ifi_list != NULL) slist_free_cb(ifi_list, (slist_free_t)sc_ifaceinf_free);
+  return rc;
+}
+
+/*
+ * sc_regex_permute_lite
+ *
+ * given a base regex (in) and candidate regex (cand), each of which
+ * have the relevant inferences cached in the infs list in each regex,
+ * permute into regexes containing both work and cand, computing the
+ * combinations.
+ */
+static int sc_regex_permute_lite(sc_regex_t *in, sc_regex_t *cand, slist_t *set)
+{
+  sc_regex_t *re = NULL;
+  int i, rc = -1;
+
+  assert(do_learnasn != 0);
+
+  /* don't add this regex if its already in the set */
+  for(i=0; i<in->regexc; i++)
+    if(strcmp(in->regexes[i]->str, cand->regexes[0]->str) == 0)
+      return 0;
+
+  for(i=0; i<=in->regexc; i++)
+    {
+      if((re = sc_regex_plus1(in, cand->regexes[0], i)) == NULL)
+	goto done;
+      re->score = in->score + cand->score;
+      if(sc_regex_permute_lite_score(re, in, cand, i) != 0)
+	goto done;
+
+      /* keep regex around */
+      if(slist_tail_push(set, re) == NULL)
+	goto done;
+      re = NULL;
+    }
+
+  rc = 0;
+
+ done:
+  if(re != NULL) sc_regex_free(re);
+  return rc;
+}
+
+
 /*
  * sc_regex_permute
  *
@@ -11662,15 +11961,15 @@ static int sc_regex_sn_base_rank_cmp(sc_regex_sn_t *a, sc_regex_sn_t *b)
   return sc_regex_score_rank_cmp(a->base, b->base);
 }
 
-static void sc_domain_fn_free(sc_domain_fn_t *domfn)
+static void sc_domain_sn_free(sc_domain_sn_t *domsn)
 {
-  if(domfn == NULL)
+  if(domsn == NULL)
     return;
-  if(domfn->work != NULL)
-    slist_free_cb(domfn->work, (slist_free_t)sc_regex_sn_free);
-  if(domfn->base != NULL)
-    slist_free_cb(domfn->base, (slist_free_t)sc_regex_sn_free);
-  free(domfn);
+  if(domsn->work != NULL)
+    slist_free_cb(domsn->work, (slist_free_t)sc_regex_sn_free);
+  if(domsn->base != NULL)
+    slist_free_cb(domsn->base, (slist_free_t)sc_regex_sn_free);
+  free(domsn);
   return;
 }
 
@@ -11721,8 +12020,7 @@ static int sc_routerdom_lcs(sc_routerdom_t *rd)
   sc_css_t *css = NULL;
   int i, rc = -1;
 
-  if((tree = splaytree_alloc((splaytree_cmp_t)sc_css_css_cmp)) == NULL ||
-     (list = slist_alloc()) == NULL)
+  if((tree = splaytree_alloc((splaytree_cmp_t)sc_css_css_cmp)) == NULL)
     goto done;
 
   /* figure out the candidate longest common substrings */
@@ -11748,7 +12046,8 @@ static int sc_routerdom_lcs(sc_routerdom_t *rd)
     goto done;
 
   /* count how many interfaces match */
-  splaytree_inorder(tree, tree_to_slist, list);
+  if((list = splaytree_to_slist(tree, NULL)) == NULL)
+    goto done;
   for(sn=slist_head_node(list); sn != NULL; sn=slist_node_next(sn))
     {
       css = slist_node_item(sn);
@@ -11792,6 +12091,20 @@ static void sc_routerdom_free(sc_routerdom_t *rd)
   if(rd->css != NULL) sc_css_free(rd->css);
   free(rd);
   return;
+}
+
+static sc_routerdom_t *sc_routerdom_alloc(sc_router_t *rtr, int ifacec)
+{
+  sc_routerdom_t *rd;
+  if((rd = malloc_zero(sizeof(sc_routerdom_t))) == NULL ||
+     (rd->ifaces = malloc_zero(sizeof(sc_ifacedom_t *) * ifacec)) == NULL)
+    goto err;
+  rd->rtr = rtr;
+  return rd;
+
+ err:
+  if(rd != NULL) sc_routerdom_free(rd);
+  return NULL;
 }
 
 static int sc_regex_del_ppv_ok(const sc_regex_t *cur, const sc_regex_t *can)
@@ -11859,6 +12172,9 @@ static sc_regex_t *sc_domain_bestre_asn(sc_domain_t *dom)
 	 ((best->rt_c == 1 &&
 	   re->tp_c * 100 / (re->tp_c + re_fp) > 50) ||
 	  (re->tp_c >= best->tp_c && re_fp <= best_fp)))
+	goto new_best;
+
+      if(best->class == RE_CLASS_SINGLE && re->class == RE_CLASS_GOOD)
 	goto new_best;
 
       continue;
@@ -12129,6 +12445,16 @@ static sc_domain_t *sc_domain_get(const char *domain)
 
   if((dom = sc_domain_find(domain)) != NULL)
     return dom;
+
+  if(strcmp(domain, "prefix") == 0)
+    {
+      if(pfx_dom != NULL)
+	return pfx_dom;
+      if((pfx_dom = sc_domain_alloc(domain)) == NULL)
+	return NULL;
+      return pfx_dom;
+    }
+
   if((dom = sc_domain_alloc(domain)) == NULL)
     return NULL;
   if(splaytree_insert(domain_tree, dom) == NULL)
@@ -13248,36 +13574,24 @@ static int sc_regex_build(splaytree_t *tree, const char *name, sc_domain_t *dom,
 }
 
 /*
- * sc_regex_asn_lcs
+ * sc_regex_asn_build: generate ASN regexes
  *
- * A modification of sc_regex_lcs which will treat the location of ASNs
- * differently -- the longest substring will be
- *
- * Generate regexes for the longest common substring.
  * param tree: Tree to put output on.
  * param dom: Domain that the interfaces belong to.
  * param S, T: A pair of interfaces from the same domain.
  * returns: 0 if successful.
  */
-static int sc_regex_asn_lcs(splaytree_t *tree, sc_domain_t *dom,
-			    sc_ifacedom_t *S, sc_ifacedom_t *T)
+static int sc_regex_asn_build(splaytree_t *tree, sc_domain_t *dom, slist_t *L,
+			      sc_ifacedom_t *S, sc_ifacedom_t *T)
 {
   static const uint16_t mask =
     RB_BASE | RB_FIRST_PUNC_END | RB_SEG_LITERAL | RB_SEG_DIGIT_SPEC;
   size_t cc[2], *L_array = NULL;
-  slist_t *L = NULL;
   int i, j, Lc, rc = -1;
   const sc_ifacedom_t *R;
   int *bits = NULL, bitc;
   sc_lcs_pt_t *pt;
   slist_node_t *sn;
-
-  /*
-   * Expand literals outwards around the ASN to see how much of the
-   * structure is shared between the two interfaces.
-   */
-  if((L = lcs_asn(S, T)) == NULL)
-    goto done;
 
   Lc = slist_count(L) * 2;
   if(Lc > 0 && (L_array = malloc(sizeof(size_t) * Lc)) == NULL)
@@ -13324,7 +13638,6 @@ static int sc_regex_asn_lcs(splaytree_t *tree, sc_domain_t *dom,
   rc = 0;
 
  done:
-  if(L != NULL) slist_free_cb(L, (slist_free_t)sc_lcs_pt_free);
   if(L_array != NULL) free(L_array);
   if(bits != NULL) free(bits);
   return rc;
@@ -13525,26 +13838,39 @@ static int sc_router_finish(sc_routerload_t *rl)
   sc_domain_t *dom;
   slist_node_t *sn; /* of sc_iface_t */
   size_t i, c;
-  int free_rtr = 1, namec = 0;
+  int rc = -1, free_rtr = 1, namec = 0;
   slist_t *tmp = NULL;
   const char *suffix;
 
-  /* count how many interfaces have names.  if none, skip over */
+  /* used to figure out all the domains the router can be mapped to */
+  if((dctree = splaytree_alloc((splaytree_cmp_t)sc_css_css_cmp)) == NULL)
+    goto err;
+
+  /* count how many interfaces have names, and how many suffixes */
   for(sn=slist_head_node(rl->ifaces); sn != NULL; sn=slist_node_next(sn))
     {
       iface = slist_node_item(sn);
-      /* skip over domains that we're not interested in */
-      if((suffix = sc_suffix_find(iface->name)) == NULL ||
-	 (do_learnasnames == 0 && domain_eval != NULL &&
-	  strcmp(domain_eval, suffix) != 0))
+
+      /* use the public suffix list to figure out the suffix for this name */
+      if((suffix = sc_suffix_find(iface->name)) == NULL)
 	continue;
+
+      /* skip over domains that we're not interested in */
+      if(do_learnasnames == 0 && domain_eval != NULL &&
+	 strcmp(domain_eval, suffix) != 0)
+	continue;
+
+      /* we only want to add the router once per domain suffix */
+      if((dc = sc_css_get_str(dctree, suffix)) == NULL)
+	goto err;
+      dc->count++;
+
       namec++;
     }
+
+  /* if no names of interest, skip over */
   if(namec == 0)
-    {
-      sc_routerload_reset(rl);
-      return 0;
-    }
+    goto done;
 
   /* to start with, build the router and put it on the global list */
   c = slist_count(rl->ifaces);
@@ -13565,61 +13891,26 @@ static int sc_router_finish(sc_routerload_t *rl)
     goto err;
   free_rtr = 0;
 
-  /* figure out all the domains the router can be mapped to */
-  if((dctree=splaytree_alloc((splaytree_cmp_t)sc_css_css_cmp))==NULL)
-    goto err;
-
-  for(i=0; i<rtr->ifacec; i++)
-    {
-      /* use the public suffix list to figure out the domain */
-      iface = rtr->ifaces[i];
-      if((suffix = sc_suffix_find(iface->name)) == NULL)
-	continue;
-
-      /* skip over domains that we're not interested in */
-      if(do_learnasnames == 0 && domain_eval != NULL &&
-	 strcmp(domain_eval, suffix) != 0)
-	continue;
-
-      /* we only want to add the router once per domain */
-      if((dc = sc_css_get_str(dctree, suffix)) == NULL)
-	goto err;
-      dc->count++;
-    }
-
   /*
    * put the unique domains into a list, and push the router onto the list
    * of routers for the domain
    */
-  if((tmp = slist_alloc()) == NULL)
+  if((tmp = splaytree_to_slist(dctree, NULL)) == NULL)
     goto err;
-  splaytree_inorder(dctree, tree_to_slist, tmp);
-  splaytree_free(dctree, NULL);
-  while((dc = slist_head_pop(tmp)) != NULL)
+
+  for(sn=slist_head_node(tmp); sn != NULL; sn=slist_node_next(sn))
     {
+      dc = slist_node_item(sn);
       if((dom = sc_domain_get(dc->css)) == NULL)
 	goto err;
-
-      /* figure out how many interfaces within the domain the router has */
-      c = 0;
-      for(i=0; i<rtr->ifacec; i++)
-	{
-	  iface = rtr->ifaces[i];
-	  if((suffix = sc_suffix_find(iface->name)) == NULL ||
-	     strcmp(suffix, dc->css) != 0)
-	    continue;
-	  c++;
-	}
 
       /*
        * allocate a sc_routerdom_t structure which only has the interfaces
        * relevant to the considered suffix
        */
-      if((rd = malloc_zero(sizeof(sc_routerdom_t))) == NULL ||
-	 (rd->ifaces = malloc_zero(sizeof(sc_ifacedom_t *) * c)) == NULL)
+      if((rd = sc_routerdom_alloc(rtr, dc->count)) == NULL)
 	goto err;
-      rd->ifacec = c;
-      rd->rtr = rtr;
+      rd->ifacec = dc->count;
       c = 0;
       for(i=0; i<rtr->ifacec; i++)
 	{
@@ -13627,27 +13918,29 @@ static int sc_router_finish(sc_routerload_t *rl)
 	  if((suffix = sc_suffix_find(iface->name)) == NULL ||
 	     strcmp(suffix, dc->css) != 0)
 	    continue;
+	  assert(c < dc->count);
 	  if((rd->ifaces[c] = sc_ifacedom_alloc(iface, dom, suffix)) == NULL)
 	    goto err;
 	  rd->ifaces[c]->rd = rd;
 	  c++;
 	}
+      assert(c == dc->count);
 
       if(slist_tail_push(dom->routers, rd) == NULL)
 	goto err;
       rd = NULL;
-
-      sc_css_free(dc);
     }
-  slist_free(tmp);
-  sc_routerload_reset(rl);
-  return 0;
+
+ done:
+  rc = 0;
 
  err:
+  if(tmp != NULL) slist_free(tmp);
+  if(dctree != NULL) splaytree_free(dctree, (splaytree_free_t)sc_css_free);
   if(rtr != NULL && free_rtr != 0) sc_router_free(rtr);
   if(rd != NULL) sc_routerdom_free(rd);
   sc_routerload_reset(rl);
-  return -1;
+  return rc;
 }
 
 static int router_file_line(char *line, void *param)
@@ -13794,45 +14087,55 @@ static void dump_0_regex_geomap(slist_t *m2h_list)
   return;
 }
 
-static int dump_1(void)
+static void dump_1_domain(sc_domain_t *dom)
 {
-  sc_domain_t *dom;
   sc_regex_t *re;
-  slist_node_t *sn, *s2;
+  slist_node_t *sn;
   char buf[512];
   int k, hdr;
 
-  for(sn=slist_head_node(domain_list); sn != NULL; sn=slist_node_next(sn))
+  if(slist_count(dom->regexes) < 1)
+    return;
+  slist_qsort(dom->regexes, (slist_cmp_t)sc_regex_score_rank_cmp);
+  hdr = 0;
+
+  for(sn=slist_head_node(dom->regexes); sn != NULL; sn=slist_node_next(sn))
     {
-      dom = slist_node_item(sn);
-      if(slist_count(dom->regexes) < 1)
+      re = slist_node_item(sn);
+      if(sc_regex_show(re) == 0)
 	continue;
-      slist_qsort(dom->regexes, (slist_cmp_t)sc_regex_score_rank_cmp);
-      hdr = 0;
 
-      for(s2=slist_head_node(dom->regexes); s2 != NULL; s2=slist_node_next(s2))
+      if(hdr == 0)
 	{
-	  re = slist_node_item(s2);
-	  if(sc_regex_show(re) == 0)
-	    continue;
-
-	  if(hdr == 0)
-	    {
-	      printf("suffix %s\n", dom->domain);
-	      hdr = 1;
-	    }
-
-	  for(k=0; k<re->regexc; k++)
-	    {
-	      if(k > 0) printf(" ");
-	      printf("%s", re->regexes[k]->str);
-	    }
-	  printf(": %s", sc_regex_score_tostr(re, buf, sizeof(buf)));
-	  if(do_learngeo != 0)
-	    printf(", plan: %s", sc_regex_plan_tostr(re, buf, sizeof(buf)));
-	  printf("\n");
+	  printf("suffix %s\n", dom->domain);
+	  hdr = 1;
 	}
+
+      for(k=0; k<re->regexc; k++)
+	{
+	  if(k > 0) printf(" ");
+	  printf("%s", re->regexes[k]->str);
+	}
+      printf(": %s", sc_regex_score_tostr(re, buf, sizeof(buf)));
+      if(do_learngeo != 0)
+	printf(", plan: %s", sc_regex_plan_tostr(re, buf, sizeof(buf)));
+      printf("\n");
     }
+
+  return;
+}
+
+static int dump_1(void)
+{
+  sc_domain_t *dom;
+  slist_node_t *sn;
+
+  sn = slist_head_node(domain_list);
+  while((dom = slist_node_iter(&sn)) != NULL)
+    dump_1_domain(dom);
+
+  if(pfx_dom != NULL)
+    dump_1_domain(pfx_dom);
 
   return 0;
 }
@@ -13893,9 +14196,10 @@ static void dump_2_regex_iface(const sc_regex_t *re, sc_iface_t *iface,
 
   if(class == '!' && do_learngeo != 0)
     {
-      assert(ifi != NULL && re != NULL && ifi->geohint != NULL);
-      x = sc_router_ooridx(iface->rtr, ifi->geohint, &sample); assert(x == 0);
-      distance = sc_geohint_dist(sample->vp, ifi->geohint);
+      assert(ifi != NULL && re != NULL && ifi->un.geohint != NULL);
+      x = sc_router_ooridx(iface->rtr, ifi->un.geohint, &sample);
+      assert(x == 0);
+      distance = sc_geohint_dist(sample->vp, ifi->un.geohint);
       printf(", \"fp\":[{\"loc\":\"%s\", \"rtt\":%u}]", sample->vp->code,
 	     dist2rtt(distance));
     }
@@ -13977,9 +14281,8 @@ static int dump_2_regex_alias(sc_domain_t *dom, sc_regex_t *re)
   if(do_ri != 0)
     {
       /* compute the Rand index if requested */
-      if((ifp_list = slist_alloc()) == NULL)
+      if((ifp_list = splaytree_to_slist(ifp_tree, NULL)) == NULL)
 	goto done;
-      splaytree_inorder(ifp_tree, tree_to_slist, ifp_list);
       randi = randindex(ifp_list);
       slist_free(ifp_list); ifp_list = NULL;
     }
@@ -14289,23 +14592,23 @@ static int dump_2_regex_alias(sc_domain_t *dom, sc_regex_t *re)
   return rc;
 }
 
-static void dump_2_regex_router_asn(const sc_routerdom_t *rd, sc_css_t *css)
+static void dump_2_regex_router_asn(const sc_router_t *rtr, sc_css_t *css)
 {
   if(do_json != 0)
     {
-      printf("{\"asn\":%u", rd->rtr->asn);
-      if((rd->rtr->flags & SC_ROUTER_FLAG_ID) != 0)
-	printf(", \"id\":%u", rd->rtr->id);
+      printf("{\"asn\":%u", rtr->asn);
+      if((rtr->flags & SC_ROUTER_FLAG_ID) != 0)
+	printf(", \"id\":%u", rtr->id);
       printf(", \"ifaces\":[");
     }
   else
     {
-      printf("%u\n", rd->rtr->asn);
+      printf("%u\n", rtr->asn);
     }
   return;
 }
 
-static void dump_2_regex_router_geo(const sc_routerdom_t *rd, sc_css_t *css)
+static void dump_2_regex_router_geo(const sc_router_t *rtr, sc_css_t *css)
 {
   sc_rtt_t *rtt;
   char buf[64];
@@ -14313,11 +14616,11 @@ static void dump_2_regex_router_geo(const sc_routerdom_t *rd, sc_css_t *css)
   if(do_json != 0)
     {
       printf("{");
-      if(rd->rtr->id != 0)
-	printf("\"id\":%u, ", rd->rtr->id);
-      if(rd->rtr->rttc > 0)
+      if(rtr->id != 0)
+	printf("\"id\":%u, ", rtr->id);
+      if(rtr->rttc > 0)
 	{
-	  rtt = &rd->rtr->rtts[0];
+	  rtt = &rtr->rtts[0];
 	  printf("\"minrtt\":{\"loc\":\"%s\", \"rtt\":%u}, ",
 		 rtt->vp->code, rtt->rtt);
 	}
@@ -14336,8 +14639,7 @@ static void dump_2_regex_router_geo(const sc_routerdom_t *rd, sc_css_t *css)
 
 static int dump_2_regex_router(sc_domain_t *dom, sc_regex_t *re,
 			       splaytree_t *(*rcss_tree_cb)(slist_t *),
-			       void (*router_cb)(const sc_routerdom_t *,
-						 sc_css_t *))
+			       void (*rtr_cb)(const sc_router_t *, sc_css_t *))
 {
   splaytree_t *rd_tree = NULL, *ifp_tree = NULL, *rcss_tree = NULL;
   slist_t *ifi_list = NULL, *rd_list = NULL, *z_list = NULL, *rd0_list = NULL;
@@ -14436,8 +14738,10 @@ static int dump_2_regex_router(sc_domain_t *dom, sc_regex_t *re,
     {
       if(z == 0)
 	z_list = rd_list;
-      else
+      else if(dom != pfx_dom)
 	z_list = dom->routers;
+      else
+	continue;
 
       for(sn=slist_head_node(z_list); sn != NULL; sn=slist_node_next(sn))
 	{
@@ -14456,7 +14760,7 @@ static int dump_2_regex_router(sc_domain_t *dom, sc_regex_t *re,
 	    rcss = sc_routercss_rd_find(rcss_tree, rd);
 	  else
 	    rcss = NULL;
-	  router_cb(rd, rcss != NULL ? rcss->css : NULL);
+	  rtr_cb(rd->rtr, rcss != NULL ? rcss->css : NULL);
 
 	  for(i=0; i<rd->ifacec; i++)
 	    {
@@ -14485,6 +14789,20 @@ static int dump_2_regex_router(sc_domain_t *dom, sc_regex_t *re,
 	  for(s=0; s<rd->rtr->ifacec; s++)
 	    {
 	      iface = rd->rtr->ifaces[s];
+
+	      if(dom == pfx_dom)
+		{
+		  if(iface->name == NULL)
+		    {
+		      if(do_json == 0)
+			{
+			  scamper_addr_tostr(iface->addr, buf, sizeof(buf));
+			  printf("%16s\n", buf);
+			}
+		    }
+		  continue;
+		}
+
 	      if((suffix = sc_suffix_find(iface->name)) == NULL ||
 		 strcmp(suffix, dom->domain) != 0)
 		{
@@ -14712,101 +15030,103 @@ static int dump_2_regex_router(sc_domain_t *dom, sc_regex_t *re,
   return rc;
 }
 
-static int dump_2(void)
+static int dump_2_domain(sc_domain_t *dom)
 {
-  slist_node_t *sn;
-  sc_domain_t *dom;
   sc_regex_t *re;
 
-  for(sn=slist_head_node(domain_list); sn != NULL; sn=slist_node_next(sn))
-    {
-      dom = slist_node_item(sn);
-      if((re = sc_domain_bestre(dom)) == NULL || sc_regex_show(re) == 0)
-	continue;
+  if((re = sc_domain_bestre(dom)) == NULL || sc_regex_show(re) == 0)
+    return 0;
 
-      if(do_learnalias != 0)
-	{
-	  if(dump_2_regex_alias(dom, re) != 0)
-	    return -1;
-	}
-      else if(do_learnasn != 0 || do_learnasnames != 0)
-	{
-	  if(dump_2_regex_router(dom, re, NULL, dump_2_regex_router_asn) != 0)
-	    return -1;
-	}
-      else if(do_learngeo != 0)
-	{
-	  if(dump_2_regex_router(dom, re, sc_routercss_geo,
-				 dump_2_regex_router_geo) != 0)
-	    return -1;
-	}
-      else return -1;
+  if(do_learnalias != 0)
+    {
+      if(dump_2_regex_alias(dom, re) != 0)
+	return -1;
     }
+  else if(do_learnasn != 0 || do_learnasnames != 0)
+    {
+      if(dump_2_regex_router(dom, re, NULL, dump_2_regex_router_asn) != 0)
+	return -1;
+    }
+  else if(do_learngeo != 0)
+    {
+      if(dump_2_regex_router(dom, re, sc_routercss_geo,
+			     dump_2_regex_router_geo) != 0)
+	return -1;
+    }
+  else return -1;
 
   return 0;
 }
 
-static int dump_3_json(void)
+static int dump_2(void)
+{
+  slist_node_t *sn;
+  sc_domain_t *dom;
+
+  sn = slist_head_node(domain_list);
+  while((dom = slist_node_iter(&sn)) != NULL)
+    if(dump_2_domain(dom) != 0)
+      return -1;
+
+  if(pfx_dom != NULL && dump_2_domain(pfx_dom) != 0)
+    return -1;
+
+  return 0;
+}
+
+static int dump_3_domain_json(sc_domain_t *dom, sc_regex_t *re)
 {
   slist_t *m2h_list = NULL, *ifi_list = NULL;
   sc_geomap2hint_t *m2h;
-  slist_node_t *sn, *s2;
-  sc_domain_t *dom;
-  sc_regex_t *re;
+  slist_node_t *sn;
   char buf[2048];
   int i, rc = -1;
 
-  for(sn=slist_head_node(domain_list); sn != NULL; sn=slist_node_next(sn))
+  printf("{\"domain\":\"%s\"", dom->domain);
+  printf(", \"re\":[");
+  for(i=0; i<re->regexc; i++)
     {
-      dom = slist_node_item(sn);
-      if((re = sc_domain_bestre(dom)) == NULL || sc_regex_show(re) == 0)
-	continue;
+      if(i > 0) printf(", ");
+      printf("\"");
+      json_print(re->regexes[i]->str);
+      printf("\"");
+    }
+  printf("]");
+  printf(", \"score\":{%s}", sc_regex_score_tojson(re, buf, sizeof(buf)));
 
-      printf("{\"domain\":\"%s\"", dom->domain);
-      printf(", \"re\":[");
-      for(i=0; i<re->regexc; i++)
+  if(do_learngeo != 0)
+    {
+      if((ifi_list = slist_alloc()) == NULL ||
+	 sc_regex_eval(re, ifi_list) != 0 ||
+	 (m2h_list = sc_geomap2hint_make(re, ifi_list)) == NULL)
+	goto done;
+
+      /* emit all the geohints */
+      printf(", \"geohints\":[");
+      i = 0;
+      for(sn=slist_head_node(m2h_list); sn != NULL; sn=slist_node_next(sn))
 	{
-	  if(i > 0) printf(", ");
-	  printf("\"");
-	  json_print(re->regexes[i]->str);
-	  printf("\"");
+	  m2h = slist_node_item(sn);
+
+	  /* skip over hints with no true positives */
+	  if(m2h->tp_c == 0)
+	    continue;
+
+	  if(sc_geomap2hint_tojson(m2h, buf, sizeof(buf)) != 0)
+	    goto done;
+	  if(i > 0) printf(",");
+	  printf("%s", buf);
+	  i++;
 	}
       printf("]");
-      printf(", \"score\":{%s}", sc_regex_score_tojson(re, buf, sizeof(buf)));
+      printf(", \"plan\":%s", sc_regex_plan_tojson(re, buf, sizeof(buf)));
 
-      if(do_learngeo != 0)
-	{
-	  if((ifi_list = slist_alloc()) == NULL ||
-	     sc_regex_eval(re, ifi_list) != 0 ||
-	     (m2h_list = sc_geomap2hint_make(re, ifi_list)) == NULL)
-	    goto done;
-
-	  /* emit all the geohints */
-	  printf(", \"geohints\":[");
-	  i = 0;
-	  for(s2=slist_head_node(m2h_list); s2 != NULL; s2=slist_node_next(s2))
-	    {
-	      m2h = slist_node_item(s2);
-
-	      /* skip over hints with no true positives */
-	      if(m2h->tp_c == 0)
-		continue;
-
-	      if(sc_geomap2hint_tojson(m2h, buf, sizeof(buf)) != 0)
-		goto done;
-	      if(i > 0) printf(",");
-	      printf("%s", buf);
-	      i++;
-	    }
-	  printf("]");
-	  printf(", \"plan\":%s", sc_regex_plan_tojson(re, buf, sizeof(buf)));
-
-	  slist_free_cb(ifi_list, (slist_free_t)sc_ifaceinf_free);
-	  slist_free_cb(m2h_list, (slist_free_t)free);
-	  ifi_list = NULL; m2h_list = NULL;
-	}
-      printf("}\n");
+      slist_free_cb(ifi_list, (slist_free_t)sc_ifaceinf_free);
+      slist_free_cb(m2h_list, (slist_free_t)free);
+      ifi_list = NULL; m2h_list = NULL;
     }
+  printf("}\n");
+
   rc = 0;
 
  done:
@@ -14815,16 +15135,30 @@ static int dump_3_json(void)
   return rc;
 }
 
-static int dump_3_text(void)
+static void dump_3_domain_text(const sc_domain_t *dom, const sc_regex_t *re)
+{
+  char buf[512];
+  int k;
+
+  printf("%s:", dom->domain);
+  for(k=0; k<re->regexc; k++)
+    printf(" %s", re->regexes[k]->str);
+  printf(", score: %s", sc_regex_score_tostr(re, buf, sizeof(buf)));
+  if(do_learngeo != 0)
+    printf(", plan: %s", sc_regex_plan_tostr(re, buf, sizeof(buf)));
+  printf(", routers: %d\n", slist_count(dom->routers));
+
+  return;
+}
+
+static int dump_3(void)
 {
   slist_node_t *sn;
   sc_domain_t *dom;
   sc_regex_t *re;
-  char buf[512];
   size_t s;
-  int k;
 
-  if(do_learnasnames != 0)
+  if(do_learnasnames != 0 && do_json == 0)
     {
       for(s=0; s<tag2asc; s++)
 	printf("%u %s\n", tag2ass[s]->asn, tag2ass[s]->tag);
@@ -14836,24 +15170,26 @@ static int dump_3_text(void)
       dom = slist_node_item(sn);
       if((re = sc_domain_bestre(dom)) == NULL || sc_regex_show(re) == 0)
 	continue;
-      printf("%s:", dom->domain);
-      for(k=0; k<re->regexc; k++)
-	printf(" %s", re->regexes[k]->str);
-      printf(", score: %s", sc_regex_score_tostr(re, buf, sizeof(buf)));
-      if(do_learngeo != 0)
-	printf(", plan: %s", sc_regex_plan_tostr(re, buf, sizeof(buf)));
-      printf(", routers: %d\n", slist_count(dom->routers));
+      if(do_json != 0)
+	{
+	  if(dump_3_domain_json(dom, re) != 0)
+	    return -1;
+	}
+      else dump_3_domain_text(dom, re);
+    }
+
+  if(pfx_dom != NULL &&
+     (re = sc_domain_bestre(pfx_dom)) != NULL && sc_regex_show(re) != 0)
+    {
+      if(do_json != 0)
+	{
+	  if(dump_3_domain_json(pfx_dom, re) != 0)
+	    return -1;
+	}
+      else dump_3_domain_text(pfx_dom, re);
     }
 
   return 0;
-}
-
-
-static int dump_3(void)
-{
-  if(do_json != 0)
-    return dump_3_json();
-  return dump_3_text();
 }
 
 static int dump_4_regex_asn(sc_domain_t *dom, sc_regex_t *re)
@@ -15042,26 +15378,26 @@ static int dump_4_regex_geo(sc_domain_t *dom, sc_regex_t *re)
 
       if(ifi->class == '+')
 	{
-	  assert(ifi->geohint != NULL);
+	  assert(ifi->un.geohint != NULL);
 	  vp = rtr->rtts[0].vp;
-	  distance = sc_geohint_dist(vp, ifi->geohint);
+	  distance = sc_geohint_dist(vp, ifi->un.geohint);
 	  snprintf(rtt, sizeof(rtt), "%u<%u", dist2rtt(distance),
 		   rtr->rtts[0].rtt + rtt_fudge);
 	}
       else if(ifi->class == '!')
 	{
-	  assert(ifi->geohint != NULL);
-	  i = sc_router_ooridx(rtr, ifi->geohint, &sample); assert(i == 0);
+	  assert(ifi->un.geohint != NULL);
+	  i = sc_router_ooridx(rtr, ifi->un.geohint, &sample); assert(i == 0);
 	  vp = sample->vp;
-	  distance = sc_geohint_dist(vp, ifi->geohint);
+	  distance = sc_geohint_dist(vp, ifi->un.geohint);
 	  snprintf(rtt, sizeof(rtt), "%u>%u", dist2rtt(distance),
 		   sample->rtt + rtt_fudge);
 	}
       else if(ifi->class == '~')
 	{
-	  assert(ifi->geohint != NULL);
+	  assert(ifi->un.geohint != NULL);
 	  vp = rtr->rtts[0].vp;
-	  distance = sc_geohint_dist(vp, ifi->geohint);
+	  distance = sc_geohint_dist(vp, ifi->un.geohint);
 	  snprintf(rtt, sizeof(rtt), "%u<%u", dist2rtt(distance),
 		   rtr->rtts[0].rtt + rtt_fudge);
 	}
@@ -15358,10 +15694,9 @@ static int thin_regexes_domain_mask(slist_t *regexes)
   int i, c2, masklen, rc = -1;
   uint32_t u;
 
-  if((kept = dlist_alloc()) == NULL || (cont = slist_alloc()) == NULL)
-    goto done;
-  slist_qsort(regexes, (slist_cmp_t)sc_regex_score_rank_cmp);
-  if(slist_foreach(regexes, slist_to_dlist, kept) != 0)
+  if(slist_qsort(regexes, (slist_cmp_t)sc_regex_score_rank_cmp) != 0 ||
+     (kept = slist_to_dlist(regexes, NULL)) == NULL ||
+     (cont = slist_alloc()) == NULL)
     goto done;
 
   for(dn1=dlist_head_node(kept); dn1 != NULL; dn1=dlist_node_next(dn1))
@@ -15399,8 +15734,7 @@ static int thin_regexes_domain_mask(slist_t *regexes)
 	}
     }
 
-  if((skept = slist_alloc()) == NULL ||
-     dlist_foreach(kept, dlist_to_slist, skept) != 0)
+  if((skept = dlist_to_slist(kept, NULL)) == NULL)
     goto done;
   slist_empty(regexes);
   slist_concat(regexes, skept);
@@ -15490,7 +15824,7 @@ static int thin_regexes(int mode)
 			     (threadpool_func_t)thin_regexes_thread_1, dom);
       else if(mode == 2)
 	threadpool_tail_push(threadp,
-			     (threadpool_func_t)thin_regexes_thread_2,dom);
+			     (threadpool_func_t)thin_regexes_thread_2, dom);
     }
 
   threadpool_join(threadp); threadp = NULL;
@@ -15556,16 +15890,15 @@ static int sc_regex_refine_tp(sc_regex_t *re)
   sc_rework_t *rew = NULL;
   char *str = NULL, *ptr;
   slist_node_t *sn, *s2;
-  int i, x, capc, rc = -1;
+  int i, x, capc = 0, rc = -1;
   sc_routerinf_t *ri;
   sc_css_t *css, css_fm;
   char buf[256];
   size_t len;
 
   /* figure out how many capture elements there are */
-  if((rew = sc_rework_alloc(re)) == NULL)
-    goto done;
-  if((capc = sc_rework_capcount(rew, 0)) < 0)
+  if((rew = sc_rework_alloc(re)) == NULL ||
+     (capc = sc_rework_capcount(rew, 0)) < 0)
     goto done;
   if(capc == 0)
     {
@@ -15631,7 +15964,8 @@ static int sc_regex_refine_tp(sc_regex_t *re)
 	goto done;
 
       /* get all the substrings out for this capture element */
-      splaytree_inorder(css_trees[i], tree_to_slist, css_list);
+      if(splaytree_to_slist(css_trees[i], css_list) == NULL)
+	goto done;
       splaytree_free(css_trees[i], NULL); css_trees[i] = NULL;
 
       /* figure out regular expressions that match the given strings */
@@ -15680,9 +16014,10 @@ static int sc_regex_refine_tp(sc_regex_t *re)
 	  free(La); La = NULL;
 	}
       slist_empty_cb(css_list, (slist_free_t)sc_css_free);
-      splaytree_inorder(re_tree, tree_to_slist, re_list);
-      splaytree_empty(re_tree, NULL);
 
+      if(splaytree_to_slist(re_tree, re_list) == NULL)
+	goto done;
+      splaytree_empty(re_tree, NULL);
       for(sn=slist_head_node(re_list); sn != NULL; sn=slist_node_next(sn))
 	{
 	  re_eval = slist_node_item(sn);
@@ -15782,8 +16117,7 @@ static int sc_regex_ip_ri_eval(sc_regex_t *re, slist_t *ri_list)
 	      if(ri->ifaces[i]->class == 'x')
 		{
 		  re->tp_c++;
-		  if(splaytree_find(tree, rd) == NULL &&
-		     splaytree_insert(tree, rd) == NULL)
+		  if(sc_ptrtree_add(tree, rd) != 0)
 		    goto done;
 		}
 	      else if(ri->ifaces[i]->class == '+')
@@ -16150,7 +16484,8 @@ static int sc_regex_refine_fne(sc_regex_t *re)
 	  caps[cap]++;
 	}
 
-      splaytree_inorder(rd_ri_tree, tree_to_slist, rd_ri_list);
+      if(splaytree_to_slist(rd_ri_tree, rd_ri_list) == NULL)
+	goto done;
       while((ptrc = slist_head_pop(rd_ri_list)) != NULL)
 	{
 	  if((ptrc = sc_ptrc_get(rd_tree, ptrc->ptr)) == NULL)
@@ -16655,6 +16990,13 @@ static int sc_regex_refine_class_do(sc_regex_t *re, slist_t *ifd_list,
       goto done;
     }
 
+  /* XXX: temporary hack to stop a slow code path */
+  if(do_learnasn != 0 && pfx_dom != NULL && re->dom == pfx_dom && cc >= 10)
+    {
+      rc = 0;
+      goto done;
+    }
+
   if((trees = malloc_zero(sizeof(splaytree_t *) * cc)) == NULL ||
      (list = slist_alloc()) == NULL)
     goto done;
@@ -16698,7 +17040,8 @@ static int sc_regex_refine_class_do(sc_regex_t *re, slist_t *ifd_list,
 
   for(i=0; i<cc; i++)
     {
-      splaytree_inorder(trees[i], tree_to_slist, list);
+      if(splaytree_to_slist(trees[i], list) == NULL)
+	goto done;
       assert(slist_count(list) > 0);
 
       /*
@@ -16822,9 +17165,11 @@ static int sc_regex_refine_class_do(sc_regex_t *re, slist_t *ifd_list,
 	    }
 	}
 
-      splaytree_inorder(seg_tree, tree_to_slist, segs[i]);
-      splaytree_empty(seg_tree, NULL);
       slist_empty(list);
+
+      if(splaytree_to_slist(seg_tree, segs[i]) == NULL)
+	goto done;
+      splaytree_empty(seg_tree, NULL);
 
       for(sn=slist_head_node(segs[i]); sn != NULL; sn=slist_node_next(sn))
 	{
@@ -16844,7 +17189,8 @@ static int sc_regex_refine_class_do(sc_regex_t *re, slist_t *ifd_list,
 	    }
 	  else
 	    {
-	      splaytree_inorder(ss->tree, tree_to_slist, list);
+	      if(splaytree_to_slist(ss->tree, list) == NULL)
+		goto done;
 	      seglen = slist_str_len(list, NULL);
 	      slist_empty(list);
 	      if(seglen == 0)
@@ -16939,10 +17285,9 @@ static int sc_regex_refine_class_tree(splaytree_t *re_tree, slist_t *ifd_list)
   slist_node_t *sn, *sn_tail;
   int rc = -1;
 
-  if((re_tree_list = slist_alloc()) == NULL ||
+  if((re_tree_list = splaytree_to_slist(re_tree, NULL)) == NULL ||
      (re_list = slist_alloc()) == NULL)
     goto done;
-  splaytree_inorder(re_tree, tree_to_slist, re_tree_list);
   sn_tail = slist_tail_node(re_tree_list);
   for(sn=slist_head_node(re_tree_list); sn != NULL; sn=slist_node_next(sn))
     {
@@ -16979,10 +17324,11 @@ static int sc_regex_refine_class_tree(splaytree_t *re_tree, slist_t *ifd_list)
  */
 static int sc_regex_refine_class(sc_regex_t *re)
 {
-  splaytree_t *seg_tree = NULL;
+  splaytree_t *seg_tree = NULL, *rd_tree = NULL;
   slist_t *ifd_list = NULL, *re_list = NULL;
   slist_t *ri_list = NULL, *ifi_list = NULL;
   sc_regex_t *capre = NULL, *re_eval;
+  sc_domain_t *tmp_dom = NULL;
   sc_rework_t *caprew = NULL;
   sc_routerinf_t *ri;
   sc_ifaceinf_t *ifi;
@@ -17023,12 +17369,25 @@ static int sc_regex_refine_class(sc_regex_t *re)
 	  (do_learnasnames != 0 && sc_regex_asnames_eval(re, ifi_list) != 0) ||
 	  (do_learngeo != 0 && sc_regex_geo_eval(re, ifi_list) != 0)))
 	goto done;
-      for(sn=slist_head_node(ifi_list); sn != NULL; sn=slist_node_next(sn))
+
+      /*
+       * learning ASN regexes for prefixes: temporarily use a thinned
+       * out set of routers
+       */
+      if(do_learnasn != 0 && pfx_dom != NULL && re->dom == pfx_dom &&
+	 (rd_tree = splaytree_alloc((splaytree_cmp_t)ptrcmp)) == NULL)
+	goto done;
+
+      sn = slist_head_node(ifi_list);
+      while((ifi = slist_node_iter(&sn)) != NULL)
 	{
-	  ifi = slist_node_item(sn);
-	  if(ifi->class != '+')
-	    continue;
-	  if(slist_tail_push(ifd_list, ifi->ifd) == NULL)
+	  /* look at true positive interfaces when considering patterns */
+	  if(ifi->class == '+' && slist_tail_push(ifd_list, ifi->ifd) == NULL)
+	    goto done;
+
+	  /* if we're building a lite set of routers, make a note */
+	  if(rd_tree != NULL && ifi->class != ' ' &&
+	     sc_ptrtree_add(rd_tree, ifi->ifd->rd) != 0)
 	    goto done;
 	}
       slist_free_cb(ifi_list, (slist_free_t)sc_ifaceinf_free); ifi_list = NULL;
@@ -17037,16 +17396,31 @@ static int sc_regex_refine_class(sc_regex_t *re)
   if(slist_count(ifd_list) == 0)
     goto done;
 
-  /* get the set of regexes and evaluate them */
+  /* get the set of refined candidates based on the input regex */
   if(sc_regex_refine_class_do(re, ifd_list, re_list) != 0)
     goto done;
   slist_free(ifd_list); ifd_list = NULL;
-  for(sn=slist_head_node(re_list); sn != NULL; sn=slist_node_next(sn))
+
+  if(rd_tree != NULL)
     {
-      re_eval = slist_node_item(sn);
-      if(sc_regex_eval(re_eval, NULL) != 0)
+      if((tmp_dom = sc_domain_alloc(re->dom->domain)) == NULL ||
+	 splaytree_to_slist(rd_tree, tmp_dom->routers) == NULL)
 	goto done;
+      splaytree_free(rd_tree, NULL); rd_tree = NULL;
+      tmp_dom->tpmlen = re->dom->tpmlen;
+      tmp_dom->rtmlen = re->dom->rtmlen;
+      tmp_dom->ifacec = re->dom->ifacec;
     }
+
+  /* use the temporary domain with a smaller set of routers if available */
+  if(tmp_dom != NULL)
+    slist_foreach(re_list, (slist_foreach_t)sc_regex_domain_mod, tmp_dom);
+
+  /* evaluate the available regexes */
+  sn = slist_head_node(re_list);
+  while((re_eval = slist_node_iter(&sn)) != NULL)
+    if(sc_regex_eval(re_eval, NULL) != 0)
+      goto done;
   slist_qsort(re_list, (slist_cmp_t)sc_regex_score_rank_cmp);
 
   if(do_debug != 0 && threadc <= 1)
@@ -17060,6 +17434,10 @@ static int sc_regex_refine_class(sc_regex_t *re)
     }
 
   thin_regexes_domain(re_list, 0x7);
+
+  if(tmp_dom != NULL)
+    slist_foreach(re_list, (slist_foreach_t)sc_regex_domain_mod, re->dom);
+
   if(sc_domain_lock(re->dom) != 0)
     goto done;
   slist_concat(re->dom->regexes, re_list);
@@ -17070,6 +17448,16 @@ static int sc_regex_refine_class(sc_regex_t *re)
  done:
   if(seg_tree != NULL)
     splaytree_free(seg_tree, (splaytree_free_t)sc_segscore_free);
+  if(tmp_dom != NULL)
+    {
+      if(tmp_dom->routers != NULL)
+	{
+	  slist_free(tmp_dom->routers);
+	  tmp_dom->routers = NULL;
+	}
+      sc_domain_free(tmp_dom);
+    }
+  if(rd_tree != NULL) splaytree_free(rd_tree, NULL);
   if(re_list != NULL) slist_free_cb(re_list, (slist_free_t)sc_regex_free);
   if(ifi_list != NULL) slist_free_cb(ifi_list, (slist_free_t)sc_ifaceinf_free);
   if(ri_list != NULL) slist_free_cb(ri_list, (slist_free_t)sc_routerinf_free);
@@ -17171,9 +17559,7 @@ static int sc_regex_refine_fnu(sc_regex_t *re)
      (ifp_tree = sc_ifdptr_tree(re->dom->routers)) == NULL ||
      (css_tree = splaytree_alloc((splaytree_cmp_t)sc_css_css_cmp)) == NULL ||
      (re_tree = splaytree_alloc((splaytree_cmp_t)sc_regex_str_cmp)) == NULL ||
-     (re_list = dlist_alloc()) == NULL ||
      (re2_list = slist_alloc()) == NULL ||
-     (css_list = slist_alloc()) == NULL ||
      (ri_list = slist_alloc()) == NULL ||
      sc_regex_alias_eval(re, ri_list) != 0 ||
      sc_ifdptr_tree_ri(ifp_tree, ri_list) != 0)
@@ -17236,7 +17622,8 @@ static int sc_regex_refine_fnu(sc_regex_t *re)
     goto done;
   if(sc_css_reduce(css_tree, 2, 1) != 0) /* trim on char class, min length 1 */
     goto done;
-  splaytree_inorder(css_tree, tree_to_slist, css_list);
+  if((css_list = splaytree_to_slist(css_tree, NULL)) == NULL)
+    goto done;
   splaytree_free(css_tree, NULL); css_tree = NULL;
 
   for(sn=slist_head_node(css_list); sn != NULL; sn=slist_node_next(sn))
@@ -17353,12 +17740,14 @@ static int sc_regex_refine_fnu(sc_regex_t *re)
    * make sure the capture format matches the base regex by
    * substituting in the capture from the base.
    */
-  splaytree_inorder(re_tree, tree_to_dlist, re_list);
+  if((re_list = splaytree_to_dlist(re_tree, NULL)) == NULL)
+    goto done;
   splaytree_empty(re_tree, NULL);
   if(sc_regex_capset_css(re_list, re_tree, capcss) != 0)
     goto done;
-  dlist_empty_cb(re_list, (dlist_free_t)sc_regex_free);
-  splaytree_inorder(re_tree, tree_to_dlist, re_list);
+  dlist_free_cb(re_list, (dlist_free_t)sc_regex_free);
+  if((re_list = splaytree_to_dlist(re_tree, NULL)) == NULL)
+    goto done;
   splaytree_free(re_tree, NULL); re_tree = NULL;
 
   if(threadc <= 1 && do_debug != 0)
@@ -17618,10 +18007,8 @@ static int sc_regex_refine_ip(sc_regex_t *re)
     goto done;
 
   /* use literals to build regexes */
-  if((css_list = slist_alloc()) == NULL)
+  if((css_list = splaytree_to_slist(css_tree, NULL)) == NULL)
     goto done;
-  splaytree_inorder(css_tree, tree_to_slist, css_list);
-
   for(sn=slist_head_node(css_list); sn != NULL; sn=slist_node_next(sn))
     {
       css = slist_node_item(sn);
@@ -17650,9 +18037,8 @@ static int sc_regex_refine_ip(sc_regex_t *re)
   if(sc_regex_refine_class_tree(re_tree, ifd_list) != 0)
     goto done;
 
-  if((re_list = dlist_alloc()) == NULL)
+  if((re_list = splaytree_to_dlist(re_tree, re_list)) == NULL)
     goto done;
-  splaytree_inorder(re_tree, tree_to_dlist, re_list);
   splaytree_free(re_tree, NULL); re_tree = NULL;
 
   for(;;)
@@ -17804,8 +18190,7 @@ static int sc_regex_alias_fp_eval(slist_t *ri_list, sc_regex_t *re)
 	      if(ri->ifaces[i]->class == '!')
 		{
 		  re->tp_c++;
-		  if(splaytree_find(tree, rd) == NULL &&
-		     splaytree_insert(tree, rd) == NULL)
+		  if(sc_ptrtree_add(tree, rd) != 0)
 		    goto done;
 		}
 	      else if(ri->ifaces[i]->class == 'x')
@@ -18038,9 +18423,8 @@ static int sc_regex_refine_fp(sc_regex_t *re)
     goto done;
 
   /* use literals to build regexes */
-  if((css_list = slist_alloc()) == NULL)
+  if((css_list = splaytree_to_slist(css_tree, NULL)) == NULL)
     goto done;
-  splaytree_inorder(css_tree, tree_to_slist, css_list);
   splaytree_free(css_tree, NULL); css_tree = NULL;
 
   for(sn=slist_head_node(css_list); sn != NULL; sn=slist_node_next(sn))
@@ -18072,9 +18456,8 @@ static int sc_regex_refine_fp(sc_regex_t *re)
       free(La); La = NULL;
     }
 
-  if((re_list = dlist_alloc()) == NULL)
+  if((re_list = splaytree_to_dlist(re_tree, NULL)) == NULL)
     goto done;
-  splaytree_inorder(re_tree, tree_to_dlist, re_list);
   splaytree_free(re_tree, NULL); re_tree = NULL;
 
   x = 0;
@@ -18249,12 +18632,16 @@ static int sc_regex_sets_isbetter(sc_regex_t *cur, sc_regex_t *can)
     }
   else if(do_learnasn != 0 || do_learnasnames != 0)
     {
+      /* if the set extracts mostly a single ASN, then no better */
+      if(can->class == RE_CLASS_SINGLE)
+	return 0;
+
       /*
        * if any component regex is unable to find two unique ASNs,
-       * then no better
+       * or seems to mostly find a single ASN, then no better
        */
       for(i=0; i<can->regexc; i++)
-	if(can->regexes[i]->rt_c < 2)
+	if(can->regexes[i]->rt_c < 2 || can->regexes[i]->single != 0)
 	  return 0;
     }
 
@@ -18269,19 +18656,33 @@ static int sc_regex_sets_isbetter(sc_regex_t *cur, sc_regex_t *can)
  * permuting into a regex containing both work and cand, determine the
  * best combination of the two regexes and return that.
  */
-static int sc_regex_refine_sets_permute(sc_regex_t *work, slist_t *work_ifi,
-					sc_regex_t *cand, sc_regex_t **best)
+static int sc_regex_refine_sets_permute(sc_regex_sni_t *sin)
 {
-  slist_t *set = NULL;
-  int rc = -1;
+  slist_t *work_ifi = NULL, *set = NULL;
   sc_regex_t *re;
+  int rc = -1;
 
-  assert(cand->regexc == 1);
+  /* check that the candidate regex to include is a single regex */
+  assert(sin->re->regexc == 1);
 
   if((set = slist_alloc()) == NULL)
     goto done;
-  if(sc_regex_permute(work, work_ifi, cand, set) != 0)
-    goto done;
+
+  if(sin->re->infs != NULL)
+    {
+      if(sin->work->re->infs == NULL)
+	goto done;
+      assert(do_learnasn != 0);
+      if(sc_regex_permute_lite(sin->work->re, sin->re, set) != 0)
+	goto done;
+    }
+  else
+    {
+      if((work_ifi = slist_alloc()) == NULL ||
+	 sc_regex_ifi_build(sin->work->re, work_ifi) != 0 ||
+	 sc_regex_permute(sin->work->re, work_ifi, sin->re, set) != 0)
+	goto done;
+    }
   if(slist_count(set) == 0)
     {
       rc = 0;
@@ -18290,18 +18691,19 @@ static int sc_regex_refine_sets_permute(sc_regex_t *work, slist_t *work_ifi,
 
   slist_qsort(set, (slist_cmp_t)sc_regex_score_rank_cmp);
   re = slist_head_item(set);
-  if(sc_regex_sets_isbetter(work, re) != 1 ||
-     (*best != NULL && sc_regex_score_rank_cmp(*best, re) <= 0))
+  if(sc_regex_sets_isbetter(sin->work->re, re) != 1)
     {
       rc = 0;
       goto done;
     }
 
-  if(*best != NULL) sc_regex_free(*best);
-  *best = slist_head_pop(set);
+  assert(sin->out == NULL);
+  sin->out = slist_head_pop(set);
   rc = 0;
 
  done:
+  if(work_ifi != NULL)
+    slist_free_cb(work_ifi, (slist_free_t)sc_ifaceinf_free);
   if(set != NULL)
     slist_free_cb(set, (slist_free_t)sc_regex_free);
   return rc;
@@ -18316,15 +18718,12 @@ static int sc_regex_refine_sets(sc_regex_sni_t *sin)
 {
   sc_regex_sn_t *work = sin->work;
   sc_domain_t *dom = work->re->dom;
-  slist_t *ifi_list = NULL;
   sc_regex_t *best = NULL;
   sc_regex_sni_t *sni;
   slist_node_t *sn;
   int snic, rc = -1;
 
-  if((ifi_list = slist_alloc()) == NULL ||
-     sc_regex_ifi_build(work->re, ifi_list) != 0 ||
-     sc_regex_refine_sets_permute(work->re, ifi_list, sin->re, &sin->out) != 0)
+  if(sc_regex_refine_sets_permute(sin) != 0)
     {
       work->done = 1;
       goto done;
@@ -18379,8 +18778,6 @@ static int sc_regex_refine_sets(sc_regex_sni_t *sin)
   rc = 0;
 
  done:
-  if(ifi_list != NULL)
-    slist_free_cb(ifi_list, (slist_free_t)sc_ifaceinf_free);
   return rc;
 }
 
@@ -18739,9 +19136,8 @@ static int sc_regex_refine_merge(sc_regex_t *re, slist_node_t *sn)
       goto done;
     }
 
-  if((list = slist_alloc()) == NULL)
+  if((list = splaytree_to_slist(tree, NULL)) == NULL)
     goto done;
-  splaytree_inorder(tree, (splaytree_inorder_t)tree_to_slist, list);
   splaytree_free(tree, NULL); tree = NULL;
 
   if((re_list = slist_alloc()) == NULL)
@@ -18825,12 +19221,13 @@ static int generate_regexes_domain_alias(sc_domain_t *dom)
    * take the regex strings out of the tree and put them in a list
    * ready to be evaluated
    */
-  splaytree_inorder(re_tree, tree_to_slist, dom->regexes);
+  if(splaytree_to_slist(re_tree, dom->regexes) == NULL)
+    goto err;
   splaytree_free(re_tree, NULL); re_tree = NULL;
   return 0;
 
  err:
-  if(re_tree != NULL) splaytree_free(re_tree, NULL);
+  if(re_tree != NULL) splaytree_free(re_tree, (splaytree_free_t)sc_regex_free);
   return -1;
 }
 
@@ -18840,7 +19237,7 @@ static int generate_regexes_domain_asn(sc_domain_t *dom)
   sc_routerdom_t *rd = NULL;
   sc_ifacedom_t *ifd1, *ifd2;
   slist_node_t *sn1, *sn2; /* of sc_ifacedom_t */
-  slist_t *ifaces = NULL; /* of sc_ifacedom_t */
+  slist_t *L = NULL, *ifaces = NULL; /* of sc_ifacedom_t */
   int i;
 
   if((re_tree = splaytree_alloc((splaytree_cmp_t)sc_regex_str_cmp)) == NULL ||
@@ -18869,11 +19266,21 @@ static int generate_regexes_domain_asn(sc_domain_t *dom)
 	  ifd2 = slist_node_item(sn2);
 
 	  /*
+	   * Expand literals outwards around the ASN to see how much of the
+	   * structure is shared between the two interfaces.
+	   */
+	  if((L = lcs_asn(ifd1, ifd2)) == NULL)
+	    goto err;
+
+	  /*
 	   * Does the particular label containing the ASN have more structure?
 	   * This might include the prefix "as" before the number.
 	   */
-	  if(sc_regex_asn_lcs(re_tree, dom, ifd1, ifd2) != 0)
+	  if(sc_regex_asn_build(re_tree, dom, L, ifd1, ifd2) != 0)
 	    goto err;
+
+	  slist_free_cb(L, (slist_free_t)sc_lcs_pt_free);
+	  L = NULL;
 	}
     }
   slist_free(ifaces); ifaces = NULL;
@@ -18882,13 +19289,15 @@ static int generate_regexes_domain_asn(sc_domain_t *dom)
    * take the regex strings out of the tree and put them in a list
    * ready to be evaluated
    */
-  splaytree_inorder(re_tree, tree_to_slist, dom->regexes);
+  if(splaytree_to_slist(re_tree, dom->regexes) == NULL)
+    goto err;
   splaytree_free(re_tree, NULL); re_tree = NULL;
   return 0;
 
  err:
+  if(L != NULL) slist_free_cb(L, (slist_free_t)sc_lcs_pt_free);
   if(ifaces != NULL) slist_free(ifaces);
-  if(re_tree != NULL) splaytree_free(re_tree, NULL);
+  if(re_tree != NULL) splaytree_free(re_tree, (splaytree_free_t)sc_regex_free);
   return -1;
 }
 
@@ -18933,12 +19342,13 @@ static int generate_regexes_domain_asnames(sc_domain_t *dom)
    * take the regex strings out of the tree and put them in a list
    * ready to be evaluated
    */
-  splaytree_inorder(tree, tree_to_slist, dom->regexes);
-  splaytree_free(tree, NULL); tree = NULL;
+  if(splaytree_to_slist(tree, dom->regexes) == NULL)
+    goto err;
+  splaytree_free(tree, NULL);
   return 0;
 
  err:
-  if(tree != NULL) splaytree_free(tree, NULL);
+  if(tree != NULL) splaytree_free(tree, (splaytree_free_t)sc_regex_free);
   return -1;
 }
 
@@ -18996,16 +19406,16 @@ static int generate_regexes_domain_geo(sc_domain_t *dom)
    * take the regex strings out of the tree and put them in a list
    * ready to be evaluated
    */
-  splaytree_inorder(tree, tree_to_slist, dom->regexes);
-  splaytree_free(tree, NULL); tree = NULL;
-
+  if(splaytree_to_slist(tree, dom->regexes) == NULL)
+    goto err;
+  splaytree_free(tree, NULL);
   return 0;
 
  err:
   if(bits != NULL) free(bits);
   if(ctypes != NULL) free(ctypes);
   if(c != NULL) free(c);
-  if(tree != NULL) splaytree_free(tree, NULL);
+  if(tree != NULL) splaytree_free(tree, (splaytree_free_t)sc_regex_free);
   return -1;
 }
 
@@ -19205,8 +19615,16 @@ static int regex_file_line_d3(char *line)
 
   if((dom = sc_domain_find(dup)) == NULL)
     {
-      rc = 0;
-      goto done;
+      if(strcmp(dup, "prefix") != 0)
+	{
+	  rc = 0;
+	  goto done;
+	}
+      if((dom = sc_domain_get("prefix")) == NULL)
+	{
+	  fprintf(stderr, "%s: could not get prefix domain\n", __func__);
+	  goto done;
+	}
     }
 
   /* build the regex and tag the score */
@@ -19251,7 +19669,15 @@ static int regex_file_line(char *line, void *param)
   /* if a suffix line, get the equivalent domain */
   if(strncmp(line, "suffix ", 7) == 0)
     {
-      dom = sc_domain_find(line + 7);
+      ptr = line + 7;
+      if((dom = sc_domain_find(ptr)) == NULL && strcmp(ptr, "prefix") == 0)
+	{
+	  if((dom = sc_domain_get("prefix")) == NULL)
+	    {
+	      fprintf(stderr, "%s: could not get prefix domain\n", __func__);
+	      return -1;
+	    }
+	}
       return 0;
     }
 
@@ -19372,37 +19798,112 @@ static int generate_regexes(void)
   return 0;
 }
 
+static void eval_regexes_lite_thread(sc_regex_t *re)
+{
+  slist_t *list = NULL, *lite = NULL;
+  sc_ifaceinf_t *ifi = NULL;
+
+  assert(re->infs == NULL);
+
+  if((list = slist_alloc()) == NULL || (lite = slist_alloc()) == NULL ||
+     sc_regex_eval(re, list) != 0)
+    goto done;
+
+  while((ifi = slist_head_pop(list)) != NULL)
+    {
+      if(ifi->class == ' ')
+	{
+	  sc_ifaceinf_free(ifi);
+	  continue;
+	}
+      if(ifi->css != NULL)
+	{
+	  sc_css_free(ifi->css);
+	  ifi->css = NULL;
+	}
+      if(slist_tail_push(lite, ifi) == NULL)
+	goto done;
+    }
+
+  re->infs = lite; lite = NULL;
+
+ done:
+  if(ifi != NULL) sc_ifaceinf_free(ifi);
+  if(list != NULL) slist_free_cb(list, (slist_free_t)sc_ifaceinf_free);
+  if(lite != NULL) slist_free_cb(list, (slist_free_t)sc_ifaceinf_free);
+  return;
+}
+
+static int eval_regexes_lite_list(slist_t *list)
+{
+  slist_node_t *sn = slist_head_node(list);
+  sc_regex_t *re;
+  int regexc = 0;
+
+  while((re = slist_node_iter(&sn)) != NULL)
+    {
+      threadpool_tail_push(threadp,
+			   (threadpool_func_t)eval_regexes_lite_thread, re);
+      regexc++;
+    }
+
+  return regexc;
+}
+
 static void eval_regexes_thread(sc_regex_t *re)
 {
   sc_regex_eval(re, NULL);
   return;
 }
 
+static int eval_regexes_dom(sc_domain_t *dom)
+{
+  slist_node_t *sn;
+  sc_regex_t *re;
+  int regexc = 0;
+
+  for(sn=slist_head_node(dom->regexes); sn != NULL; sn=slist_node_next(sn))
+    {
+      re = slist_node_item(sn);
+      threadpool_tail_push(threadp,
+			   (threadpool_func_t)eval_regexes_thread, re);
+      regexc++;
+    }
+
+  return regexc;
+}
+
 static int eval_regexes(void)
 {
   struct timeval start, finish;
-  slist_node_t *sn, *s2;
+  slist_node_t *sn;
   sc_domain_t *dom;
-  sc_regex_t *re;
   int regexc = 0;
   char buf[32];
 
   gettimeofday_wrap(&start);
+
   threadp = threadpool_alloc(threadc);
   for(sn=slist_head_node(domain_list); sn != NULL; sn=slist_node_next(sn))
     {
       dom = slist_node_item(sn);
-      for(s2=slist_head_node(dom->regexes); s2 != NULL; s2=slist_node_next(s2))
-	{
-	  re = slist_node_item(s2);
-	  threadpool_tail_push(threadp,
-			       (threadpool_func_t)eval_regexes_thread, re);
-	  regexc++;
-	}
+      regexc += eval_regexes_dom(dom);
     }
   threadpool_join(threadp); threadp = NULL;
-  gettimeofday_wrap(&finish);
 
+  if(pfx_dom != NULL && slist_count(pfx_dom->regexes) > 0)
+    {
+      if(slist_count(pfx_dom->routers) == 0 && build_prefix_dom() != 0)
+	{
+	  fprintf(stderr, "could not build prefix domain\n");
+	  return -1;
+	}
+      threadp = threadpool_alloc(threadc);
+      regexc += eval_regexes_dom(pfx_dom);
+      threadpool_join(threadp); threadp = NULL;
+    }
+
+  gettimeofday_wrap(&finish);
   fprintf(stderr, "evaluated %d regexes in %s\n", regexc,
 	  duration_tostr(buf, sizeof(buf), &start, &finish));
 
@@ -19443,6 +19944,13 @@ static void refine_regexes_tp_thread(sc_regex_t *re)
 {
   if(do_learnalias != 0)
     sc_regex_refine_tp(re);
+  return;
+}
+
+static void refine_regexes_merge_thread(sc_regex_mn_t *rmn)
+{
+  sc_regex_refine_merge(rmn->re, rmn->sn);
+  free(rmn);
   return;
 }
 
@@ -19503,14 +20011,7 @@ static void refine_regexes_sets_onion_thread(sc_regex_sn_t *work)
   return;
 }
 
-static void refine_regexes_merge_thread(sc_regex_mn_t *rmn)
-{
-  sc_regex_refine_merge(rmn->re, rmn->sn);
-  free(rmn);
-  return;
-}
-
-static void refine_regexes_sets_domain_check(sc_domain_fn_t *domfn)
+static void refine_regexes_sets_domain_check(sc_domain_sn_t *domsn)
 {
   sc_regex_sn_t *work = NULL, *work2;
   slist_node_t *sn, *s2;
@@ -19518,22 +20019,22 @@ static void refine_regexes_sets_domain_check(sc_domain_fn_t *domfn)
   int all_done = 0, work_atp, head_atp;
 
   /* check if we've inferred a near-perfect regex */
-  slist_qsort(domfn->work, (slist_cmp_t)sc_regex_sn_score_rank_cmp);
-  work = slist_head_item(domfn->work);  assert(work != NULL);
+  slist_qsort(domsn->work, (slist_cmp_t)sc_regex_sn_score_rank_cmp);
+  work = slist_head_item(domsn->work);  assert(work != NULL);
   head = work->re;
   if(head->fne_c + head->fnu_c + head->unk_c + head->fp_c < 2)
     {
-      domfn->done = 1;
+      domsn->done = 1;
       return;
     }
   head_atp = sc_regex_score_atp(head);
 
   /* put the list back in to the order it started with */
-  slist_qsort(domfn->work, (slist_cmp_t)sc_regex_sn_base_rank_cmp);
+  slist_qsort(domsn->work, (slist_cmp_t)sc_regex_sn_base_rank_cmp);
 
   /* check if there are any regexes not marked done */
   all_done = 1;
-  for(sn=slist_head_node(domfn->work); sn != NULL; sn=slist_node_next(sn))
+  for(sn=slist_head_node(domsn->work); sn != NULL; sn=slist_node_next(sn))
     {
       work = slist_node_item(sn);
       if(work->done != 0)
@@ -19549,7 +20050,7 @@ static void refine_regexes_sets_domain_check(sc_domain_fn_t *domfn)
 	  work->done = 2;
 	  continue;
 	}
-      for(s2=slist_head_node(domfn->work); s2 != sn; s2=slist_node_next(s2))
+      for(s2=slist_head_node(domsn->work); s2 != sn; s2=slist_node_next(s2))
 	{
 	  work2 = slist_node_item(s2);
 	  if(work2->re->regexc < work->re->regexc &&
@@ -19565,7 +20066,7 @@ static void refine_regexes_sets_domain_check(sc_domain_fn_t *domfn)
       all_done = 0;
     }
   if(all_done != 0)
-    domfn->done = 1;
+    domsn->done = 1;
 
   return;
 }
@@ -19573,7 +20074,7 @@ static void refine_regexes_sets_domain_check(sc_domain_fn_t *domfn)
 /*
  * refine_regexes_sets_domain_init
  *
- * this function creates a set of sc_domain_fn_t nodes, each of which
+ * this function creates a set of sc_domain_sn_t nodes, each of which
  * point to a list of sc_regex_sn_t nodes.
  *
  * the sc_regex_sn_t nodes represent the starting point of a regex -- hoiho
@@ -19583,7 +20084,7 @@ static void refine_regexes_sets_domain_check(sc_domain_fn_t *domfn)
 static int refine_regexes_sets_domain_init(dlist_t *out, sc_domain_t *dom)
 {
   sc_regex_sn_t *base = NULL, *work = NULL, *last = NULL;
-  sc_domain_fn_t *domfn = NULL;
+  sc_domain_sn_t *domsn = NULL;
   slist_node_t *sn, *s2;
   sc_regex_t *head, *re;
   int rc = -1;
@@ -19606,9 +20107,9 @@ static int refine_regexes_sets_domain_init(dlist_t *out, sc_domain_t *dom)
   if(head->fne_c + head->fnu_c + head->unk_c + head->fp_c < 2)
     return 0;
 
-  if((domfn = malloc_zero(sizeof(sc_domain_fn_t))) == NULL ||
-     (domfn->work = slist_alloc()) == NULL ||
-     (domfn->base = slist_alloc()) == NULL)
+  if((domsn = malloc_zero(sizeof(sc_domain_sn_t))) == NULL ||
+     (domsn->work = slist_alloc()) == NULL ||
+     (domsn->base = slist_alloc()) == NULL)
     goto done;
 
   for(sn=slist_head_node(dom->regexes); sn != NULL; sn=slist_node_next(sn))
@@ -19616,7 +20117,7 @@ static int refine_regexes_sets_domain_init(dlist_t *out, sc_domain_t *dom)
       re = slist_node_item(sn);
 
       if((base = malloc_zero(sizeof(sc_regex_sn_t))) == NULL ||
-	 slist_tail_push(domfn->base, base) == NULL)
+	 slist_tail_push(domsn->base, base) == NULL)
 	goto done;
       base->re = re;
 
@@ -19638,7 +20139,7 @@ static int refine_regexes_sets_domain_init(dlist_t *out, sc_domain_t *dom)
 	  (do_learnasnames != 0 && re->fp_c > head->fp_c) ||
 	  (do_learngeo != 0 && re->fp_c > head->fp_c)))
 	continue;
-      for(s2=slist_head_node(domfn->work); s2 != NULL; s2=slist_node_next(s2))
+      for(s2=slist_head_node(domsn->work); s2 != NULL; s2=slist_node_next(s2))
 	{
 	  work = slist_node_item(s2);
 	  if(re->tp_c <= work->re->tp_c &&
@@ -19652,56 +20153,32 @@ static int refine_regexes_sets_domain_init(dlist_t *out, sc_domain_t *dom)
 	continue;
 
       if((work = malloc_zero(sizeof(sc_regex_sn_t))) == NULL ||
-	 slist_tail_push(domfn->work, work) == NULL)
+	 slist_tail_push(domsn->work, work) == NULL)
 	goto done;
       work->refn = base;
       work->base = re;
       work->re = re;
     }
 
-  if(dlist_tail_push(out, domfn) == NULL)
+  if(dlist_tail_push(out, domsn) == NULL)
     goto done;
-  domfn = NULL;
+  domsn = NULL;
   rc = 0;
 
  done:
-  if(domfn != NULL) sc_domain_fn_free(domfn);
+  if(domsn != NULL) sc_domain_sn_free(domsn);
   return rc;
 }
 
-static int refine_regexes_sets(void)
+static int refine_regexes_sets_do(dlist_t *domsn_list)
 {
-  dlist_t *domfn_list = NULL;
-  struct timeval start, finish;
   char buf[1024], score[128];
-  sc_domain_fn_t *domfn;
+  sc_domain_sn_t *domsn;
   sc_regex_sn_t *work;
   dlist_node_t *dn, *dn_this;
   slist_node_t *sn;
-  sc_domain_t *dom;
-  int rc = -1;
 
-  if((refine_mask & REFINE_SETS) == 0)
-    return 0;
-
-  /*
-   * go through the regexes and figure out if there are missed routers
-   * with apparent names that we might be able to match with more work
-   */
-  fprintf(stderr, "refining regexes: build sets\n");
-  gettimeofday_wrap(&start);
-
-  /* figure out which domains still have work to be done */
-  if((domfn_list = dlist_alloc()) == NULL)
-    goto done;
-  for(sn=slist_head_node(domain_list); sn != NULL; sn=slist_node_next(sn))
-    {
-      dom = slist_node_item(sn);
-      if(refine_regexes_sets_domain_init(domfn_list, dom) != 0)
-	goto done;
-    }
-
-  while(dlist_count(domfn_list) > 0)
+  while(dlist_count(domsn_list) > 0)
     {
       if(do_debug != 0 && threadc <= 1)
 	printf("\n###\n");
@@ -19711,11 +20188,11 @@ static int refine_regexes_sets(void)
        * below makes the most sense to merge in
        */
       if((threadp = threadpool_alloc(threadc)) == NULL)
-	goto done;
-      for(dn=dlist_head_node(domfn_list); dn != NULL; dn=dlist_node_next(dn))
+	return -1;
+      for(dn=dlist_head_node(domsn_list); dn != NULL; dn=dlist_node_next(dn))
 	{
-	  domfn = dlist_node_item(dn);
-	  for(sn=slist_head_node(domfn->work); sn!=NULL; sn=slist_node_next(sn))
+	  domsn = dlist_node_item(dn);
+	  for(sn=slist_head_node(domsn->work); sn!=NULL; sn=slist_node_next(sn))
 	    {
 	      work = slist_node_item(sn);
 	      if(do_debug != 0 && threadc <= 1)
@@ -19736,29 +20213,64 @@ static int refine_regexes_sets(void)
        * not need further work
        */
       if((threadp = threadpool_alloc(threadc)) == NULL)
-	goto done;
-      for(dn=dlist_head_node(domfn_list); dn != NULL; dn=dlist_node_next(dn))
+	return -1;
+      for(dn=dlist_head_node(domsn_list); dn != NULL; dn=dlist_node_next(dn))
 	{
-	  domfn = dlist_node_item(dn);
+	  domsn = dlist_node_item(dn);
 	  threadpool_tail_push(threadp,
 			(threadpool_func_t)refine_regexes_sets_domain_check,
-			domfn);
+			domsn);
 	}
       threadpool_join(threadp); threadp = NULL;
 
       /* remove the ones that do not require further work */
-      dn=dlist_head_node(domfn_list);
+      dn=dlist_head_node(domsn_list);
       while(dn != NULL)
 	{
-	  domfn = dlist_node_item(dn); dn_this=dn;
+	  domsn = dlist_node_item(dn); dn_this=dn;
 	  dn = dlist_node_next(dn);
-	  if(domfn->done != 0)
+	  if(domsn->done != 0)
 	    {
-	      sc_domain_fn_free(domfn);
-	      dlist_node_pop(domfn_list, dn_this);
+	      sc_domain_sn_free(domsn);
+	      dlist_node_pop(domsn_list, dn_this);
 	    }
 	}
     }
+
+  return 0;
+}
+
+static int refine_regexes_sets(void)
+{
+  dlist_t *domsn_list = NULL;
+  struct timeval start, finish;
+  slist_node_t *sn;
+  sc_domain_t *dom;
+  char buf[1024];
+  int rc = -1;
+
+  if((refine_mask & REFINE_SETS) == 0)
+    return 0;
+
+  /*
+   * go through the regexes and figure out if there are missed routers
+   * with apparent names that we might be able to match with more work
+   */
+  fprintf(stderr, "refining regexes: build sets\n");
+  gettimeofday_wrap(&start);
+
+  /* figure out which domains still have work to be done */
+  if((domsn_list = dlist_alloc()) == NULL)
+    goto done;
+  for(sn=slist_head_node(domain_list); sn != NULL; sn=slist_node_next(sn))
+    {
+      dom = slist_node_item(sn);
+      if(refine_regexes_sets_domain_init(domsn_list, dom) != 0)
+	goto done;
+    }
+
+  if(refine_regexes_sets_do(domsn_list) != 0)
+    goto done;
 
   gettimeofday_wrap(&finish);
   fprintf(stderr, "refining regexes: build sets finished in %s\n",
@@ -19766,9 +20278,42 @@ static int refine_regexes_sets(void)
   rc = 0;
 
  done:
-  if(domfn_list != NULL)
-    dlist_free_cb(domfn_list, (slist_free_t)sc_domain_fn_free);
+  if(domsn_list != NULL)
+    dlist_free_cb(domsn_list, (slist_free_t)sc_domain_sn_free);
   return rc;
+}
+
+static int refine_regexes_dom(sc_domain_t *dom, threadpool_func_t func,
+			      int (*skip)(sc_regex_t *, void *), void *param,
+			      void *(*prep)(sc_regex_t *, slist_node_t *))
+{
+  slist_node_t *sn, *sn_tail;
+  sc_regex_t *re;
+  void *ptr;
+
+  sn_tail = slist_tail_node(dom->regexes);
+  for(sn=slist_head_node(dom->regexes); sn != NULL; sn=slist_node_next(sn))
+    {
+      re = slist_node_item(sn);
+      if(skip != NULL && skip(re, param) != 0)
+	continue;
+      if(prep == NULL)
+	{
+	  threadpool_tail_push(threadp, func, re);
+	  if(sn == sn_tail)
+	    break;
+	}
+      else
+	{
+	  if(sn == sn_tail)
+	    break;
+	  if((ptr = prep(re, slist_node_next(sn))) == NULL)
+	    return -1;
+	  threadpool_tail_push(threadp, func, ptr);
+	}
+    }
+
+  return 0;
 }
 
 static int refine_regexes(const char *type, threadpool_func_t func,
@@ -19776,11 +20321,9 @@ static int refine_regexes(const char *type, threadpool_func_t func,
 			  void *(*prep)(sc_regex_t *, slist_node_t *))
 {
   struct timeval start, finish;
-  slist_node_t *sn, *s2, *sn_tail;
+  slist_node_t *sn;
   int from = 0, to = 0, rc = -1;
   sc_domain_t *dom;
-  sc_regex_t *re;
-  void *ptr;
   char buf[32];
 
   fprintf(stderr, "refining regexes: %s\n", type);
@@ -19791,28 +20334,9 @@ static int refine_regexes(const char *type, threadpool_func_t func,
   for(sn=slist_head_node(domain_list); sn != NULL; sn=slist_node_next(sn))
     {
       dom = slist_node_item(sn);
-      sn_tail = slist_tail_node(dom->regexes);
       from += slist_count(dom->regexes);
-      for(s2=slist_head_node(dom->regexes); s2 != NULL; s2=slist_node_next(s2))
-	{
-	  re = slist_node_item(s2);
-	  if(skip != NULL && skip(re, param) != 0)
-	    continue;
-	  if(prep == NULL)
-	    {
-	      threadpool_tail_push(threadp, func, re);
-	      if(s2 == sn_tail)
-		break;
-	    }
-	  else
-	    {
-	      if(s2 == sn_tail)
-		break;
-	      if((ptr = prep(re, slist_node_next(s2))) == NULL)
-		goto done;
-	      threadpool_tail_push(threadp, func, ptr);
-	    }
-	}
+      if(refine_regexes_dom(dom, func, skip, param, prep) != 0)
+	goto done;
     }
   threadpool_join(threadp); threadp = NULL;
 
@@ -20283,11 +20807,11 @@ static int refine_dict_asnames(void)
     }
 
   /* thin out the dictionary */
-  if((list = slist_alloc()) == NULL || (unk_list = slist_alloc()) == NULL)
+  if((list = splaytree_to_slist(tree, NULL)) == NULL)
     goto done;
-  splaytree_inorder(tree, tree_to_slist, list);
   splaytree_free(tree, NULL); tree = NULL;
-  splaytree_inorder(unk_tree, tree_to_slist, unk_list);
+  if((unk_list = splaytree_to_slist(unk_tree, NULL)) == NULL)
+    goto done;
   splaytree_free(unk_tree, NULL); unk_tree = NULL;
   if(refine_dict_asnames_thin(list, unk_list) != 0)
     goto done;
@@ -20446,9 +20970,8 @@ static void refine_dict_geo_thread(sc_regex_t *re)
     }
 
   /* convert the tree to a flat list for further work */
-  if((gr_list = slist_alloc()) == NULL)
+  if((gr_list = splaytree_to_slist(gr_tree, NULL)) == NULL)
     goto done;
-  splaytree_inorder(gr_tree, tree_to_slist, gr_list);
   splaytree_free(gr_tree, NULL); gr_tree = NULL;
 
   /* get the unique set of hints from the dictionary */
@@ -20458,9 +20981,9 @@ static void refine_dict_geo_thread(sc_regex_t *re)
   for(sn=slist_head_node(m2h_list); sn != NULL; sn=slist_node_next(sn))
     {
       m2h = slist_node_item(sn);
-      if(m2h->tp_c == 0 || splaytree_find(gh_tree, m2h->hint) != NULL)
+      if(m2h->tp_c == 0)
 	continue;
-      if(splaytree_insert(gh_tree, m2h->hint) == NULL)
+      if(sc_ptrtree_add(gh_tree, m2h->hint) != 0)
 	goto done;
     }
 
@@ -20624,6 +21147,359 @@ static int refine_dict_geo(void)
   return rc;
 }
 
+static int refine_regexes_pref_asn_1(splaytree_t *tree,
+				     sc_ifacedom_t *ifd1, sc_ifacedom_t *ifd2)
+{
+  slist_t *asn_pt = NULL, *pref_pt = NULL;
+  int ifd1_start, ifd2_start, i, rc = -1;
+  sc_lcs_pt_t *pt;
+
+  /* fast exit */
+  if(ifd1->label[0] != ifd2->label[0] || ifd1->label[0] == '\0')
+    {
+      rc = 0;
+      goto done;
+    }
+
+  /* determine any common substrings before/after the embedded ASN */
+  if((asn_pt = lcs_asn(ifd1, ifd2)) == NULL)
+    goto done;
+
+  /* figure out where the prefix could extend to */
+  ifd1_start = ifd1->iface->as_s;
+  ifd2_start = ifd1->iface->as_s;
+  if((pt = slist_head_item(asn_pt)) != NULL)
+    {
+      if(pt->S_start < ifd1_start)
+	ifd1_start = pt->S_start;
+      if(pt->T_start < ifd2_start)
+	ifd2_start = pt->T_start;
+    }
+  if((ifd1->iface->flags & SC_IFACE_FLAG_IP) != 0 &&
+     ifd1->iface->ip_s < ifd1_start)
+    ifd1_start = ifd1->iface->ip_s;
+  if((ifd2->iface->flags & SC_IFACE_FLAG_IP) != 0 &&
+     ifd2->iface->ip_s < ifd2_start)
+    ifd2_start = ifd2->iface->ip_s;
+
+  /* determine the common prefix between the two labels */
+  i = 0;
+  while(ifd1->label[i+1] != '\0' && ifd2->label[i+1] != '\0' &&
+	ifd1->label[i+1] == ifd2->label[i+1] &&
+	i < ifd1_start && i < ifd2_start)
+    i++;
+
+  /* use the lcs_trim code to skip back through common punctuation */
+  if((pref_pt = slist_alloc()) == NULL ||
+     sc_lcs_pt_push(pref_pt, 0, i, 0, i) != 0 ||
+     lcs_trim(pref_pt, ifd1->label, ifd2->label) != 0)
+    goto done;
+
+  /*
+   * the prefix length must be at least three characters
+   * (pt->S_end >= 2) to be considered further.
+   */
+  if((pt = slist_head_item(pref_pt)) == NULL || pt->S_end < 2)
+    {
+      rc = 0;
+      goto done;
+    }
+
+  slist_concat(pref_pt, asn_pt);
+  if(sc_regex_asn_build(tree, NULL, pref_pt, ifd1, ifd2) != 0)
+    goto done;
+
+  rc = 0;
+
+ done:
+  if(asn_pt != NULL) slist_free_cb(asn_pt, (slist_free_t)sc_lcs_pt_free);
+  if(pref_pt != NULL) slist_free_cb(pref_pt, (slist_free_t)sc_lcs_pt_free);
+  return rc;
+}
+
+static int build_prefix_dom(void)
+{
+  sc_domain_t *dom;
+  splaytree_t *rtr_tree = NULL, *iface_tree = NULL;
+  sc_routerdom_t *rd, *new_rd = NULL;
+  sc_ifacedom_t *ifd, *new_ifd = NULL;
+  sc_ifaceinf_t *ifi;
+  sc_regex_t *re;
+  int i, free_new_rd = 0;
+  slist_t *re_list = NULL;
+  slist_node_t *sn, *s2;
+  sc_abc_t *abc;
+
+  assert(pfx_dom != NULL);
+
+  /*
+   * first, figure out how many interfaces will be needed on each
+   * sc_routerdom_t, which are all the interfaces of a sc_router_t
+   * that are in any sc_routerdom_t.
+   */
+  if((re_list = slist_alloc()) == NULL ||
+     (rtr_tree = sc_abc_tree_alloc()) == NULL ||
+     (iface_tree = splaytree_alloc(ptrcmp)) == NULL)
+    goto err;
+  for(sn=slist_head_node(domain_list); sn != NULL; sn=slist_node_next(sn))
+    {
+      dom = slist_node_item(sn); s2=slist_head_node(dom->routers);
+      while((rd = slist_node_iter(&s2)) != NULL)
+	{
+	  if((abc = sc_abc_tree_get(rtr_tree, rd->rtr)) == NULL)
+	    goto err;
+	  abc->c += rd->ifacec;
+	}
+
+      /* identify the best current regexes to evaluate */
+      if(slist_count(dom->regexes) > 0 &&
+	 (re = sc_domain_bestre(dom)) != NULL &&
+	 re->class != RE_CLASS_SINGLE &&
+	 slist_tail_push(re_list, re) == NULL)
+	goto err;
+    }
+
+  /* evaluate the best current regexes */
+  threadp = threadpool_alloc(threadc);
+  eval_regexes_lite_list(re_list);
+  threadpool_join(threadp); threadp = NULL;
+
+  /*
+   * identify the interfaces that we should not match with a prefix
+   * regex
+   */
+  sn = slist_head_node(re_list);
+  while((re = slist_node_iter(&sn)) != NULL)
+    {
+      s2 = slist_head_node(re->infs);
+      while((ifi = slist_node_iter(&s2)) != NULL)
+	{
+	  if((ifi->class == '+' || ifi->class == '=') &&
+	     sc_ptrtree_add(iface_tree, ifi->ifd->iface) != 0)
+	    {
+	      fprintf(stderr, "could not insert %s into iface_tree",
+		      ifi->ifd->iface->name);
+	      goto err;
+	    }
+	}
+    }
+  slist_free(re_list); re_list = NULL;
+
+  /*
+   * make a second pass through, building the sc_routerdom_t for the
+   * 'prefix' domain
+   */
+  for(sn=slist_head_node(domain_list); sn != NULL; sn=slist_node_next(sn))
+    {
+      dom = slist_node_item(sn);
+      for(s2=slist_head_node(dom->routers); s2 != NULL; s2=slist_node_next(s2))
+	{
+	  rd = slist_node_item(s2);
+	  if((abc = sc_abc_tree_find(rtr_tree, rd->rtr)) == NULL)
+	    goto err;
+
+	  /* no sc_routerdom_t in the prefix domain yet */
+	  if(abc->b == NULL)
+	    {
+	      free_new_rd = 1;
+	      if((new_rd = sc_routerdom_alloc(rd->rtr, abc->c)) == NULL ||
+		 slist_tail_push(pfx_dom->routers, new_rd) == NULL)
+		goto err;
+	      free_new_rd = 0;
+	      abc->b = new_rd;
+	    }
+	  else new_rd = abc->b;
+
+	  for(i=0; i<rd->ifacec; i++)
+	    {
+	      ifd = rd->ifaces[i];
+	      assert(new_rd->ifacec < abc->c);
+	      if((new_ifd = sc_ifacedom_dup(ifd)) == NULL)
+		goto err;
+	      if(splaytree_find(iface_tree, ifd->iface) != NULL)
+		new_ifd->dnm = 1;
+	      new_rd->ifaces[new_rd->ifacec++] = new_ifd;
+	      new_ifd->rd = new_rd;
+	    }
+	}
+    }
+
+  splaytree_free(iface_tree, NULL);
+  sc_abc_tree_free(rtr_tree);
+  sc_domain_assign_ids(pfx_dom);
+  return 0;
+
+ err:
+  if(rtr_tree != NULL) sc_abc_tree_free(rtr_tree);
+  if(new_rd != NULL && free_new_rd != 0) sc_routerdom_free(new_rd);
+  if(re_list != NULL) slist_free(re_list);
+  if(iface_tree != NULL) splaytree_free(iface_tree, NULL);
+  return -1;
+}
+
+static int refine_regexes_pref_asn(void)
+{
+  struct timeval start, finish;
+  slist_t *unmatched = NULL, *re_list = NULL;
+  splaytree_t *re_tree = NULL;
+  sc_routerdom_t *rd;
+  sc_ifacedom_t *ifd1, *ifd2;
+  slist_node_t *sn, *sn1, *sn2;
+  sc_domain_t *dom;
+  dlist_t *domsn_list = NULL;
+  char buf[32];
+  int i, rc = -1;
+
+  if((refine_mask & REFINE_PREF) == 0)
+    return 0;
+
+  fprintf(stderr, "refining regexes: prefix\n");
+
+  gettimeofday_wrap(&start);
+  if((pfx_dom = sc_domain_get("prefix")) == NULL || build_prefix_dom() != 0)
+    goto done;
+  gettimeofday_wrap(&finish);
+  fprintf(stderr, "refining regexes: prefix - built domain in %s\n",
+	  duration_tostr(buf, sizeof(buf), &start, &finish));
+  timeval_cpy(&start, &finish);
+
+  /* figure out the interfaces to consider prefix regexes for */
+  if((unmatched = slist_alloc()) == NULL)
+     goto done;
+  for(sn=slist_head_node(domain_list); sn != NULL; sn=slist_node_next(sn))
+    {
+      dom = slist_node_item(sn);
+      if(slist_count(dom->regexes) > 0)
+	continue;
+
+      /*
+       * if there is no regex for the suffix, then identify interfaces
+       * with an apparent ASN hint
+       */
+      sn2 = slist_head_node(dom->routers);
+      while((rd = slist_node_iter(&sn2)) != NULL)
+	{
+	  for(i=0; i<rd->ifacec; i++)
+	    {
+	      if((rd->ifaces[i]->iface->flags & SC_IFACE_FLAG_AS) == 0 ||
+		 (rd->ifaces[i]->iface->flags & SC_IFACE_FLAG_AS_ED1) != 0)
+		continue;
+	      if(slist_tail_push(unmatched, rd->ifaces[i]) == NULL)
+		goto done;
+	    }
+	}
+    }
+
+  /* build regexes for current unmatched interfaces */
+  if((re_tree = splaytree_alloc((splaytree_cmp_t)sc_regex_str_cmp)) == NULL)
+    goto done;
+  for(sn1=slist_head_node(unmatched); sn1 != NULL; sn1=slist_node_next(sn1))
+    {
+      ifd1 = slist_node_item(sn1);
+      for(sn2=slist_node_next(sn1); sn2 != NULL; sn2=slist_node_next(sn2))
+	{
+	  ifd2 = slist_node_item(sn2);
+	  if(refine_regexes_pref_asn_1(re_tree, ifd1, ifd2) != 0)
+	    goto done;
+	}
+    }
+  gettimeofday_wrap(&finish);
+  fprintf(stderr,
+	  "refining regexes: prefix - %d base regexes generated in %s\n",
+	  splaytree_count(re_tree),
+	  duration_tostr(buf, sizeof(buf), &start, &finish));
+  if(splaytree_count(re_tree) == 0)
+    {
+      rc = 0;
+      goto done;
+    }
+  timeval_cpy(&start, &finish);
+
+  /*
+   * take the regex strings out of the tree and put them in a list
+   * ready to be evaluated
+   */
+  if((re_list = splaytree_to_slist(re_tree, NULL)) == NULL)
+    goto done;
+  splaytree_free(re_tree, NULL); re_tree = NULL;
+  slist_foreach(re_list, (slist_foreach_t)sc_regex_prefix_mod, NULL);
+  slist_foreach(re_list, (slist_foreach_t)sc_regex_domain_mod, pfx_dom);
+  slist_concat(pfx_dom->regexes, re_list);
+  threadp = threadpool_alloc(threadc);
+  eval_regexes_dom(pfx_dom);
+  threadpool_join(threadp); threadp = NULL;
+  gettimeofday_wrap(&finish);
+  fprintf(stderr,
+	  "refining regexes: prefix - %d base regexes evaluated in %s\n",
+	  slist_count(pfx_dom->regexes),
+	  duration_tostr(buf, sizeof(buf), &start, &finish));
+  timeval_cpy(&start, &finish);
+
+  /* thin regexes */
+  i = slist_count(pfx_dom->regexes);
+  thin_regexes_thread_1(pfx_dom);
+  gettimeofday_wrap(&finish);
+  fprintf(stderr,
+	  "refining regexes: prefix - thinned from %d to %d regexes in %s\n",
+	  i, slist_count(pfx_dom->regexes),
+	  duration_tostr(buf, sizeof(buf), &start, &finish));
+  timeval_cpy(&start, &finish);
+
+  /* class prefix regexes */
+  i = slist_count(pfx_dom->regexes);
+  threadp = threadpool_alloc(threadc);
+  refine_regexes_dom(pfx_dom, (threadpool_func_t)refine_regexes_class_thread,
+		     NULL, NULL, NULL);
+  threadpool_join(threadp); threadp = NULL;
+  gettimeofday_wrap(&finish);
+  fprintf(stderr, "refining regexes: prefix - class %d to %d regexes in %s\n",
+	  i, slist_count(pfx_dom->regexes),
+	  duration_tostr(buf, sizeof(buf), &start, &finish));
+  timeval_cpy(&start, &finish);
+
+  /* thin regexes */
+  i = slist_count(pfx_dom->regexes);
+  thin_regexes_thread_1(pfx_dom);
+  gettimeofday_wrap(&finish);
+  fprintf(stderr,
+	  "refining regexes: prefix - thinned from %d to %d regexes in %s\n",
+	  i, slist_count(pfx_dom->regexes),
+	  duration_tostr(buf, sizeof(buf), &start, &finish));
+  timeval_cpy(&start, &finish);
+
+  /* build cached inferences prior to building sets */
+  threadp = threadpool_alloc(threadc);
+  eval_regexes_lite_list(pfx_dom->regexes);
+  threadpool_join(threadp); threadp = NULL;
+  gettimeofday_wrap(&finish);
+  fprintf(stderr, "refining regexes: prefix - eval lite in %s\n",
+	  duration_tostr(buf, sizeof(buf), &start, &finish));
+  timeval_cpy(&start, &finish);
+
+  /* build sets */
+  i = slist_count(pfx_dom->regexes);
+  domsn_list = dlist_alloc();
+  if(refine_regexes_sets_domain_init(domsn_list, pfx_dom) != 0)
+    goto done;
+  if(refine_regexes_sets_do(domsn_list) != 0)
+    goto done;
+  dlist_free_cb(domsn_list, (dlist_free_t)sc_domain_sn_free);
+  domsn_list = NULL;
+  gettimeofday_wrap(&finish);
+  fprintf(stderr, "refining regexes: prefix - sets %d to %d regexes in %s\n",
+	  i, slist_count(pfx_dom->regexes),
+	  duration_tostr(buf, sizeof(buf), &start, &finish));
+  timeval_cpy(&start, &finish);
+
+  rc = 0;
+
+ done:
+  if(re_tree != NULL) splaytree_free(re_tree, (splaytree_free_t)sc_regex_free);
+  if(re_list != NULL) slist_free_cb(re_list, (slist_free_t)sc_regex_free);
+  if(unmatched != NULL) slist_free(unmatched);
+  return rc;
+}
+
 static int assert_domains(void)
 {
   slist_node_t *sn, *s2;
@@ -20758,10 +21634,11 @@ static int load_routers_asnames_dict(void)
     }
 
   /* thin out any ASN tags that are in less than 3 suffixes */
-  if((list = slist_alloc()) == NULL || (thin = slist_alloc()) == NULL)
+  if((list = splaytree_to_slist(tree, NULL)) == NULL)
     goto done;
-  splaytree_inorder(tree, tree_to_slist, list);
   splaytree_free(tree, NULL); tree = NULL;
+  if((thin = slist_alloc()) == NULL)
+    goto done;
   while((a2t = slist_head_pop(list)) != NULL)
     {
       if(splaytree_count(a2t->sxes) < 3)
@@ -20926,9 +21803,8 @@ static int load_routers_1(void)
     }
   if(slist_count(rl.ifaces) > 0 && sc_router_finish(&rl) != 0)
     goto done;
-  if((domain_list = slist_alloc()) == NULL)
+  if((domain_list = splaytree_to_slist(domain_tree, NULL)) == NULL)
     goto done;
-  splaytree_inorder(domain_tree, tree_to_slist, domain_list);
 
   /* infer if the hostnames contain IP address literals */
   threadp = threadpool_alloc(threadc);
@@ -20966,13 +21842,11 @@ static int load_routers_1(void)
 static int load_routers_2(void)
 {
   struct timeval start, finish;
-  slist_node_t *sn, *s2;
+  slist_node_t *sn;
   sc_routerdom_t *rd;
   sc_domain_t *dom;
   slist_t *tmp = NULL;
-  int i, rc = -1;
-  int rtr_id, ifd_id;
-  uint32_t rtc;
+  int rc = -1;
   char buf[32];
 
   gettimeofday_wrap(&start);
@@ -21021,26 +21895,7 @@ static int load_routers_2(void)
   for(sn=slist_head_node(domain_list); sn != NULL; sn=slist_node_next(sn))
     {
       dom = slist_node_item(sn);
-
-#if 0
-      printf("%s %d %d\n", dom->domain, slist_count(dom->routers),
-	     slist_count(dom->appl));
-#endif
-
-      /* assign router and interface ids to each training router and iface */
-      rtr_id = 1; ifd_id = 1;
-      for(s2=slist_head_node(dom->routers); s2 != NULL; s2=slist_node_next(s2))
-	{
-	  rd = slist_node_item(s2);
-	  rd->id = rtr_id++;
-	  for(i=0; i<rd->ifacec; i++)
-	    rd->ifaces[i]->id = ifd_id++;
-	  dom->ifacec += rd->ifacec;
-	}
-
-      rtc = slist_count(dom->routers);
-      dom->tpmlen = dom->ifacec / 32 + ((dom->ifacec % 32 == 0) ? 0 : 1);
-      dom->rtmlen = rtc / 32 + ((rtc % 32 == 0) ? 0 : 1);
+      sc_domain_assign_ids(dom);
     }
 
   /* run some assertions on the domains */
@@ -21631,8 +22486,7 @@ static int load_dict_geohints(void)
      (state_list = slist_alloc()) == NULL ||
      (vp_list = slist_alloc()) == NULL ||
      (clligp_tree = splaytree_alloc((splaytree_cmp_t)sc_clligp_3cmp)) == NULL||
-     (strlist_tree = splaytree_alloc((splaytree_cmp_t)sc_strlist_cmp))== NULL||
-     (clligp_list = slist_alloc()) == NULL)
+     (strlist_tree = splaytree_alloc((splaytree_cmp_t)sc_strlist_cmp))== NULL)
     goto done;
 
   while((geohint_file = slist_head_pop(dicts)) != NULL)
@@ -21670,7 +22524,8 @@ static int load_dict_geohints(void)
     }
 
   /* map the geopolitical portion of the clli code to ISO3166 cc/st */
-  splaytree_inorder(clligp_tree, tree_to_slist, clligp_list);
+  if((clligp_list = splaytree_to_slist(clligp_tree, NULL)) == NULL)
+    goto done;
   splaytree_free(clligp_tree, NULL); clligp_tree = NULL;
   if((i = slist_count(clligp_list)) > 0)
     {
@@ -22003,10 +22858,8 @@ static int load_dict_asnames(void)
   if(dicts == NULL)
     return 0;
 
-  if((tree = splaytree_alloc((splaytree_cmp_t)sc_as2tag_tag_cmp)) == NULL ||
-     (list = slist_alloc()) == NULL)
+  if((tree = splaytree_alloc((splaytree_cmp_t)sc_as2tag_tag_cmp)) == NULL)
     goto done;
-
   while((file = slist_head_pop(dicts)) != NULL)
     {
       if(file_lines(file, asnames_file_line, tree))
@@ -22015,8 +22868,10 @@ static int load_dict_asnames(void)
 	  goto done;
 	}
     }
-  splaytree_inorder(tree, tree_to_slist, list);
+  if((list = splaytree_to_slist(tree, NULL)) == NULL)
+    goto done;
   splaytree_free(tree, NULL); tree = NULL;
+
   if((x = slist_count(list)) <= 0)
     {
       rc = 0;
@@ -22396,6 +23251,12 @@ static void cleanup(void)
       router_list = NULL;
     }
 
+  if(pfx_dom != NULL)
+    {
+      sc_domain_free(pfx_dom);
+      pfx_dom = NULL;
+    }
+
   return;
 }
 
@@ -22484,6 +23345,7 @@ int main(int argc, char *argv[])
 	  else if(j == 2) { if(refine_regexes_class() != 0) return -1; }
 	  else if(j == 3) { if(refine_regexes_merge() != 0) return -1; }
 	  else if(j == 4) { if(refine_regexes_sets() != 0) return -1; }
+	  else if(j == 5) { if(refine_regexes_pref_asn() != 0) return -1; }
 	}
     }
   else if(do_learnasnames != 0)

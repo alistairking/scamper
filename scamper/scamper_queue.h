@@ -1,11 +1,11 @@
 /*
  * scamper_queue.h
  *
- * $Id: scamper_queue.h,v 1.17 2024/12/15 06:56:23 mjl Exp $
+ * $Id: scamper_queue.h,v 1.19 2025/07/04 23:34:23 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2010 The University of Waikato
- * Copyright (C) 2015-2024 Matthew Luckie
+ * Copyright (C) 2015-2025 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -42,8 +42,7 @@ typedef int (*scamper_queue_event_cb_t)(void *param);
  */
 int scamper_queue_probe(scamper_queue_t *queue);
 int scamper_queue_probe_head(scamper_queue_t *sq);
-int scamper_queue_wait(scamper_queue_t *queue, int msec);
-int scamper_queue_done(scamper_queue_t *queue, int msec);
+int scamper_queue_done(scamper_queue_t *queue);
 int scamper_queue_wait_tv(scamper_queue_t *queue, const struct timeval *tv);
 
 int scamper_queue_isprobe(scamper_queue_t *queue);

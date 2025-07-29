@@ -1,5 +1,6 @@
 scamperdir = $(PYTHON_SITE_PKG)
 scamper_LTLIBRARIES = scamper.la
+scamper_DATA = scamper.pyi
 
 scamper_la_SOURCES = scamper.c
 

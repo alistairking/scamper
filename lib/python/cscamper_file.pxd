@@ -29,6 +29,23 @@ cdef extern from "scamper_file.h":
  ctypedef struct scamper_file_readbuf_t:
   pass
 
+ cdef uint16_t SCAMPER_FILE_OBJ_LIST
+ cdef uint16_t SCAMPER_FILE_OBJ_CYCLE_START
+ cdef uint16_t SCAMPER_FILE_OBJ_CYCLE_DEF
+ cdef uint16_t SCAMPER_FILE_OBJ_CYCLE_STOP
+ cdef uint16_t SCAMPER_FILE_OBJ_ADDR
+ cdef uint16_t SCAMPER_FILE_OBJ_TRACE
+ cdef uint16_t SCAMPER_FILE_OBJ_PING
+ cdef uint16_t SCAMPER_FILE_OBJ_TRACELB
+ cdef uint16_t SCAMPER_FILE_OBJ_DEALIAS
+ cdef uint16_t SCAMPER_FILE_OBJ_NEIGHBOURDISC
+ cdef uint16_t SCAMPER_FILE_OBJ_TBIT
+ cdef uint16_t SCAMPER_FILE_OBJ_STING
+ cdef uint16_t SCAMPER_FILE_OBJ_SNIFF
+ cdef uint16_t SCAMPER_FILE_OBJ_HOST
+ cdef uint16_t SCAMPER_FILE_OBJ_HTTP
+ cdef uint16_t SCAMPER_FILE_OBJ_UDPPROBE
+
  ctypedef int (*scamper_file_readfunc_t)(void *param,
 				         uint8_t **data, size_t len)
 

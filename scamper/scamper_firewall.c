@@ -1,10 +1,10 @@
 /*
  * scamper_firewall.c
  *
- * $Id: scamper_firewall.c,v 1.62 2025/03/29 19:55:24 mjl Exp $
+ * $Id: scamper_firewall.c,v 1.63 2025/07/04 07:28:27 mjl Exp $
  *
  * Copyright (C) 2008-2011 The University of Waikato
- * Copyright (C) 2016-2024 Matthew Luckie
+ * Copyright (C) 2016-2025 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -1084,8 +1084,7 @@ static int pf_init(char *opts)
   long num;
 
   name_str = opts;
-  string_nullterm_char(opts, ':', &num_str);
-  if(strlen(name_str) < 1)
+  if(string_nullterm_char(opts, ':', &num_str) < 1)
     {
       scamper_debug(__func__, "invalid name");
       return -1;

@@ -1,7 +1,7 @@
 /*
  * scamper_tracelb_do.c
  *
- * $Id: scamper_tracelb_do.c,v 1.320 2025/06/27 02:29:51 mjl Exp $
+ * $Id: scamper_tracelb_do.c,v 1.321 2025/07/04 23:34:23 mjl Exp $
  *
  * Copyright (C) 2008-2011 The University of Waikato
  * Copyright (C) 2012      The Regents of the University of California
@@ -313,7 +313,7 @@ static void tracelb_handleerror(scamper_task_t *task, int err)
   scamper_tracelb_t *trace = tracelb_getdata(task);
   trace->error = err;
   scamper_debug(__func__, "%d", err);
-  scamper_task_queue_done(task, 0);
+  scamper_task_queue_done(task);
   return;
 }
 
@@ -1661,7 +1661,7 @@ static void tracelb_queue(scamper_task_t *task)
   /* if there are no branches to probe, then we're done */
   if(heap_count(state->active) == 0 && heap_count(state->waiting) == 0)
     {
-      scamper_task_queue_done(task, 0);
+      scamper_task_queue_done(task);
       return;
     }
 
@@ -1683,7 +1683,7 @@ static void tracelb_queue(scamper_task_t *task)
       /* check to see if we're permitted to send another probe */
       if(trace->probec >= trace->probec_max)
 	{
-	  scamper_task_queue_done(task, 0);
+	  scamper_task_queue_done(task);
 	  return;
 	}
 
@@ -3710,7 +3710,7 @@ static void tracelb_handle_dlhdr(scamper_dlhdr_t *dlhdr)
 
   if(dlhdr->error != 0)
     {
-      scamper_task_queue_done(task, 0);
+      scamper_task_queue_done(task);
       return;
     }
 
@@ -3921,7 +3921,7 @@ static void tracelb_state_free(scamper_tracelb_t *trace,tracelb_state_t *state)
 
 static void do_tracelb_halt(scamper_task_t *task)
 {
-  scamper_task_queue_done(task, 0);
+  scamper_task_queue_done(task);
   return;
 }
 

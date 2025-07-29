@@ -1,7 +1,7 @@
 /*
  * utils.h
  *
- * $Id: utils.h,v 1.174 2025/04/20 07:29:14 mjl Exp $
+ * $Id: utils.h,v 1.182 2025/07/05 10:28:05 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -67,32 +67,35 @@ int timeval_cmp_lt(const struct timeval *tv, time_t s, suseconds_t us)
 int timeval_cmp_gt(const struct timeval *tv, time_t s, suseconds_t us)
   ATTRIBUTE_NONNULL_PURE;
 
-int timeval_inrange_us(const struct timeval *a, const struct timeval *b, int c)
+int timeval_inrange_tv(const struct timeval *a, const struct timeval *b,
+		       const struct timeval *range)
   ATTRIBUTE_NONNULL_PURE;
 
-int timeval_diff_ms(const struct timeval *from, const struct timeval *to)
-  ATTRIBUTE_NONNULL_PURE;
-int timeval_diff_us(const struct timeval *from, const struct timeval *to)
-  ATTRIBUTE_NONNULL_PURE;
 void timeval_diff_tv(struct timeval *out,
 		     const struct timeval *from, const struct timeval *to)
   ATTRIBUTE_NONNULL;
 
-void timeval_add_ms(struct timeval *out, const struct timeval *in, int ms)
+void timeval_add_s(struct timeval *out, const struct timeval *in, time_t s)
   ATTRIBUTE_NONNULL;
-void timeval_add_us(struct timeval *out, const struct timeval *in, int us)
+void timeval_add_us(struct timeval *out, const struct timeval *in, uint32_t us)
   ATTRIBUTE_NONNULL;
 void timeval_add_tv(struct timeval *tv, const struct timeval *add)
   ATTRIBUTE_NONNULL;
 void timeval_add_tv3(struct timeval *out, const struct timeval *in,
 		     const struct timeval *add)
-  ATTRIBUTE_NONNULL;
-void timeval_add_s(struct timeval *out, const struct timeval *in, int s)
+
   ATTRIBUTE_NONNULL;
 void timeval_sub_tv(struct timeval *out, const struct timeval *sub)
   ATTRIBUTE_NONNULL;
-void timeval_sub_us(struct timeval *out, const struct timeval *in, int us)
+void timeval_sub_tv3(struct timeval *out, const struct timeval *in,
+		     const struct timeval *sub)
   ATTRIBUTE_NONNULL;
+
+void timeval_div(struct timeval *out, const struct timeval *in, uint32_t d)
+  ATTRIBUTE_NONNULL;
+void timeval_mul(struct timeval *out, const struct timeval *in, uint32_t m)
+  ATTRIBUTE_NONNULL;
+
 void timeval_cpy(struct timeval *dst, const struct timeval *src)
   ATTRIBUTE_NONNULL;
 char *timeval_tostr_us(const struct timeval *rtt, char *str, size_t len)
@@ -241,9 +244,10 @@ char *strerror_wrap(char *errbuf, size_t errlen, const char *format, ...);
 /*
  * Functions for parsing strings
  */
+
 char *string_nextword(char *str) ATTRIBUTE_NONNULL;
-char *string_nullterm(char *str, const char *delim, char **next);
-char *string_nullterm_char(char *str, char delim, char **next);
+size_t string_nullterm(char *str, const char *delim) ATTRIBUTE_NONNULL;
+size_t string_nullterm_char(char *str, char delim, char **next) ATTRIBUTE_NONNULL;
 int   string_isprint(const char *str, size_t len) ATTRIBUTE_NONNULL_PURE;
 int   string_isalpha(const char *str) ATTRIBUTE_NONNULL_PURE;
 int   string_isnumber(const char *str) ATTRIBUTE_NONNULL_PURE;

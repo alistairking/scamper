@@ -1,7 +1,7 @@
 /*
  * scamper_host_do
  *
- * $Id: scamper_host_do.c,v 1.91 2025/04/27 00:49:24 mjl Exp $
+ * $Id: scamper_host_do.c,v 1.92 2025/07/04 23:34:23 mjl Exp $
  *
  * Copyright (C) 2018-2025 Matthew Luckie
  *
@@ -236,7 +236,7 @@ static void host_stop(scamper_task_t *task, uint8_t reason)
 {
   scamper_host_t *host = host_getdata(task);
   host->stop = reason;
-  scamper_task_queue_done(task, 0);
+  scamper_task_queue_done(task);
   return;
 }
 

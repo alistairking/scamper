@@ -1,7 +1,7 @@
 /*
  * scamper_fds: manage events and file descriptors
  *
- * $Id: scamper_fds.c,v 1.134 2024/11/30 06:59:41 mjl Exp $
+ * $Id: scamper_fds.c,v 1.135 2025/07/23 07:37:47 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -407,7 +407,7 @@ static void fd_refcnt_0(scamper_fd_t *fdn)
   return;
 }
 
-#if defined(BUILDING_SCAMPER) && (defined(__linux__) || defined(BIOCSETFNR))
+#if defined(BUILDING_SCAMPER) && defined(HAVE_BPF_DYN_FILTER)
 static void fd_dynfilter(void)
 {
   dlist_node_t *dn;
@@ -1356,7 +1356,7 @@ static scamper_fd_t *fd_tcpudp(int type, void *src, uint16_t sport,
 
   scamper_debug(__func__, "fd %d type %s", fdn->fd, fd_tostr(fdn));
 
-#if defined(BUILDING_SCAMPER) && (defined(__linux__) || defined(BIOCSETFNR))
+#if defined(BUILDING_SCAMPER) && defined(HAVE_BPF_DYN_FILTER)
   if(scamper_option_dynfilter() &&
      (fdn->type == SCAMPER_FD_TYPE_UDP4DG ||
       fdn->type == SCAMPER_FD_TYPE_UDP6 ||

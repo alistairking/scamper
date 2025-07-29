@@ -1,12 +1,12 @@
 /*
  * linked list routines
  *
- * $Id: mjl_list.c,v 1.89 2024/12/30 04:19:00 mjl Exp $
+ * $Id: mjl_list.c,v 1.91 2025/07/12 21:36:31 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
  *
- * Copyright (C) 2004-2024 Matthew Luckie. All rights reserved.
+ * Copyright (C) 2004-2025 Matthew Luckie. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -372,6 +372,34 @@ void slist_concat(slist_t *first, slist_t *second)
   return;
 }
 
+dlist_t *slist_to_dlist(slist_t *in, dlist_t *out)
+{
+  slist_node_t *sn;
+  dlist_t *tmp;
+
+  assert(in != NULL);
+
+  if((tmp = dlist_alloc()) == NULL)
+    goto err;
+
+  for(sn=in->head; sn != NULL; sn=sn->next)
+    if(dlist_tail_push(tmp, sn->item) == NULL)
+      goto err;
+
+  if(out != NULL)
+    {
+      dlist_concat(out, tmp);
+      dlist_free(tmp);
+      return out;
+    }
+
+  return tmp;
+
+ err:
+  if(tmp != NULL) dlist_free(tmp);
+  return NULL;
+}
+
 static void slist_flush(slist_t *list, slist_free_t free_func)
 {
   slist_node_t *node;
@@ -555,6 +583,20 @@ slist_node_t *slist_node_next(const slist_node_t *node)
 {
   assert(node != NULL);
   return node->next;
+}
+
+void *slist_node_iter(slist_node_t **iter)
+{
+  void *item = NULL;
+
+  assert(iter != NULL);
+  if(*iter != NULL)
+    {
+      item = (*iter)->item;
+      *iter = (*iter)->next;
+    }
+
+  return item;
 }
 
 int slist_foreach(slist_t *list, const slist_foreach_t func, void *param)
@@ -1016,6 +1058,34 @@ void dlist_concat(dlist_t *first, dlist_t *second)
   return;
 }
 
+slist_t *dlist_to_slist(dlist_t *in, slist_t *out)
+{
+  dlist_node_t *dn;
+  slist_t *tmp;
+
+  assert(in != NULL);
+
+  if((tmp = slist_alloc()) == NULL)
+    goto err;
+
+  for(dn=in->head; dn != NULL; dn=dn->next)
+    if(slist_tail_push(tmp, dn->item) == NULL)
+      goto err;
+
+  if(out != NULL)
+    {
+      slist_concat(out, tmp);
+      slist_free(tmp);
+      return out;
+    }
+
+  return tmp;
+
+ err:
+  if(tmp != NULL) slist_free(tmp);
+  return NULL;
+}
+
 void dlist_node_head_push(dlist_t *list, dlist_node_t *node)
 {
   assert(list != NULL);
@@ -1314,6 +1384,20 @@ dlist_node_t *dlist_node_prev(const dlist_node_t *node)
 {
   assert(node != NULL);
   return node->prev;
+}
+
+void *dlist_node_iter(dlist_node_t **iter)
+{
+  void *item = NULL;
+
+  assert(iter != NULL);
+  if(*iter != NULL)
+    {
+      item = (*iter)->item;
+      *iter = (*iter)->next;
+    }
+
+  return item;
 }
 
 /*

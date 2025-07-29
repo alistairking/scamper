@@ -1,12 +1,12 @@
 /*
  * scamper_source_file.c
  *
- * $Id: scamper_source_file.c,v 1.37 2025/03/29 18:46:03 mjl Exp $
+ * $Id: scamper_source_file.c,v 1.39 2025/07/04 19:26:21 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2014      The Regents of the University of California
- * Copyright (C) 2017-2024 Matthew Luckie
+ * Copyright (C) 2017-2025 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -98,34 +98,32 @@ static int ssf_read_line(void *param, uint8_t *buf, size_t len)
   char *str = (char *)buf;
   char cmd_buf[256], *cmd = NULL;
   size_t reqd_len;
+  int rc = -1;
 
   /* make sure the string contains only printable characters */
   if(string_isprint(str, len) == 0)
     {
       printerror(__func__, "%s contains unprintable characters", ssf->filename);
-      goto err;
+      goto done;
     }
 
   if(ssf->command != NULL)
     {
       /* null terminate at these characters */
-      string_nullterm(str, " \r\t#", NULL);
+      len = string_nullterm(str, " \r\t#");
       if(str[0] == '\0' || str[0] == '#')
 	return 0;
 
       /* figure out if the cmd_buf above is large enough */
-      len = strlen(str);
-      if(sizeof(cmd_buf) >= (reqd_len = ssf->command_len + 1 + len + 1))
+      reqd_len = ssf->command_len + 1 + len + 1;
+      if(sizeof(cmd_buf) >= reqd_len)
 	{
 	  cmd = cmd_buf;
 	}
-      else
+      else if((cmd = malloc(reqd_len)) == NULL)
 	{
-	  if((cmd = malloc_zero(reqd_len)) == NULL)
-	    {
-	      printerror(__func__, "could not malloc %d bytes", (int)reqd_len);
-	      goto err;
-	    }
+	  printerror(__func__, "could not malloc %d bytes", (int)reqd_len);
+	  goto done;
 	}
 
       /* build the command string */
@@ -135,7 +133,7 @@ static int ssf_read_line(void *param, uint8_t *buf, size_t len)
     }
   else
     {
-      string_nullterm(str, "\r\t#", NULL);
+      string_nullterm(str, "\r\t#");
       if(str[0] == '\0' || str[0] == '#')
 	return 0;
       cmd = str;
@@ -143,16 +141,13 @@ static int ssf_read_line(void *param, uint8_t *buf, size_t len)
 
   /* add the command to the source */
   if(scamper_source_command(source, cmd) != 0)
-    {
-      goto err;
-    }
+    goto done;
 
-  if(cmd != cmd_buf && cmd != str) free(cmd);
-  return 0;
+  rc = 0;
 
- err:
+ done:
   if(cmd != cmd_buf && cmd != str) free(cmd);
-  return -1;
+  return rc;
 }
 
 /*
