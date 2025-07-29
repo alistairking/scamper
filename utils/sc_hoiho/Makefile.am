@@ -10,6 +10,7 @@ sc_hoiho_SOURCES = \
 	$(top_srcdir)/mjl_list.c \
 	$(top_srcdir)/mjl_splaytree.c \
 	$(top_srcdir)/mjl_threadpool.c \
+	$(top_srcdir)/mjl_splaytree_to_list.c \
 	$(top_srcdir)/scamper/scamper_addr.c
 
 sc_hoiho_CFLAGS = @PTHREAD_CFLAGS@ @PCRE_CFLAGS@

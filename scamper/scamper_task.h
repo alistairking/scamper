@@ -1,12 +1,12 @@
 /*
  * scamper_task.h
  *
- * $Id: scamper_task.h,v 1.59 2025/05/28 07:18:59 mjl Exp $
+ * $Id: scamper_task.h,v 1.61 2025/07/04 23:34:23 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2013      The Regents of the University of California
- * Copyright (C) 2018-2023 Matthew Luckie
+ * Copyright (C) 2018-2025 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -201,9 +201,8 @@ void scamper_task_handleudp(struct scamper_udp_resp *r);
 /* access the queue structre the task holds */
 int scamper_task_queue_probe(scamper_task_t *task);
 int scamper_task_queue_probe_head(scamper_task_t *task);
-int scamper_task_queue_wait(scamper_task_t *task, int ms);
 int scamper_task_queue_wait_tv(scamper_task_t *task, struct timeval *tv);
-int scamper_task_queue_done(scamper_task_t *task, int ms);
+int scamper_task_queue_done(scamper_task_t *task);
 int scamper_task_queue_isprobe(scamper_task_t *task);
 int scamper_task_queue_isdone(scamper_task_t *task);
 

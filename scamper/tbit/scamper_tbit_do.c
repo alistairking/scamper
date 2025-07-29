@@ -1,7 +1,7 @@
 /*
  * scamper_do_tbit.c
  *
- * $Id: scamper_tbit_do.c,v 1.216 2025/05/10 19:39:40 mjl Exp $
+ * $Id: scamper_tbit_do.c,v 1.220 2025/07/05 03:29:20 mjl Exp $
  *
  * Copyright (C) 2009-2010 Ben Stasiewicz
  * Copyright (C) 2009-2010 Stephen Eichler
@@ -73,10 +73,12 @@
 
 /* Default test parameters */
 #define TBIT_RETX_DEFAULT         3
-#define TBIT_TIMEOUT_DEFAULT      10000
-#define TBIT_TIMEOUT_LONG         70000
-#define TBIT_TIMEOUT_SACK         2000
-#define TBIT_TIMEOUT_BLINDDATA    2000
+
+/* indexes into tbit_timeouts timeval array */
+#define TBIT_TIMEOUT_DEFAULT      0
+#define TBIT_TIMEOUT_LONG         1
+#define TBIT_TIMEOUT_SACK         2
+#define TBIT_TIMEOUT_BLINDDATA    3
 
 typedef struct tbit_segment
 {
@@ -103,7 +105,7 @@ typedef struct tbit_frags
 typedef struct tbit_probe
 {
   uint8_t type;
-  int     wait;
+  uint8_t wait; /* index into tbit_timeouts */
   union
   {
     struct tp_tcp
@@ -302,6 +304,8 @@ static const uint8_t MODE_BLIND     = 12; /* in process of blind packets */
 static SSL_CTX *ssl_ctx = NULL;
 #endif
 
+static struct timeval tbit_timeouts[4];
+
 static scamper_tbit_t *tbit_getdata(const scamper_task_t *task)
 {
   return scamper_task_getdata(task);
@@ -319,7 +323,7 @@ static void tbit_queue(scamper_task_t *task)
   if(slist_count(state->tx) > 0)
     scamper_task_queue_probe(task);
   else if(state->mode == MODE_DONE)
-    scamper_task_queue_done(task, 0);
+    scamper_task_queue_done(task);
   else
     scamper_task_queue_wait_tv(task, &state->timeout);
 
@@ -394,7 +398,7 @@ static void tbit_result(scamper_task_t *task, uint8_t result)
     {
       if(state != NULL)
 	state->mode = MODE_DONE;
-      scamper_task_queue_done(task, 0);
+      scamper_task_queue_done(task);
     }
 
   return;
@@ -414,7 +418,7 @@ static void tbit_classify(scamper_task_t *task)
       if(state->flags & TBIT_STATE_FLAG_RST_SEEN)
 	{
 	  state->mode = MODE_DONE;
-	  scamper_task_queue_done(task, 0);
+	  scamper_task_queue_done(task);
 	}
       return;
     }
@@ -594,7 +598,7 @@ static void tbit_handleerror(scamper_task_t *task, int error)
   tbit_state_t *state = tbit_getstate(task);
   tbit->result = SCAMPER_TBIT_RESULT_ERROR;
   if(state != NULL) state->mode = MODE_DONE;
-  scamper_task_queue_done(task, 0);
+  scamper_task_queue_done(task);
   return;
 }
 
@@ -1378,7 +1382,8 @@ static void tbit_fin(scamper_task_t *task, scamper_dl_rec_t *dl)
   uint8_t flags;
   int x;
 
-  timeval_add_ms(&state->timeout, &dl->dl_tv, TBIT_TIMEOUT_LONG);
+  timeval_add_tv3(&state->timeout, &dl->dl_tv,
+		  &tbit_timeouts[TBIT_TIMEOUT_LONG]);
 
   /* see if the remote host has acked our fin */
   if(dl->dl_tcp_ack == state->snd_nxt + 1 &&
@@ -2251,11 +2256,6 @@ static int tbit_data_blindfin(scamper_task_t *task, scamper_dl_rec_t *dl)
 	  scamper_debug(__func__, "old ack %u %u", dl->dl_tcp_ack, state->blind_ack);
 	  return 0;
 	}
-      //if(state->blind_step == 2)
-      //{
-      //timeval_add_ms(&state->timeout, &dl->dl_tv, TBIT_TIMEOUT_BLINDDATA);
-      //state->flags |= TBIT_STATE_FLAG_NORESET;
-      //}
       state->blind_step = 3;
 
       /* make sure the ack is one of two possible values */
@@ -2445,7 +2445,7 @@ static void tbit_data(scamper_task_t *task, scamper_dl_rec_t *dl)
   tbit_state_t *state = tbit_getstate(task);
   tbit_segment_t *seg;
   uint32_t ab;
-  int timeout = TBIT_TIMEOUT_LONG;
+  uint8_t timeout = TBIT_TIMEOUT_LONG;
 
   if((tbit->type == SCAMPER_TBIT_TYPE_BLIND_DATA ||
       tbit->type == SCAMPER_TBIT_TYPE_BLIND_FIN) &&
@@ -2461,7 +2461,7 @@ static void tbit_data(scamper_task_t *task, scamper_dl_rec_t *dl)
     }
 
   if((state->flags & TBIT_STATE_FLAG_NORESET) == 0)
-    timeval_add_ms(&state->timeout, &dl->dl_tv, timeout);
+    timeval_add_tv3(&state->timeout, &dl->dl_tv, &tbit_timeouts[timeout]);
 
   /* is the data in range? */
   if(tbit_data_inrange(state, dl->dl_tcp_seq, dl->dl_tcp_datalen) == 0)
@@ -2695,7 +2695,8 @@ static void tbit_blackhole(scamper_task_t *task, scamper_dl_rec_t *dl)
 	}
 
       /* reset the timeout */
-      timeval_add_ms(&state->timeout, &dl->dl_tv, TBIT_TIMEOUT_LONG);
+      timeval_add_tv3(&state->timeout, &dl->dl_tv,
+		      &tbit_timeouts[TBIT_TIMEOUT_LONG]);
     }
 
   tbit_queue(task);
@@ -3251,7 +3252,7 @@ static void tbit_handle_dlhdr(scamper_dlhdr_t *dlhdr)
 
   if(dlhdr->error != 0)
     {
-      scamper_task_queue_done(task, 0);
+      scamper_task_queue_done(task);
       return;
     }
 
@@ -3265,6 +3266,7 @@ static void tbit_handle_rt(scamper_route_t *rt)
   scamper_task_t *task = rt->param;
   scamper_tbit_t *tbit = tbit_getdata(task);
   tbit_state_t *state = tbit_getstate(task);
+  struct timeval wait;
   scamper_dl_t *dl;
   uint16_t mtu;
 
@@ -3339,7 +3341,10 @@ static void tbit_handle_rt(scamper_route_t *rt)
     }
 
   if(state->mode != MODE_FIREWALL && scamper_task_queue_isdone(task) == 0)
-    scamper_task_queue_wait(task, 1000);
+    {
+      gettimeofday_wrap(&wait); wait.tv_sec += 1;
+      scamper_task_queue_wait_tv(task, &wait);
+    }
 
  done:
   scamper_route_free(rt);
@@ -3502,6 +3507,14 @@ static void do_tbit_free(scamper_task_t *task)
   return;
 }
 
+static uint32_t tbit_tsval(const struct timeval *start)
+{
+  struct timeval now, tv;
+  gettimeofday_wrap(&now);
+  timeval_diff_tv(&tv, start, &now);
+  return ((uint32_t)tv.tv_sec * 1000) + ((uint32_t)tv.tv_usec / 1000);
+}
+
 static int tbit_tx_tcp(scamper_task_t *task, scamper_probe_t *pr,
 		       tbit_probe_t *tp)
 {
@@ -3509,7 +3522,6 @@ static int tbit_tx_tcp(scamper_task_t *task, scamper_probe_t *pr,
   scamper_tbit_t *tbit  = tbit_getdata(task);
   tbit_state_t   *state = tbit_getstate(task);
   scamper_tbit_null_t *null;
-  struct timeval tv;
   tbit_segment_t *seg;
 
   pr->pr_ip_proto  = IPPROTO_TCP;
@@ -3526,9 +3538,8 @@ static int tbit_tx_tcp(scamper_task_t *task, scamper_probe_t *pr,
 
       if(tbit->options & SCAMPER_TBIT_OPTION_TCPTS)
 	{
-	  gettimeofday_wrap(&tv);
 	  pr->pr_tcp_opts |= SCAMPER_PROBE_TCPOPT_TS;
-	  pr->pr_tcp_tsval = timeval_diff_ms(&tbit->start, &tv);
+	  pr->pr_tcp_tsval = tbit_tsval(&tbit->start);
 	}
 
       if(tbit->options & SCAMPER_TBIT_OPTION_SACK)
@@ -3630,9 +3641,8 @@ static int tbit_tx_tcp(scamper_task_t *task, scamper_probe_t *pr,
 
   if(state->flags & TBIT_STATE_FLAG_TCPTS)
     {
-      gettimeofday_wrap(&tv);
       pr->pr_tcp_opts |= SCAMPER_PROBE_TCPOPT_TS;
-      pr->pr_tcp_tsval = timeval_diff_ms(&tbit->start, &tv);
+      pr->pr_tcp_tsval = tbit_tsval(&tbit->start);
       pr->pr_tcp_tsecr = state->ts_recent;
       state->ts_lastack = pr->pr_tcp_ack;
     }
@@ -3681,7 +3691,9 @@ static void do_tbit_probe(scamper_task_t *task)
   scamper_tbit_pkt_t *pkt;
   scamper_probe_t     probe;
   tbit_probe_t       *tp;
-  int                 wait, rc;
+  int                 rc;
+  uint8_t             wait;
+  struct timeval      tv;
 
   if(state == NULL)
     {
@@ -3714,7 +3726,8 @@ static void do_tbit_probe(scamper_task_t *task)
 
       if(state->mode != MODE_FIREWALL)
         {
-	  scamper_task_queue_wait(task, 1000);
+	  gettimeofday_wrap(&tv); tv.tv_sec += 1;
+	  scamper_task_queue_wait_tv(task, &tv);
 	  return;
         }
     }
@@ -3792,8 +3805,7 @@ static void do_tbit_probe(scamper_task_t *task)
       goto err;
     }
 
-  if(wait > 0)
-    timeval_add_ms(&state->timeout, &probe.pr_tx, wait);
+  timeval_add_tv3(&state->timeout, &probe.pr_tx, &tbit_timeouts[wait]);
 
   tbit_queue(task);
   return;
@@ -3899,6 +3911,15 @@ int scamper_do_tbit_init(void)
   tbit_funcs.write          = do_tbit_write;
   tbit_funcs.task_free      = do_tbit_free;
   tbit_funcs.halt           = do_tbit_halt;
+
+  tbit_timeouts[TBIT_TIMEOUT_DEFAULT].tv_sec    = 10;
+  tbit_timeouts[TBIT_TIMEOUT_DEFAULT].tv_usec   = 0;
+  tbit_timeouts[TBIT_TIMEOUT_LONG].tv_sec       = 70;
+  tbit_timeouts[TBIT_TIMEOUT_LONG].tv_usec      = 0;
+  tbit_timeouts[TBIT_TIMEOUT_SACK].tv_sec       = 2;
+  tbit_timeouts[TBIT_TIMEOUT_SACK].tv_usec      = 0;
+  tbit_timeouts[TBIT_TIMEOUT_BLINDDATA].tv_sec  = 2;
+  tbit_timeouts[TBIT_TIMEOUT_BLINDDATA].tv_usec = 0;
 
   return 0;
 }

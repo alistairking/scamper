@@ -1,12 +1,12 @@
 /*
  * scamper_do_dealias.c
  *
- * $Id: scamper_dealias_do.c,v 1.206 2025/04/27 00:49:24 mjl Exp $
+ * $Id: scamper_dealias_do.c,v 1.208 2025/07/05 03:30:44 mjl Exp $
  *
  * Copyright (C) 2008-2011 The University of Waikato
  * Copyright (C) 2012-2013 Matthew Luckie
  * Copyright (C) 2012-2014 The Regents of the University of California
- * Copyright (C) 2016-2024 Matthew Luckie
+ * Copyright (C) 2016-2025 Matthew Luckie
  * Copyright (C) 2023-2024 The Regents of the University of California
  * Author: Matthew Luckie
  *
@@ -278,7 +278,7 @@ static void dealias_queue(scamper_task_t *task)
 
 static void dealias_handleerror(scamper_task_t *task, int error)
 {
-  scamper_task_queue_done(task, 0);
+  scamper_task_queue_done(task);
   return;
 }
 
@@ -296,7 +296,7 @@ static void dealias_result(scamper_task_t *task, uint8_t result)
 		scamper_dealias_result_tostr(result, buf, sizeof(buf)));
 #endif
 
-  scamper_task_queue_done(task, 0);
+  scamper_task_queue_done(task);
   return;
 }
 
@@ -1706,7 +1706,6 @@ static int dealias_midardisc_postprobe(scamper_dealias_t *dealias,
   scamper_dealias_midardisc_round_t *r = md->sched[state->round];
   dealias_midardisc_t *mdstate = state->methodstate;
   struct timeval tv;
-  int us;
 
   assert(state->round < md->schedc);
 
@@ -1715,10 +1714,9 @@ static int dealias_midardisc_postprobe(scamper_dealias_t *dealias,
       /* figure out when the last probe for the first round should be sent */
       if(r->begin < r->end)
 	{
-	  us = (md->sched[1]->start.tv_sec * 1000000) + md->sched[1]->start.tv_usec;
-	  us /= (r->end - r->begin + 1);
-	  us *= (r->end - r->begin);
-	  timeval_add_us(&mdstate->finish, &mdstate->start, us);
+	  timeval_div(&tv, &md->sched[1]->start, r->end - r->begin + 1);
+	  timeval_mul(&tv, &tv, r->end - r->begin);
+	  timeval_add_tv3(&mdstate->finish, &mdstate->start, &tv);
 	}
       else
 	{
@@ -1733,7 +1731,7 @@ static int dealias_midardisc_postprobe(scamper_dealias_t *dealias,
   if(state->probe < r->end)
     {
       state->probe++;
-      if((us = timeval_diff_us(&state->last_tx, &mdstate->finish)) <= 0)
+      if(timeval_cmp(&state->last_tx, &mdstate->finish) >= 0)
 	{
 	  /* if we were due to finish by now, send the next probe ASAP */
 	  timeval_cpy(&state->next_tx, &state->last_tx);
@@ -1741,8 +1739,9 @@ static int dealias_midardisc_postprobe(scamper_dealias_t *dealias,
       else if(state->probe < r->end)
 	{
 	  /* make sure the remaining probes are evenly spaced */
-	  us /= (r->end - state->probe + 1);
-	  timeval_add_us(&state->next_tx, &state->last_tx, us);
+	  timeval_diff_tv(&tv, &state->last_tx, &mdstate->finish);
+	  timeval_div(&tv, &tv, r->end - state->probe + 1);
+	  timeval_add_tv3(&state->next_tx, &state->last_tx, &tv);
 	}
       else
 	{
@@ -1775,10 +1774,9 @@ static int dealias_midardisc_postprobe(scamper_dealias_t *dealias,
   /* figure out when the last probe for the next round should be sent */
   if(r->begin < r->end)
     {
-      us = (tv.tv_sec * 1000000) + tv.tv_usec;
-      us /= (r->end - r->begin + 1);
-      us *= (r->end - r->begin);
-      timeval_add_us(&mdstate->finish, &state->next_tx, us);
+      timeval_div(&tv, &tv, r->end - r->begin + 1);
+      timeval_mul(&tv, &tv, r->end - r->begin);
+      timeval_add_tv3(&mdstate->finish, &state->next_tx, &tv);
     }
   else
     {

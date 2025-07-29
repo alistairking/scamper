@@ -1,12 +1,12 @@
 /*
  * scamper_do_ping.c
  *
- * $Id: scamper_ping_do.c,v 1.210 2025/05/29 07:44:16 mjl Exp $
+ * $Id: scamper_ping_do.c,v 1.212 2025/07/05 02:29:41 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2012-2015 The Regents of the University of California
- * Copyright (C) 2016-2023 Matthew Luckie
+ * Copyright (C) 2016-2025 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -115,7 +115,7 @@ static void ping_stop(scamper_task_t *task, uint8_t reason, uint8_t data)
   scamper_ping_t *ping = ping_getdata(task);
   ping->stop_reason = reason;
   ping->stop_data   = data;
-  scamper_task_queue_done(task, 0);
+  scamper_task_queue_done(task);
   return;
 }
 
@@ -194,7 +194,6 @@ static void do_ping_handle_dl(scamper_task_t *task, scamper_dl_rec_t *dl)
   int                   seq;
   int                   direction;
   struct timeval        diff;
-  int                   usec;
 
   if(state == NULL || state->seq == 0)
     return;
@@ -634,13 +633,12 @@ static void do_ping_handle_dl(scamper_task_t *task, scamper_dl_rec_t *dl)
 
       if(probe->replyc > 0)
 	{
-	  usec = ((int)diff.tv_sec * 1000000) + diff.tv_usec;
 	  for(u16=0; u16 < probe->replyc; u16++)
 	    {
 	      reply = probe->replies[u16];
 	      if(timeval_cmp(&diff, &reply->rtt) > 0)
 		continue;
-	      timeval_sub_us(&reply->rtt, &reply->rtt, usec);
+	      timeval_sub_tv(&reply->rtt, &diff);
 	      reply->flags |= SCAMPER_PING_REPLY_FLAG_DLTX;
 	    }
 	}
@@ -997,7 +995,7 @@ static void ping_handle_dlhdr(scamper_dlhdr_t *dlhdr)
 
   if(dlhdr->error != 0)
     {
-      scamper_task_queue_done(task, 0);
+      scamper_task_queue_done(task);
       return;
     }
 

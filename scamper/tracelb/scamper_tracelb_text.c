@@ -6,7 +6,7 @@
  * Copyright (C) 2022-2025 Matthew Luckie
  * Author: Matthew Luckie
  *
- * $Id: scamper_tracelb_text.c,v 1.14 2025/05/30 10:04:10 mjl Exp $
+ * $Id: scamper_tracelb_text.c,v 1.16 2025/07/29 01:30:14 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -108,14 +108,20 @@ char *node_tostr(const scamper_tracelb_node_t *node)
     {
       for(j=0; j<node->linkc; j++)
 	{
-	  scamper_addr_tostr(node->links[j]->to->addr, dst, sizeof(dst));
-	  string_concat3(buf, sizeof(buf), &off, src, " -> ", dst);
+	  if(node->links[j]->to != NULL)
+	    string_concat3(buf, sizeof(buf), &off, src, " -> ",
+			   scamper_addr_tostr(node->links[j]->to->addr,
+					      dst, sizeof(dst)));
+	  else
+	    string_concat2(buf, sizeof(buf), &off, src, " -> *");
 	  string_concatc(buf, sizeof(buf), &off, '\n');
 	}
     }
   else
     {
       link = node->links[0];
+      if(link->hopc < 1)
+	return NULL;
 
       string_concat2(buf, sizeof(buf), &off, src, " -> ");
       for(j=0; j<link->hopc-1; j++)

@@ -5,7 +5,7 @@
  *
  * Authors: Matthew Luckie
  *
- * $Id: scamper_tracelb_json.c,v 1.25 2025/05/04 02:50:06 mjl Exp $
+ * $Id: scamper_tracelb_json.c,v 1.26 2025/07/29 01:30:14 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -373,12 +373,13 @@ static char *node_tostr(const scamper_tracelb_node_t *node)
   else
     {
       link = node->links[0];
+      if(link->hopc < 1)
+	goto err;
       for(j=0; j<link->hopc-1; j++)
 	{
 	  set = link->sets[j];
 	  if((sum = scamper_tracelb_probeset_summary_alloc(set)) == NULL)
-	    return NULL;
-
+	    goto err;
 	  off = 0;
 	  if(j > 0) string_concatc(buf, sizeof(buf), &off, ',');
 	  string_concatc(buf, sizeof(buf), &off, '[');

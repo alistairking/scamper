@@ -1,11 +1,11 @@
 /*
  * scamper_do_sting.c
  *
- * $Id: scamper_sting_do.c,v 1.63 2025/04/27 00:49:24 mjl Exp $
+ * $Id: scamper_sting_do.c,v 1.65 2025/07/04 23:34:23 mjl Exp $
  *
  * Copyright (C) 2008-2011 The University of Waikato
  * Copyright (C) 2012      The Regents of the University of California
- * Copyright (C) 2022-2023 Matthew Luckie
+ * Copyright (C) 2022-2025 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This file implements algorithms described in the sting-0.7 source code,
@@ -106,7 +106,7 @@ static sting_state_t *sting_getstate(const scamper_task_t *task)
 
 static void sting_handleerror(scamper_task_t *task, int error)
 {
-  scamper_task_queue_done(task, 0);
+  scamper_task_queue_done(task);
   return;
 }
 
@@ -121,7 +121,7 @@ static void handletimeout_syn(scamper_task_t *task)
   sting_state_t *state = sting_getstate(task);
 
   if(state->attempt == sting->synretx)
-    scamper_task_queue_done(task, 0);
+    scamper_task_queue_done(task);
   else
     scamper_task_queue_probe(task);
 
@@ -176,7 +176,7 @@ static void handletimeout_hole(scamper_task_t *task)
  */
 static void handletimeout_rst(scamper_task_t *task)
 {
-  scamper_task_queue_done(task, 0);
+  scamper_task_queue_done(task);
   return;
 }
 
@@ -227,7 +227,7 @@ static void handletcp_syn(scamper_task_t *task, scamper_dl_rec_t *dl)
   if((dl->dl_tcp_flags & (TH_SYN|TH_ACK)) != (TH_SYN|TH_ACK))
     {
       /* we got a reply, but it was not a SYN/ACK; halt the measurement */
-      scamper_task_queue_done(task, 0);
+      scamper_task_queue_done(task);
       return;
     }
 
@@ -240,7 +240,7 @@ static void handletcp_syn(scamper_task_t *task, scamper_dl_rec_t *dl)
   /* if the sequence number in response did not make sense, abandon */
   if(dl->dl_tcp_ack != state->isn)
     {
-      scamper_task_queue_done(task, 0);
+      scamper_task_queue_done(task);
       return;
     }
 
@@ -277,7 +277,7 @@ static void handletcp_data(scamper_task_t *task, scamper_dl_rec_t *dl)
   /* if the acknowledgement number is not what is expected, abandon */
   if(dl->dl_tcp_ack != state->isn)
     {
-      scamper_task_queue_done(task, 0);
+      scamper_task_queue_done(task);
       return;
     }
 
@@ -381,7 +381,7 @@ static void do_sting_handle_dl(scamper_task_t *task, scamper_dl_rec_t *dl)
   /* if a reset packet is received, abandon the measurement */
   if((dl->dl_tcp_flags & TH_RST) != 0)
     {
-      scamper_task_queue_done(task, 0);
+      scamper_task_queue_done(task);
       return;
     }
 
@@ -399,7 +399,7 @@ static void sting_handle_dlhdr(scamper_dlhdr_t *dlhdr)
 
   if(dlhdr->error != 0)
     {
-      scamper_task_queue_done(task, 0);
+      scamper_task_queue_done(task);
       return;
     }
 
@@ -413,6 +413,7 @@ static void sting_handle_rt(scamper_route_t *rt)
   scamper_task_t *task = rt->param;
   scamper_sting_t *sting = sting_getdata(task);
   sting_state_t *state = sting_getstate(task);
+  struct timeval wait;
   scamper_dl_t *dl;
 
   if(state->mode != MODE_RTSOCK || state->route != rt)
@@ -464,7 +465,10 @@ static void sting_handle_rt(scamper_route_t *rt)
     }
 
   if(state->mode != MODE_SYN && scamper_task_queue_isdone(task) == 0)
-    scamper_task_queue_wait(task, 1000);
+    {
+      gettimeofday_wrap(&wait); wait.tv_sec += 1;
+      scamper_task_queue_wait_tv(task, &wait);
+    }
 
  done:
   scamper_route_free(rt);
@@ -537,7 +541,7 @@ static int sting_state_alloc(scamper_task_t *task)
 
 static void do_sting_halt(scamper_task_t *task)
 {
-  scamper_task_queue_done(task, 0);
+  scamper_task_queue_done(task);
   return;
 }
 
@@ -600,7 +604,8 @@ static void do_sting_probe(scamper_task_t *task)
 
       if(state->mode != MODE_SYN)
 	{
-	  scamper_task_queue_wait(task, 1000);
+	  gettimeofday_wrap(&wait); wait.tv_sec += 1;
+	  scamper_task_queue_wait_tv(task, &wait);
 	  return;
 	}
     }

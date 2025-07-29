@@ -1,6 +1,6 @@
 #!/usr/bin/env perl
 #
-# $Id: build-man-pdfs.pl,v 1.24 2024/11/12 23:55:47 mjl Exp $
+# $Id: build-man-pdfs.pl,v 1.26 2025/07/09 20:50:42 mjl Exp $
 
 use strict;
 use warnings;
@@ -63,7 +63,7 @@ foreach my $man (@mans)
 	my @pdfstat = stat("man/$name.pdf");
 	if(scalar(@pdfstat) == 0 || $manstat[9] > $pdfstat[9])
 	{
-	    cmd("groff -T ps -man $man | ps2pdf - >man/$name.pdf");
+	    cmd("man -t $man | ps2pdf - >man/$name.pdf");
 	    cmd("touch -r $man man/$name.pdf");
 	}
     }

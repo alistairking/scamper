@@ -1,7 +1,7 @@
 /*
  * common_trace : common functions for unit testing trace
  *
- * $Id: common_trace.c,v 1.14 2025/05/09 09:13:30 mjl Exp $
+ * $Id: common_trace.c,v 1.15 2025/07/15 06:12:32 mjl Exp $
  *
  *        Marcus Luckie, Matthew Luckie
  *        mjl@luckie.org.nz
@@ -753,6 +753,55 @@ scamper_trace_t *trace_6(void)
   return NULL;
 }
 
+static scamper_trace_t *trace_7(void)
+{
+  scamper_trace_t *trace = NULL;
+  scamper_trace_pmtud_t *pmtud = NULL;
+  scamper_trace_pmtud_note_t *n = NULL;
+  scamper_trace_probe_t *p;
+  scamper_trace_reply_t *r;
+
+  if((trace = trace_3_base()) == NULL ||
+     pmtud_prply_add(trace, 1, 255, 8986, 1724828854, 672568,
+		     "192.0.2.5", 254, 72, 0, 219732, &p, &r) != 0)
+    goto err;
+
+  trace->flags |= SCAMPER_TRACE_FLAG_PMTUD;
+
+  pmtud = trace->pmtud;
+  pmtud->ver = 2;
+  pmtud->ifmtu = 9000;
+  pmtud->outmtu = 8986;
+  pmtud->pmtu = 8980;
+
+  r->reply_icmp_type = ICMP_UNREACH;
+  r->reply_icmp_code = ICMP_UNREACH_NEEDFRAG;
+  r->reply_icmp_nhmtu = 8980;
+
+  if((n = scamper_trace_pmtud_note_alloc()) == NULL)
+    goto err;
+  n->type = SCAMPER_TRACE_PMTUD_NOTE_TYPE_SILENCE;
+  n->nhmtu = 8986;
+  if(scamper_trace_pmtud_note_add(pmtud, n) != 0)
+    goto err;
+
+  if((n = scamper_trace_pmtud_note_alloc()) == NULL)
+    goto err;
+  n->type = SCAMPER_TRACE_PMTUD_NOTE_TYPE_PTB;
+  n->probe = p;
+  n->reply = r;
+  n->nhmtu = r->reply_icmp_nhmtu;
+  if(scamper_trace_pmtud_note_add(pmtud, n) != 0)
+    goto err;
+
+  return trace;
+
+ err:
+  if(n != NULL) scamper_trace_pmtud_note_free(n);
+  if(trace != NULL) scamper_trace_free(trace);
+  return NULL;
+}
+
 static scamper_trace_makefunc_t makers[] = {
   trace_1,
   trace_2,
@@ -760,6 +809,7 @@ static scamper_trace_makefunc_t makers[] = {
   trace_4,
   trace_5,
   trace_6,
+  trace_7,
 };
 
 scamper_trace_t *trace_makers(size_t i)

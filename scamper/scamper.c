@@ -1,7 +1,7 @@
 /*
  * scamper
  *
- * $Id: scamper.c,v 1.375 2025/06/02 08:22:35 mjl Exp $
+ * $Id: scamper.c,v 1.379 2025/07/23 07:37:47 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -160,7 +160,7 @@
 #ifdef __linux__
 #define FLAG_DLANY           0x00002000
 #endif
-#if defined(__linux__) || defined(BIOCSETFNR)
+#ifdef HAVE_BPF_DYN_FILTER
 #define FLAG_DYNFILTER       0x00004000
 #endif
 
@@ -238,12 +238,12 @@ static uid_t  euid;
 /*
  * parameters calculated by scamper at run time:
  *
- * wait_between:   calculated wait between probes to reach pps, in microseconds
- * probe_window:   maximum extension of probing window before truncation
+ * gap_min:        calculated wait between probes to reach pps
+ * gap_max:        maximum extension of gap between probes before truncation
  * exit_when_done: exit scamper when current window of tasks is completed
  */
-static int    wait_between   = 1000000 / SCAMPER_OPTION_PPS_DEF;
-static int    probe_window   = 250000;
+static struct timeval gap_min;
+static struct timeval gap_max;
 static int    exit_when_done = 1;
 
 #ifdef HAVE_SIGACTION
@@ -556,35 +556,34 @@ static int listid_set(const int lid)
 
 static int ppswindow_set(int p, int w)
 {
-  if(p == 0 && w == 0)
+  if((p == 0 && w == 0) ||
+     (p != 0 &&
+      (p < SCAMPER_OPTION_PPS_MIN || p > SCAMPER_OPTION_PPS_MAX)) ||
+     (w != 0 &&
+      (w < SCAMPER_OPTION_WINDOW_MIN || w > SCAMPER_OPTION_WINDOW_MAX)))
     return -1;
 
-  if(p != pps)
+  /*
+   * reset the pps scamper is operating at.  re-calculate the
+   * inter-probe delay, and the maximum size of the probe window.
+   */
+  pps = p;
+  if(pps != 0)
     {
-      if(p != 0 && (p < SCAMPER_OPTION_PPS_MIN || p > SCAMPER_OPTION_PPS_MAX))
-	return -1;
-
-      /*
-       * reset the pps scamper is operating at.  re-calculate the
-       * inter-probe delay, and the maximum size of the probe window.
-       */
-      pps = p;
-      if(p != 0)
-	wait_between = 1000000 / pps;
-      else
-	wait_between = 0;
-      probe_window = 250000;
-      if(wait_between > 250000)
-	probe_window += wait_between;
+      gap_min.tv_sec = 0;
+      gap_min.tv_usec = 1000000 / pps;
     }
-
-  if(w != window)
+  else
     {
-      if(w != 0 &&
-	 (w < SCAMPER_OPTION_WINDOW_MIN || w > SCAMPER_OPTION_WINDOW_MAX))
-	return -1;
-      window = w;
+      gap_min.tv_sec = 0;
+      gap_min.tv_usec = 0;
     }
+  gap_max.tv_sec = 0;
+  gap_max.tv_usec = 250000;
+  if(gap_min.tv_usec > 250000)
+    gap_max.tv_usec += gap_min.tv_usec;
+
+  window = w;
 
   return 0;
 }
@@ -932,11 +931,11 @@ static int check_options(int argc, char *argv[])
 	  usage(OPT_PPS);
 	  return -1;
 	}
-      if(ppswindow_set(lo_p, lo_w) != 0)
-	{
-	  usage(OPT_PPS|OPT_WINDOW);
-	  return -1;
-	}
+    }
+  if(ppswindow_set(lo_p, lo_w) != 0)
+    {
+      usage(OPT_PPS|OPT_WINDOW);
+      return -1;
     }
 
   if(countbits32(flags & (FLAG_SELECT|FLAG_KQUEUE|FLAG_EPOLL|FLAG_POLL)) > 1)
@@ -1722,7 +1721,7 @@ static int scamper_timeout(struct timeval *timeout,
      ((window == 0 || scamper_queue_windowcount() < window) &&
       scamper_sources_isready() != 0))
     {
-      timeval_add_us(timeout, lastprobe, wait_between);
+      timeval_add_tv3(timeout, lastprobe, &gap_min);
       set++;
     }
 
@@ -1969,7 +1968,7 @@ static void cleanup(void)
  */
 static int scamper(int argc, char *argv[])
 {
-  struct timeval           tv;
+  struct timeval           wait, now;
   struct timeval           lastprobe;
   struct timeval           nextprobe;
   struct timeval           timeout, *timeout_ptr;
@@ -2375,12 +2374,12 @@ static int scamper(int argc, char *argv[])
 	   * we've been told to calculate a timeout value.  figure out what
 	   * it should be.
 	   */
-	  gettimeofday_wrap(&tv);
-	  if(timeval_cmp(&timeout, &tv) <= 0)
-	    memset(&tv, 0, sizeof(tv));
+	  gettimeofday_wrap(&now);
+	  if(timeval_cmp(&timeout, &now) <= 0)
+	    memset(&wait, 0, sizeof(wait));
 	  else
-	    timeval_diff_tv(&tv, &tv, &timeout);
-	  timeout_ptr = &tv;
+	    timeval_diff_tv(&wait, &now, &timeout);
+	  timeout_ptr = &wait;
 	}
       else if(x == 1)
 	{
@@ -2407,11 +2406,11 @@ static int scamper(int argc, char *argv[])
 	goto done;
 
       /* get the current time */
-      gettimeofday_wrap(&tv);
+      gettimeofday_wrap(&now);
 
-      if(scamper_queue_event_proc(&tv) != 0)
+      if(scamper_queue_event_proc(&now) != 0)
 	goto done;
-      scamper_task_sig_expiry_run(&tv);
+      scamper_task_sig_expiry_run(&now);
 
       /*
        * if there is something waiting to be probed, then find out if it is
@@ -2423,11 +2422,11 @@ static int scamper(int argc, char *argv[])
 	   * check for large differences between the time the last probe
 	   * was sent and the current time.  don't allow the difference to
 	   * be larger than a particular amount, since that could result in
-	   * either a large flutter of probes to be sent, or a large time
-	   * before the next probe is sent
+	   * scamper sending a large flutter of probes, or a large time
+	   * before scamper sends the next probe
 	   */
-	  if(timeval_inrange_us(&tv, &lastprobe, probe_window) == 0)
-	    timeval_sub_us(&lastprobe, &tv, wait_between);
+	  if(timeval_inrange_tv(&now, &lastprobe, &gap_max) == 0)
+	    timeval_sub_tv3(&lastprobe, &now, &gap_min);
 
 	  /*
 	   * when probing at > HZ, scamper might find that select blocks it
@@ -2438,10 +2437,10 @@ static int scamper(int argc, char *argv[])
 	   */
 	  for(;;)
 	    {
-	      timeval_add_us(&nextprobe, &lastprobe, wait_between);
+	      timeval_add_tv3(&nextprobe, &lastprobe, &gap_min);
 
 	      /* if the next probe is not due to be sent, don't send one */
-	      if(timeval_cmp(&nextprobe, &tv) > 0)
+	      if(timeval_cmp(&nextprobe, &now) > 0)
 		break;
 
 	      /*

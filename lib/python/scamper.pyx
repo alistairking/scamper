@@ -296,36 +296,6 @@ cimport cscamper_http
 cimport cscamper_udpprobe
 cimport clibscamperctrl
 
-# from scamper_file.h
-SCAMPER_FILE_OBJ_LIST          = 1
-SCAMPER_FILE_OBJ_CYCLE_START   = 2
-SCAMPER_FILE_OBJ_CYCLE_DEF     = 3
-SCAMPER_FILE_OBJ_CYCLE_STOP    = 4
-SCAMPER_FILE_OBJ_ADDR          = 5
-SCAMPER_FILE_OBJ_TRACE         = 6
-SCAMPER_FILE_OBJ_PING          = 7
-SCAMPER_FILE_OBJ_TRACELB       = 8
-SCAMPER_FILE_OBJ_DEALIAS       = 9
-SCAMPER_FILE_OBJ_NEIGHBOURDISC = 10
-SCAMPER_FILE_OBJ_TBIT          = 11
-SCAMPER_FILE_OBJ_STING         = 12
-SCAMPER_FILE_OBJ_SNIFF         = 13
-SCAMPER_FILE_OBJ_HOST          = 14
-SCAMPER_FILE_OBJ_HTTP          = 15
-SCAMPER_FILE_OBJ_UDPPROBE      = 16
-
-# from libscamperctrl.h
-SCAMPER_CTRL_TYPE_DATA  = 1
-SCAMPER_CTRL_TYPE_MORE  = 2
-SCAMPER_CTRL_TYPE_ERR   = 3
-SCAMPER_CTRL_TYPE_EOF   = 4
-SCAMPER_CTRL_TYPE_FATAL = 5
-
-# from scamper_trace.h
-SCAMPER_TRACE_TYPE_ICMP_ECHO_PARIS = 4
-SCAMPER_TRACE_FLAG_RXERR           = 0x80
-SCAMPER_TRACE_REPLY_FLAG_REPLY_TTL   = 0x10
-
 class ScamperTraceStop(enum.IntEnum):
     NoReason = 0x00
     Completed = 0x01
@@ -337,14 +307,6 @@ class ScamperTraceStop(enum.IntEnum):
     HopLimit = 0x07
     GSS = 0x08
     Halted = 0x09
-
-# from scamper_ping.h
-SCAMPER_PING_REPLY_FLAG_REPLY_TTL  = 0x01
-SCAMPER_PING_REPLY_FLAG_REPLY_IPID = 0x02
-SCAMPER_PING_REPLY_FLAG_PROBE_IPID = 0x04
-
-# from scamper_host.h
-SCAMPER_HOST_CLASS_IN    = 1
 
 class ScamperHostType(enum.IntEnum):
     A = 1
@@ -1065,6 +1027,7 @@ cdef class ScamperIcmpExts:
         ext._c = cscamper_icmpext.scamper_icmpexts_use(ptr)
         return ext
 
+    @property
     def ext_count(self):
         return cscamper_icmpext.scamper_icmpexts_count_get(self._c)
 
@@ -1254,7 +1217,7 @@ cdef class ScamperTraceHop:
         """
         if (self._r == NULL or
             (cscamper_trace.scamper_trace_reply_flags_get(self._r) &
-             SCAMPER_TRACE_REPLY_FLAG_REPLY_TTL) == 0):
+             cscamper_trace.SCAMPER_TRACE_REPLY_FLAG_REPLY_TTL) == 0):
             return None
         return cscamper_trace.scamper_trace_reply_ttl_get(self._r)
 
@@ -1314,7 +1277,7 @@ cdef class ScamperTraceHop:
         """
         if self._r == NULL:
             return None
-        if self._t_flags & SCAMPER_TRACE_FLAG_RXERR != 0:
+        if self._t_flags & cscamper_trace.SCAMPER_TRACE_FLAG_RXERR != 0:
             return None
         return cscamper_trace.scamper_trace_reply_size_get(self._r)
 
@@ -1332,7 +1295,7 @@ cdef class ScamperTraceHop:
         sa = cscamper_trace.scamper_trace_reply_addr_get(self._r)
         if sa == NULL or not cscamper_addr.scamper_addr_isipv4(sa):
             return None
-        if self._t_flags & SCAMPER_TRACE_FLAG_RXERR != 0:
+        if self._t_flags & cscamper_trace.SCAMPER_TRACE_FLAG_RXERR != 0:
             return None
         return cscamper_trace.scamper_trace_reply_ipid_get(self._r)
 
@@ -1738,7 +1701,7 @@ cdef class ScamperTrace:
         :rtype: ScamperCycle
         """
         c = cscamper_trace.scamper_trace_cycle_get(self._c)
-        return ScamperCycle.from_ptr(c, SCAMPER_FILE_OBJ_CYCLE_DEF)
+        return ScamperCycle.from_ptr(c, cscamper_file.SCAMPER_FILE_OBJ_CYCLE_DEF)
 
     @property
     def userid(self):
@@ -2080,7 +2043,7 @@ cdef class ScamperTrace:
         :rtype: int
         """
         trace_type = cscamper_trace.scamper_trace_type_get(self._c)
-        if (trace_type == SCAMPER_TRACE_TYPE_ICMP_ECHO_PARIS and
+        if (trace_type == cscamper_trace.SCAMPER_TRACE_TYPE_ICMP_ECHO_PARIS and
             cscamper_trace.scamper_trace_flag_is_icmpcsumdp(self._c)):
             return cscamper_trace.scamper_trace_dport_get(self._c)
         return None
@@ -2413,7 +2376,7 @@ cdef class ScamperPingReply:
         :rtype: int
         """
         flags = cscamper_ping.scamper_ping_probe_flags_get(self._p)
-        if (flags & SCAMPER_PING_REPLY_FLAG_PROBE_IPID) == 0:
+        if (flags & cscamper_ping.SCAMPER_PING_REPLY_FLAG_PROBE_IPID) == 0:
             return None
         return cscamper_ping.scamper_ping_probe_ipid_get(self._p)
 
@@ -2436,7 +2399,7 @@ cdef class ScamperPingReply:
         :rtype: int
         """
         flags = cscamper_ping.scamper_ping_reply_flags_get(self._r)
-        if (flags & SCAMPER_PING_REPLY_FLAG_REPLY_TTL) == 0:
+        if (flags & cscamper_ping.SCAMPER_PING_REPLY_FLAG_REPLY_TTL) == 0:
             return None
         return cscamper_ping.scamper_ping_reply_ttl_get(self._r)
 
@@ -2459,7 +2422,7 @@ cdef class ScamperPingReply:
         :rtype: int
         """
         flags = cscamper_ping.scamper_ping_reply_flags_get(self._r)
-        if (flags & SCAMPER_PING_REPLY_FLAG_REPLY_IPID) == 0:
+        if (flags & cscamper_ping.SCAMPER_PING_REPLY_FLAG_REPLY_IPID) == 0:
             return None
         sa = cscamper_ping.scamper_ping_reply_addr_get(self._r)
         if cscamper_addr.scamper_addr_isipv4(sa):
@@ -2619,7 +2582,7 @@ cdef class ScamperPingReply:
 class _ScamperPingIterator:
     def __init__(self, ping):
         self._ping = ping
-        self._i = 0;
+        self._i = 0
         self._c = ping.probe_count
 
     def __iter__(self):
@@ -2722,7 +2685,7 @@ cdef class ScamperPing:
         :rtype: ScamperCycle
         """
         c = cscamper_ping.scamper_ping_cycle_get(self._c)
-        return ScamperCycle.from_ptr(c, SCAMPER_FILE_OBJ_CYCLE_DEF)
+        return ScamperCycle.from_ptr(c, cscamper_file.SCAMPER_FILE_OBJ_CYCLE_DEF)
 
     @property
     def src(self):
@@ -3272,8 +3235,6 @@ cdef class ScamperTracelbReply:
         :rtype: datetime
         """
         c = cscamper_tracelb.scamper_tracelb_reply_rx_get(self._c)
-        if c == NULL:
-            return None
         t = time.gmtime(c.tv_sec)
         return datetime.datetime(t[0], t[1], t[2], t[3], t[4], t[5], c.tv_usec,
                                  tzinfo=datetime.timezone.utc)
@@ -3420,8 +3381,6 @@ cdef class ScamperTracelbProbe:
         :rtype: datetime
         """
         c = cscamper_tracelb.scamper_tracelb_probe_tx_get(self._c)
-        if c == NULL:
-            return None
         t = time.gmtime(c.tv_sec)
         return datetime.datetime(t[0], t[1], t[2], t[3], t[4], t[5], c.tv_usec,
                                  tzinfo=datetime.timezone.utc)
@@ -3688,6 +3647,7 @@ cdef class ScamperTracelbLink:
         l._c = cscamper_tracelb.scamper_tracelb_link_use(ptr)
         return l
 
+    @property
     def near(self):
         """
         get method to obtain the node at the near side of this link
@@ -3698,6 +3658,7 @@ cdef class ScamperTracelbLink:
         c = cscamper_tracelb.scamper_tracelb_link_from_get(self._c)
         return ScamperTracelbNode.from_ptr(c)
 
+    @property
     def far(self):
         """
         get method to obtain the node at the far side of this link
@@ -3708,6 +3669,7 @@ cdef class ScamperTracelbLink:
         c = cscamper_tracelb.scamper_tracelb_link_to_get(self._c)
         return ScamperTracelbNode.from_ptr(c)
 
+    @property
     def length(self):
         """
         get method to obtain the length of this link, in hops.
@@ -3776,7 +3738,7 @@ cdef class ScamperTracelb:
         :rtype: ScamperCycle
         """
         c = cscamper_tracelb.scamper_tracelb_cycle_get(self._c)
-        return ScamperCycle.from_ptr(c, SCAMPER_FILE_OBJ_CYCLE_DEF)
+        return ScamperCycle.from_ptr(c, cscamper_file.SCAMPER_FILE_OBJ_CYCLE_DEF)
 
     @property
     def inst(self):
@@ -4935,7 +4897,7 @@ cdef class ScamperDealias:
         :rtype: ScamperCycle
         """
         c = cscamper_dealias.scamper_dealias_cycle_get(self._c)
-        return ScamperCycle.from_ptr(c, SCAMPER_FILE_OBJ_CYCLE_DEF)
+        return ScamperCycle.from_ptr(c, cscamper_file.SCAMPER_FILE_OBJ_CYCLE_DEF)
 
     @property
     def userid(self):
@@ -5531,7 +5493,7 @@ cdef class ScamperTbit:
         :rtype: ScamperCycle
         """
         c = cscamper_tbit.scamper_tbit_cycle_get(self._c)
-        return ScamperCycle.from_ptr(c, SCAMPER_FILE_OBJ_CYCLE_DEF)
+        return ScamperCycle.from_ptr(c, cscamper_file.SCAMPER_FILE_OBJ_CYCLE_DEF)
 
     @property
     def src(self):
@@ -5801,7 +5763,7 @@ cdef class ScamperSniff:
         :rtype: ScamperCycle
         """
         c = cscamper_sniff.scamper_sniff_cycle_get(self._c)
-        return ScamperCycle.from_ptr(c, SCAMPER_FILE_OBJ_CYCLE_DEF)
+        return ScamperCycle.from_ptr(c, cscamper_file.SCAMPER_FILE_OBJ_CYCLE_DEF)
 
     @property
     def stop_reason(self):
@@ -6567,7 +6529,7 @@ cdef class ScamperHostRR:
         """
         cls = cscamper_host.scamper_host_rr_class_get(self._c)
         typ = cscamper_host.scamper_host_rr_type_get(self._c)
-        if cls != SCAMPER_HOST_CLASS_IN or typ != ScamperHostType.NS:
+        if cls != cscamper_host.SCAMPER_HOST_CLASS_IN or typ != ScamperHostType.NS:
             return None
         x = cscamper_host.scamper_host_rr_str_get(self._c)
         return x.decode('UTF-8', 'strict')
@@ -6582,7 +6544,7 @@ cdef class ScamperHostRR:
         """
         cls = cscamper_host.scamper_host_rr_class_get(self._c)
         typ = cscamper_host.scamper_host_rr_type_get(self._c)
-        if cls != SCAMPER_HOST_CLASS_IN or typ != ScamperHostType.CNAME:
+        if cls != cscamper_host.SCAMPER_HOST_CLASS_IN or typ != ScamperHostType.CNAME:
             return None
         x = cscamper_host.scamper_host_rr_str_get(self._c)
         return x.decode('UTF-8', 'strict')
@@ -6597,7 +6559,7 @@ cdef class ScamperHostRR:
         """
         cls = cscamper_host.scamper_host_rr_class_get(self._c)
         typ = cscamper_host.scamper_host_rr_type_get(self._c)
-        if cls != SCAMPER_HOST_CLASS_IN or typ != ScamperHostType.PTR:
+        if cls != cscamper_host.SCAMPER_HOST_CLASS_IN or typ != ScamperHostType.PTR:
             return None
         x = cscamper_host.scamper_host_rr_str_get(self._c)
         return x.decode('UTF-8', 'strict')
@@ -7086,7 +7048,7 @@ cdef class ScamperHost:
         :rtype: ScamperCycle
         """
         c = cscamper_host.scamper_host_cycle_get(self._c)
-        return ScamperCycle.from_ptr(c, SCAMPER_FILE_OBJ_CYCLE_DEF)
+        return ScamperCycle.from_ptr(c, cscamper_file.SCAMPER_FILE_OBJ_CYCLE_DEF)
 
     @property
     def src(self):
@@ -7715,7 +7677,7 @@ cdef class ScamperHttp:
         :rtype: ScamperCycle
         """
         c = cscamper_http.scamper_http_cycle_get(self._c)
-        return ScamperCycle.from_ptr(c, SCAMPER_FILE_OBJ_CYCLE_DEF)
+        return ScamperCycle.from_ptr(c, cscamper_file.SCAMPER_FILE_OBJ_CYCLE_DEF)
 
     @property
     def userid(self):
@@ -8082,8 +8044,6 @@ cdef class ScamperUdpprobeReply:
         :rtype: datetime
         """
         c = cscamper_udpprobe.scamper_udpprobe_reply_rx_get(self._c)
-        if c == NULL:
-            return None
         t = time.gmtime(c.tv_sec)
         return datetime.datetime(t[0], t[1], t[2], t[3], t[4], t[5], c.tv_usec,
                                  tzinfo=datetime.timezone.utc)
@@ -8161,8 +8121,6 @@ cdef class ScamperUdpprobeProbe:
         :rtype: datetime
         """
         c = cscamper_udpprobe.scamper_udpprobe_probe_tx_get(self._c)
-        if c == NULL:
-            return None
         t = time.gmtime(c.tv_sec)
         return datetime.datetime(t[0], t[1], t[2], t[3], t[4], t[5], c.tv_usec,
                                  tzinfo=datetime.timezone.utc)
@@ -8264,7 +8222,7 @@ cdef class ScamperUdpprobe:
         :rtype: ScamperCycle
         """
         c = cscamper_udpprobe.scamper_udpprobe_cycle_get(self._c)
-        return ScamperCycle.from_ptr(c, SCAMPER_FILE_OBJ_CYCLE_DEF)
+        return ScamperCycle.from_ptr(c, cscamper_file.SCAMPER_FILE_OBJ_CYCLE_DEF)
 
     @property
     def userid(self):
@@ -8285,8 +8243,6 @@ cdef class ScamperUdpprobe:
         :rtype: datetime
         """
         c = cscamper_udpprobe.scamper_udpprobe_start_get(self._c)
-        if c == NULL:
-            return None
         t = time.gmtime(c.tv_sec)
         return datetime.datetime(t[0], t[1], t[2], t[3], t[4], t[5], c.tv_usec,
                                  tzinfo=datetime.timezone.utc)
@@ -8532,27 +8488,27 @@ cdef class ScamperFile:
 
         for t in types:
             if t is ScamperTrace:
-                o_type = SCAMPER_FILE_OBJ_TRACE
+                o_type = cscamper_file.SCAMPER_FILE_OBJ_TRACE
             elif t is ScamperPing:
-                o_type = SCAMPER_FILE_OBJ_PING
+                o_type = cscamper_file.SCAMPER_FILE_OBJ_PING
             elif t is ScamperTracelb:
-                o_type = SCAMPER_FILE_OBJ_TRACELB
+                o_type = cscamper_file.SCAMPER_FILE_OBJ_TRACELB
             elif t is ScamperDealias:
-                o_type = SCAMPER_FILE_OBJ_DEALIAS
+                o_type = cscamper_file.SCAMPER_FILE_OBJ_DEALIAS
             elif t is ScamperNeighbourdisc:
-                o_type = SCAMPER_FILE_OBJ_NEIGHBOURDISC
+                o_type = cscamper_file.SCAMPER_FILE_OBJ_NEIGHBOURDISC
             elif t is ScamperTbit:
-                o_type = SCAMPER_FILE_OBJ_TBIT
+                o_type = cscamper_file.SCAMPER_FILE_OBJ_TBIT
             elif t is ScamperSting:
-                o_type = SCAMPER_FILE_OBJ_STING
+                o_type = cscamper_file.SCAMPER_FILE_OBJ_STING
             elif t is ScamperSniff:
-                o_type = SCAMPER_FILE_OBJ_SNIFF
+                o_type = cscamper_file.SCAMPER_FILE_OBJ_SNIFF
             elif t is ScamperHost:
-                o_type = SCAMPER_FILE_OBJ_HOST
+                o_type = cscamper_file.SCAMPER_FILE_OBJ_HOST
             elif t is ScamperHttp:
-                o_type = SCAMPER_FILE_OBJ_HTTP
+                o_type = cscamper_file.SCAMPER_FILE_OBJ_HTTP
             elif t is ScamperUdpprobe:
-                o_type = SCAMPER_FILE_OBJ_UDPPROBE
+                o_type = cscamper_file.SCAMPER_FILE_OBJ_UDPPROBE
             else:
                 raise ValueError("invalid type")
 
@@ -8601,41 +8557,41 @@ cdef class ScamperFile:
         if rc != 0 or o_data == NULL:
             return None
 
-        if o_type == SCAMPER_FILE_OBJ_LIST:
+        if o_type == cscamper_file.SCAMPER_FILE_OBJ_LIST:
             c_list = <cscamper_list.scamper_list_t *>o_data
             o = ScamperList.from_ptr(c_list)
             if o is not None:
                 cscamper_list.scamper_list_free(c_list)
             return o
-        elif (o_type == SCAMPER_FILE_OBJ_CYCLE_START or
-              o_type == SCAMPER_FILE_OBJ_CYCLE_DEF or
-              o_type == SCAMPER_FILE_OBJ_CYCLE_STOP):
+        elif (o_type == cscamper_file.SCAMPER_FILE_OBJ_CYCLE_START or
+              o_type == cscamper_file.SCAMPER_FILE_OBJ_CYCLE_DEF or
+              o_type == cscamper_file.SCAMPER_FILE_OBJ_CYCLE_STOP):
             c_cycle = <cscamper_list.scamper_cycle_t *>o_data
             o = ScamperCycle.from_ptr(c_cycle, o_type)
             if o is not None:
                 cscamper_list.scamper_cycle_free(c_cycle)
             return o
-        elif o_type == SCAMPER_FILE_OBJ_TRACE:
+        elif o_type == cscamper_file.SCAMPER_FILE_OBJ_TRACE:
             return ScamperTrace.from_ptr(<cscamper_trace.scamper_trace_t *>o_data)
-        elif o_type == SCAMPER_FILE_OBJ_PING:
+        elif o_type == cscamper_file.SCAMPER_FILE_OBJ_PING:
             return ScamperPing.from_ptr(<cscamper_ping.scamper_ping_t *>o_data)
-        elif o_type == SCAMPER_FILE_OBJ_TRACELB:
+        elif o_type == cscamper_file.SCAMPER_FILE_OBJ_TRACELB:
             return ScamperTracelb.from_ptr(<cscamper_tracelb.scamper_tracelb_t *>o_data)
-        elif o_type == SCAMPER_FILE_OBJ_DEALIAS:
+        elif o_type == cscamper_file.SCAMPER_FILE_OBJ_DEALIAS:
             return ScamperDealias.from_ptr(<cscamper_dealias.scamper_dealias_t *>o_data)
-        elif o_type == SCAMPER_FILE_OBJ_NEIGHBOURDISC:
+        elif o_type == cscamper_file.SCAMPER_FILE_OBJ_NEIGHBOURDISC:
             return ScamperNeighbourdisc.from_ptr(<cscamper_neighbourdisc.scamper_neighbourdisc_t *>o_data)
-        elif o_type == SCAMPER_FILE_OBJ_TBIT:
+        elif o_type == cscamper_file.SCAMPER_FILE_OBJ_TBIT:
             return ScamperTbit.from_ptr(<cscamper_tbit.scamper_tbit_t *>o_data)
-        elif o_type == SCAMPER_FILE_OBJ_STING:
+        elif o_type == cscamper_file.SCAMPER_FILE_OBJ_STING:
             return ScamperSting.from_ptr(<cscamper_sting.scamper_sting_t *>o_data)
-        elif o_type == SCAMPER_FILE_OBJ_SNIFF:
+        elif o_type == cscamper_file.SCAMPER_FILE_OBJ_SNIFF:
             return ScamperSniff.from_ptr(<cscamper_sniff.scamper_sniff_t *>o_data)
-        elif o_type == SCAMPER_FILE_OBJ_HOST:
+        elif o_type == cscamper_file.SCAMPER_FILE_OBJ_HOST:
             return ScamperHost.from_ptr(<cscamper_host.scamper_host_t *>o_data)
-        elif o_type == SCAMPER_FILE_OBJ_HTTP:
+        elif o_type == cscamper_file.SCAMPER_FILE_OBJ_HTTP:
             return ScamperHttp.from_ptr(<cscamper_http.scamper_http_t *>o_data)
-        elif o_type == SCAMPER_FILE_OBJ_UDPPROBE:
+        elif o_type == cscamper_file.SCAMPER_FILE_OBJ_UDPPROBE:
             return ScamperUdpprobe.from_ptr(<cscamper_udpprobe.scamper_udpprobe_t *>o_data)
 
         raise RuntimeError("unexpected object type " + o_type)
@@ -8657,53 +8613,53 @@ cdef class ScamperFile:
             raise RuntimeError("file not opened in write mode")
 
         if isinstance(obj, ScamperList):
-            o_type = SCAMPER_FILE_OBJ_LIST
+            o_type = cscamper_file.SCAMPER_FILE_OBJ_LIST
             o_data = (<ScamperList>obj)._c
         elif isinstance(obj, ScamperCycle):
             o_type = (<ScamperCycle>obj)._type
             o_data = (<ScamperCycle>obj)._c
         elif isinstance(obj, ScamperAddr):
-            o_type = SCAMPER_FILE_OBJ_ADDR
+            o_type = cscamper_file.SCAMPER_FILE_OBJ_ADDR
             o_data = (<ScamperAddr>obj)._c
         elif isinstance(obj, ScamperTrace):
-            o_type = SCAMPER_FILE_OBJ_TRACE
+            o_type = cscamper_file.SCAMPER_FILE_OBJ_TRACE
             o_data = (<ScamperTrace>obj)._c
         elif isinstance(obj, ScamperPing):
-            o_type = SCAMPER_FILE_OBJ_PING
+            o_type = cscamper_file.SCAMPER_FILE_OBJ_PING
             o_data = (<ScamperPing>obj)._c
         elif isinstance(obj, ScamperTracelb):
-            o_type = SCAMPER_FILE_OBJ_TRACELB
+            o_type = cscamper_file.SCAMPER_FILE_OBJ_TRACELB
             o_data = (<ScamperTracelb>obj)._c
         elif isinstance(obj, ScamperDealias):
-            o_type = SCAMPER_FILE_OBJ_DEALIAS
+            o_type = cscamper_file.SCAMPER_FILE_OBJ_DEALIAS
             o_data = (<ScamperDealias>obj)._c
         elif isinstance(obj, ScamperNeighbourdisc):
-            o_type = SCAMPER_FILE_OBJ_NEIGHBOURDISC
+            o_type = cscamper_file.SCAMPER_FILE_OBJ_NEIGHBOURDISC
             o_data = (<ScamperNeighbourdisc>obj)._c
         elif isinstance(obj, ScamperTbit):
-            o_type = SCAMPER_FILE_OBJ_TBIT
+            o_type = cscamper_file.SCAMPER_FILE_OBJ_TBIT
             o_data = (<ScamperTbit>obj)._c
         elif isinstance(obj, ScamperSting):
-            o_type = SCAMPER_FILE_OBJ_STING
+            o_type = cscamper_file.SCAMPER_FILE_OBJ_STING
             o_data = (<ScamperSting>obj)._c
         elif isinstance(obj, ScamperSniff):
-            o_type = SCAMPER_FILE_OBJ_SNIFF
+            o_type = cscamper_file.SCAMPER_FILE_OBJ_SNIFF
             o_data = (<ScamperSniff>obj)._c
         elif isinstance(obj, ScamperHost):
-            o_type = SCAMPER_FILE_OBJ_HOST
+            o_type = cscamper_file.SCAMPER_FILE_OBJ_HOST
             o_data = (<ScamperHost>obj)._c
         elif isinstance(obj, ScamperHttp):
-            o_type = SCAMPER_FILE_OBJ_HTTP
+            o_type = cscamper_file.SCAMPER_FILE_OBJ_HTTP
             o_data = (<ScamperHttp>obj)._c
         elif isinstance(obj, ScamperUdpprobe):
-            o_type = SCAMPER_FILE_OBJ_UDPPROBE
+            o_type = cscamper_file.SCAMPER_FILE_OBJ_UDPPROBE
             o_data = (<ScamperUdpprobe>obj)._c
         else:
             raise RuntimeError("unhandled object type")
 
-        if (o_type == SCAMPER_FILE_OBJ_LIST or
-            o_type == SCAMPER_FILE_OBJ_CYCLE_DEF or
-            o_type == SCAMPER_FILE_OBJ_ADDR):
+        if (o_type == cscamper_file.SCAMPER_FILE_OBJ_LIST or
+            o_type == cscamper_file.SCAMPER_FILE_OBJ_CYCLE_DEF or
+            o_type == cscamper_file.SCAMPER_FILE_OBJ_ADDR):
             return
 
         rc = cscamper_file.scamper_file_write_obj(self._c_sf, o_type, o_data)
@@ -8749,7 +8705,7 @@ cdef void _ctrl_cb(clibscamperctrl.scamper_inst_t *c_inst,
             ctrl._tasks.remove(<ScamperTask>c_task_param)
             inst._tasks.remove(<ScamperTask>c_task_param)
 
-    if cb_type == SCAMPER_CTRL_TYPE_DATA:
+    if cb_type == clibscamperctrl.SCAMPER_CTRL_TYPE_DATA:
 
         # add the passed in data to the file input stream, and see if
         # we got a complete object at the end of it
@@ -8760,39 +8716,39 @@ cdef void _ctrl_cb(clibscamperctrl.scamper_inst_t *c_inst,
 
         # figure out what type of object we got, and create a wrapping
         # object for it
-        if o_type == SCAMPER_FILE_OBJ_LIST:
+        if o_type == cscamper_file.SCAMPER_FILE_OBJ_LIST:
             c_list = <cscamper_list.scamper_list_t *>o_data
             obj = ScamperList.from_ptr(c_list)
             if obj is not None:
                 cscamper_list.scamper_list_free(c_list)
-        elif (o_type == SCAMPER_FILE_OBJ_CYCLE_START or
-              o_type == SCAMPER_FILE_OBJ_CYCLE_DEF or
-              o_type == SCAMPER_FILE_OBJ_CYCLE_STOP):
+        elif (o_type == cscamper_file.SCAMPER_FILE_OBJ_CYCLE_START or
+              o_type == cscamper_file.SCAMPER_FILE_OBJ_CYCLE_DEF or
+              o_type == cscamper_file.SCAMPER_FILE_OBJ_CYCLE_STOP):
             c_cycle = <cscamper_list.scamper_cycle_t *>o_data
             obj = ScamperCycle.from_ptr(c_cycle, o_type)
             if obj is not None:
                 cscamper_list.scamper_cycle_free(c_cycle)
-        elif o_type == SCAMPER_FILE_OBJ_TRACE:
+        elif o_type == cscamper_file.SCAMPER_FILE_OBJ_TRACE:
             obj = ScamperTrace.from_ptr(<cscamper_trace.scamper_trace_t *>o_data)
-        elif o_type == SCAMPER_FILE_OBJ_PING:
+        elif o_type == cscamper_file.SCAMPER_FILE_OBJ_PING:
             obj = ScamperPing.from_ptr(<cscamper_ping.scamper_ping_t *>o_data)
-        elif o_type == SCAMPER_FILE_OBJ_TRACELB:
+        elif o_type == cscamper_file.SCAMPER_FILE_OBJ_TRACELB:
             obj = ScamperTracelb.from_ptr(<cscamper_tracelb.scamper_tracelb_t *>o_data)
-        elif o_type == SCAMPER_FILE_OBJ_DEALIAS:
+        elif o_type == cscamper_file.SCAMPER_FILE_OBJ_DEALIAS:
             obj = ScamperDealias.from_ptr(<cscamper_dealias.scamper_dealias_t *>o_data)
-        elif o_type == SCAMPER_FILE_OBJ_NEIGHBOURDISC:
+        elif o_type == cscamper_file.SCAMPER_FILE_OBJ_NEIGHBOURDISC:
             obj = ScamperNeighbourdisc.from_ptr(<cscamper_neighbourdisc.scamper_neighbourdisc_t *>o_data)
-        elif o_type == SCAMPER_FILE_OBJ_TBIT:
+        elif o_type == cscamper_file.SCAMPER_FILE_OBJ_TBIT:
             obj = ScamperTbit.from_ptr(<cscamper_tbit.scamper_tbit_t *>o_data)
-        elif o_type == SCAMPER_FILE_OBJ_STING:
+        elif o_type == cscamper_file.SCAMPER_FILE_OBJ_STING:
             obj = ScamperSting.from_ptr(<cscamper_sting.scamper_sting_t *>o_data)
-        elif o_type == SCAMPER_FILE_OBJ_SNIFF:
+        elif o_type == cscamper_file.SCAMPER_FILE_OBJ_SNIFF:
             obj = ScamperSniff.from_ptr(<cscamper_sniff.scamper_sniff_t *>o_data)
-        elif o_type == SCAMPER_FILE_OBJ_HOST:
+        elif o_type == cscamper_file.SCAMPER_FILE_OBJ_HOST:
             obj = ScamperHost.from_ptr(<cscamper_host.scamper_host_t *>o_data)
-        elif o_type == SCAMPER_FILE_OBJ_HTTP:
+        elif o_type == cscamper_file.SCAMPER_FILE_OBJ_HTTP:
             obj = ScamperHttp.from_ptr(<cscamper_http.scamper_http_t *>o_data)
-        elif o_type == SCAMPER_FILE_OBJ_UDPPROBE:
+        elif o_type == cscamper_file.SCAMPER_FILE_OBJ_UDPPROBE:
             obj = ScamperUdpprobe.from_ptr(<cscamper_udpprobe.scamper_udpprobe_t *>o_data)
         else:
             obj = None
@@ -8817,28 +8773,28 @@ cdef void _ctrl_cb(clibscamperctrl.scamper_inst_t *c_inst,
                 ctrl._objs.append(onion)
             inst._queued += 1
 
-    elif cb_type == SCAMPER_CTRL_TYPE_MORE:
+    elif cb_type == clibscamperctrl.SCAMPER_CTRL_TYPE_MORE:
         if ctrl._morecb is not None:
             try:
                 ctrl._morecb(ctrl, inst, ctrl._param)
             except Exception as e:
                 ctrl._exceptions.append(e)
 
-    elif cb_type == SCAMPER_CTRL_TYPE_ERR:
+    elif cb_type == clibscamperctrl.SCAMPER_CTRL_TYPE_ERR:
         errstr = <const char *>data
         excstr = f"got err from {inst.name}"
         if errstr != NULL and errstr[0] != ord('\0'):
             excstr += ": " + errstr.decode('UTF-8', 'strict')
         ctrl._exceptions.append(ScamperInstError(excstr, inst))
 
-    elif cb_type == SCAMPER_CTRL_TYPE_FATAL:
+    elif cb_type == clibscamperctrl.SCAMPER_CTRL_TYPE_FATAL:
         excstr = f"got fatal from {inst.name}"
         errstr = clibscamperctrl.scamper_ctrl_strerror(c_ctrl)
         if errstr != NULL and errstr[0] != ord('\0'):
             excstr += ": " + errstr.decode('UTF-8', 'strict')
         ctrl._exceptions.append(ScamperInstError(excstr, inst))
 
-    elif cb_type == SCAMPER_CTRL_TYPE_EOF:
+    elif cb_type == clibscamperctrl.SCAMPER_CTRL_TYPE_EOF:
         # got an eof on an instance.  remove the references to the tasks
         # managed by inst from both the inst and ctrl objects.
         while len(inst._tasks) > 0:
@@ -9379,8 +9335,8 @@ cdef class ScamperCtrl:
             onion = self._syncdata
             self._c_synctask = NULL
             self._syncdata = None
-            onion.inst._queued -= 1
-            return onion.data
+            onion._inst._queued -= 1
+            return onion._data
         else:
             t = ScamperTask.from_ptr(task, inst)
             self._tasks.append(t)
@@ -10408,7 +10364,7 @@ cdef class ScamperCtrl:
         return self._dotasks(' '.join(args), inst, sync)
 
     def do_udpprobe(self, dst, dport, payload, attempts=None, src=None,
-                    stop_count=None, inst=None, userid=None, sync=False):
+                    stop_count=None, userid=None, inst=None, sync=False):
         """
         do_udpprobe(dst, dport, payload, attempts=None, src=None,\
                     stop_count=None, inst=None, userid=None, sync=False)
@@ -10454,7 +10410,7 @@ cdef class ScamperCtrl:
         return self._dotasks(' '.join(args), inst, sync)
 
     def do_tbit(self, dst, method=None, url=None,
-                inst=None, userid=None, sync=False):
+                userid=None, inst=None, sync=False):
         """
         do_tbit(dst, method=None, url=None,
                 inst=None, userid=None, sync=False)

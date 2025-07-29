@@ -1,9 +1,9 @@
 /*
  * scamper_do_neighbourdisc
  *
- * $Id: scamper_neighbourdisc_do.c,v 1.53 2025/04/27 00:49:24 mjl Exp $
+ * $Id: scamper_neighbourdisc_do.c,v 1.54 2025/07/04 23:34:23 mjl Exp $
  *
- * Copyright (C) 2009-2024 Matthew Luckie
+ * Copyright (C) 2009-2025 Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -80,13 +80,13 @@ static nd_state_t *nd_getstate(const scamper_task_t *task)
 
 static void nd_handleerror(scamper_task_t *task, int error)
 {
-  scamper_task_queue_done(task, 0);
+  scamper_task_queue_done(task);
   return;
 }
 
 static void nd_done(scamper_task_t *task)
 {
-  scamper_task_queue_done(task, 0);
+  scamper_task_queue_done(task);
   return;
 }
 
