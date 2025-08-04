@@ -1,7 +1,7 @@
 /*
  * scamper_do_tbit.c
  *
- * $Id: scamper_tbit_do.c,v 1.220 2025/07/05 03:29:20 mjl Exp $
+ * $Id: scamper_tbit_do.c,v 1.222 2025/08/04 00:00:27 mjl Exp $
  *
  * Copyright (C) 2009-2010 Ben Stasiewicz
  * Copyright (C) 2009-2010 Stephen Eichler

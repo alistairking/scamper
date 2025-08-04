@@ -1,7 +1,7 @@
 /*
  * scamper_do_tracelb.h
  *
- * $Id: scamper_tracelb_do.h,v 1.14 2025/04/27 00:49:24 mjl Exp $
+ * $Id: scamper_tracelb_do.h,v 1.16 2025/08/04 00:00:27 mjl Exp $
  *
  * Copyright (C) 2008-2010 The University of Waikato
  * Author: Matthew Luckie

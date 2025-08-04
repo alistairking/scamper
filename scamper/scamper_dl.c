@@ -1,7 +1,7 @@
 /*
  * scamper_dl: manage BPF/PF_PACKET datalink instances for scamper
  *
- * $Id: scamper_dl.c,v 1.237 2025/07/23 07:37:47 mjl Exp $
+ * $Id: scamper_dl.c,v 1.238 2025/07/31 08:00:24 mjl Exp $
  *
  *          Matthew Luckie
  *          Ben Stasiewicz added fragmentation support.
@@ -18,7 +18,7 @@
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2012      Matthew Luckie
  * Copyright (C) 2014-2015 The Regents of the University of California
- * Copyright (C) 2022-2024 Matthew Luckie
+ * Copyright (C) 2022-2025 Matthew Luckie
  * Copyright (C) 2023-2024 The Regents of the University of California
  *
  * This program is free software; you can redistribute it and/or modify
@@ -2542,9 +2542,9 @@ void scamper_dl_rec_tcp_print(const scamper_dl_rec_t *dl)
     }
 
   off = 0;
-  string_concaf(pos, sizeof(pos), &off, "%u", dl->dl_tcp_seq);
+  string_concat_u32(pos, sizeof(pos), &off, NULL, dl->dl_tcp_seq);
   if(dl->dl_tcp_flags & TH_ACK)
-    string_concaf(pos, sizeof(pos), &off, ":%u", dl->dl_tcp_ack);
+    string_concat_u32(pos, sizeof(pos), &off, ":", dl->dl_tcp_ack);
 
   if(dl->dl_af == AF_INET)
     snprintf(ipid, sizeof(ipid), "ipid 0x%04x ", dl->dl_ip_id);
@@ -2649,8 +2649,9 @@ void scamper_dl_rec_icmp_print(const scamper_dl_rec_t *dl)
     {
       addr_tostr(AF_INET6, dl->dl_ip_src, addr, sizeof(addr));
       off = 0;
-      string_concaf(ip, sizeof(ip), &off, "from %s size %d hlim %d", addr,
-		    dl->dl_ip_size, dl->dl_ip_hlim);
+      string_concat2(ip, sizeof(ip), &off, "from ", addr);
+      string_concat_u16(ip, sizeof(ip), &off, " size ", dl->dl_ip_size);
+      string_concat_u8(ip, sizeof(ip), &off, " hlim ", dl->dl_ip_hlim);
       if(dl->dl_ip_flags & SCAMPER_DL_IP_FLAG_FRAG)
 	string_concaf(ip, sizeof(ip), &off, " ipid 0x%08x", dl->dl_ip6_id);
 

@@ -1,7 +1,7 @@
 /*
  * scamper_task.h
  *
- * $Id: scamper_task.h,v 1.61 2025/07/04 23:34:23 mjl Exp $
+ * $Id: scamper_task.h,v 1.63 2025/08/04 00:00:27 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato

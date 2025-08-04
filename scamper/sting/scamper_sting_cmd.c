@@ -1,7 +1,7 @@
 /*
  * scamper_sting_cmd.c
  *
- * $Id: scamper_sting_cmd.c,v 1.7 2024/05/02 02:33:38 mjl Exp $
+ * $Id: scamper_sting_cmd.c,v 1.8 2025/08/04 00:00:27 mjl Exp $
  *
  * Copyright (C) 2008-2011 The University of Waikato
  * Copyright (C) 2012      The Regents of the University of California
@@ -44,6 +44,7 @@
 #include "scamper_sting_int.h"
 #include "scamper_sting_cmd.h"
 #include "scamper_options.h"
+#include "scamper_dnp.h"
 #include "utils.h"
 
 /*
@@ -349,6 +350,14 @@ void *scamper_do_sting_alloc(char *str, char *errbuf, size_t errlen)
       snprintf(errbuf, errlen, "invalid destination address");
       goto err;
     }
+
+#ifndef DISABLE_SCAMPER_DNP
+  if(scamper_dnp_canprobe(sting->dst) == 0)
+    {
+      snprintf(errbuf, errlen, "destination in do-not-probe list");
+      goto err;
+    }
+#endif
 
   sting->sport    = sport;
   sting->dport    = dport;
