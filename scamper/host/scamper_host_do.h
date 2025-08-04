@@ -1,7 +1,7 @@
 /*
  * scamper_do_host.h
  *
- * $Id: scamper_host_do.h,v 1.8 2025/04/27 00:49:24 mjl Exp $
+ * $Id: scamper_host_do.h,v 1.10 2025/08/04 00:00:27 mjl Exp $
  *
  * Copyright (C) 2018-2020 Matthew Luckie
  * Author: Matthew Luckie

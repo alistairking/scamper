@@ -8,7 +8,7 @@
  * mjl_patricia.  Note, we cannot use a generic Patricia Trie to do
  * longest matching prefix lookup, hence this tree.
  *
- * Copyright (C) 2016-2024 Matthew Luckie. All rights reserved.
+ * Copyright (C) 2016-2025 Matthew Luckie. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -31,7 +31,7 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  *
- * $Id: mjl_prefixtree.c,v 1.23 2025/06/10 22:32:49 mjl Exp $
+ * $Id: mjl_prefixtree.c,v 1.24 2025/08/02 07:29:46 mjl Exp $
  *
  */
 
@@ -169,6 +169,12 @@ int prefix4_cmp(const prefix4_t *a, const prefix4_t *b)
   return 0;
 }
 
+void prefix4_setptr(prefix4_t *pref, void *ptr)
+{
+  pref->ptr = ptr;
+  return;
+}
+
 #ifndef DMALLOC
 prefix6_t *prefix6_alloc(struct in6_addr *net, uint8_t len, void *ptr)
 #else
@@ -242,6 +248,12 @@ int prefix6_cmp(const prefix6_t *a, const prefix6_t *b)
   if(a->len < b->len) return -1;
   if(a->len > b->len) return  1;
   return 0;
+}
+
+void prefix6_setptr(prefix6_t *pref, void *ptr)
+{
+  pref->ptr = ptr;
+  return;
 }
 
 #ifndef DMALLOC

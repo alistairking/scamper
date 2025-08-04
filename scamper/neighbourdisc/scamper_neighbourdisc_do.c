@@ -1,7 +1,7 @@
 /*
  * scamper_do_neighbourdisc
  *
- * $Id: scamper_neighbourdisc_do.c,v 1.54 2025/07/04 23:34:23 mjl Exp $
+ * $Id: scamper_neighbourdisc_do.c,v 1.56 2025/08/04 00:00:27 mjl Exp $
  *
  * Copyright (C) 2009-2025 Matthew Luckie
  *

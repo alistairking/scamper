@@ -1,7 +1,7 @@
 /*
  * scamper
  *
- * $Id: scamper.c,v 1.379 2025/07/23 07:37:47 mjl Exp $
+ * $Id: scamper.c,v 1.384 2025/08/04 02:00:19 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -65,6 +65,9 @@
 #ifndef DISABLE_SCAMPER_PRIVSEP
 #include "scamper_privsep.h"
 #endif
+#ifndef DISABLE_SCAMPER_DNP
+#include "scamper_dnp.h"
+#endif
 #include "scamper_control.h"
 #include "scamper_osinfo.h"
 #ifndef DISABLE_SCAMPER_TRACE
@@ -109,6 +112,8 @@
 #include "udpprobe/scamper_udpprobe_cmd.h"
 #include "udpprobe/scamper_udpprobe_do.h"
 #endif
+
+#include "mjl_list.h"
 
 #include "utils.h"
 
@@ -261,6 +266,11 @@ int           sighup_rx = 0;
 static scamper_fd_t *privsep_fdn = NULL;
 int                  privsep_do = -1; /* 0=no, 1=yes */
 pid_t                privsep_unpriv_pid = -1;
+#endif
+
+#ifndef DISABLE_SCAMPER_DNP
+static char   **dnpfiles = NULL;
+static size_t   dnpfilec = 0;
 #endif
 
 /* central cache of addresses that scamper is dealing with */
@@ -417,6 +427,9 @@ static void usage(uint32_t opt_mask)
 #endif
 #ifndef DISABLE_SCAMPER_SELECT
       usage_line("select: use select(2)");
+#endif
+#ifndef DISABLE_SCAMPER_DNP
+      usage_line("dnp=file: do not probe addresses in do-not-probe file");
 #endif
 #ifdef HAVE_KQUEUE
       usage_line("kqueue: use kqueue(2)");
@@ -643,6 +656,10 @@ static int check_options(int argc, char *argv[])
   char *opt_firewall = NULL, *opt_pidfile = NULL, *opt_ctrl_remote = NULL;
   char *opt_holdtime = NULL, *opt_nameserver = NULL;
 
+#ifndef DISABLE_SCAMPER_DNP
+  slist_t *dnp_list = NULL;
+#endif
+
 #ifdef HAVE_STRUCT_TPACKET_REQ3
   char *opt_ring_blocks = NULL, *opt_ring_block_size = NULL;
 #endif
@@ -655,6 +672,7 @@ static int check_options(int argc, char *argv[])
   size_t m, len;
   size_t off;
   uint32_t o;
+  int rc = -1;
 
 #if defined(ENABLE_SCAMPER_RING) && defined(HAVE_STRUCT_TPACKET_REQ3)
   flags |= FLAG_RING;
@@ -858,10 +876,18 @@ static int check_options(int argc, char *argv[])
 	      ring_locked = 1;
 	    }
 #endif
+#ifndef DISABLE_SCAMPER_DNP
+	  else if(strncasecmp(optarg, "dnp=", 4) == 0)
+	    {
+	      if((dnp_list = slist_alloc()) == NULL ||
+		 slist_tail_push(dnp_list, optarg + 4) == NULL)
+		goto done;
+	    }
+#endif
 	  else
 	    {
 	      usage(OPT_OPTION);
-	      return -1;
+	      goto done;
 	    }
 	  break;
 
@@ -897,17 +923,20 @@ static int check_options(int argc, char *argv[])
 	case '?':
 	  options |= OPT_HELP;
 	  usage(0xffffffff);
-	  return -1;
+	  goto done;
 
 	default:
 	  printerror(__func__, "could not parse command line options");
-	  return -1;
+	  goto done;
 	}
     }
 
   /* handle this in scamper() */
   if(options & OPT_VERSION)
-    return 0;
+    {
+      rc = 0;
+      goto done;
+    }
 
   /*
    * if one of -IPRUi is not provided, pretend that -f was for backward
@@ -924,30 +953,30 @@ static int check_options(int argc, char *argv[])
       if(opt_window != NULL && string_tolong(opt_window, &lo_w) != 0)
 	{
 	  usage(OPT_WINDOW);
-	  return -1;
+	  goto done;
 	}
       if(opt_pps != NULL && string_tolong(opt_pps, &lo_p) != 0)
 	{
 	  usage(OPT_PPS);
-	  return -1;
+	  goto done;
 	}
     }
   if(ppswindow_set(lo_p, lo_w) != 0)
     {
       usage(OPT_PPS|OPT_WINDOW);
-      return -1;
+      goto done;
     }
 
   if(countbits32(flags & (FLAG_SELECT|FLAG_KQUEUE|FLAG_EPOLL|FLAG_POLL)) > 1)
     {
       usage(OPT_OPTION);
-      return -1;
+      goto done;
     }
 
   if(options & OPT_FIREWALL && (firewall = strdup(opt_firewall)) == NULL)
     {
       printerror(__func__, "could not strdup firewall");
-      return -1;
+      goto done;
     }
 
   if(options & OPT_HOLDTIME)
@@ -957,7 +986,7 @@ static int check_options(int argc, char *argv[])
 	{
 	  usage(OPT_HOLDTIME);
 	  fprintf(stderr, "invalid holdtime\n");
-	  return -1;
+	  goto done;
 	}
       holdtime = (int)lo;
     }
@@ -966,47 +995,47 @@ static int check_options(int argc, char *argv[])
      (monitorname = strdup(opt_monitorname)) == NULL)
     {
       printerror(__func__, "could not strdup monitorname");
-      return -1;
+      goto done;
     }
 
   if(options & OPT_NAMESERVER &&
      (nameserver = strdup(opt_nameserver)) == NULL)
     {
       printerror(__func__, "could not strdup nameserver");
-      return -1;
+      goto done;
     }
 
   if(options & OPT_LISTNAME && (listname = strdup(opt_listname)) == NULL)
     {
       printerror(__func__, "could not strdup listname");
-      return -1;
+      goto done;
     }
 
   if(options & OPT_LISTID && set_opt(OPT_LISTID, opt_listid, listid_set) != 0)
     {
       usage(OPT_LISTID);
-      return -1;
+      goto done;
     }
 
   if(options & OPT_CYCLEID &&
      set_opt(OPT_CYCLEID, opt_cycleid, cycleid_set) != 0)
     {
       usage(OPT_CYCLEID);
-      return -1;
+      goto done;
     }
 
 #ifndef WITHOUT_DEBUGFILE
   if(options & OPT_DEBUGFILE && (debugfile = strdup(opt_debugfile)) == NULL)
     {
       printerror(__func__, "could not strdup debugfile");
-      return -1;
+      goto done;
     }
 #endif
 
   if(options & OPT_PIDFILE && (pidfile = strdup(opt_pidfile)) == NULL)
     {
       printerror(__func__, "could not strdup pidfile");
-      return -1;
+      goto done;
     }
 
 #ifdef HAVE_STRUCT_TPACKET_REQ3
@@ -1016,7 +1045,7 @@ static int check_options(int argc, char *argv[])
 	{
 	  usage(OPT_OPTION);
 	  fprintf(stderr, "invalid -O ring-blocks\n");
-	  return -1;
+	  goto done;
 	}
       ring_blocks = (unsigned int)lo;
     }
@@ -1027,7 +1056,7 @@ static int check_options(int argc, char *argv[])
 	{
 	  usage(OPT_OPTION);
 	  fprintf(stderr, "invalid -O ring-block-size\n");
-	  return -1;
+	  goto done;
 	}
       ring_block_size = (unsigned int)lo;
     }
@@ -1045,7 +1074,7 @@ static int check_options(int argc, char *argv[])
 	  usage(OPT_OUTFILE);
 	  fprintf(stderr, "cannot write to %s: did not link against zlib\n",
 		  outfile);
-	  return -1;
+	  goto done;
 #endif
 	}
       else if(string_endswith(outfile, ".warts.bz2") != 0)
@@ -1056,7 +1085,7 @@ static int check_options(int argc, char *argv[])
 	  usage(OPT_OUTFILE);
 	  fprintf(stderr, "cannot write to %s: did not link against libbz2\n",
 		  outfile);
-	  return -1;
+	  goto done;
 #endif
 	}
       else if(string_endswith(outfile, ".warts.xz") != 0)
@@ -1067,7 +1096,7 @@ static int check_options(int argc, char *argv[])
 	  usage(OPT_OUTFILE);
 	  fprintf(stderr, "cannot write to %s: did not link against liblzma\n",
 		  outfile);
-	  return -1;
+	  goto done;
 #endif
 	}
       else if(string_endswith(outfile, ".json") != 0)
@@ -1090,7 +1119,7 @@ static int check_options(int argc, char *argv[])
     {
       usage(OPT_OUTFILE);
       fprintf(stderr, "not going to dump %s to a tty, sorry\n", outtype);
-      return -1;
+      goto done;
     }
 #endif
 
@@ -1103,7 +1132,7 @@ static int check_options(int argc, char *argv[])
      scamper_option_command_set((options & OPT_COMMAND) ?
 				opt_command : SCAMPER_OPTION_COMMAND_DEF) != 0)
     {
-      return -1;
+      goto done;
     }
 
 #ifdef HAVE_DAEMON
@@ -1118,7 +1147,7 @@ static int check_options(int argc, char *argv[])
       if((options & o) == 0)
 	{
 	  usage(OPT_DAEMON | o);
-	  return -1;
+	  goto done;
 	}
       if((options & OPT_OUTFILE) != 0)
 	{
@@ -1126,14 +1155,14 @@ static int check_options(int argc, char *argv[])
 	    {
 	      usage(OPT_DAEMON | OPT_OUTFILE);
 	      fprintf(stderr, "cannot output to stdout with daemon\n");
-	      return -1;
+	      goto done;
 	    }
 	  o = OPT_CTRL_INET | OPT_CTRL_UNIX | OPT_CTRL_REMOTE;
 	  if((options & o) != 0)
 	    {
 	      usage(OPT_DAEMON | OPT_OUTFILE | (options & o));
 	      fprintf(stderr, "outfile does not make sense with options\n");
-	      return -1;
+	      goto done;
 	    }
 	}
     }
@@ -1147,7 +1176,7 @@ static int check_options(int argc, char *argv[])
       if(options & (OPT_IP | OPT_CMDLIST | OPT_INFILE))
 	{
 	  usage(o);
-	  return -1;
+	  goto done;
 	}
 
       if(options & OPT_CTRL_INET)
@@ -1157,7 +1186,7 @@ static int check_options(int argc, char *argv[])
 	     string_addrport(opt_ctrl_inet, &ctrl_inet_addr, &ctrl_inet_port) != 0)
 	    {
 	      usage(OPT_CTRL_INET);
-	      return -1;
+	      goto done;
 	    }
 	}
       if(options & OPT_CTRL_REMOTE)
@@ -1170,7 +1199,7 @@ static int check_options(int argc, char *argv[])
 	     string_addrport(opt_ctrl_remote, &ctrl_rem_name, &ctrl_rem_port) != 0)
 	    {
 	      usage(OPT_CTRL_REMOTE);
-	      return -1;
+	      goto done;
 	    }
 	}
       if(options & OPT_CTRL_UNIX)
@@ -1179,7 +1208,7 @@ static int check_options(int argc, char *argv[])
 	  if(arglist_len != 0)
 	    {
 	      usage(OPT_CTRL_UNIX);
-	      return -1;
+	      goto done;
 	    }
 	  ctrl_unix = opt_ctrl_unix;
 	}
@@ -1191,7 +1220,7 @@ static int check_options(int argc, char *argv[])
 	 ((options & OPT_IP) && (options & OPT_CMDLIST)))
 	{
 	  usage(o);
-	  return -1;
+	  goto done;
 	}
 
       /*
@@ -1204,7 +1233,7 @@ static int check_options(int argc, char *argv[])
 	    usage(OPT_IP);
 	  else if(options & OPT_CMDLIST)
 	    usage(OPT_CMDLIST);
-	  return -1;
+	  goto done;
 	}
     }
   else
@@ -1217,7 +1246,7 @@ static int check_options(int argc, char *argv[])
       if(arglist_len != 1)
 	{
 	  usage(0);
-	  return -1;
+	  goto done;
 	}
     }
 
@@ -1229,7 +1258,7 @@ static int check_options(int argc, char *argv[])
 	 (remote_client_privfile == NULL && remote_client_certfile != NULL))
 	{
 	  usage(OPT_CTRL_REMOTE);
-	  return -1;
+	  goto done;
 	}
     }
   else
@@ -1238,12 +1267,30 @@ static int check_options(int argc, char *argv[])
       if(remote_client_privfile != NULL || remote_client_certfile != NULL)
 	{
 	  usage(OPT_CTRL_REMOTE);
-	  return -1;
+	  goto done;
 	}
     }
 #endif
 
-  return 0;
+#ifndef DISABLE_SCAMPER_DNP
+  if(dnp_list != NULL)
+    {
+      len = slist_count(dnp_list);
+      if((dnpfiles = malloc_zero(len * sizeof(char *))) == NULL)
+	goto done;
+      for(m=0; m<len; m++)
+	dnpfiles[m] = slist_head_pop(dnp_list);
+      dnpfilec = m;
+    }
+#endif
+
+  rc = 0;
+
+ done:
+#ifndef DISABLE_SCAMPER_DNP
+  if(dnp_list != NULL) slist_free(dnp_list);
+#endif
+  return rc;
 }
 
 const char *scamper_option_command_get(void)
@@ -1693,72 +1740,6 @@ uint16_t scamper_pid_u16(void)
 }
 
 /*
- * scamper_timeout
- *
- * figure out how long the timeout on the poll (or equivalent) should be.
- *
- * returns:
- *  zero if there is a timeout value computed
- *  one  if there is no timeout value computed
- *  two  if scamper should exit because it is done.
- */
-static int scamper_timeout(struct timeval *timeout,
-			   const struct timeval *lastprobe)
-{
-  struct timeval tv;
-  int set = 0;
-
-#ifdef HAVE_EXIT_NOW
-  if(exit_now != 0)
-    return 2;
-#endif
-
-  /*
-   * if there is something ready to be probed right now, then set the
-   * timeout to go off when it is time to send the next probe
-   */
-  if(scamper_queue_readycount() > 0 ||
-     ((window == 0 || scamper_queue_windowcount() < window) &&
-      scamper_sources_isready() != 0))
-    {
-      timeval_add_tv3(timeout, lastprobe, &gap_min);
-      set++;
-    }
-
-  /*
-   * if we are waiting on a response from an earlier probe, then set
-   * the timer to go off when that probe expires.
-   */
-  if(scamper_queue_waittime(&tv) > 0)
-    {
-      if(set == 0 || timeval_cmp(&tv, timeout) < 0)
-	timeval_cpy(timeout, &tv);
-      set++;
-    }
-
-  /* nothing to probe, and been told to exit */
-  if(set == 0 && exit_when_done != 0 && scamper_sources_isempty() != 0)
-    return 2;
-
-  /*
-   * if there are no events to consider, then we only need to consider
-   * if there are events in the future
-   */
-  if(scamper_queue_event_waittime(&tv) > 0)
-    {
-      if(set == 0 || timeval_cmp(&tv, timeout) < 0)
-	timeval_cpy(timeout, &tv);
-      set++;
-    }
-
-  /* no timeout value computed */
-  if(set == 0)
-    return 1;
-
-  return 0;
-}
-
-/*
  * scamper_process_done:
  *
  * take any 'done' tasks and output them now
@@ -1787,6 +1768,78 @@ static void scamper_process_done(void)
     }
 
   return;
+}
+
+/*
+ * scamper_timeout
+ *
+ * figure out how long the timeout on the poll (or equivalent) should be.
+ *
+ * returns:
+ *  zero if there is a timeout value computed
+ *  one  if there is no timeout value computed
+ *  two  if scamper should exit because it is done.
+ */
+static int scamper_timeout(struct timeval *timeout,
+			   const struct timeval *lastprobe)
+{
+  struct timeval tv;
+  int set = 0;
+
+  /*
+   * if there is something ready to be probed right now, then set the
+   * timeout to go off when it is time to send the next probe
+   */
+  if(scamper_queue_readycount() > 0 ||
+     ((window == 0 || scamper_queue_windowcount() < window) &&
+      scamper_sources_isready() != 0))
+    {
+      timeval_add_tv3(timeout, lastprobe, &gap_min);
+      set++;
+    }
+
+  /*
+   * if we are waiting on a response from an earlier probe, then set
+   * the timer to go off when that probe expires.
+   */
+  if(scamper_queue_waittime(&tv) > 0)
+    {
+      if(set == 0 || timeval_cmp(&tv, timeout) < 0)
+	timeval_cpy(timeout, &tv);
+      set++;
+    }
+
+  /*
+   * scamper_queue_readycount can put tasks in the done queue, so
+   * output them here.
+   */
+  scamper_process_done();
+
+#ifdef HAVE_EXIT_NOW
+  if(exit_now != 0)
+    return 2;
+#endif
+
+  /* nothing to probe, and been told to exit */
+  if(set == 0 && exit_when_done != 0 && scamper_sources_isempty() != 0)
+    return 2;
+
+  /*
+   * if there are no events to consider, then we only need to consider
+   * if there are events in the future
+   */
+  if(scamper_queue_event_waittime(&tv) > 0)
+    {
+      if(set == 0 || timeval_cmp(&tv, timeout) < 0)
+	timeval_cpy(timeout, &tv);
+      set++;
+    }
+
+  /* no timeout value computed */
+  if(set == 0)
+    return 1;
+
+  return 0;
 }
 
 /*
@@ -1942,6 +1995,12 @@ static void cleanup(void)
     }
 #endif
 
+#ifndef DISABLE_SCAMPER_DNP
+  if(dnpfiles != NULL)
+    free(dnpfiles);
+  scamper_dnp_cleanup();
+#endif
+
   scamper_config_cleanup();
 
 #ifdef HAVE_TIMEBEGINPERIOD
@@ -2095,6 +2154,11 @@ static int scamper(int argc, char *argv[])
 
   if(scamper_config_init(configfile) != 0)
     goto done;
+
+#ifndef DISABLE_SCAMPER_DNP
+  if(scamper_dnp_init((const char **)dnpfiles, dnpfilec) != 0)
+    goto done;
+#endif
 
   if(scamper_osinfo_init() != 0)
     goto done;
@@ -2366,8 +2430,6 @@ static int scamper(int argc, char *argv[])
 
   for(;;)
     {
-      scamper_process_done();
-
       if((x = scamper_timeout(&timeout, &lastprobe)) == 0)
 	{
 	  /*
@@ -2391,12 +2453,18 @@ static int scamper(int argc, char *argv[])
 	  break;
 	}
 
-#if defined(HAVE_OPENSSL) && defined(HAVE_SIGACTION)
+#ifdef HAVE_SIGACTION
       if(sighup_rx != 0)
 	{
 	  if(configfile != NULL)
 	    scamper_config_reload(configfile);
+#ifndef DISABLE_SCAMPER_DNP
+	  if(dnpfilec > 0)
+	    scamper_dnp_reload((const char **)dnpfiles, dnpfilec);
+#endif
+#ifdef HAVE_OPENSSL
 	  scamper_loadcerts();
+#endif
 	  sighup_rx = 0;
 	}
 #endif

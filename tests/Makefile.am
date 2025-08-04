@@ -1,4 +1,4 @@
-# $Id: Makefile.am,v 1.64 2025/07/21 05:31:22 mjl Exp $
+# $Id: Makefile.am,v 1.66 2025/08/04 00:00:27 mjl Exp $
 
 AUTOMAKE_OPTIONS = subdir-objects
 
@@ -58,7 +58,7 @@ noinst_PROGRAMS = \
 
 noinst_LTLIBRARIES = libcmdtest.la libosinfotest.la libscamperfiletest.la
 
-libcmdtest_la_CFLAGS = -DBUILDING_SCAMPER -DCOMMON_CHECK_ADDR
+libcmdtest_la_CFLAGS = -DBUILD_ADDRCACHE -DCOMMON_CHECK_ADDR
 libcmdtest_la_SOURCES = \
 	../utils.c \
 	../scamper/scamper_addr.c \
@@ -66,6 +66,8 @@ libcmdtest_la_SOURCES = \
 	../scamper/scamper_options.c \
 	../scamper/scamper_icmpext.c \
 	../scamper/scamper_ifname.c \
+	../scamper/scamper_dnp.c \
+	../mjl_prefixtree.c \
 	../mjl_splaytree.c \
 	../mjl_list.c \
 	common.c
@@ -277,7 +279,7 @@ unit_cmd_udpprobe_SOURCES = unit_cmd_udpprobe.c \
 	../scamper/udpprobe/scamper_udpprobe_cmd.c
 unit_cmd_udpprobe_LDADD = libcmdtest.la
 
-unit_addr_CFLAGS = -DBUILDING_SCAMPER
+unit_addr_CFLAGS = -DBUILD_ADDRCACHE
 unit_addr_SOURCES = unit_addr.c \
 	../scamper/scamper_addr.c \
 	../utils.c \

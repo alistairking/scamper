@@ -1,7 +1,7 @@
 /*
  * scamper_http_cmd.c
  *
- * $Id: scamper_http_cmd.c,v 1.8 2024/05/02 02:33:38 mjl Exp $
+ * $Id: scamper_http_cmd.c,v 1.9 2025/08/04 00:00:27 mjl Exp $
  *
  * Copyright (C) 2023-2024 The Regents of the University of California
  *
@@ -35,6 +35,7 @@
 #include "scamper_http_int.h"
 #include "scamper_http_cmd.h"
 #include "scamper_options.h"
+#include "scamper_dnp.h"
 #include "mjl_list.h"
 #include "utils.h"
 
@@ -276,6 +277,14 @@ void *scamper_do_http_alloc(char *str, char *errbuf, size_t errlen)
       snprintf(errbuf, errlen, "invalid destination address");
       goto err;
     }
+
+#ifndef DISABLE_SCAMPER_DNP
+  if(scamper_dnp_canprobe(http->dst) == 0)
+    {
+      snprintf(errbuf, errlen, "destination in do-not-probe list");
+      goto err;
+    }
+#endif
 
   if(strcasecmp(scheme, "http") == 0)
     {

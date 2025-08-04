@@ -24,7 +24,7 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  *
- * $Id: mjl_prefixtree.h,v 1.8 2023/04/20 10:12:41 mjl Exp $
+ * $Id: mjl_prefixtree.h,v 1.9 2025/08/02 07:29:46 mjl Exp $
  *
  */
 
@@ -113,6 +113,9 @@ prefix6_t *prefix6_alloc_dm(struct in6_addr *net, uint8_t len, void *ptr,
 
 void prefix4_free(prefix4_t *pfx);
 void prefix6_free(prefix6_t *pfx);
+
+void prefix4_setptr(prefix4_t *pfx, void *ptr);
+void prefix6_setptr(prefix6_t *pfx, void *ptr);
 
 int prefix4_cmp(const prefix4_t *a, const prefix4_t *b);
 int prefix6_cmp(const prefix6_t *a, const prefix6_t *b);

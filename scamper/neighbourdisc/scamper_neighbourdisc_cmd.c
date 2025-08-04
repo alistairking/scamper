@@ -1,7 +1,7 @@
 /*
  * scamper_neighbourdisc_cmd
  *
- * $Id: scamper_neighbourdisc_cmd.c,v 1.5 2024/02/15 20:34:51 mjl Exp $
+ * $Id: scamper_neighbourdisc_cmd.c,v 1.6 2025/08/04 03:46:57 mjl Exp $
  *
  * Copyright (C) 2009-2023 Matthew Luckie
  *
@@ -32,6 +32,8 @@
 #include "scamper_neighbourdisc_int.h"
 #include "scamper_neighbourdisc_cmd.h"
 #include "scamper_options.h"
+#include "scamper_dnp.h"
+
 #include "utils.h"
 
 extern scamper_addrcache_t *addrcache;
@@ -290,6 +292,14 @@ void *scamper_do_neighbourdisc_alloc(char *str, char *errbuf, size_t errlen)
       snprintf(errbuf, errlen, "unhandled address type");
       goto err;
     }
+
+#ifndef DISABLE_SCAMPER_DNP
+  if(scamper_dnp_canprobe(nd->dst_ip) == 0)
+    {
+      snprintf(errbuf, errlen, "destination in do-not-probe list");
+      goto err;
+    }
+#endif
 
   if(src != NULL)
     {

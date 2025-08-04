@@ -1,6 +1,6 @@
 # Process this file with autoconf to produce a configure script.
 
-AC_INIT([scamper],[20250729],[mjl@luckie.org.nz])
+AC_INIT([scamper],[20250804],[mjl@luckie.org.nz])
 
 AC_CONFIG_SRCDIR([scamper/scamper.c])
 AC_CONFIG_AUX_DIR([.])
@@ -58,6 +58,18 @@ if test "x$enable_scamper_privsep" = xrootonly; then
             [Define to 1 build scamper with privilege separation for root only])
 fi
 AM_CONDITIONAL([ENABLE_SCAMPER_PRIVSEP], [test x$enable_scamper_privsep != xno])
+
+# --disable-scamper-dnp
+AC_ARG_ENABLE([scamper-dnp],
+  [AS_HELP_STRING([--disable-scamper-dnp],
+                  [build scamper without support for do-not-probe list])],
+  [enable_scamper_dnp=$enableval],
+  [enable_scamper_dnp=yes])
+if test "x$enable_scamper_dnp" = xno; then
+  AC_DEFINE([DISABLE_SCAMPER_DNP], [1],
+            [Define to 1 to not build scamper with support for do-not-probe])
+fi
+AM_CONDITIONAL([ENABLE_SCAMPER_DNP], [test x$enable_scamper_dnp != xno])
 
 # --with-privsep-user --with-privsep-dir
 # --with-privsep-dirowner --with-privsep-dirgroup

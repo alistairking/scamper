@@ -1,7 +1,7 @@
 /*
  * scamper_addr_int.h
  *
- * $Id: scamper_addr_int.h,v 1.5 2024/01/09 06:16:19 mjl Exp $
+ * $Id: scamper_addr_int.h,v 1.6 2025/08/03 23:45:33 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -42,7 +42,7 @@ struct scamper_addr
   int   type;
   void *addr;
   int   refcnt;
-#ifdef BUILDING_SCAMPER
+#if defined(BUILDING_SCAMPER) || defined(BUILD_ADDRCACHE)
   void *internal;
 #endif
 };

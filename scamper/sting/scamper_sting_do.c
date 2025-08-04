@@ -1,7 +1,7 @@
 /*
  * scamper_do_sting.c
  *
- * $Id: scamper_sting_do.c,v 1.65 2025/07/04 23:34:23 mjl Exp $
+ * $Id: scamper_sting_do.c,v 1.67 2025/08/04 00:00:27 mjl Exp $
  *
  * Copyright (C) 2008-2011 The University of Waikato
  * Copyright (C) 2012      The Regents of the University of California

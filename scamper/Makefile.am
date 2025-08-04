@@ -1,4 +1,4 @@
-# $Id: Makefile.am,v 1.84 2025/06/24 07:05:29 mjl Exp $
+# $Id: Makefile.am,v 1.85 2025/08/02 20:39:08 mjl Exp $
 
 AUTOMAKE_OPTIONS = subdir-objects
 
@@ -59,6 +59,11 @@ scamper_SOURCES = \
 if ENABLE_SCAMPER_PRIVSEP
 scamper_SOURCES += \
 	scamper_privsep.c
+endif
+if ENABLE_SCAMPER_DNP
+scamper_SOURCES += \
+	scamper_dnp.c \
+	../mjl_prefixtree.c
 endif
 if HAVE_OPENSSL
 scamper_SOURCES += \

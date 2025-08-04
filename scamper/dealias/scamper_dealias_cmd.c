@@ -1,7 +1,7 @@
 /*
  * scamper_dealias_cmd.c
  *
- * $Id: scamper_dealias_cmd.c,v 1.33 2025/07/11 23:01:34 mjl Exp $
+ * $Id: scamper_dealias_cmd.c,v 1.35 2025/08/04 03:14:02 mjl Exp $
  *
  * Copyright (C) 2008-2011 The University of Waikato
  * Copyright (C) 2012-2013 Matthew Luckie
@@ -41,6 +41,7 @@
 #include "scamper_dealias_int.h"
 #include "scamper_dealias_cmd.h"
 #include "scamper_options.h"
+#include "scamper_dnp.h"
 #include "scamper.h"
 #include "mjl_list.h"
 #include "utils.h"
@@ -526,6 +527,14 @@ static int dealias_alloc_mercator(scamper_dealias_t *d, dealias_options_t *o,
       goto err;
     }
 
+#ifndef DISABLE_SCAMPER_DNP
+  if(scamper_dnp_canprobe(dst) == 0)
+    {
+      snprintf(errbuf, errlen, "destination in do-not-probe list");
+      goto err;
+    }
+#endif
+
   if((o->probedefs != NULL && slist_count(o->probedefs) > 1) ||
      o->xs != NULL || o->sched != NULL ||
      timeval_iszero(&o->wait_probe) == 0 || timeval_iszero(&o->startat) == 0 ||
@@ -700,6 +709,15 @@ static int dealias_alloc_ally(scamper_dealias_t *d, dealias_options_t *o,
       goto err;
     }
 
+#ifndef DISABLE_SCAMPER_DNP
+  if(scamper_dnp_canprobe(pd[0].dst) == 0 ||
+     scamper_dnp_canprobe(pd[1].dst) == 0)
+    {
+      snprintf(errbuf, errlen, "destination in do-not-probe list");
+      goto err;
+    }
+#endif
+
   if(o->nobs != 0 || SCAMPER_ADDR_TYPE_IS_IPV6(pd[0].dst))
     flags |= SCAMPER_DEALIAS_ALLY_FLAG_NOBS;
 
@@ -744,11 +762,16 @@ static int dealias_alloc_radargun(scamper_dealias_t *d, dealias_options_t *o,
   scamper_dealias_radargun_t *rg = NULL;
   scamper_dealias_probedef_t *pd = NULL, pd0;
   scamper_addr_t *addr = NULL;
-  slist_t *pd_list = NULL, *addrs = NULL;
+  slist_t *addrs = NULL;
+  dlist_t *pd_list = NULL;
   slist_node_t *sn, *s2;
   uint32_t i, probedefc;
   uint8_t flags = 0;
   char *a1, *a2, *pdstr;
+
+#ifndef DISABLE_SCAMPER_DNP
+  dlist_node_t *dn, *dn_this;
+#endif
 
   memset(&pd0, 0, sizeof(pd0));
 
@@ -798,7 +821,7 @@ static int dealias_alloc_radargun(scamper_dealias_t *d, dealias_options_t *o,
     }
 
   /* get the probedefs */
-  if((pd_list = slist_alloc()) == NULL)
+  if((pd_list = dlist_alloc()) == NULL)
     {
       snprintf(errbuf, errlen, "could not alloc pd_list");
       goto err;
@@ -813,7 +836,7 @@ static int dealias_alloc_radargun(scamper_dealias_t *d, dealias_options_t *o,
       for(sn=slist_head_node(addrs); sn != NULL; sn=slist_node_next(sn))
 	{
 	  if((pd = scamper_dealias_probedef_alloc()) == NULL ||
-	     slist_tail_push(pd_list, pd) == NULL)
+	     dlist_tail_push(pd_list, pd) == NULL)
 	    {
 	      snprintf(errbuf, errlen, "could not create default %s def", meth);
 	      goto err;
@@ -848,7 +871,7 @@ static int dealias_alloc_radargun(scamper_dealias_t *d, dealias_options_t *o,
 	  for(s2=slist_head_node(addrs); s2 != NULL; s2=slist_node_next(s2))
 	    {
 	      if((pd = memdup(&pd0, sizeof(pd0))) == NULL ||
-		 slist_tail_push(pd_list, pd) == NULL)
+		 dlist_tail_push(pd_list, pd) == NULL)
 		{
 		  snprintf(errbuf, errlen, "could not alloc %s probedef", meth);
 		  goto err;
@@ -880,7 +903,7 @@ static int dealias_alloc_radargun(scamper_dealias_t *d, dealias_options_t *o,
 	      snprintf(errbuf, errlen, "expected dst in %s probedef", meth);
 	      goto err;
 	    }
-	  if(slist_tail_push(pd_list, pd) == NULL)
+	  if(dlist_tail_push(pd_list, pd) == NULL)
 	    {
 	      snprintf(errbuf, errlen, "could not add %s probedef", meth);
 	      goto err;
@@ -891,13 +914,33 @@ static int dealias_alloc_radargun(scamper_dealias_t *d, dealias_options_t *o,
 	}
     }
 
+#ifndef DISABLE_SCAMPER_DNP
+  dn = dlist_head_node(pd_list);
+  while(dn != NULL)
+    {
+      pd = dlist_node_item(dn); dn_this = dn;
+      dn = dlist_node_next(dn);
+      if(scamper_dnp_canprobe(pd->dst) == 0)
+	{
+	  dlist_node_pop(pd_list, dn_this);
+	  scamper_dealias_probedef_free(pd);
+	}
+      pd = NULL;
+    }
+  if(dlist_count(pd_list) < 2)
+    {
+      snprintf(errbuf, errlen, "destination in do-not-probe list");
+      goto err;
+    }
+#endif
+
   if(addrs != NULL)
     {
       slist_free_cb(addrs, (slist_free_t)scamper_addr_free);
       addrs = NULL;
     }
 
-  probedefc = slist_count(pd_list);
+  probedefc = dlist_count(pd_list);
   if((rg = scamper_dealias_radargun_alloc()) == NULL ||
      scamper_dealias_radargun_probedefs_alloc(rg, probedefc) != 0)
     {
@@ -915,7 +958,7 @@ static int dealias_alloc_radargun(scamper_dealias_t *d, dealias_options_t *o,
   timeval_cpy(&rg->wait_round, &o->wait_round);
 
   i=0;
-  while((pd = slist_head_pop(pd_list)) != NULL)
+  while((pd = dlist_head_pop(pd_list)) != NULL)
     {
       if(probedef_size_check(pd, errbuf, errlen) != 0)
 	goto err;
@@ -927,7 +970,7 @@ static int dealias_alloc_radargun(scamper_dealias_t *d, dealias_options_t *o,
 	}
       rg->probedefs[i++] = pd; pd = NULL;
     }
-  slist_free(pd_list);
+  dlist_free(pd_list);
 
   d->data = rg;
   return 0;
@@ -942,7 +985,7 @@ static int dealias_alloc_radargun(scamper_dealias_t *d, dealias_options_t *o,
   if(pd != NULL)
     scamper_dealias_probedef_free(pd);
   if(pd_list != NULL)
-    slist_free_cb(pd_list, (slist_free_t)scamper_dealias_probedef_free);
+    dlist_free_cb(pd_list, (slist_free_t)scamper_dealias_probedef_free);
   if(pd0.dst != NULL)
     scamper_addr_free(pd0.dst);
   return -1;
@@ -1054,6 +1097,14 @@ static int dealias_alloc_prefixscan(scamper_dealias_t *d, dealias_options_t *o,
       goto err;
     }
 
+#ifndef DISABLE_SCAMPER_DNP
+  if(scamper_dnp_canprobe(prefixscan->a) == 0)
+    {
+      snprintf(errbuf, errlen, "destination in do-not-probe list");
+      goto err;
+    }
+#endif
+
   /* add the first probedef */
   if(scamper_dealias_prefixscan_probedefs_alloc(prefixscan, 1) != 0)
     {
@@ -1149,6 +1200,15 @@ static int dealias_alloc_bump(scamper_dealias_t *d, dealias_options_t *o,
       i++;
     }
 
+#ifndef DISABLE_SCAMPER_DNP
+  if(scamper_dnp_canprobe(pd[0].dst) == 0 ||
+     scamper_dnp_canprobe(pd[1].dst) == 0)
+    {
+      snprintf(errbuf, errlen, "destination in do-not-probe list");
+      goto err;
+    }
+#endif
+
   if((bump = scamper_dealias_bump_alloc()) == NULL)
     {
       snprintf(errbuf, errlen, "could not alloc %s structure", meth);
@@ -1191,6 +1251,10 @@ static int dealias_alloc_midarest(scamper_dealias_t *d, dealias_options_t *o,
   char *a1, *a2, *pdstr;
   uint32_t id;
   int probedefc;
+
+#ifndef DISABLE_SCAMPER_DNP
+  uint32_t dnp = 0;
+#endif
 
   /*
    * process a midarest measurement definition.  midarest assumes at least
@@ -1257,16 +1321,38 @@ static int dealias_alloc_midarest(scamper_dealias_t *d, dealias_options_t *o,
 	  snprintf(errbuf, errlen, "could not resolve IPv4 address");
 	  goto err;
 	}
+
+#ifndef DISABLE_SCAMPER_DNP
+      if(scamper_dnp_canprobe(addr) == 0)
+	{
+	  scamper_addr_free(addr);
+	  dnp++;
+	  goto next;
+	}
+#endif
+
       if(slist_tail_push(addrs, addr) == NULL)
 	{
 	  snprintf(errbuf, errlen, "could not add address to list");
 	  goto err;
 	}
+
+#ifndef DISABLE_SCAMPER_DNP
+    next:
+#endif
       addr = NULL;
       if(a2 == NULL)
 	break;
       a1 = a2;
     }
+
+#ifndef DISABLE_SCAMPER_DNP
+  if(dnp > 0 && slist_count(addrs) < 1)
+    {
+      snprintf(errbuf, errlen, "destination in do-not-probe list");
+      goto err;
+    }
+#endif
 
   if(slist_count(addrs) < 1)
     {
