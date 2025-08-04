@@ -82,7 +82,7 @@ jobs:
           version="$(grep SCAMPER_VERSION scamper/scamper.h | cut -d \" -f 2)-${GITHUB_REF_NAME}.${git_hash}"
           ./set-version.sh ${version}
           autoreconf -vfi
-          ./configure --disable-libs --disable-utils --with-openssl=disabled
+          ./configure --disable-libs --disable-utils --with-openssl=disabled --disable-scamper-dnp
           make
           mkdir -p ./build/${{matrix.platform}}
           cp scamper/scamper ./build/${{matrix.platform}}
