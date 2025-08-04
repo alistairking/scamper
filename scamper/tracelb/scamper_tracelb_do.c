@@ -1,7 +1,7 @@
 /*
  * scamper_tracelb_do.c
  *
- * $Id: scamper_tracelb_do.c,v 1.321 2025/07/04 23:34:23 mjl Exp $
+ * $Id: scamper_tracelb_do.c,v 1.324 2025/08/04 00:00:27 mjl Exp $
  *
  * Copyright (C) 2008-2011 The University of Waikato
  * Copyright (C) 2012      The Regents of the University of California
@@ -509,7 +509,7 @@ static void tracelb_links_dump(tracelb_state_t *state)
 	  scamper_addr_tostr(node->addr, addr, sizeof(addr));
 	  string_concat(buf, sizeof(buf), &off, addr);
 	  if(SCAMPER_TRACELB_NODE_QTTL(node))
-	    string_concaf(buf, sizeof(buf), &off, ",%d", node->q_ttl);
+	    string_concat_u8(buf, sizeof(buf), &off, ",", node->q_ttl);
 	}
       else
 	string_concatc(buf, sizeof(buf), &off, '*');
@@ -527,7 +527,7 @@ static void tracelb_links_dump(tracelb_state_t *state)
 	  scamper_addr_tostr(node->addr, addr, sizeof(addr));
 	  string_concat2(buf, sizeof(buf), &off, " ", addr);
 	  if(SCAMPER_TRACELB_NODE_QTTL(node))
-	    string_concaf(buf, sizeof(buf), &off, ",%d", node->q_ttl);
+	    string_concat_u8(buf, sizeof(buf), &off, ",", node->q_ttl);
 	}
 
       scamper_debug(__func__, "%s", buf);

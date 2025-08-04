@@ -1,7 +1,7 @@
 /*
  * scamper_addr.c
  *
- * $Id: scamper_addr.c,v 1.90 2025/07/12 07:17:15 mjl Exp $
+ * $Id: scamper_addr.c,v 1.91 2025/08/03 23:45:33 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -195,7 +195,7 @@ static const struct handler handlers[] = {
   }
 };
 
-#ifdef BUILDING_SCAMPER
+#if defined(BUILDING_SCAMPER) || defined(BUILD_ADDRCACHE)
 struct scamper_addrcache
 {
   splaytree_t *tree[sizeof(handlers)/sizeof(struct handler)];
@@ -891,7 +891,7 @@ static int firewire_fbd(const scamper_addr_t *sa, const scamper_addr_t *sb)
   return r;
 }
 
-#ifdef BUILDING_SCAMPER
+#if defined(BUILDING_SCAMPER) || defined(BUILD_ADDRCACHE)
 static void free_cb(void *node)
 {
   ((scamper_addr_t *)node)->internal = NULL;
@@ -1031,7 +1031,7 @@ scamper_addr_t *scamper_addrcache_resolve(scamper_addrcache_t *addrcache,
 }
 #endif
 
-#endif /* BUILDING_SCAMPER */
+#endif /* BUILDING_SCAMPER || BUILDING_ADDRCACHE */
 
 size_t scamper_addr_len_get(const scamper_addr_t *sa)
 {
@@ -1085,7 +1085,7 @@ scamper_addr_t *scamper_addr_alloc_dm(const int type, const void *addr,
 
   sa->type = type;
   sa->refcnt = 1;
-#ifdef BUILDING_SCAMPER
+#if defined(BUILDING_SCAMPER) || defined(BUILD_ADDRCACHE)
   sa->internal = NULL;
 #endif
   return sa;
@@ -1297,7 +1297,7 @@ scamper_addr_t *scamper_addr_use(scamper_addr_t *sa)
 
 void scamper_addr_free(scamper_addr_t *sa)
 {
-#ifdef BUILDING_SCAMPER
+#if defined(BUILDING_SCAMPER) || defined(BUILD_ADDRCACHE)
   scamper_addrcache_t *ac;
 #endif
 
@@ -1309,7 +1309,7 @@ void scamper_addr_free(scamper_addr_t *sa)
   if(--sa->refcnt > 0)
     return;
 
-#ifdef BUILDING_SCAMPER
+#if defined(BUILDING_SCAMPER) || defined(BUILD_ADDRCACHE)
   if((ac = sa->internal) != NULL)
     splaytree_remove_item(ac->tree[sa->type-1], sa);
 #endif

@@ -175,7 +175,7 @@ docs-deps:
         FROM +base-debian
         RUN apt-get update && \
             apt-get install -y \
-                    perl groff ghostscript
+                    perl man-db ghostscript
 
 docs:
         FROM +docs-deps

@@ -1,7 +1,7 @@
 /*
  * scamper_source
  *
- * $Id: scamper_sources.c,v 1.91 2025/05/28 07:10:37 mjl Exp $
+ * $Id: scamper_sources.c,v 1.93 2025/08/04 00:00:27 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -1416,7 +1416,7 @@ int scamper_source_command(scamper_source_t *source, const char *command)
   if(func->enabled() == 0)
     {
       printerror_msg(__func__, "%s disabled", func->command);
-      goto err;
+      return 0;
     }
 
   errbuf[0] = '\0';

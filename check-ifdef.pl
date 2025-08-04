@@ -2,7 +2,7 @@
 #
 # process source code looking for #ifdef-related bugs.
 #
-# $Id: check-ifdef.pl,v 1.9 2025/06/16 19:42:30 mjl Exp $
+# $Id: check-ifdef.pl,v 1.11 2025/08/03 23:45:33 mjl Exp $
 
 use strict;
 use warnings;
@@ -25,13 +25,14 @@ $defs{$_} = 0 foreach (
     "MJLHEAP_DEBUG", "MJLLIST_DEBUG", "MJLSPLAYTREE_DEBUG",
     "O_NONBLOCK", "PCRE_STUDY_JIT_COMPILE", "RTF_LLINFO",
     "SIGCHLD", "SIGPIPE",
+    "SKF_AD_HATYPE",
     "SOURCES_DEBUG",
     "SO_TIMESTAMP",
     "SSL_CTRL_SET_TLSEXT_HOSTNAME",
     "_MSC_VER",
     "IOV_MAX", "_SC_IOV_MAX", "_SC_NPROCESSORS_ONLN",
     "s6_addr32",
-    "BUILDING_SCAMPER", "BUILDING_LIBSCAMPERFILE",
+    "BUILDING_SCAMPER", "BUILDING_LIBSCAMPERFILE", "BUILD_ADDRCACHE",
     "DMALLOC",
     "HAVE_CONFIG_H", "HAVE_PCRE2", "HAVE_WINGETOPT_H",
     "_IPFW2_H", "_IP_FW_H",

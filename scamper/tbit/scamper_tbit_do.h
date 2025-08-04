@@ -1,7 +1,7 @@
 /*
  * scamper_do_tbit.h
  *
- * $Id: scamper_tbit_do.h,v 1.6 2025/04/27 00:49:24 mjl Exp $
+ * $Id: scamper_tbit_do.h,v 1.8 2025/08/04 00:00:27 mjl Exp $
  *
  * Copyright (C) 2009-2010 Ben Stasiewicz
  *

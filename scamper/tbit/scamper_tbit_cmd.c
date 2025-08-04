@@ -1,7 +1,7 @@
 /*
  * scamper_tbit_cmd.c
  *
- * $Id: scamper_tbit_cmd.c,v 1.8 2024/05/20 07:40:23 mjl Exp $
+ * $Id: scamper_tbit_cmd.c,v 1.9 2025/08/04 00:00:27 mjl Exp $
  *
  * Copyright (C) 2009-2010 Ben Stasiewicz
  * Copyright (C) 2009-2010 Stephen Eichler
@@ -51,6 +51,7 @@
 #include "scamper_options.h"
 #include "scamper_tbit_int.h"
 #include "scamper_tbit_cmd.h"
+#include "scamper_dnp.h"
 #include "utils.h"
 
 typedef struct tbit_options
@@ -744,6 +745,14 @@ void *scamper_do_tbit_alloc(char *str, char *errbuf, size_t errlen)
       snprintf(errbuf, errlen, "invalid destination address");
       goto err;
     }
+
+#ifndef DISABLE_SCAMPER_DNP
+  if(scamper_dnp_canprobe(tbit->dst) == 0)
+    {
+      snprintf(errbuf, errlen, "destination in do-not-probe list");
+      goto err;
+    }
+#endif
 
   tbit->type            = type;
   tbit->userid          = userid;

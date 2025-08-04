@@ -1,10 +1,9 @@
 /*
- * scamper_do_trace.h
+ * scamper_dnp.h
  *
- * $Id: scamper_trace_do.h,v 1.22 2025/08/04 00:00:27 mjl Exp $
+ * $Id: scamper_dnp.h,v 1.3 2025/08/04 01:54:05 mjl Exp $
  *
- * Copyright (C) 2003-2006 Matthew Luckie
- * Copyright (C) 2006-2010 The University of Waikato
+ * Copyright (C) 2025 The Regents of the University of California
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -22,23 +21,13 @@
  *
  */
 
-#ifndef __SCAMPER_DO_TRACE_H
-#define __SCAMPER_DO_TRACE_H
+#ifndef __SCAMPER_DNP_H
+#define __SCAMPER_DNP_H
 
-scamper_task_t *scamper_do_trace_alloctask(void *data,
-					   scamper_list_t *list,
-					   scamper_cycle_t *cycle,
-					   char *errbuf, size_t errlen);
+int scamper_dnp_canprobe(scamper_addr_t *dst);
+int scamper_dnp_reload(const char **files, size_t filec);
 
-void scamper_do_trace_free(void *data);
+int scamper_dnp_init(const char **files, size_t filec);
+void scamper_dnp_cleanup(void);
 
-int scamper_do_trace_dtree_lss_clear(char *name);
-
-uint32_t scamper_do_trace_userid(void *data);
-
-int scamper_do_trace_enabled(void);
-
-void scamper_do_trace_cleanup(void);
-int scamper_do_trace_init(void);
-
-#endif /*__SCAMPER_DO_TRACE_H */
+#endif /* __SCAMPER_DNP_H */

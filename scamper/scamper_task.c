@@ -1,7 +1,7 @@
 /*
  * scamper_task.c
  *
- * $Id: scamper_task.c,v 1.112 2025/07/22 07:19:31 mjl Exp $
+ * $Id: scamper_task.c,v 1.113 2025/07/30 10:28:04 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -453,7 +453,7 @@ char *scamper_task_sig_tostr(scamper_task_sig_t *sig, char *buf, size_t len)
 	    string_concat(buf, len, &off, " icmp time");
 	  else
 	    string_concat(buf, len, &off, " icmp");
-	  string_concaf(buf, len, &off, " id %d", sig->sig_tx_ip_icmp_id);
+	  string_concat_u16(buf, len, &off, " id ", sig->sig_tx_ip_icmp_id);
 	}
       else if(sig->sig_tx_ip_proto == IPPROTO_ICMPV6)
 	{
@@ -461,29 +461,29 @@ char *scamper_task_sig_tostr(scamper_task_sig_t *sig, char *buf, size_t len)
 	    string_concat(buf, len, &off, " icmp echo");
 	  else
 	    string_concat(buf, len, &off, " icmp");
-	  string_concaf(buf, len, &off, " id %d", sig->sig_tx_ip_icmp_id);
+	  string_concat_u16(buf, len, &off, " id ", sig->sig_tx_ip_icmp_id);
 	}
       else if(sig->sig_tx_ip_proto == IPPROTO_UDP)
 	{
-	  string_concaf(buf, len, &off, " udp sport %d",
-			sig->sig_tx_ip_udp_sport_x);
+	  string_concat_u16(buf, len, &off, " udp sport ",
+			    sig->sig_tx_ip_udp_sport_x);
 	  if(sig->sig_tx_ip_udp_sport_x != sig->sig_tx_ip_udp_sport_y)
-	    string_concaf(buf, len, &off, "-%d", sig->sig_tx_ip_udp_sport_y);
-	  string_concaf(buf, len, &off, " dport %d",
-			sig->sig_tx_ip_udp_dport_x);
+	    string_concat_u16(buf, len, &off, "-", sig->sig_tx_ip_udp_sport_y);
+	  string_concat_u16(buf, len, &off, " dport ",
+			    sig->sig_tx_ip_udp_dport_x);
 	  if(sig->sig_tx_ip_udp_dport_x != sig->sig_tx_ip_udp_dport_y)
-	    string_concaf(buf, len, &off, "-%d", sig->sig_tx_ip_udp_dport_y);
+	    string_concat_u16(buf, len, &off, "-", sig->sig_tx_ip_udp_dport_y);
 	}
       else if(sig->sig_tx_ip_proto == IPPROTO_TCP)
 	{
-	  string_concaf(buf, len, &off, " tcp sport %d",
-			sig->sig_tx_ip_tcp_sport_x);
+	  string_concat_u16(buf, len, &off, " tcp sport ",
+			    sig->sig_tx_ip_tcp_sport_x);
 	  if(sig->sig_tx_ip_tcp_sport_x != sig->sig_tx_ip_tcp_sport_y)
-	    string_concaf(buf, len, &off, "-%d", sig->sig_tx_ip_tcp_sport_y);
-	  string_concaf(buf, len, &off, " dport %d",
-			sig->sig_tx_ip_tcp_dport_x);
+	    string_concat_u16(buf, len, &off, "-", sig->sig_tx_ip_tcp_sport_y);
+	  string_concat_u16(buf, len, &off, " dport ",
+			    sig->sig_tx_ip_tcp_dport_x);
 	  if(sig->sig_tx_ip_tcp_dport_x != sig->sig_tx_ip_tcp_dport_y)
-	    string_concaf(buf, len, &off, "-%d", sig->sig_tx_ip_tcp_dport_y);
+	    string_concat_u16(buf, len, &off, "-", sig->sig_tx_ip_tcp_dport_y);
 	}
     }
   else if(sig->sig_type == SCAMPER_TASK_SIG_TYPE_TX_ND)
@@ -491,14 +491,18 @@ char *scamper_task_sig_tostr(scamper_task_sig_t *sig, char *buf, size_t len)
 		   scamper_addr_tostr(sig->sig_tx_nd_ip, tmp, sizeof(tmp)));
 #ifndef DISABLE_SCAMPER_SNIFF
   else if(sig->sig_type == SCAMPER_TASK_SIG_TYPE_SNIFF)
-    string_concaf(buf, len, &off, "sniff %s icmp-id %04x",
-		  scamper_addr_tostr(sig->sig_sniff_src, tmp, sizeof(tmp)),
-		  sig->sig_sniff_icmp_id);
+    {
+      string_concat2(buf, len, &off, "sniff ",
+		     scamper_addr_tostr(sig->sig_sniff_src, tmp, sizeof(tmp)));
+      string_concat_u16(buf, len, &off, " icmp-id ", sig->sig_sniff_icmp_id);
+    }
 #endif
 #ifndef DISABLE_SCAMPER_HOST
   else if(sig->sig_type == SCAMPER_TASK_SIG_TYPE_HOST)
-    string_concaf(buf, len, &off, "host %s %u",
-		  sig->sig_host_name, sig->sig_host_type);
+    {
+      string_concat2(buf, len, &off, "host ", sig->sig_host_name);
+      string_concat_u16(buf, len, &off, " ", sig->sig_host_type);
+    }
 #endif
   else
     return NULL;

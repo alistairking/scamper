@@ -10,9 +10,9 @@
 .\" Copyright (c) 2024      The Regents of the University of California
 .\"                         All rights reserved
 .\"
-.\" $Id: scamper.1,v 1.156 2025/06/02 23:27:55 mjl Exp $
+.\" $Id: scamper.1,v 1.159 2025/08/04 01:47:56 mjl Exp $
 .\"
-.Dd June 3, 2025
+.Dd August 4, 2025
 .Dt SCAMPER 1
 .Os
 .\""""""""""""
@@ -367,6 +367,12 @@ to the remote controller for client authentication.
 .Sy client-privfile=file:
 load the private key in the specified file into scamper and use it
 for client authentication with the remote controller.
+.It
+.Sy dnp=file:
+do not allow
+.Nm
+to probe addresses in prefixes listed in the specified file.  Specify
+prefixes one per line.  This option can be specified more than once.
 .El
 .It Fl i Ar IP 1..N
 specifies a list of one or more addresses to probe, on the command
@@ -471,9 +477,20 @@ allow.
 specifies that path MTU discovery (PMTUD) should be attempted for the path
 when the initial traceroute completes.
 .Nm
-will not conduct PMTUD unless it is probing a responsive destination, as
+will not do PMTUD probing unless it is probing a responsive destination, as
 otherwise there is no way to distinguish all packets being lost from just
 big packets (larger than MTU) being lost.
+.Nm
+will not conduct PMTUD probing with TCP SYN packets, as the responses do
+not allow for a reliable inference.
+.Nm
+will conduct PMTUD probing with UDP probe methods, TCP ACK packets, and
+ICMP echo probes.
+UDP and TCP ACK probe methods are the most reliable methods because
+they solicit small responses from the destination.
+ICMP methods solicit large packets from a responsive destination, so an
+MTU issue on the reverse path that causes large response packets to be
+discarded may appear as an MTU mismatch involving the destination host.
 .It Fl N Ar squeries
 specifies the number of consecutive hops that may have an outstanding
 probe.
@@ -653,6 +670,10 @@ and received packets.
 .It
 .Sy dltx:
 specifies that a datalink socket should be used to transmit packets.
+.It
+.Sy mss=val:
+specifies that the probe should include a TCP maximum segment size
+option, with the specified value embedded.
 .It
 .Sy nosrc:
 specifies that the real address of the host should not be embedded in
@@ -1397,7 +1418,8 @@ collected for those measurements is discarded.
 .Pp
 On receipt of a SIGHUP,
 .Nm
-will reload any TLS key material, and the configuration file.
+will reload any TLS key material, the configuration file, and any
+do-not-probe files.
 .Pp
 .Nm
 will run privilege separated unless compiled without privilege separation.

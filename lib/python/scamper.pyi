@@ -1,4 +1,24 @@
-from typing import Callable, Dict, Generator, Iterator, List, Optional, Set, Sequence, Tuple, Type, Union, TypeAlias
+# scamper python interface
+#
+# Authors: Matthew Luckie, Ken Keys
+#
+# Copyright (C) 2025 The Regents of the University of California
+#
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, version 2.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+
+from typing import (Callable, Dict, Generator, Iterator, List, Optional, Set,
+    Sequence, Tuple, Type, TypeAlias, TypeVar, Union, Generic)
 from builtins import BaseException
 import datetime
 import enum
@@ -288,7 +308,7 @@ class ScamperDealiasMidardiscRound:
     def __init__(self, start: datetime.timedelta, begin: int, end: int) -> None: ...
 
     @property
-    def start(self) -> datetime.datetime: ...
+    def start(self) -> datetime.timedelta: ...
 
     @property
     def begin(self) -> int: ...
@@ -1543,17 +1563,18 @@ class ScamperFile:
     def is_read(self) -> bool: ...
     def is_write(self) -> bool: ...
 
-class ScamperCtrl:
-    morecb: Optional[Callable[[ScamperCtrl, ScamperInst, object], None]]
-    eofcb: Optional[Callable[[ScamperCtrl, ScamperInst, object], None]]
-    param: object
+PT = TypeVar('PT')
+class ScamperCtrl(Generic[PT]):
+    morecb: Optional[Callable[["ScamperCtrl[PT]", ScamperInst, PT], None]]
+    eofcb: Optional[Callable[["ScamperCtrl[PT]", ScamperInst, PT], None]]
+    param: PT
     outfile: Optional[ScamperFile]
 
     def __init__(self,
                  meta: bool = ...,
-                 morecb: Optional[Callable[[ScamperCtrl, ScamperInst, object], None]] = ...,
-                 eofcb: Optional[Callable[[ScamperCtrl, ScamperInst, object], None]] = ...,
-                 param: object = ...,
+                 morecb: Optional[Callable[["ScamperCtrl[PT]", ScamperInst, PT], None]] = ...,
+                 eofcb: Optional[Callable[["ScamperCtrl[PT]", ScamperInst, PT], None]] = ...,
+                 param: PT = ...,
                  unix: str = ...,
                  remote: str = ...,
                  remote_dir: str = ...,
@@ -1561,7 +1582,7 @@ class ScamperCtrl:
                  outfile: ScamperFile = ...
                  ) -> None: ...
 
-    def __enter__(self) -> "ScamperCtrl": ...
+    def __enter__(self) -> "ScamperCtrl[PT]": ...
     def __exit__(self,
                  exc_type: Optional[Type[BaseException]],
                  exc_value: Optional[BaseException],
@@ -1664,7 +1685,7 @@ class ScamperCtrl:
                     wait_round: Union[datetime.timedelta, float, None] = ...,
                     wait_timeout: Union[datetime.timedelta, float, None] = ...,
                     probedefs: Optional[List[ScamperDealiasProbedef]] = ...,
-                    addrs: Optional[List[ScamperAddr]] = ...,
+                    addrs: Optional[Sequence[Union[ScamperAddr, str]]] = ...,
                     userid: Optional[int] = ...,
                     inst: Optional[ScamperInst] = ...,
                     sync: Optional[bool] = ...

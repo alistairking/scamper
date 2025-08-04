@@ -1,9 +1,9 @@
 /*
  * scamper_file_json.c
  *
- * $Id: scamper_file_json.c,v 1.8 2024/12/31 04:17:31 mjl Exp $
+ * $Id: scamper_file_json.c,v 1.9 2025/07/30 07:13:17 mjl Exp $
  *
- * Copyright (C) 2017-2024 Matthew Luckie
+ * Copyright (C) 2017-2025 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -40,12 +40,13 @@ static int json_cycle(const scamper_file_t *sf, const scamper_cycle_t *c,
 
   string_concat2(buf, sizeof(buf), &off, "{\"type\":\"cycle-", type);
   string_concat2(buf, sizeof(buf), &off, "\", \"list_name\":\"", c->list->name);
-  string_concaf(buf, sizeof(buf), &off, "\", \"id\":%u", c->id);
+  string_concat_u32(buf, sizeof(buf), &off, "\", \"id\":", c->id);
   if(c->hostname != NULL)
     string_concat3(buf, sizeof(buf), &off, ", \"hostname\":\"",
 		   c->hostname, "\"");
   string_concat2(buf, sizeof(buf), &off, ", \"", type);
-  string_concaf(buf, sizeof(buf), &off, "_time\":%u}\n", time);
+  string_concat_u32(buf, sizeof(buf), &off, "_time\":", time);
+  string_concat(buf, sizeof(buf), &off, "}\n");
 
   return json_write(sf, buf, off, NULL);
 }

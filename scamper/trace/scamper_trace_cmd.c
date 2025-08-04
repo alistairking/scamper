@@ -1,7 +1,7 @@
 /*
  * scamper_trace_cmd.c
  *
- * $Id: scamper_trace_cmd.c,v 1.27 2025/05/29 07:54:07 mjl Exp $
+ * $Id: scamper_trace_cmd.c,v 1.29 2025/08/04 00:00:27 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -44,6 +44,7 @@
 #include "scamper_trace_int.h"
 #include "scamper_trace_cmd.h"
 #include "scamper_options.h"
+#include "scamper_dnp.h"
 
 #include "mjl_splaytree.h"
 #include "mjl_list.h"
@@ -613,9 +614,7 @@ void *scamper_do_trace_alloc(char *str, char *errbuf, size_t errlen)
 	  snprintf(errbuf, errlen, "cannot do pmtud without all of path");
 	  goto err;
 	}
-      if(type != SCAMPER_TRACE_TYPE_UDP &&
-	 type != SCAMPER_TRACE_TYPE_UDP_PARIS &&
-	 type != SCAMPER_TRACE_TYPE_TCP_ACK)
+      if(type == SCAMPER_TRACE_TYPE_TCP)
 	{
 	  snprintf(errbuf, errlen, "cannot do pmtud with this probe method");
 	  goto err;
@@ -642,6 +641,14 @@ void *scamper_do_trace_alloc(char *str, char *errbuf, size_t errlen)
       snprintf(errbuf, errlen, "invalid destination address");
       goto err;
     }
+
+#ifndef DISABLE_SCAMPER_DNP
+  if(scamper_dnp_canprobe(trace->dst) == 0)
+    {
+      snprintf(errbuf, errlen, "destination in do-not-probe list");
+      goto err;
+    }
+#endif
 
   trace->type        = type;
   trace->flags       = flags;
