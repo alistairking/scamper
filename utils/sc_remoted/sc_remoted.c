@@ -1,7 +1,7 @@
 /*
  * sc_remoted
  *
- * $Id: sc_remoted.c,v 1.144 2025/06/28 04:58:42 mjl Exp $
+ * $Id: sc_remoted.c,v 1.146 2025/08/04 02:50:11 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -3569,7 +3569,7 @@ static void remoted_sigaction(int sig)
 {
   if(sig == SIGHUP)
     reload = 1;
-  else if(sig == SIGINT)
+  else if(sig == SIGINT || sig == SIGTERM)
     stop = 1;
   return;
 }
@@ -4061,9 +4061,9 @@ static int select_loop(void)
   return 0;
 }
 
-int main(int argc, char *argv[])
+static int remoted(int argc, char *argv[])
 {
-  int i;
+  int i, rc = -1;
 
 #ifdef HAVE_SIGACTION
   struct sigaction si_sa;
@@ -4078,21 +4078,24 @@ int main(int argc, char *argv[])
   for(i=0; i<2; i++)
     serversockets[i] = -1;
 
-  atexit(cleanup);
-
   if(check_options(argc, argv) != 0)
-    return -1;
+    goto done;
 
 #ifdef OPT_VERSION
   if(options & OPT_VERSION)
     {
       printf("sc_remoted version %s\n", PACKAGE_VERSION);
-      return 0;
+      rc = 0;
+      goto done;
     }
 #endif
 
-  if(pidfile != NULL && remoted_pidfile() != 0)
-    return -1;
+  /*
+   * check that specified directory exists, if we are going to provide
+   * per-instance unix domain sockets.
+   */
+  if(unix_dir != NULL && unixdomain_direxists() != 0)
+    goto done;
 
 #ifdef HAVE_OPENSSL
   if(tls_certfile != NULL)
@@ -4100,20 +4103,23 @@ int main(int argc, char *argv[])
       SSL_library_init();
       SSL_load_error_strings();
       if(remoted_tlsctx() != 0)
-	return -1;
+	goto done;
     }
 #endif
 
 #ifdef HAVE_DAEMON
   if((options & OPT_DAEMON) != 0 && daemon(1, 0) != 0)
-    return -1;
+    goto done;
 #endif
+
+  if(pidfile != NULL && remoted_pidfile() != 0)
+    goto done;
 
 #ifdef HAVE_SIGNAL
   if(signal(SIGPIPE, SIG_IGN) == SIG_ERR)
     {
       remote_debug(__func__, "could not ignore SIGPIPE");
-      return -1;
+      goto done;
     }
 #endif
 
@@ -4124,7 +4130,7 @@ int main(int argc, char *argv[])
   if(sigaction(SIGHUP, &si_sa, 0) == -1)
     {
       remote_debug(__func__, "could not set sigaction for SIGHUP");
-      return -1;
+      goto done;
     }
 
   sigemptyset(&si_sa.sa_mask);
@@ -4133,29 +4139,51 @@ int main(int argc, char *argv[])
   if(sigaction(SIGINT, &si_sa, 0) == -1)
     {
       remote_debug(__func__, "could not set sigaction for SIGINT");
-      return -1;
+      goto done;
+    }
+
+  sigemptyset(&si_sa.sa_mask);
+  si_sa.sa_flags   = 0;
+  si_sa.sa_handler = remoted_sigaction;
+  if(sigaction(SIGTERM, &si_sa, 0) == -1)
+    {
+      remote_debug(__func__, "could not set sigaction for SIGTERM");
+      goto done;
     }
 #endif
 
-  if((unix_dir != NULL && unixdomain_direxists() != 0) ||
-     serversocket_init() != 0 ||
-     muxsocket_init() != 0)
-    return -1;
-
-  if((mslist = dlist_alloc()) == NULL ||
+  if(serversocket_init() != 0 ||
+     muxsocket_init() != 0 ||
+     (mslist = dlist_alloc()) == NULL ||
      (mstree = splaytree_alloc((splaytree_cmp_t)sc_master_cmp)) == NULL ||
      (gclist = dlist_alloc()) == NULL ||
      (mxlist = dlist_alloc()) == NULL ||
      metadata_load() != 0)
-    return -1;
+    goto done;
 
 #if defined(HAVE_EPOLL)
   if((flags & FLAG_SELECT) == 0)
-    return epoll_loop();
+    {
+      rc = epoll_loop();
+      goto done;
+    }
 #elif defined(HAVE_KQUEUE)
   if((flags & FLAG_SELECT) == 0)
-    return kqueue_loop();
+    {
+      rc = kqueue_loop();
+      goto done;
+    }
 #endif
 
-  return select_loop();
+  rc = select_loop();
+
+ done:
+  cleanup();
+
+  return rc;
+}
+
+int main(int argc, char *argv[])
+{
+  return remoted(argc, argv);
 }

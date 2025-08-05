@@ -1,7 +1,7 @@
 /*
  * scamper_sniff_do.c
  *
- * $Id: scamper_sniff_do.c,v 1.30 2025/07/04 23:34:23 mjl Exp $
+ * $Id: scamper_sniff_do.c,v 1.32 2025/08/04 00:00:27 mjl Exp $
  *
  * Copyright (C) 2011      The University of Waikato
  * Copyright (C) 2022-2025 Matthew Luckie

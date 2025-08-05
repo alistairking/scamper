@@ -1,7 +1,7 @@
 /*
  * scamper_udpprobe_cmd.c
  *
- * $Id: scamper_udpprobe_cmd.c,v 1.15 2025/02/26 04:23:08 mjl Exp $
+ * $Id: scamper_udpprobe_cmd.c,v 1.16 2025/08/04 00:00:27 mjl Exp $
  *
  * Copyright (C) 2023-2024 The Regents of the University of California
  *
@@ -35,6 +35,7 @@
 #include "scamper_udpprobe_int.h"
 #include "scamper_udpprobe_cmd.h"
 #include "scamper_options.h"
+#include "scamper_dnp.h"
 #include "utils.h"
 
 /* options that udpprobe supports */
@@ -325,6 +326,14 @@ void *scamper_do_udpprobe_alloc(char *str, char *errbuf, size_t errlen)
       snprintf(errbuf, errlen, "invalid destination address");
       goto err;
     }
+
+#ifndef DISABLE_SCAMPER_DNP
+  if(scamper_dnp_canprobe(up->dst) == 0)
+    {
+      snprintf(errbuf, errlen, "destination in do-not-probe list");
+      goto err;
+    }
+#endif
 
   if(src != NULL &&
      (up->src = scamper_addr_fromstr(up->dst->type, src)) == NULL)

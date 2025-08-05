@@ -5,7 +5,7 @@
  *
  * Authors: Matthew Luckie
  *
- * $Id: scamper_tracelb_json.c,v 1.26 2025/07/29 01:30:14 mjl Exp $
+ * $Id: scamper_tracelb_json.c,v 1.27 2025/07/31 09:43:23 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -66,26 +66,33 @@ static char *header_tostr(const scamper_tracelb_t *trace)
     string_concat3(buf, sizeof(buf), &off, ", \"rtr\":\"",
 		   scamper_addr_tostr(trace->rtr, tmp, sizeof(tmp)), "\"");
   if(SCAMPER_TRACELB_TYPE_IS_UDP(trace) || SCAMPER_TRACELB_TYPE_IS_TCP(trace))
-    string_concaf(buf, sizeof(buf), &off, ", \"sport\":%u, \"dport\":%u",
-		  trace->sport, trace->dport);
+    {
+      string_concat_u16(buf, sizeof(buf), &off, ", \"sport\":", trace->sport);
+      string_concat_u16(buf, sizeof(buf), &off, ", \"dport\":", trace->dport);
+    }
+  string_concat_u32(buf, sizeof(buf), &off, ", \"start\":{\"sec\":",
+		    (uint32_t)trace->start.tv_sec);
+  string_concat_u32(buf, sizeof(buf), &off, ", \"usec\":",
+		    (uint32_t)trace->start.tv_usec);
   strftime(tmp, sizeof(tmp), "%Y-%m-%d %H:%M:%S", localtime(&tt));
-  string_concaf(buf, sizeof(buf), &off,
-		", \"start\":{\"sec\":%ld, \"usec\":%d, \"ftime\":\"%s\"}",
-		(long)trace->start.tv_sec, (int)trace->start.tv_usec, tmp);
-  string_concaf(buf, sizeof(buf), &off,
-		", \"probe_size\":%u, \"firsthop\":%u, \"attempts\":%u",
-		trace->probe_size, trace->firsthop, trace->attempts);
-  string_concaf(buf, sizeof(buf), &off,
-		", \"confidence\":%u, \"tos\":%u, \"gaplimit\":%u",
-		trace->confidence, trace->tos, trace->gaplimit);
+  string_concat2(buf, sizeof(buf), &off, ", \"ftime\":\"", tmp);
+  string_concat_u16(buf, sizeof(buf), &off, "\"}, \"probe_size\":",
+		    trace->probe_size);
+  string_concat_u8(buf, sizeof(buf), &off, ", \"firsthop\":", trace->firsthop);
+  string_concat_u8(buf, sizeof(buf), &off, ", \"attempts\":", trace->attempts);
+  string_concat_u8(buf, sizeof(buf), &off, ", \"confidence\":",
+		   trace->confidence);
+  string_concat_u8(buf, sizeof(buf), &off, ", \"tos\":", trace->tos);
+  string_concat_u8(buf, sizeof(buf), &off, ", \"gaplimit\":", trace->gaplimit);
+  string_concat_u32(buf, sizeof(buf), &off, ", \"wait_timeout\":",
+		    (uint32_t)trace->wait_timeout.tv_sec);
   cs = (trace->wait_probe.tv_sec * 100) + (trace->wait_probe.tv_usec / 10000);
-  string_concaf(buf, sizeof(buf), &off,
-		", \"wait_timeout\":%u, \"wait_probe\":%u",
-		(uint32_t)trace->wait_timeout.tv_sec, cs);
-  string_concaf(buf, sizeof(buf), &off, ", \"probec\":%u, \"probec_max\":%u",
-		trace->probec, trace->probec_max);
-  string_concaf(buf, sizeof(buf), &off, ", \"nodec\":%u, \"linkc\":%u",
-		trace->nodec, trace->linkc);
+  string_concat_u32(buf, sizeof(buf), &off, ", \"wait_probe\":", cs);
+  string_concat_u32(buf, sizeof(buf), &off, ", \"probec\":", trace->probec);
+  string_concat_u32(buf, sizeof(buf), &off, ", \"probec_max\":",
+		    trace->probec_max);
+  string_concat_u16(buf, sizeof(buf), &off, ", \"nodec\":", trace->nodec);
+  string_concat_u16(buf, sizeof(buf), &off, ", \"linkc\":", trace->linkc);
 
   return strdup(buf);
 }
@@ -98,11 +105,13 @@ static char *reply_tostr(const scamper_tracelb_probe_t *probe,
   size_t off = 0;
 
   timeval_diff_tv(&rtt, &probe->tx, &reply->reply_rx);
-  string_concaf(buf, sizeof(buf), &off,
-		"{\"rx\":{\"sec\":%ld, \"usec\":%d}, \"ttl\":%u, \"rtt\":%s",
-		(long)reply->reply_rx.tv_sec, (int)reply->reply_rx.tv_usec,
-		reply->reply_ttl, timeval_tostr_us(&rtt, tmp, sizeof(tmp)));
-
+  string_concat_u32(buf, sizeof(buf), &off, "{\"rx\":{\"sec\":",
+		    (uint32_t)reply->reply_rx.tv_sec);
+  string_concat_u32(buf, sizeof(buf), &off, ", \"usec\":",
+		    (uint32_t)reply->reply_rx.tv_usec);
+  string_concat_u8(buf, sizeof(buf), &off, "}, \"ttl\":", reply->reply_ttl);
+  string_concat2(buf, sizeof(buf), &off, ", \"rtt\":",
+		 timeval_tostr_us(&rtt, tmp, sizeof(tmp)));
   if(SCAMPER_ADDR_TYPE_IS_IPV4(reply->reply_from))
     string_concat_u16(buf, sizeof(buf), &off, ", \"ipid\":", reply->reply_ipid);
 
@@ -113,10 +122,12 @@ static char *reply_tostr(const scamper_tracelb_probe_t *probe,
     }
   else
     {
-      string_concaf(buf, sizeof(buf), &off,
-		    ", \"icmp_type\":%u, \"icmp_code\":%u, \"icmp_q_tos\":%u",
-		    reply->reply_icmp_type, reply->reply_icmp_code,
-		    reply->reply_icmp_q_tos);
+      string_concat_u8(buf, sizeof(buf), &off, ", \"icmp_type\":",
+		       reply->reply_icmp_type);
+      string_concat_u8(buf, sizeof(buf), &off, ", \"icmp_code\":",
+		       reply->reply_icmp_code);
+      string_concat_u8(buf, sizeof(buf), &off, ", \"icmp_q_tos\":",
+		       reply->reply_icmp_q_tos);
       if(SCAMPER_TRACELB_REPLY_IS_ICMP_UNREACH(reply) ||
 	 SCAMPER_TRACELB_REPLY_IS_ICMP_TTL_EXP(reply))
 	string_concat_u8(buf, sizeof(buf), &off, ", \"icmp_q_ttl\":",
@@ -141,11 +152,14 @@ static char *probe_tostr(const scamper_tracelb_probe_t *probe,
     if(scamper_addr_cmp(addr, probe->rxs[i]->reply_from) == 0)
       rxc++;
 
-  string_concaf(buf, sizeof(buf), &off,
-		"{\"tx\":{\"sec\":%ld, \"usec\":%d}, \"replyc\":%u,"
-		" \"ttl\":%u, \"attempt\":%u, \"flowid\":%u",
-		(long)probe->tx.tv_sec, (int)probe->tx.tv_usec, rxc,
-		probe->ttl, probe->attempt, probe->flowid);
+  string_concat_u32(buf, sizeof(buf), &off, "{\"tx\":{\"sec\":",
+		    (uint32_t)probe->tx.tv_sec);
+  string_concat_u32(buf, sizeof(buf), &off, ", \"usec\":", 
+		    (uint32_t)probe->tx.tv_usec);
+  string_concat_u16(buf, sizeof(buf), &off, "}, \"replyc\":", rxc);
+  string_concat_u8(buf, sizeof(buf), &off, ", \"ttl\":", probe->ttl);
+  string_concat_u8(buf, sizeof(buf), &off, ", \"attempt\":", probe->attempt);
+  string_concat_u16(buf, sizeof(buf), &off, ", \"flowid\":", probe->flowid);
 
   if(rxc > 0)
     {
@@ -324,8 +338,8 @@ static char *node_tostr(const scamper_tracelb_node_t *node)
 		   json_esc(node->name, tmp, sizeof(tmp)), "\"");
   if(SCAMPER_TRACELB_NODE_QTTL(node))
     string_concat_u8(buf, sizeof(buf), &off, ", \"q_ttl\":", node->q_ttl);
-  string_concaf(buf, sizeof(buf), &off, ", \"linkc\":%u, \"links\":[",
-		node->linkc);
+  string_concat_u16(buf, sizeof(buf), &off, ", \"linkc\":", node->linkc);
+  string_concat(buf, sizeof(buf), &off, ", \"links\":[");
 
   if(strlist_add(&tail, buf, &len) != 0)
     goto err;

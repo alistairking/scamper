@@ -1,7 +1,7 @@
 /*
  * scamper_host_cmd
  *
- * $Id: scamper_host_cmd.c,v 1.18 2025/06/21 04:59:15 mjl Exp $
+ * $Id: scamper_host_cmd.c,v 1.19 2025/08/04 00:00:27 mjl Exp $
  *
  * Copyright (C) 2018-2025 Matthew Luckie
  *
@@ -32,6 +32,7 @@
 #include "scamper_host_int.h"
 #include "scamper_host_cmd.h"
 #include "scamper_options.h"
+#include "scamper_dnp.h"
 #include "utils.h"
 
 #define HOST_OPT_NORECURSE 1
@@ -426,6 +427,14 @@ void *scamper_do_host_alloc(char *str, char *errbuf, size_t errlen)
 	    }
 	}
       host->dst = scamper_addr_use(default_ns);
+    }
+#endif
+
+#ifndef DISABLE_SCAMPER_DNP
+  if(scamper_dnp_canprobe(host->dst) == 0)
+    {
+      snprintf(errbuf, errlen, "destination in do-not-probe list");
+      goto err;
     }
 #endif
 

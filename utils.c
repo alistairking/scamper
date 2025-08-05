@@ -1,7 +1,7 @@
 /*
  * utils.c
  *
- * $Id: utils.c,v 1.276 2025/07/23 07:16:44 mjl Exp $
+ * $Id: utils.c,v 1.277 2025/07/31 08:13:08 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -1200,15 +1200,9 @@ int fcntl_unset(int fd, int flags)
 {
   int i;
 
-  if((i = fcntl(fd, F_GETFL, 0)) == -1)
-    {
-      return -1;
-    }
-
-  if(fcntl(fd, F_SETFL, i & (~flags)) == -1)
-    {
-      return -1;
-    }
+  if((i = fcntl(fd, F_GETFL, 0)) == -1 ||
+     fcntl(fd, F_SETFL, i & (~flags)) == -1)
+    return -1;
 
   return 0;
 }
@@ -1217,15 +1211,9 @@ int fcntl_set(int fd, int flags)
 {
   int i;
 
-  if((i = fcntl(fd, F_GETFL, 0)) == -1)
-    {
-      return -1;
-    }
-
-  if(fcntl(fd, F_SETFL, i | flags) == -1)
-    {
-      return -1;
-    }
+  if((i = fcntl(fd, F_GETFL, 0)) == -1 ||
+     fcntl(fd, F_SETFL, i | flags) == -1)
+    return -1;
 
   return 0;
 }

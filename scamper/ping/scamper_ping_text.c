@@ -7,7 +7,7 @@
  * Copyright (C) 2022-2024 Matthew Luckie
  * Author: Matthew Luckie
  *
- * $Id: scamper_ping_text.c,v 1.30 2025/06/02 22:40:41 mjl Exp $
+ * $Id: scamper_ping_text.c,v 1.31 2025/07/30 07:54:23 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -73,28 +73,31 @@ static char *ping_reply(const scamper_ping_t *ping,
 {
   scamper_ping_reply_v4rr_t *v4rr;
   scamper_ping_reply_v4ts_t *v4ts;
-  char buf[256], a[64], rtt[32], *tcp, flags[16], tso[32], tsr[32], tst[32];
+  char buf[256], a[64], tmp[32], *tcp;
   uint8_t i;
   size_t off = 0;
 
-  scamper_addr_tostr(reply->addr, a, sizeof(a));
-  timeval_tostr_us(&reply->rtt, rtt, sizeof(rtt));
-
-  string_concaf(buf, sizeof(buf), &off, "%d bytes from %s, seq=%d ",
-		reply->size, a, probe->id);
+  string_concat_u16(buf, sizeof(buf), &off, NULL, reply->size);
+  string_concat2(buf, sizeof(buf), &off, " bytes from ",
+		 scamper_addr_tostr(reply->addr, a, sizeof(a)));
+  string_concat_u16(buf, sizeof(buf), &off, ", seq=", probe->id);
+  string_concatc(buf, sizeof(buf), &off, ' ');
 
   if(SCAMPER_PING_REPLY_IS_ICMP(reply) || SCAMPER_PING_REPLY_IS_UDP(reply))
     {
-      string_concaf(buf, sizeof(buf), &off, "ttl=%d time=%s ms",
-		    reply->ttl, rtt);
+      string_concat_u8(buf, sizeof(buf), &off, "ttl=", reply->ttl);
+      string_concat3(buf, sizeof(buf), &off, " time=",
+		     timeval_tostr_us(&reply->rtt, tmp, sizeof(tmp)), " ms");
     }
 
   if(SCAMPER_PING_REPLY_IS_ICMP(reply) && reply->tsreply != NULL)
     {
-      string_concaf(buf, sizeof(buf), &off, " tso=%s tsr=%s tst=%s",
-		    tsreply_tostr(tso, sizeof(tso), reply->tsreply->tso),
-		    tsreply_tostr(tsr, sizeof(tsr), reply->tsreply->tsr),
-		    tsreply_tostr(tst, sizeof(tst), reply->tsreply->tst));
+      string_concat2(buf, sizeof(buf), &off, " tso=", 
+		     tsreply_tostr(tmp, sizeof(tmp), reply->tsreply->tso));
+      string_concat2(buf, sizeof(buf), &off, " tsr=", 
+		     tsreply_tostr(tmp, sizeof(tmp), reply->tsreply->tsr));
+      string_concat2(buf, sizeof(buf), &off, " tst=", 
+		     tsreply_tostr(tmp, sizeof(tmp), reply->tsreply->tst));
     }
   else if(SCAMPER_PING_REPLY_IS_TCP(reply))
     {
@@ -111,12 +114,14 @@ static char *ping_reply(const scamper_ping_t *ping,
 	}
       else
 	{
-	  snprintf(flags, sizeof(flags), "%0x02x", reply->tcp_flags);
-	  tcp = flags;
+	  snprintf(tmp, sizeof(tmp), "0x%02x", reply->tcp_flags);
+	  tcp = tmp;
 	}
 
-      string_concaf(buf, sizeof(buf), &off, "tcp=%s ttl=%d time=%s ms",
-		    tcp, reply->ttl, rtt);
+      string_concat2(buf, sizeof(buf), &off, "tcp=", tcp);
+      string_concat_u8(buf, sizeof(buf), &off, " ttl=", reply->ttl);
+      string_concat3(buf, sizeof(buf), &off, " time=",
+		     timeval_tostr_us(&reply->rtt, tmp, sizeof(tmp)), " ms");
     }
   string_concat(buf, sizeof(buf), &off, "\n");
 
@@ -135,7 +140,8 @@ static char *ping_reply(const scamper_ping_t *ping,
       if(v4ts->ips != NULL)
 	string_concaf(buf, sizeof(buf), &off, "%-15s ",
 		      scamper_addr_tostr(v4ts->ips[0], a, sizeof(a)));
-      string_concaf(buf, sizeof(buf), &off, "%d\n", v4ts->tss[0]);
+      string_concat_u32(buf, sizeof(buf), &off, NULL, v4ts->tss[0]);
+      string_concatc(buf, sizeof(buf), &off, '\n');
 
       for(i=1; i<v4ts->tsc; i++)
 	{
@@ -143,7 +149,8 @@ static char *ping_reply(const scamper_ping_t *ping,
 	  if(v4ts->ips != NULL)
 	    string_concaf(buf, sizeof(buf), &off, "%-15s ",
 			  scamper_addr_tostr(v4ts->ips[i], a, sizeof(a)));
-	  string_concaf(buf, sizeof(buf), &off, "%d\n", v4ts->tss[i]);
+	  string_concat_u32(buf, sizeof(buf), &off, NULL, v4ts->tss[i]);
+	  string_concatc(buf, sizeof(buf), &off, '\n');
 	}
     }
 
@@ -164,15 +171,26 @@ static char *ping_stats(const scamper_ping_t *ping)
   string_concat3(buf, sizeof(buf), &off, "--- ",
 		 scamper_addr_tostr(ping->dst, str, sizeof(str)),
 		 " ping statistics ---\n");
-  string_concaf(buf, sizeof(buf), &off,
-		"%d packets transmitted, %d packets received",
-		ping->ping_sent, stats->nreplies);
+  string_concat_u16(buf, sizeof(buf), &off, NULL, ping->ping_sent);
+  string_concat_u32(buf, sizeof(buf), &off,
+		    " packets transmitted, ", stats->nreplies);
+  string_concat(buf, sizeof(buf), &off, " packets received");
+
   if(stats->ndups > 0)
-    string_concaf(buf, sizeof(buf), &off, ", +%d duplicates", stats->ndups);
+    {
+      string_concat_u32(buf, sizeof(buf), &off, ", +", stats->ndups);
+      string_concat(buf, sizeof(buf), &off, " duplicates");
+    }
   if(stats->nerrs > 0)
-    string_concaf(buf, sizeof(buf), &off, ", +%d errors", stats->nerrs);
+    {
+      string_concat_u32(buf, sizeof(buf), &off, ", +", stats->nerrs);
+      string_concat(buf, sizeof(buf), &off, " errors");
+    }
   if(stats->npend > 0)
-    string_concaf(buf, sizeof(buf), &off, ", +%d pending", stats->npend);
+    {
+      string_concat_u32(buf, sizeof(buf), &off, ", +", stats->npend);
+      string_concat(buf, sizeof(buf), &off, " pending");
+    }
 
   if(ping->ping_sent > stats->npend)
     {

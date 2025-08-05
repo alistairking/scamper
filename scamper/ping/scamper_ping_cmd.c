@@ -1,7 +1,7 @@
 /*
  * scamper_ping_cmd.c
  *
- * $Id: scamper_ping_cmd.c,v 1.32 2025/05/29 07:33:24 mjl Exp $
+ * $Id: scamper_ping_cmd.c,v 1.34 2025/08/04 00:00:27 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -38,6 +38,7 @@
 #include "scamper_ping_int.h"
 #include "scamper_ping_cmd.h"
 #include "scamper_options.h"
+#include "scamper_dnp.h"
 #include "utils.h"
 
 #define SCAMPER_DO_PING_PATTERN_MAX       32
@@ -253,16 +254,6 @@ static int ping_arg_param_validate(int optid, char *param, long long *out,
     case PING_OPT_OPTION:
       if(strcasecmp(param, "dl") == 0)
 	tmp = SCAMPER_PING_FLAG_DL;
-      else if(strcasecmp(param, "nosrc") == 0)
-	tmp = SCAMPER_PING_FLAG_NOSRC;
-      else if(strcasecmp(param, "raw") == 0)
-	tmp = SCAMPER_PING_FLAG_RAW;
-      else if(strcasecmp(param, "sockrx") == 0)
-	tmp = SCAMPER_PING_FLAG_SOCKRX;
-      else if(strcasecmp(param, "spoof") == 0)
-	tmp = SCAMPER_PING_FLAG_SPOOF;
-      else if(strcasecmp(param, "tbt") == 0)
-	tmp = SCAMPER_PING_FLAG_TBT;
       else if(strcasecmp(param, "dltx") == 0)
 	tmp = SCAMPER_PING_FLAG_DLTX;
       else if(strncasecmp(param, "mss=", 4) == 0)
@@ -274,6 +265,16 @@ static int ping_arg_param_validate(int optid, char *param, long long *out,
 	      goto err;
 	    }
 	}
+      else if(strcasecmp(param, "nosrc") == 0)
+	tmp = SCAMPER_PING_FLAG_NOSRC;
+      else if(strcasecmp(param, "raw") == 0)
+	tmp = SCAMPER_PING_FLAG_RAW;
+      else if(strcasecmp(param, "sockrx") == 0)
+	tmp = SCAMPER_PING_FLAG_SOCKRX;
+      else if(strcasecmp(param, "spoof") == 0)
+	tmp = SCAMPER_PING_FLAG_SPOOF;
+      else if(strcasecmp(param, "tbt") == 0)
+	tmp = SCAMPER_PING_FLAG_TBT;
       else
 	{
 	  snprintf(errbuf, errlen, "unknown option");
@@ -652,6 +653,15 @@ void *scamper_do_ping_alloc(char *str, char *errbuf, size_t errlen)
       snprintf(errbuf, errlen, "invalid destination address");
       goto err;
     }
+
+#ifndef DISABLE_SCAMPER_DNP
+  if(scamper_dnp_canprobe(ping->dst) == 0)
+    {
+      snprintf(errbuf, errlen, "destination in do-not-probe list");
+      goto err;
+    }
+#endif
+
   ping->method = probe_method;
 
   /* only one of pattern or payload should be specified */

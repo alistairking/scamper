@@ -1,7 +1,7 @@
 /*
  * scamper_http_do.c
  *
- * $Id: scamper_http_do.c,v 1.22 2025/07/04 23:34:23 mjl Exp $
+ * $Id: scamper_http_do.c,v 1.24 2025/08/04 00:00:27 mjl Exp $
  *
  * Copyright (C) 2023-2024 The Regents of the University of California
  * Copyright (C) 2024-2025 Matthew Luckie

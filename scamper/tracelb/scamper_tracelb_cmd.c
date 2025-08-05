@@ -1,7 +1,7 @@
 /*
  * scamper_tracelb_cmd.c
  *
- * $Id: scamper_tracelb_cmd.c,v 1.9 2024/08/26 09:14:21 mjl Exp $
+ * $Id: scamper_tracelb_cmd.c,v 1.10 2025/08/04 00:00:27 mjl Exp $
  *
  * Copyright (C) 2008-2011 The University of Waikato
  * Copyright (C) 2012      The Regents of the University of California
@@ -43,6 +43,7 @@
 #include "scamper_tracelb_int.h"
 #include "scamper_tracelb_cmd.h"
 #include "scamper_options.h"
+#include "scamper_dnp.h"
 #include "utils.h"
 
 #define TRACE_OPT_CONFIDENCE   1
@@ -393,6 +394,14 @@ void *scamper_do_tracelb_alloc(char *str, char *errbuf, size_t errlen)
       snprintf(errbuf, errlen, "invalid destination address");
       goto err;
     }
+
+#ifndef DISABLE_SCAMPER_DNP
+  if(scamper_dnp_canprobe(trace->dst) == 0)
+    {
+      snprintf(errbuf, errlen, "destination in do-not-probe list");
+      goto err;
+    }
+#endif
 
   if(SCAMPER_ADDR_TYPE_IS_IPV6(trace->dst) &&
      SCAMPER_TRACELB_TYPE_IS_TCP(trace))
