@@ -1,7 +1,7 @@
 /*
  * scamper_dealias_int.h
  *
- * $Id: scamper_dealias_int.h,v 1.20 2025/02/11 14:31:43 mjl Exp $
+ * $Id: scamper_dealias_int.h,v 1.21 2025/10/09 22:00:52 mjl Exp $
  *
  * Copyright (C) 2008-2011 The University of Waikato
  * Copyright (C) 2012-2013 The Regents of the University of California
@@ -343,6 +343,7 @@ struct scamper_dealias
   struct timeval                start;
   uint8_t                       method;
   uint8_t                       result;
+  char                         *errmsg;
   void                         *data;
   scamper_dealias_probe_t     **probes;
   uint32_t                      probec;

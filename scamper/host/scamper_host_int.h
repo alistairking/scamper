@@ -1,7 +1,7 @@
 /*
  * scamper_host_int.h
  *
- * $Id: scamper_host_int.h,v 1.11 2025/02/23 05:38:15 mjl Exp $
+ * $Id: scamper_host_int.h,v 1.12 2025/10/12 21:20:47 mjl Exp $
  *
  * Copyright (C) 2018-2025 Matthew Luckie
  *
@@ -175,6 +175,7 @@ struct scamper_host
   struct timeval           start;    /* when started */
   uint16_t                 flags;    /* flags controlling */
   struct timeval           wait_timeout; /* how long to wait */
+  char                    *errmsg;
   uint8_t                  stop;     /* reason we stopped */
   uint8_t                  retries;  /* how many retries to make */
   uint16_t                 qtype;    /* query type */

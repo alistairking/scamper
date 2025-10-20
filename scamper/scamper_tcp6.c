@@ -1,7 +1,7 @@
 /*
  * scamper_tcp6.c
  *
- * $Id: scamper_tcp6.c,v 1.41 2024/08/13 05:14:13 mjl Exp $
+ * $Id: scamper_tcp6.c,v 1.43 2025/10/20 01:21:44 mjl Exp $
  *
  * Copyright (C) 2006      Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -282,9 +282,9 @@ int scamper_tcp6_build(scamper_probe_t *probe, uint8_t *buf, size_t *len)
 }
 
 #ifndef _WIN32 /* SOCKET vs int on windows */
-int scamper_tcp6_open(const void *addr, int sport)
+int scamper_tcp6_open(const void *addr, int sport, scamper_err_t *error)
 #else
-SOCKET scamper_tcp6_open(const void *addr, int sport)
+SOCKET scamper_tcp6_open(const void *addr, int sport, scamper_err_t *error)
 #endif
 {
   struct sockaddr_in6 sin6;
@@ -299,14 +299,14 @@ SOCKET scamper_tcp6_open(const void *addr, int sport)
   fd = socket(AF_INET6, SOCK_STREAM, IPPROTO_TCP);
   if(socket_isinvalid(fd))
     {
-      printerror(__func__, "could not open socket");
+      scamper_err_make(error, errno, "could not open tcp6 socket");
       goto err;
     }
 
 #ifdef IPV6_V6ONLY
   if(setsockopt_int(fd, IPPROTO_IPV6, IPV6_V6ONLY, 1) != 0)
     {
-      printerror(__func__, "could not set IPV6_V6ONLY");
+      scamper_err_make(error, errno, "could not set IPV6_V6ONLY");
       goto err;
     }
 #endif
@@ -315,9 +315,10 @@ SOCKET scamper_tcp6_open(const void *addr, int sport)
   if(bind(fd, (struct sockaddr *)&sin6, sizeof(sin6)) == -1)
     {
       if(addr == NULL || addr_tostr(AF_INET6, addr, tmp, sizeof(tmp)) == NULL)
-	printerror(__func__, "could not bind port %d", sport);
+	scamper_err_make(error, errno, "could not bind tcp6 port %d", sport);
       else
-	printerror(__func__, "could not bind %s:%d", tmp, sport);
+	scamper_err_make(error, errno, "could not bind tcp6 [%s.%d]",
+			 tmp, sport);
       goto err;
     }
 

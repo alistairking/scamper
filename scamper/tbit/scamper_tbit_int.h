@@ -1,7 +1,7 @@
 /*
  * scamper_tbit_int.h
  *
- * $Id: scamper_tbit_int.h,v 1.5 2023/07/29 07:34:45 mjl Exp $
+ * $Id: scamper_tbit_int.h,v 1.6 2025/10/13 21:11:18 mjl Exp $
  *
  * Copyright (C) 2009-2010 Ben Stasiewicz
  * Copyright (C) 2010-2011 University of Waikato
@@ -154,6 +154,7 @@ struct scamper_tbit
 
   /* outcome of test */
   uint16_t             result;
+  char                *errmsg;
 
   /* type of tbit test and data specific to that test */
   uint8_t              type;

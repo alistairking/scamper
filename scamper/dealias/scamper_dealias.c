@@ -1,7 +1,7 @@
 /*
  * scamper_dealias.c
  *
- * $Id: scamper_dealias.c,v 1.78 2025/04/30 07:59:54 mjl Exp $
+ * $Id: scamper_dealias.c,v 1.81 2025/10/19 19:28:50 mjl Exp $
  *
  * Copyright (C) 2008-2010 The University of Waikato
  * Copyright (C) 2012-2013 The Regents of the University of California
@@ -748,14 +748,20 @@ int scamper_dealias_ipid_inseq(scamper_dealias_probe_t **probes,
   int i, x;
 
   if(probec < 2)
-    return -1;
+    {
+      errno = EINVAL;
+      return -1;
+    }
 
   if(SCAMPER_ADDR_TYPE_IS_IPV4(probes[0]->def->dst))
     x = 0;
   else if(SCAMPER_ADDR_TYPE_IS_IPV6(probes[0]->def->dst))
     x = 1;
   else
-    return -1;
+    {
+      errno = EINVAL;
+      return -1;
+    }
 
   if(bs == 3 && fudge == 0)
     {
@@ -1130,6 +1136,7 @@ char *scamper_dealias_result_tostr(uint8_t result, char *buf, size_t len)
     "not-aliases",
     "halted",
     "ipid-echo",
+    "error",
   };
   if(result >= sizeof(t) / sizeof(char *) || t[result] == NULL)
     snprintf(buf, len, "%d", result);
@@ -1155,6 +1162,7 @@ void scamper_dealias_free(scamper_dealias_t *dealias)
 
   if(dealias->cycle != NULL) scamper_cycle_free(dealias->cycle);
   if(dealias->list != NULL)  scamper_list_free(dealias->list);
+  if(dealias->errmsg != NULL) free(dealias->errmsg);
 
   if(dealias->data != NULL)
     {

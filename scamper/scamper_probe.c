@@ -1,7 +1,7 @@
 /*
  * scamper_probe.c
  *
- * $Id: scamper_probe.c,v 1.88 2024/12/30 03:16:57 mjl Exp $
+ * $Id: scamper_probe.c,v 1.99 2025/10/20 01:07:45 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -75,7 +75,6 @@ typedef struct probe_state
   size_t              len;
   struct timeval      tv;
   int                 mode;
-  int                 error;
 } probe_state_t;
 
 #define PROBE_MODE_TX_RT 1
@@ -145,6 +144,7 @@ static char *tcp_pos(char *buf, size_t len, scamper_probe_t *probe)
 
 static void probe_print(scamper_probe_t *probe)
 {
+  scamper_err_t error;
   size_t iphl;
   char tcp[16];
   char pos[32];
@@ -171,7 +171,7 @@ static void probe_print(scamper_probe_t *probe)
 
   if(probe->pr_ip_dst->type == SCAMPER_ADDR_TYPE_IPV4)
     {
-      if(scamper_ip4_hlen(probe, &iphl) != 0)
+      if((iphl = scamper_ip4_hlen(probe, &error)) == 0)
 	return;
 
       if((probe->pr_ip_off & IP_OFFMASK) != 0)
@@ -396,7 +396,8 @@ static void probe_state_free(probe_state_t *pt)
  * determine how to build the packet and call the appropriate function
  * to do so.
  */
-static probe_state_t *probe_state_alloc(scamper_probe_t *pr)
+static probe_state_t *probe_state_alloc(scamper_probe_t *pr,
+					scamper_err_t *error)
 {
   int (*build_func)(scamper_probe_t *, uint8_t *, size_t *) = NULL;
   probe_state_t *pt = NULL;
@@ -404,7 +405,7 @@ static probe_state_t *probe_state_alloc(scamper_probe_t *pr)
 
   if((pt = malloc_zero(sizeof(probe_state_t))) == NULL)
     {
-      pr->pr_errno = errno;
+      scamper_err_make(error, errno, "could not alloc probe state");
       goto err;
     }
 
@@ -415,7 +416,7 @@ static probe_state_t *probe_state_alloc(scamper_probe_t *pr)
 	{
 	  if((pt->pr = probe_dup(pr)) == NULL)
 	    {
-	      pr->pr_errno = errno;
+	      scamper_err_make(error, errno, "could not dup probe");
 	      goto err;
 	    }
 	  return pt;
@@ -451,7 +452,7 @@ static probe_state_t *probe_state_alloc(scamper_probe_t *pr)
 
   if(build_func == NULL)
     {
-      pr->pr_errno = EINVAL;
+      scamper_err_make(error, 0, "no build_func for probe");
       goto err;
     }
 
@@ -466,13 +467,13 @@ static probe_state_t *probe_state_alloc(scamper_probe_t *pr)
       /* reallocate the packet buffer */
       if(realloc_wrap((void **)&pktbuf, len+16) != 0)
 	{
-	  pr->pr_errno = errno;
+	  scamper_err_make(error, errno, "could not alloc pktbuf");
 	  goto err;
 	}
       pktbuf_len = len+16;
       if(build_func(pr, pktbuf+16, &len) != 0)
 	{
-	  pr->pr_errno = EINVAL;
+	  scamper_err_make(error, 0, "could not build packet");
 	  goto err;
 	}
     }
@@ -491,6 +492,7 @@ static int probe_dl_tx(probe_state_t *pt)
   scamper_fd_t *fd;
   scamper_dl_t *dl;
   uint8_t *pkt;
+  scamper_err_t error;
 
   /* copy the datalink header into the packet */
   assert(pt->dlhdr->len < 16);
@@ -499,40 +501,29 @@ static int probe_dl_tx(probe_state_t *pt)
     memcpy(pkt, pt->dlhdr->buf, pt->dlhdr->len);
 
   /* get the file descriptor to transmit on */
-  if((fd = scamper_task_fd_dl(pt->task, pt->tx_rt->ifindex)) == NULL)
-    {
-      pt->error = EINVAL;
-      return -1;
-    }
+  if((fd = scamper_task_fd_dl(pt->task, pt->tx_rt->ifindex, &error)) == NULL)
+    return -1;
 
   if(pt->buf == pktbuf)
     gettimeofday_wrap(&pt->tv);
   dl = scamper_fd_dl_get(fd);
-  if(scamper_dl_tx(dl, pkt, pt->dlhdr->len + pt->len) == -1)
-    {
-      pt->error = errno;
-      return -1;
-    }
+  if(scamper_dl_tx(dl, pkt, pt->dlhdr->len + pt->len, &error) == -1)
+    return -1;
 
   pt->mode = PROBE_MODE_TX;
   return 0;
 }
 
-static void probe_rx_rt_cb(scamper_route_t *rt)
+static void probe_rx_rt_cb(scamper_route_t *rt, const scamper_err_t *rt_err)
 {
   probe_state_t *pt = rt->param;
+  scamper_err_t error;
 
-  if(rt->error != 0 || rt->ifindex < 0)
-    {
-      pt->error = rt->error;
-      goto err;
-    }
+  if(rt_err != NULL || rt->ifindex < 0)
+    goto err;
 
-  if(scamper_task_fd_dl(pt->task, rt->ifindex) == NULL)
-    {
-      pt->error = errno;
-      goto err;
-    }
+  if(scamper_task_fd_dl(pt->task, rt->ifindex, &error) == NULL)
+    goto err;
 
   if(probe_dl_tx(pt) != 0)
     goto err;
@@ -548,15 +539,15 @@ static void probe_rx_rt_cb(scamper_route_t *rt)
   return;
 }
 
-static void probe_dlhdr_cb(scamper_dlhdr_t *dlhdr)
+static void probe_dlhdr_cb(scamper_dlhdr_t *dlhdr,
+			   const scamper_err_t *dlhdr_err)
 {
   probe_state_t *pt = dlhdr->param;
+  scamper_err_t error;
+  int rc;
 
-  if(dlhdr->error != 0)
-    {
-      pt->error = dlhdr->error;
-      goto err;
-    }
+  if(dlhdr_err != NULL)
+    goto err;
 
   /*
    * if we are probing via a specific router and expecting TCP
@@ -570,24 +561,15 @@ static void probe_dlhdr_cb(scamper_dlhdr_t *dlhdr)
       pt->mode = PROBE_MODE_RX_RT;
       pt->rx_rt = scamper_route_alloc(pt->dst, pt, probe_rx_rt_cb);
       if(pt->rx_rt == NULL)
-	{
-	  pt->error = errno;
-	  goto err;
-	}
+	goto err;
 
 #ifndef _WIN32 /* windows does not have a routing socket */
-      if(scamper_rtsock_getroute(pt->rtsock, pt->rx_rt) != 0)
-	{
-	  pt->error = errno;
-	  goto err;
-	}
+      rc = scamper_rtsock_getroute(pt->rtsock, pt->rx_rt, &error);
 #else
-      if(scamper_rtsock_getroute(pt->rx_rt) != 0)
-	{
-	  pt->error = errno;
-	  goto err;
-	}
+      rc = scamper_rtsock_getroute(pt->rx_rt, &error);
 #endif
+      if(rc != 0)
+	goto err;
       return;
     }
 
@@ -603,31 +585,27 @@ static void probe_dlhdr_cb(scamper_dlhdr_t *dlhdr)
   return;
 }
 
-static void probe_tx_rt_cb(scamper_route_t *rt)
+static void probe_tx_rt_cb(scamper_route_t *rt, const scamper_err_t *rt_err)
 {
   scamper_fd_t *fd = NULL;
   scamper_dl_t *dl = NULL;
   probe_state_t *pt = rt->param;
+  scamper_err_t error;
 
-  if(rt->error != 0 || rt->ifindex < 0)
-    {
-      pt->error = rt->error;
-      goto err;
-    }
-  if((fd = scamper_task_fd_dl(pt->task, rt->ifindex)) == NULL)
-    {
-      pt->error = errno;
-      goto err;
-    }
+  if(rt_err != NULL || rt->ifindex < 0)
+    goto err;
+
+  if((fd = scamper_task_fd_dl(pt->task, rt->ifindex, &error)) == NULL)
+    goto err;
 
   if(rawtcp != 0 && pt->pr != NULL &&
      pt->pr->pr_ip_proto == IPPROTO_TCP &&
      SCAMPER_ADDR_TYPE_IS_IPV4(pt->pr->pr_ip_dst))
     {
-      if((fd = scamper_task_fd_ip4(pt->task)) != NULL)
+      if((fd = scamper_task_fd_ip4(pt->task, &error)) != NULL)
 	{
 	  pt->pr->pr_fd = scamper_fd_fd_get(fd);
-	  if(scamper_tcp4_probe(pt->pr) != 0)
+	  if(scamper_tcp4_probe(pt->pr, &error) != 0)
 	    pt->mode = PROBE_MODE_ERR;
 	}
       if(pt->anc != NULL)
@@ -636,10 +614,7 @@ static void probe_tx_rt_cb(scamper_route_t *rt)
     }
 
   if((pt->dlhdr = scamper_dlhdr_alloc()) == NULL)
-    {
-      pt->error = errno;
-      goto err;
-    }
+    goto err;
   dl = scamper_fd_dl_get(fd);
 
   pt->dlhdr->dst     = scamper_addr_use(rt->dst);
@@ -649,11 +624,8 @@ static void probe_tx_rt_cb(scamper_route_t *rt)
   pt->dlhdr->param   = pt;
   pt->dlhdr->cb      = probe_dlhdr_cb;
   pt->mode           = PROBE_MODE_TX_DL;
-  if(scamper_dlhdr_get(pt->dlhdr) != 0)
-    {
-      pt->error = pt->dlhdr->error;
-      goto err;
-    }
+  if(scamper_dlhdr_get(pt->dlhdr, &error) != 0)
+    goto err;
 
   return;
 
@@ -664,25 +636,21 @@ static void probe_tx_rt_cb(scamper_route_t *rt)
   return;
 }
 
-static int probe_task_dl(scamper_probe_t *pr, scamper_task_t *task)
+static int probe_task_dl(scamper_probe_t *pr, scamper_task_t *task,
+			 scamper_err_t *error)
 {
   probe_state_t *pt = NULL;
+  int rc;
 
-  if((pt = probe_state_alloc(pr)) == NULL)
-    {
-      pr->pr_errno = errno;
-      goto err;
-    }
+  if((pt = probe_state_alloc(pr, error)) == NULL)
+    goto err;
 
   pt->task = task;
   pt->mode = PROBE_MODE_TX_RT;
 
 #ifndef _WIN32 /* windows does not have a routing socket */
-  if((pt->rtsock = scamper_task_fd_rtsock(task)) == NULL)
-    {
-      pr->pr_errno = errno;
-      goto err;
-    }
+  if((pt->rtsock = scamper_task_fd_rtsock(task, error)) == NULL)
+    goto err;
 #endif
 
   if(pr->pr_rtr != NULL)
@@ -691,27 +659,21 @@ static int probe_task_dl(scamper_probe_t *pr, scamper_task_t *task)
     pt->tx_rt = scamper_route_alloc(pr->pr_ip_dst, pt, probe_tx_rt_cb);
   if(pt->tx_rt == NULL)
     {
-      pr->pr_errno = errno;
+      scamper_err_make(error, errno, "could not alloc route lookup");
       goto err;
     }
 
 #ifndef _WIN32 /* windows does not have a routing socket */
-  if(scamper_rtsock_getroute(pt->rtsock, pt->tx_rt) != 0)
-    {
-      pr->pr_errno = errno;
-      goto err;
-    }
+  rc = scamper_rtsock_getroute(pt->rtsock, pt->tx_rt, error);
 #else
-  if(scamper_rtsock_getroute(pt->tx_rt) != 0)
-    {
-      pr->pr_errno = errno;
-      goto err;
-    }
+  rc = scamper_rtsock_getroute(pt->tx_rt, error);
 #endif
+  if(rc != 0)
+    goto err;
 
   if(pt->mode == PROBE_MODE_ERR)
     {
-      pr->pr_errno = pt->error;
+      /* XXX: should propagate error */
       goto err;
     }
 
@@ -719,12 +681,12 @@ static int probe_task_dl(scamper_probe_t *pr, scamper_task_t *task)
     {
       if(pt->len > 0 && (pt->buf = memdup(pktbuf, pt->len + 16)) == NULL)
 	{
-	  pr->pr_errno = errno;
+	  scamper_err_make(error, errno, "could not dup pktbuf");
 	  goto err;
 	}
       if((pt->anc = scamper_task_anc_add(task,pt,probe_state_free_cb)) == NULL)
 	{
-	  pr->pr_errno = errno;
+	  scamper_err_make(error, errno, "could not add ancilliary data");
 	  goto err;
 	}
       gettimeofday_wrap(&pr->pr_tx);
@@ -742,38 +704,30 @@ static int probe_task_dl(scamper_probe_t *pr, scamper_task_t *task)
 }
 
 static int probe_task_ipv4(scamper_probe_t *pr, scamper_task_t *task,
-			   scamper_fd_t *icmp)
+			   scamper_fd_t *icmp, scamper_err_t *error)
 {
   scamper_fd_t *fd;
 
   if(pr->pr_ip_proto == IPPROTO_UDP)
     {
-      fd = scamper_task_fd_udp4(task, pr->pr_ip_src->addr, pr->pr_udp_sport);
-      if(fd == NULL)
-	{
-	  pr->pr_errno = errno;
-	  return -1;
-	}
+      if((fd = scamper_task_fd_udp4(task, pr->pr_ip_src->addr,
+				    pr->pr_udp_sport, error)) == NULL)
+	return -1;
       pr->pr_fd = scamper_fd_fd_get(fd);
-      if(scamper_udp4_probe(pr) != 0)
-	{
-	  pr->pr_errno = errno;
-	  return -1;
-	}
+      if(scamper_udp4_probe(pr, error) != 0)
+	return -1;
     }
   else if(pr->pr_ip_proto == IPPROTO_ICMP)
     {
       pr->pr_fd = scamper_fd_fd_get(icmp);
-      if(scamper_icmp4_probe(pr) != 0)
-	{
-	  pr->pr_errno = errno;
-	  return -1;
-	}
+      if(scamper_icmp4_probe(pr, error) != 0)
+	return -1;
     }
   else
     {
-      scamper_debug(__func__, "unhandled protocol %d", pr->pr_ip_proto);
-      pr->pr_errno = EINVAL; /* actually a bug in the caller */
+      /* actually a bug in the caller */
+      scamper_err_make(error, 0, "probe_task_ipv4: unhandled protocol %d",
+		       pr->pr_ip_proto);
       return -1;
     }
 
@@ -781,44 +735,39 @@ static int probe_task_ipv4(scamper_probe_t *pr, scamper_task_t *task,
 }
 
 static int probe_task_ipv6(scamper_probe_t *pr, scamper_task_t *task,
-			   scamper_fd_t *icmp)
+			   scamper_fd_t *icmp, scamper_err_t *error)
+
 {
   scamper_fd_t *fd;
 
   if(pr->pr_ip_proto == IPPROTO_UDP)
     {
-      fd = scamper_task_fd_udp6(task, pr->pr_ip_src->addr, pr->pr_udp_sport);
-      if(fd == NULL)
-	{
-	  pr->pr_errno = errno;
-	  return -1;
-	}
+      if((fd = scamper_task_fd_udp6(task, pr->pr_ip_src->addr,
+				    pr->pr_udp_sport, error)) == NULL)
+	return -1;
       pr->pr_fd = scamper_fd_fd_get(fd);
-      if(scamper_udp6_probe(pr) != 0)
-	{
-	  pr->pr_errno = errno;
-	  return -1;
-	}
+      if(scamper_udp6_probe(pr, error) != 0)
+	return -1;
     }
   else if(pr->pr_ip_proto == IPPROTO_ICMPV6)
     {
       pr->pr_fd = scamper_fd_fd_get(icmp);
-      if(scamper_icmp6_probe(pr) != 0)
-	{
-	  pr->pr_errno = errno;
-	  return -1;
-	}
+      if(scamper_icmp6_probe(pr, error) != 0)
+	return -1;
     }
   else
     {
-      pr->pr_errno = EINVAL; /* actually a bug in the caller */
+      /* actually a bug in the caller */
+      scamper_err_make(error, 0, "probe_task_ipv6: unhandled protocol %d",
+		       pr->pr_ip_proto);
       return -1;
     }
 
   return 0;
 }
 
-int scamper_probe_task(scamper_probe_t *pr, scamper_task_t *task)
+int scamper_probe_task(scamper_probe_t *pr, scamper_task_t *task,
+		       scamper_err_t *error)
 {
   scamper_fd_t *icmp = NULL;
   int dl = 0;
@@ -832,26 +781,21 @@ int scamper_probe_task(scamper_probe_t *pr, scamper_task_t *task)
   if(SCAMPER_ADDR_TYPE_IS_IPV4(pr->pr_ip_dst))
     {
       if((pr->pr_flags & SCAMPER_PROBE_FLAG_SPOOF) == 0 &&
-	 (icmp = scamper_task_fd_icmp4(task, pr->pr_ip_src->addr)) == NULL)
-	{
-	  pr->pr_errno = errno;
-	  goto err;
-	}
+	 (icmp = scamper_task_fd_icmp4(task, pr->pr_ip_src->addr,
+				       error)) == NULL)
+	return -1;
     }
   else if(SCAMPER_ADDR_TYPE_IS_IPV6(pr->pr_ip_dst))
     {
       if((pr->pr_flags & SCAMPER_PROBE_FLAG_SPOOF) == 0 &&
-	 (icmp = scamper_task_fd_icmp6(task, pr->pr_ip_src->addr)) == NULL)
-	{
-	  pr->pr_errno = errno;
-	  goto err;
-	}
+	 (icmp = scamper_task_fd_icmp6(task, pr->pr_ip_src->addr,
+				       error)) == NULL)
+	return -1;
     }
   else
     {
-      scamper_debug(__func__, "missing destination address");
-      pr->pr_errno = EINVAL;
-      goto err;
+      scamper_err_make(error, 0, "probe_task: dst not IP");
+      return -1;
     }
 
   /*
@@ -870,49 +814,40 @@ int scamper_probe_task(scamper_probe_t *pr, scamper_task_t *task)
 
   if(dl != 0)
     {
-      if(probe_task_dl(pr, task) != 0)
-	goto err;
+      if(probe_task_dl(pr, task, error) != 0)
+	return -1;
     }
   else if(SCAMPER_ADDR_TYPE_IS_IPV4(pr->pr_ip_dst))
     {
-      if(probe_task_ipv4(pr, task, icmp) != 0)
-	goto err;
-    }
-  else if(SCAMPER_ADDR_TYPE_IS_IPV6(pr->pr_ip_dst))
-    {
-      if(probe_task_ipv6(pr, task, icmp) != 0)
-	goto err;
+      if(probe_task_ipv4(pr, task, icmp, error) != 0)
+	return -1;
     }
   else
     {
-      pr->pr_errno = EINVAL;
-      goto err;
+      /* this was established earlier in this function */
+      assert(SCAMPER_ADDR_TYPE_IS_IPV6(pr->pr_ip_dst));
+      if(probe_task_ipv6(pr, task, icmp, error) != 0)
+	return -1;
     }
 
   return 0;
-
- err:
-  printerror_msg(__func__, "could not probe: %s", strerror(pr->pr_errno));
-  return -1;
 }
 
 /*
- * scamper_probe_send
+ * scamper_probe
  *
  * this meta-function is responsible for
  *  1. sending a probe
  *  2. handling any error condition incurred when sending the probe
  *  3. recording details of the probe with the trace's state
  */
-int scamper_probe(scamper_probe_t *probe)
+int scamper_probe(scamper_probe_t *probe, scamper_err_t *error)
 {
-  int (*send_func)(scamper_probe_t *) = NULL;
+  int (*send_func)(scamper_probe_t *, scamper_err_t *) = NULL;
   int (*build_func)(scamper_probe_t *, uint8_t *, size_t *) = NULL;
   size_t pad, len;
   uint8_t *buf, *dl_buf;
   uint16_t dl_len;
-
-  probe->pr_errno = 0;
 
 #ifdef HAVE_SCAMPER_DEBUG
   if(scamper_debug_would())
@@ -969,15 +904,15 @@ int scamper_probe(scamper_probe_t *probe)
   if(probe->pr_dl == NULL)
     {
       if(send_func != NULL)
-	return send_func(probe);
-      probe->pr_errno = EINVAL;
+	return send_func(probe, error);
+      scamper_err_make(error, 0, "no pr_dl and send_func");
       return -1;
     }
 
   /* if the header type is not known (we cannot build it) then bail */
   if(build_func == NULL)
     {
-      probe->pr_errno = EINVAL;
+      scamper_err_make(error, 0, "no build_func");
       return -1;
     }
 
@@ -1007,8 +942,7 @@ int scamper_probe(scamper_probe_t *probe)
       len += pad + dl_len;
       if((buf = realloc(pktbuf, len)) == NULL)
 	{
-	  probe->pr_errno = errno;
-	  printerror(__func__, "could not realloc");
+	  scamper_err_make(error, errno, "could not realloc");
 	  return -1;
 	}
       pktbuf     = buf;
@@ -1017,7 +951,8 @@ int scamper_probe(scamper_probe_t *probe)
       len = pktbuf_len - pad - dl_len;
       if(build_func(probe, pktbuf + pad + dl_len, &len) != 0)
 	{
-	  probe->pr_errno = EINVAL;
+	  /* XXX: get better error message from build function */
+	  scamper_err_make(error, 0, "could not build probe");
 	  return -1;
 	}
     }
@@ -1030,11 +965,8 @@ int scamper_probe(scamper_probe_t *probe)
     memcpy(pktbuf+pad, dl_buf, dl_len);
 
   gettimeofday_wrap(&probe->pr_tx);
-  if(scamper_dl_tx(probe->pr_dl, pktbuf+pad, len) == -1)
-    {
-      probe->pr_errno = errno;
-      return -1;
-    }
+  if(scamper_dl_tx(probe->pr_dl, pktbuf+pad, len, error) == -1)
+    return -1;
 
   probe->pr_tx_raw = pktbuf + pad + dl_len;
   probe->pr_tx_rawlen = len - dl_len;

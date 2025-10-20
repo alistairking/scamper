@@ -1,7 +1,7 @@
 /*
  * scamper_host_cmd
  *
- * $Id: scamper_host_cmd.c,v 1.19 2025/08/04 00:00:27 mjl Exp $
+ * $Id: scamper_host_cmd.c,v 1.21 2025/10/02 06:47:06 mjl Exp $
  *
  * Copyright (C) 2018-2025 Matthew Luckie
  *
@@ -87,6 +87,44 @@ static scamper_addr_t *host_arg_server(const char *param,
 
   return addr;
 }
+
+static int host_arg_qname(char *qname)
+{
+  char *ptr = qname;
+
+  while(*ptr != '\0')
+    {
+      if(*ptr == '.' && ptr > qname && *(ptr-1) == '.')
+	return -1;
+      ptr++;
+    }
+
+  if(ptr != qname && *(ptr-1) == '.')
+    *(ptr-1) = '\0';
+
+  return 0;
+}
+
+#ifndef DISABLE_SCAMPER_DNP
+static int host_canprobe(scamper_addr_t *dst)
+{
+  if(scamper_dnp_canprobe(dst) != 0)
+    return 1;
+
+#ifdef BUILDING_SCAMPER
+  /*
+   * if the DNP list covers the resolver, check if the resolver is the
+   * default nameserver.  if it is, we allow it as an exception, as
+   * the goal of the DNP list is to prevent arbitrary probing of
+   * systems in specified prefixes.
+   */
+  if(default_ns != NULL && scamper_addr_cmp(dst, default_ns) == 0)
+    return 1;
+#endif
+
+  return 0;
+}
+#endif
 
 static int host_arg_param_validate(int optid, char *param, long long *out,
 				   char *errbuf, size_t errlen)
@@ -393,6 +431,12 @@ void *scamper_do_host_alloc(char *str, char *errbuf, size_t errlen)
       name_addr = NULL;
     }
 
+  if(qtype != SCAMPER_HOST_TYPE_PTR && host_arg_qname(name) != 0)
+    {
+      snprintf(errbuf, errlen, "invalid name");
+      goto err;
+    }
+
   if((host = scamper_host_alloc()) == NULL ||
      (host->qname = strdup(name)) == NULL)
     {
@@ -431,7 +475,7 @@ void *scamper_do_host_alloc(char *str, char *errbuf, size_t errlen)
 #endif
 
 #ifndef DISABLE_SCAMPER_DNP
-  if(scamper_dnp_canprobe(host->dst) == 0)
+  if(host_canprobe(host->dst) == 0)
     {
       snprintf(errbuf, errlen, "destination in do-not-probe list");
       goto err;

@@ -1,7 +1,7 @@
 /*
  * scamper_tracelb.c
  *
- * $Id: scamper_tracelb.c,v 1.82 2025/02/11 14:31:43 mjl Exp $
+ * $Id: scamper_tracelb.c,v 1.83 2025/10/14 00:14:42 mjl Exp $
  *
  * Copyright (C) 2008-2010 The University of Waikato
  * Copyright (C) 2012      The Regents of the University of California
@@ -484,9 +484,9 @@ void scamper_tracelb_free(scamper_tracelb_t *trace)
   if(trace->dst != NULL) scamper_addr_free(trace->dst);
   if(trace->src != NULL) scamper_addr_free(trace->src);
   if(trace->rtr != NULL) scamper_addr_free(trace->rtr);
-
   if(trace->cycle != NULL) scamper_cycle_free(trace->cycle);
   if(trace->list != NULL) scamper_list_free(trace->list);
+  if(trace->errmsg != NULL) free(trace->errmsg);
 
   free(trace);
   return;

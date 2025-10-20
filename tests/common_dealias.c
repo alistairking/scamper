@@ -1,7 +1,7 @@
 /*
  * common_dealias : common functions for unit testing dealias
  *
- * $Id: common_dealias.c,v 1.3 2025/05/05 05:20:20 mjl Exp $
+ * $Id: common_dealias.c,v 1.5 2025/10/19 20:49:19 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -194,6 +194,7 @@ int dealias_ok(const scamper_dealias_t *in, const scamper_dealias_t *out)
      timeval_cmp(&in->start, &out->start) != 0 ||
      in->method != out->method ||
      in->result != out->result ||
+     str_ok(in->errmsg, out->errmsg) != 0 ||
      ptr_ok(in->data, out->data) != 0 ||
      ptr_ok(in->probes, out->probes) != 0 ||
      in->probec != out->probec)
@@ -474,10 +475,36 @@ static scamper_dealias_t *dealias_3(void)
   return NULL;
 }
 
+static scamper_dealias_t *dealias_4(void)
+{
+  scamper_dealias_t *dealias = NULL;
+  scamper_dealias_mercator_t *mc;
+
+  if((dealias = scamper_dealias_alloc()) == NULL ||
+     (mc = mercator_add(dealias)) == NULL ||
+     (mc->probedef = probedef_alloc("192.0.2.1", "192.0.2.2", 0,
+				    SCAMPER_DEALIAS_PROBEDEF_METHOD_UDP,
+				    255, 72)) == NULL)
+    goto err;
+
+  dealias->userid = 1234567890;
+  dealias->start.tv_sec = 1724828853;
+  dealias->start.tv_usec = 123456;
+  dealias->result = SCAMPER_DEALIAS_RESULT_ERROR;
+  dealias->errmsg = strdup("hello world");
+
+  return dealias;
+
+ err:
+  if(dealias != NULL) scamper_dealias_free(dealias);
+  return NULL;
+}
+
 static scamper_dealias_makefunc_t makers[] = {
   dealias_1,
   dealias_2,
   dealias_3,
+  dealias_4,
 };
 
 scamper_dealias_t *dealias_makers(size_t i)

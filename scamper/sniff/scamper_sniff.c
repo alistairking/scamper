@@ -1,7 +1,7 @@
 /*
  * scamper_sniff.c
  *
- * $Id: scamper_sniff.c,v 1.8 2025/04/22 01:41:43 mjl Exp $
+ * $Id: scamper_sniff.c,v 1.9 2025/10/19 21:53:46 mjl Exp $
  *
  * Copyright (C) 2011 The University of Waikato
  * Author: Matthew Luckie
@@ -32,6 +32,23 @@
 #include "scamper_sniff_int.h"
 
 #include "utils.h"
+
+char *scamper_sniff_stop_tostr(const scamper_sniff_t *sniff,
+			       char *buf, size_t len)
+{
+  static const char *r[] = {
+    "none",
+    "error",
+    "limit-time",
+    "limit-pktc",
+    "halted",
+  };
+  if(sniff->stop_reason >= sizeof(r) / sizeof(char *))
+    snprintf(buf, len, "%d", sniff->stop_reason);
+  else
+    snprintf(buf, len, "%s", r[sniff->stop_reason]);
+  return buf;
+}
 
 scamper_sniff_pkt_t *scamper_sniff_pkt_alloc(uint8_t *data, uint16_t len,
 					     struct timeval *tv)
@@ -90,6 +107,8 @@ void scamper_sniff_free(scamper_sniff_t *sniff)
     scamper_cycle_free(sniff->cycle);
   if(sniff->src != NULL)
     scamper_addr_free(sniff->src);
+  if(sniff->errmsg != NULL)
+    free(sniff->errmsg);
 
   if(sniff->pkts != NULL)
     {

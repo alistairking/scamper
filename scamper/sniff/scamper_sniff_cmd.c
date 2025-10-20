@@ -1,7 +1,7 @@
 /*
  * scamper_sniff_do.c
  *
- * $Id: scamper_sniff_cmd.c,v 1.6 2024/05/02 02:33:38 mjl Exp $
+ * $Id: scamper_sniff_cmd.c,v 1.7 2025/10/19 21:22:10 mjl Exp $
  *
  * Copyright (C) 2011      The University of Waikato
  * Copyright (C) 2022-2023 Matthew Luckie
@@ -220,7 +220,8 @@ void *scamper_do_sniff_alloc(char *str, char *errbuf, size_t errlen)
       goto err;
     }
 
-  if((sniff->src = scamper_addrcache_resolve(addrcache,AF_UNSPEC,src)) == NULL)
+  if((sniff->src = scamper_addrcache_resolve_unspec(addrcache,src)) == NULL ||
+     SCAMPER_ADDR_TYPE_IS_IP(sniff->src) == 0)
     {
       snprintf(errbuf, errlen, "invalid source address");
       goto err;

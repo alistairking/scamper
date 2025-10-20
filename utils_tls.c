@@ -1,7 +1,7 @@
 /*
  * utils_tls : functions for TLS
  *
- * $Id: utils_tls.c,v 1.8 2025/02/07 16:37:20 mjl Exp $
+ * $Id: utils_tls.c,v 1.9 2025/08/18 21:35:35 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -30,6 +30,26 @@
 #include "internal.h"
 
 #include "utils_tls.h"
+#include "utils.h"
+
+char *tls_errstr(char *sslbuf, size_t len)
+{
+  unsigned long ecode;
+  size_t off = 0;
+  char buf[256];
+
+  assert(sslbuf != NULL);
+  assert(len > 0);
+
+  sslbuf[0] = '\0';
+  while((ecode = ERR_get_error()) != 0)
+    {
+      ERR_error_string_n(ecode, buf, sizeof(buf));
+      string_concat2(sslbuf, len, &off, off > 0 ? " " : "", buf);
+    }
+
+  return sslbuf;
+}
 
 int tls_want_read(BIO *wbio, void *param, char *errbuf, size_t errlen,
 		  int (*cb)(void *param, uint8_t *buf, int len))

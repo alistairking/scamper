@@ -1,12 +1,12 @@
 /*
  * sc_minrtt: dump RTT values by node for use by sc_hoiho
  *
- * $Id: sc_minrtt.c,v 1.24 2025/06/03 02:12:54 mjl Exp $
+ * $Id: sc_minrtt.c,v 1.29 2025/09/17 00:32:56 mjl Exp $
  *
  *         Matthew Luckie
  *         mjl@luckie.org.nz
  *
- * Copyright (C) 2023-2024 The Regents of the University of California
+ * Copyright (C) 2023-2025 The Regents of the University of California
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -54,6 +54,7 @@
 #include "scamper_file.h"
 #include "mjl_list.h"
 #include "mjl_splaytree.h"
+#include "mjl_prefixtree.h"
 #include "mjl_threadpool.h"
 #include "mjl_heap.h"
 #include "utils.h"
@@ -68,9 +69,10 @@
 #define OPT_VPLOCFILE   0x0080
 #define OPT_RTRFILE     0x0100
 #define OPT_BATCHC      0x0200
+#define OPT_ANYCASTFILE 0x0400
 
 #ifdef PACKAGE_VERSION
-#define OPT_VERSION     0x0400
+#define OPT_VERSION     0x8000
 #endif
 
 /* this is the same order that sc_pinger uses */
@@ -175,6 +177,8 @@ static splaytree_t    *dst_tree = NULL;
 static slist_t        *dst_list = NULL;
 static splaytree_t    *vp_tree  = NULL;
 static sc_vp_t       **vp_array = NULL;
+static prefixtree_t   *anycast4 = NULL;
+static prefixtree_t   *anycast6 = NULL;
 static int             vp_c     = 0;
 static const char     *dbfile   = NULL;
 static sqlite3        *db       = NULL;
@@ -185,6 +189,7 @@ static threadpool_t   *tp       = NULL;
 static long            threadc  = -1;
 static long            batchc   = -1;
 static const char     *vplocfile = NULL;
+static const char     *anycastfile = NULL;
 static int             proc_x   = 0;
 static const char     *rtrfile  = NULL;
 static int             import_ok = 1;
@@ -231,15 +236,15 @@ static void usage(uint32_t opt_mask)
 #endif
   
   fprintf(stderr,
-    "usage: sc_minrtt [-c] [-d dbfile]\n"
+    "usage: sc_minrtt [-c] [-d db-file]\n"
     "\n");
   fprintf(stderr,
-    "       sc_minrtt [-i] [-b batchc] [-d dbfile] [-R regex]%s\n"
+    "       sc_minrtt [-i] [-b batchc] [-d db-file] [-R regex]%s\n"
     "                 in1.warts .. inN.warts\n"
     "\n", t);
   fprintf(stderr,
-    "       sc_minrtt [-p mode] [-d dbfile] [-r rtrfile]%s\n"
-    "                 [-V vploc]\n"
+    "       sc_minrtt [-p process-mode] [-a anycast-file] [-d db-file]\n"
+    "                 [-r router-file]%s [-V vploc-file]\n"
     "\n", t);
 
   if(opt_mask == 0)
@@ -260,7 +265,7 @@ static int check_options(int argc, char *argv[])
   char *opt_threadc = NULL;
 #endif
 
-  string_concat(opts, sizeof(opts), &off, "?b:cd:ip:r:R:V:");
+  string_concat(opts, sizeof(opts), &off, "?a:b:cd:ip:r:R:V:");
 #ifdef HAVE_PTHREAD
   string_concat(opts, sizeof(opts), &off, "t:");
 #endif
@@ -272,6 +277,11 @@ static int check_options(int argc, char *argv[])
     {
       switch(ch)
 	{
+	case 'a':
+	  options |= OPT_ANYCASTFILE;
+	  anycastfile = optarg;
+	  break;
+
 	case 'b':
 	  options |= OPT_BATCHC;
 	  opt_batchc = optarg;
@@ -699,6 +709,19 @@ static void sc_dst_free(sc_dst_t *dst)
   return;
 }
 
+static int sc_sample_conflict(const sc_sample_t *s1, const sc_sample_t *s2)
+{
+  uint32_t rtt;
+  double dist;
+
+  dist = vp_dist(s1->vp, s2->vp);
+  rtt = dist2rtt(dist);
+  if(UINT32_MAX - s1->rtt >= s2->rtt && s1->rtt + s2->rtt < rtt)
+    return 1;
+
+  return 0;
+}
+
 static void sc_sample_free(sc_sample_t *sample)
 {
   if(sample->addr != NULL) scamper_addr_free(sample->addr);
@@ -961,7 +984,7 @@ static int sc_rxsec_add(splaytree_t **trees, sc_sample_t *sample)
   return 0;
 }
 
-slist_t *do_rtrfile_read(void)
+static slist_t *do_rtrfile_read(void)
 {
   sc_routerload_t rl;
 
@@ -984,6 +1007,82 @@ slist_t *do_rtrfile_read(void)
   if(rl.routers != NULL)
     slist_free_cb(rl.routers, (slist_free_t)sc_router_free);
   return NULL;
+}
+
+static int anycastfile_line(char *str, void *param)
+{
+  static int line = 0;
+  struct sockaddr_storage sas;
+  struct sockaddr *sa = (struct sockaddr *)&sas;
+  prefix4_t *pf4 = NULL;
+  prefix6_t *pf6 = NULL;
+  void *va;
+  int plen;
+
+  line++;
+
+  if(str[0] == '#' || str[0] == '\0')
+    return 0;
+
+  if(prefix_to_sockaddr(str, sa) != 0)
+    goto err;
+
+  if(sa->sa_family == AF_INET)
+    {
+      va = (uint8_t *)(&((struct sockaddr_in *)sa)->sin_addr);
+      plen = ((struct sockaddr_in *)sa)->sin_port;
+      if((anycast4 == NULL && (anycast4 = prefixtree_alloc4()) == NULL) ||
+	 (pf4 = prefix4_alloc(va, plen, NULL)) == NULL ||
+	 prefixtree_insert4(anycast4, pf4) == NULL)
+	goto err;
+    }
+  else if(sa->sa_family == AF_INET6)
+    {
+      va = (uint8_t *)(&((struct sockaddr_in6 *)sa)->sin6_addr);
+      plen = ((struct sockaddr_in6 *)sa)->sin6_port;
+      if((anycast6 == NULL && (anycast6 = prefixtree_alloc6()) == NULL) ||
+	 (pf6 = prefix6_alloc(va, plen, NULL)) == NULL ||
+	 prefixtree_insert6(anycast6, pf6) == NULL)
+	goto err;
+    }
+  else goto err;
+
+  return 0;
+
+ err:
+  fprintf(stderr, "bad prefix at line %d of %s\n", line, anycastfile);
+  if(pf4 != NULL) prefix4_free(pf4);
+  if(pf6 != NULL) prefix6_free(pf6);
+  return -1;
+}
+
+static int do_anycast_covered(const scamper_addr_t *sa)
+{
+  if(scamper_addr_isipv4(sa))
+    {
+      if(anycast4 == NULL ||
+	 prefixtree_find_ip4(anycast4, scamper_addr_addr_get(sa)) == NULL)
+	return 0;
+      return 1;
+    }
+  else if(scamper_addr_isipv6(sa))
+    {
+      if(anycast6 == NULL ||
+	 prefixtree_find_ip6(anycast6, scamper_addr_addr_get(sa)) == NULL)
+	return 0;
+      return 1;
+    }
+
+  return 0;
+}
+
+static int do_anycastfile_read(void)
+{
+  if(anycastfile == NULL)
+    return 0;
+  if(file_lines(anycastfile, anycastfile_line, NULL) != 0)
+    return -1;
+  return 0;
 }
 
 static void do_stmt_final(void)
@@ -2466,9 +2565,8 @@ static void do_process_1_dst(sc_dst_t *dst)
   slist_t *samples = NULL;
   slist_node_t *sn1, *sn2;
   sc_sample_t *s1, *s2;
-  double dist;
-  uint16_t rtt;
   char buf[256];
+  int conflicting = 0;
 
 #ifdef HAVE_PTHREAD
   pthread_mutex_lock(&db_mutex);
@@ -2495,10 +2593,7 @@ static void do_process_1_dst(sc_dst_t *dst)
 	      s2 = slist_node_item(sn2);
 	      if(s2->skip != 0)
 		continue;
-
-	      dist = vp_dist(s1->vp, s2->vp);
-	      rtt = dist2rtt(dist);
-	      if(s1->rtt + s2->rtt >= rtt)
+	      if(sc_sample_conflict(s1, s2) == 0)
 		continue;
 	      s1->bad++;
 	      s2->bad++;
@@ -2515,12 +2610,20 @@ static void do_process_1_dst(sc_dst_t *dst)
 	  if(s2->bad < s1->bad)
 	    break;
 	  s2->skip = 1;
+	  conflicting = 1;
 	}
       /* if all samples conflict, then we're done */
       if(sn2 == NULL)
 	break;
       slist_foreach(samples, (slist_foreach_t)sc_sample_bad_zero, NULL);
     }
+
+  /*
+   * if there are conflicting samples and the address believed to be
+   * anycast, then do not count this destination.
+   */
+  if(conflicting && do_anycast_covered(dst->addr))
+    goto done;
 
   slist_qsort(samples, (slist_cmp_t)sc_sample_bad_cmp);
 
@@ -2584,6 +2687,7 @@ static int do_process_1(void)
      do_vps_array() != 0 ||
      do_runlens_read() != 0 ||
      (dst_list = slist_alloc()) == NULL || do_dsts_read() != 0 ||
+     do_anycastfile_read() != 0 ||
      do_samples_create_index() != 0)
     goto done;
 
@@ -2689,6 +2793,23 @@ static int do_process_1(void)
   return rc;
 }
 
+static int do_process_2_conflicting(slist_t *samples)
+{
+  slist_node_t *sn1, *sn2;
+  sc_sample_t *s1, *s2;
+
+  sn1 = slist_head_node(samples);
+  while((s1 = slist_node_iter(&sn1)) != NULL)
+    {
+      sn2 = sn1;
+      while((s2 = slist_node_iter(&sn2)) != NULL)
+	if(sc_sample_conflict(s1, s2) != 0)
+	  return 1;
+    }
+
+  return 0;
+}
+
 static int do_process_2_prune(slist_t *pruned, slist_t *samples)
 {
   slist_node_t *sn, *sn2;
@@ -2739,6 +2860,7 @@ static int do_process_2(void)
      do_vps_read() != 0 || file_lines(vplocfile, vploc_file_line, NULL) != 0 ||
      do_vps_array() != 0 ||
      do_runlens_read() != 0 ||
+     do_anycastfile_read() != 0 ||
      do_samples_create_index() != 0 ||
      (pruned = slist_alloc()) == NULL)
     goto done;
@@ -2771,8 +2893,14 @@ static int do_process_2(void)
 		continue;
 	      if((samples = do_read_dst_samples(dst)) == NULL)
 		goto done;
-	      slist_concat(rtr_samples, samples);
-	      slist_free(samples); samples = NULL;
+
+	      if(do_anycast_covered(dst->addr) == 0 ||
+		 do_process_2_conflicting(samples) == 0)
+		{
+		  slist_concat(rtr_samples, samples);
+		}
+	      slist_free_cb(samples, (slist_free_t)sc_sample_free);
+	      samples = NULL;
 	    }
 
 	  if(do_process_2_prune(pruned, rtr_samples) != 0)
@@ -2793,14 +2921,20 @@ static int do_process_2(void)
       for(sn=slist_head_node(dst_list); sn != NULL; sn=slist_node_next(sn))
 	{
 	  dst = slist_node_item(sn);
-	  if((samples = do_read_dst_samples(dst)) == NULL ||
-	     do_process_2_prune(pruned, samples) != 0)
+	  if((samples = do_read_dst_samples(dst)) == NULL)
 	    goto done;
 
-	  scamper_addr_tostr(dst->addr, buf, sizeof(buf));
-	  while((sample = slist_head_pop(pruned)) != NULL)
-	    printf("%s %s %s %d\n", buf, sample->vp->name,
-		   method_str(sample->method), (sample->rtt / 1000) + 1);
+	  if(do_anycast_covered(dst->addr) == 0 ||
+	     do_process_2_conflicting(samples) == 0)
+	    {
+	      if(do_process_2_prune(pruned, samples) != 0)
+		goto done;
+
+	      scamper_addr_tostr(dst->addr, buf, sizeof(buf));
+	      while((sample = slist_head_pop(pruned)) != NULL)
+		printf("%s %s %s %d\n", buf, sample->vp->name,
+		       method_str(sample->method), (sample->rtt / 1000) + 1);
+	    }
 
 	  slist_free_cb(samples, (slist_free_t)sc_sample_free);
 	  samples = NULL;
@@ -2843,6 +2977,18 @@ static void cleanup(void)
     {
       free(vp_array);
       vp_array = NULL;
+    }
+
+  if(anycast4 != NULL)
+    {
+      prefixtree_free_cb(anycast4, (prefix_free_t)prefix4_free);
+      anycast4 = NULL;
+    }
+
+  if(anycast6 != NULL)
+    {
+      prefixtree_free_cb(anycast6, (prefix_free_t)prefix6_free);
+      anycast6 = NULL;
     }
 
 #ifdef HAVE_PTHREAD

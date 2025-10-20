@@ -1,7 +1,7 @@
 /*
  * scamper_host
  *
- * $Id: scamper_host.c,v 1.28 2025/02/23 05:38:14 mjl Exp $
+ * $Id: scamper_host.c,v 1.29 2025/10/12 21:20:47 mjl Exp $
  *
  * Copyright (C) 2018-2025 Matthew Luckie
  *
@@ -624,6 +624,7 @@ void scamper_host_free(scamper_host_t *host)
   if(host->cycle != NULL) scamper_cycle_free(host->cycle);
   if(host->list != NULL) scamper_list_free(host->list);
   if(host->ecs != NULL) free(host->ecs);
+  if(host->errmsg != NULL) free(host->errmsg);
 
   free(host);
   return;

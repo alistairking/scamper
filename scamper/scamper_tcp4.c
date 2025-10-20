@@ -1,7 +1,7 @@
 /*
  * scamper_tcp4.c
  *
- * $Id: scamper_tcp4.c,v 1.67 2024/08/13 05:14:13 mjl Exp $
+ * $Id: scamper_tcp4.c,v 1.71 2025/10/15 23:42:35 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -273,7 +273,7 @@ int scamper_tcp4_build(scamper_probe_t *probe, uint8_t *buf, size_t *len)
   return rc;
 }
 
-int scamper_tcp4_probe(scamper_probe_t *pr)
+int scamper_tcp4_probe(scamper_probe_t *pr, scamper_err_t *error)
 {
   struct sockaddr_in sin4;
   int                i;
@@ -291,7 +291,8 @@ int scamper_tcp4_probe(scamper_probe_t *pr)
   assert(pr->pr_len > 0 || pr->pr_data == NULL);
 
   /* compute length, for sake of readability */
-  scamper_ip4_hlen(pr, &ip4hlen);
+  if((ip4hlen = scamper_ip4_hlen(pr, error)) == 0)
+    return -1;
   tcphlen = scamper_tcp4_hlen(pr);
   len = ip4hlen + tcphlen + pr->pr_len;
 
@@ -299,7 +300,7 @@ int scamper_tcp4_probe(scamper_probe_t *pr)
     {
       if(realloc_wrap((void **)&pktbuf, len) != 0)
 	{
-	  printerror(__func__, "could not realloc");
+	  scamper_err_make(error, errno, "tcp4_probe could not realloc");
 	  return -1;
 	}
       pktbuf_len = len;
@@ -327,18 +328,19 @@ int scamper_tcp4_probe(scamper_probe_t *pr)
   if(i < 0)
     {
       /* error condition, could not send the packet at all */
-      pr->pr_errno = errno;
-      printerror(__func__, "could not send to %s (%d ttl, %d dport, %d len)",
-		 scamper_addr_tostr(pr->pr_ip_dst, addr, sizeof(addr)),
-		 pr->pr_ip_ttl, pr->pr_tcp_dport, (int)len);
+      scamper_err_make(error, errno,
+		       "tcp4_probe could not send to %s (%d ttl, %d dport, %d len)",
+		       scamper_addr_tostr(pr->pr_ip_dst, addr, sizeof(addr)),
+		       pr->pr_ip_ttl, pr->pr_tcp_dport, (int)len);
       return -1;
     }
   else if((size_t)i != len)
     {
       /* error condition, sent a portion of the probe */
-      printerror_msg(__func__, "sent %d bytes of %d byte packet to %s",
-		     i, (int)len,
-		     scamper_addr_tostr(pr->pr_ip_dst, addr, sizeof(addr)));
+      scamper_err_make(error, 0,
+		       "tcp4_probe sent %d bytes of %d byte packet to %s",
+		       i, (int)len,
+		       scamper_addr_tostr(pr->pr_ip_dst, addr, sizeof(addr)));
       return -1;
     }
 
@@ -357,9 +359,9 @@ void scamper_tcp4_cleanup()
 }
 
 #ifndef _WIN32 /* SOCKET vs int on windows */
-int scamper_tcp4_open(const void *addr, int sport)
+int scamper_tcp4_open(const void *addr, int sport, scamper_err_t *error)
 #else
-SOCKET scamper_tcp4_open(const void *addr, int sport)
+SOCKET scamper_tcp4_open(const void *addr, int sport, scamper_err_t *error)
 #endif
 {
   struct sockaddr_in sin4;
@@ -374,29 +376,29 @@ SOCKET scamper_tcp4_open(const void *addr, int sport)
   fd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
   if(socket_isinvalid(fd))
     {
-      printerror(__func__, "could not open socket");
+      scamper_err_make(error, errno, "could not open tcp4 socket");
       goto err;
     }
 
   if(setsockopt_int(fd, SOL_SOCKET, SO_REUSEADDR, 1) != 0)
     {
-      printerror(__func__, "could not set SO_REUSEADDR");
+      scamper_err_make(error, errno, "could not set SO_REUSEADDR on tcp4");
       goto err;
     }
 
   if(setsockopt_raise(fd, SOL_SOCKET, SO_SNDBUF, 65535 + 128) != 0)
     {
-      printerror(__func__, "could not set SO_SNDBUF");
-      return -1;
+      scamper_err_make(error, errno, "could not raise SO_SNDBUF on tcp4");
+      goto err;
     }
 
   sockaddr_compose((struct sockaddr *)&sin4, AF_INET, addr, sport);
   if(bind(fd, (struct sockaddr *)&sin4, sizeof(sin4)) == -1)
     {
       if(addr == NULL || addr_tostr(AF_INET, addr, tmp, sizeof(tmp)) == NULL)
-	printerror(__func__, "could not bind port %d", sport);
+	scamper_err_make(error, errno, "could not bind tcp4 port %d", sport);
       else
-	printerror(__func__, "could not bind %s:%d", tmp, sport);
+	scamper_err_make(error, errno, "could not bind tcp4 %s:%d", tmp, sport);
       goto err;
     }
 

@@ -1,7 +1,7 @@
 /*
  * scamper_neighbourdisc_warts.h
  *
- * $Id: scamper_neighbourdisc_warts.c,v 1.16 2023/12/24 00:19:25 mjl Exp $
+ * $Id: scamper_neighbourdisc_warts.c,v 1.18 2025/10/19 20:13:58 mjl Exp $
  *
  * Copyright (C) 2009-2023 Matthew Luckie
  *
@@ -52,6 +52,7 @@
 #define WARTS_NEIGHBOURDISC_DST_IP   13
 #define WARTS_NEIGHBOURDISC_DST_MAC  14
 #define WARTS_NEIGHBOURDISC_PROBEC   15
+#define WARTS_NEIGHBOURDISC_ERRMSG   16
 
 static const warts_var_t neighbourdisc_vars[] =
 {
@@ -70,6 +71,7 @@ static const warts_var_t neighbourdisc_vars[] =
   {WARTS_NEIGHBOURDISC_DST_IP,   -1},
   {WARTS_NEIGHBOURDISC_DST_MAC,  -1},
   {WARTS_NEIGHBOURDISC_PROBEC,    2},
+  {WARTS_NEIGHBOURDISC_ERRMSG,   -1},
 };
 #define neighbourdisc_vars_mfb WARTS_VAR_MFB(neighbourdisc_vars)
 
@@ -315,42 +317,47 @@ static int warts_neighbourdisc_params(const scamper_neighbourdisc_t *nd,
 	 (var->id == WARTS_NEIGHBOURDISC_SRC_MAC && nd->src_mac == NULL) ||
 	 (var->id == WARTS_NEIGHBOURDISC_DST_IP && nd->dst_ip == NULL) ||
 	 (var->id == WARTS_NEIGHBOURDISC_DST_MAC && nd->dst_mac == NULL) ||
-	 (var->id == WARTS_NEIGHBOURDISC_PROBEC && nd->probec == 0))
+	 (var->id == WARTS_NEIGHBOURDISC_PROBEC && nd->probec == 0) ||
+	 (var->id == WARTS_NEIGHBOURDISC_ERRMSG && nd->errmsg == NULL))
 	continue;
+
       flag_set(flags, var->id, &max_id);
 
-      if(var->size < 0)
+      if(var->id == WARTS_NEIGHBOURDISC_SRC_IP)
 	{
-	  if(var->id == WARTS_NEIGHBOURDISC_SRC_IP)
-	    {
-	      if(warts_addr_size(table, nd->src_ip, params_len) != 0)
-		return -1;
-	    }
-	  else if(var->id == WARTS_NEIGHBOURDISC_SRC_MAC)
-	    {
-	      if(warts_addr_size(table, nd->src_mac, params_len) != 0)
-		return -1;
-	    }
-	  else if(var->id == WARTS_NEIGHBOURDISC_DST_IP)
-	    {
-	      if(warts_addr_size(table, nd->dst_ip, params_len) != 0)
-		return -1;
-	    }
-	  else if(var->id == WARTS_NEIGHBOURDISC_DST_MAC)
-	    {
-	      if(warts_addr_size(table, nd->dst_mac, params_len) != 0)
-		return -1;
-	    }
-	  else if(var->id == WARTS_NEIGHBOURDISC_IFNAME)
-	    {
-	      if(warts_str_size(nd->ifname, params_len) != 0)
-		return -1;
-	    }
-	  continue;
+	  if(warts_addr_size(table, nd->src_ip, params_len) != 0)
+	    return -1;
 	}
-
-      assert(var->size >= 0);
-      *params_len += var->size;
+      else if(var->id == WARTS_NEIGHBOURDISC_SRC_MAC)
+	{
+	  if(warts_addr_size(table, nd->src_mac, params_len) != 0)
+	    return -1;
+	}
+      else if(var->id == WARTS_NEIGHBOURDISC_DST_IP)
+	{
+	  if(warts_addr_size(table, nd->dst_ip, params_len) != 0)
+	    return -1;
+	}
+      else if(var->id == WARTS_NEIGHBOURDISC_DST_MAC)
+	{
+	  if(warts_addr_size(table, nd->dst_mac, params_len) != 0)
+	    return -1;
+	}
+      else if(var->id == WARTS_NEIGHBOURDISC_IFNAME)
+	{
+	  if(warts_str_size(nd->ifname, params_len) != 0)
+	    return -1;
+	}
+      else if(var->id == WARTS_NEIGHBOURDISC_ERRMSG)
+	{
+	  if(warts_str_size(nd->errmsg, params_len) != 0)
+	    return -1;
+	}
+      else
+	{
+	  assert(var->size >= 0);
+	  *params_len += var->size;
+	}
     }
 
   *flags_len = fold_flags(flags, max_id);
@@ -384,6 +391,7 @@ static int warts_neighbourdisc_params_write(const scamper_neighbourdisc_t *nd,
     {nd->dst_ip,    (wpw_t)insert_addr,    table},
     {nd->dst_mac,   (wpw_t)insert_addr,    table},
     {&nd->probec,   (wpw_t)insert_uint16,  table},
+    {nd->errmsg,    (wpw_t)insert_string,  NULL},
   };
   const int handler_cnt = sizeof(handlers)/sizeof(warts_param_writer_t);
 
@@ -420,6 +428,7 @@ static int warts_neighbourdisc_params_read(scamper_neighbourdisc_t *nd,
     {&nd->dst_ip,   (wpr_t)extract_addr,    table},
     {&nd->dst_mac,  (wpr_t)extract_addr,    table},
     {&nd->probec,   (wpr_t)extract_uint16,  NULL},
+    {&nd->errmsg,   (wpr_t)extract_string,  NULL},
   };
   const int handler_cnt = sizeof(handlers) / sizeof(warts_param_reader_t);
   int rc;
@@ -427,8 +436,6 @@ static int warts_neighbourdisc_params_read(scamper_neighbourdisc_t *nd,
   if((rc = warts_params_read(buf, off, len, handlers, handler_cnt)) != 0)
     return rc;
 
-  if(nd->src_mac == NULL || nd->dst_ip == NULL)
-    return -1;
   nd->wait_timeout.tv_sec = wait / 1000;
   nd->wait_timeout.tv_usec = (wait % 1000) * 1000;
 

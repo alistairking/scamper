@@ -1,7 +1,7 @@
 /*
  * scamper_sniff.c
  *
- * $Id: scamper_sniff_lib.c,v 1.6 2024/01/02 17:51:46 mjl Exp $
+ * $Id: scamper_sniff_lib.c,v 1.7 2025/10/19 21:53:46 mjl Exp $
  *
  * Copyright (C) 2023 Matthew Luckie
  * Author: Matthew Luckie
@@ -79,6 +79,11 @@ scamper_addr_t *scamper_sniff_src_get(const scamper_sniff_t *sniff)
 uint16_t scamper_sniff_icmpid_get(const scamper_sniff_t *sniff)
 {
   return sniff->icmpid;
+}
+
+const char *scamper_sniff_errmsg_get(const scamper_sniff_t *sniff)
+{
+  return sniff->errmsg;
 }
 
 scamper_sniff_pkt_t *scamper_sniff_pkt_get(const scamper_sniff_t *sniff,

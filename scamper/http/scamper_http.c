@@ -1,7 +1,7 @@
 /*
  * scamper_http.c
  *
- * $Id: scamper_http.c,v 1.3 2023/11/29 23:48:13 mjl Exp $
+ * $Id: scamper_http.c,v 1.4 2025/10/12 21:21:29 mjl Exp $
  *
  * Copyright (C) 2023 The Regents of the University of California
  *
@@ -64,6 +64,7 @@ void scamper_http_free(scamper_http_t *http)
   if(http->dst != NULL) scamper_addr_free(http->dst);
   if(http->host != NULL) free(http->host);
   if(http->file != NULL) free(http->file);
+  if(http->errmsg != NULL) free(http->errmsg);
   if(http->bufs != NULL)
     {
       for(i=0; i<http->bufc; i++)

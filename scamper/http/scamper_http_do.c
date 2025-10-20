@@ -1,7 +1,7 @@
 /*
  * scamper_http_do.c
  *
- * $Id: scamper_http_do.c,v 1.24 2025/08/04 00:00:27 mjl Exp $
+ * $Id: scamper_http_do.c,v 1.26 2025/10/12 23:16:07 mjl Exp $
  *
  * Copyright (C) 2023-2024 The Regents of the University of California
  * Copyright (C) 2024-2025 Matthew Luckie
@@ -29,6 +29,7 @@
 #include "internal.h"
 
 #include "scamper.h"
+#include "scamper_debug.h"
 #include "scamper_config.h"
 #include "scamper_addr.h"
 #include "scamper_addr_int.h"
@@ -37,7 +38,6 @@
 #include "scamper_fds.h"
 #include "scamper_queue.h"
 #include "scamper_file.h"
-#include "scamper_debug.h"
 #include "scamper_writebuf.h"
 #include "scamper_http.h"
 #include "scamper_http_int.h"
@@ -113,28 +113,66 @@ static http_state_t *http_getstate(const scamper_task_t *task)
   return scamper_task_getstate(task);
 }
 
+static void http_stop_err(scamper_http_t *http, scamper_err_t *error)
+{
+  char errbuf[512];
+
+  if(printerror_would())
+    {
+      scamper_err_render(error, errbuf, sizeof(errbuf));
+      printerror_msg("http failed", "%s", errbuf);
+    }
+
+  if(http->stop == SCAMPER_HTTP_STOP_NONE)
+    {
+      http->stop = SCAMPER_HTTP_STOP_ERROR;
+      if(http->errmsg == NULL)
+	http->errmsg = strdup(errbuf);
+    }
+
+  return;
+}
+
 static void http_stop(scamper_task_t *task, uint8_t reason)
 {
   scamper_http_t *http = http_getdata(task);
   http_state_t *state = http_getstate(task);
   scamper_http_buf_t *htb;
+  scamper_err_t error;
   int i, bufc;
 
-  if(http->stop == SCAMPER_HTTP_STOP_NONE)
-    http->stop = reason;
+  SCAMPER_ERR_INIT(&error);
 
   if(state != NULL && http->bufc == 0)
     {
-      bufc = slist_count(state->htbs); i = 0;
-      if((http->bufs = malloc_zero(sizeof(scamper_http_buf_t *)*bufc)) != NULL)
+      bufc = slist_count(state->htbs);
+      if((http->bufs = malloc_zero(sizeof(scamper_http_buf_t *)*bufc)) == NULL)
 	{
-	  while((htb = slist_head_pop(state->htbs)) != NULL)
-	    http->bufs[i++] = htb;
-	  http->bufc = i;
+	  scamper_err_make(&error, errno, "could not alloc %d bufs", bufc);
+	  goto err;
 	}
+
+      i = 0;
+      while((htb = slist_head_pop(state->htbs)) != NULL)
+	http->bufs[i++] = htb;
+      http->bufc = i;
     }
 
+  if(http->stop == SCAMPER_HTTP_STOP_NONE)
+    http->stop = reason;
   scamper_task_queue_done(task);
+  return;
+
+ err:
+  http_stop_err(http, &error);
+  scamper_task_queue_done(task);
+  return;
+}
+
+static void http_handleerror(scamper_task_t *task, scamper_err_t *error)
+{
+  http_stop_err(http_getdata(task), error);
+  http_stop(task, SCAMPER_HTTP_STOP_ERROR);
   return;
 }
 
@@ -284,7 +322,7 @@ static int http_tls_want_read(http_state_t *state)
   return 0;
 }
 
-static int tls_handshake(scamper_task_t *task)
+static int tls_handshake(scamper_task_t *task, scamper_err_t *error)
 {
   scamper_http_t *http = http_getdata(task);
   http_state_t *state = http_getstate(task);
@@ -292,7 +330,10 @@ static int tls_handshake(scamper_task_t *task)
 
   if(tls_bio_alloc(default_tls_ctx, &state->ssl,
 		   &state->ssl_rbio, &state->ssl_wbio) != 0)
-    return -1;
+    {
+      scamper_err_make(error, 0, "could not alloc TLS BIOs");
+      return -1;
+    }
 
 #ifdef SSL_CTRL_SET_TLSEXT_HOSTNAME
   if(http->host != NULL) SSL_set_tlsext_host_name(state->ssl, http->host);
@@ -304,16 +345,23 @@ static int tls_handshake(scamper_task_t *task)
 
   if((rc = SSL_get_error(state->ssl, rc)) != SSL_ERROR_WANT_READ)
     {
-      scamper_debug(__func__, "SSL_do_handshake error %d", rc);
+      scamper_err_make(error, 0, "SSL_do_handshake error %d", rc);
       return -1;
     }
 
   state->mode = STATE_MODE_TLS_HS;
-  return http_tls_want_read(state);
+
+  if(http_tls_want_read(state) != 0)
+    {
+      scamper_err_make(error, 0, "could not process tls_want_read");
+      return -1;
+    }
+
+  return 0;
 }
 #endif /* HAVE_OPENSSL */
 
-static int http_read_sock(scamper_task_t *task)
+static int http_read_sock(scamper_task_t *task, scamper_err_t *error)
 {
   http_state_t *state = http_getstate(task);
   ssize_t rrc;
@@ -337,7 +385,7 @@ static int http_read_sock(scamper_task_t *task)
     {
       if(errno == EAGAIN || errno == EINTR)
 	return 1;
-      printerror(__func__, "could not recv from %d", fd);
+      scamper_err_make(error, errno, "could not recv from %d", fd);
       return -1;
     }
 
@@ -356,7 +404,10 @@ static int http_read_sock(scamper_task_t *task)
 	  gettimeofday_wrap(&tv);
 	  if(http_buf_add(state, SCAMPER_HTTP_BUF_DIR_RX,
 			  SCAMPER_HTTP_BUF_TYPE_TLS, &tv, buf, rrc) != 0)
-	    return -1;
+	    {
+	      scamper_err_make(error, errno, "could not add tls http buf");
+	      return -1;
+	    }
 
 	  http = http_getdata(task);
 
@@ -391,14 +442,20 @@ static int http_read_sock(scamper_task_t *task)
 	  while((ret = SSL_read(state->ssl, buf, sizeof(buf))) > 0)
 	    {
 	      if(http_read_payload(state, buf, (size_t)ret) != 0)
-		return -1;
+		{
+		  scamper_err_make(error, errno, "could not read payload");
+		  return -1;
+		}
 	    }
 	}
 
       if((ecode = SSL_get_error(state->ssl, ret)) == SSL_ERROR_WANT_READ)
 	{
 	  if(http_tls_want_read(state) < 0)
-	    return -1;
+	    {
+	      scamper_err_make(error, 0, "could not process tls_want_read");
+	      return -1;
+	    }
 	}
       else if(ecode == SSL_ERROR_ZERO_RETURN)
 	{
@@ -408,6 +465,8 @@ static int http_read_sock(scamper_task_t *task)
 	{
 	  printerror_ssl(__func__, "mode %s ecode %d",
 			 http_mode(state->mode), ecode);
+	  scamper_err_make(error, 0, "TLS error mode %s ecode %d",
+			   http_mode(state->mode), ecode);
 	  return -1;
 	}
 
@@ -416,7 +475,10 @@ static int http_read_sock(scamper_task_t *task)
 #endif
 
   if(http_read_payload(state, buf, (size_t)rrc) != 0)
-    return -1;
+    {
+      scamper_err_make(error, errno, "could not read payload");
+      return -1;
+    }
   return 1;
 }
 
@@ -437,7 +499,7 @@ static char *scamper_version(void)
   return out;
 }
 
-static int http_req(scamper_task_t *task)
+static int http_req(scamper_task_t *task, scamper_err_t *error)
 {
   scamper_http_t *http = http_getdata(task);
   http_state_t *state = http_getstate(task);
@@ -477,7 +539,10 @@ static int http_req(scamper_task_t *task)
     len += 13;
 
   if((buf = malloc(len)) == NULL)
-    goto done;
+    {
+      scamper_err_make(error, errno, "could not alloc request %d", (int)len);
+      goto done;
+    }
 
   /* form the headers */
   string_concat3(buf, len, &off, "GET ", http->file, " HTTP/1.1\r\n");
@@ -499,7 +564,10 @@ static int http_req(scamper_task_t *task)
   gettimeofday_wrap(&tv);
   if(http_buf_add(state, SCAMPER_HTTP_BUF_DIR_TX,
 		  SCAMPER_HTTP_BUF_TYPE_HDR, &tv, buf, len) != 0)
-    goto done;
+    {
+      scamper_err_make(error, errno, "could not add hdr http buf");
+      goto done;
+    }
 
   state->mode = STATE_MODE_REQ;
 
@@ -514,7 +582,10 @@ static int http_req(scamper_task_t *task)
 #endif
 
   if(scamper_writebuf_send(state->wb, buf, len-1) != 0)
-    goto done;
+    {
+      scamper_err_make(error, errno, "could not send %d bytes", (int)len-1);
+      goto done;
+    }
 
   rc = 0;
 
@@ -531,30 +602,29 @@ static void http_read(SOCKET fd, void *param)
 {
   scamper_task_t *task = param;
   http_state_t *state = http_getstate(task);
+  scamper_err_t error;
   socklen_t sl;
-  int rc, error;
+  int rc, ecode;
 
 #ifdef HAVE_OPENSSL
   int enter_mode = state->mode;
 #endif
 
+  SCAMPER_ERR_INIT(&error);
+
   /* if we get a read event during connect, then we could not connect */
   if(state->mode == STATE_MODE_CONNECT)
     {
-      sl = sizeof(error);
-      if(getsockopt(fd, SOL_SOCKET, SO_ERROR, &error, &sl) == 0)
-	scamper_debug(__func__, "could not connect: %s", strerror(error));
+      sl = sizeof(ecode);
+      if(getsockopt(fd, SOL_SOCKET, SO_ERROR, &ecode, &sl) == 0)
+	scamper_debug(__func__, "could not connect: %s", strerror(ecode));
       http_stop(task, SCAMPER_HTTP_STOP_NOCONN);
       state->mode = STATE_MODE_DONE;
       return;
     }
 
-  if((rc = http_read_sock(task)) < 0)
-    {
-      http_stop(task, SCAMPER_HTTP_STOP_ERROR);
-      state->mode = STATE_MODE_DONE;
-      return;
-    }
+  if((rc = http_read_sock(task, &error)) < 0)
+    goto err;
 
   if(rc == 0)
     {
@@ -566,14 +636,17 @@ static void http_read(SOCKET fd, void *param)
 
 #ifdef HAVE_OPENSSL
   if(state->ssl != NULL && enter_mode == STATE_MODE_TLS_HS &&
-     state->mode == STATE_MODE_TLS_EST)
-    {
-      http_req(task);
-    }
+     state->mode == STATE_MODE_TLS_EST && http_req(task, &error) != 0)
+    goto err;
 #endif
 
   http_queue(task);
   return;
+
+ err:
+  http_handleerror(task, &error);
+  state->mode = STATE_MODE_DONE;
+  return;  
 }
 
 #ifndef _WIN32 /* SOCKET vs int on windows */
@@ -585,7 +658,10 @@ static void http_write(SOCKET fd, void *param)
   scamper_task_t *task = param;
   scamper_http_t *http = http_getdata(task);
   http_state_t *state = http_getstate(task);
+  scamper_err_t error;
   struct timeval tv;
+
+  SCAMPER_ERR_INIT(&error);
 
   /* always pause -- call unpause from the probe function */
   scamper_fd_write_pause(state->fdn);
@@ -610,16 +686,16 @@ static void http_write(SOCKET fd, void *param)
    */
   if(scamper_writebuf_gtzero(state->wb) == 0)
     {
-      scamper_debug(__func__, "nothing in writebuf, mode %s",
-		    http_mode(state->mode));
+      scamper_err_make(&error, 0, "nothing in writebuf, mode %s",
+		       http_mode(state->mode));
       goto err;
     }
 
   /* write whatever we have */
   if(scamper_writebuf_write(fd, state->wb) != 0)
     {
-      scamper_debug(__func__, "could not write from writebuf, mode %s",
-		    http_mode(state->mode));
+      scamper_err_make(&error, errno, "could not write from writebuf, mode %s",
+		       http_mode(state->mode));
       goto err;
     }
 
@@ -627,11 +703,11 @@ static void http_write(SOCKET fd, void *param)
   return;
 
  err:
-  http_stop(task, SCAMPER_HTTP_STOP_ERROR);
+  http_handleerror(task, &error);
   return;
 }
 
-static int http_state_alloc(scamper_task_t *task)
+static int http_state_alloc(scamper_task_t *task, scamper_err_t *error)
 {
   scamper_http_t *http = http_getdata(task);
   http_state_t *state = NULL;
@@ -649,7 +725,7 @@ static int http_state_alloc(scamper_task_t *task)
 
   if((state = malloc_zero(sizeof(http_state_t))) == NULL)
     {
-      printerror(__func__, "could not alloc state");
+      scamper_err_make(error, errno, "could not alloc state");
       goto err;
     }
 
@@ -660,21 +736,21 @@ static int http_state_alloc(scamper_task_t *task)
   sa = (struct sockaddr *)&ss;
   if(sockaddr_compose(sa, af, http->dst->addr, http->dport) != 0)
     {
-      printerror(__func__, "could not compose sockaddr");
+      scamper_err_make(error, 0, "could not compose sockaddr");
       goto err;
     }
 
   fd = socket(af, SOCK_STREAM, IPPROTO_TCP);
   if(socket_isinvalid(fd))
     {
-      printerror(__func__, "could not allocate socket");
+      scamper_err_make(error, errno, "could not allocate socket");
       goto err;
     }
 
 #ifdef HAVE_FCNTL
   if(fcntl_set(fd, O_NONBLOCK) == -1)
     {
-      printerror(__func__, "could not set O_NONBLOCK");
+      scamper_err_make(error, errno, "could not set O_NONBLOCK");
       goto err;
     }
 #endif
@@ -682,13 +758,13 @@ static int http_state_alloc(scamper_task_t *task)
   sl = sockaddr_len(sa);
   if(connect(fd, sa, sl) != 0 && errno != EINPROGRESS)
     {
-      printerror(__func__, "could not connect");
+      scamper_err_make(error, errno, "could not connect");
       goto err;
     }
 
   if(getsockname(fd, sa, &sl) != 0)
     {
-      printerror(__func__, "could not getsockname");
+      scamper_err_make(error, errno, "could not getsockname");
       goto err;
     }
 
@@ -706,7 +782,7 @@ static int http_state_alloc(scamper_task_t *task)
     }
   else
     {
-      scamper_debug(__func__, "unknown af");
+      scamper_err_make(error, 0, "unknown af");
       goto err;
     }
 
@@ -714,13 +790,13 @@ static int http_state_alloc(scamper_task_t *task)
      (state->wb = scamper_writebuf_alloc()) == NULL ||
      (state->htbs = slist_alloc()) == NULL)
     {
-      scamper_debug(__func__, "allocs failed");
+      scamper_err_make(error, errno, "allocs failed");
       goto err;
     }
 
   if((state->fdn = scamper_fd_private(fd,task,http_read,http_write)) == NULL)
     {
-      scamper_debug(__func__, "could not register fd");
+      scamper_err_make(error, errno, "could not register fd");
       goto err;
     }
 
@@ -739,12 +815,15 @@ static void do_http_probe(scamper_task_t *task)
 {
   scamper_http_t *http = http_getdata(task);
   http_state_t *state = http_getstate(task);
+  scamper_err_t error;
+
+  SCAMPER_ERR_INIT(&error);
 
   /* allocate the state -- create a socket so that we can get the 5-tuple */
   if(state == NULL)
     {
       gettimeofday_wrap(&http->start);
-      if(http_state_alloc(task) != 0)
+      if(http_state_alloc(task, &error) != 0)
 	goto err;
       goto done;
     }
@@ -754,12 +833,12 @@ static void do_http_probe(scamper_task_t *task)
 #ifdef HAVE_OPENSSL
       if(http->type == SCAMPER_HTTP_TYPE_HTTPS)
 	{
-	  if(tls_handshake(task) != 0)
+	  if(tls_handshake(task, &error) != 0)
 	    goto err;
 	  goto done;
 	}
 #endif
-      if(http_req(task) != 0)
+      if(http_req(task, &error) != 0)
 	goto err;
     }
 
@@ -770,7 +849,7 @@ static void do_http_probe(scamper_task_t *task)
   return;
 
  err:
-  http_stop(task, SCAMPER_HTTP_STOP_ERROR);
+  http_handleerror(task, &error);
   return;
 }
 

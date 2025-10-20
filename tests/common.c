@@ -1,7 +1,7 @@
 /*
  * common.c: common functions that we might need for linking unit tests
  *
- * $Id: common.c,v 1.10 2025/06/24 06:05:47 mjl Exp $
+ * $Id: common.c,v 1.12 2025/10/13 00:29:07 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -27,6 +27,7 @@
 #include "config.h"
 #endif
 #include "internal.h"
+#include "scamper_debug.h"
 #include "scamper_addr.h"
 #include "utils.h"
 #include "common.h"
@@ -200,6 +201,16 @@ void printerror(const char *func, const char *format, ...)
 }
 
 void printerror_msg(const char *func, const char *format, ...)
+{
+  return;
+}
+
+char *scamper_err_render(const scamper_err_t *err, char *buf, size_t len)
+{
+  return "scamper_err_render";
+}
+
+void scamper_err_make(scamper_err_t *err, int error, const char *format, ...)
 {
   return;
 }

@@ -1,7 +1,7 @@
 /*
  * scamper_sting_lib.c
  *
- * $Id: scamper_sting_lib.c,v 1.5 2023/12/24 00:03:21 mjl Exp $
+ * $Id: scamper_sting_lib.c,v 1.6 2025/10/19 19:23:21 mjl Exp $
  *
  * Copyright (C) 2023 Matthew Luckie
  * Author: Matthew Luckie
@@ -154,6 +154,11 @@ uint32_t scamper_sting_pktc_get(const scamper_sting_t *sting)
 uint8_t scamper_sting_result_get(const scamper_sting_t *sting)
 {
   return sting->result;
+}
+
+const char *scamper_sting_errmsg_get(const scamper_sting_t *sting)
+{
+  return sting->errmsg;
 }
 
 const struct timeval *scamper_sting_pkt_tv_get(const scamper_sting_pkt_t *pkt)

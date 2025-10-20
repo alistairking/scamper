@@ -1,7 +1,7 @@
 /*
  * scamper_getsrc.h
  *
- * $Id: scamper_getsrc.h,v 1.6 2024/02/19 07:29:36 mjl Exp $
+ * $Id: scamper_getsrc.h,v 1.7 2025/10/09 22:52:32 mjl Exp $
  *
  * Copyright (C) 2005 Matthew Luckie
  * Copyright (C) 2008-2009 University of Waikato
@@ -26,7 +26,7 @@
 #define __SCAMPER_GETSRC_H
 
 scamper_addr_t *scamper_getsrc(const scamper_addr_t *dst, int ifindex,
-			       char *errbuf, size_t errlen);
+			       scamper_err_t *err);
 int scamper_getsrc_init(void);
 void scamper_getsrc_cleanup(void);
 

@@ -7,7 +7,7 @@
  *
  * Author: Matthew Luckie
  *
- * $Id: scamper_tbit_json.c,v 1.38 2025/07/31 07:32:11 mjl Exp $
+ * $Id: scamper_tbit_json.c,v 1.40 2025/10/15 23:58:44 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -90,7 +90,7 @@ static char *tbit_header_tostr(const scamper_tbit_t *tbit,
   static const char *null_options[] = {"tcpts", "ipts-syn", "iprr-syn",
 				       "ipqs-syn", "sack", "fo", "fo-exp"};
   static const char *null_results[] = {"tcpts-ok", "sack-ok", "fo-ok"};
-  char buf[1024], tmp[128];
+  char buf[2048], tmp[512];
   size_t off = 0;
   scamper_tbit_pmtud_t *pmtud;
   scamper_tbit_null_t *null;
@@ -126,6 +126,10 @@ static char *tbit_header_tostr(const scamper_tbit_t *tbit,
       string_concat3(buf, sizeof(buf), &off, ", \"options\":[", tmp, "]");
     }
 
+  if(tbit->errmsg != NULL)
+    string_concat3(buf, sizeof(buf), &off, ",\"errmsg\":\"",
+		   json_esc(tbit->errmsg, tmp, sizeof(tmp)), "\"");
+
   if(tbit->client_wscale > 0)
     string_concat_u8(buf, sizeof(buf), &off, ", \"wscale\":",
 		     tbit->client_wscale);
@@ -145,9 +149,8 @@ static char *tbit_header_tostr(const scamper_tbit_t *tbit,
     string_concat_u32(buf, sizeof(buf), &off, ", \"server_isn\":",
 		      state->server_isn);
 
-  if(tbit->type == SCAMPER_TBIT_TYPE_PMTUD)
+  if(tbit->type == SCAMPER_TBIT_TYPE_PMTUD && (pmtud = tbit->data) != NULL)
     {
-      pmtud = tbit->data;
       string_concat_u16(buf, sizeof(buf), &off, ", \"mtu\":", pmtud->mtu);
       string_concat_u8(buf, sizeof(buf), &off, ", \"ptb_retx\":",
 		       pmtud->ptb_retx);
@@ -159,9 +162,8 @@ static char *tbit_header_tostr(const scamper_tbit_t *tbit,
 		       pmtud_options, sizeof(pmtud_options) / sizeof(char *));
       string_concat3(buf, sizeof(buf), &off, ", \"pmtud_options\":[", tmp, "]");
     }
-  else if(tbit->type == SCAMPER_TBIT_TYPE_NULL)
+  else if(tbit->type == SCAMPER_TBIT_TYPE_NULL && (null = tbit->data) != NULL)
     {
-      null = tbit->data;
       tbit_bits_encode(tmp, sizeof(tmp), null->options, 16,
 		       null_options, sizeof(null_options) / sizeof(char *));
       string_concat3(buf, sizeof(buf), &off, ", \"null_options\":[", tmp, "]");
@@ -171,16 +173,11 @@ static char *tbit_header_tostr(const scamper_tbit_t *tbit,
     }
   else if(tbit->type == SCAMPER_TBIT_TYPE_ICW)
     {
-      if(tbit->result == SCAMPER_TBIT_RESULT_ICW_SUCCESS &&
-	 scamper_tbit_server_icw_size_get(tbit, &u32) == 0)
+      if(scamper_tbit_server_icw_size_get(tbit, &u32) == 0)
 	string_concat_u32(buf, sizeof(buf), &off, ", \"icw_bytes\":", u32);
     }
-  else if(tbit->type == SCAMPER_TBIT_TYPE_BLIND_RST ||
-	  tbit->type == SCAMPER_TBIT_TYPE_BLIND_SYN ||
-	  tbit->type == SCAMPER_TBIT_TYPE_BLIND_DATA ||
-	  tbit->type == SCAMPER_TBIT_TYPE_BLIND_FIN)
+  else if(SCAMPER_TBIT_TYPE_IS_BLIND(tbit) && (blind = tbit->data) != NULL)
     {
-      blind = tbit->data;
       string_concaf(buf, sizeof(buf), &off, ", \"blind_off\":%d", blind->off);
       string_concat_u8(buf, sizeof(buf), &off, ", \"blind_retx\":",
 		       blind->retx);

@@ -1,7 +1,7 @@
 /*
  * scamper_neighbourdisc
  *
- * $Id: scamper_neighbourdisc.h,v 1.13 2025/06/24 07:05:29 mjl Exp $
+ * $Id: scamper_neighbourdisc.h,v 1.14 2025/10/19 19:23:21 mjl Exp $
  *
  * Copyright (C) 2009-2025 Matthew Luckie
  *
@@ -48,6 +48,7 @@ uint8_t scamper_neighbourdisc_flags_get(const scamper_neighbourdisc_t *nd);
 const struct timeval *scamper_neighbourdisc_wait_timeout_get(const scamper_neighbourdisc_t *nd);
 uint16_t scamper_neighbourdisc_attempts_get(const scamper_neighbourdisc_t *nd);
 uint16_t scamper_neighbourdisc_replyc_get(const scamper_neighbourdisc_t *nd);
+const char *scamper_neighbourdisc_errmsg_get(const scamper_neighbourdisc_t *nd);
 scamper_addr_t *scamper_neighbourdisc_src_ip_get(const scamper_neighbourdisc_t *nd);
 scamper_addr_t *scamper_neighbourdisc_src_mac_get(const scamper_neighbourdisc_t *nd);
 scamper_addr_t *scamper_neighbourdisc_dst_ip_get(const scamper_neighbourdisc_t *nd);

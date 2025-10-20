@@ -5,7 +5,7 @@
  *
  * Author: Matthew Luckie
  *
- * $Id: scamper_http_warts.c,v 1.6 2025/04/21 22:05:36 mjl Exp $
+ * $Id: scamper_http_warts.c,v 1.7 2025/10/19 02:17:23 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -58,6 +58,7 @@
 #define WARTS_HTTP_HSRTT           15
 #define WARTS_HTTP_FLAGS           16
 #define WARTS_HTTP_MAXTIME         17
+#define WARTS_HTTP_ERRMSG          18
 
 static const warts_var_t http_vars[] =
 {
@@ -78,6 +79,7 @@ static const warts_var_t http_vars[] =
  {WARTS_HTTP_HSRTT,           4},
  {WARTS_HTTP_FLAGS,           4},
  {WARTS_HTTP_MAXTIME,         8},
+ {WARTS_HTTP_ERRMSG,         -1},
 };
 #define http_vars_mfb WARTS_VAR_MFB(http_vars)
 
@@ -271,7 +273,8 @@ static int warts_http_params(const scamper_http_t *http, uint8_t *flags,
 	 (var->id == WARTS_HTTP_BUFC    && http->bufc == 0) ||
 	 (var->id == WARTS_HTTP_HSRTT   && timeval_iszero(&http->hsrtt)) ||
 	 (var->id == WARTS_HTTP_FLAGS   && http->flags == 0) ||
-	 (var->id == WARTS_HTTP_MAXTIME && timeval_iszero(&http->maxtime)))
+	 (var->id == WARTS_HTTP_MAXTIME && timeval_iszero(&http->maxtime)) ||
+	 (var->id == WARTS_HTTP_ERRMSG  && http->errmsg == NULL))
 	continue;
 
       /* Set the flag for the rest of the variables */
@@ -301,6 +304,11 @@ static int warts_http_params(const scamper_http_t *http, uint8_t *flags,
       else if(var->id == WARTS_HTTP_HEADERS)
 	{
 	  if(warts_http_headers_len(http, params_len) != 0)
+	    return -1;
+	}
+      else if(var->id == WARTS_HTTP_ERRMSG)
+	{
+	  if(warts_str_size(http->errmsg, params_len) != 0)
 	    return -1;
 	}
       else
@@ -335,6 +343,7 @@ static int warts_http_params_read(scamper_http_t *http, warts_state_t *state,
     {&http->hsrtt,        (wpr_t)extract_rtt,          NULL},
     {&http->flags,        (wpr_t)extract_uint32,       NULL},
     {&http->maxtime,      (wpr_t)extract_timeval,      NULL},
+    {&http->errmsg,       (wpr_t)extract_string,       NULL},
   };
   const int handler_cnt = sizeof(handlers) / sizeof(warts_param_reader_t);
   uint32_t o = *off;
@@ -381,6 +390,7 @@ static int warts_http_params_write(const scamper_http_t *http,
     {&http->hsrtt,        (wpw_t)insert_rtt,          NULL},
     {&http->flags,        (wpw_t)insert_uint32,       NULL},
     {&http->maxtime,      (wpw_t)insert_timeval,      NULL},
+    {http->errmsg,        (wpw_t)insert_string,       NULL},
   };
   const int handler_cnt = sizeof(handlers)/sizeof(warts_param_writer_t);
 

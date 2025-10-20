@@ -1,7 +1,7 @@
 /*
  * scamper_icmp6.h
  *
- * $Id: scamper_icmp6.h,v 1.21 2023/08/20 01:21:17 mjl Exp $
+ * $Id: scamper_icmp6.h,v 1.23 2025/10/15 01:29:55 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2009 The University of Waikato
@@ -27,11 +27,11 @@
 #define __SCAMPER_ICMP6_H
 
 #ifndef _WIN32 /* SOCKET vs int on windows */
-int scamper_icmp6_open(const void *addr);
+int scamper_icmp6_open(const void *addr, scamper_err_t *error);
 int scamper_icmp6_open_fd(void);
 void scamper_icmp6_read_cb(int fd, void *param);
 #else
-SOCKET scamper_icmp6_open(const void *addr);
+SOCKET scamper_icmp6_open(const void *addr, scamper_err_t *error);
 SOCKET scamper_icmp6_open_fd(void);
 void scamper_icmp6_read_cb(SOCKET fd, void *param);
 #endif
@@ -39,7 +39,7 @@ void scamper_icmp6_read_cb(SOCKET fd, void *param);
 void scamper_icmp6_cleanup(void);
 
 #ifdef __SCAMPER_PROBE_H
-int scamper_icmp6_probe(scamper_probe_t *probe);
+int scamper_icmp6_probe(scamper_probe_t *probe, scamper_err_t *err);
 int scamper_icmp6_build(scamper_probe_t *probe, uint8_t *buf, size_t *len);
 uint16_t scamper_icmp6_cksum(scamper_probe_t *probe);
 #endif

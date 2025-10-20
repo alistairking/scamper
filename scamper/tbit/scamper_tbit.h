@@ -1,13 +1,13 @@
 /*
  * scamper_tbit.h
  *
- * $Id: scamper_tbit.h,v 1.67 2024/11/07 18:15:39 mjl Exp $
+ * $Id: scamper_tbit.h,v 1.69 2025/10/19 19:23:21 mjl Exp $
  *
  * Copyright (C) 2009-2010 Ben Stasiewicz
  * Copyright (C) 2010-2011 University of Waikato
  * Copyright (C) 2012      Matthew Luckie
  * Copyright (C) 2012,2015 The Regents of the University of California
- * Copyright (C) 2023-2024 Matthew Luckie
+ * Copyright (C) 2023-2025 Matthew Luckie
  *
  * This file implements algorithms described in the tbit-1.0 source code,
  * as well as the papers:
@@ -150,6 +150,7 @@ typedef struct scamper_tbit_icw scamper_tbit_icw_t;
 typedef struct scamper_tbit_blind scamper_tbit_blind_t;
 
 char *scamper_tbit_tojson(const scamper_tbit_t *tbit, size_t *len);
+char *scamper_tbit_totext(const scamper_tbit_t *tbit, size_t *len);
 
 /* scamper_tbit_t functions */
 void scamper_tbit_free(scamper_tbit_t *tbit);
@@ -167,6 +168,7 @@ scamper_tbit_pkt_t *scamper_tbit_pkt_get(const scamper_tbit_t *tbit,uint32_t i);
 uint32_t scamper_tbit_pktc_get(const scamper_tbit_t *tbit);
 uint8_t scamper_tbit_type_get(const scamper_tbit_t *tbit);
 char *scamper_tbit_type_tostr(const scamper_tbit_t *tbit,char *buf, size_t len);
+const char *scamper_tbit_errmsg_get(const scamper_tbit_t *tbit);
 uint8_t scamper_tbit_app_proto_get(const scamper_tbit_t *tbit);
 uint32_t scamper_tbit_options_get(const scamper_tbit_t *tbit);
 uint16_t scamper_tbit_client_mss_get(const scamper_tbit_t *tbit);

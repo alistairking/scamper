@@ -4,7 +4,7 @@
  * Copyright (C) 2023-2025 Matthew Luckie
  * Author: Matthew Luckie
  *
- * $Id: scamper_ping_lib.c,v 1.15 2025/05/05 03:34:24 mjl Exp $
+ * $Id: scamper_ping_lib.c,v 1.16 2025/10/19 19:23:21 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -102,6 +102,11 @@ uint16_t scamper_ping_pktsize_get(const scamper_ping_t *ping)
 uint8_t scamper_ping_method_get(const scamper_ping_t *ping)
 {
   return ping->method;
+}
+
+const char *scamper_ping_errmsg_get(const scamper_ping_t *ping)
+{
+  return ping->errmsg;
 }
 
 int scamper_ping_method_is_icmp(const scamper_ping_t *ping)

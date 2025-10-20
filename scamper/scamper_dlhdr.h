@@ -1,7 +1,7 @@
 /*
  * scamper_dlhdr.h
  *
- * $Id: scamper_dlhdr.h,v 1.6 2024/06/30 19:08:57 mjl Exp $
+ * $Id: scamper_dlhdr.h,v 1.8 2025/10/15 20:38:40 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2010 The University of Waikato
@@ -30,7 +30,7 @@ typedef struct scamper_dlhdr scamper_dlhdr_t;
 scamper_dlhdr_t *scamper_dlhdr_alloc(void);
 void scamper_dlhdr_free(scamper_dlhdr_t *dlhdr);
 
-int scamper_dlhdr_get(scamper_dlhdr_t *dlhdr);
+int scamper_dlhdr_get(scamper_dlhdr_t *dlhdr, scamper_err_t *error);
 
 #if defined(__SCAMPER_ADDR_H)
 /*
@@ -54,15 +54,13 @@ struct scamper_dlhdr
   scamper_addr_t *gw;
   int             ifindex;
   int             txtype;
-  void          (*cb)(scamper_dlhdr_t *);
+  void          (*cb)(scamper_dlhdr_t *, const scamper_err_t *);
   void           *param;
 
   /*
    * result of dlhdr process:
-   *  - if there was no error (zero) or not,
    *  - the header to include, and its length, if any.
    */
-  int             error;
   uint8_t        *buf;
   uint16_t        len;
 

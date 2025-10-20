@@ -1,7 +1,7 @@
 /*
  * scamper_udpprobe_int.h
  *
- * $Id: scamper_udpprobe_int.h,v 1.4 2024/09/06 01:34:54 mjl Exp $
+ * $Id: scamper_udpprobe_int.h,v 1.6 2025/10/09 22:24:44 mjl Exp $
  *
  * Copyright (C) 2023 The Regents of the University of California
  *
@@ -31,11 +31,6 @@ scamper_udpprobe_reply_t *scamper_udpprobe_reply_alloc(void);
 
 #define SCAMPER_UDPPROBE_FLAG_IS_EXITFIRST(up) ( \
   ((up)->flags & SCAMPER_UDPPROBE_FLAG_EXITFIRST))
-
-#define SCAMPER_UDPPROBE_STOP_NONE     0
-#define SCAMPER_UDPPROBE_STOP_DONE     1
-#define SCAMPER_UDPPROBE_STOP_HALTED   2
-#define SCAMPER_UDPPROBE_STOP_ERROR    3
 
 struct scamper_ifname;
 
@@ -86,6 +81,7 @@ struct scamper_udpprobe
 
   /* collected data */
   uint8_t                    stop;
+  char                      *errmsg;
   scamper_udpprobe_probe_t **probes;
   uint8_t                    probe_sent;
 };

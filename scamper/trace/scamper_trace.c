@@ -1,7 +1,7 @@
 /*
  * scamper_trace.c
  *
- * $Id: scamper_trace.c,v 1.141 2025/06/27 10:44:16 mjl Exp $
+ * $Id: scamper_trace.c,v 1.143 2025/10/15 23:47:47 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2003-2011 The University of Waikato
@@ -965,7 +965,8 @@ void scamper_trace_free(scamper_trace_t *trace)
 {
   uint16_t i;
 
-  if(trace == NULL) return;
+  if(trace == NULL)
+    return;
 
   if(trace->hops != NULL)
     {
@@ -975,6 +976,7 @@ void scamper_trace_free(scamper_trace_t *trace)
       free(trace->hops);
     }
 
+  if(trace->errmsg != NULL) free(trace->errmsg);
   if(trace->payload != NULL) free(trace->payload);
 
   if(trace->lastditch != NULL) scamper_trace_lastditch_free(trace->lastditch);
@@ -1017,6 +1019,7 @@ scamper_trace_t *scamper_trace_dup(scamper_trace_t *in)
   out->pmtud = NULL;
   out->lastditch = NULL;
   out->hops = NULL;
+  out->errmsg = NULL;
 
   if(in->payload != NULL &&
      (out->payload = memdup(in->payload, in->payload_len)) == NULL)
@@ -1036,6 +1039,9 @@ scamper_trace_t *scamper_trace_dup(scamper_trace_t *in)
 	    goto err;
 	}
     }
+
+  if(in->errmsg != NULL && (out->errmsg = strdup(in->errmsg)) == NULL)
+    goto err;
 
   if(in->lastditch != NULL &&
      (out->lastditch = scamper_trace_lastditch_dup(in->lastditch)) == NULL)

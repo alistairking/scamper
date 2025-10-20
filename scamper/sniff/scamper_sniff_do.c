@@ -1,7 +1,7 @@
 /*
  * scamper_sniff_do.c
  *
- * $Id: scamper_sniff_do.c,v 1.32 2025/08/04 00:00:27 mjl Exp $
+ * $Id: scamper_sniff_do.c,v 1.35 2025/10/19 21:53:46 mjl Exp $
  *
  * Copyright (C) 2011      The University of Waikato
  * Copyright (C) 2022-2025 Matthew Luckie
@@ -67,12 +67,35 @@ static sniff_state_t *sniff_getstate(const scamper_task_t *task)
   return scamper_task_getstate(task);
 }
 
-static void sniff_finish(scamper_task_t *task, int reason)
+static void sniff_stop_err(scamper_sniff_t *sniff, scamper_err_t *error)
+{
+  char errbuf[512];
+
+  if(printerror_would())
+    {
+      scamper_err_render(error, errbuf, sizeof(errbuf));
+      printerror_msg("sniff failed", "%s", errbuf);
+    }
+
+  if(sniff->stop_reason == SCAMPER_SNIFF_STOP_NONE)
+    {
+      sniff->stop_reason = SCAMPER_SNIFF_STOP_ERROR;
+      if(sniff->errmsg == NULL)
+	sniff->errmsg = strdup(errbuf);
+    }
+
+  return;
+}
+
+static void sniff_finish(scamper_task_t *task, uint8_t reason)
 {
   scamper_sniff_t *sniff = sniff_getdata(task);
   sniff_state_t *state = sniff_getstate(task);
+  scamper_err_t error;
   scamper_sniff_pkt_t *pkt;
   int rc;
+
+  SCAMPER_ERR_INIT(&error);
 
   gettimeofday_wrap(&sniff->finish);
 
@@ -80,9 +103,8 @@ static void sniff_finish(scamper_task_t *task, int reason)
     {
       if(scamper_sniff_pkts_alloc(sniff, rc) != 0)
 	{
-	  sniff->stop_reason = SCAMPER_SNIFF_STOP_ERROR;
-	  scamper_task_queue_done(task);
-	  return;
+	  scamper_err_make(&error, errno, "could not alloc pkts");
+	  goto err;
 	}
 
       while((pkt = slist_head_pop(state->list)) != NULL)
@@ -93,6 +115,18 @@ static void sniff_finish(scamper_task_t *task, int reason)
   sniff->stop_reason = reason;
   scamper_task_queue_done(task);
   return;
+
+ err:
+  sniff_stop_err(sniff, &error);
+  scamper_task_queue_done(task);
+  return;
+}
+
+static void sniff_handleerror(scamper_task_t *task, scamper_err_t *error)
+{
+  sniff_stop_err(sniff_getdata(task), error);
+  sniff_finish(task, SCAMPER_SNIFF_STOP_ERROR);
+  return;
 }
 
 static void do_sniff_handle_dl(scamper_task_t *task, scamper_dl_rec_t *dl)
@@ -100,10 +134,13 @@ static void do_sniff_handle_dl(scamper_task_t *task, scamper_dl_rec_t *dl)
   scamper_sniff_t *sniff = sniff_getdata(task);
   sniff_state_t *state = sniff_getstate(task);
   scamper_sniff_pkt_t *pkt;
+  scamper_err_t error;
   int i = 0;
 
   if(state == NULL)
     return;
+
+  SCAMPER_ERR_INIT(&error);
 
   if(SCAMPER_DL_IS_ICMP(dl))
     {
@@ -122,25 +159,24 @@ static void do_sniff_handle_dl(scamper_task_t *task, scamper_dl_rec_t *dl)
   pkt = scamper_sniff_pkt_alloc(dl->dl_net_raw, dl->dl_ip_size, &dl->dl_tv);
   if(pkt == NULL)
     {
-      printerror(__func__, "could not alloc pkt");
+      scamper_err_make(&error, errno, "could not alloc pkt");
       goto err;
     }
 
   if(slist_tail_push(state->list, pkt) == NULL)
     {
-      printerror(__func__, "could not push pkt");
+      scamper_err_make(&error, errno, "could not push pkt");
       goto err;
     }
 
-  if((i = slist_count(state->list)) < 0)
-    goto err;
+  i = slist_count(state->list); assert(i >= 0);
   if((uint32_t)i >= sniff->limit_pktc)
     sniff_finish(task, SCAMPER_SNIFF_STOP_LIMIT_PKTC);
 
   return;
 
  err:
-  sniff_finish(task, SCAMPER_SNIFF_STOP_ERROR);
+  sniff_handleerror(task, &error);
   return;
 }
 
@@ -164,39 +200,35 @@ static void sniff_state_free(sniff_state_t *state)
   return;
 }
 
-static int sniff_state_alloc(scamper_task_t *task)
+static int sniff_state_alloc(scamper_task_t *task, scamper_err_t *error)
 {
   scamper_sniff_t *sniff = sniff_getdata(task);
   sniff_state_t *state = NULL;
   struct sockaddr_storage sas;
+  struct sockaddr *sa = (struct sockaddr *)&sas;
   int ifindex;
 
   assert(sniff->src != NULL);
+  assert(sniff->src->addr != NULL);
+  assert(SCAMPER_ADDR_TYPE_IS_IP(sniff->src));
 
   if(sniff->src->type == SCAMPER_ADDR_TYPE_IPV4)
-    sockaddr_compose((struct sockaddr *)&sas, AF_INET, sniff->src->addr, 0);
-  else if(sniff->src->type == SCAMPER_ADDR_TYPE_IPV6)
-    sockaddr_compose((struct sockaddr *)&sas, AF_INET6, sniff->src->addr, 0);
+    sockaddr_compose(sa, AF_INET, sniff->src->addr, 0);
   else
+    sockaddr_compose(sa, AF_INET6, sniff->src->addr, 0);
+
+  if(scamper_if_getifindex_byaddr(sa, &ifindex, error) != 0)
     goto err;
 
-  if(scamper_if_getifindex_byaddr((struct sockaddr *)&sas, &ifindex) != 0)
-    goto err;
-
-  if((state = malloc_zero(sizeof(sniff_state_t))) == NULL)
-    goto err;
-
-  if((state->list = slist_alloc()) == NULL)
+  if((state = malloc_zero(sizeof(sniff_state_t))) == NULL ||
+     (state->list = slist_alloc()) == NULL)
     {
-      printerror(__func__, "could not alloc list");
+      scamper_err_make(error, errno, "could not alloc state");
       goto err;
     }
 
-  if((state->fd = scamper_fd_dl(ifindex)) == NULL)
-    {
-      printerror(__func__, "could not get dl");
-      goto err;
-    }
+  if((state->fd = scamper_fd_dl(ifindex, error)) == NULL)
+    goto err;
 
   scamper_task_setstate(task, state);
   return 0;
@@ -209,19 +241,23 @@ static int sniff_state_alloc(scamper_task_t *task)
 static void do_sniff_probe(scamper_task_t *task)
 {
   scamper_sniff_t *sniff = sniff_getdata(task);
+  scamper_err_t error;
   struct timeval tv;
 
   assert(sniff_getstate(task) == NULL);
 
+  SCAMPER_ERR_INIT(&error);
+
   gettimeofday_wrap(&sniff->start);
-  if(sniff_state_alloc(task) != 0)
-    {
-      sniff_finish(task, SCAMPER_SNIFF_STOP_ERROR);
-      return;
-    }
+  if(sniff_state_alloc(task, &error) != 0)
+    goto err;
 
   timeval_add_tv3(&tv, &sniff->start, &sniff->limit_time);
   scamper_task_queue_wait_tv(task, &tv);
+  return;
+
+ err:
+  sniff_handleerror(task, &error);
   return;
 }
 

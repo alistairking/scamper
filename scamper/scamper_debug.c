@@ -1,7 +1,7 @@
 /*
  * scamper_debug.c
  *
- * $Id: scamper_debug.c,v 1.52 2025/01/19 03:51:01 mjl Exp $
+ * $Id: scamper_debug.c,v 1.57 2025/10/12 01:37:25 mjl Exp $
  *
  * routines to reduce the impact of debugging cruft in scamper's code.
  *
@@ -34,6 +34,10 @@
 #include "scamper_debug.h"
 #include "utils.h"
 
+#ifdef HAVE_OPENSSL
+#include "utils_tls.h"
+#endif
+
 #ifndef WITHOUT_DEBUGFILE
 static FILE *debugfile = NULL;
 #endif
@@ -50,11 +54,49 @@ static void timestamp_str(char *buf, size_t len)
   return;
 }
 
+void scamper_err_make(scamper_err_t *err, int error, const char *format, ...)
+{
+  va_list ap;
+
+  err->error = error;
+  va_start(ap, format);
+  vsnprintf(err->errstr, sizeof(err->errstr), format, ap);
+  va_end(ap);
+
+  errno = error;
+  return;
+}
+
+char *scamper_err_render(const scamper_err_t *err, char *buf, size_t len)
+{
+  if(err->error != 0)
+    snprintf(buf, len, "%s: %s", err->errstr, strerror(err->error));
+  else
+    snprintf(buf, len, "%s", err->errstr);
+  return buf;
+}
+
+/*
+ * printerror_would
+ *
+ * would printerror and related functions emit something, if called now?
+ */
+int printerror_would(void)
+{
+  if(isdaemon == 0)
+    return 1;
+#ifndef WITHOUT_DEBUGFILE
+  if(debugfile != NULL)
+    return 1;
+#endif
+  return 0; /* into the flood again */
+}
+
 /*
  * printerror
  *
- * format a nice and consistent error string using strerror and the
- * arguments supplied
+ * format a consistent error string using strerror and the arguments
+ * supplied.  ensure errno doesn't get clobbered in this function.
  */
 void printerror(const char *func, const char *format, ...)
 {
@@ -92,6 +134,7 @@ void printerror(const char *func, const char *format, ...)
     }
 #endif
 
+  errno = ecode;
   return;
 }
 
@@ -136,10 +179,8 @@ void printerror_msg(const char *func, const char *format, ...)
 void printerror_ssl(const char *func, const char *format, ...)
 {
   char msg[512], ts[16];
-  char sslbuf[1024], buf[256];
+  char sslbuf[1024];
   va_list ap;
-  size_t off = 0;
-  int ecode;
 
   if(isdaemon != 0)
     {
@@ -155,14 +196,7 @@ void printerror_ssl(const char *func, const char *format, ...)
   vsnprintf(msg, sizeof(msg), format, ap);
   va_end(ap);
   timestamp_str(ts, sizeof(ts));
-
-  for(;;)
-    {
-      if((ecode = ERR_get_error()) == 0)
-	break;
-      ERR_error_string_n(ecode, buf, sizeof(buf));
-      string_concat2(sslbuf, sizeof(sslbuf), &off, off > 0 ? " " : "", buf);
-    }
+  tls_errstr(sslbuf, sizeof(sslbuf));
 
   if(isdaemon == 0)
     {

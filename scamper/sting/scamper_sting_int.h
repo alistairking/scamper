@@ -7,7 +7,7 @@
  *
  * Author: Matthew Luckie
  *
- * $Id: scamper_sting_int.h,v 1.3 2023/12/24 00:03:21 mjl Exp $
+ * $Id: scamper_sting_int.h,v 1.4 2025/10/13 19:05:47 mjl Exp $
  *
  * This file implements algorithms described in the sting-0.7 source code,
  * as well as the paper:
@@ -95,6 +95,7 @@ struct scamper_sting
   scamper_sting_pkt_t  **pkts;     /* array of packets in the test */
   uint32_t               pktc;     /* number of packets in the test */
   uint8_t                result;   /* did sting complete? */
+  char                  *errmsg;   /* error message */
 };
 
 #endif /* __SCAMPER_STING_INT_H */

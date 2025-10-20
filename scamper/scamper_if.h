@@ -1,7 +1,7 @@
 /*
  * scamper_if.h
  *
- * $Id: scamper_if.h,v 1.4 2012/04/05 18:00:54 mjl Exp $
+ * $Id: scamper_if.h,v 1.6 2025/10/12 00:41:16 mjl Exp $
  *
  * Copyright (C) 2008-2009 The University of Waikato
  * Author: Matthew Luckie
@@ -24,10 +24,12 @@
 #ifndef __SCAMPER_IF_H
 #define __SCAMPER_IF_H
 
-int scamper_if_getmtu(const int ifindex, uint16_t *ifmtu);
-int scamper_if_getmac(const int ifindex, uint8_t *mac);
+int scamper_if_getmtu(int ifindex, uint16_t *ifmtu, scamper_err_t *err);
+int scamper_if_getmac(int ifindex, uint8_t *mac, scamper_err_t *err);
 int scamper_if_getifindex(const char *ifname, int *ifindex);
-int scamper_if_getifname(char *str, size_t len, int ifindex);
-int scamper_if_getifindex_byaddr(const struct sockaddr *addr, int *ifindex);
+int scamper_if_getifname(char *str, size_t len, int ifindex,
+			 scamper_err_t *err);
+int scamper_if_getifindex_byaddr(const struct sockaddr *addr, int *ifindex,
+				 scamper_err_t *err);
 
 #endif

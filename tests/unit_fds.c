@@ -1,7 +1,7 @@
 /*
  * unit_fds : unit tests for scamper_fd
  *
- * $Id: unit_fds.c,v 1.8 2024/08/13 05:47:16 mjl Exp $
+ * $Id: unit_fds.c,v 1.9 2025/10/13 00:31:12 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -28,6 +28,7 @@
 #endif
 #include "internal.h"
 
+#include "scamper_debug.h"
 #include "scamper_addr.h"
 #include "scamper_fds.h"
 #include "scamper_dl.h"
@@ -180,6 +181,7 @@ int scamper_task_sig_sport_used(struct scamper_addr *dst, uint8_t proto,
  */
 static int test_0(void)
 {
+  scamper_err_t error;
   struct in6_addr in6;
   struct in_addr in4;
   scamper_fd_t *fds[10], *fdy[10];
@@ -190,15 +192,15 @@ static int test_0(void)
   memset(fdy, 0, sizeof(fdy));
 
   /* open a bunch of unique fds */
-  if((fds[fdx++] = scamper_fd_udp4dg(NULL, 443)) == NULL ||   /* 0 */
-     (fds[fdx++] = scamper_fd_tcp4(NULL, 80)) == NULL ||      /* 1 */
-     (fds[fdx++] = scamper_fd_icmp4(NULL)) == NULL ||         /* 2 */
-     (fds[fdx++] = scamper_fd_rtsock()) == NULL ||            /* 3 */
-     (fds[fdx++] = scamper_fd_udp6(NULL, 443)) == NULL ||     /* 4 */
-     (fds[fdx++] = scamper_fd_tcp6(NULL, 80)) == NULL ||      /* 5 */
-     (fds[fdx++] = scamper_fd_icmp6(NULL)) == NULL ||         /* 6 */
-     (fds[fdx++] = scamper_fd_dl(5)) == NULL ||               /* 7 */
-     (fds[fdx++] = scamper_fd_udp4raw(NULL)) == NULL)         /* 8 */
+  if((fds[fdx++] = scamper_fd_udp4dg(NULL, 443, &error)) == NULL ||   /* 0 */
+     (fds[fdx++] = scamper_fd_tcp4(NULL, 80, &error)) == NULL ||      /* 1 */
+     (fds[fdx++] = scamper_fd_icmp4(NULL, &error)) == NULL ||         /* 2 */
+     (fds[fdx++] = scamper_fd_rtsock(&error)) == NULL ||              /* 3 */
+     (fds[fdx++] = scamper_fd_udp6(NULL, 443, &error)) == NULL ||     /* 4 */
+     (fds[fdx++] = scamper_fd_tcp6(NULL, 80, &error)) == NULL ||      /* 5 */
+     (fds[fdx++] = scamper_fd_icmp6(NULL, &error)) == NULL ||         /* 6 */
+     (fds[fdx++] = scamper_fd_dl(5, &error)) == NULL ||               /* 7 */
+     (fds[fdx++] = scamper_fd_udp4raw(NULL, &error)) == NULL)         /* 8 */
     goto done;
 
   /* make sure each got their own file descriptor */
@@ -251,15 +253,15 @@ static int test_0(void)
     }
 
   /* get a second copy of each of the sockets we opened earlier */
-  if((fdy[0] = scamper_fd_udp4dg(NULL, 443)) == NULL ||       /* 0 */
-     (fdy[1] = scamper_fd_tcp4(NULL, 80)) == NULL ||          /* 1 */
-     (fdy[2] = scamper_fd_icmp4(NULL)) == NULL ||             /* 2 */
-     (fdy[3] = scamper_fd_rtsock()) == NULL ||                /* 3 */
-     (fdy[4] = scamper_fd_udp6(NULL, 443)) == NULL ||         /* 4 */
-     (fdy[5] = scamper_fd_tcp6(NULL, 80)) == NULL ||          /* 5 */
-     (fdy[6] = scamper_fd_icmp6(NULL)) == NULL ||             /* 6 */
-     (fdy[7] = scamper_fd_dl(5)) == NULL ||                   /* 7 */
-     (fdy[8] = scamper_fd_udp4raw(NULL)) == NULL)             /* 8 */
+  if((fdy[0] = scamper_fd_udp4dg(NULL, 443, &error)) == NULL ||       /* 0 */
+     (fdy[1] = scamper_fd_tcp4(NULL, 80, &error)) == NULL ||          /* 1 */
+     (fdy[2] = scamper_fd_icmp4(NULL, &error)) == NULL ||             /* 2 */
+     (fdy[3] = scamper_fd_rtsock(&error)) == NULL ||                  /* 3 */
+     (fdy[4] = scamper_fd_udp6(NULL, 443, &error)) == NULL ||         /* 4 */
+     (fdy[5] = scamper_fd_tcp6(NULL, 80, &error)) == NULL ||          /* 5 */
+     (fdy[6] = scamper_fd_icmp6(NULL, &error)) == NULL ||             /* 6 */
+     (fdy[7] = scamper_fd_dl(5, &error)) == NULL ||                   /* 7 */
+     (fdy[8] = scamper_fd_udp4raw(NULL, &error)) == NULL)             /* 8 */
     goto done;
   for(i=0; i<10; i++)
     if(fds[i] != fdy[i])
@@ -284,17 +286,18 @@ static int test_0(void)
  */
 static int test_1(void)
 {
+  scamper_err_t error;
   scamper_fd_t *fd = NULL;
 
   fd_fail = 1;
-  if((fd = scamper_fd_udp4dg(NULL, 443)) != NULL ||
-     (fd = scamper_fd_tcp4(NULL, 80)) != NULL ||
-     (fd = scamper_fd_icmp4(NULL)) != NULL ||
-     (fd = scamper_fd_rtsock()) != NULL ||
-     (fd = scamper_fd_udp6(NULL, 443)) != NULL ||
-     (fd = scamper_fd_tcp6(NULL, 80)) != NULL ||
-     (fd = scamper_fd_icmp6(NULL)) != NULL ||
-     (fd = scamper_fd_dl(5)) != NULL)
+  if((fd = scamper_fd_udp4dg(NULL, 443, &error)) != NULL ||
+     (fd = scamper_fd_tcp4(NULL, 80, &error)) != NULL ||
+     (fd = scamper_fd_icmp4(NULL, &error)) != NULL ||
+     (fd = scamper_fd_rtsock(&error)) != NULL ||
+     (fd = scamper_fd_udp6(NULL, 443, &error)) != NULL ||
+     (fd = scamper_fd_tcp6(NULL, 80, &error)) != NULL ||
+     (fd = scamper_fd_icmp6(NULL, &error)) != NULL ||
+     (fd = scamper_fd_dl(5, &error)) != NULL)
     goto err;
 
   return 0;
@@ -306,6 +309,7 @@ static int test_1(void)
 
 static int test_2(void)
 {
+  scamper_err_t error;
   scamper_fd_t *fds[10];
   size_t i;
   uint16_t *ports = NULL;
@@ -314,16 +318,16 @@ static int test_2(void)
 
   memset(fds, 0, sizeof(fds));
 
-  if((fds[0] = scamper_fd_udp4dg(NULL, 38421)) == NULL ||
-     (fds[1] = scamper_fd_udp6(NULL, 12492)) == NULL ||
-     (fds[2] = scamper_fd_tcp4(NULL, 51745)) == NULL ||
-     (fds[3] = scamper_fd_tcp6(NULL, 24531)) == NULL ||
-     (fds[4] = scamper_fd_udp4dg(NULL, 44258)) == NULL ||
-     (fds[5] = scamper_fd_udp6(NULL, 52532)) == NULL ||
-     (fds[6] = scamper_fd_tcp4(NULL, 543)) == NULL ||
-     (fds[7] = scamper_fd_tcp6(NULL, 31315)) == NULL ||
-     (fds[8] = scamper_fd_udp4dg(NULL, 12345)) == NULL ||
-     (fds[9] = scamper_fd_udp6(NULL, 42152)) == NULL)
+  if((fds[0] = scamper_fd_udp4dg(NULL, 38421, &error)) == NULL ||
+     (fds[1] = scamper_fd_udp6(NULL, 12492, &error)) == NULL ||
+     (fds[2] = scamper_fd_tcp4(NULL, 51745, &error)) == NULL ||
+     (fds[3] = scamper_fd_tcp6(NULL, 24531, &error)) == NULL ||
+     (fds[4] = scamper_fd_udp4dg(NULL, 44258, &error)) == NULL ||
+     (fds[5] = scamper_fd_udp6(NULL, 52532, &error)) == NULL ||
+     (fds[6] = scamper_fd_tcp4(NULL, 543, &error)) == NULL ||
+     (fds[7] = scamper_fd_tcp6(NULL, 31315, &error)) == NULL ||
+     (fds[8] = scamper_fd_udp4dg(NULL, 12345, &error)) == NULL ||
+     (fds[9] = scamper_fd_udp6(NULL, 42152, &error)) == NULL)
     goto done;
 
   if(scamper_fds_sports(&ports, &i) != 0)
