@@ -4,11 +4,11 @@
  * Copyright (C) 2009-2010 Ben Stasiewicz
  * Copyright (C) 2010-2011 The University of Waikato
  * Copyright (C) 2012-2015 The Regents of the University of California
- * Copyright (C) 2016-2023 Matthew Luckie
+ * Copyright (C) 2016-2025 Matthew Luckie
  * Copyright (C) 2025      The Regents of the University of California
  * Authors: Matthew Luckie, Ben Stasiewicz
  *
- * $Id: scamper_tbit_warts.c,v 1.42 2025/04/22 01:41:43 mjl Exp $
+ * $Id: scamper_tbit_warts.c,v 1.43 2025/09/25 18:57:26 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -375,7 +375,7 @@ static int warts_tbit_pmtud_params(const scamper_tbit_t *tbit,
 static int warts_tbit_null_read(scamper_tbit_t *tbit, const uint8_t *buf,
 				uint32_t *off, uint32_t len)
 {
-  scamper_tbit_null_t *null = tbit->data;
+  scamper_tbit_null_t *null = NULL;
   uint16_t options = 0;
   uint16_t results = 0;
   warts_param_reader_t handlers[] = {
@@ -385,8 +385,12 @@ static int warts_tbit_null_read(scamper_tbit_t *tbit, const uint8_t *buf,
   const int handler_cnt = sizeof(handlers)/sizeof(warts_param_reader_t);
   if(warts_params_read(buf, off, len, handlers, handler_cnt) != 0)
     goto err;
+  if((null = scamper_tbit_null_alloc()) == NULL)
+    goto err;
   null->options = options;
   null->results = results;
+
+  tbit->data = null;
   return 0;
 
  err:
@@ -412,7 +416,7 @@ static int warts_tbit_pmtud_read(scamper_tbit_t *tbit,
 				 warts_addrtable_t *table, const uint8_t *buf,
 				 uint32_t *off, uint32_t len)
 {
-  scamper_tbit_pmtud_t *pmtud = tbit->data;
+  scamper_tbit_pmtud_t *pmtud = NULL;
   scamper_addr_t *ptbsrc = NULL;
   uint16_t mtu = 0;
   uint8_t ptb_retx = 0;
@@ -427,12 +431,15 @@ static int warts_tbit_pmtud_read(scamper_tbit_t *tbit,
 
   if(warts_params_read(buf, off, len, handlers, handler_cnt) != 0)
     goto err;
+  if((pmtud = scamper_tbit_pmtud_alloc()) == NULL)
+    goto err;
 
   pmtud->mtu      = mtu;
   pmtud->ptb_retx = ptb_retx;
   pmtud->options  = options;
   pmtud->ptbsrc   = ptbsrc;
 
+  tbit->data = pmtud;
   return 0;
 
  err:
@@ -460,12 +467,24 @@ static void warts_tbit_pmtud_write(const scamper_tbit_t *tbit, uint8_t *buf,
 static int warts_tbit_icw_read(scamper_tbit_t *tbit, const uint8_t *buf,
 			       uint32_t *off, uint32_t len)
 {
-  scamper_tbit_icw_t *icw = tbit->data;
+  uint32_t start_seq = 0;
+  scamper_tbit_icw_t *icw = NULL;
   warts_param_reader_t handlers[] = {
-    {&icw->start_seq, (wpr_t)extract_uint32, NULL},
+    {&start_seq, (wpr_t)extract_uint32, NULL},
   };
   const int handler_cnt = sizeof(handlers)/sizeof(warts_param_reader_t);
-  return warts_params_read(buf, off, len, handlers, handler_cnt);
+
+  if(warts_params_read(buf, off, len, handlers, handler_cnt) != 0)
+    goto err;
+  if((icw = scamper_tbit_icw_alloc()) == NULL)
+    goto err;
+  icw->start_seq = start_seq;
+
+  tbit->data = icw;
+  return 0;
+
+ err:
+  return -1;
 }
 
 static void warts_tbit_icw_write(const scamper_tbit_t *tbit, uint8_t *buf,
@@ -485,13 +504,27 @@ static void warts_tbit_icw_write(const scamper_tbit_t *tbit, uint8_t *buf,
 static int warts_tbit_blind_read(scamper_tbit_t *tbit, const uint8_t *buf,
 				 uint32_t *off, uint32_t len)
 {
-  scamper_tbit_blind_t *blind = tbit->data;
+  int32_t blind_off = 0;
+  uint8_t blind_retx = 0;
+  scamper_tbit_blind_t *blind = NULL;
   warts_param_reader_t handlers[] = {
-    {&blind->off,     (wpr_t)extract_int32,    NULL},
-    {&blind->retx,    (wpr_t)extract_byte,     NULL},
+    {&blind_off,     (wpr_t)extract_int32,    NULL},
+    {&blind_retx,    (wpr_t)extract_byte,     NULL},
   };
   const int handler_cnt = sizeof(handlers)/sizeof(warts_param_reader_t);
-  return warts_params_read(buf, off, len, handlers, handler_cnt);
+
+  if(warts_params_read(buf, off, len, handlers, handler_cnt) != 0)
+    goto err;
+  if((blind = scamper_tbit_blind_alloc()) == NULL)
+    goto err;
+  blind->off = blind_off;
+  blind->retx = blind_retx;
+
+  tbit->data = blind;
+  return 0;
+
+ err:
+  return -1;
 }
 
 static void warts_tbit_blind_write(const scamper_tbit_t *tbit, uint8_t *buf,
@@ -980,32 +1013,6 @@ int scamper_file_warts_tbit_read(scamper_file_t *sf, const warts_hdr_t *hdr,
   if(warts_tbit_params_read(tbit, table, state, buf, &off, hdr->len) != 0)
     {
       goto err;
-    }
-
-  switch(tbit->type)
-    {
-    case SCAMPER_TBIT_TYPE_PMTUD:
-      if((tbit->data = scamper_tbit_pmtud_alloc()) == NULL)
-	goto err;
-      break;
-
-    case SCAMPER_TBIT_TYPE_NULL:
-      if((tbit->data = scamper_tbit_null_alloc()) == NULL)
-	goto err;
-      break;
-
-    case SCAMPER_TBIT_TYPE_ICW:
-      if((tbit->data = scamper_tbit_icw_alloc()) == NULL)
-	goto err;
-      break;
-
-    case SCAMPER_TBIT_TYPE_BLIND_RST:
-    case SCAMPER_TBIT_TYPE_BLIND_SYN:
-    case SCAMPER_TBIT_TYPE_BLIND_DATA:
-    case SCAMPER_TBIT_TYPE_BLIND_FIN:
-      if((tbit->data = scamper_tbit_blind_alloc()) == NULL)
-	goto err;
-      break;
     }
 
   /* Determine how many tbit_pkts to read */

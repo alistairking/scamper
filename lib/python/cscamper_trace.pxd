@@ -62,6 +62,18 @@ cdef extern from "scamper_trace.h":
  cdef uint32_t SCAMPER_TRACE_FLAG_RXERR
  cdef uint8_t  SCAMPER_TRACE_REPLY_FLAG_REPLY_TTL
 
+ cdef uint8_t  SCAMPER_TRACE_STOP_NONE
+ cdef uint8_t  SCAMPER_TRACE_STOP_COMPLETED
+ cdef uint8_t  SCAMPER_TRACE_STOP_UNREACH
+ cdef uint8_t  SCAMPER_TRACE_STOP_ICMP
+ cdef uint8_t  SCAMPER_TRACE_STOP_LOOP
+ cdef uint8_t  SCAMPER_TRACE_STOP_GAPLIMIT
+ cdef uint8_t  SCAMPER_TRACE_STOP_ERROR
+ cdef uint8_t  SCAMPER_TRACE_STOP_HOPLIMIT
+ cdef uint8_t  SCAMPER_TRACE_STOP_GSS
+ cdef uint8_t  SCAMPER_TRACE_STOP_HALTED
+ cdef uint8_t  SCAMPER_TRACE_STOP_INPROGRESS
+
  char *scamper_trace_tojson(const scamper_trace_t *trace, size_t *l)
  char *scamper_trace_totext(const scamper_trace_t *trace, size_t *l)
 

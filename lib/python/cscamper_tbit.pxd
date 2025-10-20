@@ -38,6 +38,7 @@ cdef extern from "scamper_tbit.h":
   pass
 
  char *scamper_tbit_tojson(const scamper_tbit_t *tbit, size_t *l)
+ char *scamper_tbit_totext(const scamper_tbit_t *tbit, size_t *l)
 
  void scamper_tbit_free(scamper_tbit_t *tbit)
  scamper_list_t *scamper_tbit_list_get(const scamper_tbit_t *tbit)

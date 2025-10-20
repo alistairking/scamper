@@ -48,6 +48,12 @@ cdef extern from "scamper_ping.h":
  ctypedef struct scamper_ping_stats_t:
   pass
 
+ cdef uint8_t  SCAMPER_PING_STOP_NONE
+ cdef uint8_t  SCAMPER_PING_STOP_COMPLETED
+ cdef uint8_t  SCAMPER_PING_STOP_ERROR
+ cdef uint8_t  SCAMPER_PING_STOP_HALTED
+ cdef uint8_t  SCAMPER_PING_STOP_INPROGRESS
+
  cdef uint32_t SCAMPER_PING_REPLY_FLAG_REPLY_TTL
  cdef uint32_t SCAMPER_PING_REPLY_FLAG_REPLY_IPID
  cdef uint32_t SCAMPER_PING_REPLY_FLAG_PROBE_IPID
@@ -66,6 +72,7 @@ cdef extern from "scamper_ping.h":
  const timeval *scamper_ping_start_get(const scamper_ping_t *ping)
  uint8_t scamper_ping_stop_reason_get(const scamper_ping_t *ping)
  uint8_t scamper_ping_stop_data_get(const scamper_ping_t *ping)
+ char *scamper_ping_stop_tostr(const scamper_ping_t *ping, char *, size_t)
  const uint8_t *scamper_ping_data_get(const scamper_ping_t *ping)
  uint16_t scamper_ping_datalen_get(const scamper_ping_t *ping)
  uint16_t scamper_ping_attempts_get(const scamper_ping_t *ping)

@@ -1,9 +1,9 @@
 /*
  * scamper_udpprobe.h
  *
- * $Id: scamper_udpprobe.h,v 1.7 2024/11/07 18:15:39 mjl Exp $
+ * $Id: scamper_udpprobe.h,v 1.9 2025/08/13 19:30:57 mjl Exp $
  *
- * Copyright (C) 2023 The Regents of the University of California
+ * Copyright (C) 2023-2025 The Regents of the University of California
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -27,6 +27,11 @@ typedef struct scamper_udpprobe scamper_udpprobe_t;
 typedef struct scamper_udpprobe_probe scamper_udpprobe_probe_t;
 typedef struct scamper_udpprobe_reply scamper_udpprobe_reply_t;
 
+#define SCAMPER_UDPPROBE_STOP_NONE     0
+#define SCAMPER_UDPPROBE_STOP_DONE     1
+#define SCAMPER_UDPPROBE_STOP_HALTED   2
+#define SCAMPER_UDPPROBE_STOP_ERROR    3
+
 char *scamper_udpprobe_tojson(const scamper_udpprobe_t *up, size_t *len);
 
 /* scamper_udpprobe_t functions */
@@ -48,6 +53,8 @@ uint8_t scamper_udpprobe_probe_count_get(const scamper_udpprobe_t *up);
 uint8_t scamper_udpprobe_probe_sent_get(const scamper_udpprobe_t *up);
 uint8_t scamper_udpprobe_stop_count_get(const scamper_udpprobe_t *up);
 scamper_udpprobe_probe_t *scamper_udpprobe_probe_get(const scamper_udpprobe_t *up, uint8_t i);
+uint8_t scamper_udpprobe_stop_reason_get(const scamper_udpprobe_t *up);
+char *scamper_udpprobe_stop_tostr(const scamper_udpprobe_t *up, char *buf, size_t len);
 
 /* scamper_udpprobe_probe_t functions */
 void scamper_udpprobe_probe_free(scamper_udpprobe_probe_t *pr);

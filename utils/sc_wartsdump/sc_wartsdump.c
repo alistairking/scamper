@@ -1,7 +1,7 @@
 /*
  * sc_wartsdump
  *
- * $Id: sc_wartsdump.c,v 1.318 2025/05/28 06:53:57 mjl Exp $
+ * $Id: sc_wartsdump.c,v 1.320 2025/08/13 19:30:57 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -2542,8 +2542,9 @@ static void dump_udpprobe(scamper_udpprobe_t *up)
       printf("\n");
     }
   sentc = scamper_udpprobe_probe_sent_get(up);
-  printf(" probe-count: %d, probe-sent: %d\n",
-	 scamper_udpprobe_probe_count_get(up), sentc);
+  printf(" probe-count: %d, probe-sent: %d, stop-reason: %s\n",
+	 scamper_udpprobe_probe_count_get(up), sentc,
+	 scamper_udpprobe_stop_tostr(up, buf, sizeof(buf)));
 
   for(i=0; i<sentc; i++)
     {

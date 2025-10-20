@@ -1,7 +1,7 @@
 /*
  * scamper_http_lib.c
  *
- * $Id: scamper_http_lib.c,v 1.15 2025/03/13 19:52:40 mjl Exp $
+ * $Id: scamper_http_lib.c,v 1.16 2025/09/25 22:46:39 mjl Exp $
  *
  * Copyright (C) 2023-2024 The Regents of the University of California
  *
@@ -459,7 +459,7 @@ static int process_chunked(const scamper_http_t *http,uint8_t *buf,size_t *len)
   uint32_t i;
   uint16_t j;
   int mode = 0, digits = 0;
-  long lo, x;
+  long lo = 0, x;
 
   for(i=0; i<http->bufc; i++)
     {

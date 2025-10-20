@@ -1,7 +1,7 @@
 /*
  * scamper_debug.c
  *
- * $Id: scamper_debug.c,v 1.52 2025/01/19 03:51:01 mjl Exp $
+ * $Id: scamper_debug.c,v 1.53 2025/08/18 21:35:35 mjl Exp $
  *
  * routines to reduce the impact of debugging cruft in scamper's code.
  *
@@ -33,6 +33,10 @@
 #include "scamper.h"
 #include "scamper_debug.h"
 #include "utils.h"
+
+#ifdef HAVE_OPENSSL
+#include "utils_tls.h"
+#endif
 
 #ifndef WITHOUT_DEBUGFILE
 static FILE *debugfile = NULL;
@@ -136,10 +140,8 @@ void printerror_msg(const char *func, const char *format, ...)
 void printerror_ssl(const char *func, const char *format, ...)
 {
   char msg[512], ts[16];
-  char sslbuf[1024], buf[256];
+  char sslbuf[1024];
   va_list ap;
-  size_t off = 0;
-  int ecode;
 
   if(isdaemon != 0)
     {
@@ -155,14 +157,7 @@ void printerror_ssl(const char *func, const char *format, ...)
   vsnprintf(msg, sizeof(msg), format, ap);
   va_end(ap);
   timestamp_str(ts, sizeof(ts));
-
-  for(;;)
-    {
-      if((ecode = ERR_get_error()) == 0)
-	break;
-      ERR_error_string_n(ecode, buf, sizeof(buf));
-      string_concat2(sslbuf, sizeof(sslbuf), &off, off > 0 ? " " : "", buf);
-    }
+  tls_errstr(sslbuf, sizeof(sslbuf));
 
   if(isdaemon == 0)
     {

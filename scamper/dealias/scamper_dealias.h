@@ -1,7 +1,7 @@
 /*
  * scamper_dealias.h
  *
- * $Id: scamper_dealias.h,v 1.72 2025/05/17 06:58:48 mjl Exp $
+ * $Id: scamper_dealias.h,v 1.73 2025/09/14 18:11:39 mjl Exp $
  *
  * Copyright (C) 2008-2011 The University of Waikato
  * Copyright (C) 2012-2013 The Regents of the University of California
@@ -250,6 +250,7 @@ uint32_t scamper_dealias_reply_ipid32_get(const scamper_dealias_reply_t *reply);
 int scamper_dealias_reply_is_icmp_unreach(const scamper_dealias_reply_t *reply);
 int scamper_dealias_reply_is_icmp_unreach_port(const scamper_dealias_reply_t *reply);
 int scamper_dealias_reply_is_icmp_ttl_exp(const scamper_dealias_reply_t *reply);
+int scamper_dealias_reply_is_icmp_echo_reply(const scamper_dealias_reply_t *reply);
 int scamper_dealias_reply_is_tcp(const scamper_dealias_reply_t *reply);
 uint8_t scamper_dealias_reply_tcp_flags_get(const scamper_dealias_reply_t *reply);
 int scamper_dealias_reply_from_target(const scamper_dealias_probe_t *probe,

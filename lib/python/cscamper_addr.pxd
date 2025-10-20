@@ -21,6 +21,10 @@ cdef extern from "scamper_addr.h":
  ctypedef struct scamper_addr_t:
   pass
 
+ cdef int SCAMPER_ADDR_TYPE_IPV4
+ cdef int SCAMPER_ADDR_TYPE_IPV6
+ cdef int SCAMPER_ADDR_TYPE_ETHERNET
+
  void scamper_addr_free(scamper_addr_t *sa)
  scamper_addr_t *scamper_addr_use(scamper_addr_t *sa)
  scamper_addr_t *scamper_addr_fromstr(int kind, const char *addr)

@@ -36,6 +36,12 @@ cdef extern from "scamper_sniff.h":
  ctypedef struct scamper_sniff_pkt_t:
   pass
 
+ cdef uint8_t  SCAMPER_SNIFF_STOP_NONE
+ cdef uint8_t  SCAMPER_SNIFF_STOP_ERROR
+ cdef uint8_t  SCAMPER_SNIFF_STOP_LIMIT_TIME
+ cdef uint8_t  SCAMPER_SNIFF_STOP_LIMIT_PKTC
+ cdef uint8_t  SCAMPER_SNIFF_STOP_HALTED
+
  void scamper_sniff_free(scamper_sniff_t *sniff)
 
  scamper_list_t *scamper_sniff_list_get(const scamper_sniff_t *sniff)

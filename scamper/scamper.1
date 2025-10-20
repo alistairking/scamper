@@ -10,9 +10,9 @@
 .\" Copyright (c) 2024      The Regents of the University of California
 .\"                         All rights reserved
 .\"
-.\" $Id: scamper.1,v 1.159 2025/08/04 01:47:56 mjl Exp $
+.\" $Id: scamper.1,v 1.160 2025/10/02 07:06:32 mjl Exp $
 .\"
-.Dd August 4, 2025
+.Dd October 2, 2025
 .Dt SCAMPER 1
 .Os
 .\""""""""""""
@@ -373,6 +373,8 @@ do not allow
 .Nm
 to probe addresses in prefixes listed in the specified file.  Specify
 prefixes one per line.  This option can be specified more than once.
+If a prefix in a do-not-probe file covers a nameserver specified in
+/etc/resolv.conf, the host command can still use it.
 .El
 .It Fl i Ar IP 1..N
 specifies a list of one or more addresses to probe, on the command

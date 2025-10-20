@@ -43,6 +43,14 @@ cdef extern from "scamper_http.h":
  ctypedef struct scamper_http_hdr_fields_t:
   pass
 
+ cdef uint8_t  SCAMPER_HTTP_STOP_NONE
+ cdef uint8_t  SCAMPER_HTTP_STOP_HALTED
+ cdef uint8_t  SCAMPER_HTTP_STOP_NOCONN
+ cdef uint8_t  SCAMPER_HTTP_STOP_DONE
+ cdef uint8_t  SCAMPER_HTTP_STOP_ERROR
+ cdef uint8_t  SCAMPER_HTTP_STOP_TIMEOUT
+ cdef uint8_t  SCAMPER_HTTP_STOP_INSECURE
+
  void scamper_http_free(scamper_http_t *http)
 
  scamper_list_t *scamper_http_list_get(const scamper_http_t *http)

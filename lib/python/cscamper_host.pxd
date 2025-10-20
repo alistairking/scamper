@@ -54,6 +54,12 @@ cdef extern from "scamper_host.h":
 
  cdef uint16_t SCAMPER_HOST_CLASS_IN
 
+ cdef uint8_t  SCAMPER_HOST_STOP_NONE
+ cdef uint8_t  SCAMPER_HOST_STOP_DONE
+ cdef uint8_t  SCAMPER_HOST_STOP_TIMEOUT
+ cdef uint8_t  SCAMPER_HOST_STOP_HALTED
+ cdef uint8_t  SCAMPER_HOST_STOP_ERROR
+
  char *scamper_host_tojson(const scamper_host_t *host, size_t *l)
 
  void scamper_host_free(scamper_host_t *host)

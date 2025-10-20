@@ -217,6 +217,7 @@ cdef extern from "scamper_dealias.h":
  bint scamper_dealias_reply_is_icmp_unreach(const scamper_dealias_reply_t *reply)
  bint scamper_dealias_reply_is_icmp_unreach_port(const scamper_dealias_reply_t *reply)
  bint scamper_dealias_reply_is_icmp_ttl_exp(const scamper_dealias_reply_t *reply)
+ bint scamper_dealias_reply_is_icmp_echo_reply(const scamper_dealias_reply_t *reply)
  bint scamper_dealias_reply_is_tcp(const scamper_dealias_reply_t *reply)
  bint scamper_dealias_reply_from_target(const scamper_dealias_probe_t *probe,
 				        const scamper_dealias_reply_t *reply)

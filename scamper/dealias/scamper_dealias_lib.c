@@ -1,7 +1,7 @@
 /*
  * scamper_dealias_lib.c
  *
- * $Id: scamper_dealias_lib.c,v 1.23 2025/02/11 14:31:43 mjl Exp $
+ * $Id: scamper_dealias_lib.c,v 1.24 2025/09/14 18:11:39 mjl Exp $
  *
  * Copyright (C) 2023-2025 Matthew Luckie
  * Author: Matthew Luckie
@@ -871,6 +871,11 @@ int scamper_dealias_reply_is_icmp_unreach(const scamper_dealias_reply_t *reply)
 int scamper_dealias_reply_is_icmp_ttl_exp(const scamper_dealias_reply_t *reply)
 {
   return SCAMPER_DEALIAS_REPLY_IS_ICMP_TTL_EXP(reply);
+}
+
+int scamper_dealias_reply_is_icmp_echo_reply(const scamper_dealias_reply_t *reply)
+{
+  return SCAMPER_DEALIAS_REPLY_IS_ICMP_ECHO_REPLY(reply);
 }
 
 int scamper_dealias_reply_is_tcp(const scamper_dealias_reply_t *reply)

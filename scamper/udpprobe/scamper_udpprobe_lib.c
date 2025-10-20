@@ -1,9 +1,9 @@
 /*
  * scamper_udpprobe_lib.c
  *
- * $Id: scamper_udpprobe_lib.c,v 1.6 2024/09/06 01:34:54 mjl Exp $
+ * $Id: scamper_udpprobe_lib.c,v 1.7 2025/08/07 05:00:43 mjl Exp $
  *
- * Copyright (C) 2023 The Regents of the University of California
+ * Copyright (C) 2023-2025 The Regents of the University of California
  *
  * Authors: Matthew Luckie
  *
@@ -150,6 +150,11 @@ scamper_udpprobe_probe_t *scamper_udpprobe_probe_get(const scamper_udpprobe_t *u
   if(up->probes == NULL || i >= up->probe_sent)
     return NULL;
   return up->probes[i];
+}
+
+uint8_t scamper_udpprobe_stop_reason_get(const scamper_udpprobe_t *up)
+{
+  return up->stop;
 }
 
 const struct timeval *scamper_udpprobe_probe_tx_get(const scamper_udpprobe_probe_t *probe)

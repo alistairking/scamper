@@ -3,7 +3,7 @@
  *
  * Author: Matthew Luckie
  *
- * $Id: scamper_udpprobe_json.c,v 1.10 2025/05/03 09:01:57 mjl Exp $
+ * $Id: scamper_udpprobe_json.c,v 1.12 2025/08/13 19:30:57 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -149,7 +149,6 @@ static char *probe_tostr(const scamper_udpprobe_probe_t *probe)
 
 static char *header_tostr(const scamper_udpprobe_t *up)
 {
-  static const char *stop_m[] = {"none", "done", "halted", "error"};
   char buf[4096], tmp[512];
   size_t off = 0;
 
@@ -178,12 +177,8 @@ static char *header_tostr(const scamper_udpprobe_t *up)
   if(up->flags & SCAMPER_UDPPROBE_FLAG_EXITFIRST)
     string_concat(buf, sizeof(buf), &off, ", \"flags\":[\"exitfirst\"]");
 
-  if(up->stop >= sizeof(stop_m) / sizeof(char *))
-    string_concat_u8(buf, sizeof(buf), &off, ", \"stop_reason\":\"", up->stop);
-  else
-    string_concat2(buf, sizeof(buf), &off, ", \"stop_reason\":\"",
-		   stop_m[up->stop]);
-  string_concatc(buf, sizeof(buf), &off, '"');
+  string_concat3(buf, sizeof(buf), &off, ", \"stop_reason\":\"",
+		 scamper_udpprobe_stop_tostr(up, tmp, sizeof(tmp)), "\"");
 
   if(up->data != NULL && up->len > 0)
     {

@@ -9,7 +9,7 @@
  *
  * Authors: Ben Stasiewicz, Matthew Luckie
  *
- * $Id: scamper_tbit.c,v 1.63 2023/11/24 06:00:03 mjl Exp $
+ * $Id: scamper_tbit.c,v 1.64 2025/10/02 06:54:48 mjl Exp $
  *
  * This file implements algorithms described in the tbit-1.0 source code,
  * as well as the papers:
@@ -475,8 +475,8 @@ int scamper_tbit_pkt_tcpack_get(const scamper_tbit_pkt_t *pkt, uint32_t *ack)
 int scamper_tbit_server_icw_size_get(const scamper_tbit_t *tbit,
 				     uint32_t *icw_out)
 {
-  const scamper_tbit_icw_t *icw = tbit->data;
   const scamper_tbit_pkt_t *pkt = NULL;
+  const scamper_tbit_icw_t *icw;
   scamper_tbit_tcpq_t *q = NULL;
   uint32_t i, u32, seq, start_seq;
   uint16_t iplen, datalen;
@@ -484,6 +484,9 @@ int scamper_tbit_server_icw_size_get(const scamper_tbit_t *tbit,
   int rc = -1;
 
   if(tbit->result != SCAMPER_TBIT_RESULT_ICW_SUCCESS)
+    goto done;
+
+  if((icw = tbit->data) == NULL)
     goto done;
 
   for(i=1; i<tbit->pktc; i++)

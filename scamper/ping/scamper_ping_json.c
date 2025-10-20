@@ -9,7 +9,7 @@
  * Copyright (c) 2019-2025 Matthew Luckie
  * Authors: Brian Hammond, Matthew Luckie
  *
- * $Id: scamper_ping_json.c,v 1.53 2025/05/29 20:01:52 mjl Exp $
+ * $Id: scamper_ping_json.c,v 1.54 2025/08/31 02:43:18 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -55,60 +55,60 @@ static char *ping_header(const scamper_ping_t *ping)
   uint8_t u8, c;
 
   string_concat3(buf, sizeof(buf), &off,
-		 "{\"type\":\"ping\", \"version\":\"0.4\", \"method\":\"",
+		 "{\"type\":\"ping\",\"version\":\"0.4\",\"method\":\"",
 		 scamper_ping_method_tostr(ping, tmp, sizeof(tmp)), "\"");
   if(ping->src != NULL)
-    string_concat3(buf, sizeof(buf), &off, ", \"src\":\"",
+    string_concat3(buf, sizeof(buf), &off, ",\"src\":\"",
 		   scamper_addr_tostr(ping->src, tmp, sizeof(tmp)), "\"");
   if(ping->dst != NULL)
-    string_concat3(buf, sizeof(buf), &off, ", \"dst\":\"",
+    string_concat3(buf, sizeof(buf), &off, ",\"dst\":\"",
 		   scamper_addr_tostr(ping->dst, tmp, sizeof(tmp)), "\"");
   if(ping->rtr != NULL)
-    string_concat3(buf, sizeof(buf), &off, ", \"rtr\":\"",
+    string_concat3(buf, sizeof(buf), &off, ",\"rtr\":\"",
 		   scamper_addr_tostr(ping->rtr, tmp, sizeof(tmp)), "\"");
-  string_concat_u32(buf, sizeof(buf), &off, ", \"start\":{\"sec\":",
+  string_concat_u32(buf, sizeof(buf), &off, ",\"start\":{\"sec\":",
 		    (uint32_t)ping->start.tv_sec);
   string_concat_u32(buf, sizeof(buf), &off, ",\"usec\":",
 		    (uint32_t)ping->start.tv_usec);
-  string_concat2(buf, sizeof(buf), &off, "}, \"stop_reason\":\"",
+  string_concat2(buf, sizeof(buf), &off, "},\"stop_reason\":\"",
 		 scamper_ping_stop_tostr(ping, tmp, sizeof(tmp)));
-  string_concat_u8(buf, sizeof(buf), &off, "\", \"stop_data\":",
+  string_concat_u8(buf, sizeof(buf), &off, "\",\"stop_data\":",
 		   ping->stop_data);
-  string_concat_u16(buf, sizeof(buf), &off, ", \"ping_sent\":",
+  string_concat_u16(buf, sizeof(buf), &off, ",\"ping_sent\":",
 		    ping->ping_sent);
-  string_concat_u16(buf, sizeof(buf), &off, ", \"probe_size\":",
+  string_concat_u16(buf, sizeof(buf), &off, ",\"probe_size\":",
 		    ping->size);
-  string_concat_u32(buf, sizeof(buf), &off, ", \"userid\":", ping->userid);
-  string_concat_u8(buf, sizeof(buf), &off, ", \"ttl\":", ping->ttl);
-  string_concat_u8(buf, sizeof(buf), &off, ", \"tos\":", ping->tos);
-  string_concat_u8(buf, sizeof(buf), &off, ", \"wait\":",
+  string_concat_u32(buf, sizeof(buf), &off, ",\"userid\":", ping->userid);
+  string_concat_u8(buf, sizeof(buf), &off, ",\"ttl\":", ping->ttl);
+  string_concat_u8(buf, sizeof(buf), &off, ",\"tos\":", ping->tos);
+  string_concat_u8(buf, sizeof(buf), &off, ",\"wait\":",
 		   (uint8_t)ping->wait_probe.tv_sec); /* max of 20 seconds */
   if(ping->wait_probe.tv_usec != 0)
-    string_concat_u32(buf, sizeof(buf), &off, ", \"wait_us\":",
+    string_concat_u32(buf, sizeof(buf), &off, ",\"wait_us\":",
 		      (uint32_t)ping->wait_probe.tv_usec);
-  string_concat_u8(buf, sizeof(buf), &off, ", \"timeout\":", /* max of 255 */
+  string_concat_u8(buf, sizeof(buf), &off, ",\"timeout\":", /* max of 255 */
 		   (uint8_t)ping->wait_timeout.tv_sec);
   if(ping->wait_timeout.tv_usec != 0)
-    string_concat_u32(buf, sizeof(buf), &off, ", \"timeout_us\":",
+    string_concat_u32(buf, sizeof(buf), &off, ",\"timeout_us\":",
 		      (uint32_t)ping->wait_timeout.tv_usec);
 
   if(SCAMPER_PING_METHOD_IS_UDP(ping) || SCAMPER_PING_METHOD_IS_TCP(ping))
     {
-      string_concat_u16(buf, sizeof(buf), &off, ", \"sport\":", ping->sport);
-      string_concat_u16(buf, sizeof(buf), &off, ", \"dport\":", ping->dport);
+      string_concat_u16(buf, sizeof(buf), &off, ",\"sport\":", ping->sport);
+      string_concat_u16(buf, sizeof(buf), &off, ",\"dport\":", ping->dport);
     }
   if(SCAMPER_PING_METHOD_IS_TCP(ping))
     {
-      string_concat_u32(buf, sizeof(buf), &off, ", \"tcp_seq\":", ping->tcpseq);
-      string_concat_u32(buf, sizeof(buf), &off, ", \"tcp_ack\":", ping->tcpack);
+      string_concat_u32(buf, sizeof(buf), &off, ",\"tcp_seq\":", ping->tcpseq);
+      string_concat_u32(buf, sizeof(buf), &off, ",\"tcp_ack\":", ping->tcpack);
       if(ping->tcpmss > 0)
-	string_concat_u16(buf, sizeof(buf), &off, ", \"tcp_mss\":",
+	string_concat_u16(buf, sizeof(buf), &off, ",\"tcp_mss\":",
 			  ping->tcpmss);
     }
 
   if(ping->datalen > 0 && ping->data != NULL)
     {
-      string_concat3(buf, sizeof(buf), &off, ", \"",
+      string_concat3(buf, sizeof(buf), &off, ",\"",
 		     (ping->flags & SCAMPER_PING_FLAG_PAYLOAD) != 0 ?
 		     "payload" : "pattern", "\":\"");
       string_byte2hex(buf, sizeof(buf), &off, ping->data, ping->datalen);
@@ -118,7 +118,7 @@ static char *ping_header(const scamper_ping_t *ping)
   if(ping->flags != 0)
     {
       c = 0;
-      string_concat(buf, sizeof(buf), &off, ", \"flags\":[");
+      string_concat(buf, sizeof(buf), &off, ",\"flags\":[");
       for(u8=0; u8<sizeof(flags) / sizeof(char *); u8++)
 	{
 	  if((ping->flags & (0x1 << u8)) == 0)
@@ -135,11 +135,11 @@ static char *ping_header(const scamper_ping_t *ping)
 
   if(SCAMPER_PING_METHOD_IS_ICMP(ping) &&
      (ping->flags & SCAMPER_PING_FLAG_ICMPSUM) != 0)
-    string_concat_u16(buf, sizeof(buf), &off, ", \"icmp_csum\":",ping->icmpsum);
+    string_concat_u16(buf, sizeof(buf), &off, ",\"icmp_csum\":",ping->icmpsum);
 
   if(ping->tsps != NULL)
     {
-      string_concat(buf, sizeof(buf), &off, ", \"probe_tsps\":[");
+      string_concat(buf, sizeof(buf), &off, ",\"probe_tsps\":[");
       if(ping->tsps->ips != NULL)
 	{
 	  c = 0;
@@ -179,22 +179,22 @@ static void ping_probe_json(char *buf, size_t len, size_t *off,
 	string_concat2(tmp, sizeof(tmp), &off2,
 		       off2 != 0 ? ", " : "", "\"pending\"");
       if(off2 != 0)
-	string_concat3(buf, len, off, ", \"probe_flags\":[", tmp, "]");
+	string_concat3(buf, len, off, ",\"probe_flags\":[", tmp, "]");
     }
 
   if(probe->tx.tv_sec != 0)
     {
-      string_concat_u32(buf, len, off, ", \"tx\":{\"sec\":",
+      string_concat_u32(buf, len, off, ",\"tx\":{\"sec\":",
 			(uint32_t)probe->tx.tv_sec);
-      string_concat_u32(buf, len, off, ", \"usec\":",
+      string_concat_u32(buf, len, off, ",\"usec\":",
 			(uint32_t)probe->tx.tv_usec);
       string_concatc(buf, len, off, '}');
     }
 
   if(SCAMPER_PING_METHOD_IS_ICMP(ping))
     {
-      string_concat_u16(buf, len, off, ", \"icmp_id\":", ping->sport);
-      string_concat_u16(buf, len, off, ", \"icmp_seq\":",
+      string_concat_u16(buf, len, off, ",\"icmp_id\":", ping->sport);
+      string_concat_u16(buf, len, off, ",\"icmp_seq\":",
 			ping->dport + probe->id);	
     }
   else
@@ -218,14 +218,14 @@ static void ping_probe_json(char *buf, size_t len, size_t *off,
       if(SCAMPER_PING_METHOD_IS_VARY_DPORT(ping))
 	dport += probe->id;
 
-      string_concat2(buf, len, off, ", \"", pt);
+      string_concat2(buf, len, off, ",\"", pt);
       string_concat_u16(buf, len, off, "_sport\":", sport);
       string_concat2(buf, len, off, ", \"", pt);
       string_concat_u16(buf, len, off, "_dport\":", dport);
     }
 
   if(probe->flags & SCAMPER_PING_REPLY_FLAG_PROBE_IPID)
-    string_concat_u16(buf, len, off, ", \"probe_ipid\":",
+    string_concat_u16(buf, len, off, ",\"probe_ipid\":",
 		      probe->ipid);
 
   if(reply == 0)
@@ -257,13 +257,13 @@ static char *ping_reply(const scamper_ping_t *ping,
   string_concatc(buf, sizeof(buf), &off, '{');
   if(reply->addr != NULL)
     string_concat3(buf, sizeof(buf), &off, "\"from\":\"",
-		   scamper_addr_tostr(reply->addr, tmp, sizeof(tmp)), "\", ");
+		   scamper_addr_tostr(reply->addr, tmp, sizeof(tmp)), "\",");
   string_concat_u16(buf, sizeof(buf), &off, "\"reply_size\":", reply->size);
-  string_concat_u8(buf, sizeof(buf), &off, ", \"reply_ttl\":", reply->ttl);
+  string_concat_u8(buf, sizeof(buf), &off, ",\"reply_ttl\":", reply->ttl);
 
   ping_probe_json(buf, sizeof(buf), &off, ping, probe, 1);
 
-  string_concat(buf, sizeof(buf), &off, ", \"reply_proto\":");
+  string_concat(buf, sizeof(buf), &off, ",\"reply_proto\":");
   if(reply->proto == IPPROTO_ICMP || reply->proto == IPPROTO_ICMPV6)
     string_concat(buf, sizeof(buf), &off, "\"icmp\"");
   else if(reply->proto == IPPROTO_TCP)
@@ -274,7 +274,7 @@ static char *ping_reply(const scamper_ping_t *ping,
     string_concat_u8(buf, sizeof(buf), &off, NULL, reply->proto);
 
   if(reply->ifname != NULL && reply->ifname->ifname != NULL)
-    string_concat3(buf, sizeof(buf), &off, ", \"ifname\":\"",
+    string_concat3(buf, sizeof(buf), &off, ",\"ifname\":\"",
 		   reply->ifname->ifname, "\"");
 
   if(reply->flags != 0)
@@ -284,55 +284,55 @@ static char *ping_reply(const scamper_ping_t *ping,
 	string_concat(tmp, sizeof(tmp), &off2, "\"dltxts\"");
       if(reply->flags & SCAMPER_PING_REPLY_FLAG_DLRX)
 	string_concat2(tmp, sizeof(tmp), &off2,
-		       off2 != 0 ? ", " : "", "\"dlrxts\"");
+		       off2 != 0 ? "," : "", "\"dlrxts\"");
       if(off2 != 0)
-	string_concat3(buf, sizeof(buf), &off, ", \"reply_flags\":[",tmp,"]");
+	string_concat3(buf, sizeof(buf), &off, ",\"reply_flags\":[",tmp,"]");
     }
 
   if(probe->tx.tv_sec != 0)
     {
       timeval_add_tv3(&tv, &probe->tx, &reply->rtt);
-      string_concat_u32(buf, sizeof(buf), &off, ", \"rx\":{\"sec\":",
+      string_concat_u32(buf, sizeof(buf), &off, ",\"rx\":{\"sec\":",
 			(uint32_t)tv.tv_sec);
-      string_concat_u32(buf, sizeof(buf), &off, ", \"usec\":",
+      string_concat_u32(buf, sizeof(buf), &off, ",\"usec\":",
 			(uint32_t)tv.tv_usec);
       string_concatc(buf, sizeof(buf), &off, '}');
     }
-  string_concat2(buf, sizeof(buf), &off, ", \"rtt\":",
+  string_concat2(buf, sizeof(buf), &off, ",\"rtt\":",
 		 timeval_tostr_us(&reply->rtt, tmp, sizeof(tmp)));
 
   if(reply->addr != NULL)
     {
       if(SCAMPER_ADDR_TYPE_IS_IPV4(reply->addr))
 	{
-	  string_concat_u16(buf, sizeof(buf), &off, ", \"reply_ipid\":",
+	  string_concat_u16(buf, sizeof(buf), &off, ",\"reply_ipid\":",
 			    reply->ipid32 & 0xFFFF);
 	}
       else if(SCAMPER_ADDR_TYPE_IS_IPV6(reply->addr) &&
 	      (reply->flags & SCAMPER_PING_REPLY_FLAG_REPLY_IPID) != 0)
 	{
-	  string_concat_u32(buf, sizeof(buf), &off, ", \"reply_ipid\":",
+	  string_concat_u32(buf, sizeof(buf), &off, ",\"reply_ipid\":",
 			    reply->ipid32);
 	}
     }
 
   if(reply->flags & SCAMPER_PING_REPLY_FLAG_REPLY_TOS)
-    string_concat_u8(buf, sizeof(buf), &off, ", \"reply_tos\":", reply->tos);
+    string_concat_u8(buf, sizeof(buf), &off, ",\"reply_tos\":", reply->tos);
 
   if(SCAMPER_PING_REPLY_IS_ICMP(reply))
     {
-      string_concat_u8(buf, sizeof(buf), &off, ", \"icmp_type\":",
+      string_concat_u8(buf, sizeof(buf), &off, ",\"icmp_type\":",
 		       reply->icmp_type);
-      string_concat_u8(buf, sizeof(buf), &off, ", \"icmp_code\":",
+      string_concat_u8(buf, sizeof(buf), &off, ",\"icmp_code\":",
 		       reply->icmp_code);
 
       if(SCAMPER_PING_REPLY_IS_ICMP_PTB(reply))
-	string_concat_u16(buf, sizeof(buf), &off, ", \"icmp_nhmtu\":",
+	string_concat_u16(buf, sizeof(buf), &off, ",\"icmp_nhmtu\":",
 			  reply->icmp_nhmtu);
     }
   else if(SCAMPER_PING_REPLY_IS_TCP(reply))
     {
-      string_concat_u8(buf, sizeof(buf), &off, ", \"tcp_flags\":",
+      string_concat_u8(buf, sizeof(buf), &off, ",\"tcp_flags\":",
 		       reply->tcp_flags);
       if(reply->tcp_mss > 0)
 	string_concat_u16(buf, sizeof(buf), &off, ", \"tcp_mss\":",
@@ -341,7 +341,7 @@ static char *ping_reply(const scamper_ping_t *ping,
 
   if((v4rr = reply->v4rr) != NULL)
     {
-      string_concat(buf, sizeof(buf), &off, ", \"RR\":[");
+      string_concat(buf, sizeof(buf), &off, ",\"RR\":[");
       for(i=0; i<v4rr->ipc; i++)
 	{
 	  if(i > 0) string_concatc(buf, sizeof(buf), &off, ',');
@@ -357,7 +357,7 @@ static char *ping_reply(const scamper_ping_t *ping,
     {
       if((ping->flags & SCAMPER_PING_FLAG_TSONLY) == 0)
 	{
-	  string_concat(buf, sizeof(buf), &off, ", \"tsandaddr\":[");
+	  string_concat(buf, sizeof(buf), &off, ",\"tsandaddr\":[");
 	  for(i=0; i<v4ts->tsc; i++)
 	    {
 	      if(i > 0) string_concatc(buf, sizeof(buf), &off, ',');
@@ -366,7 +366,7 @@ static char *ping_reply(const scamper_ping_t *ping,
 	      if(v4ts->ips != NULL && v4ts->ips[i] != NULL)
 		{
 		  scamper_addr_tostr(v4ts->ips[i], tmp, sizeof(tmp));
-		  string_concat3(buf, sizeof(buf), &off, ", \"ip\":\"",
+		  string_concat3(buf, sizeof(buf), &off, ",\"ip\":\"",
 				 tmp, "\"");
 		}
 	      string_concatc(buf, sizeof(buf), &off, '}');
@@ -375,7 +375,7 @@ static char *ping_reply(const scamper_ping_t *ping,
 	}
       else
 	{
-	  string_concat(buf, sizeof(buf), &off, ", \"tsonly\":[");
+	  string_concat(buf, sizeof(buf), &off, ",\"tsonly\":[");
 	  for(i=0; i<v4ts->tsc; i++)
 	    {
 	      if(i > 0) string_concatc(buf, sizeof(buf), &off, ',');
@@ -406,7 +406,7 @@ static char *ping_stats(const scamper_ping_t *ping)
   if(ping->ping_sent > stats->npend)
     {
       total = ping->ping_sent - stats->npend;
-      string_concat(buf, sizeof(buf), &off, ", \"loss\":");
+      string_concat(buf, sizeof(buf), &off, ",\"loss\":");
       if(stats->nreplies == 0)
 	string_concatc(buf, sizeof(buf), &off, '1');
       else if(stats->nreplies == total)
@@ -417,21 +417,21 @@ static char *ping_stats(const scamper_ping_t *ping)
     }
   if(stats->nreplies > 0)
     {
-      string_concat2(buf, sizeof(buf), &off, ", \"min\":",
+      string_concat2(buf, sizeof(buf), &off, ",\"min\":",
 		     timeval_tostr_us(&stats->min_rtt, str, sizeof(str)));
-      string_concat2(buf, sizeof(buf), &off, ", \"max\":",
+      string_concat2(buf, sizeof(buf), &off, ",\"max\":",
 		     timeval_tostr_us(&stats->max_rtt, str, sizeof(str)));
-      string_concat2(buf, sizeof(buf), &off, ", \"avg\":",
+      string_concat2(buf, sizeof(buf), &off, ",\"avg\":",
 		     timeval_tostr_us(&stats->avg_rtt, str, sizeof(str)));
-      string_concat2(buf, sizeof(buf), &off, ", \"stddev\":",
+      string_concat2(buf, sizeof(buf), &off, ",\"stddev\":",
 		     timeval_tostr_us(&stats->stddev_rtt, str, sizeof(str)));
     }
   if(stats->ndups > 0)
-    string_concat_u32(buf, sizeof(buf), &off, ", \"ndups\":", stats->ndups);
+    string_concat_u32(buf, sizeof(buf), &off, ",\"ndups\":", stats->ndups);
   if(stats->nerrs > 0)
-    string_concat_u32(buf, sizeof(buf), &off, ", \"nerrs\":", stats->nerrs);
+    string_concat_u32(buf, sizeof(buf), &off, ",\"nerrs\":", stats->nerrs);
   if(stats->npend > 0)
-    string_concat_u32(buf, sizeof(buf), &off, ", \"npend\":", stats->npend);
+    string_concat_u32(buf, sizeof(buf), &off, ",\"npend\":", stats->npend);
 
   string_concatc(buf, sizeof(buf), &off, '}');
   dup = strdup(buf);
@@ -476,7 +476,7 @@ char *scamper_ping_tojson(const scamper_ping_t *ping, size_t *len_out)
     }
 
   /* put together a string for each reply */
-  len += 15; /* , \"responses\":[" */
+  len += 14; /* ,\"responses\":[" */
   if(replyc > 0)
     {
       if((replies    = malloc_zero(sizeof(char *) * replyc)) == NULL ||
@@ -538,7 +538,7 @@ char *scamper_ping_tojson(const scamper_ping_t *ping, size_t *len_out)
   if((str = malloc_zero(len)) == NULL)
     goto cleanup;
   memcpy(str+wc, header, header_len); wc += header_len;
-  memcpy(str+wc, ", \"responses\":[", 15); wc += 15;
+  memcpy(str+wc, ",\"responses\":[", 14); wc += 14;
   for(i=0; i < replyc; i++)
     {
       if(i > 0)
@@ -546,7 +546,7 @@ char *scamper_ping_tojson(const scamper_ping_t *ping, size_t *len_out)
       memcpy(str+wc, replies[i], reply_lens[i]);
       wc += reply_lens[i];
     }
-  memcpy(str+wc, "],", 2); wc += 2;
+  str[wc++] = ']'; str[wc++] = ',';
 
   memcpy(str+wc, "\"no_responses\":[", 16); wc += 16;
   for(i=0; i < noreplyc; i++)
@@ -556,14 +556,14 @@ char *scamper_ping_tojson(const scamper_ping_t *ping, size_t *len_out)
       memcpy(str+wc, noreplies[i], noreply_lens[i]);
       wc += noreply_lens[i];
     }
-  memcpy(str+wc, "],", 2); wc += 2;
+  str[wc++] = ']'; str[wc++] = ',';
 
   if(stats != NULL)
     {
       memcpy(str+wc, stats, stats_len);
       wc += stats_len;
     }
-  memcpy(str+wc, "}\0", 2); wc += 2;
+  str[wc++] = '}'; str[wc++] = '\0';
 
   assert(wc == len);
   rc = 0;

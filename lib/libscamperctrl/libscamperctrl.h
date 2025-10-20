@@ -1,7 +1,7 @@
 /*
  * libscamperctrl
  *
- * $Id: libscamperctrl.h,v 1.26 2025/02/24 21:07:02 mjl Exp $
+ * $Id: libscamperctrl.h,v 1.27 2025/09/04 05:28:05 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -100,6 +100,7 @@ const char *scamper_vp_cc_get(const scamper_vp_t *vp);
 const char *scamper_vp_st_get(const scamper_vp_t *vp);
 const char *scamper_vp_place_get(const scamper_vp_t *vp);
 const char *scamper_vp_latlong_get(const scamper_vp_t *vp);
+const char *scamper_vp_iata_get(const scamper_vp_t *vp);
 size_t scamper_vp_tagc_get(const scamper_vp_t *vp);
 const char *scamper_vp_tag_get(const scamper_vp_t *vp, size_t i);
 
