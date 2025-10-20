@@ -88,6 +88,7 @@ cdef extern from "scamper_trace.h":
  const timeval *scamper_trace_start_get(const scamper_trace_t *trace)
  uint8_t scamper_trace_stop_reason_get(const scamper_trace_t *trace)
  uint8_t scamper_trace_stop_data_get(const scamper_trace_t *trace)
+ const char *scamper_trace_errmsg_get(const scamper_trace_t *trace)
  char *scamper_trace_stop_tostr(const scamper_trace_t *trace,
                                 char *buf, size_t len)
  uint16_t scamper_trace_hop_count_get(const scamper_trace_t *trace)

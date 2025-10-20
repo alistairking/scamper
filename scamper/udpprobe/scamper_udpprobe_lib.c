@@ -1,7 +1,7 @@
 /*
  * scamper_udpprobe_lib.c
  *
- * $Id: scamper_udpprobe_lib.c,v 1.7 2025/08/07 05:00:43 mjl Exp $
+ * $Id: scamper_udpprobe_lib.c,v 1.8 2025/10/19 19:23:21 mjl Exp $
  *
  * Copyright (C) 2023-2025 The Regents of the University of California
  *
@@ -143,6 +143,11 @@ uint8_t scamper_udpprobe_probe_sent_get(const scamper_udpprobe_t *up)
 uint8_t scamper_udpprobe_stop_count_get(const scamper_udpprobe_t *up)
 {
   return up->stop_count;
+}
+
+const char *scamper_udpprobe_errmsg_get(const scamper_udpprobe_t *up)
+{
+  return up->errmsg;
 }
 
 scamper_udpprobe_probe_t *scamper_udpprobe_probe_get(const scamper_udpprobe_t *up, uint8_t i)

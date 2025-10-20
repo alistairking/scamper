@@ -1,7 +1,7 @@
 /*
  * scamper_trace_cmd.c
  *
- * $Id: scamper_trace_cmd.c,v 1.29 2025/08/04 00:00:27 mjl Exp $
+ * $Id: scamper_trace_cmd.c,v 1.30 2025/10/10 01:43:03 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -636,7 +636,8 @@ void *scamper_do_trace_alloc(char *str, char *errbuf, size_t errlen)
       snprintf(errbuf, errlen, "could not alloc trace");
       goto err;
     }
-  if((trace->dst= scamper_addrcache_resolve(addrcache,AF_UNSPEC,addr)) == NULL)
+  if((trace->dst=scamper_addrcache_resolve(addrcache,AF_UNSPEC,addr)) == NULL||
+     SCAMPER_ADDR_TYPE_IS_IP(trace->dst) == 0)
     {
       snprintf(errbuf, errlen, "invalid destination address");
       goto err;

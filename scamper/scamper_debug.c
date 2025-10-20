@@ -1,7 +1,7 @@
 /*
  * scamper_debug.c
  *
- * $Id: scamper_debug.c,v 1.53 2025/08/18 21:35:35 mjl Exp $
+ * $Id: scamper_debug.c,v 1.57 2025/10/12 01:37:25 mjl Exp $
  *
  * routines to reduce the impact of debugging cruft in scamper's code.
  *
@@ -54,11 +54,49 @@ static void timestamp_str(char *buf, size_t len)
   return;
 }
 
+void scamper_err_make(scamper_err_t *err, int error, const char *format, ...)
+{
+  va_list ap;
+
+  err->error = error;
+  va_start(ap, format);
+  vsnprintf(err->errstr, sizeof(err->errstr), format, ap);
+  va_end(ap);
+
+  errno = error;
+  return;
+}
+
+char *scamper_err_render(const scamper_err_t *err, char *buf, size_t len)
+{
+  if(err->error != 0)
+    snprintf(buf, len, "%s: %s", err->errstr, strerror(err->error));
+  else
+    snprintf(buf, len, "%s", err->errstr);
+  return buf;
+}
+
+/*
+ * printerror_would
+ *
+ * would printerror and related functions emit something, if called now?
+ */
+int printerror_would(void)
+{
+  if(isdaemon == 0)
+    return 1;
+#ifndef WITHOUT_DEBUGFILE
+  if(debugfile != NULL)
+    return 1;
+#endif
+  return 0; /* into the flood again */
+}
+
 /*
  * printerror
  *
- * format a nice and consistent error string using strerror and the
- * arguments supplied
+ * format a consistent error string using strerror and the arguments
+ * supplied.  ensure errno doesn't get clobbered in this function.
  */
 void printerror(const char *func, const char *format, ...)
 {
@@ -96,6 +134,7 @@ void printerror(const char *func, const char *format, ...)
     }
 #endif
 
+  errno = ecode;
   return;
 }
 

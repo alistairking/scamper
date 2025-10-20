@@ -8,7 +8,7 @@
  * Copyright (C) 2023,2025 The Regents of the University of California
  * Author: Matthew Luckie
  *
- * $Id: scamper_dealias_warts.c,v 1.50 2025/04/30 07:59:54 mjl Exp $
+ * $Id: scamper_dealias_warts.c,v 1.51 2025/10/19 02:17:23 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -52,6 +52,7 @@
 #define WARTS_DEALIAS_RESULT   5
 #define WARTS_DEALIAS_PROBEC   6
 #define WARTS_DEALIAS_USERID   7
+#define WARTS_DEALIAS_ERRMSG   8
 
 static const warts_var_t dealias_vars[] =
 {
@@ -62,6 +63,7 @@ static const warts_var_t dealias_vars[] =
   {WARTS_DEALIAS_RESULT,   1},
   {WARTS_DEALIAS_PROBEC,   4},
   {WARTS_DEALIAS_USERID,   4},
+  {WARTS_DEALIAS_ERRMSG,  -1},
 };
 #define dealias_vars_mfb WARTS_VAR_MFB(dealias_vars)
 
@@ -300,9 +302,9 @@ typedef struct warts_dealias_probe
 #define _scamper_dealias_probedef_use(def) (def)
 #endif
 
-static void warts_dealias_params(const scamper_dealias_t *dealias,
-				 uint8_t *flags, uint16_t *flags_len,
-				 uint16_t *params_len)
+static int warts_dealias_params(const scamper_dealias_t *dealias,
+				uint8_t *flags, uint16_t *flags_len,
+				uint16_t *params_len)
 {
   const warts_var_t *var;
   int max_id = 0;
@@ -316,16 +318,26 @@ static void warts_dealias_params(const scamper_dealias_t *dealias,
       var = &dealias_vars[i];
       if((var->id == WARTS_DEALIAS_USERID && dealias->userid == 0) ||
 	 (var->id == WARTS_DEALIAS_RESULT && dealias->result == 0) ||
-	 (var->id == WARTS_DEALIAS_PROBEC && dealias->probec == 0))
+	 (var->id == WARTS_DEALIAS_PROBEC && dealias->probec == 0) ||
+	 (var->id == WARTS_DEALIAS_ERRMSG && dealias->errmsg == NULL))
 	continue;
 
       flag_set(flags, var->id, &max_id);
-      assert(var->size != -1);
-      *params_len += var->size;
+
+      if(var->id == WARTS_DEALIAS_ERRMSG)
+	{
+	  if(warts_str_size(dealias->errmsg, params_len) != 0)
+	    return -1;
+	}
+      else
+	{
+	  assert(var->size >= 0);
+	  *params_len += var->size;
+	}
     }
 
   *flags_len = fold_flags(flags, max_id);
-  return;
+  return 0;
 }
 
 static int warts_dealias_params_read(scamper_dealias_t *dealias,
@@ -340,6 +352,7 @@ static int warts_dealias_params_read(scamper_dealias_t *dealias,
     {&dealias->result,  (wpr_t)extract_byte,    NULL},
     {&dealias->probec,  (wpr_t)extract_uint32,  NULL},
     {&dealias->userid,  (wpr_t)extract_uint32,  NULL},
+    {&dealias->errmsg,  (wpr_t)extract_string,  NULL},
   };
   const int handler_cnt = sizeof(handlers)/sizeof(warts_param_reader_t);
   return warts_params_read(buf, off, len, handlers, handler_cnt);
@@ -362,6 +375,7 @@ static int warts_dealias_params_write(const scamper_dealias_t *dealias,
     {&dealias->result,  (wpw_t)insert_byte,         NULL},
     {&dealias->probec,  (wpw_t)insert_uint32,       NULL},
     {&dealias->userid,  (wpw_t)insert_uint32,       NULL},
+    {dealias->errmsg,   (wpw_t)insert_string,       NULL},
   };
   const int handler_cnt = sizeof(handlers)/sizeof(warts_param_writer_t);
 
@@ -2038,7 +2052,8 @@ int scamper_file_warts_dealias_write(const scamper_file_t *sf,
   memset(&data, 0, sizeof(data));
 
   /* figure out which dealias data items we'll store in this record */
-  warts_dealias_params(dealias, flags, &flags_len, &params_len);
+  if(warts_dealias_params(dealias, flags, &flags_len, &params_len) != 0)
+    goto err;
   len = 8 + flags_len + params_len + 2;
 
   if((table = warts_addrtable_alloc_byaddr()) == NULL)

@@ -7,7 +7,7 @@
  * Copyright (C) 2016-2024 Matthew Luckie
  * Author: Matthew Luckie
  *
- * $Id: scamper_ping_warts.c,v 1.41 2025/05/05 03:34:24 mjl Exp $
+ * $Id: scamper_ping_warts.c,v 1.42 2025/10/19 02:17:23 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -78,6 +78,7 @@
 #define WARTS_PING_PROBE_TCPSEQ   31
 #define WARTS_PING_ADDR_RTR       32
 #define WARTS_PING_PROBE_TIMEOUT_US 33
+#define WARTS_PING_ERRMSG         34
 
 static const warts_var_t ping_vars[] =
 {
@@ -114,6 +115,7 @@ static const warts_var_t ping_vars[] =
   {WARTS_PING_PROBE_TCPSEQ,      4},
   {WARTS_PING_ADDR_RTR,         -1},
   {WARTS_PING_PROBE_TIMEOUT_US,  4},
+  {WARTS_PING_ERRMSG,           -1},
 };
 #define ping_vars_mfb WARTS_VAR_MFB(ping_vars)
 
@@ -633,7 +635,8 @@ static int warts_ping_params(const scamper_ping_t *ping,
 	 (var->id == WARTS_PING_PROBE_ICMPSUM &&
 	  (ping->icmpsum == 0 || (ping->flags & SCAMPER_PING_FLAG_ICMPSUM) == 0)) ||
 	 (var->id == WARTS_PING_DATA_BYTES    && ping->datalen == 0) ||
-	 (var->id == WARTS_PING_PROBE_TSPS    && ping->tsps == NULL))
+	 (var->id == WARTS_PING_PROBE_TSPS    && ping->tsps == NULL) ||
+	 (var->id == WARTS_PING_ERRMSG        && ping->errmsg == NULL))
 	{
 	  continue;
 	}
@@ -665,6 +668,11 @@ static int warts_ping_params(const scamper_ping_t *ping,
 	  for(j=0; j<ping->tsps->ipc; j++)
 	    if(warts_addr_size(table, ping->tsps->ips[j], params_len) != 0)
 	      return -1;
+	}
+      else if(var->id == WARTS_PING_ERRMSG)
+	{
+	  if(warts_str_size(ping->errmsg, params_len) != 0)
+	    return -1;
 	}
       else
 	{
@@ -762,6 +770,7 @@ static int warts_ping_params_read(scamper_ping_t *ping, warts_state_t *state,
     {&ping->tcpseq,        (wpr_t)extract_uint32,          NULL},
     {&ping->rtr,           (wpr_t)extract_addr_static,     NULL},
     {&wait_timeout_usec,   (wpr_t)extract_uint32,          NULL},
+    {&ping->errmsg,        (wpr_t)extract_string,          NULL},
   };
   const int handler_cnt = sizeof(handlers)/sizeof(warts_param_reader_t);
   uint32_t o = *off;
@@ -835,6 +844,7 @@ static int warts_ping_params_write(const scamper_ping_t *ping,
     {&ping->tcpseq,        (wpw_t)insert_uint32,          NULL},
     {ping->rtr,            (wpw_t)insert_addr_static,     NULL},
     {&wait_timeout_usec,   (wpw_t)insert_uint32,          NULL},
+    {ping->errmsg,         (wpw_t)insert_string,          NULL},
   };
 
   const int handler_cnt = sizeof(handlers)/sizeof(warts_param_writer_t);

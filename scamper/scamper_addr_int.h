@@ -1,7 +1,7 @@
 /*
  * scamper_addr_int.h
  *
- * $Id: scamper_addr_int.h,v 1.6 2025/08/03 23:45:33 mjl Exp $
+ * $Id: scamper_addr_int.h,v 1.7 2025/10/19 21:21:24 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -103,5 +103,20 @@ scamper_addr_t *scamper_addrcache_resolve_dm(scamper_addrcache_t *ac,
 
 #define scamper_addrcache_get_firewire(addrcache, addr) \
  scamper_addrcache_get(addrcache, SCAMPER_ADDR_TYPE_FIREWIRE, addr)
+
+/*
+ * scamper_addrcache_resolve_[unspec|ipv4|ipv6]
+ *
+ * these macros are provided as a convenience as the type constants can
+ * become unwieldy to use
+ */
+#define scamper_addrcache_resolve_unspec(addrcache, addr) \
+  scamper_addrcache_resolve((addrcache), SCAMPER_ADDR_TYPE_UNSPEC, (addr))
+
+#define scamper_addrcache_resolve_ipv4(addrcache, addr) \
+  scamper_addrcache_resolve((addrcache), SCAMPER_ADDR_TYPE_IPV4, (addr))
+
+#define scamper_addrcache_resolve_ipv6(addrcache, addr) \
+  scamper_addrcache_resolve((addrcache), SCAMPER_ADDR_TYPE_IPV6, (addr))
 
 #endif /* __SCAMPER_ADDR_INT_H */

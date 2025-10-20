@@ -1,7 +1,7 @@
 /*
  * scamper_udpprobe.c
  *
- * $Id: scamper_udpprobe.c,v 1.5 2025/08/13 19:30:57 mjl Exp $
+ * $Id: scamper_udpprobe.c,v 1.6 2025/10/09 22:24:44 mjl Exp $
  *
  * Copyright (C) 2023-2025 The Regents of the University of California
  *
@@ -114,6 +114,7 @@ void scamper_udpprobe_free(scamper_udpprobe_t *up)
   if(up->src != NULL) scamper_addr_free(up->src);
   if(up->dst != NULL) scamper_addr_free(up->dst);
   if(up->data != NULL) free(up->data);
+  if(up->errmsg != NULL) free(up->errmsg);
   if(up->probes != NULL)
     {
       for(i=0; i<up->probe_sent; i++)

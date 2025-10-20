@@ -6,7 +6,7 @@
  * Copyright (c) 2022-2025 Matthew Luckie
  * Author: Matthew Luckie
  *
- * $Id: scamper_dealias_json.c,v 1.30 2025/05/03 21:22:34 mjl Exp $
+ * $Id: scamper_dealias_json.c,v 1.31 2025/10/15 23:58:44 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -72,7 +72,7 @@ static char *dealias_header_tostr(const scamper_dealias_t *dealias)
   scamper_dealias_radargun_t *rg;
   scamper_dealias_prefixscan_t *pf;
   scamper_dealias_bump_t *bump;
-  char buf[512], tmp[64];
+  char buf[4096], tmp[512];
   size_t off = 0;
   uint16_t u16;
   int x;
@@ -89,6 +89,9 @@ static char *dealias_header_tostr(const scamper_dealias_t *dealias)
   string_concat_u32(buf, sizeof(buf), &off, ", \"usec\":",
 		    (uint32_t)dealias->start.tv_usec);
   string_concatc(buf, sizeof(buf), &off, '}');
+  if(dealias->errmsg != NULL)
+    string_concat3(buf, sizeof(buf), &off, ",\"errmsg\":\"",
+		   json_esc(dealias->errmsg, tmp, sizeof(tmp)), "\"");
 
   if(SCAMPER_DEALIAS_METHOD_IS_MERCATOR(dealias) &&
      (mc = dealias->data) != NULL)

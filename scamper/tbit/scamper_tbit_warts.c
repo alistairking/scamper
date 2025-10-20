@@ -8,7 +8,7 @@
  * Copyright (C) 2025      The Regents of the University of California
  * Authors: Matthew Luckie, Ben Stasiewicz
  *
- * $Id: scamper_tbit_warts.c,v 1.43 2025/09/25 18:57:26 mjl Exp $
+ * $Id: scamper_tbit_warts.c,v 1.44 2025/10/19 02:17:23 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -71,6 +71,7 @@
 #define WARTS_TBIT_WSCALE    19
 #define WARTS_TBIT_OPTIONS   20
 #define WARTS_TBIT_TTL       21
+#define WARTS_TBIT_ERRMSG    22
 
 static const warts_var_t tbit_vars[] =
 {
@@ -95,6 +96,7 @@ static const warts_var_t tbit_vars[] =
   {WARTS_TBIT_WSCALE,                1},
   {WARTS_TBIT_OPTIONS,               4},
   {WARTS_TBIT_TTL,                   1},
+  {WARTS_TBIT_ERRMSG,               -1},
 };
 #define tbit_vars_mfb WARTS_VAR_MFB(tbit_vars)
 
@@ -838,7 +840,8 @@ static int warts_tbit_params(const scamper_tbit_t *tbit,
 	 (var->id == WARTS_TBIT_COOKIE && tbit->client_fo_cookielen == 0) ||
 	 (var->id == WARTS_TBIT_WSCALE && tbit->client_wscale == 0) ||
 	 (var->id == WARTS_TBIT_OPTIONS && tbit->options == 0) ||
-	 (var->id == WARTS_TBIT_TTL && tbit->client_ipttl == 255))
+	 (var->id == WARTS_TBIT_TTL && tbit->client_ipttl == 255) ||
+	 (var->id == WARTS_TBIT_ERRMSG && tbit->errmsg == NULL))
 	continue;
 
       /* Set the flag for the rest of the variables */
@@ -849,22 +852,27 @@ static int warts_tbit_params(const scamper_tbit_t *tbit,
         {
 	  if(warts_addr_size(table, tbit->src, params_len) != 0)
 	    return -1;
-	  continue;
         }
       else if(var->id == WARTS_TBIT_DST)
         {
 	  if(warts_addr_size(table, tbit->dst, params_len) != 0)
 	    return -1;
-	  continue;
         }
       else if(var->id == WARTS_TBIT_COOKIE)
 	{
 	  *params_len += (1 + tbit->client_fo_cookielen);
-	  continue;
 	}
-
-      /* The rest of the variables have a fixed size */
-      *params_len += var->size;
+      else if(var->id == WARTS_TBIT_ERRMSG)
+	{
+	  if(warts_str_size(tbit->errmsg, params_len) != 0)
+	    return -1;
+	}
+      else
+	{
+	  /* The rest of the variables have a fixed size */
+	  assert(var->size >= 0);
+	  *params_len += var->size;
+	}
     }
 
   *flags_len = fold_flags(flags, max_id);
@@ -903,6 +911,7 @@ static int warts_tbit_params_read(scamper_tbit_t *tbit,
     {&tbit->client_wscale,(wpr_t)extract_byte,    NULL},
     {&tbit->options,      (wpr_t)extract_uint32,  NULL},
     {&tbit->client_ipttl, (wpr_t)extract_byte,    NULL},
+    {&tbit->errmsg,       (wpr_t)extract_string,  NULL},
   };
   const int handler_cnt = sizeof(handlers)/sizeof(warts_param_reader_t);
 
@@ -962,6 +971,7 @@ static int warts_tbit_params_write(const scamper_tbit_t *tbit,
     {&tbit->client_wscale,(wpw_t)insert_byte,    NULL},
     {&tbit->options,      (wpw_t)insert_uint32,  NULL},
     {&tbit->client_ipttl, (wpw_t)insert_byte,    NULL},
+    {tbit->errmsg,        (wpw_t)insert_string,  NULL},
   };
   const int handler_cnt = sizeof(handlers)/sizeof(warts_param_writer_t);
 

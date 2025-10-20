@@ -1,7 +1,7 @@
 /*
  * scamper_fds: manage events for file descriptors
  *
- * $Id: scamper_fds.h,v 1.34 2024/07/15 22:08:08 mjl Exp $
+ * $Id: scamper_fds.h,v 1.36 2025/10/13 00:31:12 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -28,6 +28,29 @@
 /* data structure type */
 typedef struct scamper_fd scamper_fd_t;
 
+typedef struct scamper_fd_spec
+{
+  /* source and destination IP addresses and ports */
+  void     *src;
+  void     *dst;
+  uint16_t  sport;
+  uint16_t  dport;
+
+  /* source ports to avoid */
+  uint16_t *sportx;
+  size_t    sportxc;
+} scamper_fd_spec_t;
+
+#define SCAMPER_FD_SPEC(spec, src_in, sport_in, sportx_in, sportxc_in,	\
+			 dst_in, dport_in) do {				\
+    (spec)->src     = (src_in);						\
+    (spec)->dst     = (dst_in);						\
+    (spec)->sport   = (sport_in);					\
+    (spec)->dport   = (dport_in);					\
+    (spec)->sportx  = (sportx_in);					\
+    (spec)->sportxc = (sportxc_in);					\
+  } while(0)
+
 /* when an event occurs, this is the format of the callback used */
 #ifndef _WIN32 /* SOCKET vs int on windows */
 typedef void (*scamper_fd_cb_t)(int fd, void *param);
@@ -36,39 +59,34 @@ typedef void (*scamper_fd_cb_t)(SOCKET fd, void *param);
 #endif
 
 /* these functions allocate reference to a socket shared throughout scamper */
-scamper_fd_t *scamper_fd_icmp4(void *addr);
-scamper_fd_t *scamper_fd_icmp4err(void *addr);
-scamper_fd_t *scamper_fd_icmp6(void *addr);
-scamper_fd_t *scamper_fd_udp4dg(void *addr, uint16_t sport);
-scamper_fd_t *scamper_fd_udp4raw(void *addr);
-scamper_fd_t *scamper_fd_udp6(void *addr, uint16_t sport);
-scamper_fd_t *scamper_fd_udp6err(void *addr, uint16_t sport);
-scamper_fd_t *scamper_fd_tcp4(void *addr, uint16_t sport);
-scamper_fd_t *scamper_fd_tcp6(void *addr, uint16_t sport);
-scamper_fd_t *scamper_fd_dl(int ifindex);
-scamper_fd_t *scamper_fd_ip4(void);
+scamper_fd_t *scamper_fd_icmp4(void *addr, scamper_err_t *err);
+scamper_fd_t *scamper_fd_icmp4err(void *addr, scamper_err_t *err);
+scamper_fd_t *scamper_fd_icmp6(void *addr, scamper_err_t *err);
+scamper_fd_t *scamper_fd_udp4dg(void *addr, uint16_t sport, scamper_err_t *err);
+scamper_fd_t *scamper_fd_udp4raw(void *addr, scamper_err_t *err);
+scamper_fd_t *scamper_fd_udp6(void *addr, uint16_t sport, scamper_err_t *err);
+scamper_fd_t *scamper_fd_udp6err(void *addr, uint16_t sport, scamper_err_t *err);
+scamper_fd_t *scamper_fd_tcp4(void *addr, uint16_t sport, scamper_err_t *err);
+scamper_fd_t *scamper_fd_tcp6(void *addr, uint16_t sport, scamper_err_t *err);
+scamper_fd_t *scamper_fd_dl(int ifindex, scamper_err_t *err);
+scamper_fd_t *scamper_fd_ip4(scamper_err_t *err);
 
-scamper_fd_t *scamper_fd_udp4dg_dst(void *src, uint16_t sport,
-				    uint16_t *sportx, size_t sportxc,
-				    void *dst, uint16_t dport);
-scamper_fd_t *scamper_fd_udp6_dst(void *src, uint16_t sport,
-				  uint16_t *sportx, size_t sportxc,
-				  void *dst, uint16_t dport);
-scamper_fd_t *scamper_fd_udp6err_dst(void *src, uint16_t sport,
-				     uint16_t *sportx, size_t sportxc,
-				     void *dst, uint16_t dport);
-scamper_fd_t *scamper_fd_tcp4_dst(void *src, uint16_t sport,
-				  uint16_t *sportx, size_t sportxc,
-				  void *dst, uint16_t dport);
-scamper_fd_t *scamper_fd_tcp6_dst(void *src, uint16_t sport,
-				  uint16_t *sportx, size_t sportxc,
-				  void *dst, uint16_t dport);
+scamper_fd_t *scamper_fd_udp4dg_dst(const scamper_fd_spec_t *spec,
+				    scamper_err_t *err);
+scamper_fd_t *scamper_fd_udp6_dst(const scamper_fd_spec_t *spec,
+				  scamper_err_t *err);
+scamper_fd_t *scamper_fd_udp6err_dst(const scamper_fd_spec_t *spec,
+				     scamper_err_t *err);
+scamper_fd_t *scamper_fd_tcp4_dst(const scamper_fd_spec_t *spec,
+				  scamper_err_t *err);
+scamper_fd_t *scamper_fd_tcp6_dst(const scamper_fd_spec_t *spec,
+				  scamper_err_t *err);
 
 scamper_fd_t *scamper_fd_use(scamper_fd_t *fdn);
 
 #ifndef _WIN32 /* windows does not have a routing socket */
-scamper_fd_t *scamper_fd_rtsock(void);
-scamper_fd_t *scamper_fd_ifsock(void);
+scamper_fd_t *scamper_fd_rtsock(scamper_err_t *err);
+scamper_fd_t *scamper_fd_ifsock(scamper_err_t *err);
 #endif
 
 /* return information on what the socket is bound to */

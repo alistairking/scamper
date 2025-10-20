@@ -1,7 +1,7 @@
 /*
  * scamper_ping_cmd.c
  *
- * $Id: scamper_ping_cmd.c,v 1.34 2025/08/04 00:00:27 mjl Exp $
+ * $Id: scamper_ping_cmd.c,v 1.35 2025/10/10 01:33:17 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -648,7 +648,8 @@ void *scamper_do_ping_alloc(char *str, char *errbuf, size_t errlen)
       snprintf(errbuf, errlen, "could not alloc ping");
       goto err;
     }
-  if((ping->dst = scamper_addr_fromstr_unspec(addr)) == NULL)
+  if((ping->dst = scamper_addr_fromstr_unspec(addr)) == NULL ||
+     SCAMPER_ADDR_TYPE_IS_IP(ping->dst) == 0)
     {
       snprintf(errbuf, errlen, "invalid destination address");
       goto err;

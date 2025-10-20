@@ -1,7 +1,7 @@
 /*
  * scamper_neighbourdisc
  *
- * $Id: scamper_neighbourdisc_int.h,v 1.3 2023/12/24 00:19:25 mjl Exp $
+ * $Id: scamper_neighbourdisc_int.h,v 1.4 2025/10/09 22:35:42 mjl Exp $
  *
  * Copyright (C) 2009, 2023 Matthew Luckie
  *
@@ -70,6 +70,7 @@ struct scamper_neighbourdisc
   struct timeval                  wait_timeout; /* how long to wait */
   uint16_t                        attempts; /* number of attempts to make */
   uint16_t                        replyc;   /* replies requested */
+  char                           *errmsg;   /* message from do code */
   scamper_addr_t                 *src_ip;   /* source IP address */
   scamper_addr_t                 *src_mac;  /* source MAC address */
   scamper_addr_t                 *dst_ip;   /* target IP address, if any */

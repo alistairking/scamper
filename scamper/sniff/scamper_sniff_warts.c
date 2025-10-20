@@ -7,7 +7,7 @@
  * Copyright (C) 2025      The Regents of the University of California
  * Author: Matthew Luckie
  *
- * $Id: scamper_sniff_warts.c,v 1.17 2025/04/22 01:41:43 mjl Exp $
+ * $Id: scamper_sniff_warts.c,v 1.18 2025/10/19 21:53:46 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -51,6 +51,7 @@
 #define WARTS_SNIFF_LIMIT_TIME  9
 #define WARTS_SNIFF_PKTC        10
 #define WARTS_SNIFF_ICMPID      11
+#define WARTS_SNIFF_ERRMSG      12
 
 static const warts_var_t sniff_vars[] =
 {
@@ -65,6 +66,7 @@ static const warts_var_t sniff_vars[] =
   {WARTS_SNIFF_LIMIT_TIME,   2},
   {WARTS_SNIFF_PKTC,         4},
   {WARTS_SNIFF_ICMPID,       2},
+  {WARTS_SNIFF_ERRMSG,      -1},
 };
 #define sniff_vars_mfb WARTS_VAR_MFB(sniff_vars)
 
@@ -187,13 +189,11 @@ static int warts_sniff_params(const scamper_sniff_t *sniff,
       var = &sniff_vars[i];
 
       /* Skip the variables for which we have no data */
-      if(var->id == WARTS_SNIFF_LIST && sniff->list == NULL)
-	continue;
-      else if(var->id == WARTS_SNIFF_CYCLE && sniff->cycle == NULL)
-	continue;
-      else if(var->id == WARTS_SNIFF_USERID && sniff->userid == 0)
-	continue;
-      else if(var->id == WARTS_SNIFF_SRC && sniff->src == NULL)
+      if((var->id == WARTS_SNIFF_LIST && sniff->list == NULL) ||
+	 (var->id == WARTS_SNIFF_CYCLE && sniff->cycle == NULL) ||
+	 (var->id == WARTS_SNIFF_USERID && sniff->userid == 0) ||
+	 (var->id == WARTS_SNIFF_SRC && sniff->src == NULL) ||
+	 (var->id == WARTS_SNIFF_ERRMSG && sniff->errmsg == NULL))
 	continue;
 
       /* Set the flag for the rest of the variables */
@@ -204,11 +204,18 @@ static int warts_sniff_params(const scamper_sniff_t *sniff,
         {
 	  if(warts_addr_size(table, sniff->src, params_len) != 0)
 	    return -1;
-	  continue;
         }
-
-      /* The rest of the variables have a fixed size */
-      *params_len += var->size;
+      else if(var->id == WARTS_SNIFF_ERRMSG)
+	{
+	  if(warts_str_size(sniff->errmsg, params_len) != 0)
+	    return -1;
+	}
+      else
+	{
+	  /* The rest of the variables have a fixed size */
+	  assert(var->size >= 0);
+	  *params_len += var->size;
+	}
     }
 
   *flags_len = fold_flags(flags, max_id);
@@ -233,6 +240,7 @@ static int warts_sniff_params_read(scamper_sniff_t *sniff,
     {&limit_time,          (wpr_t)extract_uint16,       NULL},
     {&sniff->pktc,         (wpr_t)extract_uint32,       NULL},
     {&sniff->icmpid,       (wpr_t)extract_uint16,       NULL},
+    {&sniff->errmsg,       (wpr_t)extract_string,       NULL},
   };
   const int handler_cnt = sizeof(handlers)/sizeof(warts_param_reader_t);
   int rc;
@@ -268,6 +276,7 @@ static int warts_sniff_params_write(const scamper_sniff_t *sniff,
     {&limit_time,          (wpw_t)insert_uint16,       NULL},
     {&sniff->pktc,         (wpw_t)insert_uint32,       NULL},
     {&sniff->icmpid,       (wpw_t)insert_uint16,       NULL},
+    {sniff->errmsg,        (wpw_t)insert_string,       NULL},
   };
   const int handler_cnt = sizeof(handlers)/sizeof(warts_param_writer_t);
 

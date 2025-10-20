@@ -1,7 +1,7 @@
 /*
  * scamper_host
  *
- * $Id: scamper_host.h,v 1.32 2025/02/23 05:38:14 mjl Exp $
+ * $Id: scamper_host.h,v 1.33 2025/10/19 19:23:21 mjl Exp $
  *
  * Copyright (C) 2018-2025 Matthew Luckie
  *
@@ -56,6 +56,7 @@ uint16_t scamper_host_qclass_get(const scamper_host_t *host);
 const char *scamper_host_qname_get(const scamper_host_t *host);
 uint8_t scamper_host_qcount_get(const scamper_host_t *host);
 const char *scamper_host_ecs_get(const scamper_host_t *host);
+const char *scamper_host_errmsg_get(const scamper_host_t *host);
 
 scamper_host_query_t *scamper_host_query_get(const scamper_host_t *host,
 					     uint8_t i);

@@ -1,7 +1,7 @@
 /*
  * scamper_task.h
  *
- * $Id: scamper_task.h,v 1.63 2025/08/04 00:00:27 mjl Exp $
+ * $Id: scamper_task.h,v 1.64 2025/10/15 23:17:53 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -206,21 +206,27 @@ int scamper_task_queue_done(scamper_task_t *task);
 int scamper_task_queue_isprobe(scamper_task_t *task);
 int scamper_task_queue_isdone(scamper_task_t *task);
 
+#if defined(__SCAMPER_FD_H) && defined(__SCAMPER_DEBUG_H)
 /* access the file descriptors the task holds */
-#ifdef __SCAMPER_FD_H
-scamper_fd_t *scamper_task_fd_icmp4(scamper_task_t *task, void *addr);
-scamper_fd_t *scamper_task_fd_icmp6(scamper_task_t *task, void *addr);
-scamper_fd_t *scamper_task_fd_udp4(scamper_task_t *task, void *a, uint16_t sp);
-scamper_fd_t *scamper_task_fd_udp6(scamper_task_t *task, void *a, uint16_t sp);
-scamper_fd_t *scamper_task_fd_tcp4(scamper_task_t *task, void *a, uint16_t sp);
-scamper_fd_t *scamper_task_fd_tcp6(scamper_task_t *task, void *a, uint16_t sp);
-scamper_fd_t *scamper_task_fd_dl(scamper_task_t *task, int ifindex);
-scamper_fd_t *scamper_task_fd_ip4(scamper_task_t *task);
-#endif
-
-#if defined(__SCAMPER_FD_H) && !defined(_WIN32) /* no routing socket */
-scamper_fd_t *scamper_task_fd_rtsock(scamper_task_t *task);
-#endif
+scamper_fd_t *scamper_task_fd_icmp4(scamper_task_t *task, void *addr,
+				    scamper_err_t *err);
+scamper_fd_t *scamper_task_fd_icmp6(scamper_task_t *task, void *addr,
+				    scamper_err_t *err);
+scamper_fd_t *scamper_task_fd_udp4(scamper_task_t *task, void *a, uint16_t sp,
+				   scamper_err_t *err);
+scamper_fd_t *scamper_task_fd_udp6(scamper_task_t *task, void *a, uint16_t sp,
+				   scamper_err_t *err);
+scamper_fd_t *scamper_task_fd_tcp4(scamper_task_t *task, void *a, uint16_t sp,
+				   scamper_err_t *err);
+scamper_fd_t *scamper_task_fd_tcp6(scamper_task_t *task, void *a, uint16_t sp,
+				   scamper_err_t *err);
+scamper_fd_t *scamper_task_fd_dl(scamper_task_t *task, int ifindex,
+				 scamper_err_t *err);
+scamper_fd_t *scamper_task_fd_ip4(scamper_task_t *task, scamper_err_t *err);
+#ifndef _WIN32 /* no routing socket */
+scamper_fd_t *scamper_task_fd_rtsock(scamper_task_t *task, scamper_err_t *err);
+#endif /* _WIN32 */
+#endif /* __SCAMPER_FD_H and __SCAMPER_DEBUG_H */
 
 /* define and use the task's probe signatures */
 scamper_task_sig_t *scamper_task_sig_alloc(uint8_t type);

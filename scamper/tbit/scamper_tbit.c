@@ -9,7 +9,7 @@
  *
  * Authors: Ben Stasiewicz, Matthew Luckie
  *
- * $Id: scamper_tbit.c,v 1.64 2025/10/02 06:54:48 mjl Exp $
+ * $Id: scamper_tbit.c,v 1.65 2025/10/13 21:11:18 mjl Exp $
  *
  * This file implements algorithms described in the tbit-1.0 source code,
  * as well as the papers:
@@ -946,6 +946,8 @@ void scamper_tbit_free(scamper_tbit_t *tbit)
   if(tbit->list != NULL)  scamper_list_free(tbit->list);
   if(tbit->cycle != NULL) scamper_cycle_free(tbit->cycle);
 
+  if(tbit->errmsg != NULL)
+    free(tbit->errmsg);
   if(tbit->client_fo_cookie != NULL)
     free(tbit->client_fo_cookie);
 

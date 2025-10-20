@@ -1,7 +1,7 @@
 /*
  * scamper_http_lib.c
  *
- * $Id: scamper_http_lib.c,v 1.16 2025/09/25 22:46:39 mjl Exp $
+ * $Id: scamper_http_lib.c,v 1.17 2025/10/19 19:23:21 mjl Exp $
  *
  * Copyright (C) 2023-2024 The Regents of the University of California
  *
@@ -66,6 +66,11 @@ uint16_t scamper_http_sport_get(const scamper_http_t *http)
 uint16_t scamper_http_dport_get(const scamper_http_t *http)
 {
   return http->dport;
+}
+
+const char *scamper_http_errmsg_get(const scamper_http_t *http)
+{
+  return http->errmsg;
 }
 
 const struct timeval *scamper_http_start_get(const scamper_http_t *http)

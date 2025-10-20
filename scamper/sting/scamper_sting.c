@@ -1,7 +1,7 @@
 /*
  * scamper_sting.c
  *
- * $Id: scamper_sting.c,v 1.16 2023/12/24 00:03:21 mjl Exp $
+ * $Id: scamper_sting.c,v 1.18 2025/10/19 22:06:48 mjl Exp $
  *
  * Copyright (C) 2008-2011 The University of Waikato
  * Copyright (C) 2014      The Regents of the University of California
@@ -41,6 +41,21 @@
 #include "scamper_sting.h"
 #include "scamper_sting_int.h"
 #include "utils.h"
+
+char *scamper_sting_result_tostr(const scamper_sting_t *sting,
+				 char *buf, size_t len)
+{
+  static const char *r[] = {
+    "none",
+    "completed",
+    "error",
+  };
+  if(sting->result >= sizeof(r) / sizeof(char *))
+    snprintf(buf, len, "%d", sting->result);
+  else
+    snprintf(buf, len, "%s", r[sting->result]);
+  return buf;
+}
 
 scamper_sting_pkt_t *scamper_sting_pkt_alloc(uint8_t flags, uint8_t *data,
 					     uint16_t len, struct timeval *tv)
@@ -131,6 +146,7 @@ void scamper_sting_free(scamper_sting_t *sting)
   if(sting->list != NULL)  scamper_list_free(sting->list);
   if(sting->cycle != NULL) scamper_cycle_free(sting->cycle);
   if(sting->data != NULL)  free(sting->data);
+  if(sting->errmsg != NULL) free(sting->errmsg);
 
   free(sting);
   return;

@@ -1,7 +1,7 @@
 /*
  * scamper_writebuf.c: use in combination with select to send without blocking
  *
- * $Id: scamper_writebuf.c,v 1.54 2025/07/21 05:15:24 mjl Exp $
+ * $Id: scamper_writebuf.c,v 1.55 2025/10/12 23:06:45 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2010 The University of Waikato
@@ -298,7 +298,10 @@ int scamper_writebuf_send(scamper_writebuf_t *wb, const void *vdata, size_t len)
    * writebuf invalid
    */
   if(wb->error != 0)
-    return -1;
+    {
+      errno = wb->error;
+      return -1;
+    }
 
   while(len > 0)
     {

@@ -1,7 +1,7 @@
 /*
  * scamper_trace.h
  *
- * $Id: scamper_trace.h,v 1.179 2025/05/29 07:56:15 mjl Exp $
+ * $Id: scamper_trace.h,v 1.180 2025/10/19 19:23:21 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -115,6 +115,7 @@ uint32_t scamper_trace_userid_get(const scamper_trace_t *trace);
 const struct timeval *scamper_trace_start_get(const scamper_trace_t *trace);
 uint8_t scamper_trace_stop_reason_get(const scamper_trace_t *trace);
 uint8_t scamper_trace_stop_data_get(const scamper_trace_t *trace);
+const char *scamper_trace_errmsg_get(const scamper_trace_t *trace);
 char *scamper_trace_stop_tostr(const scamper_trace_t *trace,
 			       char *buf, size_t len);
 scamper_trace_probettl_t *scamper_trace_probettl_get(const scamper_trace_t *trace, uint8_t i);

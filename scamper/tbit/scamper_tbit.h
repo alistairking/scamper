@@ -1,7 +1,7 @@
 /*
  * scamper_tbit.h
  *
- * $Id: scamper_tbit.h,v 1.68 2025/09/25 19:02:30 mjl Exp $
+ * $Id: scamper_tbit.h,v 1.69 2025/10/19 19:23:21 mjl Exp $
  *
  * Copyright (C) 2009-2010 Ben Stasiewicz
  * Copyright (C) 2010-2011 University of Waikato
@@ -168,6 +168,7 @@ scamper_tbit_pkt_t *scamper_tbit_pkt_get(const scamper_tbit_t *tbit,uint32_t i);
 uint32_t scamper_tbit_pktc_get(const scamper_tbit_t *tbit);
 uint8_t scamper_tbit_type_get(const scamper_tbit_t *tbit);
 char *scamper_tbit_type_tostr(const scamper_tbit_t *tbit,char *buf, size_t len);
+const char *scamper_tbit_errmsg_get(const scamper_tbit_t *tbit);
 uint8_t scamper_tbit_app_proto_get(const scamper_tbit_t *tbit);
 uint32_t scamper_tbit_options_get(const scamper_tbit_t *tbit);
 uint16_t scamper_tbit_client_mss_get(const scamper_tbit_t *tbit);

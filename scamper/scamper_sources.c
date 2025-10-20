@@ -1,7 +1,7 @@
 /*
  * scamper_source
  *
- * $Id: scamper_sources.c,v 1.93 2025/08/04 00:00:27 mjl Exp $
+ * $Id: scamper_sources.c,v 1.94 2025/10/20 00:07:45 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -32,6 +32,7 @@
 #include "internal.h"
 
 #include "scamper.h"
+#include "scamper_debug.h"
 #include "scamper_addr.h"
 #include "scamper_list.h"
 #include "scamper_list_int.h"
@@ -83,8 +84,6 @@
 #include "udpprobe/scamper_udpprobe_cmd.h"
 #include "udpprobe/scamper_udpprobe_do.h"
 #endif
-
-#include "scamper_debug.h"
 
 #include "utils.h"
 #include "mjl_list.h"

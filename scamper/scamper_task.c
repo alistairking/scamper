@@ -1,7 +1,7 @@
 /*
  * scamper_task.c
  *
- * $Id: scamper_task.c,v 1.113 2025/07/30 10:28:04 mjl Exp $
+ * $Id: scamper_task.c,v 1.115 2025/10/15 23:17:53 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -1400,16 +1400,17 @@ static int task_fd_cmp(const scamper_fd_t *a, const scamper_fd_t *b)
  *
  * make sure the task has a hold on this fd.
  */
-static scamper_fd_t *task_fd(scamper_task_t *t, scamper_fd_t *fd)
+static scamper_fd_t *task_fd(scamper_task_t *t, scamper_fd_t *fd,
+			     scamper_err_t *error)
 {
-  if(fd == NULL)
-    return NULL;
+  assert(fd != NULL);
 
   if(array_find((void **)t->fds, t->fdc, fd, (array_cmp_t)task_fd_cmp) == NULL)
     {
       if(array_insert((void ***)&t->fds, &t->fdc, fd,
 		      (array_cmp_t)task_fd_cmp) != 0)
 	{
+	  scamper_err_make(error, errno, "could not add fd to task");
 	  scamper_fd_free(fd);
 	  return NULL;
 	}
@@ -1422,60 +1423,86 @@ static scamper_fd_t *task_fd(scamper_task_t *t, scamper_fd_t *fd)
   return fd;
 }
 
-scamper_fd_t *scamper_task_fd_icmp4(scamper_task_t *task, void *addr)
+scamper_fd_t *scamper_task_fd_icmp4(scamper_task_t *task, void *addr,
+				    scamper_err_t *error)
 {
-  scamper_fd_t *fd = scamper_fd_icmp4(addr);
-  return task_fd(task, fd);
-}
-
-scamper_fd_t *scamper_task_fd_icmp6(scamper_task_t *task, void *addr)
-{
-  scamper_fd_t *fd = scamper_fd_icmp6(addr);
-  return task_fd(task, fd);
-}
-
-scamper_fd_t *scamper_task_fd_udp4(scamper_task_t *task, void *a, uint16_t sp)
-{
-  if(task_fd(task, scamper_fd_udp4dg(a, sp)) == NULL)
+  scamper_fd_t *fd;
+  if((fd = scamper_fd_icmp4(addr, error)) == NULL)
     return NULL;
-  return task_fd(task, scamper_fd_udp4raw(a));
+  return task_fd(task, fd, error);
 }
 
-scamper_fd_t *scamper_task_fd_udp6(scamper_task_t *task, void *a, uint16_t sp)
+scamper_fd_t *scamper_task_fd_icmp6(scamper_task_t *task, void *addr,
+				    scamper_err_t *error)
 {
-  scamper_fd_t *fd = scamper_fd_udp6(a, sp);
-  return task_fd(task, fd);
+  scamper_fd_t *fd;
+  if((fd = scamper_fd_icmp6(addr, error)) == NULL)
+    return NULL;
+  return task_fd(task, fd, error);
 }
 
-scamper_fd_t *scamper_task_fd_tcp4(scamper_task_t *task, void *a, uint16_t sp)
+scamper_fd_t *scamper_task_fd_udp4(scamper_task_t *task, void *a, uint16_t sp,
+				   scamper_err_t *error)
 {
-  scamper_fd_t *fd = scamper_fd_tcp4(a, sp);
-  return task_fd(task, fd);
+  scamper_fd_t *fd;
+  if((fd = scamper_fd_udp4dg(a, sp, error)) == NULL ||
+     task_fd(task, fd, error) == NULL ||
+     (fd = scamper_fd_udp4raw(a, error)) == NULL)
+    return NULL;
+  return task_fd(task, fd, error);
 }
 
-scamper_fd_t *scamper_task_fd_tcp6(scamper_task_t *task, void *a, uint16_t sp)
+scamper_fd_t *scamper_task_fd_udp6(scamper_task_t *task, void *a, uint16_t sp,
+				   scamper_err_t *error)
 {
-  scamper_fd_t *fd = scamper_fd_tcp6(a, sp);
-  return task_fd(task, fd);
+  scamper_fd_t *fd;
+  if((fd = scamper_fd_udp6(a, sp, error)) == NULL)
+    return NULL;
+  return task_fd(task, fd, error);
 }
 
-scamper_fd_t *scamper_task_fd_dl(scamper_task_t *task, int ifindex)
+scamper_fd_t *scamper_task_fd_tcp4(scamper_task_t *task, void *a, uint16_t sp,
+				   scamper_err_t *error)
 {
-  scamper_fd_t *fd = scamper_fd_dl(ifindex);
-  return task_fd(task, fd);
+  scamper_fd_t *fd;
+  if((fd = scamper_fd_tcp4(a, sp, error)) == NULL)
+    return NULL;
+  return task_fd(task, fd, error);
 }
 
-scamper_fd_t *scamper_task_fd_ip4(scamper_task_t *task)
+scamper_fd_t *scamper_task_fd_tcp6(scamper_task_t *task, void *a, uint16_t sp,
+				   scamper_err_t *error)
 {
-  scamper_fd_t *fd = scamper_fd_ip4();
-  return task_fd(task, fd);
+  scamper_fd_t *fd;
+  if((fd = scamper_fd_tcp6(a, sp, error)) == NULL)
+    return NULL;
+  return task_fd(task, fd, error);
+}
+
+scamper_fd_t *scamper_task_fd_dl(scamper_task_t *task, int ifindex,
+				 scamper_err_t *error)
+{
+  scamper_fd_t *fd;
+  if((fd = scamper_fd_dl(ifindex, error)) == NULL)
+    return NULL;
+  return task_fd(task, fd, error);
+}
+
+scamper_fd_t *scamper_task_fd_ip4(scamper_task_t *task, scamper_err_t *error)
+{
+  scamper_fd_t *fd;
+  if((fd = scamper_fd_ip4(error)) == NULL)
+    return NULL;
+  return task_fd(task, fd, error);
 }
 
 #ifndef _WIN32 /* windows does not have a routing socket */
-scamper_fd_t *scamper_task_fd_rtsock(scamper_task_t *task)
+scamper_fd_t *scamper_task_fd_rtsock(scamper_task_t *task, scamper_err_t *error)
 {
-  scamper_fd_t *fd = scamper_fd_rtsock();
-  return task_fd(task, fd);
+  scamper_fd_t *fd;
+  if((fd = scamper_fd_rtsock(error)) == NULL)
+    return NULL;
+  return task_fd(task, fd, error);
 }
 #endif
 

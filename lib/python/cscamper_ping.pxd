@@ -79,6 +79,7 @@ cdef extern from "scamper_ping.h":
  uint16_t scamper_ping_pktsize_get(const scamper_ping_t *ping)
  uint8_t scamper_ping_method_get(const scamper_ping_t *ping)
  char *scamper_ping_method_tostr(const scamper_ping_t *, char *, size_t)
+ const char *scamper_ping_errmsg_get(const scamper_ping_t *ping)
  bint scamper_ping_method_is_icmp(const scamper_ping_t *ping)
  bint scamper_ping_method_is_icmp_time(const scamper_ping_t *ping)
  bint scamper_ping_method_is_tcp(const scamper_ping_t *ping)

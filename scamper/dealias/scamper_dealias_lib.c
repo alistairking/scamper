@@ -1,7 +1,7 @@
 /*
  * scamper_dealias_lib.c
  *
- * $Id: scamper_dealias_lib.c,v 1.24 2025/09/14 18:11:39 mjl Exp $
+ * $Id: scamper_dealias_lib.c,v 1.25 2025/10/19 19:23:21 mjl Exp $
  *
  * Copyright (C) 2023-2025 Matthew Luckie
  * Author: Matthew Luckie
@@ -56,6 +56,11 @@ const struct timeval *
 scamper_dealias_start_get(const scamper_dealias_t *dealias)
 {
   return &dealias->start;
+}
+
+const char *scamper_dealias_errmsg_get(const scamper_dealias_t *dealias)
+{
+  return dealias->errmsg;
 }
 
 uint8_t scamper_dealias_method_get(const scamper_dealias_t *dealias)

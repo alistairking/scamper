@@ -60,6 +60,7 @@ cdef extern from "scamper_http.h":
  scamper_addr_t *scamper_http_dst_get(const scamper_http_t *http)
  uint16_t scamper_http_sport_get(const scamper_http_t *http)
  uint16_t scamper_http_dport_get(const scamper_http_t *http)
+ const char *scamper_http_errmsg_get(const scamper_http_t *http)
  const timeval *scamper_http_start_get(const scamper_http_t *http)
  uint8_t scamper_http_stop_get(const scamper_http_t *http)
  char *scamper_http_stop_tostr(const scamper_http_t *http, char *buf, size_t len)

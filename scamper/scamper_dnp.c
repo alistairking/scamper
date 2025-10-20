@@ -1,7 +1,7 @@
 /*
  * scamper_dnp.c
  *
- * $Id: scamper_dnp.c,v 1.4 2025/08/04 01:54:05 mjl Exp $
+ * $Id: scamper_dnp.c,v 1.5 2025/10/16 00:06:07 mjl Exp $
  *
  * Copyright (C) 2025 The Regents of the University of California
  * Author: Matthew Luckie
@@ -168,7 +168,7 @@ int scamper_dnp_reload(const char **files, size_t filec)
       if((fd = scamper_priv_open(files[i], O_RDONLY, 0)) == -1 ||
 	 fd_lines(fd, dnp_line, trees) != 0)
 	goto err;
-      close(fd); fd = -1;
+      close(fd);
     }
 
   prefixtree_free_cb(pfx4, (prefix_free_t)prefix4_free); pfx4 = trees[0];

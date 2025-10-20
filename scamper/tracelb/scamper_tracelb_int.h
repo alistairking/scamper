@@ -1,7 +1,7 @@
 /*
  * scamper_tracelb_int.h
  *
- * $Id: scamper_tracelb_int.h,v 1.7 2025/02/11 14:31:43 mjl Exp $
+ * $Id: scamper_tracelb_int.h,v 1.8 2025/10/14 00:14:42 mjl Exp $
  *
  * Copyright (C) 2008-2009 The University of Waikato
  * Copyright (C) 2018-2024 Matthew Luckie
@@ -268,6 +268,7 @@ struct scamper_tracelb
   uint16_t                   linkc;
   uint32_t                   probec;
   uint8_t                    error;
+  char                      *errmsg;
 };
 
 #endif /* __SCAMPER_TRACELB_INT_H */

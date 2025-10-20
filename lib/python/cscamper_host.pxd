@@ -84,6 +84,7 @@ cdef extern from "scamper_host.h":
  const char *scamper_host_qname_get(const scamper_host_t *host)
  uint8_t scamper_host_qcount_get(const scamper_host_t *host)
  const char *scamper_host_ecs_get(const scamper_host_t *host)
+ const char *scamper_host_errmsg_get(const scamper_host_t *host)
 
  scamper_host_query_t *scamper_host_query_get(const scamper_host_t *host, uint8_t i)
  scamper_host_query_t *scamper_host_query_use(scamper_host_query_t *q)

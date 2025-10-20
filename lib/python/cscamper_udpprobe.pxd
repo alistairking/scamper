@@ -67,6 +67,7 @@ cdef extern from "scamper_udpprobe.h":
 
  uint8_t scamper_udpprobe_stop_reason_get(const scamper_udpprobe_t *up)
  char *scamper_udpprobe_stop_tostr(const scamper_udpprobe_t *up, char *buf, size_t l)
+ const char *scamper_udpprobe_errmsg_get(const scamper_udpprobe_t *up)
 
  void scamper_udpprobe_probe_free(scamper_udpprobe_probe_t *probe)
  scamper_udpprobe_probe_t *scamper_udpprobe_probe_use(scamper_udpprobe_probe_t *probe)

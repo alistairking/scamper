@@ -1,7 +1,7 @@
 /*
  * scamper_sniff_int.h
  *
- * $Id: scamper_sniff_int.h,v 1.6 2025/04/22 01:41:43 mjl Exp $
+ * $Id: scamper_sniff_int.h,v 1.7 2025/10/19 21:53:46 mjl Exp $
  *
  * Copyright (C) 2011 The University of Waikato
  * Author: Matthew Luckie
@@ -51,6 +51,7 @@ struct scamper_sniff
   uint8_t               stop_reason;
   uint32_t              limit_pktc;
   struct timeval        limit_time;
+  char                 *errmsg;
 
   scamper_addr_t       *src;
   uint16_t              icmpid;

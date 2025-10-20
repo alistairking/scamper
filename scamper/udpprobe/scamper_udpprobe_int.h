@@ -1,7 +1,7 @@
 /*
  * scamper_udpprobe_int.h
  *
- * $Id: scamper_udpprobe_int.h,v 1.5 2025/08/07 05:00:43 mjl Exp $
+ * $Id: scamper_udpprobe_int.h,v 1.6 2025/10/09 22:24:44 mjl Exp $
  *
  * Copyright (C) 2023 The Regents of the University of California
  *
@@ -81,6 +81,7 @@ struct scamper_udpprobe
 
   /* collected data */
   uint8_t                    stop;
+  char                      *errmsg;
   scamper_udpprobe_probe_t **probes;
   uint8_t                    probe_sent;
 };

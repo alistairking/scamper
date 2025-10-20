@@ -1,7 +1,7 @@
 /*
  * scamper_neighbourdisc_lib.c
  *
- * $Id: scamper_neighbourdisc_lib.c,v 1.6 2023/12/24 00:19:25 mjl Exp $
+ * $Id: scamper_neighbourdisc_lib.c,v 1.7 2025/10/19 19:23:21 mjl Exp $
  *
  * Copyright (C) 2023 Matthew Luckie
  *
@@ -82,6 +82,11 @@ uint16_t scamper_neighbourdisc_attempts_get(const scamper_neighbourdisc_t *nd)
 uint16_t scamper_neighbourdisc_replyc_get(const scamper_neighbourdisc_t *nd)
 {
   return nd->replyc;
+}
+
+const char *scamper_neighbourdisc_errmsg_get(const scamper_neighbourdisc_t *nd)
+{
+  return nd->errmsg;
 }
 
 scamper_addr_t *

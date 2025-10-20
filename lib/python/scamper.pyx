@@ -1782,6 +1782,20 @@ cdef class ScamperTrace:
         return cscamper_trace.scamper_trace_userid_get(self._c)
 
     @property
+    def errmsg(self):
+        """
+        get method to obtain error message from scamper.
+
+        :returns: the error message
+        :rtype: string
+        """
+        cdef const char *errmsg
+        errmsg = cscamper_trace.scamper_trace_errmsg_get(self._c)
+        if errmsg == NULL:
+            return None
+        return errmsg.decode('UTF-8', 'strict')
+
+    @property
     def start(self):
         """
         get method to obtain the time this measurement started.
@@ -2812,6 +2826,20 @@ cdef class ScamperPing:
         :rtype: int
         """
         return cscamper_ping.scamper_ping_userid_get(self._c)
+
+    @property
+    def errmsg(self):
+        """
+        get method to obtain error message from scamper.
+
+        :returns: the error message
+        :rtype: string
+        """
+        cdef const char *errmsg
+        errmsg = cscamper_ping.scamper_ping_errmsg_get(self._c)
+        if errmsg == NULL:
+            return None
+        return errmsg.decode('UTF-8', 'strict')
 
     @property
     def start(self):
@@ -3890,6 +3918,20 @@ cdef class ScamperTracelb:
         :rtype: int
         """
         return cscamper_tracelb.scamper_tracelb_userid_get(self._c)
+
+    @property
+    def errmsg(self):
+        """
+        get method to obtain error message from scamper.
+
+        :returns: the error message
+        :rtype: string
+        """
+        cdef const char *errmsg
+        errmsg = cscamper_tracelb.scamper_tracelb_errmsg_get(self._c)
+        if errmsg == NULL:
+            return None
+        return errmsg.decode('UTF-8', 'strict')
 
     @property
     def start(self):
@@ -5053,6 +5095,20 @@ cdef class ScamperDealias:
         return cscamper_dealias.scamper_dealias_userid_get(self._c)
 
     @property
+    def errmsg(self):
+        """
+        get method to obtain error message from scamper.
+
+        :returns: the error message
+        :rtype: string
+        """
+        cdef const char *errmsg
+        errmsg = cscamper_dealias.scamper_dealias_errmsg_get(self._c)
+        if errmsg == NULL:
+            return None
+        return errmsg.decode('UTF-8', 'strict')
+
+    @property
     def start(self):
         """
         get method to obtain the time this measurement started.
@@ -5686,6 +5742,20 @@ cdef class ScamperTbit:
         return cscamper_tbit.scamper_tbit_userid_get(self._c)
 
     @property
+    def errmsg(self):
+        """
+        get method to obtain error message from scamper.
+
+        :returns: the error message
+        :rtype: string
+        """
+        cdef const char *errmsg
+        errmsg = cscamper_tbit.scamper_tbit_errmsg_get(self._c)
+        if errmsg == NULL:
+            return None
+        return errmsg.decode('UTF-8', 'strict')
+
+    @property
     def start(self):
         """
         get method to obtain the time this measurement started.
@@ -5947,6 +6017,20 @@ cdef class ScamperSniff:
         """
         c = cscamper_sniff.scamper_sniff_stop_reason_get(self._c)
         return ScamperSniffStop(c)
+
+    @property
+    def errmsg(self):
+        """
+        get method to obtain error message from scamper.
+
+        :returns: the error message
+        :rtype: string
+        """
+        cdef const char *errmsg
+        errmsg = cscamper_sniff.scamper_sniff_errmsg_get(self._c)
+        if errmsg == NULL:
+            return None
+        return errmsg.decode('UTF-8', 'strict')
 
     @property
     def userid(self):
@@ -7255,6 +7339,20 @@ cdef class ScamperHost:
         return cscamper_host.scamper_host_userid_get(self._c)
 
     @property
+    def errmsg(self):
+        """
+        get method to obtain error message from scamper.
+
+        :returns: the error message
+        :rtype: string
+        """
+        cdef const char *errmsg
+        errmsg = cscamper_host.scamper_host_errmsg_get(self._c)
+        if errmsg == NULL:
+            return None
+        return errmsg.decode('UTF-8', 'strict')
+
+    @property
     def start(self):
         """
         get method to obtain the time this measurement started.
@@ -7885,6 +7983,20 @@ cdef class ScamperHttp:
         return cscamper_http.scamper_http_userid_get(self._c)
 
     @property
+    def errmsg(self):
+        """
+        get method to obtain error message from scamper.
+
+        :returns: the error message
+        :rtype: string
+        """
+        cdef const char *errmsg
+        errmsg = cscamper_http.scamper_http_errmsg_get(self._c)
+        if errmsg == NULL:
+            return None
+        return errmsg.decode('UTF-8', 'strict')
+
+    @property
     def start(self):
         """
         get method to obtain the time this measurement started.
@@ -8451,6 +8563,20 @@ cdef class ScamperUdpprobe:
         :rtype: int
         """
         return cscamper_udpprobe.scamper_udpprobe_userid_get(self._c)
+
+    @property
+    def errmsg(self):
+        """
+        get method to obtain error message from scamper.
+
+        :returns: the error message
+        :rtype: string
+        """
+        cdef const char *errmsg
+        errmsg = cscamper_udpprobe.scamper_udpprobe_errmsg_get(self._c)
+        if errmsg == NULL:
+            return None
+        return errmsg.decode('UTF-8', 'strict')
 
     @property
     def start(self):
@@ -9057,6 +9183,13 @@ cdef void _ctrl_cb(clibscamperctrl.scamper_inst_t *c_inst,
 
     return
 
+cdef void _ctrl_cb_nogil(clibscamperctrl.scamper_inst_t *c_inst,
+                         uint8_t cb_type,
+                         clibscamperctrl.scamper_task_t *c_task,
+                         const void *data, size_t datalen) noexcept nogil:
+    with gil:
+        _ctrl_cb(c_inst, cb_type, c_task, data, datalen)
+
 cdef class ScamperCtrl:
     """
     :class:`ScamperCtrl` is used to interact with a collection (one or more)
@@ -9110,7 +9243,7 @@ cdef class ScamperCtrl:
             if not outfile.is_write():
                 raise RuntimeError("outfile not opened in write mode")
 
-        self._c = clibscamperctrl.scamper_ctrl_alloc(_ctrl_cb)
+        self._c = clibscamperctrl.scamper_ctrl_alloc(_ctrl_cb_nogil)
         clibscamperctrl.scamper_ctrl_param_set(self._c, <PyObject *>self)
         self._meta = meta
         self._morecb = morecb
@@ -9372,7 +9505,8 @@ cdef class ScamperCtrl:
                 tv.tv_sec = diff.seconds
                 tv.tv_usec = diff.microseconds
 
-            clibscamperctrl.scamper_ctrl_wait(self._c, tv_ptr)
+            with nogil:
+                clibscamperctrl.scamper_ctrl_wait(self._c, tv_ptr)
 
     def poll(self, timeout=None, until=None):
         """
@@ -9453,7 +9587,8 @@ cdef class ScamperCtrl:
                 tv.tv_sec = diff.seconds
                 tv.tv_usec = diff.microseconds
 
-            clibscamperctrl.scamper_ctrl_wait(self._c, tv_ptr)
+            with nogil:
+                clibscamperctrl.scamper_ctrl_wait(self._c, tv_ptr)
 
         return None
 
@@ -9572,7 +9707,8 @@ cdef class ScamperCtrl:
                 PyErr_CheckSignals()
                 if len(self._exceptions) > 0:
                     raise self._exceptions.pop(0)
-                clibscamperctrl.scamper_ctrl_wait(self._c, NULL)
+                with nogil:
+                    clibscamperctrl.scamper_ctrl_wait(self._c, NULL)
             onion = self._syncdata
             self._c_synctask = NULL
             self._syncdata = None

@@ -1,7 +1,7 @@
 /*
  * scamper_ip4.h
  *
- * $Id: scamper_ip4.h,v 1.6 2023/08/20 01:21:17 mjl Exp $
+ * $Id: scamper_ip4.h,v 1.8 2025/10/15 01:29:55 mjl Exp $
  *
  * Copyright (C) 2009-2011 The University of Waikato
  * Copyright (C) 2023      Matthew Luckie
@@ -27,7 +27,7 @@
 
 #ifdef __SCAMPER_PROBE_H
 int scamper_ip4_build(scamper_probe_t *probe, uint8_t *buf, size_t *len);
-int scamper_ip4_hlen(scamper_probe_t *probe, size_t *len);
+size_t scamper_ip4_hlen(scamper_probe_t *probe, scamper_err_t *err);
 int scamper_ip4_frag_build(scamper_probe_t *probe, uint8_t *buf, size_t *len);
 #endif
 

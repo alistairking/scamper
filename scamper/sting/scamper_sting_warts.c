@@ -8,7 +8,7 @@
  *
  * Author: Matthew Luckie
  *
- * $Id: scamper_sting_warts.c,v 1.18 2025/04/22 01:41:43 mjl Exp $
+ * $Id: scamper_sting_warts.c,v 1.19 2025/10/19 02:17:23 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -64,6 +64,7 @@
 #define WARTS_STING_HOLEC     20
 #define WARTS_STING_PKTC      21
 #define WARTS_STING_RESULT    22
+#define WARTS_STING_ERRMSG    23
 
 static const warts_var_t sting_vars[] =
 {
@@ -89,6 +90,7 @@ static const warts_var_t sting_vars[] =
   {WARTS_STING_HOLEC,    2},
   {WARTS_STING_PKTC,     4},
   {WARTS_STING_RESULT,   1},
+  {WARTS_STING_ERRMSG,  -1},
 };
 #define sting_vars_mfb WARTS_VAR_MFB(sting_vars)
 
@@ -215,19 +217,14 @@ static int warts_sting_params(const scamper_sting_t *sting,
       var = &sting_vars[i];
 
       /* Skip the variables for which we have no data */
-      if(var->id == WARTS_STING_LIST && sting->list == NULL)
-	continue;
-      else if(var->id == WARTS_STING_CYCLE && sting->cycle == NULL)
-	continue;
-      else if(var->id == WARTS_STING_USERID && sting->userid == 0)
-	continue;
-      else if(var->id == WARTS_STING_SRC && sting->src == NULL)
-	continue;
-      else if(var->id == WARTS_STING_DST && sting->dst == NULL)
-	continue;
-      else if(var->id == WARTS_STING_DATA && sting->datalen == 0)
-	continue;
-      else if(var->id == WARTS_STING_RESULT && sting->result == 0)
+      if((var->id == WARTS_STING_LIST && sting->list == NULL) ||
+	 (var->id == WARTS_STING_CYCLE && sting->cycle == NULL) ||
+	 (var->id == WARTS_STING_USERID && sting->userid == 0) ||
+	 (var->id == WARTS_STING_SRC && sting->src == NULL) ||
+	 (var->id == WARTS_STING_DST && sting->dst == NULL) ||
+	 (var->id == WARTS_STING_DATA && sting->datalen == 0) ||
+	 (var->id == WARTS_STING_RESULT && sting->result == 0) ||
+	 (var->id == WARTS_STING_ERRMSG && sting->errmsg == NULL))
 	continue;
 
       /* Set the flag for the rest of the variables */
@@ -238,22 +235,27 @@ static int warts_sting_params(const scamper_sting_t *sting,
         {
 	  if(warts_addr_size(table, sting->src, params_len) != 0)
 	    return -1;
-	  continue;
         }
       else if(var->id == WARTS_STING_DST)
         {
 	  if(warts_addr_size(table, sting->dst, params_len) != 0)
 	    return -1;
-	  continue;
         }
       else if(var->id == WARTS_STING_DATA)
 	{
 	  *params_len += sting->datalen;
-	  continue;
 	}
-
-      /* The rest of the variables have a fixed size */
-      *params_len += var->size;
+      else if(var->id == WARTS_STING_ERRMSG)
+	{
+	  if(warts_str_size(sting->errmsg, params_len) != 0)
+	    return -1;
+	}
+      else
+	{
+	  /* The rest of the variables have a fixed size */
+	  assert(var->size >= 0);
+	  *params_len += var->size;
+	}
     }
 
   *flags_len = fold_flags(flags, max_id);

@@ -1,7 +1,7 @@
 /*
  * scamper_tracelb_lib.c
  *
- * $Id: scamper_tracelb_lib.c,v 1.12 2025/02/11 14:31:43 mjl Exp $
+ * $Id: scamper_tracelb_lib.c,v 1.13 2025/10/19 19:23:21 mjl Exp $
  *
  * Copyright (C) 2023 Matthew Luckie
  * Author: Matthew Luckie
@@ -130,6 +130,11 @@ uint8_t scamper_tracelb_gaplimit_get(const scamper_tracelb_t *trace)
 uint32_t scamper_tracelb_flags_get(const scamper_tracelb_t *trace)
 {
   return trace->flags;
+}
+
+const char *scamper_tracelb_errmsg_get(const scamper_tracelb_t *trace)
+{
+  return trace->errmsg;
 }
 
 uint32_t scamper_tracelb_probec_max_get(const scamper_tracelb_t *trace)

@@ -1,7 +1,7 @@
 /*
  * scamper_udpprobe.h
  *
- * $Id: scamper_udpprobe.h,v 1.9 2025/08/13 19:30:57 mjl Exp $
+ * $Id: scamper_udpprobe.h,v 1.10 2025/10/19 19:23:21 mjl Exp $
  *
  * Copyright (C) 2023-2025 The Regents of the University of California
  *
@@ -55,6 +55,7 @@ uint8_t scamper_udpprobe_stop_count_get(const scamper_udpprobe_t *up);
 scamper_udpprobe_probe_t *scamper_udpprobe_probe_get(const scamper_udpprobe_t *up, uint8_t i);
 uint8_t scamper_udpprobe_stop_reason_get(const scamper_udpprobe_t *up);
 char *scamper_udpprobe_stop_tostr(const scamper_udpprobe_t *up, char *buf, size_t len);
+const char *scamper_udpprobe_errmsg_get(const scamper_udpprobe_t *up);
 
 /* scamper_udpprobe_probe_t functions */
 void scamper_udpprobe_probe_free(scamper_udpprobe_probe_t *pr);

@@ -9,7 +9,7 @@
  * Copyright (c) 2019-2025 Matthew Luckie
  * Authors: Brian Hammond, Matthew Luckie
  *
- * $Id: scamper_ping_json.c,v 1.54 2025/08/31 02:43:18 mjl Exp $
+ * $Id: scamper_ping_json.c,v 1.56 2025/10/15 23:47:47 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -74,6 +74,9 @@ static char *ping_header(const scamper_ping_t *ping)
 		 scamper_ping_stop_tostr(ping, tmp, sizeof(tmp)));
   string_concat_u8(buf, sizeof(buf), &off, "\",\"stop_data\":",
 		   ping->stop_data);
+  if(ping->errmsg != NULL)
+    string_concat3(buf, sizeof(buf), &off, ",\"errmsg\":\"",
+		   json_esc(ping->errmsg, tmp, sizeof(tmp)), "\"");
   string_concat_u16(buf, sizeof(buf), &off, ",\"ping_sent\":",
 		    ping->ping_sent);
   string_concat_u16(buf, sizeof(buf), &off, ",\"probe_size\":",

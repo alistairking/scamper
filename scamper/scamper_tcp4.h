@@ -1,7 +1,7 @@
 /*
  * scamper_tcp4.h
  *
- * $Id: scamper_tcp4.h,v 1.16 2023/08/20 01:21:17 mjl Exp $
+ * $Id: scamper_tcp4.h,v 1.18 2025/10/15 01:29:55 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -27,9 +27,9 @@
 #define __SCAMPER_TCP4_H
 
 #ifndef _WIN32 /* SOCKET vs int on windows */
-int scamper_tcp4_open(const void *addr, int sport);
+int scamper_tcp4_open(const void *addr, int sport, scamper_err_t *err);
 #else
-SOCKET scamper_tcp4_open(const void *addr, int sport);
+SOCKET scamper_tcp4_open(const void *addr, int sport, scamper_err_t *err);
 #endif
 
 void scamper_tcp4_cleanup(void);
@@ -37,7 +37,7 @@ void scamper_tcp4_cleanup(void);
 #ifdef __SCAMPER_PROBE_H
 size_t scamper_tcp4_hlen(scamper_probe_t *probe);
 int scamper_tcp4_build(scamper_probe_t *probe, uint8_t *buf, size_t *len);
-int scamper_tcp4_probe(scamper_probe_t *probe);
+int scamper_tcp4_probe(scamper_probe_t *probe, scamper_err_t *err);
 #endif
 
 #endif /* __SCAMPER_TCP4_H */

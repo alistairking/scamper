@@ -1,7 +1,7 @@
 /*
  * scamper_do_neighbourdisc.h
  *
- * $Id: scamper_neighbourdisc_do.h,v 1.11 2025/08/04 00:00:27 mjl Exp $
+ * $Id: scamper_neighbourdisc_do.h,v 1.12 2025/10/20 00:09:06 mjl Exp $
  *
  * Copyright (C) 2009-2010 Matthew Luckie
  *
@@ -35,7 +35,8 @@ void scamper_do_neighbourdisc_free(void *);
 /* code to use the neighbourdisc code to do IP->MAC for another scamper task */
 scamper_neighbourdisc_do_t *scamper_do_neighbourdisc_do(
   int ifindex, scamper_addr_t *dst,
-  void *param, void (*cb)(void *, scamper_addr_t *ip, scamper_addr_t *mac));
+  void *param, void (*cb)(void *, scamper_addr_t *ip, scamper_addr_t *mac),
+  scamper_err_t *err);
 void scamper_neighbourdisc_do_free(scamper_neighbourdisc_do_t *nddo);
 
 uint32_t scamper_do_neighbourdisc_userid(void *data);

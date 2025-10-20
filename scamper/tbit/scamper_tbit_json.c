@@ -7,7 +7,7 @@
  *
  * Author: Matthew Luckie
  *
- * $Id: scamper_tbit_json.c,v 1.39 2025/10/02 07:11:40 mjl Exp $
+ * $Id: scamper_tbit_json.c,v 1.40 2025/10/15 23:58:44 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -90,7 +90,7 @@ static char *tbit_header_tostr(const scamper_tbit_t *tbit,
   static const char *null_options[] = {"tcpts", "ipts-syn", "iprr-syn",
 				       "ipqs-syn", "sack", "fo", "fo-exp"};
   static const char *null_results[] = {"tcpts-ok", "sack-ok", "fo-ok"};
-  char buf[1024], tmp[128];
+  char buf[2048], tmp[512];
   size_t off = 0;
   scamper_tbit_pmtud_t *pmtud;
   scamper_tbit_null_t *null;
@@ -125,6 +125,10 @@ static char *tbit_header_tostr(const scamper_tbit_t *tbit,
 		       tbit_options, sizeof(tbit_options) / sizeof(char *));
       string_concat3(buf, sizeof(buf), &off, ", \"options\":[", tmp, "]");
     }
+
+  if(tbit->errmsg != NULL)
+    string_concat3(buf, sizeof(buf), &off, ",\"errmsg\":\"",
+		   json_esc(tbit->errmsg, tmp, sizeof(tmp)), "\"");
 
   if(tbit->client_wscale > 0)
     string_concat_u8(buf, sizeof(buf), &off, ", \"wscale\":",

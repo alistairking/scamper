@@ -10,7 +10,7 @@
  *
  * Authors: Brian Hammond, Matthew Luckie
  *
- * $Id: scamper_trace_json.c,v 1.52 2025/08/31 03:09:46 mjl Exp $
+ * $Id: scamper_trace_json.c,v 1.55 2025/10/15 23:58:44 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -217,7 +217,7 @@ static char *hop_tostr(const scamper_trace_t *trace,
 
 static char *header_tostr(const scamper_trace_t *trace)
 {
-  char buf[512], tmp[128];
+  char buf[1024], tmp[512];
   size_t off = 0;
   time_t tt = trace->start.tv_sec;
   uint32_t cs;
@@ -247,6 +247,9 @@ static char *header_tostr(const scamper_trace_t *trace)
 		 scamper_trace_stop_tostr(trace, tmp, sizeof(tmp)));
   string_concat_u16(buf, sizeof(buf), &off, "\",\"stop_data\":",
 		    trace->stop_data);
+  if(trace->errmsg != NULL)
+    string_concat3(buf, sizeof(buf), &off, ",\"errmsg\":\"",
+		   json_esc(trace->errmsg, tmp, sizeof(tmp)), "\"");
   string_concat_u32(buf, sizeof(buf), &off, ",\"start\":{\"sec\":",
 		    (uint32_t)trace->start.tv_sec);
   string_concat_u32(buf, sizeof(buf), &off, ",\"usec\":",

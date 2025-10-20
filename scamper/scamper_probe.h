@@ -1,7 +1,7 @@
 /*
  * scamper_probe.h
  *
- * $Id: scamper_probe.h,v 1.49 2024/07/02 01:11:17 mjl Exp $
+ * $Id: scamper_probe.h,v 1.50 2025/10/15 23:42:35 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -183,15 +183,13 @@ typedef struct scamper_probe
   /* the actual transmitted packet, IP header and down, when datalink tx'd */
   uint8_t               *pr_tx_raw;
   uint16_t               pr_tx_rawlen;
-
-  /* if an error occurs in the probe function, the errno is recorded */
-  int                    pr_errno;
 } scamper_probe_t;
 
-int scamper_probe(scamper_probe_t *probe);
+int scamper_probe(scamper_probe_t *probe, scamper_err_t *err);
 
 #ifdef __SCAMPER_TASK_H
-int scamper_probe_task(scamper_probe_t *probe, scamper_task_t *task);
+int scamper_probe_task(scamper_probe_t *probe, scamper_task_t *task,
+		       scamper_err_t *err);
 #endif
 
 /* convenience macro to construct an ICMP echo packet */

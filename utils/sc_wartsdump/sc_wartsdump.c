@@ -1,7 +1,7 @@
 /*
  * sc_wartsdump
  *
- * $Id: sc_wartsdump.c,v 1.320 2025/08/13 19:30:57 mjl Exp $
+ * $Id: sc_wartsdump.c,v 1.326 2025/10/19 22:06:48 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -298,7 +298,7 @@ static void dump_trace(scamper_trace_t *trace)
   uint32_t flags;
   uint16_t u16, sport, dport, hop_count;
   uint8_t u8, stop_reason, stop_data, notec, n_type;
-  char buf[256];
+  char buf[256], buf2[256];
 
   if((hi = scamper_trace_hopiter_alloc()) == NULL)
     return;
@@ -426,58 +426,27 @@ static void dump_trace(scamper_trace_t *trace)
     }
   printf("\n");
 
-  printf(" stop reason: ");
+  scamper_trace_stop_tostr(trace, buf, sizeof(buf));
+  printf(" stop reason: %s", string_tolower(buf2, sizeof(buf2), buf));
   stop_reason = scamper_trace_stop_reason_get(trace);
   stop_data = scamper_trace_stop_data_get(trace);
   switch(stop_reason)
     {
-    case SCAMPER_TRACE_STOP_NONE:
-      printf("none");
-      break;
-
-    case SCAMPER_TRACE_STOP_COMPLETED:
-      printf("done");
-      break;
-
     case SCAMPER_TRACE_STOP_UNREACH:
-      printf("icmp unreach %s",
+      printf(" %s",
 	     icmp_unreach_tostr(buf, sizeof(buf),
 				scamper_addr_type_get(dst), stop_data));
       break;
 
     case SCAMPER_TRACE_STOP_ICMP:
-      printf("icmp type %d", stop_data);
-      break;
-
-    case SCAMPER_TRACE_STOP_LOOP:
-      printf("loop");
-      break;
-
-    case SCAMPER_TRACE_STOP_GAPLIMIT:
-      printf("gaplimit");
-      break;
-
     case SCAMPER_TRACE_STOP_ERROR:
-      printf("errno %d", stop_data);
-      break;
-
-    case SCAMPER_TRACE_STOP_HOPLIMIT:
-      printf("hoplimit");
-      break;
-
-    case SCAMPER_TRACE_STOP_GSS:
-      printf("dtree-gss");
-      break;
-
-    case SCAMPER_TRACE_STOP_HALTED:
-      printf("halted");
-      break;
-
-    default:
-      printf("reason 0x%02x data 0x%02x", stop_reason, stop_data);
+      printf(" %d", stop_data);
       break;
     }
   printf("\n");
+
+  if((str = scamper_trace_errmsg_get(trace)) != NULL)
+    printf(" errmsg: %s\n", str);
 
   scamper_trace_hopiter_reset(hi);
   while((hop = scamper_trace_hopiter_next(trace, hi)) != NULL)
@@ -667,7 +636,7 @@ static void dump_tracelb(scamper_tracelb_t *trace)
   const scamper_tracelb_link_t *link;
   const scamper_tracelb_node_t *node, *from, *to;
   const scamper_tracelb_probeset_t *set;
-  const char *name;
+  const char *str;
   scamper_addr_t *addr;
   uint32_t u32;
   uint16_t i, j, l, nodec, linkc, probec;
@@ -739,6 +708,9 @@ static void dump_tracelb(scamper_tracelb_t *trace)
       printf("\n");
     }
 
+  if((str = scamper_tracelb_errmsg_get(trace)) != NULL)
+    printf(" errmsg: %s\n", str);
+
   nodec = scamper_tracelb_nodec_get(trace);
   for(i=0; i<nodec; i++)
     {
@@ -752,8 +724,8 @@ static void dump_tracelb(scamper_tracelb_t *trace)
       printf("node %d %s", i, buf);
       if(scamper_tracelb_node_is_q_ttl(node) != 0)
 	printf(", q-ttl %d", scamper_tracelb_node_q_ttl_get(node));
-      if((name = scamper_tracelb_node_name_get(node)) != NULL)
-	printf(", name %s", name);
+      if((str = scamper_tracelb_node_name_get(node)) != NULL)
+	printf(", name %s", str);
       printf("\n");
 
       linkc = scamper_tracelb_node_linkc_get(node);
@@ -945,6 +917,7 @@ static void dump_ping(scamper_ping_t *ping)
   const scamper_ping_v4ts_t *v4ts;
   const uint8_t *probe_data;
   scamper_addr_t *addr;
+  const char *str;
   char buf[256];
   uint32_t u32, flags;
   uint16_t i, j, u16, ping_sent, probe_datalen;
@@ -978,6 +951,8 @@ static void dump_ping(scamper_ping_t *ping)
   dump_wait(", timeout", scamper_ping_wait_timeout_get(ping));
   printf(", ttl: %u, tos: 0x%02x\n", scamper_ping_ttl_get(ping),
 	 scamper_ping_tos_get(ping));
+  if((str = scamper_ping_errmsg_get(ping)) != NULL)
+    printf(" errmsg: %s\n", str);
 
   if(flags != 0)
     {
@@ -1060,27 +1035,10 @@ static void dump_ping(scamper_ping_t *ping)
     }
 
   ping_sent = scamper_ping_sent_get(ping);
-  printf(" probes-sent: %d, stop-reason: ", ping_sent);
-  switch(scamper_ping_stop_reason_get(ping))
-    {
-    case SCAMPER_PING_STOP_NONE:
-      printf("none"); break;
-
-    case SCAMPER_PING_STOP_COMPLETED:
-      printf("done"); break;
-
-    case SCAMPER_PING_STOP_ERROR:
-      printf("sendto errno %d", scamper_ping_stop_data_get(ping)); break;
-
-    case SCAMPER_PING_STOP_HALTED:
-      printf("halted"); break;
-
-    default:
-      printf("reason 0x%02x data 0x%02x",
-	     scamper_ping_stop_reason_get(ping),
-	     scamper_ping_stop_data_get(ping));
-      break;
-    }
+  printf(" probes-sent: %d, stop-reason: %s", ping_sent,
+	 scamper_ping_stop_tostr(ping, buf, sizeof(buf)));
+  if(scamper_ping_stop_reason_get(ping) == SCAMPER_PING_STOP_ERROR)
+    printf(" %d", scamper_ping_stop_data_get(ping));
   printf("\n");
 
   for(i=0; i<ping_sent; i++)
@@ -1192,6 +1150,7 @@ static void dump_dealias(scamper_dealias_t *dealias)
   scamper_addr_t *a, *b, *ab, *src, *dst;
   struct timeval rtt;
   const struct timeval *tv;
+  const char *str;
   uint32_t i, probec, probedefc, begin, end;
   uint16_t u16, xc, replyc, reply_size;
   uint8_t u8, method, result;
@@ -1392,6 +1351,9 @@ static void dump_dealias(scamper_dealias_t *dealias)
     printf(", csa");
   printf("\n");
 
+  if((str = scamper_dealias_errmsg_get(dealias)) != NULL)
+    printf(" errmsg: %s\n", str);
+
   for(i=0; i<probec; i++)
     {
       probe = scamper_dealias_probe_get(dealias, i);
@@ -1465,6 +1427,7 @@ static void dump_neighbourdisc(scamper_neighbourdisc_t *nd)
   uint16_t i, j, probec, replyc;
   uint8_t method, flags;
   char dst[128], buf[128];
+  const char *str;
 
   printf("neighbourdisc\n");
   dump_list_summary(scamper_neighbourdisc_list_get(nd));
@@ -1487,9 +1450,9 @@ static void dump_neighbourdisc(scamper_neighbourdisc_t *nd)
       printf(", replyc: %d, iface: %s\n",
 	     scamper_neighbourdisc_replyc_get(nd),
 	     scamper_neighbourdisc_ifname_get(nd));
-      printf(" our-mac: %s\n",
-	     scamper_addr_tostr(scamper_neighbourdisc_src_mac_get(nd),
-				buf, sizeof(buf)));
+
+      if((addr = scamper_neighbourdisc_src_mac_get(nd)) != NULL)
+	printf(" our-mac: %s\n", scamper_addr_tostr(addr, buf, sizeof(buf)));
 
       flags = scamper_neighbourdisc_flags_get(nd);
       printf(" flags: 0x%02x", flags);
@@ -1503,14 +1466,21 @@ static void dump_neighbourdisc(scamper_neighbourdisc_t *nd)
 	  printf(" )");
 	}
       printf("\n");
-      scamper_addr_tostr(scamper_neighbourdisc_dst_ip_get(nd),dst,sizeof(dst));
-      printf(" query:  who-has %s", dst);
+      printf(" query:  who-has");
+      if((addr = scamper_neighbourdisc_dst_ip_get(nd)) != NULL)
+	printf(" %s", scamper_addr_tostr(addr, dst, sizeof(dst)));
+      else
+	dst[0] = '\0';
       if((addr = scamper_neighbourdisc_src_ip_get(nd)) != NULL)
 	printf(" tell %s", scamper_addr_tostr(addr, buf, sizeof(buf)));
       if((addr = scamper_neighbourdisc_dst_mac_get(nd)) != NULL)
-	printf(" result: %s is-at %s\n", dst,
+	printf(" result: %s is-at %s", dst,
 	       scamper_addr_tostr(addr, buf, sizeof(buf)));
+      printf("\n");
     }
+
+  if((str = scamper_neighbourdisc_errmsg_get(nd)) != NULL)
+    printf(" errmsg: %s\n", str);
 
   probec = scamper_neighbourdisc_probec_get(nd);
   for(i=0; i<probec; i++)
@@ -1586,9 +1556,8 @@ static void dump_tbit(scamper_tbit_t *tbit)
   uint8_t proto, flags, iphlen, tcphlen, mf, ecn, u8, txsyn, rxsyn, dir;
   uint32_t i, seq, ack, server_isn, client_isn, off, u32, pktc;
   char src[64], dst[64], buf[128], ipid[12], fstr[32], tfstr[32], sack[64];
-  const char *host, *file;
+  const char *host, *file, *str;
   uint8_t cookie[16], cookielen;
-  char *str;
   size_t soff;
   int frag;
 
@@ -1707,6 +1676,9 @@ static void dump_tbit(scamper_tbit_t *tbit)
     {
       printf(" app: bgp, asn: %u\n", scamper_tbit_app_bgp_asn_get(bgp));
     }
+
+  if((str = scamper_tbit_errmsg_get(tbit)) != NULL)
+    printf(" errmsg: %s\n", str);
 
   client_isn = 0;
   server_isn = 0;
@@ -1937,10 +1909,11 @@ static void dump_sting(scamper_sting_t *sting)
   const struct timeval *tv, *start;
   const uint8_t *pkt_data;
   struct timeval diff;
+  const char *str;
   char src[64], dst[64], buf[32], ipid[12], tfstr[32], *dir;
   uint32_t i, pktc, seq, ack, server_isn, client_isn;
   uint16_t len, pkt_len, datalen;
-  uint8_t result, proto, flags, iphlen, tcphlen, pkt_flags;
+  uint8_t proto, flags, iphlen, tcphlen, pkt_flags;
   size_t tfoff;
 
   printf("sting from %s to %s\n",
@@ -1964,15 +1937,9 @@ static void dump_sting(scamper_sting_t *sting)
 	 scamper_sting_dataackc_get(sting), scamper_sting_holec_get(sting));
   tv = scamper_sting_hsrtt_get(sting);
   printf(" hs-rtt: %d.%06d\n", (int)tv->tv_sec, (int)tv->tv_usec);
-
-  printf(" result: "); result = scamper_sting_result_get(sting);
-  if(result == SCAMPER_STING_RESULT_NONE)
-    printf("none");
-  else if(result == SCAMPER_STING_RESULT_COMPLETED)
-    printf("completed");
-  else
-    printf("0x%02x", result);
-  printf("\n");
+  printf(" result: %s\n", scamper_sting_result_tostr(sting, buf, sizeof(buf)));
+  if((str = scamper_sting_errmsg_get(sting)) != NULL)
+    printf(" errmsg: %s\n", str);
 
   client_isn = 0;
   server_isn = 0;
@@ -2103,7 +2070,8 @@ static void dump_sniff(scamper_sniff_t *sniff)
   uint16_t len;
   uint32_t i, j, pktc;
   int k;
-  char src[64], dst[64], buf[32], *str;
+  char src[64], dst[64], buf[32];
+  const char *str;
 
   start = scamper_sniff_start_get(sniff);
 
@@ -2117,21 +2085,11 @@ static void dump_sniff(scamper_sniff_t *sniff)
   printf(" limit-pktc: %d", scamper_sniff_limit_pktc_get(sniff));
   dump_wait(", limit-time", scamper_sniff_limit_time_get(sniff));
   printf(", icmp-id %d\n", scamper_sniff_icmpid_get(sniff));
-  u8 = scamper_sniff_stop_reason_get(sniff);
   pktc = scamper_sniff_pktc_get(sniff);
-  switch(u8)
-    {
-    case SCAMPER_SNIFF_STOP_NONE: str = "none"; break;
-    case SCAMPER_SNIFF_STOP_ERROR: str = "error"; break;
-    case SCAMPER_SNIFF_STOP_LIMIT_TIME: str = "limit-time"; break;
-    case SCAMPER_SNIFF_STOP_LIMIT_PKTC: str = "limit-pktc"; break;
-    case SCAMPER_SNIFF_STOP_HALTED: str = "halted"; break;
-    default:
-      snprintf(buf, sizeof(buf), "%d", u8);
-      str = buf;
-      break;
-    }
-  printf(" result: %s, pktc: %d\n", str, pktc);
+  printf(" result: %s, pktc: %d\n",
+	 scamper_sniff_stop_tostr(sniff, buf, sizeof(buf)), pktc);
+  if((str = scamper_sniff_errmsg_get(sniff)) != NULL)
+    printf(" errmsg: %s\n", str);
 
   for(i=0; i<pktc; i++)
     {
@@ -2361,6 +2319,9 @@ static void dump_host(scamper_host_t *host)
   if((str = scamper_host_ecs_get(host)) != NULL)
     printf(" edns-client-subnet: %s\n", str);
 
+  if((str = scamper_host_errmsg_get(host)) != NULL)
+    printf(" errmsg: %s\n", str);
+
   for(i=0; i<qcount; i++)
     {
       query = scamper_host_query_get(host, i);
@@ -2430,6 +2391,7 @@ static void dump_http(scamper_http_t *http)
   uint16_t dport, len, u16;
   uint8_t hdrc, u8;
   char buf[256], dir[8], type[8], *tmp;
+  const char *str;
   size_t s;
 
   printf("http");
@@ -2454,6 +2416,8 @@ static void dump_http(scamper_http_t *http)
   if(scamper_http_status_code_get(http, &u16) == 0)
     printf(", status-code: %u", u16);
   printf("\n");
+  if((str = scamper_http_errmsg_get(http)) != NULL)
+    printf(" errmsg: %s\n", str);
 
   if(scamper_http_url_len_get(http, &s) == 0 && (tmp = malloc(s)) != NULL)
     {
@@ -2545,6 +2509,8 @@ static void dump_udpprobe(scamper_udpprobe_t *up)
   printf(" probe-count: %d, probe-sent: %d, stop-reason: %s\n",
 	 scamper_udpprobe_probe_count_get(up), sentc,
 	 scamper_udpprobe_stop_tostr(up, buf, sizeof(buf)));
+  if((str = scamper_udpprobe_errmsg_get(up)) != NULL)
+    printf(" errmsg: %s\n", str);
 
   for(i=0; i<sentc; i++)
     {

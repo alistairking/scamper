@@ -1,7 +1,7 @@
 /*
  * scamper_ping.h
  *
- * $Id: scamper_ping.h,v 1.88 2025/05/29 07:44:16 mjl Exp $
+ * $Id: scamper_ping.h,v 1.89 2025/10/19 19:23:21 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -99,6 +99,7 @@ uint16_t scamper_ping_attempts_get(const scamper_ping_t *ping);
 uint16_t scamper_ping_pktsize_get(const scamper_ping_t *ping);
 uint8_t scamper_ping_method_get(const scamper_ping_t *ping);
 char *scamper_ping_method_tostr(const scamper_ping_t *ping, char *buf, size_t len);
+const char *scamper_ping_errmsg_get(const scamper_ping_t *ping);
 int scamper_ping_method_is_icmp(const scamper_ping_t *ping);
 int scamper_ping_method_is_icmp_time(const scamper_ping_t *ping);
 int scamper_ping_method_is_tcp(const scamper_ping_t *ping);

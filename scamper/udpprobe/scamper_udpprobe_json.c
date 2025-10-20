@@ -3,7 +3,7 @@
  *
  * Author: Matthew Luckie
  *
- * $Id: scamper_udpprobe_json.c,v 1.12 2025/08/13 19:30:57 mjl Exp $
+ * $Id: scamper_udpprobe_json.c,v 1.13 2025/10/15 23:58:44 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -179,6 +179,9 @@ static char *header_tostr(const scamper_udpprobe_t *up)
 
   string_concat3(buf, sizeof(buf), &off, ", \"stop_reason\":\"",
 		 scamper_udpprobe_stop_tostr(up, tmp, sizeof(tmp)), "\"");
+  if(up->errmsg != NULL)
+    string_concat3(buf, sizeof(buf), &off, ",\"errmsg\":\"",
+		   json_esc(up->errmsg, tmp, sizeof(tmp)), "\"");
 
   if(up->data != NULL && up->len > 0)
     {
