@@ -1,7 +1,7 @@
 /*
  * scamper_icmp4.h
  *
- * $Id: scamper_icmp4.h,v 1.24 2024/02/21 04:41:18 mjl Exp $
+ * $Id: scamper_icmp4.h,v 1.26 2025/10/15 01:29:55 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2009 The University of Waikato
@@ -27,13 +27,13 @@
 #define __SCAMPER_ICMP4_H
 
 #ifndef _WIN32 /* SOCKET vs int on windows */
-int scamper_icmp4_open(const void *addr);
+int scamper_icmp4_open(const void *addr, scamper_err_t *error);
 int scamper_icmp4_open_fd(void);
-int scamper_icmp4_open_err(const void *addr);
+int scamper_icmp4_open_err(const void *addr, scamper_err_t *error);
 #else
-SOCKET scamper_icmp4_open(const void *addr);
+SOCKET scamper_icmp4_open(const void *addr, scamper_err_t *error);
 SOCKET scamper_icmp4_open_fd(void);
-SOCKET scamper_icmp4_open_err(const void *addr);
+SOCKET scamper_icmp4_open_err(const void *addr, scamper_err_t *error);
 #endif
 
 void scamper_icmp4_cleanup(void);
@@ -47,7 +47,7 @@ void scamper_icmp4_read_err_cb(SOCKET fd, void *param);
 #endif
 
 #ifdef __SCAMPER_PROBE_H
-int scamper_icmp4_probe(scamper_probe_t *probe);
+int scamper_icmp4_probe(scamper_probe_t *probe, scamper_err_t *err);
 int scamper_icmp4_build(scamper_probe_t *probe, uint8_t *buf, size_t *len);
 uint16_t scamper_icmp4_cksum(scamper_probe_t *probe);
 #endif

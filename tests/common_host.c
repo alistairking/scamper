@@ -1,7 +1,7 @@
 /*
  * common_host : common functions for unit testing host
  *
- * $Id: common_host.c,v 1.1 2025/04/20 08:30:01 mjl Exp $
+ * $Id: common_host.c,v 1.3 2025/10/19 20:49:19 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -37,6 +37,7 @@
 #include "utils.h"
 
 #include "common.h"
+#include "common_ok.h"
 
 typedef scamper_host_t * (*scamper_host_makefunc_t)(void);
 
@@ -194,6 +195,7 @@ int host_ok(const scamper_host_t *in, const scamper_host_t *out)
      timeval_cmp(&in->start, &out->start) != 0 ||
      in->flags != out->flags ||
      timeval_cmp(&in->wait_timeout, &out->wait_timeout) != 0 ||
+     str_ok(in->errmsg, out->errmsg) != 0 ||
      in->stop != out->stop ||
      in->retries != out->retries ||
      in->qclass != out->qclass ||
@@ -210,7 +212,12 @@ int host_ok(const scamper_host_t *in, const scamper_host_t *out)
   return 0;
 }
 
-static scamper_host_t *dns_opt_elem_nsid(void)
+/*
+ * host_1:
+ *
+ * dns_opt_elem_nsid
+ */
+static scamper_host_t *host_1(void)
 {
   scamper_host_t *host = NULL;
   scamper_host_query_t *q;
@@ -270,8 +277,36 @@ static scamper_host_t *dns_opt_elem_nsid(void)
   return NULL;
 }
 
+static scamper_host_t *host_2(void)
+{
+  scamper_host_t *host = NULL;
+
+  if((host = scamper_host_alloc()) == NULL ||
+     (host->src = scamper_addr_fromstr_ipv4("192.0.2.1")) == NULL ||
+     (host->dst = scamper_addr_fromstr_ipv4("192.0.2.2")) == NULL ||
+     (host->qname = strdup("www.example.com")) == NULL ||
+     (host->errmsg = strdup("hello world")) == NULL)
+    goto err;
+
+  host->userid               = 70;
+  host->qclass               = SCAMPER_HOST_CLASS_IN;
+  host->qtype                = SCAMPER_HOST_TYPE_A;
+  host->stop                 = SCAMPER_HOST_STOP_ERROR;
+  host->start.tv_sec         = 1724828853;
+  host->start.tv_usec        = 123456;
+  host->wait_timeout.tv_sec  = 1;
+  host->wait_timeout.tv_usec = 0;
+
+  return host;
+
+ err:
+  if(host != NULL) scamper_host_free(host);
+  return host;
+}
+
 static scamper_host_makefunc_t makers[] = {
-  dns_opt_elem_nsid,
+  host_1,
+  host_2,
 };
 
 scamper_host_t *host_makers(size_t i)

@@ -1,7 +1,7 @@
 /*
  * scamper_rtsock.h
  *
- * $Id: scamper_rtsock.h,v 1.20 2023/08/18 21:24:40 mjl Exp $
+ * $Id: scamper_rtsock.h,v 1.22 2025/10/15 21:27:50 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2010 The University of Waikato
@@ -34,7 +34,8 @@ typedef struct scamper_route scamper_route_t;
 
 #ifdef __SCAMPER_ADDR_H
 scamper_route_t *scamper_route_alloc(scamper_addr_t *dst, void *param,
-				     void (*cb)(scamper_route_t *rt));
+				     void (*cb)(scamper_route_t *,
+						const scamper_err_t *));
 #endif
 void scamper_route_free(scamper_route_t *route);
 
@@ -45,11 +46,14 @@ void scamper_rtsock_read_cb(const int fd, void *param);
 void scamper_rtsock_close(int fd);
 #endif
 
+#if defined(__SCAMPER_DEBUG_H)
 #if defined(_WIN32) /* windows does not have a routing socket */
-int scamper_rtsock_getroute(scamper_route_t *route);
+int scamper_rtsock_getroute(scamper_route_t *route, scamper_err_t *err);
 #elif defined(__SCAMPER_FD_H)
-int scamper_rtsock_getroute(scamper_fd_t *fd, scamper_route_t *route);
+int scamper_rtsock_getroute(scamper_fd_t *fd, scamper_route_t *route,
+			    scamper_err_t *err);
 #endif
+#endif /* __SCAMPER_DEBUG_H */
 
 #if defined(__SCAMPER_ADDR_H)
 struct scamper_route
@@ -61,18 +65,16 @@ struct scamper_route
    *  - parameter that the caller can set for its own use.
    */
   scamper_addr_t  *dst;
-  void           (*cb)(scamper_route_t *rt);
+  void           (*cb)(scamper_route_t *rt, const scamper_err_t *err);
   void            *param;
 
   /*
    * result of route lookup:
    *  - gateway to use, if any,
    *  - interface to use,
-   *  - an error code if the lookup failed.
    */
   scamper_addr_t *gw;
   int             ifindex;
-  int             error;
 
   /* a pointer that is used internally by the routing code */
   void           *internal;

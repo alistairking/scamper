@@ -1,9 +1,9 @@
 /*
  * scamper_udpprobe.c
  *
- * $Id: scamper_udpprobe.c,v 1.3 2024/09/16 07:53:14 mjl Exp $
+ * $Id: scamper_udpprobe.c,v 1.6 2025/10/09 22:24:44 mjl Exp $
  *
- * Copyright (C) 2023-2024 The Regents of the University of California
+ * Copyright (C) 2023-2025 The Regents of the University of California
  *
  * Authors: Matthew Luckie
  *
@@ -33,6 +33,25 @@
 #include "scamper_udpprobe_int.h"
 #include "scamper_ifname.h"
 #include "utils.h"
+
+char *scamper_udpprobe_stop_tostr(const scamper_udpprobe_t *up,
+				  char *buf, size_t len)
+{
+  static char *r[] = {
+    "none",
+    "done",
+    "halted",
+    "error",
+  };
+  size_t off = 0;
+
+  if(up->stop >= sizeof(r) / sizeof(char *))
+    string_concat_u8(buf, len, &off, NULL, up->stop);
+  else
+    string_concat(buf, len, &off, r[up->stop]);
+
+  return buf;
+}
 
 void scamper_udpprobe_reply_free(scamper_udpprobe_reply_t *ur)
 {
@@ -95,6 +114,7 @@ void scamper_udpprobe_free(scamper_udpprobe_t *up)
   if(up->src != NULL) scamper_addr_free(up->src);
   if(up->dst != NULL) scamper_addr_free(up->dst);
   if(up->data != NULL) free(up->data);
+  if(up->errmsg != NULL) free(up->errmsg);
   if(up->probes != NULL)
     {
       for(i=0; i<up->probe_sent; i++)

@@ -3,12 +3,12 @@
 .\"
 .\" Author: Matthew Luckie <mjl@luckie.org.nz>
 .\"
-.\" Copyright (c) 2024 The Regents of the University of California
+.\" Copyright (c) 2024-2025 The Regents of the University of California
 .\"               All rights reserved
 .\"
-.\" $Id: sc_minrtt.1,v 1.4 2024/09/16 08:54:41 mjl Exp $
+.\" $Id: sc_minrtt.1,v 1.5 2025/09/17 00:32:56 mjl Exp $
 .\"
-.Dd September 16, 2024
+.Dd September 17, 2025
 .Dt SC_MINRTT 1
 .Os
 .Sh NAME
@@ -39,6 +39,7 @@
 .Nm
 .Bk -words
 .Op Fl p Ar process-mode
+.Op Fl a Ar anycast-file
 .Op Fl d Ar db-file
 .Op Fl r Ar router-file
 .Op Fl t Ar threadc
@@ -68,9 +69,8 @@ and then use the database to create the RTT constraints file for
 .Xr sc_hoiho 1
 using
 .Fl p.
-The supported options to
 .Nm
-are as follows:
+supports the following options:
 .Bl -tag -width Ds
 .It Fl ?
 prints a list of command line options and a synopsis of each.
@@ -78,6 +78,20 @@ prints a list of command line options and a synopsis of each.
 prints the version of
 .Nm
 and exits.
+.It Fl a Ar anycast-file
+specifies a file containing IPv4 and IPv6 prefixes, one per line, that
+are believed to be anycast.
+.Nm
+will use this file to ignore RTT constraints for a given address if any
+of the RTT constraints provided in the import stage imply the address
+could not have a single location.
+If the RTT constraints do not imply the address is anycast,
+.Nm
+will use the constraints.
+.It Fl b Ar batchc
+specifies the number of files to import in each batch import.  By default,
+.Nm
+will import one file per thread in each batch.
 .It Fl c
 specifies that a sqlite3 database file is to be created.
 .It Fl d Ar db-file
@@ -105,10 +119,6 @@ must subsequently match an entry in the vploc file supplied with
 the
 .Fl V
 option when processing the samples.
-.It Fl b Ar batchc
-specifies the number of files to import in each batch import.  By default,
-.Nm
-will import one file per thread in each batch.
 .It Fl t Ar threadc
 specifies the number of threads to use in the threadpool.  By default,
 .Nm
@@ -138,6 +148,20 @@ To dump the minimum set of RTT values per router for use by
 use:
 .Pp
 sc_minrtt -p 2 -d minrtt.sqlite -V vploc.txt -r routers.txt
+.Pp
+Given a file with anycast prefixes:
+.Pp
+.Dl 192.0.2.0/24
+.Dl 192.0.31.0/24
+.Dl 2001:db8:512::/48
+.Pp
+use
+.Pp
+sc_minrtt -p -d minrtt.sqlite -V vploc.txt -r routers.txt -a anycast.txt
+.Pp
+to dump the minimum set of RTT values per router without using RTT
+samples in the anycast prefixes if the RTT samples also imply the
+router is anycast.
 .Pp
 .\""""""""""""
 .Sh NOTES

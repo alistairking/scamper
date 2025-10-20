@@ -1,7 +1,7 @@
 /*
  * scamper_addr2mac.c: handle a cache of IP to MAC address mappings
  *
- * $Id: scamper_addr2mac.c,v 1.50 2023/08/27 06:39:31 mjl Exp $
+ * $Id: scamper_addr2mac.c,v 1.51 2025/10/15 19:42:18 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -94,11 +94,11 @@ struct rtattr
 #endif /* __linux__ */
 
 #include "scamper.h"
+#include "scamper_debug.h"
 #include "scamper_addr.h"
 #include "scamper_addr_int.h"
 #include "scamper_addr2mac.h"
 #include "scamper_rtsock.h"
-#include "scamper_debug.h"
 #include "utils.h"
 #include "mjl_splaytree.h"
 

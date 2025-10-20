@@ -1,4 +1,4 @@
-# scamper python interface
+# scamper python module
 #
 # Author: Matthew Luckie
 #
@@ -296,17 +296,54 @@ cimport cscamper_http
 cimport cscamper_udpprobe
 cimport clibscamperctrl
 
+class ScamperHostStop(enum.IntEnum):
+    NoReason = cscamper_host.SCAMPER_HOST_STOP_NONE
+    Completed = cscamper_host.SCAMPER_HOST_STOP_DONE
+    Timeout = cscamper_host.SCAMPER_HOST_STOP_TIMEOUT
+    Halted = cscamper_host.SCAMPER_HOST_STOP_HALTED
+    Error = cscamper_host.SCAMPER_HOST_STOP_ERROR
+
+class ScamperHttpStop(enum.IntEnum):
+    NoReason = cscamper_http.SCAMPER_HTTP_STOP_NONE
+    Halted = cscamper_http.SCAMPER_HTTP_STOP_HALTED
+    NoConnection = cscamper_http.SCAMPER_HTTP_STOP_NOCONN
+    Completed = cscamper_http.SCAMPER_HTTP_STOP_DONE
+    Error = cscamper_http.SCAMPER_HTTP_STOP_ERROR
+    Timeout = cscamper_http.SCAMPER_HTTP_STOP_TIMEOUT
+    Insecure = cscamper_http.SCAMPER_HTTP_STOP_INSECURE
+
+class ScamperPingStop(enum.IntEnum):
+    NoReason = cscamper_ping.SCAMPER_PING_STOP_NONE
+    Completed = cscamper_ping.SCAMPER_PING_STOP_COMPLETED
+    Error = cscamper_ping.SCAMPER_PING_STOP_ERROR
+    Halted = cscamper_ping.SCAMPER_PING_STOP_HALTED
+    InProgress = cscamper_ping.SCAMPER_PING_STOP_INPROGRESS
+
+class ScamperSniffStop(enum.IntEnum):
+    NoReason = cscamper_sniff.SCAMPER_SNIFF_STOP_NONE
+    Error = cscamper_sniff.SCAMPER_SNIFF_STOP_ERROR
+    LimitTime = cscamper_sniff.SCAMPER_SNIFF_STOP_LIMIT_TIME
+    LimitPktC = cscamper_sniff.SCAMPER_SNIFF_STOP_LIMIT_PKTC
+    Halted = cscamper_sniff.SCAMPER_SNIFF_STOP_HALTED
+
 class ScamperTraceStop(enum.IntEnum):
-    NoReason = 0x00
-    Completed = 0x01
-    Unreach = 0x02
-    Icmp = 0x03
-    Loop = 0x04
-    GapLimit = 0x05
-    Error = 0x06
-    HopLimit = 0x07
-    GSS = 0x08
-    Halted = 0x09
+    NoReason = cscamper_trace.SCAMPER_TRACE_STOP_NONE
+    Completed = cscamper_trace.SCAMPER_TRACE_STOP_COMPLETED
+    Unreach = cscamper_trace.SCAMPER_TRACE_STOP_UNREACH
+    Icmp = cscamper_trace.SCAMPER_TRACE_STOP_ICMP
+    Loop = cscamper_trace.SCAMPER_TRACE_STOP_LOOP
+    GapLimit = cscamper_trace.SCAMPER_TRACE_STOP_GAPLIMIT
+    Error = cscamper_trace.SCAMPER_TRACE_STOP_ERROR
+    HopLimit = cscamper_trace.SCAMPER_TRACE_STOP_HOPLIMIT
+    GSS = cscamper_trace.SCAMPER_TRACE_STOP_GSS
+    Halted = cscamper_trace.SCAMPER_TRACE_STOP_HALTED
+    InProgress = cscamper_trace.SCAMPER_TRACE_STOP_INPROGRESS
+
+class ScamperUdpprobeStop(enum.IntEnum):
+    NoReason = cscamper_udpprobe.SCAMPER_UDPPROBE_STOP_NONE
+    Completed = cscamper_udpprobe.SCAMPER_UDPPROBE_STOP_DONE
+    Halted = cscamper_udpprobe.SCAMPER_UDPPROBE_STOP_HALTED
+    Error = cscamper_udpprobe.SCAMPER_UDPPROBE_STOP_ERROR
 
 class ScamperHostType(enum.IntEnum):
     A = 1
@@ -322,14 +359,6 @@ class ScamperHostType(enum.IntEnum):
     RRSIG = 46
     NSEC = 47
     DNSKEY = 48
-
-# from scamper_sniff.h
-class ScamperSniffStop(enum.IntEnum):
-    NoReason = 0
-    Error = 1
-    LimitTime = 2
-    LimitPktC = 3
-    Halted = 4
 
 # from scamper_tracelb.h
 class ScamperTracelbMethod(enum.IntEnum):
@@ -363,16 +392,55 @@ cdef class ScamperAddr:
             c = cscamper_addr.scamper_addr_fromstr(0, addr.encode('UTF-8'))
         elif isinstance(addr, bytes):
             if len(addr) == 4:
-                at = 1
+                at = cscamper_addr.SCAMPER_ADDR_TYPE_IPV4
             elif len(addr) == 16:
-                at = 2
+                at = cscamper_addr.SCAMPER_ADDR_TYPE_IPV6
             elif len(addr) == 6:
-                at = 3
+                at = cscamper_addr.SCAMPER_ADDR_TYPE_ETHERNET
             else:
                 raise ValueError("expected bytes array of 4/6/16 bytes")
             for i, b in enumerate(addr):
                 buf[i] = b
             c = cscamper_addr.scamper_addr_alloc(at, buf)
+        if c == NULL:
+            raise ValueError("invalid address")
+        self._c = c
+
+    def __getstate__(self):
+        return {
+            'type': cscamper_addr.scamper_addr_type_get(self._c),
+            'addr': self.packed
+        }
+
+    def __setstate__(self, state):
+        cdef cscamper_addr.scamper_addr_t *c = NULL
+        cdef uint8_t buf[16]
+        cdef int at
+        if 'type' not in state:
+            raise KeyError("Missing 'type' in state dictionary")
+        if not isinstance(state['type'], int):
+            raise TypeError("Expected 'type' to be an integer")
+        if 'addr' not in state:
+            raise KeyError("Missing 'addr' in state dictionary")
+        if not isinstance(state['addr'], bytes):
+            raise TypeError("Expected 'addr' to be bytes")
+        at = state['type']
+        addr = state['addr']
+        if at == cscamper_addr.SCAMPER_ADDR_TYPE_IPV4:
+            if len(addr) != 4:
+                raise ValueError("expected 4-byte IPv4 address")
+        elif at == cscamper_addr.SCAMPER_ADDR_TYPE_IPV6:
+            if len(addr) != 16:
+                raise ValueError("expected 16-byte IPv6 address")
+        elif at == cscamper_addr.SCAMPER_ADDR_TYPE_ETHERNET:
+            if len(addr) != 6:
+                raise ValueError("expected 6-byte ethernet address")
+        else:
+            raise ValueError("unknown address type")
+        for i, b in enumerate(addr):
+            buf[i] = b
+
+        c = cscamper_addr.scamper_addr_alloc(at, buf)
         if c == NULL:
             raise ValueError("invalid address")
         self._c = c
@@ -1714,6 +1782,20 @@ cdef class ScamperTrace:
         return cscamper_trace.scamper_trace_userid_get(self._c)
 
     @property
+    def errmsg(self):
+        """
+        get method to obtain error message from scamper.
+
+        :returns: the error message
+        :rtype: string
+        """
+        cdef const char *errmsg
+        errmsg = cscamper_trace.scamper_trace_errmsg_get(self._c)
+        if errmsg == NULL:
+            return None
+        return errmsg.decode('UTF-8', 'strict')
+
+    @property
     def start(self):
         """
         get method to obtain the time this measurement started.
@@ -1727,6 +1809,20 @@ cdef class ScamperTrace:
         t = time.gmtime(c.tv_sec)
         return datetime.datetime(t[0], t[1], t[2], t[3], t[4], t[5], c.tv_usec,
                                  tzinfo=datetime.timezone.utc)
+
+    def to_text(self):
+        """
+        get method to obtain a text rendering of this traceroute measurement.
+
+        :returns: text representation
+        :rtype: string
+        """
+        c = cscamper_trace.scamper_trace_totext(self._c, NULL)
+        if c == NULL:
+            return None
+        out = c.decode('UTF-8', 'strict')
+        free(c)
+        return out
 
     def to_json(self):
         """
@@ -2732,6 +2828,20 @@ cdef class ScamperPing:
         return cscamper_ping.scamper_ping_userid_get(self._c)
 
     @property
+    def errmsg(self):
+        """
+        get method to obtain error message from scamper.
+
+        :returns: the error message
+        :rtype: string
+        """
+        cdef const char *errmsg
+        errmsg = cscamper_ping.scamper_ping_errmsg_get(self._c)
+        if errmsg == NULL:
+            return None
+        return errmsg.decode('UTF-8', 'strict')
+
+    @property
     def start(self):
         """
         get method to obtain the time this measurement started.
@@ -2746,6 +2856,20 @@ cdef class ScamperPing:
         return datetime.datetime(t[0], t[1], t[2], t[3], t[4], t[5], c.tv_usec,
                                  tzinfo=datetime.timezone.utc)
 
+    def to_text(self):
+        """
+        get method to obtain a text rendering of this ping measurement.
+
+        :returns: text representation
+        :rtype: string
+        """
+        c = cscamper_ping.scamper_ping_totext(self._c, NULL)
+        if c == NULL:
+            return None
+        out = c.decode('UTF-8', 'strict')
+        free(c)
+        return out
+
     def to_json(self):
         """
         get method to obtain a JSON rendering of this ping measurement.
@@ -2759,6 +2883,29 @@ cdef class ScamperPing:
         out = c.decode('UTF-8', 'strict')
         free(c)
         return out
+
+    @property
+    def stop_reason(self):
+        """
+        get method to obtain the stop reason.
+
+        :returns: the stop reason
+        :rtype: ScamperPingStop
+        """
+        c = cscamper_ping.scamper_ping_stop_reason_get(self._c)
+        return ScamperPingStop(c)
+
+    @property
+    def stop_reason_str(self):
+        """
+        get method to obtain the stop reason, as a string.
+
+        :returns: the stop reason
+        :rtype: string
+        """
+        cdef char buf[128]
+        cscamper_ping.scamper_ping_stop_tostr(self._c, buf, sizeof(buf))
+        return buf.decode('UTF-8', 'strict').lower()
 
     @property
     def attempts(self):
@@ -3773,6 +3920,20 @@ cdef class ScamperTracelb:
         return cscamper_tracelb.scamper_tracelb_userid_get(self._c)
 
     @property
+    def errmsg(self):
+        """
+        get method to obtain error message from scamper.
+
+        :returns: the error message
+        :rtype: string
+        """
+        cdef const char *errmsg
+        errmsg = cscamper_tracelb.scamper_tracelb_errmsg_get(self._c)
+        if errmsg == NULL:
+            return None
+        return errmsg.decode('UTF-8', 'strict')
+
+    @property
     def start(self):
         """
         get method to obtain the time this measurement started.
@@ -3786,6 +3947,21 @@ cdef class ScamperTracelb:
         t = time.gmtime(c.tv_sec)
         return datetime.datetime(t[0], t[1], t[2], t[3], t[4], t[5], c.tv_usec,
                                  tzinfo=datetime.timezone.utc)
+
+    def to_text(self):
+        """
+        get method to obtain a text rendering of this MDA traceroute
+        measurement.
+
+        :returns: text representation
+        :rtype: string
+        """
+        c = cscamper_tracelb.scamper_tracelb_totext(self._c, NULL)
+        if c == NULL:
+            return None
+        out = c.decode('UTF-8', 'strict')
+        free(c)
+        return out
 
     def to_json(self):
         """
@@ -4263,6 +4439,15 @@ cdef class ScamperDealiasReply:
         :rtype: bool
         """
         return cscamper_dealias.scamper_dealias_reply_is_icmp_unreach_port(self._c)
+
+    def is_icmp_echo_reply(self):
+        """
+        get method to determine if the response was an ICMP echo reply
+
+        :returns: True if the response was an ICMP echo reply
+        :rtype: bool
+        """
+        return cscamper_dealias.scamper_dealias_reply_is_icmp_echo_reply(self._c)
 
 cdef class ScamperDealiasMidardiscRound:
     """
@@ -4910,6 +5095,20 @@ cdef class ScamperDealias:
         return cscamper_dealias.scamper_dealias_userid_get(self._c)
 
     @property
+    def errmsg(self):
+        """
+        get method to obtain error message from scamper.
+
+        :returns: the error message
+        :rtype: string
+        """
+        cdef const char *errmsg
+        errmsg = cscamper_dealias.scamper_dealias_errmsg_get(self._c)
+        if errmsg == NULL:
+            return None
+        return errmsg.decode('UTF-8', 'strict')
+
+    @property
     def start(self):
         """
         get method to obtain the time this measurement started.
@@ -4923,6 +5122,21 @@ cdef class ScamperDealias:
         t = time.gmtime(c.tv_sec)
         return datetime.datetime(t[0], t[1], t[2], t[3], t[4], t[5], c.tv_usec,
                                  tzinfo=datetime.timezone.utc)
+
+    def to_text(self):
+        """
+        get method to obtain a text rendering of this alias resolution
+        measurement.
+
+        :returns: text representation
+        :rtype: string
+        """
+        c = cscamper_dealias.scamper_dealias_totext(self._c, NULL)
+        if c == NULL:
+            return None
+        out = c.decode('UTF-8', 'strict')
+        free(c)
+        return out
 
     def to_json(self):
         """
@@ -5528,6 +5742,20 @@ cdef class ScamperTbit:
         return cscamper_tbit.scamper_tbit_userid_get(self._c)
 
     @property
+    def errmsg(self):
+        """
+        get method to obtain error message from scamper.
+
+        :returns: the error message
+        :rtype: string
+        """
+        cdef const char *errmsg
+        errmsg = cscamper_tbit.scamper_tbit_errmsg_get(self._c)
+        if errmsg == NULL:
+            return None
+        return errmsg.decode('UTF-8', 'strict')
+
+    @property
     def start(self):
         """
         get method to obtain the time this measurement started.
@@ -5541,6 +5769,20 @@ cdef class ScamperTbit:
         t = time.gmtime(c.tv_sec)
         return datetime.datetime(t[0], t[1], t[2], t[3], t[4], t[5], c.tv_usec,
                                  tzinfo=datetime.timezone.utc)
+
+    def to_text(self):
+        """
+        get method to obtain a text rendering of this TBIT measurement.
+
+        :returns: text representation
+        :rtype: string
+        """
+        c = cscamper_tbit.scamper_tbit_totext(self._c, NULL)
+        if c == NULL:
+            return None
+        out = c.decode('UTF-8', 'strict')
+        free(c)
+        return out
 
     def to_json(self):
         """
@@ -5775,6 +6017,20 @@ cdef class ScamperSniff:
         """
         c = cscamper_sniff.scamper_sniff_stop_reason_get(self._c)
         return ScamperSniffStop(c)
+
+    @property
+    def errmsg(self):
+        """
+        get method to obtain error message from scamper.
+
+        :returns: the error message
+        :rtype: string
+        """
+        cdef const char *errmsg
+        errmsg = cscamper_sniff.scamper_sniff_errmsg_get(self._c)
+        if errmsg == NULL:
+            return None
+        return errmsg.decode('UTF-8', 'strict')
 
     @property
     def userid(self):
@@ -7083,6 +7339,20 @@ cdef class ScamperHost:
         return cscamper_host.scamper_host_userid_get(self._c)
 
     @property
+    def errmsg(self):
+        """
+        get method to obtain error message from scamper.
+
+        :returns: the error message
+        :rtype: string
+        """
+        cdef const char *errmsg
+        errmsg = cscamper_host.scamper_host_errmsg_get(self._c)
+        if errmsg == NULL:
+            return None
+        return errmsg.decode('UTF-8', 'strict')
+
+    @property
     def start(self):
         """
         get method to obtain the time this measurement started.
@@ -7110,6 +7380,29 @@ cdef class ScamperHost:
         out = c.decode('UTF-8', 'strict')
         free(c)
         return out
+
+    @property
+    def stop_reason(self):
+        """
+        get method to obtain the stop reason.
+
+        :returns: the stop reason
+        :rtype: ScamperHostStop
+        """
+        c = cscamper_host.scamper_host_stop_get(self._c)
+        return ScamperHostStop(c)
+
+    @property
+    def stop_reason_str(self):
+        """
+        get method to obtain the stop reason, as a string.
+
+        :returns: the stop reason
+        :rtype: string
+        """
+        cdef char buf[128]
+        cscamper_host.scamper_host_stop_tostr(self._c, buf, sizeof(buf))
+        return buf.decode('UTF-8', 'strict').lower()
 
     @property
     def qtype_num(self):
@@ -7690,6 +7983,20 @@ cdef class ScamperHttp:
         return cscamper_http.scamper_http_userid_get(self._c)
 
     @property
+    def errmsg(self):
+        """
+        get method to obtain error message from scamper.
+
+        :returns: the error message
+        :rtype: string
+        """
+        cdef const char *errmsg
+        errmsg = cscamper_http.scamper_http_errmsg_get(self._c)
+        if errmsg == NULL:
+            return None
+        return errmsg.decode('UTF-8', 'strict')
+
+    @property
     def start(self):
         """
         get method to obtain the time this measurement started.
@@ -7703,6 +8010,29 @@ cdef class ScamperHttp:
         t = time.gmtime(c.tv_sec)
         return datetime.datetime(t[0], t[1], t[2], t[3], t[4], t[5], c.tv_usec,
                                  tzinfo=datetime.timezone.utc)
+
+    @property
+    def stop_reason(self):
+        """
+        get method to obtain the stop reason.
+
+        :returns: the stop reason
+        :rtype: ScamperHttpStop
+        """
+        c = cscamper_http.scamper_http_stop_get(self._c)
+        return ScamperHttpStop(c)
+
+    @property
+    def stop_reason_str(self):
+        """
+        get method to obtain the stop reason, as a string.
+
+        :returns: the stop reason
+        :rtype: string
+        """
+        cdef char buf[128]
+        cscamper_http.scamper_http_stop_tostr(self._c, buf, sizeof(buf))
+        return buf.decode('UTF-8', 'strict').lower()
 
     @property
     def src(self):
@@ -8235,6 +8565,20 @@ cdef class ScamperUdpprobe:
         return cscamper_udpprobe.scamper_udpprobe_userid_get(self._c)
 
     @property
+    def errmsg(self):
+        """
+        get method to obtain error message from scamper.
+
+        :returns: the error message
+        :rtype: string
+        """
+        cdef const char *errmsg
+        errmsg = cscamper_udpprobe.scamper_udpprobe_errmsg_get(self._c)
+        if errmsg == NULL:
+            return None
+        return errmsg.decode('UTF-8', 'strict')
+
+    @property
     def start(self):
         """
         get method to obtain the time this measurement started.
@@ -8260,6 +8604,29 @@ cdef class ScamperUdpprobe:
         out = c.decode('UTF-8', 'strict')
         free(c)
         return out
+
+    @property
+    def stop_reason(self):
+        """
+        get method to obtain the stop reason.
+
+        :returns: the stop reason
+        :rtype: ScamperUdpprobeStop
+        """
+        c = cscamper_udpprobe.scamper_udpprobe_stop_reason_get(self._c)
+        return ScamperUdpprobeStop(c)
+
+    @property
+    def stop_reason_str(self):
+        """
+        get method to obtain the stop reason, as a string.
+
+        :returns: the stop reason
+        :rtype: string
+        """
+        cdef char buf[128]
+        cscamper_udpprobe.scamper_udpprobe_stop_tostr(self._c, buf, sizeof(buf))
+        return buf.decode('UTF-8', 'strict').lower()
 
     @property
     def src(self):
@@ -8816,6 +9183,13 @@ cdef void _ctrl_cb(clibscamperctrl.scamper_inst_t *c_inst,
 
     return
 
+cdef void _ctrl_cb_nogil(clibscamperctrl.scamper_inst_t *c_inst,
+                         uint8_t cb_type,
+                         clibscamperctrl.scamper_task_t *c_task,
+                         const void *data, size_t datalen) noexcept nogil:
+    with gil:
+        _ctrl_cb(c_inst, cb_type, c_task, data, datalen)
+
 cdef class ScamperCtrl:
     """
     :class:`ScamperCtrl` is used to interact with a collection (one or more)
@@ -8869,7 +9243,7 @@ cdef class ScamperCtrl:
             if not outfile.is_write():
                 raise RuntimeError("outfile not opened in write mode")
 
-        self._c = clibscamperctrl.scamper_ctrl_alloc(_ctrl_cb)
+        self._c = clibscamperctrl.scamper_ctrl_alloc(_ctrl_cb_nogil)
         clibscamperctrl.scamper_ctrl_param_set(self._c, <PyObject *>self)
         self._meta = meta
         self._morecb = morecb
@@ -9131,7 +9505,8 @@ cdef class ScamperCtrl:
                 tv.tv_sec = diff.seconds
                 tv.tv_usec = diff.microseconds
 
-            clibscamperctrl.scamper_ctrl_wait(self._c, tv_ptr)
+            with nogil:
+                clibscamperctrl.scamper_ctrl_wait(self._c, tv_ptr)
 
     def poll(self, timeout=None, until=None):
         """
@@ -9212,7 +9587,8 @@ cdef class ScamperCtrl:
                 tv.tv_sec = diff.seconds
                 tv.tv_usec = diff.microseconds
 
-            clibscamperctrl.scamper_ctrl_wait(self._c, tv_ptr)
+            with nogil:
+                clibscamperctrl.scamper_ctrl_wait(self._c, tv_ptr)
 
         return None
 
@@ -9331,7 +9707,8 @@ cdef class ScamperCtrl:
                 PyErr_CheckSignals()
                 if len(self._exceptions) > 0:
                     raise self._exceptions.pop(0)
-                clibscamperctrl.scamper_ctrl_wait(self._c, NULL)
+                with nogil:
+                    clibscamperctrl.scamper_ctrl_wait(self._c, NULL)
             onion = self._syncdata
             self._c_synctask = NULL
             self._syncdata = None
@@ -10591,6 +10968,19 @@ cdef class ScamperVp:
         return c_ipv4.decode('UTF-8', 'strict')
 
     @property
+    def iata(self):
+        """
+        get method to obtain the nearest airport's IATA code, if known.
+
+        :returns: IATA code, in upper case
+        :rtype: string
+        """
+        c_iata = clibscamperctrl.scamper_vp_iata_get(self._c)
+        if c_iata == NULL:
+            return None
+        return c_iata.decode('UTF-8', 'strict').upper()
+
+    @property
     def loc(self):
         """
         get method to obtain the location of a VP, if known.
@@ -10810,6 +11200,17 @@ cdef class ScamperInst:
         if vp is None:
             return None
         return vp.loc
+
+    @property
+    def iata(self):
+        """
+        return the nearest airport's IATA code, if known.
+        """
+        c_vp = clibscamperctrl.scamper_inst_vp_get(self._c)
+        vp = ScamperVp.from_ptr(c_vp)
+        if vp is None:
+            return None
+        return vp.iata
 
     @property
     def taskc(self):

@@ -76,6 +76,7 @@ cdef extern from "scamper_tracelb.h":
  uint8_t scamper_tracelb_tos_get(const scamper_tracelb_t *trace)
  uint8_t scamper_tracelb_gaplimit_get(const scamper_tracelb_t *trace)
  uint32_t scamper_tracelb_flags_get(const scamper_tracelb_t *trace)
+ const char *scamper_tracelb_errmsg_get(const scamper_tracelb_t *trace)
  uint32_t scamper_tracelb_probec_max_get(const scamper_tracelb_t *trace)
  uint16_t scamper_tracelb_nodec_get(const scamper_tracelb_t *trace)
  scamper_tracelb_node_t *scamper_tracelb_node_get(const scamper_tracelb_t *trace, uint16_t i)

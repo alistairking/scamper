@@ -5,7 +5,7 @@
  * Copyright (C) 2016-2025 Matthew Luckie
  * Author: Matthew Luckie
  *
- * $Id: scamper_tracelb_warts.c,v 1.24 2025/02/11 14:31:43 mjl Exp $
+ * $Id: scamper_tracelb_warts.c,v 1.25 2025/10/19 02:17:23 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -67,6 +67,7 @@
 #define WARTS_TRACELB_USERID       23       /* user id */
 #define WARTS_TRACELB_FLAGS        24       /* flags */
 #define WARTS_TRACELB_ADDR_RTR     25       /* rtr address */
+#define WARTS_TRACELB_ERRMSG       26       /* error string */
 
 static const warts_var_t tracelb_vars[] =
 {
@@ -95,6 +96,7 @@ static const warts_var_t tracelb_vars[] =
   {WARTS_TRACELB_USERID,       4},
   {WARTS_TRACELB_FLAGS,        1},
   {WARTS_TRACELB_ADDR_RTR,    -1},
+  {WARTS_TRACELB_ERRMSG,      -1},
 };
 #define tracelb_vars_mfb WARTS_VAR_MFB(tracelb_vars)
 
@@ -250,7 +252,8 @@ static int warts_tracelb_params(const scamper_tracelb_t *trace,
 	 var->id == WARTS_TRACELB_ADDR_DST_GID ||
 	 (var->id == WARTS_TRACELB_USERID && trace->userid == 0) ||
 	 (var->id == WARTS_TRACELB_FLAGS && trace->flags == 0) ||
-	 (var->id == WARTS_TRACELB_ADDR_RTR && trace->rtr == NULL))
+	 (var->id == WARTS_TRACELB_ADDR_RTR && trace->rtr == NULL) ||
+	 (var->id == WARTS_TRACELB_ERRMSG && trace->errmsg == NULL))
 	{
 	  continue;
 	}
@@ -261,23 +264,27 @@ static int warts_tracelb_params(const scamper_tracelb_t *trace,
 	{
 	  if(warts_addr_size(table, trace->src, params_len) != 0)
 	    return -1;
-	  continue;
 	}
       else if(var->id == WARTS_TRACELB_ADDR_DST)
 	{
 	  if(warts_addr_size(table, trace->dst, params_len) != 0)
 	    return -1;
-	  continue;
 	}
       else if(var->id == WARTS_TRACELB_ADDR_RTR)
 	{
 	  if(warts_addr_size_static(trace->rtr, params_len) != 0)
 	    return -1;
-	  continue;
 	}
-
-      assert(var->size >= 0);
-      *params_len += var->size;
+      else if(var->id == WARTS_TRACELB_ERRMSG)
+	{
+	  if(warts_str_size(trace->errmsg, params_len) != 0)
+	    return -1;
+	}
+      else
+	{
+	  assert(var->size >= 0);
+	  *params_len += var->size;
+	}
     }
 
   *flags_len = fold_flags(flags, max_id);
@@ -316,6 +323,7 @@ static int warts_tracelb_params_read(scamper_tracelb_t *trace,
     {&trace->userid,       (wpr_t)extract_uint32,    NULL},
     {&trace->flags,        (wpr_t)extract_byte,      NULL},
     {&trace->rtr,          (wpr_t)extract_addr_static, NULL},
+    {&trace->errmsg,       (wpr_t)extract_string,    NULL},
   };
   const int handler_cnt = sizeof(handlers)/sizeof(warts_param_reader_t);
   int rc;
@@ -370,6 +378,7 @@ static int warts_tracelb_params_write(const scamper_tracelb_t *trace,
     {&trace->userid,       (wpw_t)insert_uint32,  NULL},
     {&trace->flags,        (wpw_t)insert_byte,    NULL},
     {trace->rtr,           (wpw_t)insert_addr_static, NULL},
+    {trace->errmsg,        (wpw_t)insert_string,  NULL},
   };
   const int handler_cnt = sizeof(handlers)/sizeof(warts_param_writer_t);
 

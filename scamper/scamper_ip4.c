@@ -1,7 +1,7 @@
 /*
  * scamper_ip4.c
  *
- * $Id: scamper_ip4.c,v 1.29 2025/03/29 18:46:03 mjl Exp $
+ * $Id: scamper_ip4.c,v 1.32 2025/10/15 01:29:55 mjl Exp $
  *
  * Copyright (C) 2009-2011 The University of Waikato
  * Copyright (C) 2023      The Regents of the University of California
@@ -81,7 +81,7 @@ SOCKET scamper_ip4_openraw(void)
   return scamper_priv_ip4raw();
 }
 
-int scamper_ip4_hlen(scamper_probe_t *pr, size_t *hlen)
+size_t scamper_ip4_hlen(scamper_probe_t *pr, scamper_err_t *error)
 {
   size_t ip4hlen = sizeof(struct ip);
   scamper_probe_ipopt_t *opt;
@@ -97,7 +97,10 @@ int scamper_ip4_hlen(scamper_probe_t *pr, size_t *hlen)
 	   * the option is useless.
 	   */
 	  if(ip4hlen + 8 > 60)
-	    goto err;
+	    {
+	      scamper_err_make(error, 0, "ip4hlen would be too big");
+	      return -1;
+	    }
 
 	  /* for now assume this option fills the rest of the option space */
 	  ip4hlen = 60;
@@ -105,39 +108,38 @@ int scamper_ip4_hlen(scamper_probe_t *pr, size_t *hlen)
       else if(opt->type == SCAMPER_PROBE_IPOPTS_V4TSPS)
 	{
 	  if(opt->opt_v4tsps_ipc < 1 || opt->opt_v4tsps_ipc > 4)
-	    goto err;
-
+	    {
+	      scamper_err_make(error, 0, "invalid number of tsps");
+	      return -1;
+	    }
 	  ip4hlen += (opt->opt_v4tsps_ipc * 4 * 2) + 4;
-	  if(ip4hlen > 60)
-	    goto err;
 	}
       else if(opt->type == SCAMPER_PROBE_IPOPTS_V4TSO)
 	{
 	  ip4hlen += 40;
-	  if(ip4hlen > 60)
-	    goto err;
 	}
       else if(opt->type == SCAMPER_PROBE_IPOPTS_V4TSAA)
 	{
 	  ip4hlen += 36;
-	  if(ip4hlen > 60)
-	    goto err;
 	}
       else if(opt->type == SCAMPER_PROBE_IPOPTS_QUICKSTART)
 	{
 	  ip4hlen += 8;
-	  if(ip4hlen > 60)
-	    goto err;
 	}
-      else goto err;
+      else
+	{
+	  scamper_err_make(error, 0, "unknown ipopt type %d", opt->type);
+	  return -1;
+	}
+
+      if(ip4hlen > 60)
+	{
+	  scamper_err_make(error, 0, "ip4hlen would be too big");
+	  return -1;
+	}
     }
 
-  *hlen = ip4hlen;
-  return 0;
-
- err:
-  scamper_debug(__func__, "invalid IPv4 header specification");
-  return -1;
+  return ip4hlen;
 }
 
 int scamper_ip4_build(scamper_probe_t *pr, uint8_t *buf, size_t *len)
@@ -145,9 +147,10 @@ int scamper_ip4_build(scamper_probe_t *pr, uint8_t *buf, size_t *len)
   scamper_probe_ipopt_t *opt;
   struct ip *ip;
   size_t off, ip4hlen;
+  scamper_err_t error;
   int i, j;
 
-  if(scamper_ip4_hlen(pr, &ip4hlen) != 0)
+  if((ip4hlen = scamper_ip4_hlen(pr, &error)) == 0)
     return -1;
 
   if(ip4hlen > *len)

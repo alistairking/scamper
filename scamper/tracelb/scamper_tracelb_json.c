@@ -5,7 +5,7 @@
  *
  * Authors: Matthew Luckie
  *
- * $Id: scamper_tracelb_json.c,v 1.27 2025/07/31 09:43:23 mjl Exp $
+ * $Id: scamper_tracelb_json.c,v 1.28 2025/10/15 23:58:44 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -46,7 +46,7 @@ typedef struct strlist
 
 static char *header_tostr(const scamper_tracelb_t *trace)
 {
-  char buf[512], tmp[128];
+  char buf[1024], tmp[512];
   size_t off = 0;
   time_t tt = trace->start.tv_sec;
   uint32_t cs;
@@ -93,6 +93,9 @@ static char *header_tostr(const scamper_tracelb_t *trace)
 		    trace->probec_max);
   string_concat_u16(buf, sizeof(buf), &off, ", \"nodec\":", trace->nodec);
   string_concat_u16(buf, sizeof(buf), &off, ", \"linkc\":", trace->linkc);
+  if(trace->errmsg != NULL)
+    string_concat3(buf, sizeof(buf), &off, ",\"errmsg\":\"",
+		   json_esc(trace->errmsg, tmp, sizeof(tmp)), "\"");
 
   return strdup(buf);
 }

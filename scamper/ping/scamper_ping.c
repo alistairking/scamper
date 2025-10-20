@@ -7,7 +7,7 @@
  * Copyright (C) 2020-2023 Matthew Luckie
  * Author: Matthew Luckie
  *
- * $Id: scamper_ping.c,v 1.62 2025/05/29 07:50:34 mjl Exp $
+ * $Id: scamper_ping.c,v 1.65 2025/10/15 23:47:47 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -275,9 +275,13 @@ scamper_ping_t *scamper_ping_dup(const scamper_ping_t *in)
   out->tsps   = NULL;
   out->data   = NULL;
   out->probes = NULL;
+  out->errmsg = NULL;
 
   if(in->data != NULL &&
      (out->data = memdup(in->data, in->datalen)) == NULL)
+    goto err;
+
+  if(in->errmsg != NULL && (out->errmsg = strdup(in->errmsg)) == NULL)
     goto err;
 
   if(in->ping_sent > 0)
@@ -305,7 +309,8 @@ void scamper_ping_free(scamper_ping_t *ping)
 {
   uint16_t i;
 
-  if(ping == NULL) return;
+  if(ping == NULL)
+    return;
 
   if(ping->probes != NULL)
     {
@@ -324,6 +329,8 @@ void scamper_ping_free(scamper_ping_t *ping)
 
   if(ping->tsps != NULL) scamper_ping_v4ts_free(ping->tsps);
   if(ping->data != NULL) free(ping->data);
+
+  if(ping->errmsg != NULL) free(ping->errmsg);
 
   free(ping);
   return;

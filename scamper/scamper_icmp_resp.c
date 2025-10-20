@@ -1,7 +1,7 @@
 /*
  * scamper_icmp_resp.c
  *
- * $Id: scamper_icmp_resp.c,v 1.40 2025/07/31 07:46:12 mjl Exp $
+ * $Id: scamper_icmp_resp.c,v 1.41 2025/10/04 18:55:32 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -320,6 +320,7 @@ int scamper_icmp_resp_src(scamper_icmp_resp_t *resp, scamper_addr_t *addr)
       addr->addr = &resp->ir_ip_src.v6;
       return 0;
     }
+  errno = EINVAL;
   return -1;
 }
 

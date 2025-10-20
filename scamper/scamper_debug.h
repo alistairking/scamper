@@ -1,7 +1,7 @@
 /*
  * scamper_debug.h
  *
- * $Id: scamper_debug.h,v 1.25 2024/12/15 18:59:20 mjl Exp $
+ * $Id: scamper_debug.h,v 1.29 2025/10/13 00:52:32 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2009 The University of Waikato
@@ -26,6 +26,33 @@
 #ifndef __SCAMPER_DEBUG_H
 #define __SCAMPER_DEBUG_H
 
+typedef struct scamper_err
+{
+  int error;
+  char errstr[256];
+} scamper_err_t;
+
+#define SCAMPER_ERR_INIT(err) do { \
+  (err)->error = 0;		   \
+  (err)->errstr[0] = '\0';	   \
+  } while(0)
+
+#ifdef HAVE_FUNC_ATTRIBUTE_FORMAT
+void scamper_err_make(scamper_err_t *err, int error, const char *format, ...)
+  __attribute__((format(printf, 3, 4)));
+#else
+void scamper_err_make(scamper_err_t *err, int error, const char *format, ...);
+#endif
+
+#ifdef HAVE_FUNC_ATTRIBUTE_NONNULL
+char *scamper_err_render(const scamper_err_t *err, char *buf, size_t len)
+  __attribute__((nonnull));
+#else
+char *scamper_err_render(const scamper_err_t *err, char *buf, size_t len);
+#endif
+
+int printerror_would(void);
+
 #ifdef HAVE_FUNC_ATTRIBUTE_FORMAT
 void printerror(const char *func, const char *format, ...)
   __attribute__((format(printf, 2, 3)));
@@ -46,7 +73,7 @@ void printerror_ssl(const char *func, const char *format, ...);
 #endif
 
 /* only define scamper_debug if scamper is being built in debugging mode */
-#if defined(NDEBUG) && defined(WITHOUT_DEBUGFILE)
+#if defined(NDEBUG) && defined(WITHOUT_DEBUGFILE) && defined(BUILDING_SCAMPER)
 #define scamper_debug(func, format, ...) ((void)0)
 #else
 #define HAVE_SCAMPER_DEBUG

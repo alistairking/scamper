@@ -36,6 +36,12 @@ cdef extern from "scamper_sniff.h":
  ctypedef struct scamper_sniff_pkt_t:
   pass
 
+ cdef uint8_t  SCAMPER_SNIFF_STOP_NONE
+ cdef uint8_t  SCAMPER_SNIFF_STOP_ERROR
+ cdef uint8_t  SCAMPER_SNIFF_STOP_LIMIT_TIME
+ cdef uint8_t  SCAMPER_SNIFF_STOP_LIMIT_PKTC
+ cdef uint8_t  SCAMPER_SNIFF_STOP_HALTED
+
  void scamper_sniff_free(scamper_sniff_t *sniff)
 
  scamper_list_t *scamper_sniff_list_get(const scamper_sniff_t *sniff)
@@ -44,10 +50,13 @@ cdef extern from "scamper_sniff.h":
  const timeval *scamper_sniff_start_get(const scamper_sniff_t *sniff)
  const timeval *scamper_sniff_finish_get(const scamper_sniff_t *sniff)
  uint8_t scamper_sniff_stop_reason_get(const scamper_sniff_t *sniff)
+ char *scamper_sniff_stop_tostr(const scamper_sniff_t *sniff, char *, size_t)
  uint32_t scamper_sniff_limit_pktc_get(const scamper_sniff_t *sniff)
  const timeval *scamper_sniff_limit_time_get(const scamper_sniff_t *sniff)
  scamper_addr_t *scamper_sniff_src_get(const scamper_sniff_t *sniff)
  uint16_t scamper_sniff_icmpid_get(const scamper_sniff_t *sniff)
+ const char *scamper_sniff_errmsg_get(const scamper_sniff_t *sniff)
+
  scamper_sniff_pkt_t *scamper_sniff_pkt_get(const scamper_sniff_t *sniff, uint32_t i)
  uint32_t scamper_sniff_pktc_get(const scamper_sniff_t *sniff)
 

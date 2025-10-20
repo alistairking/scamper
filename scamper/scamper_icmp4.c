@@ -1,7 +1,7 @@
 /*
  * scamper_icmp4.c
  *
- * $Id: scamper_icmp4.c,v 1.147 2025/06/10 22:32:49 mjl Exp $
+ * $Id: scamper_icmp4.c,v 1.152 2025/10/20 00:46:53 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -145,7 +145,7 @@ int scamper_icmp4_build(scamper_probe_t *probe, uint8_t *buf, size_t *len)
  *
  * send an ICMP probe to a destination
  */
-int scamper_icmp4_probe(scamper_probe_t *probe)
+int scamper_icmp4_probe(scamper_probe_t *pr, scamper_err_t *error)
 {
   struct sockaddr_in  sin4;
   char                addr[128];
@@ -156,13 +156,13 @@ int scamper_icmp4_probe(scamper_probe_t *probe)
   struct ip          *ip;
 #endif
 
-  assert(probe != NULL);
-  assert(probe->pr_ip_proto == IPPROTO_ICMP);
-  assert(probe->pr_ip_dst != NULL);
-  assert(probe->pr_ip_src != NULL);
-  assert(probe->pr_len > 0 || probe->pr_data == NULL);
+  assert(pr != NULL);
+  assert(pr->pr_ip_proto == IPPROTO_ICMP);
+  assert(pr->pr_ip_dst != NULL);
+  assert(pr->pr_ip_src != NULL);
+  assert(pr->pr_len > 0 || pr->pr_data == NULL);
 
-  switch(probe->pr_icmp_type)
+  switch(pr->pr_icmp_type)
     {
     case ICMP_ECHO:
     case ICMP_TSTAMP:
@@ -170,33 +170,37 @@ int scamper_icmp4_probe(scamper_probe_t *probe)
       break;
 
     default:
-      probe->pr_errno = EINVAL;
+      scamper_err_make(error, 0, "icmp4_probe invalid icmp type %d",
+		       pr->pr_icmp_type);
       return -1;
     }
 
-  if((probe->pr_flags & SCAMPER_PROBE_FLAG_RXERR) == 0)
-    scamper_ip4_hlen(probe, &ip4hlen);
+  if((pr->pr_flags & SCAMPER_PROBE_FLAG_RXERR) == 0)
+    {
+      if((ip4hlen = scamper_ip4_hlen(pr, error)) == 0)
+	return -1;
+    }
   else
     ip4hlen = 0;
 
   /* compute length, for sake of readability */
-  len = ip4hlen + icmphdrlen + probe->pr_len;
+  len = ip4hlen + icmphdrlen + pr->pr_len;
 
   if(txbuf_len < len)
     {
       if(realloc_wrap((void **)&txbuf, len) != 0)
 	{
-	  printerror(__func__, "could not realloc");
+	  scamper_err_make(error, errno, "icmp4_probe could not realloc");
 	  return -1;
 	}
       txbuf_len = len;
     }
 
   /* build the IPv4 header from the probe structure */
-  if((probe->pr_flags & SCAMPER_PROBE_FLAG_RXERR) == 0)
+  if((pr->pr_flags & SCAMPER_PROBE_FLAG_RXERR) == 0)
     {
       tmp = len;
-      scamper_ip4_build(probe, txbuf, &tmp);
+      scamper_ip4_build(pr, txbuf, &tmp);
 
       /*
        * byte swap the length and offset fields back to host-byte order
@@ -210,39 +214,40 @@ int scamper_icmp4_probe(scamper_probe_t *probe)
     }
   else
     {
-      if(setsockopt_int(probe->pr_fd,IPPROTO_IP,IP_TTL, probe->pr_ip_ttl) != 0)
+      if(setsockopt_int(pr->pr_fd,IPPROTO_IP,IP_TTL, pr->pr_ip_ttl) != 0)
 	{
-	  printerror(__func__, "could not set IP_TTL");
+	  scamper_err_make(error, errno, "icmp4_probe could not set IP_TTL");
 	  return -1;
 	}
     }
 
-  icmp4_build(probe, txbuf + ip4hlen);
+  icmp4_build(pr, txbuf + ip4hlen);
 
   sockaddr_compose((struct sockaddr *)&sin4, AF_INET,
-		   probe->pr_ip_dst->addr, 0);
+		   pr->pr_ip_dst->addr, 0);
 
   /* get the transmit time immediately before we send the packet */
-  gettimeofday_wrap(&probe->pr_tx);
+  gettimeofday_wrap(&pr->pr_tx);
 
-  i = sendto(probe->pr_fd, txbuf, len, 0, (struct sockaddr *)&sin4,
+  i = sendto(pr->pr_fd, txbuf, len, 0, (struct sockaddr *)&sin4,
 	     sizeof(struct sockaddr_in));
 
   if(i < 0)
     {
       /* error condition, could not send the packet at all */
-      probe->pr_errno = errno;
-      printerror(__func__, "could not send to %s (%d ttl, %d seq, %d len)",
-		 scamper_addr_tostr(probe->pr_ip_dst, addr, sizeof(addr)),
-		 probe->pr_ip_ttl, probe->pr_icmp_seq, (int)len);
+      scamper_err_make(error, errno,
+		       "icmp4_probe could not send to %s (%d ttl, %d seq, %d len)",
+		       scamper_addr_tostr(pr->pr_ip_dst, addr, sizeof(addr)),
+		       pr->pr_ip_ttl, pr->pr_icmp_seq, (int)len);
       return -1;
     }
   else if((size_t)i != len)
     {
       /* error condition, sent a portion of the probe */
-      printerror_msg(__func__, "sent %d bytes of %d byte packet to %s",
-		     i, (int)len,
-		     scamper_addr_tostr(probe->pr_ip_dst, addr, sizeof(addr)));
+      scamper_err_make(error, 0,
+		       "icmp4_probe sent %d bytes of %d byte packet to %s",
+		       i, (int)len,
+		       scamper_addr_tostr(pr->pr_ip_dst, addr, sizeof(addr)));
       return -1;
     }
 
@@ -1011,9 +1016,9 @@ void scamper_icmp4_cleanup()
 }
 
 #ifndef _WIN32 /* SOCKET vs int on windows */
-int scamper_icmp4_open_err(const void *addr)
+int scamper_icmp4_open_err(const void *addr, scamper_err_t *error)
 #else
-SOCKET scamper_icmp4_open_err(const void *addr)
+SOCKET scamper_icmp4_open_err(const void *addr, scamper_err_t *error)
 #endif
 {
 #ifdef IP_RECVERR
@@ -1029,52 +1034,52 @@ SOCKET scamper_icmp4_open_err(const void *addr)
   fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_ICMP);
   if(socket_isinvalid(fd))
     {
-      printerror(__func__, "could not open ICMP socket");
+      scamper_err_make(error, errno, "could not open icmp4err socket");
       goto err;
     }
 
   if(setsockopt_raise(fd, SOL_SOCKET, SO_RCVBUF, 65535 + 128) != 0)
     {
-      printerror(__func__, "could not set SO_RCVBUF");
+      scamper_err_make(error, errno, "could not raise SO_RCVBUF on icmp4err");
       goto err;
     }
 
   if(setsockopt_raise(fd, SOL_SOCKET, SO_SNDBUF, 65535 + 128) != 0)
     {
-      printerror(__func__, "could not set SO_SNDBUF");
+      scamper_err_make(error, errno, "could not raise SO_SNDBUF on icmp4err");
       goto err;
     }
 
 #if defined(SO_TIMESTAMP)
   if(setsockopt_int(fd, SOL_SOCKET, SO_TIMESTAMP, 1) != 0)
     {
-      printerror(__func__, "could not set SO_TIMESTAMP");
+      scamper_err_make(error, errno, "could not set SO_TIMESTAMP on icmp4err");
       goto err;
     }
 #endif
 
   if(setsockopt_int(fd, SOL_IP, IP_RECVERR, 1) != 0)
     {
-      printerror(__func__, "could not set IP_RECVERR");
+      scamper_err_make(error, errno, "could not set IP_RECVERR on icmp4err");
       goto err;
     }
 
   if(setsockopt_int(fd, SOL_IP, IP_RECVTTL, 1) != 0)
     {
-      printerror(__func__, "could not set IP_RECVTTL");
+      scamper_err_make(error, errno, "could not set IP_RECVTTL on icmp4err");
       goto err;
     }
 
   if(setsockopt_int(fd, SOL_IP, IP_RECVTOS, 1) != 0)
     {
-      printerror(__func__, "could not set IP_RECVTOS");
+      scamper_err_make(error, errno, "could not set IP_RECVTOS on icmp4err");
       goto err;
     }
 
 #ifdef IP_RECVOPTS
   if(setsockopt_int(fd, SOL_IP, IP_RECVOPTS, 1) != 0)
     {
-      printerror(__func__, "could not set IP_RECVOPTS");
+      scamper_err_make(error, errno, "could not set IP_RECVOPTS on icmp4err");
       goto err;
     }
 #endif
@@ -1085,7 +1090,7 @@ SOCKET scamper_icmp4_open_err(const void *addr)
       if(bind(fd, (struct sockaddr *)&sin, sizeof(sin)) != 0)
 	{
 	  sockaddr_tostr((struct sockaddr *)&sin, tmp, sizeof(tmp), 0);
-	  printerror(__func__, "could not bind %s", tmp);
+	  scamper_err_make(error, errno, "could not bind icmp4err %s", tmp);
 	  goto err;
 	}
     }
@@ -1131,9 +1136,9 @@ SOCKET scamper_icmp4_open_fd(void)
 }
 
 #ifndef _WIN32 /* SOCKET vs int on windows */
-int scamper_icmp4_open(const void *addr)
+int scamper_icmp4_open(const void *addr, scamper_err_t *error)
 #else
-SOCKET scamper_icmp4_open(const void *addr)
+SOCKET scamper_icmp4_open(const void *addr, scamper_err_t *error)
 #endif
 {
   struct sockaddr_in sin;
@@ -1151,24 +1156,27 @@ SOCKET scamper_icmp4_open(const void *addr)
 
   fd = scamper_priv_icmp4();
   if(socket_isinvalid(fd))
-    goto err;
+    {
+      scamper_err_make(error, errno, "could not open icmp4 socket");
+      goto err;
+    }
 
   if(setsockopt_raise(fd, SOL_SOCKET, SO_RCVBUF, 65535 + 128) != 0)
     {
-      printerror(__func__, "could not set SO_RCVBUF");
+      scamper_err_make(error, errno, "could not raise SO_RCVBUF on icmp4");
       goto err;
     }
 
   if(setsockopt_raise(fd, SOL_SOCKET, SO_SNDBUF, 65535 + 128) != 0)
     {
-      printerror(__func__, "could not set SO_SNDBUF");
+      scamper_err_make(error, errno, "could not raise SO_SNDBUF on icmp4");
       goto err;
     }
 
 #if defined(SO_TIMESTAMP)
   if(setsockopt_int(fd, SOL_SOCKET, SO_TIMESTAMP, 1) != 0)
     {
-      printerror(__func__, "could not set SO_TIMESTAMP");
+      scamper_err_make(error, errno, "could not set SO_TIMESTAMP on icmp4");
       goto err;
     }
 #endif
@@ -1201,7 +1209,7 @@ SOCKET scamper_icmp4_open(const void *addr)
 		  );
   if(setsockopt(fd, SOL_RAW, ICMP_FILTER, &filter, sizeof(filter)) == -1)
     {
-      printerror(__func__, "could not set ICMP_FILTER");
+      scamper_err_make(error, errno, "could not set ICMP_FILTER on icmp4");
       goto err;
     }
 #endif
@@ -1212,7 +1220,7 @@ SOCKET scamper_icmp4_open(const void *addr)
       if(bind(fd, (struct sockaddr *)&sin, sizeof(sin)) != 0)
 	{
 	  sockaddr_tostr((struct sockaddr *)&sin, tmp, sizeof(tmp), 0);
-	  printerror(__func__, "could not bind %s", tmp);
+	  scamper_err_make(error, errno, "could not bind icmp4 %s", tmp);
 	  goto err;
 	}
     }

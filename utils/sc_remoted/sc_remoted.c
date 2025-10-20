@@ -1,7 +1,7 @@
 /*
  * sc_remoted
  *
- * $Id: sc_remoted.c,v 1.146 2025/08/04 02:50:11 mjl Exp $
+ * $Id: sc_remoted.c,v 1.147 2025/09/04 05:28:05 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -294,6 +294,7 @@ typedef struct sc_metadata
   char               *st;
   char               *place;
   char               *shortname;
+  char               *iata;
   slist_t            *tags;
 } sc_metadata_t;
 
@@ -534,6 +535,7 @@ typedef struct sc_message
 #define VP_ATTR_LATLONG        8
 #define VP_ATTR_SHORTNAME      9
 #define VP_ATTR_TAG           10
+#define VP_ATTR_IATA          11
 
 static uint16_t     options        = 0;
 static char        *unix_dir       = NULL;
@@ -1166,6 +1168,7 @@ static void sc_metadata_free(sc_metadata_t *md)
   if(md->st != NULL) free(md->st);
   if(md->place != NULL) free(md->place);
   if(md->shortname != NULL) free(md->shortname);
+  if(md->iata != NULL) free(md->iata);
   if(md->tags != NULL) slist_free_cb(md->tags, free);
   free(md);
   return;
@@ -1482,6 +1485,8 @@ static int sc_master_mux_encode(const sc_master_t *ms,uint8_t *buf,size_t *len)
        attr_embed(buf, *len, &off, VP_ATTR_PLACE, md->place) != 0) ||
       (md->shortname != NULL &&
        attr_embed(buf, *len, &off, VP_ATTR_SHORTNAME, md->shortname) != 0) ||
+      (md->iata != NULL &&
+       attr_embed(buf, *len, &off, VP_ATTR_IATA, md->iata) != 0) ||
       (md->tags != NULL &&
        tags_embed(buf, *len, &off, md->tags) != 0)))
     return -1;
@@ -3457,6 +3462,7 @@ static int remoted_pidfile(void)
  *
  * hlz2-nz cc nz
  * hlz2-nz asn4 64504
+ * hlz2-nz iata hlz
  *
  */
 static int metadata_line(char *line, void *param)
@@ -3534,6 +3540,7 @@ static int metadata_line(char *line, void *param)
   else if(strcasecmp(attr, "place") == 0) out = &md->place;
   else if(strcasecmp(attr, "latlong") == 0) out = &md->latlong;
   else if(strcasecmp(attr, "shortname") == 0) out = &md->shortname;
+  else if(strcasecmp(attr, "iata") == 0) out = &md->iata;
   else remote_debug(__func__, "unknown attribute type %s", attr);
 
   if(out != NULL && (*out = strdup(value)) == NULL)

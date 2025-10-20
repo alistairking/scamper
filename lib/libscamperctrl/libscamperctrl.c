@@ -1,7 +1,7 @@
 /*
  * libscamperctrl
  *
- * $Id: libscamperctrl.c,v 1.93 2025/06/10 22:32:49 mjl Exp $
+ * $Id: libscamperctrl.c,v 1.94 2025/09/04 05:28:05 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -234,6 +234,7 @@ struct scamper_vp
   char              *place;
   char              *latlong;
   char              *shortname;
+  char              *iata;
   char             **tags;
   size_t             tagc;
   int                refcnt;
@@ -288,6 +289,7 @@ struct scamper_vp
 #define VP_ATTR_LATLONG        8
 #define VP_ATTR_SHORTNAME      9
 #define VP_ATTR_TAG           10
+#define VP_ATTR_IATA          11
 
 #define FD_TYPE_INST           0
 #define FD_TYPE_MUX            1
@@ -1339,6 +1341,7 @@ static int mux_vp_update(scamper_mux_t *mux, const uint8_t *buf, size_t len)
 	  else if(attr_type == VP_ATTR_PLACE) out = &vp->place;
 	  else if(attr_type == VP_ATTR_LATLONG) out = &vp->latlong;
 	  else if(attr_type == VP_ATTR_SHORTNAME) out = &vp->shortname;
+	  else if(attr_type == VP_ATTR_IATA) out = &vp->iata;
 	  if(out != NULL)
 	    {
 	      if(*out != NULL)
@@ -2358,6 +2361,7 @@ void scamper_vp_free(scamper_vp_t *vp)
   if(vp->place != NULL) free(vp->place);
   if(vp->latlong != NULL) free(vp->latlong);
   if(vp->shortname != NULL) free(vp->shortname);
+  if(vp->iata != NULL) free(vp->iata);
   if(vp->tags != NULL)
     {
       for(i=0; i<vp->tagc; i++)
@@ -2428,6 +2432,13 @@ const char *scamper_vp_latlong_get(const scamper_vp_t *vp)
 {
   if(vp != NULL)
     return vp->latlong;
+  return NULL;
+}
+
+const char *scamper_vp_iata_get(const scamper_vp_t *vp)
+{
+  if(vp != NULL)
+    return vp->iata;
   return NULL;
 }
 

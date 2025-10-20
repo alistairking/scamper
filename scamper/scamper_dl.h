@@ -1,7 +1,7 @@
 /*
  * scamper_dl.h
  *
- * $Id: scamper_dl.h,v 1.70 2024/08/07 16:12:37 mjl Exp $
+ * $Id: scamper_dl.h,v 1.73 2025/10/15 01:59:01 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -508,12 +508,15 @@ int scamper_dl_open_fd(int ifindex);
 
 /*
  * scamper_dl_state_alloc: allocate state to be held with fd
- * scamper_dl_state_free:  deallocate state
  */
-#ifdef __SCAMPER_FD_H
-scamper_dl_t *scamper_dl_state_alloc(scamper_fd_t *fdn);
-void scamper_dl_state_free(scamper_dl_t *dl);
+#if defined(__SCAMPER_FD_H) && defined(__SCAMPER_DEBUG_H)
+scamper_dl_t *scamper_dl_state_alloc(scamper_fd_t *fdn, scamper_err_t *err);
 #endif
+
+/*
+ * scamper_dl_state_free: deallocate state
+ */
+void scamper_dl_state_free(scamper_dl_t *dl);
 
 /*
  * scamper_dl_read_cb: callback for read events
@@ -529,7 +532,10 @@ void scamper_dl_read_cb(SOCKET fd, void *param);
  * transmit the packet, including relevant headers which are included, on
  * the datalink.
  */
-int scamper_dl_tx(const scamper_dl_t *dl, const uint8_t *pkt, size_t len);
+#ifdef __SCAMPER_DEBUG_H
+int scamper_dl_tx(const scamper_dl_t *dl, const uint8_t *pkt, size_t len,
+		  scamper_err_t *err);
+#endif
 
 #if defined(__linux__) || defined(BIOCSETFNR)
 /*

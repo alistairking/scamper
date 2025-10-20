@@ -1,7 +1,7 @@
 /*
  * common_ping : common functions for unit testing ping
  *
- * $Id: common_ping.c,v 1.6 2025/04/20 07:31:58 mjl Exp $
+ * $Id: common_ping.c,v 1.10 2025/10/19 20:49:19 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -144,6 +144,8 @@ int ping_ok(const scamper_ping_t *in, const scamper_ping_t *out)
      in->userid != out->userid ||
      timeval_cmp(&in->start, &out->start) != 0 ||
      in->stop_reason != out->stop_reason ||
+     in->stop_data != out->stop_data ||
+     str_ok(in->errmsg, out->errmsg) != 0 ||
      timeval_cmp(&in->wait_probe, &out->wait_probe) != 0 ||
      timeval_cmp(&in->wait_timeout, &out->wait_timeout) != 0 ||
      in->attempts != out->attempts ||
@@ -305,9 +307,47 @@ static scamper_ping_t *ping_2(void)
   return NULL;
 }
 
+static scamper_ping_t *ping_3(void)
+{
+  scamper_ping_t *ping = NULL;
+
+  if((ping = scamper_ping_alloc()) == NULL ||
+     (ping->src = scamper_addr_fromstr_ipv6("2001:db8::1")) == NULL ||
+     (ping->dst = scamper_addr_fromstr_ipv6("2001:db8::2")) == NULL ||
+     (ping->errmsg = strdup("hello world")) == NULL)
+    goto err;
+
+  ping->userid               = 123457;
+  ping->start.tv_sec         = 1724828853;
+  ping->start.tv_usec        = 123456;
+  ping->stop_reason          = SCAMPER_PING_STOP_ERROR;
+  ping->wait_probe.tv_sec    = 1;
+  ping->wait_probe.tv_usec   = 0;
+  ping->wait_timeout.tv_sec  = 5;
+  ping->wait_timeout.tv_usec = 0;
+  ping->attempts             = 4;
+  ping->size                 = 1400;
+  ping->method               = SCAMPER_PING_METHOD_ICMP_ECHO;
+  ping->ttl                  = 64;
+  ping->tos                  = 0;
+  ping->sport                = 0x1234;
+  ping->dport                = 5;
+  ping->flags               |= SCAMPER_PING_FLAG_ICMPSUM;
+  ping->icmpsum              = 32;
+  ping->stop_count           = 1;
+  ping->ping_sent            = 0;
+
+  return ping;
+
+ err:
+  if(ping != NULL) scamper_ping_free(ping);
+  return NULL;
+}
+
 static scamper_ping_makefunc_t makers[] = {
   ping_1,
   ping_2,
+  ping_3,
 };
 
 scamper_ping_t *ping_makers(size_t i)

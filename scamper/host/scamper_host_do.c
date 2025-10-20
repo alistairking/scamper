@@ -1,7 +1,7 @@
 /*
  * scamper_host_do
  *
- * $Id: scamper_host_do.c,v 1.94 2025/08/04 00:00:27 mjl Exp $
+ * $Id: scamper_host_do.c,v 1.96 2025/10/12 22:50:23 mjl Exp $
  *
  * Copyright (C) 2018-2025 Matthew Luckie
  *
@@ -27,6 +27,7 @@
 
 #include "scamper.h"
 #include "scamper_config.h"
+#include "scamper_debug.h"
 #include "scamper_addr.h"
 #include "scamper_addr_int.h"
 #include "scamper_list.h"
@@ -36,7 +37,6 @@
 #include "scamper_getsrc.h"
 #include "scamper_queue.h"
 #include "scamper_file.h"
-#include "scamper_debug.h"
 #include "scamper_host_do.h"
 #include "scamper_fds.h"
 #include "scamper_writebuf.h"
@@ -105,6 +105,74 @@ struct scamper_host_do
   } un;
   dlist_node_t   *node;
 };
+
+static scamper_host_t *host_getdata(const scamper_task_t *task)
+{
+  return scamper_task_getdata(task);
+}
+
+static host_state_t *host_getstate(const scamper_task_t *task)
+{
+  return scamper_task_getstate(task);
+}
+
+static const char *host_mode(int mode)
+{
+  switch(mode)
+    {
+    case STATE_MODE_CONNECT:   return "connect";
+    case STATE_MODE_CONNECTED: return "connected";
+    case STATE_MODE_REQ:       return "req";
+    case STATE_MODE_DONE:      return "done";
+    }
+  return "unknown";
+}
+
+static void host_queue(scamper_task_t *task)
+{
+  host_state_t *state = host_getstate(task);
+  if(scamper_task_queue_isdone(task))
+    return;
+  if(scamper_writebuf_gtzero(state->wb))
+    scamper_task_queue_probe(task);
+  else
+    scamper_task_queue_wait_tv(task, &state->finish);
+  return;
+}
+
+static void host_stop(scamper_task_t *task, uint8_t reason)
+{
+  scamper_host_t *host = host_getdata(task);
+  host->stop = reason;
+  scamper_task_queue_done(task);
+  return;
+}
+
+static void host_stop_err(scamper_host_t *host, scamper_err_t *err)
+{
+  char errbuf[512];
+
+  scamper_err_render(err, errbuf, sizeof(errbuf));
+
+  if(printerror_would())
+    printerror_msg("host failed", "%s", errbuf);
+
+  if(host->stop == SCAMPER_HOST_STOP_NONE)
+    {
+      host->stop = SCAMPER_HOST_STOP_ERROR;
+      if(host->errmsg == NULL)
+	host->errmsg = strdup(errbuf);
+    }
+
+  return;
+}
+
+static void host_handleerror(scamper_task_t *task, scamper_err_t *err)
+{
+  host_stop_err(host_getdata(task), err);
+  scamper_task_queue_done(task);
+  return;
+}
 
 static int etc_resolv_line(char *line, void *param)
 {
@@ -196,50 +264,6 @@ static int host_fd_close(void *param)
   return 0;
 }
 
-#ifdef HAVE_SCAMPER_DEBUG
-static const char *host_mode(int mode)
-{
-  switch(mode)
-    {
-    case STATE_MODE_CONNECT:   return "connect";
-    case STATE_MODE_CONNECTED: return "connected";
-    case STATE_MODE_REQ:       return "req";
-    case STATE_MODE_DONE:      return "done";
-    }
-  return "unknown";
-}
-#endif
-
-static scamper_host_t *host_getdata(const scamper_task_t *task)
-{
-  return scamper_task_getdata(task);
-}
-
-static host_state_t *host_getstate(const scamper_task_t *task)
-{
-  return scamper_task_getstate(task);
-}
-
-static void host_queue(scamper_task_t *task)
-{
-  host_state_t *state = host_getstate(task);
-  if(scamper_task_queue_isdone(task))
-    return;
-  if(scamper_writebuf_gtzero(state->wb))
-    scamper_task_queue_probe(task);
-  else
-    scamper_task_queue_wait_tv(task, &state->finish);
-  return;
-}
-
-static void host_stop(scamper_task_t *task, uint8_t reason)
-{
-  scamper_host_t *host = host_getdata(task);
-  host->stop = reason;
-  scamper_task_queue_done(task);
-  return;
-}
-
 static void host_id_free(host_id_t *hid)
 {
   if(hid == NULL)
@@ -263,7 +287,7 @@ static host_id_t *host_id_find(uint16_t id)
   return splaytree_find(queries, &fm);
 }
 
-static host_id_t *host_id_get(uint16_t id)
+static host_id_t *host_id_get(uint16_t id, scamper_err_t *error)
 {
   host_id_t *hid = NULL;
 
@@ -271,18 +295,18 @@ static host_id_t *host_id_get(uint16_t id)
     return hid;
   if((hid = malloc_zero(sizeof(host_id_t))) == NULL)
     {
-      printerror(__func__, "could not alloc hid");
+      scamper_err_make(error, errno, "could not alloc hid");
       goto err;
     }
   if((hid->list = dlist_alloc()) == NULL)
     {
-      printerror(__func__, "could not alloc hid->list");
+      scamper_err_make(error, errno, "could not alloc hid->list");
       goto err;
     }
   hid->id = id;
   if((hid->node = splaytree_insert(queries, hid)) == NULL)
     {
-      printerror(__func__, "could not insert hid into queries");
+      scamper_err_make(error, errno, "could not insert hid into queries");
       goto err;
     }
   return hid;
@@ -296,29 +320,30 @@ static host_id_t *host_id_get(uint16_t id)
   return NULL;
 }
 
-static int host_query_add(uint16_t id, scamper_task_t *task)
+static int host_query_add(uint16_t id, scamper_task_t *task,
+			  scamper_err_t *error)
 {
   host_state_t *state = host_getstate(task);
   host_pid_t *pid = NULL;
   host_id_t *hid = NULL;
 
-  if((hid = host_id_get(id)) == NULL)
+  if((hid = host_id_get(id, error)) == NULL)
     goto err;
 
   if((pid = malloc_zero(sizeof(host_pid_t))) == NULL)
     {
-      printerror(__func__, "could not alloc pid");
+      scamper_err_make(error, errno, "could not alloc pid");
       goto err;
     }
   pid->hid = hid;
   if((pid->dn = dlist_tail_push(hid->list, task)) == NULL)
     {
-      printerror(__func__, "could not insert task onto hid->list");
+      scamper_err_make(error, errno, "could not insert task onto hid->list");
       goto err;
     }
   if(dlist_tail_push(state->pids, pid) == NULL)
     {
-      printerror(__func__, "could not insert pid onto state->pids");
+      scamper_err_make(error, errno, "could not insert pid onto state->pids");
       goto err;
     }
 
@@ -379,7 +404,7 @@ static void host_state_free(host_state_t *state)
   return;
 }
 
-static host_state_t *host_state_alloc(scamper_task_t *task)
+static int host_state_alloc(scamper_task_t *task, scamper_err_t *error)
 {
   scamper_host_t *host = host_getdata(task);
   host_state_t *state = NULL;
@@ -398,7 +423,7 @@ static host_state_t *host_state_alloc(scamper_task_t *task)
   if((state = malloc_zero(sizeof(host_state_t))) == NULL ||
      (state->pids = dlist_alloc()) == NULL)
     {
-      printerror(__func__, "could not alloc state");
+      scamper_err_make(error, errno, "could not alloc state");
       goto err;
     }
 
@@ -406,7 +431,7 @@ static host_state_t *host_state_alloc(scamper_task_t *task)
     {
       if((sa = scamper_addr_fromstr_unspec(host->qname)) == NULL)
 	{
-	  printerror(__func__, "could not resolve %s", host->qname);
+	  scamper_err_make(error, errno, "could not resolve %s", host->qname);
 	  goto err;
 	}
       if(SCAMPER_ADDR_TYPE_IS_IPV4(sa))
@@ -444,7 +469,7 @@ static host_state_t *host_state_alloc(scamper_task_t *task)
       scamper_addr_free(sa);
       if((state->qname = strdup(qname)) == NULL)
 	{
-	  printerror(__func__, "could not strdup qname");
+	  scamper_err_make(error, errno, "could not strdup qname");
 	  goto err;
 	}
     }
@@ -452,18 +477,18 @@ static host_state_t *host_state_alloc(scamper_task_t *task)
     {
       if((state->qname = strdup(host->qname)) == NULL)
 	{
-	  printerror(__func__, "could not strdup qname");
+	  scamper_err_make(error, errno, "could not strdup qname");
 	  goto err;
 	}
     }
 
   scamper_task_setstate(task, state);
-  return state;
+  return 0;
 
  err:
   if(sa != NULL) scamper_addr_free(sa);
   if(state != NULL) host_state_free(state);
-  return NULL;
+  return -1;
 }
 #endif /* TEST_HOST_RR_LIST */
 
@@ -989,15 +1014,17 @@ static void host_tcp_read(SOCKET fd, void *param)
 {
   scamper_task_t *task = (scamper_task_t *)param;
   host_state_t *state = host_getstate(task);
+  scamper_err_t error;
   uint8_t pktbuf[1024];
   ssize_t rc;
   size_t s;
 
+  SCAMPER_ERR_INIT(&error);
+
   if((rc = recv(fd, pktbuf, sizeof(pktbuf), 0)) < 0)
     {
-      host_stop(task, SCAMPER_HOST_STOP_ERROR);
-      state->mode = STATE_MODE_DONE;
-      return;
+      scamper_err_make(&error, errno, "could not recv on tcp socket");
+      goto err;
     }
 
   if(rc == 0)
@@ -1021,7 +1048,11 @@ static void host_tcp_read(SOCKET fd, void *param)
       else
 	state->readbuf_len = (pktbuf[0] * 256) + pktbuf[1] + 2;
       if((state->readbuf = malloc(state->readbuf_len)) == NULL)
-	return;
+	{
+	  scamper_err_make(&error, errno, "could not malloc readbuf %d",
+			   (int)state->readbuf_len);
+	  goto err;
+	}
       memcpy(state->readbuf, pktbuf, rc);
       state->readbuf_off = rc;
     }
@@ -1042,6 +1073,11 @@ static void host_tcp_read(SOCKET fd, void *param)
 	}
     }
 
+  return;
+
+ err:
+  host_handleerror(task, &error);
+  state->mode = STATE_MODE_DONE;
   return;
 }
 
@@ -1243,7 +1279,7 @@ static int do_host_probe_query(const scamper_host_t *host,
   return 0;
 }
 
-static int do_host_probe_udp(scamper_task_t *task)
+static int do_host_probe_udp(scamper_task_t *task, scamper_err_t *error)
 {
   scamper_host_t *host = host_getdata(task);
   host_state_t *state = host_getstate(task);
@@ -1284,20 +1320,20 @@ static int do_host_probe_udp(scamper_task_t *task)
       fd = socket(af, SOCK_DGRAM, IPPROTO_UDP);
       if(socket_isinvalid(fd))
 	{
-	  printerror(__func__, "could not open udp socket");
+	  scamper_err_make(error, errno, "could not open udp socket");
 	  goto err;
 	}
 
       if((fdn = scamper_fd_private(fd, NULL, host_udp_read, NULL)) == NULL)
 	{
-	  printerror(__func__, "could not register udp socket");
+	  scamper_err_make(error, errno, "could not register udp socket");
 	  socket_close(fd);
 	  goto err;
 	}
 
       if((sq = scamper_queue_event(&tv, host_fd_close, fdn)) == NULL)
 	{
-	  printerror(__func__, "could not register sq");
+	  scamper_err_make(error, errno, "could not register sq");
 	  socket_close(fd);
 	  scamper_fd_free(fdn);
 	  goto err;
@@ -1332,7 +1368,7 @@ static int do_host_probe_udp(scamper_task_t *task)
       assert(sq != NULL);
       if(scamper_queue_event_update_time(sq, &tv) != 0)
 	{
-	  printerror(__func__, "could not update sq");
+	  scamper_err_make(error, errno, "could not update sq");
 	  goto err;
 	}
     }
@@ -1344,9 +1380,12 @@ static int do_host_probe_udp(scamper_task_t *task)
 
   len = sizeof(pktbuf);
   if(do_host_probe_query(host, state, id, pktbuf, &len) != 0)
-    goto err;
+    {
+      scamper_err_make(error, 0, "could not form query");
+      goto err;
+    }
 
-  if(host_query_add(id, task) != 0)
+  if(host_query_add(id, task, error) != 0)
     goto err;
 
   scamper_debug(__func__, "%s %s %s", state->qname,
@@ -1355,7 +1394,7 @@ static int do_host_probe_udp(scamper_task_t *task)
 
   if((q = scamper_host_query_alloc()) == NULL)
     {
-      printerror(__func__, "could not malloc q");
+      scamper_err_make(error, errno, "could not malloc q");
       goto err;
     }
   gettimeofday_wrap(&q->tx);
@@ -1365,7 +1404,7 @@ static int do_host_probe_udp(scamper_task_t *task)
   sockaddr_compose(sa, af, host->dst->addr, 53);
   if(sendto(fd, pktbuf, len, 0, sa, sockaddr_len(sa)) == -1)
     {
-      printerror(__func__, "could not send query");
+      scamper_err_make(error, errno, "could not send query");
       goto err;
     }
   host->queries[host->qcount++] = q;
@@ -1376,6 +1415,7 @@ static int do_host_probe_udp(scamper_task_t *task)
   return 0;
 
  err:
+  if(q != NULL) scamper_host_query_free(q);
   return -1;
 }
 
@@ -1387,6 +1427,9 @@ static void host_tcp_write(SOCKET fd, void *param)
 {
   scamper_task_t *task = param;
   host_state_t *state = host_getstate(task);
+  scamper_err_t error;
+
+  SCAMPER_ERR_INIT(&error);
 
   /* always pause -- call unpause from the probe function */
   scamper_fd_write_pause(state->tcp);
@@ -1411,16 +1454,17 @@ static void host_tcp_write(SOCKET fd, void *param)
        */
       if(scamper_writebuf_gtzero(state->wb) == 0)
 	{
-	  scamper_debug(__func__, "nothing in writebuf, mode %s",
-			host_mode(state->mode));
+	  scamper_err_make(&error, 0, "nothing in writebuf, mode %s",
+			   host_mode(state->mode));
 	  goto err;
 	}
 
       /* write whatever we have */
       if(scamper_writebuf_write(fd, state->wb) != 0)
 	{
-	  scamper_debug(__func__, "could not write from writebuf, mode %s",
-			host_mode(state->mode));
+	  scamper_err_make(&error, errno,
+			   "could not write from writebuf, mode %s",
+			   host_mode(state->mode));
 	  goto err;
 	}
     }
@@ -1429,11 +1473,11 @@ static void host_tcp_write(SOCKET fd, void *param)
   return;
 
  err:
-  host_stop(task, SCAMPER_HOST_STOP_ERROR);
+  host_handleerror(task, &error);
   return;
 }
 
-static int do_host_probe_tcp(scamper_task_t *task)
+static int do_host_probe_tcp(scamper_task_t *task, scamper_err_t *error)
 {
   scamper_host_t *host = host_getdata(task);
   host_state_t *state = host_getstate(task);
@@ -1467,14 +1511,14 @@ static int do_host_probe_tcp(scamper_task_t *task)
       fd = socket(af, SOCK_STREAM, IPPROTO_TCP);
       if(socket_isinvalid(fd))
 	{
-	  printerror(__func__, "could not open tcp socket");
+	  scamper_err_make(error, errno, "could not open tcp socket");
 	  goto err;
 	}
 
 #ifdef HAVE_FCNTL
       if(fcntl_set(fd, O_NONBLOCK) == -1)
 	{
-	  printerror(__func__, "could not set O_NONBLOCK");
+	  scamper_err_make(error, errno, "could not set O_NONBLOCK");
 	  socket_close(fd);
 	  goto err;
 	}
@@ -1484,7 +1528,7 @@ static int do_host_probe_tcp(scamper_task_t *task)
       sockaddr_compose(sa, af, host->dst->addr, 53);
       if(connect(fd, sa, sockaddr_len(sa)) != 0 && errno != EINPROGRESS)
 	{
-	  printerror(__func__, "could not connect");
+	  scamper_err_make(error, errno, "could not connect");
 	  socket_close(fd);
 	  goto err;
 	}
@@ -1492,7 +1536,7 @@ static int do_host_probe_tcp(scamper_task_t *task)
       fdn = scamper_fd_private(fd, task, host_tcp_read, host_tcp_write);
       if(fdn == NULL)
 	{
-	  scamper_debug(__func__, "could not register fd");
+	  scamper_err_make(error, errno, "could not register fd");
 	  socket_close(fd);
 	  goto err;
 	}
@@ -1505,7 +1549,7 @@ static int do_host_probe_tcp(scamper_task_t *task)
     {
       if((state->wb = scamper_writebuf_alloc()) == NULL)
 	{
-	  scamper_debug(__func__, "could not alloc writebuf");
+	  scamper_err_make(error, errno, "could not alloc writebuf");
 	  goto err;
 	}
 
@@ -1517,11 +1561,14 @@ static int do_host_probe_tcp(scamper_task_t *task)
 	dns_id = 1;
 
       if(do_host_probe_query(host, state, id, pktbuf+2, &len) != 0)
-	goto err;
+	{
+	  scamper_err_make(error, 0, "could not form query");
+	  goto err;
+	}
       bytes_htons(pktbuf, len); len += 2;
       scamper_writebuf_send(state->wb, pktbuf, len);
 
-      if(host_query_add(id, task) != 0)
+      if(host_query_add(id, task, error) != 0)
 	goto err;
 
       scamper_debug(__func__, "%s %s %s", state->qname,
@@ -1530,7 +1577,7 @@ static int do_host_probe_tcp(scamper_task_t *task)
 
       if((q = scamper_host_query_alloc()) == NULL)
 	{
-	  printerror(__func__, "could not malloc q");
+	  scamper_err_make(error, errno, "could not malloc q");
 	  goto err;
 	}
       gettimeofday_wrap(&q->tx);
@@ -1555,27 +1602,33 @@ static int do_host_probe_tcp(scamper_task_t *task)
 static void do_host_probe(scamper_task_t *task)
 {
   scamper_host_t *host = host_getdata(task);
+  scamper_err_t error;
   int rc = -1;
 
-  if(host_getstate(task) == NULL && host_state_alloc(task) == NULL)
+  SCAMPER_ERR_INIT(&error);
+
+  if(host_getstate(task) == NULL && host_state_alloc(task, &error) != 0)
     goto done;
 
   if(host->queries == NULL)
     {
       if(scamper_host_queries_alloc(host, host->retries + 1) != 0)
-	goto done;
+	{
+	  scamper_err_make(&error, errno, "could not alloc queries");
+	  goto done;
+	}
       host->qcount = 0;
       gettimeofday_wrap(&host->start);
     }
 
   if((host->flags & SCAMPER_HOST_FLAG_TCP) == 0)
-    rc = do_host_probe_udp(task);
+    rc = do_host_probe_udp(task, &error);
   else
-    rc = do_host_probe_tcp(task);
+    rc = do_host_probe_tcp(task, &error);
 
  done:
   if(rc != 0)
-    host_stop(task, SCAMPER_HOST_STOP_ERROR);
+    host_handleerror(task, &error);
 
   return;
 }
@@ -1595,6 +1648,9 @@ scamper_task_t *scamper_do_host_alloctask(void *data, scamper_list_t *list,
   scamper_host_t *host = (scamper_host_t *)data;
   scamper_task_sig_t *sig = NULL;
   scamper_task_t *task = NULL;
+  scamper_err_t error;
+
+  SCAMPER_ERR_INIT(&error);
 
   /* allocate a task structure and store the host query with it */
   if((task = scamper_task_alloc(host, &host_funcs)) == NULL)
@@ -1611,8 +1667,11 @@ scamper_task_t *scamper_do_host_alloctask(void *data, scamper_list_t *list,
   sig->sig_host_type = host->qtype;
   sig->sig_host_name = strdup(host->qname);
   sig->sig_host_dst  = scamper_addr_use(host->dst);
-  if((host->src = scamper_getsrc(host->dst, 0, errbuf, errlen)) == NULL)
-    goto err;
+  if((host->src = scamper_getsrc(host->dst, 0, &error)) == NULL)
+    {
+      snprintf(errbuf, errlen, "%s: %s", __func__, error.errstr);
+      goto err;
+    }
   if(scamper_task_sig_add(task, sig) != 0)
     {
       snprintf(errbuf, errlen, "%s: could not add signature to task", __func__);
@@ -1692,7 +1751,10 @@ static scamper_host_do_t *scamper_do_host_do_host(const char *qname,
   scamper_host_do_t *hostdo = NULL;
   scamper_host_t *host = NULL;
   scamper_task_t *task = NULL;
+  scamper_err_t error;
   char errbuf[256];
+
+  SCAMPER_ERR_INIT(&error);
 
   if((host = scamper_host_alloc()) == NULL ||
      (host->qname = strdup(qname)) == NULL)
@@ -1718,7 +1780,7 @@ static scamper_host_do_t *scamper_do_host_do_host(const char *qname,
       printerror(__func__, "could not install task");
       goto err;
     }
-  if(host_state_alloc(task) == NULL)
+  if(host_state_alloc(task, &error) != 0)
     {
       printerror(__func__, "could not alloc state");
       goto err;

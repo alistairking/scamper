@@ -1,7 +1,7 @@
 /*
  * scamper_udp6.c
  *
- * $Id: scamper_udp6.c,v 1.82 2024/12/12 15:27:06 mjl Exp $
+ * $Id: scamper_udp6.c,v 1.86 2025/10/20 01:21:44 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2010 The University of Waikato
@@ -140,80 +140,80 @@ int scamper_udp6_build(scamper_probe_t *probe, uint8_t *buf, size_t *len)
  *
  * this function returns 0 on success, -1 otherwise
  */
-int scamper_udp6_probe(scamper_probe_t *probe)
+int scamper_udp6_probe(scamper_probe_t *pr, scamper_err_t *error)
 {
   struct sockaddr_in6  sin6;
   int                  i, j, k;
   char                 addr[128];
 
-  assert(probe != NULL);
-  assert(probe->pr_ip_proto == IPPROTO_UDP);
-  assert(probe->pr_ip_dst != NULL);
-  assert(probe->pr_ip_src != NULL);
-  assert(probe->pr_len != 0 || probe->pr_data == NULL);
+  assert(pr != NULL);
+  assert(pr->pr_ip_proto == IPPROTO_UDP);
+  assert(pr->pr_ip_dst != NULL);
+  assert(pr->pr_ip_src != NULL);
+  assert(pr->pr_len != 0 || pr->pr_data == NULL);
 
-  if(setsockopt_int(probe->pr_fd,
-		    IPPROTO_IPV6, IPV6_UNICAST_HOPS, probe->pr_ip_ttl) != 0)
+  if(setsockopt_int(pr->pr_fd,
+		    IPPROTO_IPV6, IPV6_UNICAST_HOPS, pr->pr_ip_ttl) != 0)
     {
-      printerror(__func__, "could not set hlim to %d", probe->pr_ip_ttl);
+      scamper_err_make(error, errno, "udp6_probe could not set hlim to %d",
+		       pr->pr_ip_ttl);
       return -1;
     }
 
 #ifdef IPV6_TCLASS
-  if(setsockopt_int(probe->pr_fd,
-		    IPPROTO_IPV6, IPV6_TCLASS, probe->pr_ip_tos) != 0)
+  if(setsockopt_int(pr->pr_fd, IPPROTO_IPV6, IPV6_TCLASS, pr->pr_ip_tos) != 0)
     {
-      printerror(__func__, "could not set tclass to %d", probe->pr_ip_tos);
+      scamper_err_make(error, errno, "udp6_probe could not set tclass to %d",
+		       pr->pr_ip_tos);
       return -1;
     }
 #endif /* IPV6_TCLASS */
 
   sockaddr_compose((struct sockaddr *)&sin6, AF_INET6,
-		   probe->pr_ip_dst->addr, probe->pr_udp_dport);
+		   pr->pr_ip_dst->addr, pr->pr_udp_dport);
 
   /* get the transmit time immediately before we send the packet */
-  gettimeofday_wrap(&probe->pr_tx);
+  gettimeofday_wrap(&pr->pr_tx);
 
   /*
    * if we are using RECVERR socket, then we might need to try probing
    * multiple times to get the packet to send.
    */
-  if((probe->pr_flags & SCAMPER_PROBE_FLAG_RXERR) == 0)
+  if((pr->pr_flags & SCAMPER_PROBE_FLAG_RXERR) == 0)
     k = 1;
   else
     k = 5;
 
   for(j=0; j<k; j++)
     {
-      i = sendto(probe->pr_fd, probe->pr_data, probe->pr_len, 0,
+      i = sendto(pr->pr_fd, pr->pr_data, pr->pr_len, 0,
 		 (struct sockaddr *)&sin6, sizeof(struct sockaddr_in6));
 
       /*
        * if we sent the probe successfully, there is nothing more to
        * do here
        */
-      if(i == probe->pr_len)
+      if(i == pr->pr_len)
 	return 0;
       else if(i != -1)
 	break;
     }
 
-  /* get a copy of the errno variable as it is immediately after the sendto */
-  probe->pr_errno = errno;
-
-  /* error condition, could not send the packet at all */
   if(i == -1)
     {
-      printerror(__func__, "could not send to %s (%d hlim, %d dport, %d len)",
-		 scamper_addr_tostr(probe->pr_ip_dst, addr, sizeof(addr)),
-		 probe->pr_ip_ttl, probe->pr_udp_dport, probe->pr_len);
+      /* error condition, could not send the packet at all */
+      scamper_err_make(error, errno,
+		       "udp6_probe could not send to %s (%d hlim, %d dport, %d len)",
+		       scamper_addr_tostr(pr->pr_ip_dst, addr, sizeof(addr)),
+		       pr->pr_ip_ttl, pr->pr_udp_dport, pr->pr_len);
     }
-  /* error condition, sent a portion of the probe */
   else
     {
-      printerror_msg(__func__, "sent %d bytes of %d byte packet to %s",
-		     i, (int)probe->pr_len,
-		     scamper_addr_tostr(probe->pr_ip_dst, addr, sizeof(addr)));
+      /* error condition, sent a portion of the probe */
+      scamper_err_make(error, 0,
+		       "udp6_probe sent %d bytes of %d byte packet to %s",
+		       i, (int)pr->pr_len,
+		       scamper_addr_tostr(pr->pr_ip_dst, addr, sizeof(addr)));
     }
 
   return -1;
@@ -411,9 +411,9 @@ void scamper_udp6_read_err_cb(SOCKET fd, void *param)
 }
 
 #ifndef _WIN32 /* SOCKET vs int on windows */
-int scamper_udp6_open(const void *addr, int sport)
+int scamper_udp6_open(const void *addr, int sport, scamper_err_t *error)
 #else
-SOCKET scamper_udp6_open(const void *addr, int sport)
+SOCKET scamper_udp6_open(const void *addr, int sport, scamper_err_t *error)
 #endif
 {
   struct sockaddr_in6 sin6;
@@ -428,14 +428,14 @@ SOCKET scamper_udp6_open(const void *addr, int sport)
   fd = socket(AF_INET6, SOCK_DGRAM, IPPROTO_UDP);
   if(socket_isinvalid(fd))
     {
-      printerror(__func__, "could not open socket");
+      scamper_err_make(error, errno, "could not open udp6 socket");
       goto err;
     }
 
 #ifdef IPV6_V6ONLY
   if(setsockopt_int(fd, IPPROTO_IPV6, IPV6_V6ONLY, 1) != 0)
     {
-      printerror(__func__, "could not set IPV6_V6ONLY");
+      scamper_err_make(error, errno, "could not set IPV6_V6ONLY on udp6");
       goto err;
     }
 #endif
@@ -444,22 +444,23 @@ SOCKET scamper_udp6_open(const void *addr, int sport)
   if(bind(fd, (struct sockaddr *)&sin6, sizeof(sin6)) == -1)
     {
       if(addr == NULL || addr_tostr(AF_INET6, addr, buf, sizeof(buf)) == NULL)
-	printerror(__func__, "could not bind port %d", sport);
+	scamper_err_make(error, errno, "could not bind udp6 port %d", sport);
       else
-	printerror(__func__, "could not bind %s:%d", buf, sport);
+	scamper_err_make(error, errno, "could not bind udp6 [%s.%d]",
+			 buf, sport);
       goto err;
     }
 
   if(setsockopt_raise(fd, SOL_SOCKET, SO_SNDBUF, 65535 + 128) != 0)
     {
-      printerror(__func__, "could not set SO_SNDBUF");
-      return -1;
+      scamper_err_make(error, errno, "could not raise SO_SNDBUF on udp6");
+      goto err;
     }
 
 #if defined(IPV6_DONTFRAG)
   if(setsockopt_int(fd, IPPROTO_IPV6, IPV6_DONTFRAG, 1) != 0)
     {
-      printerror(__func__, "could not set IPV6_DONTFRAG");
+      scamper_err_make(error, errno, "could not set IPV6_DONTFRAG on udp6");
       goto err;
     }
 #endif
@@ -498,9 +499,9 @@ SOCKET scamper_udp6_open(const void *addr, int sport)
 }
 
 #ifndef _WIN32 /* SOCKET vs int on windows */
-int scamper_udp6_open_err(const void *addr, int sport)
+int scamper_udp6_open_err(const void *addr, int sport, scamper_err_t *error)
 #else
-SOCKET scamper_udp6_open_err(const void *addr, int sport)
+SOCKET scamper_udp6_open_err(const void *addr, int sport, scamper_err_t *error)
 #endif
 {
 #ifdef IPV6_RECVERR
@@ -511,19 +512,19 @@ SOCKET scamper_udp6_open_err(const void *addr, int sport)
   SOCKET fd;
 #endif
 
-  fd = scamper_udp6_open(addr, sport);
+  fd = scamper_udp6_open(addr, sport, error);
   if(socket_isinvalid(fd))
     return socket_invalid();
 
   if(setsockopt_raise(fd, SOL_SOCKET, SO_RCVBUF, 65535 + 128) != 0)
     {
-      printerror(__func__, "could not set SO_RCVBUF");
+      scamper_err_make(error, errno, "could not raise SO_RCVBUF on udp6err");
       goto err;
     }
 
   if(setsockopt_int(fd, IPPROTO_IPV6, IPV6_RECVERR, 1) != 0)
     {
-      printerror(__func__, "could not set IPV6_RECVERR");
+      scamper_err_make(error, errno, "could not set IPV6_RECVERR on udp6err");
       goto err;
     }
 

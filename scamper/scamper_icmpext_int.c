@@ -1,7 +1,7 @@
 /*
  * scamper_icmpext_int.c
  *
- * $Id: scamper_icmpext_int.c,v 1.2 2025/02/11 14:31:43 mjl Exp $
+ * $Id: scamper_icmpext_int.c,v 1.3 2025/10/10 00:56:22 mjl Exp $
  *
  * Copyright (C) 2008-2010 The University of Waikato
  * Copyright (C) 2012      Matthew Luckie
@@ -43,12 +43,12 @@ int scamper_icmpext_parse(scamper_icmpexts_t **out, uint8_t *data, size_t len)
   uint16_t dl;
   uint8_t cn, ct;
   size_t off;
-  int extc, rc = -1;
+  int extc;
 
   *out = NULL;
 
   if((list = slist_alloc()) == NULL)
-    goto cleanup;
+    goto err;
 
   /* start at offset 4 so the extension header is skipped */
   for(off = 4; off + 4 < len; off += dl)
@@ -68,14 +68,14 @@ int scamper_icmpext_parse(scamper_icmpexts_t **out, uint8_t *data, size_t len)
 
       if((ie = scamper_icmpext_alloc(cn, ct, dl-4, data+off+4)) == NULL ||
 	 slist_tail_push(list, ie) == NULL)
-	goto cleanup;
+	goto err;
       ie = NULL;
     }
 
   if((extc = slist_count(list)) > 0)
     {
       if((exts = scamper_icmpexts_alloc((uint16_t)extc)) == NULL)
-	goto cleanup;
+	goto err;
       while((ie = slist_head_pop(list)) != NULL)
 	exts->exts[exts->extc++] = ie;
     }
@@ -85,8 +85,8 @@ int scamper_icmpext_parse(scamper_icmpexts_t **out, uint8_t *data, size_t len)
   *out = exts;
   return 0;
 
- cleanup:
+ err:
   if(list != NULL) slist_free_cb(list, (slist_free_t)scamper_icmpext_free);
   if(ie != NULL) scamper_icmpext_free(ie);
-  return rc;
+  return -1;
 }

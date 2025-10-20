@@ -17,8 +17,9 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 
-from typing import (Callable, Dict, Generator, Iterator, List, Optional, Set,
-    Sequence, Tuple, Type, TypeAlias, TypeVar, Union, Generic)
+from typing import (cast, Callable, Dict, Generator, Iterator, List,
+                    Optional, Set, Sequence, Tuple, Type, TypeAlias,
+                    TypeVar, Union, Generic)
 from builtins import BaseException
 import datetime
 import enum
@@ -30,6 +31,8 @@ class ScamperAddr:
     def __eq__(self, other: object) -> bool: ...
     def __str__(self) -> str: ...
     def __hash__(self) -> int: ...
+    def __getstate__(self) -> dict: ...
+    def __setstate__(self, state: dict) -> None: ...
 
     @property
     def packed(self) -> Optional[bytes]: ...
@@ -98,6 +101,9 @@ class ScamperVp:
     def loc(self) -> Optional[Tuple[float, float]]: ...
 
     @property
+    def iata(self) -> Optional[str]: ...
+
+    @property
     def cc(self) -> Optional[str]: ...
 
     @property
@@ -137,6 +143,9 @@ class ScamperInst:
     def loc(self) -> Optional[Tuple[float, float]]: ...
 
     @property
+    def iata(self) -> Optional[str]: ...
+
+    @property
     def cc(self) -> Optional[str]: ...
 
     @property
@@ -156,6 +165,7 @@ class ScamperInst:
 
 class ScamperInstError(Exception):
     def __init__(self, message: str, inst: ScamperInst) -> None: ...
+    inst: ScamperInst
 
 class ScamperMux:
     def __init__(self, *args: object, **kwargs: object) -> None: ...
@@ -282,6 +292,7 @@ class ScamperDealiasReply:
     def is_icmp_ttl_exp(self) -> bool: ...
     def is_icmp_unreach(self) -> bool: ...
     def is_icmp_unreach_port(self) -> bool: ...
+    def is_icmp_echo_reply(self) -> bool: ...
     def is_from_target(self) -> bool: ...
 
 class ScamperDealiasProbe:
@@ -347,6 +358,10 @@ class ScamperDealias:
     def wait_timeout(self) -> Optional[datetime.timedelta]: ...
 
     def to_json(self) -> Optional[str]: ...
+    def to_text(self) -> Optional[str]: ...
+
+    @property
+    def errmsg(self) -> Optional[str]: ...
 
     def is_ally(self) -> bool: ...
     def is_mercator(self) -> bool: ...
@@ -370,19 +385,26 @@ class ScamperDealias:
     def probes(self) -> Iterator[ScamperDealiasProbe]: ...
 
 class ScamperHostType(enum.IntEnum):
-    A: ScamperHostType
-    NS: ScamperHostType
-    CNAME: ScamperHostType
-    SOA: ScamperHostType
-    PTR: ScamperHostType
-    MX: ScamperHostType
-    TXT: ScamperHostType
-    AAAA: ScamperHostType
-    DS: ScamperHostType
-    SSHFP: ScamperHostType
-    RRSIG: ScamperHostType
-    NSEC: ScamperHostType
-    DNSKEY: ScamperHostType
+    A = 1
+    NS = 2
+    CNAME = 5
+    SOA = 6
+    PTR = 12
+    MX = 15
+    TXT = 16
+    AAAA = 28
+    DS = 43
+    SSHFP = 44
+    RRSIG = 46
+    NSEC = 47
+    DNSKEY = 48
+
+class ScamperHostStop(enum.IntEnum):
+    NoReason = cast(int, ...)
+    Completed = cast(int, ...)
+    Timeout = cast(int, ...)
+    Halted = cast(int, ...)
+    Error = cast(int, ...)
 
 class ScamperHostOPTElem:
     def __init__(self, *args: object, **kwargs: object) -> None: ...
@@ -606,6 +628,15 @@ class ScamperHost:
     def to_json(self) -> Optional[str]: ...
 
     @property
+    def errmsg(self) -> Optional[str]: ...
+
+    @property
+    def stop_reason(self) -> ScamperHostStop: ...
+
+    @property
+    def stop_reason_str(self) -> str: ...
+
+    @property
     def qtype_num(self) -> int: ...
 
     @property
@@ -671,6 +702,15 @@ class ScamperHost:
     def ans_txts(self) -> List[ScamperHostTXT]: ...
     def ans_mxes(self) -> List[ScamperHostMX]: ...
 
+class ScamperHttpStop(enum.IntEnum):
+    NoReason = cast(int, ...)
+    Halted = cast(int, ...)
+    NoConnection = cast(int, ...)
+    Completed = cast(int, ...)
+    Error = cast(int, ...)
+    Timeout = cast(int, ...)
+    Insecure = cast(int, ...)
+
 class ScamperHttpBuf:
     def __init__(self, *args: object, **kwargs: object) -> None: ...
 
@@ -708,7 +748,16 @@ class ScamperHttp:
     def userid(self) -> int: ...
 
     @property
+    def errmsg(self) -> Optional[str]: ...
+
+    @property
     def start(self) -> Optional[datetime.datetime]: ...
+
+    @property
+    def stop_reason(self) -> ScamperHttpStop: ...
+
+    @property
+    def stop_reason_str(self) -> str: ...
 
     @property
     def src(self) -> Optional[ScamperAddr]: ...
@@ -757,6 +806,13 @@ class ScamperNeighbourdisc:
     def inst(self) -> Optional[ScamperInst]: ...
 
     def to_json(self) -> Optional[str]: ...
+
+class ScamperPingStop(enum.IntEnum):
+    NoReason = cast(int, ...)
+    Completed = cast(int, ...)
+    Error = cast(int, ...)
+    Halted = cast(int, ...)
+    InProgress = cast(int, ...)
 
 class ScamperPingReply:
     def __init__(self, *args: object, **kwargs: object) -> None: ...
@@ -846,6 +902,16 @@ class ScamperPing:
     def start(self) -> Optional[datetime.datetime]: ...
 
     def to_json(self) -> Optional[str]: ...
+    def to_text(self) -> Optional[str]: ...
+
+    @property
+    def errmsg(self) -> Optional[str]: ...
+
+    @property
+    def stop_reason(self) -> ScamperPingStop: ...
+
+    @property
+    def stop_reason_str(self) -> str: ...
 
     @property
     def attempts(self) -> int: ...
@@ -928,11 +994,11 @@ class ScamperPing:
     def stddev_rtt(self) -> Optional[datetime.timedelta]: ...
 
 class ScamperSniffStop(enum.IntEnum):
-    NoReason: ScamperSniffStop
-    Error: ScamperSniffStop
-    LimitTime: ScamperSniffStop
-    LimitPktC: ScamperSniffStop
-    Halted: ScamperSniffStop
+    NoReason = cast(int, ...)
+    Error = cast(int, ...)
+    LimitTime = cast(int, ...)
+    LimitPktC = cast(int, ...)
+    Halted = cast(int, ...)
 
 class ScamperSniffPkt:
     def __init__(self, *args: object, **kwargs: object) -> None: ...
@@ -963,6 +1029,9 @@ class ScamperSniff:
 
     @property
     def userid(self) -> int: ...
+
+    @property
+    def errmsg(self) -> Optional[str]: ...
 
     @property
     def src(self) -> Optional[ScamperAddr]: ...
@@ -1032,6 +1101,10 @@ class ScamperTbit:
     def start(self) -> Optional[datetime.datetime]: ...
 
     def to_json(self) -> Optional[str]: ...
+    def to_text(self) -> Optional[str]: ...
+
+    @property
+    def errmsg(self) -> Optional[str]: ...
 
     @property
     def result(self) -> str: ...
@@ -1049,16 +1122,17 @@ class ScamperTbit:
     def client_ipttl(self) -> int: ...
 
 class ScamperTraceStop(enum.IntEnum):
-    NoReason: ScamperTraceStop
-    Completed: ScamperTraceStop
-    Unreach: ScamperTraceStop
-    Icmp: ScamperTraceStop
-    Loop: ScamperTraceStop
-    GapLimit: ScamperTraceStop
-    Error: ScamperTraceStop
-    HopLimit: ScamperTraceStop
-    GSS: ScamperTraceStop
-    Halted: ScamperTraceStop
+    NoReason = cast(int, ...)
+    Completed = cast(int, ...)
+    Unreach = cast(int, ...)
+    Icmp = cast(int, ...)
+    Loop = cast(int, ...)
+    GapLimit = cast(int, ...)
+    Error = cast(int, ...)
+    HopLimit = cast(int, ...)
+    GSS = cast(int, ...)
+    Halted = cast(int, ...)
+    InProgress = cast(int, ...)
 
 class ScamperTraceHop:
     def __init__(self, *args: object, **kwargs: object) -> None: ...
@@ -1175,6 +1249,10 @@ class ScamperTrace:
     def start(self) -> Optional[datetime.datetime]: ...
 
     def to_json(self) -> Optional[str]: ...
+    def to_text(self) -> Optional[str]: ...
+
+    @property
+    def errmsg(self) -> Optional[str]: ...
 
     @property
     def stop_reason(self) -> ScamperTraceStop: ...
@@ -1270,11 +1348,11 @@ class ScamperTrace:
     def is_stop_halted(self) -> bool: ...
 
 class ScamperTracelbMethod(enum.IntEnum):
-    UdpDport: ScamperTracelbMethod
-    IcmpEcho: ScamperTracelbMethod
-    UdpSport: ScamperTracelbMethod
-    TcpSport: ScamperTracelbMethod
-    TcpAckSport: ScamperTracelbMethod
+    UdpDport = cast(int, ...)
+    IcmpEcho = cast(int, ...)
+    UdpSport = cast(int, ...)
+    TcpSport = cast(int, ...)
+    TcpAckSport = cast(int, ...)
 
 class ScamperTracelbReply:
     def __init__(self, *args: object, **kwargs: object) -> None: ...
@@ -1391,6 +1469,10 @@ class ScamperTracelb:
     def start(self) -> Optional[datetime.datetime]: ...
 
     def to_json(self) -> Optional[str]: ...
+    def to_text(self) -> Optional[str]: ...
+
+    @property
+    def errmsg(self) -> Optional[str]: ...
 
     @property
     def src(self) -> Optional[ScamperAddr]: ...
@@ -1451,6 +1533,12 @@ class ScamperTracelb:
     def is_tcp(self) -> bool: ...
     def is_icmp(self) -> bool: ...
 
+class ScamperUdpprobeStop(enum.IntEnum):
+    NoReason = cast(int, ...)
+    Completed = cast(int, ...)
+    Halted = cast(int, ...)
+    Error = cast(int, ...)
+
 class ScamperUdpprobeReply:
     def __init__(self, *args: object, **kwargs: object) -> None: ...
 
@@ -1501,6 +1589,15 @@ class ScamperUdpprobe:
     def start(self) -> datetime.datetime: ...
 
     def to_json(self) -> Optional[str]: ...
+
+    @property
+    def errmsg(self) -> Optional[str]: ...
+
+    @property
+    def stop_reason(self) -> ScamperUdpprobeStop: ...
+
+    @property
+    def stop_reason_str(self) -> str: ...
 
     @property
     def src(self) -> Optional[ScamperAddr]: ...

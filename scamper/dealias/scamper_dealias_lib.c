@@ -1,7 +1,7 @@
 /*
  * scamper_dealias_lib.c
  *
- * $Id: scamper_dealias_lib.c,v 1.23 2025/02/11 14:31:43 mjl Exp $
+ * $Id: scamper_dealias_lib.c,v 1.25 2025/10/19 19:23:21 mjl Exp $
  *
  * Copyright (C) 2023-2025 Matthew Luckie
  * Author: Matthew Luckie
@@ -56,6 +56,11 @@ const struct timeval *
 scamper_dealias_start_get(const scamper_dealias_t *dealias)
 {
   return &dealias->start;
+}
+
+const char *scamper_dealias_errmsg_get(const scamper_dealias_t *dealias)
+{
+  return dealias->errmsg;
 }
 
 uint8_t scamper_dealias_method_get(const scamper_dealias_t *dealias)
@@ -871,6 +876,11 @@ int scamper_dealias_reply_is_icmp_unreach(const scamper_dealias_reply_t *reply)
 int scamper_dealias_reply_is_icmp_ttl_exp(const scamper_dealias_reply_t *reply)
 {
   return SCAMPER_DEALIAS_REPLY_IS_ICMP_TTL_EXP(reply);
+}
+
+int scamper_dealias_reply_is_icmp_echo_reply(const scamper_dealias_reply_t *reply)
+{
+  return SCAMPER_DEALIAS_REPLY_IS_ICMP_ECHO_REPLY(reply);
 }
 
 int scamper_dealias_reply_is_tcp(const scamper_dealias_reply_t *reply)

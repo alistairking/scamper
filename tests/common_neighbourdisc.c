@@ -1,7 +1,7 @@
 /*
  * common_host : common functions for unit testing neighbourdisc
  *
- * $Id: common_neighbourdisc.c,v 1.1 2025/06/29 21:52:12 mjl Exp $
+ * $Id: common_neighbourdisc.c,v 1.3 2025/10/19 20:49:19 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -87,6 +87,7 @@ int neighbourdisc_ok(const scamper_neighbourdisc_t *in,
      in->userid != out->userid ||
      timeval_cmp(&in->start, &out->start) != 0 ||
      str_ok(in->ifname, out->ifname) != 0 ||
+     str_ok(in->errmsg, out->errmsg) != 0 ||
      in->method != out->method ||
      in->flags != out->flags ||
      timeval_cmp(&in->wait_timeout, &out->wait_timeout) != 0 ||
@@ -107,7 +108,12 @@ int neighbourdisc_ok(const scamper_neighbourdisc_t *in,
   return 0;
 }
 
-static scamper_neighbourdisc_t *nd_arp(void)
+/*
+ * nd_1:
+ *
+ * ARP
+ */
+static scamper_neighbourdisc_t *nd_1(void)
 {
   uint8_t src_mac[6] = {0x00, 0x00, 0x5e, 0x00, 0x53, 0x99};
   uint8_t dst_mac[6] = {0x00, 0x00, 0x5e, 0x00, 0x53, 0x26};
@@ -153,8 +159,36 @@ static scamper_neighbourdisc_t *nd_arp(void)
   return NULL;
 }
 
+static scamper_neighbourdisc_t *nd_2(void)
+{
+  scamper_neighbourdisc_t *nd = NULL;
+
+  if((nd = scamper_neighbourdisc_alloc()) == NULL ||
+     (nd->ifname = strdup("em0")) == NULL ||
+     (nd->src_ip = scamper_addr_fromstr_ipv4("192.0.2.1")) == NULL ||
+     (nd->dst_ip = scamper_addr_fromstr_ipv4("192.0.2.2")) == NULL ||
+     (nd->errmsg = strdup("hello world")) == NULL)
+    goto err;
+
+  nd->userid = 65;
+  nd->start.tv_sec         = 1724828853;
+  nd->start.tv_usec        = 123456;
+  nd->method               = SCAMPER_NEIGHBOURDISC_METHOD_ARP;
+  nd->flags                = SCAMPER_NEIGHBOURDISC_FLAG_FIRSTRESPONSE;
+  nd->wait_timeout.tv_sec  = 1;
+  nd->wait_timeout.tv_usec = 0;
+  nd->attempts             = 1;
+
+  return nd;
+
+ err:
+  if(nd != NULL) scamper_neighbourdisc_free(nd);
+  return NULL;
+}
+
 static scamper_neighbourdisc_makefunc_t makers[] = {
-  nd_arp,
+  nd_1,
+  nd_2,
 };
 
 scamper_neighbourdisc_t *neighbourdisc_makers(size_t i)

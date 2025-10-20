@@ -1,7 +1,7 @@
 /*
  * scamper_host_lib.c
  *
- * $Id: scamper_host_lib.c,v 1.13 2025/02/23 05:38:15 mjl Exp $
+ * $Id: scamper_host_lib.c,v 1.14 2025/10/19 19:23:21 mjl Exp $
  *
  * Copyright (C) 2023-2025 Matthew Luckie
  *
@@ -103,6 +103,11 @@ uint8_t scamper_host_qcount_get(const scamper_host_t *host)
 const char *scamper_host_ecs_get(const scamper_host_t *host)
 {
   return host->ecs;
+}
+
+const char *scamper_host_errmsg_get(const scamper_host_t *host)
+{
+  return host->errmsg;
 }
 
 scamper_host_query_t *scamper_host_query_get(const scamper_host_t *host, uint8_t i)

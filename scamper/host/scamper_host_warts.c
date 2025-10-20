@@ -5,7 +5,7 @@
  *
  * Author: Matthew Luckie
  *
- * $Id: scamper_host_warts.c,v 1.24 2025/02/23 05:38:15 mjl Exp $
+ * $Id: scamper_host_warts.c,v 1.25 2025/10/19 02:17:23 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -54,6 +54,7 @@
 #define WARTS_HOST_QNAME           13
 #define WARTS_HOST_QCOUNT          14
 #define WARTS_HOST_ECS             15
+#define WARTS_HOST_ERRMSG          16
 
 static const warts_var_t host_vars[] =
 {
@@ -72,6 +73,7 @@ static const warts_var_t host_vars[] =
   {WARTS_HOST_QNAME,          -1},
   {WARTS_HOST_QCOUNT,          1},
   {WARTS_HOST_ECS,            -1},
+  {WARTS_HOST_ERRMSG,         -1},
 };
 #define host_vars_mfb WARTS_VAR_MFB(host_vars)
 
@@ -1274,7 +1276,8 @@ static int warts_host_params(const scamper_host_t *host,
 	 (var->id == WARTS_HOST_QCLASS  && host->qclass == 0) ||
 	 (var->id == WARTS_HOST_QNAME   && host->qname == NULL) ||
 	 (var->id == WARTS_HOST_QCOUNT  && host->qcount == 0) ||
-	 (var->id == WARTS_HOST_ECS     && host->ecs == NULL))
+	 (var->id == WARTS_HOST_ECS     && host->ecs == NULL) ||
+	 (var->id == WARTS_HOST_ERRMSG  && host->errmsg == NULL))
 	continue;
 
       /* Set the flag for the rest of the variables */
@@ -1299,6 +1302,11 @@ static int warts_host_params(const scamper_host_t *host,
       else if(var->id == WARTS_HOST_ECS)
 	{
 	  if(warts_str_size(host->ecs, params_len) != 0)
+	    return -1;
+	}
+      else if(var->id == WARTS_HOST_ERRMSG)
+	{
+	  if(warts_str_size(host->errmsg, params_len) != 0)
 	    return -1;
 	}
       else
@@ -1334,6 +1342,7 @@ static int warts_host_params_read(scamper_host_t *host,
     {&host->qname,        (wpr_t)extract_string,  NULL},
     {&host->qcount,       (wpr_t)extract_byte,    NULL},
     {&host->ecs,          (wpr_t)extract_string,  NULL},
+    {&host->errmsg,       (wpr_t)extract_string,  NULL},
   };
   const int handler_cnt = sizeof(handlers) / sizeof(warts_param_reader_t);
   int rc;
@@ -1375,6 +1384,7 @@ static int warts_host_params_write(const scamper_host_t *host,
     {host->qname,         (wpw_t)insert_string,   NULL},
     {&host->qcount,       (wpw_t)insert_byte,     NULL},
     {host->ecs,           (wpw_t)insert_string,   NULL},
+    {host->errmsg,        (wpw_t)insert_string,   NULL},
   };
   const int handler_cnt = sizeof(handlers)/sizeof(warts_param_writer_t);
 

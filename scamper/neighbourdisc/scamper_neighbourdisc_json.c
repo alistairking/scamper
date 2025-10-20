@@ -1,7 +1,7 @@
 /*
  * scamper_neighbourdisc_json.c
  *
- * $Id: scamper_neighbourdisc_json.c,v 1.1 2025/06/24 07:05:29 mjl Exp $
+ * $Id: scamper_neighbourdisc_json.c,v 1.2 2025/10/15 23:58:44 mjl Exp $
  *
  * Copyright (C) 2025 Matthew Luckie
  *
@@ -38,7 +38,7 @@
 
 static char *header_tostr(const scamper_neighbourdisc_t *nd)
 {
-  char buf[1024], tmp[256];
+  char buf[1024], tmp[512];
   size_t off = 0;
   int c = 0;
 
@@ -81,6 +81,10 @@ static char *header_tostr(const scamper_neighbourdisc_t *nd)
   string_concat_u32(buf, sizeof(buf), &off, ", \"usec\":",
 		    (uint32_t)nd->wait_timeout.tv_usec);
   string_concatc(buf, sizeof(buf), &off, '}');
+
+  if(nd->errmsg != NULL)
+    string_concat3(buf, sizeof(buf), &off, ",\"errmsg\":\"",
+		   json_esc(nd->errmsg, tmp, sizeof(tmp)), "\"");
 
   if(nd->flags != 0)
     {

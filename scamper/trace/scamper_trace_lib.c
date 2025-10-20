@@ -1,7 +1,7 @@
 /*
  * scamper_trace_lib.c
  *
- * $Id: scamper_trace_lib.c,v 1.20 2025/05/27 10:03:08 mjl Exp $
+ * $Id: scamper_trace_lib.c,v 1.21 2025/10/19 19:23:21 mjl Exp $
  *
  * Copyright (C) 2023-2025 Matthew Luckie
  *
@@ -436,6 +436,11 @@ uint8_t scamper_trace_stop_reason_get(const scamper_trace_t *trace)
 uint8_t scamper_trace_stop_data_get(const scamper_trace_t *trace)
 {
   return trace->stop_data;
+}
+
+const char *scamper_trace_errmsg_get(const scamper_trace_t *trace)
+{
+  return trace->errmsg;
 }
 
 uint16_t scamper_trace_hop_count_get(const scamper_trace_t *trace)

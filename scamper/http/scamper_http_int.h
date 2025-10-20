@@ -1,7 +1,7 @@
 /*
  * scamper_http_int.h
  *
- * $Id: scamper_http_int.h,v 1.6 2024/01/03 03:51:42 mjl Exp $
+ * $Id: scamper_http_int.h,v 1.7 2025/10/12 21:21:29 mjl Exp $
  *
  * Copyright (C) 2023-2024 The Regents of the University of California
  *
@@ -70,15 +70,16 @@ struct scamper_http
   scamper_addr_t            *dst;
   uint16_t                   sport;
   uint16_t                   dport;
+  uint32_t                   flags;
   struct timeval             start;
   struct timeval             hsrtt;   /* rtt of syn -> syn/ack */
-  struct timeval             maxtime; /* total length of time to let http run */
-  uint32_t                   flags;
+  struct timeval             maxtime; /* length of time to let http run */
+  char                      *host;    /* domain name portion of host */
+  char                      *file;    /* resource requested */
 
-  uint8_t                    stop; /* stop reason */
-  uint8_t                    type; /* http or https */
-  char                      *host; /* domain name portion of host */
-  char                      *file; /* resource requested */
+  char                      *errmsg;
+  uint8_t                    stop;    /* stop reason */
+  uint8_t                    type;    /* http or https */
 
   /* headers supplied by the user to set in the request */
   char                     **headers;
