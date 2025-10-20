@@ -4,7 +4,7 @@
  * Copyright (c) 2023-2025 Matthew Luckie
  * Author: Matthew Luckie
  *
- * $Id: scamper_host_json.c,v 1.20 2025/07/30 07:09:30 mjl Exp $
+ * $Id: scamper_host_json.c,v 1.21 2025/10/15 23:58:44 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -56,6 +56,9 @@ static char *header_tostr(const scamper_host_t *host)
   string_concat_u32(buf, sizeof(buf), &off, ",\"usec\":",
 		    (uint32_t)host->start.tv_usec);
   string_concatc(buf, sizeof(buf), &off, '}');
+  if(host->errmsg != NULL)
+    string_concat3(buf, sizeof(buf), &off, ",\"errmsg\":\"",
+		   json_esc(host->errmsg, tmp, sizeof(tmp)), "\"");
 
   if(host->flags != 0)
     {

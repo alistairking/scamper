@@ -1,7 +1,7 @@
 /*
  * scamper_tracelb.h
  *
- * $Id: scamper_tracelb.h,v 1.84 2025/05/18 02:05:23 mjl Exp $
+ * $Id: scamper_tracelb.h,v 1.85 2025/10/19 19:23:21 mjl Exp $
  *
  * Copyright (C) 2008-2009 The University of Waikato
  * Copyright (C) 2018-2025 Matthew Luckie
@@ -63,6 +63,7 @@ uint8_t scamper_tracelb_confidence_get(const scamper_tracelb_t *trace);
 uint8_t scamper_tracelb_tos_get(const scamper_tracelb_t *trace);
 uint8_t scamper_tracelb_gaplimit_get(const scamper_tracelb_t *trace);
 uint32_t scamper_tracelb_flags_get(const scamper_tracelb_t *trace);
+const char *scamper_tracelb_errmsg_get(const scamper_tracelb_t *trace);
 uint32_t scamper_tracelb_probec_max_get(const scamper_tracelb_t *trace);
 uint16_t scamper_tracelb_nodec_get(const scamper_tracelb_t *trace);
 scamper_tracelb_node_t *scamper_tracelb_node_get(const scamper_tracelb_t *trace,

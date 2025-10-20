@@ -1,7 +1,7 @@
 /*
  * scamper_neighbourdisc.c
  *
- * $Id: scamper_neighbourdisc.c,v 1.11 2025/06/24 07:05:29 mjl Exp $
+ * $Id: scamper_neighbourdisc.c,v 1.12 2025/10/09 22:35:42 mjl Exp $
  *
  * Copyright (C) 2009-2023 Matthew Luckie
  *
@@ -170,6 +170,7 @@ void scamper_neighbourdisc_free(scamper_neighbourdisc_t *nd)
       free(nd->probes);
     }
 
+  if(nd->errmsg != NULL) free(nd->errmsg);
   if(nd->ifname != NULL) free(nd->ifname);
   if(nd->dst_mac != NULL) scamper_addr_free(nd->dst_mac);
   if(nd->dst_ip != NULL) scamper_addr_free(nd->dst_ip);

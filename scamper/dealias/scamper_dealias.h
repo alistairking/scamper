@@ -1,7 +1,7 @@
 /*
  * scamper_dealias.h
  *
- * $Id: scamper_dealias.h,v 1.72 2025/05/17 06:58:48 mjl Exp $
+ * $Id: scamper_dealias.h,v 1.75 2025/10/19 19:23:21 mjl Exp $
  *
  * Copyright (C) 2008-2011 The University of Waikato
  * Copyright (C) 2012-2013 The Regents of the University of California
@@ -68,6 +68,7 @@ typedef struct scamper_dealias_reply scamper_dealias_reply_t;
 #define SCAMPER_DEALIAS_RESULT_NOTALIASES 2
 #define SCAMPER_DEALIAS_RESULT_HALTED     3
 #define SCAMPER_DEALIAS_RESULT_IPIDECHO   4
+#define SCAMPER_DEALIAS_RESULT_ERROR      5
 
 #define SCAMPER_DEALIAS_ALLY_FLAG_NOBS        1
 #define SCAMPER_DEALIAS_RADARGUN_FLAG_SHUFFLE 1
@@ -84,6 +85,7 @@ scamper_list_t *scamper_dealias_list_get(const scamper_dealias_t *dealias);
 scamper_cycle_t *scamper_dealias_cycle_get(const scamper_dealias_t *dealias);
 uint32_t scamper_dealias_userid_get(const scamper_dealias_t *dealias);
 const struct timeval *scamper_dealias_start_get(const scamper_dealias_t *dealias);
+const char *scamper_dealias_errmsg_get(const scamper_dealias_t *dealias);
 uint32_t scamper_dealias_probec_get(const scamper_dealias_t *dealias);
 scamper_dealias_probe_t *scamper_dealias_probe_get(const scamper_dealias_t *dealias, uint32_t i);
 
@@ -250,6 +252,7 @@ uint32_t scamper_dealias_reply_ipid32_get(const scamper_dealias_reply_t *reply);
 int scamper_dealias_reply_is_icmp_unreach(const scamper_dealias_reply_t *reply);
 int scamper_dealias_reply_is_icmp_unreach_port(const scamper_dealias_reply_t *reply);
 int scamper_dealias_reply_is_icmp_ttl_exp(const scamper_dealias_reply_t *reply);
+int scamper_dealias_reply_is_icmp_echo_reply(const scamper_dealias_reply_t *reply);
 int scamper_dealias_reply_is_tcp(const scamper_dealias_reply_t *reply);
 uint8_t scamper_dealias_reply_tcp_flags_get(const scamper_dealias_reply_t *reply);
 int scamper_dealias_reply_from_target(const scamper_dealias_probe_t *probe,

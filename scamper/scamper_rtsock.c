@@ -1,7 +1,7 @@
 /*
  * scamper_rtsock: code to deal with a route socket or equivalent
  *
- * $Id: scamper_rtsock.c,v 1.108 2025/06/10 22:33:46 mjl Exp $
+ * $Id: scamper_rtsock.c,v 1.114 2025/10/20 01:22:20 mjl Exp $
  *
  *          Matthew Luckie
  *
@@ -102,6 +102,7 @@ struct rtmsg
 #endif
 
 #include "scamper.h"
+#include "scamper_debug.h"
 #include "scamper_addr.h"
 #include "scamper_addr_int.h"
 #include "scamper_list.h"
@@ -109,7 +110,6 @@ struct rtmsg
 #include "scamper_rtsock.h"
 #include "scamper_priv.h"
 #include "scamper_osinfo.h"
-#include "scamper_debug.h"
 #include "utils.h"
 #include "mjl_list.h"
 
@@ -134,15 +134,14 @@ static dlist_t *pairs = NULL; /* list of addresses queried with their seq */
 static rtsock_pair_t *rtsock_pair_alloc(scamper_route_t *route, int seq_in)
 {
   rtsock_pair_t *pair;
-  if((pair = malloc_zero(sizeof(rtsock_pair_t))) == NULL)
-    return NULL;
-  pair->route = route;
-  pair->seq = seq_in;
-  if((pair->node = dlist_head_push(pairs, pair)) == NULL)
+  if((pair = malloc_zero(sizeof(rtsock_pair_t))) == NULL ||
+     (pair->node = dlist_head_push(pairs, pair)) == NULL)
     {
-      free(pair);
+      if(pair != NULL) free(pair);
       return NULL;
     }
+  pair->route = route;
+  pair->seq = seq_in;
   route->internal = pair;
   return pair;
 }
@@ -218,30 +217,39 @@ size_t scamper_rtsock_roundup(size_t len)
  *
  * route(4) gives an overview of the functions called in here
  */
-static int scamper_rtsock_getifindex(int fd, scamper_addr_t *dst)
+static int scamper_rtsock_getifindex(int fd, scamper_addr_t *dst,
+				     scamper_err_t *error)
 {
   struct sockaddr_storage sas;
   struct sockaddr_dl *sdl;
   struct rt_msghdr *rtm;
   uint8_t buf[1024];
-  size_t len;
+  size_t len, slen;
   ssize_t ss;
-  int slen;
 
   if(SCAMPER_ADDR_TYPE_IS_IPV4(dst))
-    sockaddr_compose((struct sockaddr *)&sas, AF_INET, dst->addr, 0);
+    {
+      sockaddr_compose((struct sockaddr *)&sas, AF_INET, dst->addr, 0);
+      slen = sizeof(struct sockaddr_in);
+    }
   else if(SCAMPER_ADDR_TYPE_IS_IPV6(dst))
-    sockaddr_compose((struct sockaddr *)&sas, AF_INET6, dst->addr, 0);
+    {
+      sockaddr_compose((struct sockaddr *)&sas, AF_INET6, dst->addr, 0);
+      slen = sizeof(struct sockaddr_in6);
+    }
   else
-    return -1;
-
-  if((slen = sockaddr_len((struct sockaddr *)&sas)) <= 0)
-    return -1;
+    {
+      scamper_err_make(error, 0, "rtsock_getifindex: dst not IP address");
+      return -1;
+    }
 
   len = sizeof(struct rt_msghdr) + scamper_rtsock_roundup(slen) +
     scamper_rtsock_roundup(sizeof(struct sockaddr_dl));
   if(len > sizeof(buf))
-    return -1;
+    {
+      scamper_err_make(error, 0, "rtsock_getifindex: buf not large enough");
+      return -1;
+    }
 
   memset(buf, 0, len);
   rtm = (struct rt_msghdr *)buf;
@@ -251,7 +259,7 @@ static int scamper_rtsock_getifindex(int fd, scamper_addr_t *dst)
   rtm->rtm_addrs   = RTA_DST | RTA_IFP;
   rtm->rtm_pid     = pid;
   rtm->rtm_seq     = seq;
-  memcpy(buf + sizeof(struct rt_msghdr), &sas, (size_t)slen);
+  memcpy(buf + sizeof(struct rt_msghdr), &sas, slen);
 
   sdl = (struct sockaddr_dl *)(buf + sizeof(struct rt_msghdr) +
 			       scamper_rtsock_roundup(slen));
@@ -261,9 +269,16 @@ static int scamper_rtsock_getifindex(int fd, scamper_addr_t *dst)
   sdl->sdl_len    = sizeof(struct sockaddr_dl);
 #endif
 
-  if((ss = write(fd, buf, len)) < 0 || (size_t)ss != len)
+  ss = write(fd, buf, len);
+  if(ss < 0)
     {
-      printerror(__func__, "could not write routing socket");
+      scamper_err_make(error,errno,"rtsock_getifindex: could not write socket");
+      return -1;
+    }
+  else if((size_t)ss != len)
+    {
+      scamper_err_make(error, 0, "rtsock_getifindex: wrote %d of %d bytes",
+		       (int)ss, (int)len);
       return -1;
     }
 
@@ -286,7 +301,8 @@ static int scamper_rtsock_getifindex(int fd, scamper_addr_t *dst)
  * documentation in those man pages is pretty crap.
  * you'd be better off studying netlink.h and rtnetlink.h
  */
-static int scamper_rtsock_getifindex(int fd, scamper_addr_t *dst)
+static int scamper_rtsock_getifindex(int fd, scamper_addr_t *dst,
+				     scamper_err_t *error)
 {
   struct nlmsghdr *nlmsg;
   struct rtmsg    *rtmsg;
@@ -294,6 +310,7 @@ static int scamper_rtsock_getifindex(int fd, scamper_addr_t *dst)
   int              dst_len;
   uint8_t          buf[1024];
   int              af;
+  ssize_t          ss;
 
   if(SCAMPER_ADDR_TYPE_IS_IPV4(dst))
     {
@@ -307,6 +324,7 @@ static int scamper_rtsock_getifindex(int fd, scamper_addr_t *dst)
     }
   else
     {
+      scamper_err_make(error, 0, "rtsock_getifindex: dst not IP address");
       return -1;
     }
 
@@ -338,9 +356,16 @@ static int scamper_rtsock_getifindex(int fd, scamper_addr_t *dst)
   memcpy(RTA_DATA(rta), dst->addr, dst_len);
 
   /* send the request */
-  if(send(fd, buf, nlmsg->nlmsg_len, 0) != nlmsg->nlmsg_len)
+  ss = send(fd, buf, nlmsg->nlmsg_len, 0);
+  if(ss < 0)
     {
-      printerror(__func__, "could not send");
+      scamper_err_make(error,errno,"rtsock_getifindex: could not write socket");
+      return -1;
+    }
+  else if((size_t)ss != nlmsg->nlmsg_len)
+    {
+      scamper_err_make(error, 0, "rtsock_getifindex: wrote %d of %d bytes",
+		       (int)ss, (int)nlmsg->nlmsg_len);
       return -1;
     }
 
@@ -348,21 +373,22 @@ static int scamper_rtsock_getifindex(int fd, scamper_addr_t *dst)
 }
 #endif
 
-int scamper_rtsock_getroute(scamper_fd_t *fdn, scamper_route_t *route)
+int scamper_rtsock_getroute(scamper_fd_t *fdn, scamper_route_t *route,
+			    scamper_err_t *error)
 {
-  int fd;
-
-  /* get the route socket fd */
-  if((fd = scamper_fd_fd_get(fdn)) == -1)
-    return -1;
+  int fd = scamper_fd_fd_get(fdn);
 
   /* ask the question */
-  if(scamper_rtsock_getifindex(fd, route->dst) != 0)
+  if(scamper_rtsock_getifindex(fd, route->dst, error) != 0)
     return -1;
 
   /* keep track of the question */
   if(rtsock_pair_alloc(route, seq++) == NULL)
-    return -1;
+    {
+      scamper_err_make(error, errno, "rtsock_getroute: could not alloc pair");
+      return -1;
+    }
+
   return 0;
 }
 
@@ -424,6 +450,9 @@ static void rtsock_parsemsg(uint8_t *buf, size_t len)
   scamper_addr_t  *gw = NULL;
   rtsock_pair_t   *pair = NULL;
   scamper_route_t *route = NULL;
+  scamper_err_t    error;
+
+  SCAMPER_ERR_INIT(&error);
 
   if(len < sizeof(struct nlmsghdr))
     {
@@ -474,44 +503,149 @@ static void rtsock_parsemsg(uint8_t *buf, size_t len)
 	  else if(rtmsg->rtm_family == AF_INET6)
 	    gw = scamper_addrcache_get_ipv6(addrcache, gwa);
 	  else
-	    route->error = EINVAL;
+	    {
+	      scamper_err_make(&error, 0, "rtsock_parsemsg: gwa not IP");
+	      goto err;
+	    }
+	  if(gw == NULL)
+	    {
+	      scamper_err_make(&error, errno,
+			       "rtsock_parsemsg: could not get gw");
+	      goto err;
+	    }
 	}
+
+      route->gw = gw;
+      route->ifindex = ifindex;
+      route->cb(route, NULL);
     }
   else if(nlmsg->nlmsg_type == NLMSG_ERROR)
     {
       nlerr = NLMSG_DATA(nlmsg);
-      route->error = nlerr->error;
+      scamper_err_make(&error, nlerr->error, "rtsock_parsemsg: got nlerr");
+      goto err;
     }
-  else goto skip;
-
-  route->gw = gw;
-  route->ifindex = ifindex;
-  route->cb(route);
 
   return;
 
- skip:
-  if(route != NULL) scamper_route_free(route);
+ err:
+  route->cb(route, &error);
   return;
 }
 #endif
 
 #if defined(HAVE_BSD_ROUTE_SOCKET)
-static void rtsock_parsemsg(uint8_t *buf, size_t len)
+static void rtsock_parsemsg_route(uint8_t *buf, scamper_route_t *route)
 {
-  struct rt_msghdr   *rtm;
+  struct rt_msghdr   *rtm = (struct rt_msghdr *)buf;
   struct sockaddr    *addrs[RTAX_MAX];
   struct sockaddr_dl *sdl;
   struct sockaddr    *sa;
   struct in6_addr    *ip6;
-  size_t              off, x;
-  int                 i, tmp, ifindex;
-  void               *addr;
-  scamper_addr_t     *gw;
-  rtsock_pair_t      *pair;
-  scamper_route_t    *route;
+  size_t              off;
+  int                 i, tmp, ifindex = -1;
+  void               *addr = NULL;
+  scamper_addr_t     *gw = NULL;
+  scamper_err_t       error;
 
-  x = 0;
+  SCAMPER_ERR_INIT(&error);
+
+  if(rtm->rtm_errno != 0)
+    {
+      scamper_err_make(&error, rtm->rtm_errno, "rtsock_parsemsg: got err");
+      goto err;
+    }
+
+  off = sizeof(struct rt_msghdr);
+  memset(addrs, 0, sizeof(addrs));
+  for(i=0; i<RTAX_MAX; i++)
+    {
+      if(rtm->rtm_addrs & (1 << i))
+	{
+	  addrs[i] = sa = (struct sockaddr *)(buf + off);
+	  if((tmp = sockaddr_len(sa)) <= 0)
+	    {
+	      scamper_err_make(&error, 0, "rtsock_parsemsg: unhandled af %d",
+			       sa->sa_family);
+	      goto err;
+	    }
+	  off += scamper_rtsock_roundup(tmp);
+	}
+    }
+
+  if((sdl = (struct sockaddr_dl *)addrs[RTAX_IFP]) != NULL)
+    {
+      if(sdl->sdl_family != AF_LINK)
+	{
+	  scamper_err_make(&error, 0, "rtsock_parsemsg: sdl_family %d",
+			   sdl->sdl_family);
+	  goto err;
+	}
+      ifindex = sdl->sdl_index;
+    }
+
+  if((sa = addrs[RTAX_GATEWAY]) != NULL)
+    {
+      if(sa->sa_family == AF_INET)
+	{
+	  i = SCAMPER_ADDR_TYPE_IPV4;
+	  addr = &((struct sockaddr_in *)sa)->sin_addr;
+	}
+      else if(sa->sa_family == AF_INET6)
+	{
+	  /*
+	   * check to see if the gw address is a link local address.  if
+	   * it is, then drop the embedded index from the gateway address
+	   */
+	  ip6 = &((struct sockaddr_in6 *)sa)->sin6_addr;
+	  if(IN6_IS_ADDR_LINKLOCAL(ip6))
+	    {
+	      ip6->s6_addr[2] = 0;
+	      ip6->s6_addr[3] = 0;
+	    }
+	  i = SCAMPER_ADDR_TYPE_IPV6;
+	  addr = ip6;
+	}
+      else if(sa->sa_family == AF_LINK)
+	{
+	  sdl = (struct sockaddr_dl *)sa;
+	  if(sdl->sdl_type == IFT_ETHER && sdl->sdl_alen == ETHER_ADDR_LEN)
+	    {
+	      i = SCAMPER_ADDR_TYPE_ETHERNET;
+	      addr = sdl->sdl_data + sdl->sdl_nlen;
+	    }
+	}
+
+      /*
+       * if we have got a gateway address that we know what to do with,
+       * then store it here.
+       */
+      if(addr != NULL &&
+	 (gw = scamper_addrcache_get(addrcache, i, addr)) == NULL)
+	{
+	  scamper_err_make(&error, errno,
+			   "rtsock_parsemsg: could not get gw");	  
+	  goto err;
+	}
+    }
+
+  route->gw      = gw;
+  route->ifindex = ifindex;
+  route->cb(route, NULL);
+  return;
+
+ err:
+  route->cb(route, &error);
+  return;
+}
+
+static void rtsock_parsemsg(uint8_t *buf, size_t len)
+{
+  struct rt_msghdr *rtm;
+  scamper_route_t *route;
+  rtsock_pair_t *pair;
+  size_t x = 0;
+
   while(x < len)
     {
       if(len - x < sizeof(struct rt_msghdr))
@@ -531,101 +665,13 @@ static void rtsock_parsemsg(uint8_t *buf, size_t len)
 	 rtm->rtm_type != RTM_GET ||
 	 (rtm->rtm_flags & RTF_DONE) == 0 ||
 	 (pair = rtsock_pair_get(rtm->rtm_seq)) == NULL)
-	{
-	  x += rtm->rtm_msglen;
-	  continue;
-	}
+	goto next;
 
       route = pair->route;
       rtsock_pair_free(pair);
+      rtsock_parsemsg_route(buf + x, route);
 
-      ifindex = -1;
-      addr = NULL;
-      gw = NULL;
-
-      if(rtm->rtm_errno != 0)
-	{
-	  route->error = rtm->rtm_errno;
-	  goto done;
-	}
-
-      off = sizeof(struct rt_msghdr);
-      memset(addrs, 0, sizeof(addrs));
-      for(i=0; i<RTAX_MAX; i++)
-	{
-	  if(rtm->rtm_addrs & (1 << i))
-	    {
-	      addrs[i] = sa = (struct sockaddr *)(buf + x + off);
-	      if((tmp = sockaddr_len(sa)) <= 0)
-		{
-		  printerror_msg(__func__, "unhandled af %d", sa->sa_family);
-		  route->error = EINVAL;
-		  goto done;
-		}
-	      off += scamper_rtsock_roundup(tmp);
-	    }
-	}
-
-      if((sdl = (struct sockaddr_dl *)addrs[RTAX_IFP]) != NULL)
-	{
-	  if(sdl->sdl_family != AF_LINK)
-	    {
-	      printerror_msg(__func__, "sdl_family %d", sdl->sdl_family);
-	      route->error = EINVAL;
-	      goto done;
-	    }
-	  ifindex = sdl->sdl_index;
-	}
-
-      if((sa = addrs[RTAX_GATEWAY]) != NULL)
-	{
-	  if(sa->sa_family == AF_INET)
-	    {
-	      i = SCAMPER_ADDR_TYPE_IPV4;
-	      addr = &((struct sockaddr_in *)sa)->sin_addr;
-	    }
-	  else if(sa->sa_family == AF_INET6)
-	    {
-	      /*
-	       * check to see if the gw address is a link local address.  if
-	       * it is, then drop the embedded index from the gateway address
-	       */
-	      ip6 = &((struct sockaddr_in6 *)sa)->sin6_addr;
-	      if(IN6_IS_ADDR_LINKLOCAL(ip6))
-		{
-		  ip6->s6_addr[2] = 0;
-		  ip6->s6_addr[3] = 0;
-		}
-	      i = SCAMPER_ADDR_TYPE_IPV6;
-	      addr = ip6;
-	    }
-	  else if(sa->sa_family == AF_LINK)
-	    {
-	      sdl = (struct sockaddr_dl *)sa;
-	      if(sdl->sdl_type == IFT_ETHER && sdl->sdl_alen == ETHER_ADDR_LEN)
-		{
-		  i = SCAMPER_ADDR_TYPE_ETHERNET;
-		  addr = sdl->sdl_data + sdl->sdl_nlen;
-		}
-	    }
-
-	  /*
-	   * if we have got a gateway address that we know what to do with,
-	   * then store it here.
-	   */
-	  if(addr != NULL &&
-	     (gw = scamper_addrcache_get(addrcache, i, addr)) == NULL)
-	    {
-	      scamper_debug(__func__, "could not get rtsmsg->rr.gw");
-	      route->error = EINVAL;
-	      goto done;
-	    }
-	}
-
-    done:
-      route->gw      = gw;
-      route->ifindex = ifindex;
-      route->cb(route);
+    next:
       x += rtm->rtm_msglen;
     }
 
@@ -694,7 +740,8 @@ int scamper_rtsock_open()
 #endif
 
 #ifdef _WIN32 /* windows does not have a routing socket */
-static int scamper_rtsock_getroute4(scamper_route_t *route)
+static int scamper_rtsock_getroute4(scamper_route_t *route,
+				    scamper_err_t *error)
 {
   struct in_addr *in = route->dst->addr;
   MIB_IPFORWARDROW fw;
@@ -702,6 +749,7 @@ static int scamper_rtsock_getroute4(scamper_route_t *route)
 
   if((dw = GetBestRoute(in->s_addr, 0, &fw)) != NO_ERROR)
     {
+      scamper_err_make(error, 0, "rtsock_getroute4: could not get route");
       route->error = dw;
       return -1;
     }
@@ -714,6 +762,7 @@ static int scamper_rtsock_getroute4(scamper_route_t *route)
       if((route->gw = scamper_addrcache_get_ipv4(addrcache, &dw)) == NULL)
 	{
 	  route->error = errno;
+	  scamper_err_make(error, errno, "rtsock_getroute4: could not get gw");
 	  return -1;
 	}
     }
@@ -721,16 +770,21 @@ static int scamper_rtsock_getroute4(scamper_route_t *route)
   return 0;
 }
 
-int scamper_rtsock_getroute(scamper_route_t *route)
+int scamper_rtsock_getroute(scamper_route_t *route, scamper_err_t *error)
 {
-  if(SCAMPER_ADDR_TYPE_IS_IPV4(route->dst) &&
-     scamper_rtsock_getroute4(route) == 0)
+  if(SCAMPER_ADDR_TYPE_IS_IPV4(route->dst))
     {
+      if(scamper_rtsock_getroute4(route, error) != 0)
+	return -1;
       route->cb(route);
-      return 0;
+    }
+  else
+    {
+      scamper_err_make(error, errno, "rtsock_getroute: not IPv4 dst");
+      return -1;
     }
 
-  return -1;
+  return 0;
 }
 #endif
 
@@ -751,7 +805,8 @@ void scamper_route_free(scamper_route_t *route)
 }
 
 scamper_route_t *scamper_route_alloc(scamper_addr_t *dst, void *param,
-				     void (*cb)(scamper_route_t *rt))
+				     void (*cb)(scamper_route_t *,
+						const scamper_err_t *))
 {
   scamper_route_t *route;
   if((route = malloc_zero(sizeof(scamper_route_t))) == NULL)

@@ -1,7 +1,7 @@
 /*
  * utils.c
  *
- * $Id: utils.c,v 1.277 2025/07/31 08:13:08 mjl Exp $
+ * $Id: utils.c,v 1.279 2025/10/13 00:31:12 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -2810,7 +2810,10 @@ int socket_sport(SOCKET fd, uint16_t *sport)
   else if(sa->sa_family == AF_INET6)
     *sport = ntohs(((struct sockaddr_in6 *)sa)->sin6_port);
   else
-    return -1;
+    {
+      errno = EINVAL;
+      return -1;
+    }
   return 0;
 }
 
@@ -2823,7 +2826,10 @@ char *strerror_wrap(char *errbuf, size_t errlen, const char *format, ...)
   va_start(ap, format);
   vsnprintf(message, sizeof(message), format, ap);
   va_end(ap);
-  snprintf(errbuf, errlen, "%s: %s", message, strerror(ecode));
+  if(ecode != 0)
+    snprintf(errbuf, errlen, "%s: %s", message, strerror(ecode));
+  else
+    snprintf(errbuf, errlen, "%s", message);
 
   return errbuf;
 }

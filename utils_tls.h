@@ -1,7 +1,7 @@
 /*
  * utils_tls : functions for TLS
  *
- * $Id: utils_tls.h,v 1.5 2024/08/19 02:59:36 mjl Exp $
+ * $Id: utils_tls.h,v 1.6 2025/08/18 21:35:35 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -26,6 +26,8 @@
 
 #ifndef __UTILS_TLS_H
 #define __UTILS_TLS_H
+
+char *tls_errstr(char *buf, size_t len);
 
 int tls_bio_alloc(SSL_CTX *ctx, SSL **ssl, BIO **rbio, BIO **wbio);
 void tls_bio_free(SSL *ssl, BIO *rbio, BIO *wbio);

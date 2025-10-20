@@ -2,11 +2,11 @@
  * scamper_tbit_text.c
  *
  * Copyright (C) 2009-2011 The University of Waikato
- * Copyright (C) 2021-2024 Matthew Luckie
+ * Copyright (C) 2021-2025 Matthew Luckie
  *
  * Authors: Ben Stasiewicz, Matthew Luckie
  *
- * $Id: scamper_tbit_text.c,v 1.25 2025/04/21 03:24:13 mjl Exp $
+ * $Id: scamper_tbit_text.c,v 1.26 2025/09/25 19:02:30 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -43,12 +43,11 @@ static uint32_t tbit_isnoff(uint32_t isn, uint32_t seq)
   return TCP_MAX_SEQNUM - isn + seq + 1;
 }
 
-int scamper_file_text_tbit_write(const scamper_file_t *sf,
-				 const scamper_tbit_t *tbit, void *p)
+char *scamper_tbit_totext(const scamper_tbit_t *tbit, size_t *len_out)
 {
   scamper_tbit_pkt_t *pkt;
   scamper_tbit_app_http_t *http;
-  char buf[131072], *str;
+  char buf[131072], *str, *dup = NULL;
   char src[64], dst[64], tmp[256], ipid[12], fstr[32], tfstr[32], sack[128];
   struct timeval diff;
   uint32_t i;
@@ -57,7 +56,6 @@ int scamper_file_text_tbit_write(const scamper_file_t *sf,
   uint8_t proto, flags, iphlen, tcphlen, mf, ecn, u8, *ptr;
   size_t soff = 0, toff;
   int frag;
-  int fd = scamper_file_getfd(sf);
 
   string_concaf(buf, sizeof(buf), &soff,
 		"tbit from %s to %s\n server-mss %d, result: %s\n",
@@ -285,6 +283,51 @@ int scamper_file_text_tbit_write(const scamper_file_t *sf,
       string_concatc(buf, sizeof(buf), &soff, '\n');
     }
 
-  write_wrap(fd, buf, NULL, soff);
-  return 0;
+  if((dup = memdup(buf, soff)) == NULL)
+    return NULL;
+
+  /* remove the trailing \n */
+  dup[soff-1] = '\0';
+
+  if(len_out != NULL)
+    *len_out = soff;
+  return dup;
+}
+
+int scamper_file_text_tbit_write(const scamper_file_t *sf,
+				 const scamper_tbit_t *tbit, void *p)
+{
+  size_t wc, len;
+  off_t off = 0;
+  char *str = NULL;
+  int fd, rc = -1;
+
+  /* get current position incase trunction is required */
+  fd = scamper_file_getfd(sf);
+  if(fd != STDOUT_FILENO && (off = lseek(fd, 0, SEEK_CUR)) == -1)
+    goto cleanup;
+
+  if((str = scamper_tbit_totext(tbit, &len)) == NULL)
+    goto cleanup;
+  str[len-1] = '\n';
+
+  /*
+   * try and write the string to disk.  if it fails, then truncate the
+   * write and fail
+   */
+  if(write_wrap(fd, str, &wc, len) != 0)
+    {
+      if(fd != STDOUT_FILENO)
+	{
+	  if(ftruncate(fd, off) != 0)
+	    goto cleanup;
+	}
+      goto cleanup;
+    }
+
+  rc = 0;
+
+ cleanup:
+  if(str != NULL) free(str);
+  return rc;
 }

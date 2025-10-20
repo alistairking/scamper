@@ -1,7 +1,7 @@
 /*
  * scamper_do_dealias.c
  *
- * $Id: scamper_dealias_do.c,v 1.210 2025/08/04 00:00:27 mjl Exp $
+ * $Id: scamper_dealias_do.c,v 1.214 2025/10/20 00:46:53 mjl Exp $
  *
  * Copyright (C) 2008-2011 The University of Waikato
  * Copyright (C) 2012-2013 Matthew Luckie
@@ -276,8 +276,29 @@ static void dealias_queue(scamper_task_t *task)
   return;
 }
 
-static void dealias_handleerror(scamper_task_t *task, int error)
+static void dealias_stop_err(scamper_dealias_t *dealias, scamper_err_t *error)
 {
+  char errbuf[512];
+
+  if(printerror_would())
+    {
+      scamper_err_render(error, errbuf, sizeof(errbuf));
+      printerror_msg("dealias failed", "%s", errbuf);
+    }
+
+  if(dealias->result == SCAMPER_DEALIAS_RESULT_NONE)
+    {
+      dealias->result = SCAMPER_DEALIAS_RESULT_ERROR;
+      if(dealias->errmsg == NULL)
+	dealias->errmsg = strdup(errbuf);
+    }
+
+  return;
+}
+
+static void dealias_handleerror(scamper_task_t *task, scamper_err_t *error)
+{
+  dealias_stop_err(dealias_getdata(task), error);
   scamper_task_queue_done(task);
   return;
 }
@@ -311,13 +332,14 @@ static void dealias_ptb_free(dealias_ptb_t *ptb)
 }
 
 static int dealias_ptb_add(dealias_state_t *state, scamper_dl_rec_t *dl,
-			   scamper_dealias_probedef_t *def)
+			   scamper_dealias_probedef_t *def,
+			   scamper_err_t *error)
 {
   dealias_ptb_t *ptb;
 
   if((ptb = malloc_zero(sizeof(dealias_ptb_t))) == NULL)
     {
-      printerror(__func__, "could not malloc ptb");
+      scamper_err_make(error, errno, "could not alloc ptb");
       goto err;
     }
   ptb->def = def;
@@ -327,13 +349,13 @@ static int dealias_ptb_add(dealias_state_t *state, scamper_dl_rec_t *dl,
     ptb->quote_len = dl->dl_ip_size;
   if((ptb->quote = memdup(dl->dl_net_raw, ptb->quote_len)) == NULL)
     {
-      printerror(__func__, "could not dup ptb quote");
+      scamper_err_make(error, errno, "could not dup ptb quote");
       goto err;
     }
 
   if(slist_tail_push(state->ptbq, ptb) == NULL)
     {
-      printerror(__func__, "could not queue ptb");
+      scamper_err_make(error, errno, "could not queue ptb");
       goto err;
     }
 
@@ -390,7 +412,7 @@ static dealias_target_t *dealias_target_get(dealias_state_t *state,
 
 static int dealias_probedef_add(dealias_state_t *state,
 				scamper_dealias_probedef_t *def,
-				char *errbuf, size_t errlen)
+				scamper_err_t *error)
 {
   dealias_probedef_t *pd = NULL;
   uint16_t hl;
@@ -402,7 +424,7 @@ static int dealias_probedef_add(dealias_state_t *state,
     hl = 40; /* sizeof ipv6 hdr */
   else
     {
-      snprintf(errbuf, errlen, "%s: invalid def->dst", __func__);
+      scamper_err_make(error, 0, "invalid def->dst");
       return -1;
     }
   if(SCAMPER_DEALIAS_PROBEDEF_PROTO_IS_ICMP(def) ||
@@ -412,26 +434,26 @@ static int dealias_probedef_add(dealias_state_t *state,
     hl += 20; /* sizeof tcp hdr */
   else
     {
-      snprintf(errbuf, errlen, "%s: unknown probedef proto", __func__);
+      scamper_err_make(error, 0, "unknown probedef proto");
       return -1;
     }
 
   if((pd = malloc_zero(sizeof(dealias_probedef_t))) == NULL)
     {
-      snprintf(errbuf, errlen, "%s: could not malloc pd", __func__);
+      scamper_err_make(error, errno, "could not alloc pd");
       goto err;
     }
   pd->def = def;
   if((pd->target = dealias_target_get(state, def->dst)) == NULL)
     {
-      snprintf(errbuf, errlen, "%s: could not add target state", __func__);
+      scamper_err_make(error, errno, "could not add target state");
       goto err;
     }
 
   /* ensure the probedef size is at least as large as the required headers */
   if(def->size < hl)
     {
-      snprintf(errbuf, errlen, "%s: def->size %u < hl %u", __func__, def->size, hl);
+      scamper_err_make(error, 0, "def->size %u < hl %u", def->size, hl);
       goto err;
     }
   pd->pktbuf_len = def->size - hl;
@@ -439,13 +461,13 @@ static int dealias_probedef_add(dealias_state_t *state,
   if(def->method == SCAMPER_DEALIAS_PROBEDEF_METHOD_TCP_ACK &&
      (random_u32(&pd->tcp_seq) != 0 || random_u32(&pd->tcp_ack) != 0))
     {
-      snprintf(errbuf, errlen, "%s: could not get random TCP seq/ack", __func__);
+      scamper_err_make(error, errno, "could not get random TCP seq/ack");
       goto err;
     }
 
   if(array_insert((void ***)&state->pds, &state->pdc, pd, NULL) != 0)
     {
-      snprintf(errbuf, errlen, "%s: could not add pd", __func__);
+      scamper_err_make(error, errno, "could not add pd");
       goto err;
     }
 
@@ -473,7 +495,8 @@ static void dealias_prefixscan_array_free(scamper_addr_t **addrs, int addrc)
 
 static int dealias_prefixscan_array_add(scamper_dealias_t *dealias,
 					scamper_addr_t ***out, size_t *outc,
-					struct in_addr *addr)
+					struct in_addr *addr,
+					scamper_err_t *error)
 {
   scamper_dealias_prefixscan_t *prefixscan = dealias->data;
   scamper_addr_t **array = *out;
@@ -483,7 +506,7 @@ static int dealias_prefixscan_array_add(scamper_dealias_t *dealias,
   sa = scamper_addrcache_get(addrcache, SCAMPER_ADDR_TYPE_IPV4, addr);
   if(sa == NULL)
     {
-      printerror(__func__, "could not get addr");
+      scamper_err_make(error, errno, "could not get addr");
       return -1;
     }
 
@@ -501,7 +524,7 @@ static int dealias_prefixscan_array_add(scamper_dealias_t *dealias,
   /* add the scamper address to the array */
   if(array_insert((void ***)&array, outc, sa, NULL) != 0)
     {
-      printerror(__func__, "could not add addr");
+      scamper_err_make(error, errno, "could not add addr");
       scamper_addr_free(sa);
       return -1;
     }
@@ -537,7 +560,8 @@ static int dealias_prefixscan_array_add(scamper_dealias_t *dealias,
  *
  */
 static int dealias_prefixscan_array(scamper_dealias_t *dealias,
-				    scamper_addr_t ***out, size_t *outc)
+				    scamper_addr_t ***out, size_t *outc,
+				    scamper_err_t *error)
 {
   scamper_dealias_prefixscan_t *prefixscan = dealias->data;
   scamper_addr_t **array = NULL;
@@ -562,7 +586,7 @@ static int dealias_prefixscan_array(scamper_dealias_t *dealias,
       else
 	a.s_addr = htonl(netid | 1);
 
-      if(dealias_prefixscan_array_add(dealias, &array, outc, &a) != 0)
+      if(dealias_prefixscan_array_add(dealias, &array, outc, &a, error) != 0)
 	goto err;
 
       *out = array;
@@ -576,7 +600,7 @@ static int dealias_prefixscan_array(scamper_dealias_t *dealias,
   for(i=0; i<3; i++)
     {
       a.s_addr = htonl(netid | slash30[hostid][i]);
-      if(dealias_prefixscan_array_add(dealias, &array, outc, &a) != 0)
+      if(dealias_prefixscan_array_add(dealias, &array, outc, &a, error) != 0)
 	goto err;
     }
 
@@ -594,7 +618,7 @@ static int dealias_prefixscan_array(scamper_dealias_t *dealias,
       for(hostid=0; hostid<cnt[29-pre]; hostid++)
 	{
 	  a.s_addr = htonl(netid | bit | hostid);
-	  if(dealias_prefixscan_array_add(dealias, &array, outc, &a) != 0)
+	  if(dealias_prefixscan_array_add(dealias, &array, outc, &a, error) != 0)
 	    goto err;
 	}
     }
@@ -860,7 +884,8 @@ static int dealias_ally_allzero(scamper_dealias_t *dealias)
 static int dealias_ally_handlereply_v6(scamper_task_t *task,
 				       scamper_dealias_probe_t *probe,
 				       scamper_dealias_reply_t *reply,
-				       scamper_dl_rec_t *dl)
+				       scamper_dl_rec_t *dl,
+				       scamper_err_t *error)
 {
   scamper_dealias_t *dealias = dealias_getdata(task);
   dealias_state_t *state = dealias_getstate(task);
@@ -899,7 +924,10 @@ static int dealias_ally_handlereply_v6(scamper_task_t *task,
       for(i=0; i<dealias->probec; i++)
 	{
 	  if(slist_head_push(state->discard, dealias->probes[i]) == NULL)
-	    return -1;
+	    {
+	      scamper_err_make(error, errno, "could not push discard");
+	      return -1;
+	    }
 	  dealias->probes[i] = NULL;
 	}
       dealias->probec = 0;
@@ -907,7 +935,7 @@ static int dealias_ally_handlereply_v6(scamper_task_t *task,
 
       /* send a PTB */
       pd->flags |= DEALIAS_PROBEDEF_FLAG_TX_PTB;
-      if(dealias_ptb_add(state, dl, probe->def) != 0)
+      if(dealias_ptb_add(state, dl, probe->def, error) != 0)
 	return -1;
       dealias_queue(task);
       return 0;
@@ -928,8 +956,11 @@ static void dealias_ally_handlereply(scamper_task_t *task,
   scamper_dealias_t       *dealias = dealias_getdata(task);
   scamper_dealias_ally_t  *ally    = dealias->data;
   scamper_dealias_probe_t *probes[5];
+  scamper_err_t error;
   uint32_t k;
   int rc, probec = 0;
+
+  SCAMPER_ERR_INIT(&error);
 
   /* check to see if the response could be useful for alias resolution */
   if(probe->replyc != 1 ||
@@ -943,9 +974,10 @@ static void dealias_ally_handlereply(scamper_task_t *task,
 
   if(SCAMPER_ADDR_TYPE_IS_IPV6(reply->src))
     {
-      rc = dealias_ally_handlereply_v6(task, probe, reply, dl);
-      if(rc == -1) goto err;
-      if(rc == 0) return;
+      if((rc = dealias_ally_handlereply_v6(task, probe, reply, dl, &error)) == 0)
+	return;
+      if(rc == -1)
+	goto err;
     }
 
   /* can't make any decision unless at least two probes have been sent */
@@ -988,7 +1020,7 @@ static void dealias_ally_handlereply(scamper_task_t *task,
   return;
 
  err:
-  dealias_handleerror(task, errno);
+  dealias_handleerror(task, &error);
   return;
 }
 
@@ -1073,6 +1105,7 @@ static int dealias_radargun_postprobe(scamper_dealias_t *dealias,
   /* shuffle if requested to */
   if((rg->flags & SCAMPER_DEALIAS_RADARGUN_FLAG_SHUFFLE) != 0)
     {
+      /* if rand_s fails, it will set errno */
       if(shuffle32(rgstate->order, rg->probedefc) != 0)
 	return -1;
       rgstate->i = 0;
@@ -1102,15 +1135,20 @@ static void dealias_radargun_handlereply(scamper_task_t *task,
 					 scamper_dl_rec_t *dl)
 {
   dealias_state_t *state = dealias_getstate(task);
+  scamper_err_t error;
+
+  SCAMPER_ERR_INIT(&error);
+
   if(SCAMPER_ADDR_TYPE_IS_IPV6(probe->def->dst) &&
      (reply->flags & SCAMPER_DEALIAS_REPLY_FLAG_IPID32) == 0 &&
      probe->def->mtu != 0 && probe->def->mtu < dl->dl_ip_size)
     {
-      if(dealias_ptb_add(state, dl, probe->def) != 0)
-	dealias_handleerror(task, errno);
+      if(dealias_ptb_add(state, dl, probe->def, &error) != 0)
+	dealias_handleerror(task, &error);
       else
 	dealias_queue(task);
     }
+
   return;
 }
 
@@ -1138,7 +1176,7 @@ static int dealias_prefixscan_postprobe(scamper_dealias_t *dealias,
   return 0;
 }
 
-static int dealias_prefixscan_next(scamper_task_t *task)
+static int dealias_prefixscan_next(scamper_task_t *task, scamper_err_t *error)
 {
   scamper_dealias_t *dealias = dealias_getdata(task);
   dealias_state_t *state = dealias_getstate(task);
@@ -1146,7 +1184,6 @@ static int dealias_prefixscan_next(scamper_task_t *task)
   scamper_dealias_prefixscan_t *prefixscan = dealias->data;
   scamper_dealias_probedef_t *def = &pfstate->probedefs[state->probedefc-1];
   uint32_t *defids = NULL, p;
-  char errbuf[256];
   size_t q;
 
   /*
@@ -1165,7 +1202,7 @@ static int dealias_prefixscan_next(scamper_task_t *task)
   /* remember the probedef used with each probe */
   if((defids = malloc_zero(sizeof(uint32_t) * dealias->probec)) == NULL)
     {
-      printerror(__func__, "could not malloc defids");
+      scamper_err_make(error, errno, "could not alloc defids");
       goto err;
     }
   for(p=0; p<dealias->probec; p++)
@@ -1174,7 +1211,7 @@ static int dealias_prefixscan_next(scamper_task_t *task)
   /* add the probedef */
   if(scamper_dealias_prefixscan_probedef_add(dealias, def) != 0)
     {
-      printerror(__func__, "could not add probedef");
+      scamper_err_make(error, errno, "could not add probedef");
       goto err;
     }
 
@@ -1186,11 +1223,8 @@ static int dealias_prefixscan_next(scamper_task_t *task)
   free(defids); defids = NULL;
 
   def = prefixscan->probedefs[prefixscan->probedefc-1];
-  if(dealias_probedef_add(state, def, errbuf, sizeof(errbuf)) != 0)
-    {
-      printerror_msg(__func__, "%s", errbuf);
-      goto err;
-    }
+  if(dealias_probedef_add(state, def, error) != 0)
+    goto err;
 
   state->probedefs = prefixscan->probedefs;
   state->probedefc = prefixscan->probedefc;
@@ -1213,8 +1247,11 @@ static void dealias_prefixscan_handlereply(scamper_task_t *task,
   dealias_prefixscan_t *pfstate = state->methodstate;
   scamper_dealias_probe_t **probes = NULL;
   dealias_probedef_t *pd = state->pds[probe->def->id];
+  scamper_err_t error;
   uint32_t defid;
   int p, s, seq;
+
+  SCAMPER_ERR_INIT(&error);
 
   /* if the reply is not for the most recently sent probe */
   if(probe != dealias->probes[dealias->probec-1])
@@ -1266,7 +1303,7 @@ static void dealias_prefixscan_handlereply(scamper_task_t *task,
 	      if(array_insert((void ***)&pfstate->aaliases, &pfstate->aaliasc,
 			      reply->src, (array_cmp_t)scamper_addr_cmp) != 0)
 		{
-		  printerror(__func__, "could not add to aaliases");
+		  scamper_err_make(&error, errno, "could not add to aaliases");
 		  goto err;
 		}
 	      scamper_addr_use(reply->src);
@@ -1316,7 +1353,7 @@ static void dealias_prefixscan_handlereply(scamper_task_t *task,
       if(state->probedefc == 1)
 	{
 	  /* figure out what we're going to probe next */
-	  if(dealias_prefixscan_next(task) != 0)
+	  if(dealias_prefixscan_next(task, &error) != 0)
 	    goto err;
 
 	  /* if it turns out we don't need to probe, handle that */
@@ -1331,7 +1368,7 @@ static void dealias_prefixscan_handlereply(scamper_task_t *task,
 
   if((probes = malloc_zero(sizeof(scamper_dealias_probe_t *) * seq)) == NULL)
     {
-      printerror(__func__, "could not malloc probes");
+      scamper_err_make(&error, errno, "could not alloc probes");
       goto err;
     }
   probes[seq-1] = probe;
@@ -1344,7 +1381,10 @@ static void dealias_prefixscan_handlereply(scamper_task_t *task,
   for(s=seq-1; s>0; s--)
     {
       if(p < 0)
-	goto err;
+	{
+	  scamper_err_make(&error, 0, "p < 0");
+	  goto err;
+	}
 
       if(probes[s]->def->id == 0)
 	defid = state->probedefc - 1;
@@ -1384,7 +1424,10 @@ static void dealias_prefixscan_handlereply(scamper_task_t *task,
 				   seq < prefixscan->replyc ? 2 : 3);
   free(probes); probes = NULL;
   if(p == -1)
-    goto err;
+    {
+      scamper_err_make(&error, errno, "could not determine ipid inseq");
+      goto err;
+    }
 
   if(p == 1)
     {
@@ -1412,7 +1455,7 @@ static void dealias_prefixscan_handlereply(scamper_task_t *task,
       return;
     }
 
-  if(dealias_prefixscan_next(task) != 0)
+  if(dealias_prefixscan_next(task, &error) != 0)
     goto err;
   if(dealias->result == SCAMPER_DEALIAS_RESULT_ALIASES)
     return;
@@ -1431,7 +1474,7 @@ static void dealias_prefixscan_handlereply(scamper_task_t *task,
 
  err:
   if(probes != NULL) free(probes);
-  dealias_handleerror(task, errno);
+  dealias_handleerror(task, &error);
   return;
 }
 
@@ -1443,6 +1486,9 @@ static void dealias_prefixscan_handletimeout(scamper_task_t *task)
   scamper_dealias_prefixscan_t *prefixscan;
   scamper_dealias_probedef_t *def;
   scamper_dealias_probe_t *probe;
+  scamper_err_t error;
+
+  SCAMPER_ERR_INIT(&error);
 
   prefixscan = dealias->data;
   probe = dealias->probes[dealias->probec-1];
@@ -1462,7 +1508,7 @@ static void dealias_prefixscan_handletimeout(scamper_task_t *task)
        */
       if(def->id != 0 && state->probedefc-1 < (uint32_t)pfstate->probedefc)
 	{
-	  if(dealias_prefixscan_next(task) != 0)
+	  if(dealias_prefixscan_next(task, &error) != 0)
 	    goto err;
 
 	  /* if it turns out we don't need to probe, handle that */
@@ -1491,7 +1537,7 @@ static void dealias_prefixscan_handletimeout(scamper_task_t *task)
   return;
 
  err:
-  dealias_handleerror(task, errno);
+  dealias_handleerror(task, &error);
   return;
 }
 
@@ -1613,10 +1659,7 @@ static int dealias_midarest_shuffle(scamper_dealias_midarest_t *me,
   defc = me->probedefc / mestate->addrc;
   assert(mestate->addrc * defc == me->probedefc);
   if((defs = malloc_zero(sizeof(uint32_t) * defc)) == NULL)
-    {
-      printerror(__func__, "could not malloc defs");
-      return -1;
-    }
+    return -1;
 
   /*
    * shuffle the order of probedefs per address while evenly spacing
@@ -1675,6 +1718,8 @@ static int dealias_midarest_postprobe(scamper_dealias_t *dealias,
 
   /* shuffle */
   mestate->i = 0;
+
+  /* will set errno if malloc fails */
   return dealias_midarest_shuffle(me, mestate);
 }
 
@@ -1820,8 +1865,11 @@ static void do_dealias_handle_dl(scamper_task_t *task, scamper_dl_rec_t *dl)
   dealias_state_t *state = dealias_getstate(task);
   dealias_target_t *tgt;
   scamper_addr_t a;
+  scamper_err_t error;
   int v4 = 0;
 
+  SCAMPER_ERR_INIT(&error);
+  
   /* if we haven't sent a probe yet, then we have nothing to match */
   if(dealias->probec == 0)
     return;
@@ -1889,7 +1937,7 @@ static void do_dealias_handle_dl(scamper_task_t *task, scamper_dl_rec_t *dl)
 
   if((reply = scamper_dealias_reply_alloc()) == NULL)
     {
-      scamper_debug(__func__, "could not alloc reply");
+      scamper_err_make(&error, errno, "could not alloc reply");
       goto err;
     }
 
@@ -1899,7 +1947,7 @@ static void do_dealias_handle_dl(scamper_task_t *task, scamper_dl_rec_t *dl)
     }
   else if((reply->src=scamper_addrcache_get(addrcache,a.type,a.addr)) == NULL)
     {
-      scamper_debug(__func__, "could not get address from cache");
+      scamper_err_make(&error, errno, "could not get address from cache");
       goto err;
     }
   timeval_cpy(&reply->rx, &dl->dl_tv);
@@ -1930,7 +1978,7 @@ static void do_dealias_handle_dl(scamper_task_t *task, scamper_dl_rec_t *dl)
 
   if(scamper_dealias_reply_add(probe, reply) != 0)
     {
-      scamper_debug(__func__, "could not add reply to probe");
+      scamper_err_make(&error, errno, "could not add reply to probe");
       goto err;
     }
 
@@ -1941,7 +1989,7 @@ static void do_dealias_handle_dl(scamper_task_t *task, scamper_dl_rec_t *dl)
 
  err:
   if(reply != NULL) scamper_dealias_reply_free(reply);
-  dealias_handleerror(task, errno);
+  dealias_handleerror(task, &error);
   return;
 }
 
@@ -1963,7 +2011,10 @@ static void do_dealias_handle_icmp(scamper_task_t *task,scamper_icmp_resp_t *ir)
   scamper_dealias_t *dealias = dealias_getdata(task);
   dealias_state_t *state = dealias_getstate(task);
   dealias_target_t *tgt;
+  scamper_err_t error;
   scamper_addr_t a;
+
+  SCAMPER_ERR_INIT(&error);
 
   /* if we haven't sent a probe yet, then we have nothing to match */
   if(dealias->probec == 0)
@@ -2023,7 +2074,7 @@ static void do_dealias_handle_icmp(scamper_task_t *task,scamper_icmp_resp_t *ir)
 
   if((reply = scamper_dealias_reply_alloc()) == NULL)
     {
-      scamper_debug(__func__, "could not alloc reply");
+      scamper_err_make(&error, errno, "could not alloc reply");
       goto err;
     }
   if(scamper_addr_cmp(&a, probe->def->dst) == 0)
@@ -2032,7 +2083,7 @@ static void do_dealias_handle_icmp(scamper_task_t *task,scamper_icmp_resp_t *ir)
     }
   else if((reply->src=scamper_addrcache_get(addrcache,a.type,a.addr)) == NULL)
     {
-      scamper_debug(__func__, "could not get address from cache");
+      scamper_err_make(&error, errno, "could not get address from cache");
       goto err;
     }
   timeval_cpy(&reply->rx, &ir->ir_rx);
@@ -2054,7 +2105,7 @@ static void do_dealias_handle_icmp(scamper_task_t *task,scamper_icmp_resp_t *ir)
 
   if(scamper_dealias_reply_add(probe, reply) != 0)
     {
-      scamper_debug(__func__, "could not add reply to probe");
+      scamper_err_make(&error, errno, "could not add reply to probe");
       goto err;
     }
 
@@ -2064,7 +2115,7 @@ static void do_dealias_handle_icmp(scamper_task_t *task,scamper_icmp_resp_t *ir)
 
  err:
   if(reply != NULL) scamper_dealias_reply_free(reply);
-  dealias_handleerror(task, errno);
+  dealias_handleerror(task, &error);
   return;
 }
 
@@ -2092,14 +2143,15 @@ static void do_dealias_handle_timeout(scamper_task_t *task)
 static int dealias_state_probe(dealias_state_t *state,
 			       dealias_probedef_t *pdef,
 			       scamper_dealias_probe_t *probe,
-			       scamper_probe_t *pr)
+			       scamper_probe_t *pr,
+			       scamper_err_t *error)
 {
   dealias_probe_t *dp = NULL;
 
   /* allocate a structure to record this probe's details */
   if((dp = malloc_zero(sizeof(dealias_probe_t))) == NULL)
     {
-      printerror(__func__, "could not malloc dealias_probe_t");
+      scamper_err_make(error, errno, "could not alloc dealias_probe_t");
       goto err;
     }
   if(pdef->def->method == SCAMPER_DEALIAS_PROBEDEF_METHOD_UDP_DPORT)
@@ -2115,7 +2167,7 @@ static int dealias_state_probe(dealias_state_t *state,
   if((dp->target_node = dlist_head_push(dp->target->probes, dp)) == NULL ||
      dlist_tail_push(state->recent_probes, dp) == NULL)
     {
-      printerror(__func__, "could not push to lists");
+      scamper_err_make(error, errno, "could not push to lists");
       goto err;
     }
 
@@ -2156,22 +2208,22 @@ static void dealias_prefixscan_free(void *data)
 }
 
 static int dealias_prefixscan_alloc(scamper_dealias_t *dealias,
-				    dealias_state_t *state)
+				    dealias_state_t *state,
+				    scamper_err_t *error)
 {
   scamper_dealias_prefixscan_t *pfxscan = dealias->data;
   scamper_dealias_probedef_t pd;
   dealias_prefixscan_t *pfstate = NULL;
-  scamper_addr_t      **addrs = NULL;
-  size_t                i, addrc = 0;
-  char errbuf[256];
+  scamper_addr_t **addrs = NULL;
+  size_t i, addrc = 0;
 
   /* figure out the addresses that will be probed */
-  if(dealias_prefixscan_array(dealias, &addrs, &addrc) != 0)
+  if(dealias_prefixscan_array(dealias, &addrs, &addrc, error) != 0)
     goto err;
 
   if((pfstate = malloc_zero(sizeof(dealias_prefixscan_t))) == NULL)
     {
-      printerror(__func__, "could not malloc pfstate");
+      scamper_err_make(error, errno, "could not alloc pfstate");
       goto err;
     }
   state->methodstate = pfstate;
@@ -2179,7 +2231,7 @@ static int dealias_prefixscan_alloc(scamper_dealias_t *dealias,
   pfstate->probedefs = malloc_zero(addrc * sizeof(scamper_dealias_probedef_t));
   if(pfstate->probedefs == NULL)
     {
-      printerror(__func__, "could not malloc probedefs");
+      scamper_err_make(error, errno, "could not alloc probedefs");
       goto err;
     }
   pfstate->probedefc = addrc;
@@ -2188,7 +2240,7 @@ static int dealias_prefixscan_alloc(scamper_dealias_t *dealias,
     {
       memcpy(&pd, pfxscan->probedefs[0], sizeof(pd));
       pd.dst = scamper_addr_use(addrs[i]);
-      pd.src = scamper_getsrc(pd.dst, 0, errbuf, sizeof(errbuf));
+      pd.src = scamper_getsrc(pd.dst, 0, error);
       memcpy(&pfstate->probedefs[i], &pd, sizeof(pd));
     }
 
@@ -2279,10 +2331,16 @@ static int dealias_midarest_alloc(scamper_dealias_midarest_t *me,
     if(scamper_addr_cmp(me->probedefs[0]->dst, me->probedefs[i]->dst) == 0)
       break;
   if(i == me->probedefc)
-    goto err;
+    {
+      errno = EINVAL;
+      goto err;
+    }
   mestate->addrc = i;
 
-  /* figure out how many probedefs there are per address */
+  /*
+   * figure out how many probedefs there are per address.  will set
+   * errno if malloc fails
+   */
   if(dealias_midarest_shuffle(me, mestate) != 0)
     goto err;
 
@@ -2414,13 +2472,16 @@ static void do_dealias_probe(scamper_task_t *task)
   scamper_dealias_probedef_t *def;
   scamper_dealias_probe_t *dp = NULL;
   scamper_probe_t probe;
+  scamper_err_t error;
   dealias_ptb_t *ptb = NULL;
   struct timeval tv;
   uint16_t u16;
 
+  SCAMPER_ERR_INIT(&error);
+
   if(state == NULL)
     {
-      dealias_handleerror(task, 0);
+      scamper_task_queue_done(task);
       return;
     }
 
@@ -2446,11 +2507,8 @@ static void do_dealias_probe(scamper_task_t *task)
       SCAMPER_PROBE_ICMP_PTB(&probe, def->mtu);
       probe.pr_data   = ptb->quote;
       probe.pr_len    = ptb->quote_len;
-      if(scamper_probe_task(&probe, task) != 0)
-	{
-	  errno = probe.pr_errno;
-	  goto err;
-	}
+      if(scamper_probe_task(&probe, task, &error) != 0)
+	goto err;
       timeval_cpy(&state->ptb_tx, &probe.pr_tx);
       dealias_ptb_free(ptb);
       dealias_queue(task);
@@ -2458,14 +2516,17 @@ static void do_dealias_probe(scamper_task_t *task)
     }
 
   if((pdef = def_func[dealias->method-1](dealias, state)) == NULL)
-    goto err;
+    {
+      scamper_err_make(&error, 0, "could not get probedef");
+      goto err;
+    }
   def = pdef->def;
 
   if(txbuf_len < state->pds[def->id]->pktbuf_len)
     {
       if(realloc_wrap((void **)&txbuf, state->pds[def->id]->pktbuf_len) != 0)
 	{
-	  printerror(__func__, "could not realloc txbuf");
+	  scamper_err_make(&error, errno, "could not realloc txbuf");
 	  goto err;
 	}
       txbuf_len = state->pds[def->id]->pktbuf_len;
@@ -2498,7 +2559,10 @@ static void do_dealias_probe(scamper_task_t *task)
       else if(def->method == SCAMPER_DEALIAS_PROBEDEF_METHOD_UDP_DPORT)
 	probe.pr_udp_dport = def->un.udp.dport + pdef->target->udp_dport++;
       else
-	goto err;
+	{
+	  scamper_err_make(&error, 0, "unknown UDP method");
+	  goto err;
+	}
 
       /* hack to get the udp csum to be a particular value, and be valid */
       u16 = htons(dealias->probec + 1);
@@ -2533,9 +2597,16 @@ static void do_dealias_probe(scamper_task_t *task)
 	  probe.pr_tcp_sport = def->un.tcp.sport + pdef->target->tcp_sport++;
 	  if(random_u32(&probe.pr_tcp_seq) != 0 ||
 	     random_u32(&probe.pr_tcp_ack) != 0)
-	    goto err;
+	    {
+	      scamper_err_make(&error,errno,"could not get random TCP seq/ack");
+	      goto err;
+	    }
 	}
-      else goto err;
+      else
+	{
+	  scamper_err_make(&error, 0, "unknown TCP method");
+	  goto err;
+	}
     }
 
   /*
@@ -2544,35 +2615,35 @@ static void do_dealias_probe(scamper_task_t *task)
    */
   if((dp = scamper_dealias_probe_alloc()) == NULL)
     {
-      printerror(__func__, "could not alloc probe");
+      scamper_err_make(&error, errno, "could not alloc probe");
       goto err;
     }
   dp->def = def;
   dp->ipid = probe.pr_ip_id;
   dp->seq = state->round;
 
-  if(dealias_state_probe(state, pdef, dp, &probe) != 0)
+  if(dealias_state_probe(state, pdef, dp, &probe, &error) != 0)
     goto err;
 
   /* send the probe */
-  if(scamper_probe_task(&probe, task) != 0)
-    {
-      errno = probe.pr_errno;
-      goto err;
-    }
+  if(scamper_probe_task(&probe, task, &error) != 0)
+    goto err;
 
   /* record details of the probe in the scamper_dealias_t data structures */
   timeval_cpy(&dp->tx, &probe.pr_tx);
   if(scamper_dealias_probe_add(dealias, dp) != 0)
     {
-      scamper_debug(__func__, "could not add probe to dealias data");
+      scamper_err_make(&error, errno, "could not add probe to dealias data");
       goto err;
     }
 
   /* figure out how long to wait until sending the next probe */
   timeval_cpy(&state->last_tx, &probe.pr_tx);
   if(postprobe_func[dealias->method-1](dealias, state) != 0)
-    goto err;
+    {
+      scamper_err_make(&error, errno, "could not postprobe");
+      goto err;
+    }
 
   assert(state->id != 0);
   if(--state->id == 0)
@@ -2583,7 +2654,7 @@ static void do_dealias_probe(scamper_task_t *task)
 
  err:
   if(ptb != NULL) dealias_ptb_free(ptb);
-  dealias_handleerror(task, errno);
+  dealias_handleerror(task, &error);
   return;
 }
 
@@ -2620,18 +2691,18 @@ void scamper_do_dealias_free(void *data)
 }
 
 static int probedef2sig(scamper_task_t *task, scamper_dealias_probedef_t *def,
-			char *errbuf, size_t errlen)
+			scamper_err_t *error)
 {
   scamper_task_sig_t *sig = NULL;
 
   if(def->src == NULL &&
-     (def->src = scamper_getsrc(def->dst, 0, errbuf, errlen)) == NULL)
+     (def->src = scamper_getsrc(def->dst, 0, error)) == NULL)
     goto err;
 
   /* form a signature */
   if((sig = scamper_task_sig_alloc(SCAMPER_TASK_SIG_TYPE_TX_IP)) == NULL)
     {
-      snprintf(errbuf, errlen, "could not alloc task signature");
+      scamper_err_make(error, errno, "could not alloc task signature");
       goto err;
     }
   sig->sig_tx_ip_dst = scamper_addr_use(def->dst);
@@ -2660,15 +2731,16 @@ static int probedef2sig(scamper_task_t *task, scamper_dealias_probedef_t *def,
       break;
 
     default:
-      snprintf(errbuf, errlen, "%s: unhandled probe method %d",
-	       __func__, def->method);
+      scamper_err_make(error, errno, "%s: unhandled probe method %d",
+		       __func__, def->method);
       goto err;
     }
 
   /* add it to the task */
   if(scamper_task_sig_add(task, sig) != 0)
     {
-      snprintf(errbuf, errlen, "%s: could not add signature to task", __func__);
+      scamper_err_make(error, errno, "%s: could not add signature to task",
+		       __func__);
       goto err;
     }
 
@@ -2680,12 +2752,12 @@ static int probedef2sig(scamper_task_t *task, scamper_dealias_probedef_t *def,
 }
 
 static int dealias_mercator_init(scamper_task_t *task, dealias_state_t *state,
-				 char *errbuf, size_t errlen)
+				 scamper_err_t *error)
 {
   scamper_dealias_t *dealias = dealias_getdata(task);
   scamper_dealias_mercator_t *mercator = dealias->data;
 
-  if(probedef2sig(task, mercator->probedef, errbuf, errlen) != 0)
+  if(probedef2sig(task, mercator->probedef, error) != 0)
     return -1;
   state->probedefs = &mercator->probedef;
   state->probedefc = 1;
@@ -2694,13 +2766,13 @@ static int dealias_mercator_init(scamper_task_t *task, dealias_state_t *state,
 }
 
 static int dealias_ally_init(scamper_task_t *task, dealias_state_t *state,
-			     char *errbuf, size_t errlen)
+			     scamper_err_t *error)
 {
   scamper_dealias_t *dealias = dealias_getdata(task);
   scamper_dealias_ally_t *ally = dealias->data;
 
-  if(probedef2sig(task, ally->probedefs[0], errbuf, errlen) != 0 ||
-     probedef2sig(task, ally->probedefs[1], errbuf, errlen) != 0)
+  if(probedef2sig(task, ally->probedefs[0], error) != 0 ||
+     probedef2sig(task, ally->probedefs[1], error) != 0)
     return -1;
   state->probedefs = ally->probedefs;
   state->probedefc = 2;
@@ -2709,20 +2781,20 @@ static int dealias_ally_init(scamper_task_t *task, dealias_state_t *state,
 }
 
 static int dealias_radargun_init(scamper_task_t *task, dealias_state_t *state,
-				 char *errbuf, size_t errlen)
+				 scamper_err_t *error)
 {
   scamper_dealias_t *dealias = dealias_getdata(task);
   scamper_dealias_radargun_t *radargun = dealias->data;
   uint32_t p;
 
   for(p=0; p<radargun->probedefc; p++)
-    if(probedef2sig(task, radargun->probedefs[p], errbuf, errlen) != 0)
+    if(probedef2sig(task, radargun->probedefs[p], error) != 0)
       return -1;
   state->probedefs = radargun->probedefs;
   state->probedefc = radargun->probedefc;
   if(dealias_radargun_alloc(radargun, state) != 0)
     {
-      snprintf(errbuf, errlen, "could not alloc radargun state");
+      scamper_err_make(error, errno, "could not alloc radargun state");
       return -1;
     }
 
@@ -2730,40 +2802,40 @@ static int dealias_radargun_init(scamper_task_t *task, dealias_state_t *state,
 }
 
 static int dealias_prefixscan_init(scamper_task_t *task, dealias_state_t *state,
-				   char *errbuf, size_t errlen)
+				   scamper_err_t *error)
 {
   scamper_dealias_t *dealias = dealias_getdata(task);
   scamper_dealias_prefixscan_t *pfxscan = dealias->data;
   dealias_prefixscan_t *pfstate;
   uint32_t p;
 
-  if(dealias_prefixscan_alloc(dealias, state) != 0 ||
-     probedef2sig(task, pfxscan->probedefs[0], errbuf, errlen) != 0)
+  if(dealias_prefixscan_alloc(dealias, state, error) != 0 ||
+     probedef2sig(task, pfxscan->probedefs[0], error) != 0)
     return -1;
   state->probedefs = pfxscan->probedefs;
   state->probedefc = pfxscan->probedefc;
   pfstate = state->methodstate;
   for(p=0; p<pfstate->probedefc; p++)
-    if(probedef2sig(task, &pfstate->probedefs[p], errbuf, errlen) != 0)
+    if(probedef2sig(task, &pfstate->probedefs[p], error) != 0)
       return -1;
 
   return 0;
 }
 
 static int dealias_bump_init(scamper_task_t *task, dealias_state_t *state,
-			     char *errbuf, size_t errlen)
+			     scamper_err_t *error)
 {
   scamper_dealias_t *dealias = dealias_getdata(task);
   scamper_dealias_bump_t *bump = dealias->data;
 
-  if(probedef2sig(task, bump->probedefs[0], errbuf, errlen) != 0 ||
-     probedef2sig(task, bump->probedefs[1], errbuf, errlen) != 0)
+  if(probedef2sig(task, bump->probedefs[0], error) != 0 ||
+     probedef2sig(task, bump->probedefs[1], error) != 0)
     return -1;
   state->probedefs = bump->probedefs;
   state->probedefc = 2;
   if(dealias_bump_alloc(state) != 0)
     {
-      snprintf(errbuf, errlen, "could not alloc bump state");
+      scamper_err_make(error, errno, "could not alloc bump state");
       return -1;
     }
 
@@ -2771,20 +2843,20 @@ static int dealias_bump_init(scamper_task_t *task, dealias_state_t *state,
 }
 
 static int dealias_midarest_init(scamper_task_t *task, dealias_state_t *state,
-				 char *errbuf, size_t errlen)
+				 scamper_err_t *error)
 {
   scamper_dealias_t *dealias = dealias_getdata(task);
   scamper_dealias_midarest_t *midarest = dealias->data;
   uint16_t p;
 
   for(p=0; p<midarest->probedefc; p++)
-    if(probedef2sig(task, midarest->probedefs[p], errbuf, errlen) != 0)
+    if(probedef2sig(task, midarest->probedefs[p], error) != 0)
       return -1;
   state->probedefs = midarest->probedefs;
   state->probedefc = midarest->probedefc;
   if(dealias_midarest_alloc(midarest, state) != 0)
     {
-      snprintf(errbuf, errlen, "could not alloc midarest state");
+      scamper_err_make(error, errno, "could not alloc midarest state");
       return -1;
     }
 
@@ -2792,20 +2864,20 @@ static int dealias_midarest_init(scamper_task_t *task, dealias_state_t *state,
 }
 
 static int dealias_midardisc_init(scamper_task_t *task, dealias_state_t *state,
-				  char *errbuf, size_t errlen)
+				  scamper_err_t *error)
 {
   scamper_dealias_t *dealias = dealias_getdata(task);
   scamper_dealias_midardisc_t *midardisc = dealias->data;
   uint32_t p;
 
   for(p=0; p<midardisc->probedefc; p++)
-    if(probedef2sig(task, midardisc->probedefs[p], errbuf, errlen) != 0)
+    if(probedef2sig(task, midardisc->probedefs[p], error) != 0)
       return -1;
   state->probedefs = midardisc->probedefs;
   state->probedefc = midardisc->probedefc;
   if(dealias_midardisc_alloc(midardisc, state) != 0)
     {
-      snprintf(errbuf, errlen, "could not alloc midardisc state");
+      scamper_err_make(error, errno, "could not alloc midardisc state");
       return -1;
     }
 
@@ -2815,7 +2887,7 @@ static int dealias_midardisc_init(scamper_task_t *task, dealias_state_t *state,
 static void do_dealias_sigs(scamper_task_t *task)
 {
   static int (*const func[])(scamper_task_t *, dealias_state_t *,
-			     char *, size_t) = {
+			     scamper_err_t *) = {
     dealias_mercator_init,
     dealias_ally_init,
     dealias_radargun_init,
@@ -2824,12 +2896,13 @@ static void do_dealias_sigs(scamper_task_t *task)
     dealias_midarest_init,
     dealias_midardisc_init,
   };
-  scamper_dealias_t             *dealias = dealias_getdata(task);
-  dealias_state_t               *state = dealias_getstate(task);
-  scamper_dealias_probedef_t    *def;
-  char errbuf[256];
-  size_t errlen = sizeof(errbuf);
+  scamper_dealias_t *dealias = dealias_getdata(task);
+  dealias_state_t *state = dealias_getstate(task);
+  scamper_dealias_probedef_t *def;
+  scamper_err_t error;
   uint32_t p;
+
+  SCAMPER_ERR_INIT(&error);
 
   /*
    * this function might have already been called if the task was held
@@ -2845,27 +2918,21 @@ static void do_dealias_sigs(scamper_task_t *task)
      (state->discard = slist_alloc()) == NULL ||
      (state->targets = splaytree_alloc((splaytree_cmp_t)dealias_target_cmp)) == NULL)
     {
-      scamper_debug(__func__, "could not malloc state");
+      scamper_err_make(&error, errno, "could not alloc state");
       goto err;
     }
   state->id = 255;
 
-  if(func[dealias->method-1](task, state, errbuf, errlen) != 0)
-    {
-      scamper_debug(__func__, "%s", errbuf);
-      goto err;
-    }
+  if(func[dealias->method-1](task, state, &error) != 0)
+    goto err;
 
   for(p=0; p<state->probedefc; p++)
     {
       def = state->probedefs[p];
       if(def->mtu != 0)
 	state->flags |= DEALIAS_STATE_FLAG_DL;
-      if(dealias_probedef_add(state, def, errbuf, errlen) != 0)
-	{
-	  scamper_debug(__func__, "%s", errbuf);
-	  goto err;
-	}
+      if(dealias_probedef_add(state, def, &error) != 0)
+	goto err;
     }
 
   scamper_task_setstate(task, state);
@@ -2873,6 +2940,7 @@ static void do_dealias_sigs(scamper_task_t *task)
 
  err:
   if(state != NULL) dealias_state_free(dealias, state);
+  dealias_stop_err(dealias, &error);
   return;
 }
 

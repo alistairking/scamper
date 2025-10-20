@@ -1,7 +1,7 @@
 /*
  * scamper_dlhdr.c
  *
- * $Id: scamper_dlhdr.c,v 1.20 2024/07/19 05:46:26 mjl Exp $
+ * $Id: scamper_dlhdr.c,v 1.26 2025/10/20 00:46:53 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2010 The University of Waikato
@@ -42,11 +42,17 @@
 #include "neighbourdisc/scamper_neighbourdisc_do.h"
 #include "utils.h"
 
-static int dlhdr_eth_common(scamper_dlhdr_t *dlhdr)
+/*
+ * dlhdr_eth_common:
+ *
+ * called both via scamper_dlhdr_get, and via neighbourdisc callback.
+ */
+static int dlhdr_eth_common(scamper_dlhdr_t *dlhdr, scamper_err_t *error)
 {
+  /* allocate space for ethernet header */
   if((dlhdr->buf = malloc_zero(14)) == NULL)
     {
-      dlhdr->error = errno;
+      scamper_err_make(error, errno, "dlhdr_eth_common: could not malloc");
       return -1;
     }
   dlhdr->len = 14;
@@ -64,31 +70,27 @@ static int dlhdr_eth_common(scamper_dlhdr_t *dlhdr)
     }
   else
     {
-      dlhdr->error = EINVAL;
-      scamper_debug(__func__, "unhandled ip->type %d", dlhdr->dst->type);
+      scamper_err_make(error, 0, "dlhdr_eth_common: dst not IP address");
       return -1;
     }
 
   return 0;
 }
 
-static void dlhdr_ethmake(scamper_dlhdr_t *dlhdr, scamper_addr_t *mac)
+static int dlhdr_ethmake(scamper_dlhdr_t *dlhdr, scamper_addr_t *mac,
+			 scamper_err_t *error)
 {
-  if(dlhdr_eth_common(dlhdr) != 0)
-    return;
+  /* allocate space for the header */
+  if(dlhdr_eth_common(dlhdr, error) != 0)
+    return -1;
+
+  /* the source mac address to use */
+  if(scamper_if_getmac(dlhdr->ifindex, dlhdr->buf+6, error) != 0)
+    return -1;
 
   /* copy the destination mac address to use */
   memcpy(dlhdr->buf, mac->addr, 6);
-
-  /* the source mac address to use */
-  if(scamper_if_getmac(dlhdr->ifindex, dlhdr->buf+6) != 0)
-    {
-      dlhdr->error = errno;
-      scamper_debug(__func__, "could not get source mac");
-      return;
-    }
-
-  return;
+  return 0;
 }
 
 /*
@@ -99,17 +101,31 @@ static void dlhdr_ethmake(scamper_dlhdr_t *dlhdr, scamper_addr_t *mac)
 static void dlhdr_ethcb(void *param, scamper_addr_t *ip, scamper_addr_t *mac)
 {
   scamper_dlhdr_t *dlhdr = param;
+  scamper_err_t error;
+  char buf[128];
+
+  SCAMPER_ERR_INIT(&error);
+
   dlhdr->internal = NULL;
-  if(mac != NULL)
+
+  /* we did not get a MAC address */
+  if(mac == NULL)
     {
-      scamper_addr2mac_add(dlhdr->ifindex, ip, mac);
-      dlhdr_ethmake(dlhdr, mac);
+      scamper_err_make(&error, 0,
+		       "dlhdr_ethcb: did not get mac address for %s",
+		       scamper_addr_tostr(ip, buf, sizeof(buf)));
+      dlhdr->cb(dlhdr, &error);
+      return;
     }
+
+  /* make the ethernet header */
+  if(dlhdr_ethmake(dlhdr, mac, &error) != 0)
+    dlhdr->cb(dlhdr, &error);
   else
-    {
-      dlhdr->error = ENOENT;
-    }
-  dlhdr->cb(dlhdr);
+    dlhdr->cb(dlhdr, NULL);
+
+  /* cache the response */
+  scamper_addr2mac_add(dlhdr->ifindex, ip, mac);
   return;
 }
 
@@ -120,7 +136,7 @@ static void dlhdr_ethcb(void *param, scamper_addr_t *ip, scamper_addr_t *mac)
  * may not know the mac address of the relevant IP, this function deals with
  * doing a neighbour discovery.
  */
-static int dlhdr_ethernet(scamper_dlhdr_t *dlhdr)
+static int dlhdr_ethernet(scamper_dlhdr_t *dlhdr, scamper_err_t *error)
 {
   scamper_neighbourdisc_do_t *nd = NULL;
   scamper_addr_t *ip = NULL;
@@ -138,32 +154,30 @@ static int dlhdr_ethernet(scamper_dlhdr_t *dlhdr)
   /* if we need to get a mac address, then look it up */
   if(mac == NULL && (mac = scamper_addr2mac_whohas(ifindex, ip)) == NULL)
     {
-      nd = scamper_do_neighbourdisc_do(ifindex, ip, dlhdr, dlhdr_ethcb);
+      nd = scamper_do_neighbourdisc_do(ifindex, ip, dlhdr, dlhdr_ethcb, error);
       if(nd == NULL)
-	{
-	  dlhdr->error = errno;
-	  goto done;
-	}
+	return -1;
       dlhdr->internal = nd;
       return 0;
     }
 
-  /* give the user what they asked for */
-  dlhdr_ethmake(dlhdr, mac);
+  /* return a cached mac address */
+  if(dlhdr_ethmake(dlhdr, mac, error) != 0)
+    return -1;
+  dlhdr->cb(dlhdr, NULL);
 
- done:
-  dlhdr->cb(dlhdr);
   return 0;
 }
 
-static int dlhdr_ethloop(scamper_dlhdr_t *dlhdr)
+static int dlhdr_ethloop(scamper_dlhdr_t *dlhdr, scamper_err_t *error)
 {
-  dlhdr_eth_common(dlhdr);
-  dlhdr->cb(dlhdr);
+  if(dlhdr_eth_common(dlhdr, error) != 0)
+    return -1;
+  dlhdr->cb(dlhdr, NULL);
   return 0;
 }
 
-static int dlhdr_null(scamper_dlhdr_t *dlhdr)
+static int dlhdr_null(scamper_dlhdr_t *dlhdr, scamper_err_t *error)
 {
   int af;
 
@@ -173,30 +187,31 @@ static int dlhdr_null(scamper_dlhdr_t *dlhdr)
     af = AF_INET6;
   else
     {
-      dlhdr->error = EINVAL;
-      goto done;
+      scamper_err_make(error, 0, "dlhdr_null: dst not IP address");
+      return -1;
     }
 
   if((dlhdr->buf = memdup(&af, sizeof(af))) == NULL)
     {
-      dlhdr->error = errno;
-      goto done;
+      scamper_err_make(error, errno, "dlhdr_null: could not dup af");
+      return -1;
     }
+
   dlhdr->len = sizeof(af);
-
- done:
-  dlhdr->cb(dlhdr);
+  dlhdr->cb(dlhdr, NULL);
   return 0;
 }
 
-static int dlhdr_raw(scamper_dlhdr_t *dlhdr)
+static int dlhdr_raw(scamper_dlhdr_t *dlhdr, scamper_err_t *error)
 {
-  dlhdr->cb(dlhdr);
+  dlhdr->cb(dlhdr, NULL);
   return 0;
 }
 
-static int dlhdr_unsupp(scamper_dlhdr_t *dlhdr)
+static int dlhdr_unsupp(scamper_dlhdr_t *dlhdr, scamper_err_t *error)
 {
+  scamper_err_make(error, 0, "dlhdr_get: unsupported on ifindex %d",
+		   dlhdr->ifindex);
   return -1;
 }
 
@@ -205,9 +220,9 @@ static int dlhdr_unsupp(scamper_dlhdr_t *dlhdr)
  *
  * determine the datalink header to use when framing a packet.
  */
-int scamper_dlhdr_get(scamper_dlhdr_t *dlhdr)
+int scamper_dlhdr_get(scamper_dlhdr_t *dlhdr, scamper_err_t *error)
 {
-  static int (*const func[])(scamper_dlhdr_t *dlhdr) = {
+  static int (*const func[])(scamper_dlhdr_t *, scamper_err_t *) = {
     dlhdr_unsupp,
     dlhdr_ethernet,
     dlhdr_null,
@@ -217,11 +232,11 @@ int scamper_dlhdr_get(scamper_dlhdr_t *dlhdr)
 
   if(dlhdr->txtype < 0 || dlhdr->txtype > 4)
     {
-      dlhdr->error = EINVAL;
+      scamper_err_make(error, 0, "dlhdr_get: invalid txtype %d", dlhdr->txtype);
       return -1;
     }
 
-  return func[dlhdr->txtype](dlhdr);
+  return func[dlhdr->txtype](dlhdr, error);
 }
 
 scamper_dlhdr_t *scamper_dlhdr_alloc(void)

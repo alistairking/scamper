@@ -38,6 +38,11 @@ cdef extern from "scamper_udpprobe.h":
  ctypedef struct scamper_udpprobe_reply_t:
   pass
 
+ cdef uint8_t  SCAMPER_UDPPROBE_STOP_NONE
+ cdef uint8_t  SCAMPER_UDPPROBE_STOP_DONE
+ cdef uint8_t  SCAMPER_UDPPROBE_STOP_HALTED
+ cdef uint8_t  SCAMPER_UDPPROBE_STOP_ERROR
+
  char *scamper_udpprobe_tojson(const scamper_udpprobe_t *up, size_t *l)
 
  void scamper_udpprobe_free(scamper_udpprobe_t *up)
@@ -59,6 +64,10 @@ cdef extern from "scamper_udpprobe.h":
  uint8_t scamper_udpprobe_probe_sent_get(const scamper_udpprobe_t *up)
  uint8_t scamper_udpprobe_stop_count_get(const scamper_udpprobe_t *up)
  scamper_udpprobe_probe_t *scamper_udpprobe_probe_get(const scamper_udpprobe_t *up, uint8_t i)
+
+ uint8_t scamper_udpprobe_stop_reason_get(const scamper_udpprobe_t *up)
+ char *scamper_udpprobe_stop_tostr(const scamper_udpprobe_t *up, char *buf, size_t l)
+ const char *scamper_udpprobe_errmsg_get(const scamper_udpprobe_t *up)
 
  void scamper_udpprobe_probe_free(scamper_udpprobe_probe_t *probe)
  scamper_udpprobe_probe_t *scamper_udpprobe_probe_use(scamper_udpprobe_probe_t *probe)

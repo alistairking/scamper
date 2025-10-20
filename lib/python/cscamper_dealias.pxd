@@ -67,6 +67,7 @@ cdef extern from "scamper_dealias.h":
  scamper_cycle_t *scamper_dealias_cycle_get(const scamper_dealias_t *dealias)
  uint32_t scamper_dealias_userid_get(const scamper_dealias_t *dealias)
  const timeval *scamper_dealias_start_get(const scamper_dealias_t *dealias)
+ const char *scamper_dealias_errmsg_get(const scamper_dealias_t *dealias)
  scamper_dealias_ally_t *scamper_dealias_ally_get(const scamper_dealias_t *dealias)
  scamper_dealias_mercator_t *scamper_dealias_mercator_get(const scamper_dealias_t *dealias)
  scamper_dealias_radargun_t *scamper_dealias_radargun_get(const scamper_dealias_t *dealias)
@@ -217,6 +218,7 @@ cdef extern from "scamper_dealias.h":
  bint scamper_dealias_reply_is_icmp_unreach(const scamper_dealias_reply_t *reply)
  bint scamper_dealias_reply_is_icmp_unreach_port(const scamper_dealias_reply_t *reply)
  bint scamper_dealias_reply_is_icmp_ttl_exp(const scamper_dealias_reply_t *reply)
+ bint scamper_dealias_reply_is_icmp_echo_reply(const scamper_dealias_reply_t *reply)
  bint scamper_dealias_reply_is_tcp(const scamper_dealias_reply_t *reply)
  bint scamper_dealias_reply_from_target(const scamper_dealias_probe_t *probe,
 				        const scamper_dealias_reply_t *reply)

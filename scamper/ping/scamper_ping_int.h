@@ -1,7 +1,7 @@
 /*
  * scamper_ping_int.h
  *
- * $Id: scamper_ping_int.h,v 1.20 2025/05/29 07:50:34 mjl Exp $
+ * $Id: scamper_ping_int.h,v 1.23 2025/10/15 23:47:47 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -330,6 +330,7 @@ struct scamper_ping
   /* why the ping finished */
   uint8_t                stop_reason;
   uint8_t                stop_data;
+  char                  *errmsg;
 
   /* the data to use inside of a probe.  if null then all zeros */
   uint8_t               *data;

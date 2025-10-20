@@ -1,7 +1,7 @@
 /*
  * common_http : common functions for unit testing http
  *
- * $Id: common_http.c,v 1.2 2025/04/23 09:55:03 mjl Exp $
+ * $Id: common_http.c,v 1.4 2025/10/19 20:49:19 mjl Exp $
  *
  *        Marcus Luckie, Matthew Luckie
  *        mjl@luckie.org.nz
@@ -48,6 +48,7 @@ int http_ok(const scamper_http_t *in, const scamper_http_t *out)
      addr_ok(in->dst, out->dst) != 0 ||
      in->userid != out->userid ||
      timeval_cmp(&in->start, &out->start) != 0 ||
+     str_ok(in->errmsg, out->errmsg) != 0 ||
      in->sport != out->sport ||
      in->dport != out->dport ||
      in->flags != out->flags)
@@ -82,8 +83,36 @@ static scamper_http_t *http_1(void)
   return NULL;
 }
 
+static scamper_http_t *http_2(void)
+{
+  scamper_http_t *http = NULL;
+
+  if((http = scamper_http_alloc()) == NULL ||
+     (http->src = scamper_addr_fromstr_ipv4("192.0.2.1")) == NULL ||
+     (http->dst = scamper_addr_fromstr_ipv4("192.0.2.2")) == NULL ||
+     (http->errmsg = strdup("hello world")) == NULL)
+    goto err;
+
+  http->userid               = 70;
+  http->sport                = 120;
+  http->dport                = 443;
+  http->start.tv_sec         = 1724828853;
+  http->start.tv_usec        = 123456;
+  http->flags                = 0;
+  http->stop = SCAMPER_HTTP_STOP_ERROR;
+  http->type = SCAMPER_HTTP_TYPE_HTTPS;
+  http->host = strdup("www.example.org");
+  http->file = strdup("/index.html");
+  return http;
+
+ err:
+  if(http != NULL) scamper_http_free(http);
+  return NULL;
+}
+
 static scamper_http_makefunc_t makers[] = {
   http_1,
+  http_2,
 };
 
 scamper_http_t *http_makers(size_t i)

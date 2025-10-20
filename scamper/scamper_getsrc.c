@@ -1,7 +1,7 @@
 /*
  * scamper_getsrc.c
  *
- * $Id: scamper_getsrc.c,v 1.25 2024/02/19 07:29:36 mjl Exp $
+ * $Id: scamper_getsrc.c,v 1.28 2025/10/20 00:46:53 mjl Exp $
  *
  * Copyright (C) 2005 Matthew Luckie
  * Copyright (C) 2007-2010 The University of Waikato
@@ -52,7 +52,7 @@ extern scamper_addrcache_t *addrcache;
  * header to transmit probes to it.
  */
 scamper_addr_t *scamper_getsrc(const scamper_addr_t *dst, int ifindex,
-			       char *errbuf, size_t errlen)
+			       scamper_err_t *err)
 {
   struct sockaddr_storage sas;
   scamper_addr_t *src;
@@ -73,7 +73,7 @@ scamper_addr_t *scamper_getsrc(const scamper_addr_t *dst, int ifindex,
 	  udp4 = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
 	  if(socket_isinvalid(udp4))
 	    {
-	      strerror_wrap(errbuf, errlen, "getsrc could not open udp4 sock");
+	      scamper_err_make(err, errno, "getsrc could not open udp4 sock");
 	      return NULL;
 	    }
 	}
@@ -91,7 +91,7 @@ scamper_addr_t *scamper_getsrc(const scamper_addr_t *dst, int ifindex,
 	  udp6 = socket(AF_INET6, SOCK_DGRAM, IPPROTO_UDP);
 	  if(socket_isinvalid(udp6))
 	    {
-	      strerror_wrap(errbuf, errlen, "getsrc could not open udp6 sock");
+	      scamper_err_make(err, errno, "getsrc could not open udp6 sock");
 	      return NULL;
 	    }
 	}
@@ -109,22 +109,22 @@ scamper_addr_t *scamper_getsrc(const scamper_addr_t *dst, int ifindex,
     }
   else
     {
-      snprintf(errbuf, errlen, "unhandled address type in getsrc");
+      scamper_err_make(err, 0, "unhandled address type in getsrc");
       return NULL;
     }
 
   if(connect(sock, (struct sockaddr *)&sas, socklen) != 0)
     {
-      strerror_wrap(errbuf, errlen, "getsrc connect to dst failed for %s",
-		    scamper_addr_tostr(dst, buf, sizeof(buf)));
+      scamper_err_make(err, errno, "getsrc connect to dst failed for %s",
+		       scamper_addr_tostr(dst, buf, sizeof(buf)));
       return NULL;
     }
 
   sockleno = socklen;
   if(getsockname(sock, (struct sockaddr *)&sas, &sockleno) != 0)
     {
-      strerror_wrap(errbuf, errlen, "getsrc could not getsockname for %s",
-		 scamper_addr_tostr(dst, buf, sizeof(buf)));
+      scamper_err_make(err, errno, "getsrc could not getsockname for %s",
+		       scamper_addr_tostr(dst, buf, sizeof(buf)));
       return NULL;
     }
 

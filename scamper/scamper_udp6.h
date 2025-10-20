@@ -1,7 +1,7 @@
 /*
  * scamper_udp6.h
  *
- * $Id: scamper_udp6.h,v 1.23 2024/02/21 04:58:05 mjl Exp $
+ * $Id: scamper_udp6.h,v 1.25 2025/10/15 01:29:55 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2009 The University of Waikato
@@ -27,19 +27,19 @@
 #define __SCAMPER_UDP6_H
 
 #ifndef _WIN32 /* SOCKET vs int on windows */
-int scamper_udp6_open(const void *addr, int sport);
-int scamper_udp6_open_err(const void *addr, int sport);
+int scamper_udp6_open(const void *addr, int sport, scamper_err_t *err);
+int scamper_udp6_open_err(const void *addr, int sport, scamper_err_t *err);
 void scamper_udp6_read_cb(int fd, void *param);
 void scamper_udp6_read_err_cb(int fd, void *param);
 #else
-SOCKET scamper_udp6_open(const void *addr, int sport);
-SOCKET scamper_udp6_open_err(const void *addr, int sport);
+SOCKET scamper_udp6_open(const void *addr, int sport, scamper_err_t *err);
+SOCKET scamper_udp6_open_err(const void *addr, int sport, scamper_err_t *err);
 void scamper_udp6_read_cb(SOCKET fd, void *param);
 void scamper_udp6_read_err_cb(SOCKET fd, void *param);
 #endif
 
 #ifdef __SCAMPER_PROBE_H
-int scamper_udp6_probe(scamper_probe_t *probe);
+int scamper_udp6_probe(scamper_probe_t *probe, scamper_err_t *err);
 int scamper_udp6_build(scamper_probe_t *probe, uint8_t *buf, size_t *len);
 uint16_t scamper_udp6_cksum(scamper_probe_t *probe);
 #endif

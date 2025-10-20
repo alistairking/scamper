@@ -1,7 +1,7 @@
 /*
  * scamper_priv : operations that require privilege
  *
- * $Id: scamper_priv.c,v 1.3 2025/03/29 19:55:24 mjl Exp $
+ * $Id: scamper_priv.c,v 1.4 2025/10/12 01:53:38 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -29,6 +29,7 @@
 #include "internal.h"
 
 #include "scamper.h"
+#include "scamper_debug.h"
 #include "scamper_priv.h"
 #ifndef DISABLE_SCAMPER_PRIVSEP
 #include "scamper_privsep.h"

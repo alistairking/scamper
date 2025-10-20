@@ -1,7 +1,7 @@
 /*
  * scamper_do_sting.c
  *
- * $Id: scamper_sting_do.c,v 1.67 2025/08/04 00:00:27 mjl Exp $
+ * $Id: scamper_sting_do.c,v 1.76 2025/10/15 23:42:35 mjl Exp $
  *
  * Copyright (C) 2008-2011 The University of Waikato
  * Copyright (C) 2012      The Regents of the University of California
@@ -104,8 +104,32 @@ static sting_state_t *sting_getstate(const scamper_task_t *task)
   return scamper_task_getstate(task);
 }
 
-static void sting_handleerror(scamper_task_t *task, int error)
+static void sting_stop_err(scamper_sting_t *sting, const scamper_err_t *err)
 {
+  char errbuf[512], buf[256], addr[256];
+
+  scamper_err_render(err, errbuf, sizeof(errbuf));
+
+  if(printerror_would())
+    {
+      snprintf(buf, sizeof(buf), "sting to %s failed",
+	       scamper_addr_tostr(sting->dst, addr, sizeof(addr)));
+      printerror_msg(buf, "%s", errbuf);
+    }
+
+  if(sting->result == SCAMPER_STING_RESULT_NONE)
+    {
+      sting->result = SCAMPER_STING_RESULT_ERROR;
+      if(sting->errmsg == NULL)
+	sting->errmsg = strdup(errbuf);
+    }
+
+  return;
+}
+
+static void sting_handleerror(scamper_task_t *task, const scamper_err_t *err)
+{
+  sting_stop_err(sting_getdata(task), err);
   scamper_task_queue_done(task);
   return;
 }
@@ -353,9 +377,12 @@ static void do_sting_handle_dl(scamper_task_t *task, scamper_dl_rec_t *dl)
   scamper_sting_t *sting = sting_getdata(task);
   sting_state_t *state = sting_getstate(task);
   scamper_sting_pkt_t *pkt;
+  scamper_err_t error;
 
   if(state == NULL)
     return;
+
+  SCAMPER_ERR_INIT(&error);
 
   /* unless the packet is an inbound TCP packet for the flow, ignore it */
   if(SCAMPER_DL_IS_TCP(dl) == 0 ||
@@ -374,7 +401,8 @@ static void do_sting_handle_dl(scamper_task_t *task, scamper_dl_rec_t *dl)
   if(pkt == NULL || scamper_sting_pkt_record(sting, pkt) != 0)
     {
       if(pkt != NULL) scamper_sting_pkt_free(pkt);
-      sting_handleerror(task, errno);
+      scamper_err_make(&error, errno, "could not record packet");
+      sting_handleerror(task, &error);
       return;
     }
 
@@ -392,14 +420,15 @@ static void do_sting_handle_dl(scamper_task_t *task, scamper_dl_rec_t *dl)
   return;
 }
 
-static void sting_handle_dlhdr(scamper_dlhdr_t *dlhdr)
+static void sting_handle_dlhdr(scamper_dlhdr_t *dlhdr,
+			       const scamper_err_t *err)
 {
   scamper_task_t *task = dlhdr->param;
   sting_state_t *state = sting_getstate(task);
 
-  if(dlhdr->error != 0)
+  if(err != NULL)
     {
-      scamper_task_queue_done(task);
+      sting_handleerror(task, err);
       return;
     }
 
@@ -408,14 +437,17 @@ static void sting_handle_dlhdr(scamper_dlhdr_t *dlhdr)
   return;
 }
 
-static void sting_handle_rt(scamper_route_t *rt)
+static void sting_handle_rt(scamper_route_t *rt, const scamper_err_t *rt_err)
 {
   scamper_task_t *task = rt->param;
   scamper_sting_t *sting = sting_getdata(task);
   sting_state_t *state = sting_getstate(task);
+  scamper_err_t error;
+  const scamper_err_t *error_ptr = &error;
   struct timeval wait;
   scamper_dl_t *dl;
 
+  /* silently skip over */
   if(state->mode != MODE_RTSOCK || state->route != rt)
     goto done;
 
@@ -427,19 +459,22 @@ static void sting_handle_rt(scamper_route_t *rt)
     }
 #endif
 
-  if(rt->error != 0 || rt->ifindex < 0)
+  SCAMPER_ERR_INIT(&error);
+
+  if(rt_err != NULL)
     {
-      printerror(__func__, "could not get ifindex");
-      sting_handleerror(task, errno);
-      goto done;
+      error_ptr = rt_err;
+      goto err;
     }
 
-  if((state->dl = scamper_fd_dl(rt->ifindex)) == NULL)
+  if(rt->ifindex < 0)
     {
-      scamper_debug(__func__, "could not get dl for %d", rt->ifindex);
-      sting_handleerror(task, errno);
-      goto done;
+      scamper_err_make(&error, errno, "handle_rt: could not get ifindex");
+      goto err;
     }
+
+  if((state->dl = scamper_fd_dl(rt->ifindex, &error)) == NULL)
+    goto err;
 
   /*
    * determine the underlying framing to use with each probe packet that will
@@ -448,8 +483,8 @@ static void sting_handle_rt(scamper_route_t *rt)
   state->mode = MODE_DLHDR;
   if((state->dlhdr = scamper_dlhdr_alloc()) == NULL)
     {
-      sting_handleerror(task, errno);
-      goto done;
+      scamper_err_make(&error, errno, "could not alloc dlhdr");
+      goto err;
     }
   dl = scamper_fd_dl_get(state->dl);
   state->dlhdr->dst = scamper_addr_use(sting->dst);
@@ -458,11 +493,8 @@ static void sting_handle_rt(scamper_route_t *rt)
   state->dlhdr->txtype = scamper_dl_tx_type(dl);
   state->dlhdr->param = task;
   state->dlhdr->cb = sting_handle_dlhdr;
-  if(scamper_dlhdr_get(state->dlhdr) != 0)
-    {
-      sting_handleerror(task, errno);
-      goto done;
-    }
+  if(scamper_dlhdr_get(state->dlhdr, &error) != 0)
+    goto err;
 
   if(state->mode != MODE_SYN && scamper_task_queue_isdone(task) == 0)
     {
@@ -475,6 +507,10 @@ static void sting_handle_rt(scamper_route_t *rt)
   if(state->route == rt)
     state->route = NULL;
   return;
+
+ err:
+  sting_handleerror(task, error_ptr);
+  goto done;
 }
 
 static void do_sting_write(scamper_file_t *sf, scamper_task_t *task)
@@ -500,7 +536,7 @@ static void sting_state_free(sting_state_t *state)
   return;
 }
 
-static int sting_state_alloc(scamper_task_t *task)
+static int sting_state_alloc(scamper_task_t *task, scamper_err_t *error)
 {
   scamper_sting_t *sting = sting_getdata(task);
   sting_state_t *state;
@@ -509,24 +545,27 @@ static int sting_state_alloc(scamper_task_t *task)
 
   if((state = malloc_zero(sizeof(sting_state_t))) == NULL)
     {
-      printerror(__func__, "could not malloc state");
+      scamper_err_make(error, errno, "could not malloc state");
       goto err;
     }
   scamper_task_setstate(task, state);
 
   size = (sting->seqskip + sting->count) * sizeof(scamper_sting_pkt_t *);
   if((state->probes = malloc_zero(size)) == NULL)
-    goto err;
+    {
+      scamper_err_make(error, errno, "could not malloc state probes");
+      goto err;
+    }
 
   if(random_u16(&u16) != 0)
     {
-      printerror(__func__, "could not get random isn");
+      scamper_err_make(error, errno, "could not get random isn");
       goto err;
     }
   state->isn = u16;
 
 #ifndef _WIN32 /* windows does not have a routing socket */
-  if((state->rtsock = scamper_fd_rtsock()) == NULL)
+  if((state->rtsock = scamper_fd_rtsock(error)) == NULL)
     {
       goto err;
     }
@@ -571,17 +610,19 @@ static void do_sting_probe(scamper_task_t *task)
   scamper_sting_pkt_t *pkt;
   scamper_sting_t *sting = sting_getdata(task);
   sting_state_t   *state = sting_getstate(task);
+  scamper_err_t    error;
   scamper_probe_t  probe;
   struct timeval   wait;
   uint8_t          data[3];
+  int i;
+
+  SCAMPER_ERR_INIT(&error);
 
   if(state == NULL)
     {
       gettimeofday_wrap(&sting->start);
-
-      if(sting_state_alloc(task) != 0)
+      if(sting_state_alloc(task, &error) != 0)
 	goto err;
-
       state = sting_getstate(task);
     }
 
@@ -589,15 +630,18 @@ static void do_sting_probe(scamper_task_t *task)
     {
       state->route = scamper_route_alloc(sting->dst, task, sting_handle_rt);
       if(state->route == NULL)
-	goto err;
+	{
+	  scamper_err_make(&error, errno, "could not alloc route lookup");
+	  goto err;
+	}
 
 #ifndef _WIN32 /* windows does not have a routing socket */
-      if(scamper_rtsock_getroute(state->rtsock, state->route) != 0)
-	goto err;
+      i = scamper_rtsock_getroute(state->rtsock, state->route, &error);
 #else
-      if(scamper_rtsock_getroute(state->route) != 0)
-	goto err;
+      i = scamper_rtsock_getroute(state->route, &error);
 #endif
+      if(i != 0)
+	goto err;
 
       if(scamper_task_queue_isdone(task))
 	return;
@@ -636,6 +680,8 @@ static void do_sting_probe(scamper_task_t *task)
 	  sfw.sfw_5tuple_dport = sting->sport;
 	  if((state->fw = scamper_firewall_entry_get(&sfw)) == NULL)
 	    {
+	      /* XXX: extend scamper_firewall_entry_get to get better error */
+	      scamper_err_make(&error, 0, "could not get firewall entry");
 	      goto err;
 	    }
 	}
@@ -713,23 +759,21 @@ static void do_sting_probe(scamper_task_t *task)
     }
   else
     {
+      scamper_err_make(&error, 0, "unexpected state->mode %d", state->mode);
       goto err;
     }
 
   /* send the probe */
-  if(scamper_probe(&probe) == -1)
-    {
-      errno = probe.pr_errno;
-      printerror(__func__, "could not send probe");
-      goto err;
-    }
+  if(scamper_probe(&probe, &error) != 0)
+    goto err;
 
   if((pkt = scamper_sting_pkt_alloc(SCAMPER_STING_PKT_FLAG_TX,
 				    probe.pr_tx_raw, probe.pr_tx_rawlen,
 				    &probe.pr_tx)) == NULL ||
      scamper_sting_pkt_record(sting, pkt) != 0)
     {
-      printerror(__func__, "could not record packet");
+      if(pkt != NULL) scamper_sting_pkt_free(pkt);
+      scamper_err_make(&error, errno, "could not record packet");
       goto err;
     }
 
@@ -757,7 +801,7 @@ static void do_sting_probe(scamper_task_t *task)
 
  err:
   scamper_debug(__func__, "error mode %d", state != NULL ? state->mode : -1);
-  sting_handleerror(task, errno);
+  sting_handleerror(task, &error);
   return;
 }
 
@@ -779,6 +823,7 @@ scamper_task_t *scamper_do_sting_alloctask(void *data,
   scamper_sting_t *sting = (scamper_sting_t *)data;
   scamper_task_sig_t *sig = NULL;
   scamper_task_t *task = NULL;
+  scamper_err_t error;
 
   /* allocate a task structure and store the sting with it */
   if((task = scamper_task_alloc(sting, &sting_funcs)) == NULL)
@@ -795,8 +840,11 @@ scamper_task_t *scamper_do_sting_alloctask(void *data,
     }
   sig->sig_tx_ip_dst = scamper_addr_use(sting->dst);
   if(sting->src == NULL &&
-     (sting->src = scamper_getsrc(sting->dst, 0, errbuf, errlen)) == NULL)
-    goto err;
+     (sting->src = scamper_getsrc(sting->dst, 0, &error)) == NULL)
+    {
+      snprintf(errbuf, errlen, "%s: %s", __func__, error.errstr);
+      goto err;
+    }
   SCAMPER_TASK_SIG_TCP(sig, sting->sport, sting->dport);
   if(scamper_task_sig_add(task, sig) != 0)
     {

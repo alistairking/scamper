@@ -1,7 +1,7 @@
 /*
  * scamper_do_tbit.c
  *
- * $Id: scamper_tbit_do.c,v 1.222 2025/08/04 00:00:27 mjl Exp $
+ * $Id: scamper_tbit_do.c,v 1.233 2025/10/16 00:37:42 mjl Exp $
  *
  * Copyright (C) 2009-2010 Ben Stasiewicz
  * Copyright (C) 2009-2010 Stephen Eichler
@@ -592,13 +592,44 @@ static int tbit_tcpclosed(tbit_state_t *state)
   return 0;
 }
 
-static void tbit_handleerror(scamper_task_t *task, int error)
+static void tbit_stop_err(scamper_tbit_t *tbit, const scamper_err_t *err)
+{
+  char errbuf[512], buf[256], addr[256];
+
+  scamper_err_render(err, errbuf, sizeof(errbuf));
+
+  if(printerror_would())
+    {
+      snprintf(buf, sizeof(buf), "tbit to %s failed",
+	       scamper_addr_tostr(tbit->dst, addr, sizeof(addr)));
+      printerror_msg(buf, "%s", errbuf);
+    }
+  
+  tbit->result = SCAMPER_TBIT_RESULT_ERROR;
+  if(tbit->errmsg == NULL)
+    tbit->errmsg = strdup(errbuf);
+
+  return;
+}
+
+static void tbit_handleerror(scamper_task_t *task, const scamper_err_t *err)
 {
   scamper_tbit_t *tbit = tbit_getdata(task);
   tbit_state_t *state = tbit_getstate(task);
-  tbit->result = SCAMPER_TBIT_RESULT_ERROR;
-  if(state != NULL) state->mode = MODE_DONE;
+
+  tbit_stop_err(tbit, err);
+  if(state != NULL)
+    state->mode = MODE_DONE;
   scamper_task_queue_done(task);
+
+  return;
+}
+
+static void tbit_frag_free(tbit_frag_t *frag)
+{
+  if(frag->data != NULL)
+    free(frag->data);
+  free(frag);
   return;
 }
 
@@ -612,10 +643,8 @@ static void tbit_frags_free(tbit_frags_t *frags)
   if(frags->frags != NULL)
     {
       for(i=0; i<frags->fragc; i++)
-	{
-	  free(frags->frags[i]->data);
-	  free(frags->frags[i]);
-	}
+	if(frags->frags[i] != NULL)
+	  tbit_frag_free(frags->frags[i]);
       free(frags->frags);
     }
   free(frags);
@@ -637,14 +666,14 @@ static int tbit_frag_cmp(const tbit_frag_t *a, const tbit_frag_t *b)
 }
 
 static int tbit_reassemble(scamper_task_t *task, scamper_dl_rec_t **out,
-			   scamper_dl_rec_t *dl)
+			   scamper_dl_rec_t *dl, scamper_err_t *error)
 {
   scamper_tbit_t *tbit = tbit_getdata(task);
   tbit_state_t *state = tbit_getstate(task);
   scamper_tbit_pmtud_t *pmtud;
   scamper_dl_rec_t *newp = NULL;
   tbit_frags_t fmfs, *frags;
-  tbit_frag_t fmf, *frag, *next;
+  tbit_frag_t fmf, *frag, *next, *newfrag = NULL;
   uint8_t *data = NULL;
   size_t off, pos, i;
   uint16_t mtu;
@@ -701,7 +730,7 @@ static int tbit_reassemble(scamper_task_t *task, scamper_dl_rec_t **out,
     {
       if((frags = malloc_zero(sizeof(tbit_frags_t))) == NULL)
 	{
-	  printerror(__func__, "could not malloc frags");
+	  scamper_err_make(error, errno, "could not malloc frags");
 	  goto err;
 	}
       frags->id = fmfs.id;
@@ -709,7 +738,7 @@ static int tbit_reassemble(scamper_task_t *task, scamper_dl_rec_t **out,
 			(array_cmp_t)tbit_frags_cmp);
       if(rc != 0)
 	{
-	  printerror(__func__, "could not insert frags");
+	  scamper_err_make(error, errno, "could not insert frags");
 	  goto err;
 	}
       rc = array_findpos((void **)state->frags, state->fragc, frags,
@@ -719,30 +748,30 @@ static int tbit_reassemble(scamper_task_t *task, scamper_dl_rec_t **out,
 
   /* add the fragment to the collection */
   fmf.off = dl->dl_ip_off;
-  frag = array_find((void **)frags->frags, frags->fragc, &fmf,
-		    (array_cmp_t)tbit_frag_cmp);
-  if(frag == NULL)
+  if(array_find((void **)frags->frags, frags->fragc, &fmf,
+		(array_cmp_t)tbit_frag_cmp) == NULL)
     {
-      if((frag = malloc_zero(sizeof(tbit_frag_t))) == NULL)
+      if((newfrag = malloc_zero(sizeof(tbit_frag_t))) == NULL)
 	{
-	  printerror(__func__, "could not malloc frag");
+	  scamper_err_make(error, errno, "could not malloc frag");
 	  goto err;
 	}
-      frag->off = fmf.off;
+      newfrag->off = fmf.off;
 
-      if((frag->data = memdup(dl->dl_ip_data, dl->dl_ip_datalen)) == NULL)
+      if((newfrag->data = memdup(dl->dl_ip_data, dl->dl_ip_datalen)) == NULL)
 	{
-	  printerror(__func__, "could not dup %d", dl->dl_ip_datalen);
+	  scamper_err_make(error, errno, "could not dup %d", dl->dl_ip_datalen);
 	  goto err;
 	}
-      frag->datalen = dl->dl_ip_datalen;
+      newfrag->datalen = dl->dl_ip_datalen;
 
-      if(array_insert((void ***)&frags->frags, &frags->fragc, frag,
+      if(array_insert((void ***)&frags->frags, &frags->fragc, newfrag,
 		      (array_cmp_t)tbit_frag_cmp) != 0)
 	{
-	  printerror(__func__, "could not add frag");
+	  scamper_err_make(error, errno, "could not add frag");
 	  goto err;
 	}
+      newfrag = NULL;
 
       if(SCAMPER_DL_IS_IP_MF(dl) == 0)
 	frags->gotlast = 1;
@@ -769,7 +798,7 @@ static int tbit_reassemble(scamper_task_t *task, scamper_dl_rec_t **out,
   frag = frags->frags[frags->fragc-1];
   if((data = malloc_zero(frag->off + frag->datalen)) == NULL)
     {
-      printerror(__func__, "could not malloc data");
+      scamper_err_make(error, errno, "could not malloc data");
       goto err;
     }
   for(i=0, off=0; i<frags->fragc; i++)
@@ -783,7 +812,7 @@ static int tbit_reassemble(scamper_task_t *task, scamper_dl_rec_t **out,
 
   if((newp = malloc_zero(sizeof(scamper_dl_rec_t))) == NULL)
     {
-      printerror(__func__, "could not malloc newp");
+      scamper_err_make(error, errno, "could not malloc newp");
       goto err;
     }
 
@@ -827,6 +856,7 @@ static int tbit_reassemble(scamper_task_t *task, scamper_dl_rec_t **out,
   return 0;
 
  err:
+  if(newfrag != NULL) tbit_frag_free(newfrag);
   if(newp != NULL) free(newp);
   if(data != NULL) free(data);
   return -1;
@@ -844,13 +874,9 @@ static tbit_probe_t *tp_alloc(tbit_state_t *state, uint8_t type)
 {
   tbit_probe_t *tp;
   if((tp = malloc_zero(sizeof(tbit_probe_t))) == NULL)
-    {
-      printerror(__func__, "could not malloc tp");
-      return NULL;
-    }
+    return NULL;
   if(slist_tail_push(state->tx, tp) == NULL)
     {
-      printerror(__func__, "could not queue tp");
       free(tp);
       return NULL;
     }
@@ -901,23 +927,14 @@ static int tbit_segment(tbit_state_t *state, const uint8_t *data, uint16_t len)
 {
   tbit_segment_t *seg = NULL;
 
-  if((seg = malloc_zero(sizeof(tbit_segment_t))) == NULL)
+  if((seg = malloc_zero(sizeof(tbit_segment_t))) == NULL ||
+     (seg->data = memdup(data, len)) == NULL ||
+     slist_tail_push(state->segments, seg) == NULL)
     {
-      printerror(__func__, "could not malloc seg");
-      goto err;
-    }
-  if((seg->data = memdup(data, len)) == NULL)
-    {
-      printerror(__func__, "could not malloc seg->data");
+      scamper_debug(__func__, "could not add seg");
       goto err;
     }
   seg->len = len;
-  if(slist_tail_push(state->segments, seg) == NULL)
-    {
-      printerror(__func__, "could not add seg");
-      goto err;
-    }
-
   return 0;
 
  err:
@@ -933,7 +950,8 @@ static int tbit_data_inrange(tbit_state_t *state, uint32_t seq, uint32_t len)
   return 0;
 }
 
-static int tbit_rxq(tbit_state_t *state, const scamper_dl_rec_t *dl)
+static int tbit_rxq(tbit_state_t *state, const scamper_dl_rec_t *dl,
+		    scamper_err_t *error)
 {
   void *data = NULL;
 
@@ -943,22 +961,23 @@ static int tbit_rxq(tbit_state_t *state, const scamper_dl_rec_t *dl)
   if(state->rxq == NULL &&
      (state->rxq = scamper_tbit_tcpq_alloc(state->rcv_nxt)) == NULL)
     {
-      printerror(__func__, "could not alloc tcpq");
+      scamper_err_make(error, errno, "could not alloc tcpq");
       goto err;
     }
 
   if(dl->dl_tcp_datalen > 0 &&
      (data = memdup(dl->dl_tcp_data, dl->dl_tcp_datalen)) == NULL)
     {
-      printerror(__func__, "could not dup %d bytes", dl->dl_tcp_datalen);
+      scamper_err_make(error, errno, "could not dup %d bytes",
+		       dl->dl_tcp_datalen);
       goto err;
     }
 
   if(scamper_tbit_tcpq_add(state->rxq, dl->dl_tcp_seq, dl->dl_tcp_flags,
 			   dl->dl_tcp_datalen, data) != 0)
     {
-      printerror(__func__, "could not add %u/%2x/%u",
-		 dl->dl_tcp_seq, dl->dl_tcp_flags, dl->dl_tcp_datalen);
+      scamper_err_make(error, errno, "could not add %u/%2x/%u",
+		       dl->dl_tcp_seq, dl->dl_tcp_flags, dl->dl_tcp_datalen);
       goto err;
     }
 
@@ -1181,9 +1200,12 @@ static void tbit_syn(scamper_task_t *task, scamper_dl_rec_t *dl)
   scamper_tbit_null_t *null;
   tbit_segment_t *seg = slist_head_item(state->segments);
   tbit_probe_t *tp = NULL;
+  scamper_err_t error;
   uint32_t ab;
   uint8_t mode = MODE_DATA;
   int rc;
+
+  SCAMPER_ERR_INIT(&error);
 
   if(SCAMPER_DL_IS_TCP_SYNACK(dl) == 0 || dl->dl_tcp_ack <= state->snd_nxt)
     {
@@ -1283,19 +1305,28 @@ static void tbit_syn(scamper_task_t *task, scamper_dl_rec_t *dl)
       if(dl->dl_tcp_datalen > 0)
 	{
 	  if((rc = tbit_app_rx(task, dl->dl_tcp_data, dl->dl_tcp_datalen)) < 0)
-	    goto err;
+	    {
+	      scamper_err_make(&error, 0, "error in tbit_app_rx");
+	      goto err;
+	    }
 	  state->rcv_nxt += dl->dl_tcp_datalen;
 	}
     }
   else
     {
       if((rc = tbit_app_rx(task, NULL, 0)) < 0)
-	goto err;
+	{
+	  scamper_err_make(&error, 0, "error in tbit_app_rx");
+	  goto err;
+	}
     }
 
   /* send a pure ack to their data */
   if((tp = tp_tcp(state)) == NULL)
-    goto err;
+    {
+      scamper_err_make(&error, errno, "error in tp_tcp");
+      goto err;
+    }
 
   /* send our request if there is one */
   if(rc > 0)
@@ -1313,7 +1344,10 @@ static void tbit_syn(scamper_task_t *task, scamper_dl_rec_t *dl)
 	}
 
       if((tp = tp_tcp(state)) == NULL)
-	goto err;
+	{
+	  scamper_err_make(&error, errno, "error in tp_tcp");
+	  goto err;
+	}
       tp->tp_len = rc;
 
       if(tbit->type == SCAMPER_TBIT_TYPE_SACK_RCVR)
@@ -1358,7 +1392,7 @@ static void tbit_syn(scamper_task_t *task, scamper_dl_rec_t *dl)
   return;
 
  err:
-  tbit_handleerror(task, errno);
+  tbit_handleerror(task, &error);
   return;
 }
 
@@ -1376,6 +1410,7 @@ static void tbit_fin(scamper_task_t *task, scamper_dl_rec_t *dl)
   scamper_tbit_t *tbit = tbit_getdata(task);
   tbit_state_t *state = tbit_getstate(task);
   scamper_tbit_tcpqe_t *qe;
+  scamper_err_t error;
   tbit_probe_t *tp;
   uint32_t seq;
   uint16_t datalen;
@@ -1412,13 +1447,16 @@ static void tbit_fin(scamper_task_t *task, scamper_dl_rec_t *dl)
     return;
 
   if((tp = tp_tcp(state)) == NULL)
-    goto err;
+    {
+      scamper_err_make(&error, errno, "error in tp_tcp");
+      goto err;
+    }
 
   /* is the data in range? */
   if(tbit_data_inrange(state, dl->dl_tcp_seq, dl->dl_tcp_datalen) == 0)
     goto ack;
 
-  if(tbit_rxq(state, dl) != 0)
+  if(tbit_rxq(state, dl, &error) != 0)
     goto err;
 
   while(scamper_tbit_tcpq_seg(state->rxq, &seq, &datalen) == 0)
@@ -1470,7 +1508,7 @@ static void tbit_fin(scamper_task_t *task, scamper_dl_rec_t *dl)
   return;
 
  err:
-  tbit_handleerror(task, errno);
+  tbit_handleerror(task, &error);
   return;
 }
 
@@ -1499,15 +1537,21 @@ static int tbit_data_pmtud(scamper_task_t *task, scamper_dl_rec_t *dl)
   scamper_tbit_t *tbit = tbit_getdata(task);
   tbit_state_t *state = tbit_getstate(task);
   scamper_tbit_pmtud_t *pmtud = tbit->data;
+  scamper_err_t error;
   tbit_probe_t *tp;
   int rc, bh = 0, ipv4 = 0, ipv6 = 0, skip = 0, frag = 0;
   uint16_t size;
+
+  SCAMPER_ERR_INIT(&error);
 
   /* if it is out of sequence, then send an ack for what we want */
   if(dl->dl_tcp_seq != state->rcv_nxt)
     {
       if(tp_tcp(state) == NULL)
-	goto err;
+	{
+	  scamper_err_make(&error, errno, "error in tp_tcp");
+	  goto err;
+	}
       return 0;
     }
 
@@ -1557,9 +1601,15 @@ static int tbit_data_pmtud(scamper_task_t *task, scamper_dl_rec_t *dl)
       if(dl->dl_tcp_datalen > 0 || (dl->dl_tcp_flags & TH_FIN) != 0)
 	{
 	  if((rc = tbit_app_rx(task, dl->dl_tcp_data, dl->dl_tcp_datalen)) < 0)
-	    goto err;
+	    {
+	      scamper_err_make(&error, 0, "error in tbit_app_rx");
+	      goto err;
+	    }
 	  if((tp = tp_tcp(state)) == NULL)
-	    goto err;
+	    {
+	      scamper_err_make(&error, errno, "error in tp_tcp");
+	      goto err;
+	    }
 	  if(rc > 0)
             {
 	      tp->tp_len = rc;
@@ -1602,18 +1652,21 @@ static int tbit_data_pmtud(scamper_task_t *task, scamper_dl_rec_t *dl)
   state->pmtud_ptb_data = memdup(dl->dl_net_raw, state->pmtud_ptb_datalen);
   if(state->pmtud_ptb_data == NULL)
     {
-      printerror(__func__, "could not dup quote");
+      scamper_err_make(&error, errno, "could not dup quote");
       goto err;
     }
 
   if(tp_ptb(state) == NULL)
-    goto err;
+    {
+      scamper_err_make(&error, errno, "error in tp_ptb");
+      goto err;
+    }
   state->attempt = 0;
 
   return 0;
 
  err:
-  tbit_handleerror(task, errno);
+  tbit_handleerror(task, &error);
   return -1;
 }
 
@@ -1632,7 +1685,10 @@ static int tbit_data_ecn(scamper_task_t *task, scamper_dl_rec_t *dl)
 {
   tbit_state_t *state = tbit_getstate(task);
   tbit_probe_t *tp = NULL;
+  scamper_err_t error;
   int rc, fin = 0;
+
+  SCAMPER_ERR_INIT(&error);
 
   /*
    * look for the ECN echo bit in the TCP header.
@@ -1660,7 +1716,10 @@ static int tbit_data_ecn(scamper_task_t *task, scamper_dl_rec_t *dl)
   if(dl->dl_tcp_seq != state->rcv_nxt)
     {
       if(tp_tcp(state) == NULL)
-	goto err;
+	{
+	  scamper_err_make(&error, errno, "error in tp_tcp");
+	  goto err;
+	}
       return 0;
     }
 
@@ -1686,9 +1745,15 @@ static int tbit_data_ecn(scamper_task_t *task, scamper_dl_rec_t *dl)
   if(dl->dl_tcp_datalen > 0 || fin != 0)
     {
       if((rc = tbit_app_rx(task, dl->dl_tcp_data, dl->dl_tcp_datalen)) < 0)
-	goto err;
+	{
+	  scamper_err_make(&error, 0, "error in tbit_app_rx");
+	  goto err;
+	}
       if((tp = tp_tcp(state)) == NULL)
-	goto err;
+	{
+	  scamper_err_make(&error, errno, "error in tp_tcp");
+	  goto err;
+	}
       if(rc > 0)
 	{
 	  tp->tp_len = rc;
@@ -1711,7 +1776,7 @@ static int tbit_data_ecn(scamper_task_t *task, scamper_dl_rec_t *dl)
   return 0;
 
  err:
-  tbit_handleerror(task, errno);
+  tbit_handleerror(task, &error);
   return -1;
 }
 
@@ -1737,9 +1802,12 @@ static int tbit_data_null(scamper_task_t *task, scamper_dl_rec_t *dl)
   tbit_state_t *state = tbit_getstate(task);
   tbit_probe_t *tp = NULL;
   scamper_tbit_tcpqe_t *qe = NULL;
+  scamper_err_t error;
   uint32_t seq;
   uint16_t datalen;
   int off, rc, fin, tx_fin = 0;
+
+  SCAMPER_ERR_INIT(&error);
 
   /* if we've got no more data to send, transmit a fin */
   if((state->flags & TBIT_STATE_FLAG_NOMOREDATA) != 0 &&
@@ -1752,7 +1820,10 @@ static int tbit_data_null(scamper_task_t *task, scamper_dl_rec_t *dl)
       if(tx_fin != 0 && (state->flags & TBIT_STATE_FLAG_SEEN_DATA) != 0)
 	{
 	  if((tp = tp_tcp(state)) == NULL)
-	    goto err;
+	    {
+	      scamper_err_make(&error, errno, "error in tp_tcp");
+	      goto err;
+	    }
 	  tp->tp_flags |= TH_FIN;
 	  state->mode = MODE_FIN;
 	}
@@ -1761,7 +1832,7 @@ static int tbit_data_null(scamper_task_t *task, scamper_dl_rec_t *dl)
 
   if(tbit_data_inrange(state, dl->dl_tcp_seq, dl->dl_tcp_datalen) == 0)
     return 0;
-  if(tbit_rxq(state, dl) != 0)
+  if(tbit_rxq(state, dl, &error) != 0)
     goto err;
 
   while(scamper_tbit_tcpq_seg(state->rxq, &seq, &datalen) == 0)
@@ -1779,7 +1850,10 @@ static int tbit_data_null(scamper_task_t *task, scamper_dl_rec_t *dl)
       if((off = scamper_tbit_data_seqoff(state->rcv_nxt, seq)) > 0)
 	{
 	  if((tp = tp_tcp(state)) == NULL)
-	    goto err;
+	    {
+	      scamper_err_make(&error, errno, "error in tp_tcp");
+	      goto err;
+	    }
 	  if(tx_fin != 0)
 	    {
 	      tp->tp_flags |= TH_FIN;
@@ -1802,11 +1876,17 @@ static int tbit_data_null(scamper_task_t *task, scamper_dl_rec_t *dl)
       if(qe->len > 0)
 	state->rcv_nxt += (qe->len - off);
       if((rc = tbit_app_rx(task, qe->data+off, qe->len-off)) < 0)
-	goto err;
+	{
+	  scamper_err_make(&error, 0, "error in tbit_app_rx");
+	  goto err;
+	}
       scamper_tbit_tcpqe_free(qe, free); qe = NULL;
 
       if((tp = tp_tcp(state)) == NULL)
-	goto err;
+	{
+	  scamper_err_make(&error, errno, "error in tp_tcp");
+	  goto err;
+	}
       if(rc > 0)
 	{
 	  tp->tp_len = rc;
@@ -1831,11 +1911,11 @@ static int tbit_data_null(scamper_task_t *task, scamper_dl_rec_t *dl)
 
  err:
   if(qe != NULL) scamper_tbit_tcpqe_free(qe, free);
-  tbit_handleerror(task, errno);
+  tbit_handleerror(task, &error);
   return -1;
 }
 
-static int sack_rcvr_next(scamper_task_t *task)
+static int sack_rcvr_next(scamper_task_t *task, scamper_err_t *error)
 {
   tbit_state_t *state = tbit_getstate(task);
   tbit_probe_t *tp;
@@ -1849,7 +1929,10 @@ static int sack_rcvr_next(scamper_task_t *task)
 
   /* send the next out of sequence packet */
   if((tp = tp_tcp(state)) == NULL)
-    return -1;
+    {
+      scamper_err_make(error, errno, "error in tp_tcp");
+      return -1;
+    }
   tp->tp_len = 1;
   tp->tp_seq += 1 + (state->sackr_x * 2);
   tp->wait = TBIT_TIMEOUT_SACK;
@@ -1869,8 +1952,11 @@ static int sack_rcvr_next(scamper_task_t *task)
 static int tbit_data_sack_rcvr(scamper_task_t *task, scamper_dl_rec_t *dl)
 {
   tbit_state_t *state = tbit_getstate(task);
+  scamper_err_t error;
   uint32_t edge;
   int i, x = -1;
+
+  SCAMPER_ERR_INIT(&error);
 
   if(dl->dl_tcp_seq != state->rcv_nxt)
     return 0;
@@ -1923,23 +2009,26 @@ static int tbit_data_sack_rcvr(scamper_task_t *task, scamper_dl_rec_t *dl)
 	return 0;
     }
 
-  if(sack_rcvr_next(task) != 0)
+  if(sack_rcvr_next(task, &error) != 0)
     goto err;
 
   return 0;
 
  err:
-  tbit_handleerror(task, errno);
+  tbit_handleerror(task, &error);
   return -1;
 }
 
 static void timeout_data_sack_rcvr(scamper_task_t *task)
 {
   tbit_state_t *state = tbit_getstate(task);
+  scamper_err_t error;
+
+  SCAMPER_ERR_INIT(&error);
 
   state->sackr_timeout++;
-  if(sack_rcvr_next(task) != 0)
-    tbit_handleerror(task, errno);
+  if(sack_rcvr_next(task, &error) != 0)
+    tbit_handleerror(task, &error);
 
   return;
 }
@@ -1959,11 +2048,14 @@ static int tbit_data_icw(scamper_task_t *task, scamper_dl_rec_t *dl)
   scamper_tbit_tcpqe_t *qe;
   scamper_tbit_icw_t *icw;
   tbit_probe_t *tp = NULL;
+  scamper_err_t error;
   uint32_t seq;
   uint16_t datalen;
   int rc, off, fin = 0;
 
   assert(state->icw_count <= 2);
+
+  SCAMPER_ERR_INIT(&error);
 
   if((dl->dl_tcp_flags & TH_FIN) != 0)
     {
@@ -1975,11 +2067,8 @@ static int tbit_data_icw(scamper_task_t *task, scamper_dl_rec_t *dl)
     goto done;
 
   /* if the packet contains data or is a fin, fail if we cannot queue it */
-  if((dl->dl_tcp_datalen != 0 || fin) && tbit_rxq(state, dl) != 0)
-    {
-      printerror(__func__, "could not queue packet");
-      goto err;
-    }
+  if((dl->dl_tcp_datalen != 0 || fin) && tbit_rxq(state, dl, &error) != 0)
+    goto err;
 
   if(state->flags & TBIT_STATE_FLAG_NOMOREDATA)
     {
@@ -2041,7 +2130,10 @@ static int tbit_data_icw(scamper_task_t *task, scamper_dl_rec_t *dl)
       if((off = scamper_tbit_data_seqoff(state->rcv_nxt, seq)) > 0)
 	{
 	  if((tp = tp_tcp(state)) == NULL)
-	    goto err;
+	    {
+	      scamper_err_make(&error, errno, "error in tp_tcp");
+	      goto err;
+	    }
 	  if(state->mode == MODE_MOREDATA)
 	    tp->tp_flags |= TH_FIN;
 	  break;
@@ -2054,11 +2146,17 @@ static int tbit_data_icw(scamper_task_t *task, scamper_dl_rec_t *dl)
       if(qe->len > 0)
 	state->rcv_nxt += (qe->len - off);
       if((rc = tbit_app_rx(task, qe->data+off, qe->len-off)) < 0)
-	goto err;
+	{
+	  scamper_err_make(&error, 0, "error in tbit_app_rx");
+	  goto err;
+	}
       scamper_tbit_tcpqe_free(qe, free); qe = NULL;
 
       if((tp = tp_tcp(state)) == NULL)
-	goto err;
+	{
+	  scamper_err_make(&error, errno, "error in tp_tcp");
+	  goto err;
+	}
       tp->tp_len = rc;
       if(state->mode == MODE_MOREDATA)
 	tp->tp_flags |= TH_FIN;
@@ -2075,8 +2173,7 @@ static int tbit_data_icw(scamper_task_t *task, scamper_dl_rec_t *dl)
   return 0;
 
  err:
-  tbit_handleerror(task, errno);
-  tbit_queue(task);
+  tbit_handleerror(task, &error);
   return -1;
 }
 
@@ -2085,6 +2182,7 @@ static int tbit_data_blinddata(scamper_task_t *task, scamper_dl_rec_t *dl)
   scamper_tbit_t *tbit = tbit_getdata(task);
   tbit_state_t *state = tbit_getstate(task);
   scamper_tbit_blind_t *blind = tbit->data;
+  scamper_err_t error;
   tbit_segment_t *seg;
   tbit_probe_t *tp;
 
@@ -2092,6 +2190,8 @@ static int tbit_data_blinddata(scamper_task_t *task, scamper_dl_rec_t *dl)
     return tbit_data_null(task, dl);
   if(state->mode != MODE_BLIND)
     return 0;
+
+  SCAMPER_ERR_INIT(&error);
 
   /*
    * if we got some data, or the packet is an ack that indicates the
@@ -2128,7 +2228,10 @@ static int tbit_data_blinddata(scamper_task_t *task, scamper_dl_rec_t *dl)
 
       /* in step 1, we send third segment with wrong ack */
       if((tp = tp_tcp(state)) == NULL)
-	goto err;
+	{
+	  scamper_err_make(&error, errno, "error in tp_tcp");
+	  goto err;
+	}
       tp->tp_seq += state->blind_part2;
       tp->tp_len = state->blind_part3;
       tp->tp_ack += blind->off;
@@ -2153,7 +2256,10 @@ static int tbit_data_blinddata(scamper_task_t *task, scamper_dl_rec_t *dl)
 
       /* in step 3, we send the third segment with correct ack */
       if((tp = tp_tcp(state)) == NULL)
-	goto err;
+	{
+	  scamper_err_make(&error, errno, "error in tp_tcp");
+	  goto err;
+	}
       tp->tp_len = seg->len;
       tp->wait = TBIT_TIMEOUT_BLINDDATA;
     }
@@ -2161,7 +2267,7 @@ static int tbit_data_blinddata(scamper_task_t *task, scamper_dl_rec_t *dl)
   return 0;
 
  err:
-  tbit_handleerror(task, errno);
+  tbit_handleerror(task, &error);
   return -1;
 }
 
@@ -2178,6 +2284,7 @@ static int tbit_data_blindfin(scamper_task_t *task, scamper_dl_rec_t *dl)
   scamper_tbit_t *tbit = tbit_getdata(task);
   tbit_state_t *state = tbit_getstate(task);
   scamper_tbit_blind_t *blind = tbit->data;
+  scamper_err_t error;
   tbit_segment_t *seg;
   tbit_probe_t *tp;
 
@@ -2185,6 +2292,8 @@ static int tbit_data_blindfin(scamper_task_t *task, scamper_dl_rec_t *dl)
     return tbit_data_null(task, dl);
   if(state->mode != MODE_BLIND)
     return 0;
+
+  SCAMPER_ERR_INIT(&error);
 
   /*
    * if the packet does not contain the expected sequence number, but we're in
@@ -2231,7 +2340,10 @@ static int tbit_data_blindfin(scamper_task_t *task, scamper_dl_rec_t *dl)
 
       /* in step 1, we send the FIN with wrong ack */
       if((tp = tp_tcp(state)) == NULL)
-	goto err;
+	{
+	  scamper_err_make(&error, errno, "error in tp_tcp");
+	  goto err;
+	}
       tp->tp_seq += state->blind_part2;
       tp->tp_ack += blind->off;
       tp->tp_flags |= TH_FIN;
@@ -2261,7 +2373,7 @@ static int tbit_data_blindfin(scamper_task_t *task, scamper_dl_rec_t *dl)
       /* make sure the ack is one of two possible values */
       if(dl->dl_tcp_ack > state->blind_ack + 1)
 	{
-	  errno = 0;
+	  scamper_err_make(&error, 0, "unexpected ack");
 	  goto err;
 	}
 
@@ -2269,10 +2381,16 @@ static int tbit_data_blindfin(scamper_task_t *task, scamper_dl_rec_t *dl)
       if(dl->dl_tcp_datalen > 0)
 	{
 	  if(tbit_app_rx(task, dl->dl_tcp_data, dl->dl_tcp_datalen) < 0)
-	    goto err;
+	    {
+	      scamper_err_make(&error, 0, "error in tbit_app_rx");
+	      goto err;
+	    }
 	  state->rcv_nxt += dl->dl_tcp_datalen;
 	  if(tp_tcp(state) == NULL)
-	    goto err;
+	    {
+	      scamper_err_make(&error, errno, "error in tp_tcp");
+	      goto err;
+	    }
 	}
 
       /*
@@ -2293,7 +2411,7 @@ static int tbit_data_blindfin(scamper_task_t *task, scamper_dl_rec_t *dl)
   return 0;
 
  err:
-  tbit_handleerror(task, errno);
+  tbit_handleerror(task, &error);
   return -1;
 }
 
@@ -2308,10 +2426,13 @@ static int tbit_data_blindrst(scamper_task_t *task, scamper_dl_rec_t *dl)
   scamper_tbit_t *tbit = tbit_getdata(task);
   tbit_state_t *state = tbit_getstate(task);
   scamper_tbit_blind_t *blind = tbit->data;
+  scamper_err_t error;
   tbit_probe_t *tp;
 
   assert(tbit->type == SCAMPER_TBIT_TYPE_BLIND_RST ||
 	 tbit->type == SCAMPER_TBIT_TYPE_BLIND_SYN);
+
+  SCAMPER_ERR_INIT(&error);
 
   if((state->flags & TBIT_STATE_FLAG_NOMOREDATA) != 0 &&
      state->mode == MODE_BLIND)
@@ -2335,7 +2456,10 @@ static int tbit_data_blindrst(scamper_task_t *task, scamper_dl_rec_t *dl)
       if(dl->dl_tcp_seq != state->rcv_nxt)
 	{
 	  if(tp_tcp(state) == NULL)
-	    goto err;
+	    {
+	      scamper_err_make(&error, errno, "error in tp_tcp");
+	      goto err;
+	    }
 	  return 0;
 	}
 
@@ -2356,10 +2480,16 @@ static int tbit_data_blindrst(scamper_task_t *task, scamper_dl_rec_t *dl)
 	{
 	  state->rcv_nxt += dl->dl_tcp_datalen;
 	  if(tbit_app_rx(task, dl->dl_tcp_data, dl->dl_tcp_datalen) < 0)
-	    goto err;
+	    {
+	      scamper_err_make(&error, 0, "error in tbit_app_rx");
+	      goto err;
+	    }
 	}
       if((tp = tp_tcp(state)) == NULL)
-	goto err;
+	{
+	  scamper_err_make(&error, errno, "error in tp_tcp");
+	  goto err;
+	}
 
       /* if the packet is a pure fin, then stop now */
       if((dl->dl_tcp_flags & TH_FIN) != 0 && dl->dl_tcp_datalen == 0)
@@ -2421,7 +2551,7 @@ static int tbit_data_blindrst(scamper_task_t *task, scamper_dl_rec_t *dl)
   return 0;
 
  err:
-  tbit_handleerror(task, errno);
+  tbit_handleerror(task, &error);
   return -1;
 }
 
@@ -2511,8 +2641,11 @@ static void timeout_data(scamper_task_t *task)
     };
   scamper_tbit_t *tbit = tbit_getdata(task);
   tbit_state_t *state = tbit_getstate(task);
+  scamper_err_t error;
   tbit_segment_t *seg;
   tbit_probe_t *tp;
+
+  SCAMPER_ERR_INIT(&error);
 
   if((seg = slist_head_item(state->segments)) != NULL)
     {
@@ -2521,8 +2654,11 @@ static void timeout_data(scamper_task_t *task)
 	  func[tbit->type](task);
 	  return;
 	}
-      if((tp=tp_tcp(state)) == NULL)
-	goto err;
+      if((tp = tp_tcp(state)) == NULL)
+	{
+	  scamper_err_make(&error, errno, "error in tp_tcp");
+	  goto err;
+	}
       tp->tp_len = seg->len;
       tp->wait = TBIT_TIMEOUT_DEFAULT;
       tbit_queue(task);
@@ -2540,7 +2676,7 @@ static void timeout_data(scamper_task_t *task)
   return;
 
  err:
-  tbit_handleerror(task, errno);
+  tbit_handleerror(task, &error);
   return;
 }
 
@@ -2563,10 +2699,13 @@ static void tbit_pmtud(scamper_task_t *task, scamper_dl_rec_t *dl)
   scamper_tbit_t *tbit = tbit_getdata(task);
   tbit_state_t *state = tbit_getstate(task);
   scamper_tbit_pmtud_t *pmtud = tbit->data;
+  scamper_err_t error;
   tbit_probe_t *tp;
   uint16_t mtu = pmtud->mtu;
   int ipv4 = SCAMPER_ADDR_TYPE_IS_IPV4(tbit->dst) ? 1 : 0;
   int success = 0;
+
+  SCAMPER_ERR_INIT(&error);
 
   /* no packet size restriction for IPv6 fragmentation header technique */
   if(SCAMPER_ADDR_TYPE_IS_IPV6(tbit->dst) && pmtud->mtu < 1280)
@@ -2578,7 +2717,10 @@ static void tbit_pmtud(scamper_task_t *task, scamper_dl_rec_t *dl)
       if(dl->dl_ip_size > mtu)
 	return;
       if(tp_tcp(state) == NULL)
-	goto err;
+	{
+	  scamper_err_make(&error, errno, "error in tp_tcp");
+	  goto err;
+	}
       tbit_queue(task);
       return;
     }
@@ -2606,8 +2748,8 @@ static void tbit_pmtud(scamper_task_t *task, scamper_dl_rec_t *dl)
 
       if((tp = tp_tcp(state)) == NULL)
 	{
-	  tbit_handleerror(task, errno);
-	  return;
+	  scamper_err_make(&error, errno, "error in tp_tcp");
+	  goto err;
 	}
       if((dl->dl_tcp_flags & TH_FIN) != 0)
 	{
@@ -2629,13 +2771,16 @@ static void tbit_pmtud(scamper_task_t *task, scamper_dl_rec_t *dl)
 
   /* send another PTB */
   if(tp_ptb(state) == NULL)
-    goto err;
+    {
+      scamper_err_make(&error, errno, "error in tp_ptb");
+      goto err;
+    }
 
   tbit_queue(task);
   return;
 
  err:
-  tbit_handleerror(task, errno);
+  tbit_handleerror(task, &error);
   return;
 }
 
@@ -2644,10 +2789,13 @@ static void tbit_blackhole(scamper_task_t *task, scamper_dl_rec_t *dl)
   scamper_tbit_t *tbit = tbit_getdata(task);
   tbit_state_t *state = tbit_getstate(task);
   scamper_tbit_pmtud_t *pmtud = tbit->data;
+  scamper_err_t error;
   tbit_probe_t *tp;
   uint16_t mtu = pmtud->mtu;
   int ipv4 = SCAMPER_ADDR_TYPE_IS_IPV4(tbit->dst) ? 1 : 0;
   int ack = 0;
+
+  SCAMPER_ERR_INIT(&error);
 
   /* if an out of sequence packet is received, ack it */
   if(dl->dl_tcp_seq != state->rcv_nxt)
@@ -2655,7 +2803,10 @@ static void tbit_blackhole(scamper_task_t *task, scamper_dl_rec_t *dl)
       if(dl->dl_ip_size > mtu)
 	return;
       if(tp_tcp(state) == NULL)
-	goto err;
+	{
+	  scamper_err_make(&error, errno, "error in tp_tcp");
+	  goto err;
+	}
       tbit_queue(task);
       return;
     }
@@ -2677,8 +2828,8 @@ static void tbit_blackhole(scamper_task_t *task, scamper_dl_rec_t *dl)
 
       if((tp = tp_tcp(state)) == NULL)
 	{
-	  tbit_handleerror(task, errno);
-	  return;
+	  scamper_err_make(&error, errno, "error in tp_tcp");
+	  goto err;
 	}
 
       /*
@@ -2703,7 +2854,7 @@ static void tbit_blackhole(scamper_task_t *task, scamper_dl_rec_t *dl)
   return;
 
  err:
-  tbit_handleerror(task, errno);
+  tbit_handleerror(task, &error);
   return;
 }
 
@@ -2723,15 +2874,21 @@ static void tbit_zerowin(scamper_task_t *task, scamper_dl_rec_t *dl)
 {
   scamper_tbit_t *tbit = tbit_getdata(task);
   tbit_state_t *state = tbit_getstate(task);
+  scamper_err_t error;
   tbit_segment_t *seg;
   tbit_probe_t *tp;
+
+  SCAMPER_ERR_INIT(&error);
 
   if(dl->dl_tcp_win == 0)
     return;
 
   seg = slist_head_item(state->segments); assert(seg != NULL);
   if((tp = tp_tcp(state)) == NULL)
-    goto err;
+    {
+      scamper_err_make(&error, errno, "error in tp_tcp");
+      goto err;
+    }
 
   if(tbit->type == SCAMPER_TBIT_TYPE_SACK_RCVR)
     tp->tp_len = 1;
@@ -2769,7 +2926,7 @@ static void tbit_zerowin(scamper_task_t *task, scamper_dl_rec_t *dl)
   return;
 
  err:
-  tbit_handleerror(task, errno);
+  tbit_handleerror(task, &error);
   return;
 }
 
@@ -2791,12 +2948,15 @@ static void tbit_moredata(scamper_task_t *task, scamper_dl_rec_t *dl)
   scamper_tbit_t *tbit = tbit_getdata(task);
   tbit_state_t *state = tbit_getstate(task);
   scamper_tbit_tcpqe_t *qe;
+  scamper_err_t error;
   tbit_probe_t *tp = NULL;
   uint32_t seq;
   uint16_t datalen;
   int off, fin = 0;
 
   assert(tbit->type == SCAMPER_TBIT_TYPE_ICW);
+
+  SCAMPER_ERR_INIT(&error);
 
   if(tbit->type == SCAMPER_TBIT_TYPE_ICW)
     assert(state->icw_count == 2);
@@ -2818,11 +2978,8 @@ static void tbit_moredata(scamper_task_t *task, scamper_dl_rec_t *dl)
     return;
 
   /* fail if we cannot queue packet */
-  if(tbit_rxq(state, dl) != 0)
-    {
-      printerror(__func__, "could not queue packet");
-      goto err;
-    }
+  if(tbit_rxq(state, dl, &error) != 0)
+    goto err;
 
   while(scamper_tbit_tcpq_seg(state->rxq, &seq, &datalen) == 0)
     {
@@ -2854,7 +3011,10 @@ static void tbit_moredata(scamper_task_t *task, scamper_dl_rec_t *dl)
       if((off = scamper_tbit_data_seqoff(state->rcv_nxt, seq)) > 0)
 	{
 	  if((tp = tp_tcp(state)) == NULL)
-	    goto err;
+	    {
+	      scamper_err_make(&error, errno, "error in tp_tcp");
+	      goto err;
+	    }
 	  if((state->flags & TBIT_STATE_FLAG_FIN_ACKED) == 0)
 	    tp->tp_flags |= TH_FIN;
 	  break;
@@ -2866,11 +3026,17 @@ static void tbit_moredata(scamper_task_t *task, scamper_dl_rec_t *dl)
       if(qe->len > 0)
 	state->rcv_nxt += (qe->len - off);
       if(tbit_app_rx(task, qe->data+off, qe->len-off) < 0)
-	goto err;
+	{
+	  scamper_err_make(&error, 0, "error in tbit_app_rx");
+	  goto err;
+	}
       scamper_tbit_tcpqe_free(qe, free); qe = NULL;
 
       if((tp = tp_tcp(state)) == NULL)
-	goto err;
+	{
+	  scamper_err_make(&error, errno, "error in tp_tcp");
+	  goto err;
+	}
       if((state->flags & TBIT_STATE_FLAG_FIN_ACKED) == 0)
 	tp->tp_flags |= TH_FIN;
       if(fin != 0)
@@ -2893,8 +3059,7 @@ static void tbit_moredata(scamper_task_t *task, scamper_dl_rec_t *dl)
   return;
 
  err:
-  tbit_handleerror(task, errno);
-  tbit_queue(task);
+  tbit_handleerror(task, &error);
   return;
 }
 
@@ -2903,8 +3068,11 @@ static void timeout_blinddata(scamper_task_t *task)
   scamper_tbit_t *tbit = tbit_getdata(task);
   tbit_state_t *state = tbit_getstate(task);
   scamper_tbit_blind_t *blind = tbit->data;
+  scamper_err_t error;
   tbit_segment_t *seg;
   tbit_probe_t *tp;
+
+  SCAMPER_ERR_INIT(&error);
 
   seg = slist_head_item(state->segments); assert(seg != NULL);
 
@@ -2916,7 +3084,10 @@ static void timeout_blinddata(scamper_task_t *task)
 	  return;
 	}
       if((tp = tp_tcp(state)) == NULL)
-	goto err;
+	{
+	  scamper_err_make(&error, errno, "error in tp_tcp");
+	  goto err;
+	}
       if(state->blind_step == 0)
 	tp->tp_len = state->blind_part1;
       else
@@ -2927,7 +3098,10 @@ static void timeout_blinddata(scamper_task_t *task)
     }
 
   if((tp = tp_tcp(state)) == NULL)
-    goto err;
+    {
+      scamper_err_make(&error, errno, "error in tp_tcp");
+      goto err;
+    }
   tp->tp_len = seg->len;
   tp->wait = TBIT_TIMEOUT_BLINDDATA;
 
@@ -2965,7 +3139,7 @@ static void timeout_blinddata(scamper_task_t *task)
   return;
 
  err:
-  tbit_handleerror(task, errno);
+  tbit_handleerror(task, &error);
   return;
 }
 
@@ -2983,7 +3157,10 @@ static void timeout_blindfin(scamper_task_t *task)
   tbit_state_t *state = tbit_getstate(task);
   scamper_tbit_blind_t *blind = tbit->data;
   tbit_segment_t *seg = slist_head_item(state->segments);
+  scamper_err_t error;
   tbit_probe_t *tp;
+
+  SCAMPER_ERR_INIT(&error);
 
   if(state->blind_step == 0)
     {
@@ -2993,7 +3170,10 @@ static void timeout_blindfin(scamper_task_t *task)
 	  return;
 	}
       if((tp = tp_tcp(state)) == NULL)
-	goto err;
+	{
+	  scamper_err_make(&error, errno, "error in tp_tcp");
+	  goto err;
+	}
       tp->tp_len = state->blind_part1;
       tp->wait = TBIT_TIMEOUT_BLINDDATA;
     }
@@ -3006,7 +3186,10 @@ static void timeout_blindfin(scamper_task_t *task)
   else
     {
       if((tp = tp_tcp(state)) == NULL)
-	goto err;
+	{
+	  scamper_err_make(&error, errno, "error in tp_tcp");
+	  goto err;
+	}
       tp->tp_len = seg->len;
       tp->wait = TBIT_TIMEOUT_BLINDDATA;
 
@@ -3047,7 +3230,7 @@ static void timeout_blindfin(scamper_task_t *task)
   return;
 
  err:
-  tbit_handleerror(task, errno);
+  tbit_handleerror(task, &error);
   return;
 }
 
@@ -3124,9 +3307,12 @@ static void do_tbit_handle_dl(scamper_task_t *task, scamper_dl_rec_t *dl)
   tbit_state_t *state = tbit_getstate(task);
   scamper_tbit_pkt_t *pkt = NULL;
   scamper_dl_rec_t *newp = NULL;
+  scamper_err_t error;
 
   if(state == NULL)
     return;
+
+  SCAMPER_ERR_INIT(&error);
 
   /*
    * handle packets that arrive in fragments.  fall through if it is able
@@ -3138,8 +3324,12 @@ static void do_tbit_handle_dl(scamper_task_t *task, scamper_dl_rec_t *dl)
       pkt = scamper_tbit_pkt_alloc(SCAMPER_TBIT_PKT_DIR_RX, dl->dl_net_raw,
 				   dl->dl_ip_size, &dl->dl_tv);
       if(pkt == NULL || scamper_tbit_record_pkt(tbit, pkt) != 0)
-	goto err;
-      if(tbit_reassemble(task, &newp, dl) != 0)
+	{
+	  if(pkt != NULL) scamper_tbit_pkt_free(pkt);
+	  scamper_err_make(&error, errno, "could not record packet");
+	  goto err;
+	}
+      if(tbit_reassemble(task, &newp, dl, &error) != 0)
 	goto err;
       if(newp == NULL)
 	return;
@@ -3167,6 +3357,7 @@ static void do_tbit_handle_dl(scamper_task_t *task, scamper_dl_rec_t *dl)
       if(pkt == NULL || scamper_tbit_record_pkt(tbit, pkt) != 0)
 	{
 	  if(pkt != NULL) scamper_tbit_pkt_free(pkt);
+	  scamper_err_make(&error, errno, "could not record packet");
 	  goto err;
 	}
     }
@@ -3213,7 +3404,7 @@ static void do_tbit_handle_dl(scamper_task_t *task, scamper_dl_rec_t *dl)
   return;
 
  err:
-  tbit_handleerror(task, errno);
+  tbit_handleerror(task, &error);
   return;
 }
 
@@ -3245,14 +3436,14 @@ static void do_tbit_handle_timeout(scamper_task_t *task)
   return;
 }
 
-static void tbit_handle_dlhdr(scamper_dlhdr_t *dlhdr)
+static void tbit_handle_dlhdr(scamper_dlhdr_t *dlhdr, const scamper_err_t *err)
 {
   scamper_task_t *task = dlhdr->param;
   tbit_state_t *state = tbit_getstate(task);
 
-  if(dlhdr->error != 0)
+  if(err != NULL)
     {
-      scamper_task_queue_done(task);
+      tbit_handleerror(task, err);
       return;
     }
 
@@ -3261,15 +3452,20 @@ static void tbit_handle_dlhdr(scamper_dlhdr_t *dlhdr)
   return;
 }
 
-static void tbit_handle_rt(scamper_route_t *rt)
+static void tbit_handle_rt(scamper_route_t *rt, const scamper_err_t *rt_err)
 {
   scamper_task_t *task = rt->param;
   scamper_tbit_t *tbit = tbit_getdata(task);
   tbit_state_t *state = tbit_getstate(task);
+  scamper_err_t error;
+  const scamper_err_t *error_ptr = &error;
   struct timeval wait;
   scamper_dl_t *dl;
   uint16_t mtu;
 
+  SCAMPER_ERR_INIT(&error);
+
+  /* silently skip over */
   if(state->mode != MODE_RTSOCK || state->route != rt)
     goto done;
 
@@ -3281,33 +3477,30 @@ static void tbit_handle_rt(scamper_route_t *rt)
     }
 #endif
 
-  if(rt->error != 0 || rt->ifindex < 0)
+  if(rt_err != NULL)
     {
-      printerror(__func__, "could not get ifindex");
-      tbit_handleerror(task, errno);
-      goto done;
+      error_ptr = rt_err;
+      goto err;
+    }
+
+  if(rt->ifindex < 0)
+    {
+      scamper_err_make(&error, errno, "handle_rt: could not get ifindex");
+      goto err;
     }
 
   /*
    * scamper needs the datalink to transmit packets; try and get a
    * datalink on the ifindex specified.
    */
-  if((state->dl = scamper_fd_dl(rt->ifindex)) == NULL)
-    {
-      scamper_debug(__func__, "could not get dl for %d", rt->ifindex);
-      tbit_handleerror(task, errno);
-      goto done;
-    }
+  if((state->dl = scamper_fd_dl(rt->ifindex, &error)) == NULL)
+    goto err;
 
   /* Calculate the MSS to advertise */
   if(tbit->client_mss == 0)
     {
-      if(scamper_if_getmtu(rt->ifindex, &mtu) != 0)
-        {
-	  scamper_debug(__func__, "could not get the interface mtu");
-	  tbit_handleerror(task, errno);
-	  goto done;
-        }
+      if(scamper_if_getmtu(rt->ifindex, &mtu, &error) != 0)
+	goto err;
 
       if(tbit->dst->type == SCAMPER_ADDR_TYPE_IPV4)
 	tbit->client_mss = mtu - 40;
@@ -3324,8 +3517,8 @@ static void tbit_handle_rt(scamper_route_t *rt)
   state->mode = MODE_DLHDR;
   if((state->dlhdr = scamper_dlhdr_alloc()) == NULL)
     {
-      tbit_handleerror(task, errno);
-      goto done;
+      scamper_err_make(&error, errno, "could not alloc dlhdr");
+      goto err;
     }
   dl = scamper_fd_dl_get(state->dl);
   state->dlhdr->dst = scamper_addr_use(tbit->dst);
@@ -3334,11 +3527,8 @@ static void tbit_handle_rt(scamper_route_t *rt)
   state->dlhdr->txtype = scamper_dl_tx_type(dl);
   state->dlhdr->param = task;
   state->dlhdr->cb = tbit_handle_dlhdr;
-  if(scamper_dlhdr_get(state->dlhdr) != 0)
-    {
-      tbit_handleerror(task, errno);
-      goto done;
-    }
+  if(scamper_dlhdr_get(state->dlhdr, &error) != 0)
+    goto err;
 
   if(state->mode != MODE_FIREWALL && scamper_task_queue_isdone(task) == 0)
     {
@@ -3351,6 +3541,10 @@ static void tbit_handle_rt(scamper_route_t *rt)
   if(state->route == rt)
     state->route = NULL;
   return;
+
+ err:
+  tbit_handleerror(task, error_ptr);
+  goto done;
 }
 
 static void do_tbit_write(scamper_file_t *sf, scamper_task_t *task)
@@ -3416,7 +3610,7 @@ static void tbit_state_free(scamper_task_t *task)
   return;
 }
 
-static int tbit_state_alloc(scamper_task_t *task)
+static int tbit_state_alloc(scamper_task_t *task, scamper_err_t *error)
 {
   scamper_tbit_t *tbit = tbit_getdata(task);
   scamper_tbit_null_t *null;
@@ -3425,20 +3619,16 @@ static int tbit_state_alloc(scamper_task_t *task)
 
   if((state = malloc_zero(sizeof(tbit_state_t))) == NULL)
     {
-      printerror(__func__, "could not malloc state");
+      scamper_err_make(error, errno, "could not malloc state");
       goto err;
     }
   state->mode = MODE_RTSOCK;
   scamper_task_setstate(task, state);
 
-  if((state->segments = slist_alloc()) == NULL)
+  if((state->segments = slist_alloc()) == NULL ||
+     (state->tx = slist_alloc()) == NULL)
     {
-      printerror(__func__, "could not create segments list");
-      goto err;
-    }
-  if((state->tx = slist_alloc()) == NULL)
-    {
-      printerror(__func__, "could not create tx list");
+      scamper_err_make(error, errno, "could not malloc state");
       goto err;
     }
 
@@ -3448,7 +3638,7 @@ static int tbit_state_alloc(scamper_task_t *task)
    */
   if(random_u16(&seq) != 0)
     {
-      printerror(__func__, "could not get random isn");
+      scamper_err_make(error, errno, "could not get random isn");
       goto err;
     }
   state->snd_nxt = seq;
@@ -3457,11 +3647,8 @@ static int tbit_state_alloc(scamper_task_t *task)
     random_u16(&state->ipid);
 
 #ifndef _WIN32 /* windows does not have a routing socket */
-  if((state->rtsock = scamper_fd_rtsock()) == NULL)
-    {
-      printerror(__func__, "could not get rtsock");
-      goto err;
-    }
+  if((state->rtsock = scamper_fd_rtsock(error)) == NULL)
+    goto err;
 #endif
 
   if(tbit->type == SCAMPER_TBIT_TYPE_SACK_RCVR)
@@ -3480,7 +3667,7 @@ static int tbit_state_alloc(scamper_task_t *task)
       /* if we are using the fast-open cookie, get the payload to include */
       if(tbit->client_fo_cookielen > 0 && tbit_app_rx(task, NULL, 0) <= 0)
 	{
-	  scamper_debug(__func__, "could not get payload");
+	  scamper_err_make(error, 0, "error in tbit_app_rx");
 	  goto err;
 	}
     }
@@ -3694,16 +3881,16 @@ static void do_tbit_probe(scamper_task_t *task)
   int                 rc;
   uint8_t             wait;
   struct timeval      tv;
+  scamper_err_t       error;
+
+  SCAMPER_ERR_INIT(&error);
 
   if(state == NULL)
     {
       /* Fill in the test start time */
       gettimeofday_wrap(&tbit->start);
-
-      /* Allocate space to store task state */
-      if(tbit_state_alloc(task) != 0)
+      if(tbit_state_alloc(task, &error) != 0)
 	goto err;
-
       state = tbit_getstate(task);
     }
 
@@ -3711,15 +3898,18 @@ static void do_tbit_probe(scamper_task_t *task)
     {
       state->route = scamper_route_alloc(tbit->dst, task, tbit_handle_rt);
       if(state->route == NULL)
-	goto err;
+	{
+	  scamper_err_make(&error, errno, "could not alloc route lookup");
+	  goto err;
+	}
 
 #ifndef _WIN32 /* windows does not have a routing socket */
-      if(scamper_rtsock_getroute(state->rtsock, state->route) != 0)
-	goto err;
+      rc = scamper_rtsock_getroute(state->rtsock, state->route, &error);
 #else
-      if(scamper_rtsock_getroute(state->route) != 0)
-	goto err;
+      rc = scamper_rtsock_getroute(state->route, &error);
 #endif
+      if(rc != 0)
+	goto err;
 
       if(scamper_task_queue_isdone(task))
 	return;
@@ -3743,7 +3933,8 @@ static void do_tbit_probe(scamper_task_t *task)
 
       if((state->fw = scamper_firewall_entry_get(&sfw)) == NULL)
 	{
-	  scamper_debug(__func__, "could not get firewall entry");
+	  /* XXX: extend scamper_firewall_entry_get to get better error */
+	  scamper_err_make(&error, 0, "could not get firewall entry");
 	  goto err;
 	}
 
@@ -3790,18 +3981,15 @@ static void do_tbit_probe(scamper_task_t *task)
     }
 
   /* Send the probe */
-  if(scamper_probe(&probe) != 0)
-    {
-      errno = probe.pr_errno;
-      printerror(__func__, "could not send probe");
-      goto err;
-    }
+  if(scamper_probe(&probe, &error) != 0)
+    goto err;
 
   if((pkt = scamper_tbit_pkt_alloc(SCAMPER_TBIT_PKT_DIR_TX, probe.pr_tx_raw,
 				   probe.pr_tx_rawlen, &probe.pr_tx))==NULL ||
      scamper_tbit_record_pkt(tbit, pkt) != 0)
     {
-      printerror(__func__, "could not record packet");
+      if(pkt != NULL) scamper_tbit_pkt_free(pkt);
+      scamper_err_make(&error, errno, "could not record packet");
       goto err;
     }
 
@@ -3811,7 +3999,7 @@ static void do_tbit_probe(scamper_task_t *task)
   return;
 
 err:
-  tbit_handleerror(task, errno);
+  tbit_handleerror(task, &error);
   return;
 }
 
@@ -3829,6 +4017,9 @@ scamper_task_t *scamper_do_tbit_alloctask(void *data, scamper_list_t *list,
   scamper_tbit_t *tbit = (scamper_tbit_t *)data;
   scamper_task_sig_t *sig = NULL;
   scamper_task_t *task = NULL;
+  scamper_err_t error;
+
+  SCAMPER_ERR_INIT(&error);
 
   /* allocate a task structure and store the tbit with it */
   if((task = scamper_task_alloc(data, &tbit_funcs)) == NULL)
@@ -3845,8 +4036,11 @@ scamper_task_t *scamper_do_tbit_alloctask(void *data, scamper_list_t *list,
     }
   sig->sig_tx_ip_dst = scamper_addr_use(tbit->dst);
   if(tbit->src == NULL &&
-     (tbit->src = scamper_getsrc(tbit->dst, 0, errbuf, errlen)) == NULL)
-    goto err;
+     (tbit->src = scamper_getsrc(tbit->dst, 0, &error)) == NULL)
+    {
+      snprintf(errbuf, errlen, "%s: %s", __func__, error.errstr);
+      goto err;
+    }
   SCAMPER_TASK_SIG_TCP(sig, tbit->sport, tbit->dport);
   if(scamper_task_sig_add(task, sig) != 0)
     {

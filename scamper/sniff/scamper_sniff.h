@@ -1,7 +1,7 @@
 /*
  * scamper_sniff.h
  *
- * $Id: scamper_sniff.h,v 1.11 2024/01/02 17:51:46 mjl Exp $
+ * $Id: scamper_sniff.h,v 1.12 2025/10/19 21:53:46 mjl Exp $
  *
  * Copyright (C) 2011 The University of Waikato
  * Copyright (C) 2023 Matthew Luckie
@@ -41,10 +41,14 @@ uint32_t scamper_sniff_userid_get(const scamper_sniff_t *sniff);
 const struct timeval *scamper_sniff_start_get(const scamper_sniff_t *sniff);
 const struct timeval *scamper_sniff_finish_get(const scamper_sniff_t *sniff);
 uint8_t scamper_sniff_stop_reason_get(const scamper_sniff_t *sniff);
+char *scamper_sniff_stop_tostr(const scamper_sniff_t *sniff,
+			       char *buf, size_t len);
 uint32_t scamper_sniff_limit_pktc_get(const scamper_sniff_t *sniff);
 const struct timeval *scamper_sniff_limit_time_get(const scamper_sniff_t *sniff);
 scamper_addr_t *scamper_sniff_src_get(const scamper_sniff_t *sniff);
 uint16_t scamper_sniff_icmpid_get(const scamper_sniff_t *sniff);
+const char *scamper_sniff_errmsg_get(const scamper_sniff_t *sniff);
+
 scamper_sniff_pkt_t *scamper_sniff_pkt_get(const scamper_sniff_t *sniff,
 					   uint32_t i);
 uint32_t scamper_sniff_pktc_get(const scamper_sniff_t *sniff);

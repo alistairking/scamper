@@ -1,7 +1,7 @@
 /*
  * common_trace : common functions for unit testing trace
  *
- * $Id: common_trace.c,v 1.15 2025/07/15 06:12:32 mjl Exp $
+ * $Id: common_trace.c,v 1.18 2025/10/19 20:49:19 mjl Exp $
  *
  *        Marcus Luckie, Matthew Luckie
  *        mjl@luckie.org.nz
@@ -221,6 +221,7 @@ int trace_ok(const scamper_trace_t *in, const scamper_trace_t *out)
      addr_ok(in->src, out->src) != 0 ||
      addr_ok(in->dst, out->dst) != 0 ||
      addr_ok(in->rtr, out->rtr) != 0 ||
+     str_ok(in->errmsg, out->errmsg) != 0 ||
      timeval_cmp(&in->start, &out->start) != 0 ||
      in->hop_count != out->hop_count ||
      in->probec != out->probec ||
@@ -802,6 +803,43 @@ static scamper_trace_t *trace_7(void)
   return NULL;
 }
 
+scamper_trace_t *trace_8(void)
+{
+  scamper_trace_t *trace = NULL;
+
+  if((trace = scamper_trace_alloc()) == NULL ||
+     (trace->dst = scamper_addr_fromstr_ipv4("192.0.2.2")) == NULL ||
+     (trace->errmsg = strdup("hello world")) == NULL)
+    goto err;
+
+  trace->userid               = 70;
+  trace->sport                = 120;
+  trace->dport                = 154;
+  trace->start.tv_sec         = 1724828853;
+  trace->start.tv_usec        = 123456;
+  trace->wait_timeout.tv_sec  = 1;
+  trace->wait_timeout.tv_usec = 0;
+  trace->wait_probe.tv_sec    = 0;
+  trace->wait_probe.tv_usec   = 0;
+  trace->flags                = 0;
+  trace->stop_hop             = 5;
+  trace->hop_count            = 0;
+  trace->firsthop             = 1;
+  trace->squeries             = 3;
+  trace->gaplimit             = 3;
+  trace->attempts             = 2;
+  trace->probec               = 0;
+  trace->flags               |= SCAMPER_TRACE_FLAG_ALLATTEMPTS;
+  trace->stop_reason          = SCAMPER_TRACE_STOP_ERROR;
+  trace->type                 = SCAMPER_TRACE_TYPE_ICMP_ECHO_PARIS;
+
+  return trace;
+
+ err:
+  if(trace != NULL) scamper_trace_free(trace);
+  return NULL;
+}
+
 static scamper_trace_makefunc_t makers[] = {
   trace_1,
   trace_2,
@@ -810,6 +848,7 @@ static scamper_trace_makefunc_t makers[] = {
   trace_5,
   trace_6,
   trace_7,
+  trace_8,
 };
 
 scamper_trace_t *trace_makers(size_t i)

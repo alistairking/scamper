@@ -54,6 +54,12 @@ cdef extern from "scamper_host.h":
 
  cdef uint16_t SCAMPER_HOST_CLASS_IN
 
+ cdef uint8_t  SCAMPER_HOST_STOP_NONE
+ cdef uint8_t  SCAMPER_HOST_STOP_DONE
+ cdef uint8_t  SCAMPER_HOST_STOP_TIMEOUT
+ cdef uint8_t  SCAMPER_HOST_STOP_HALTED
+ cdef uint8_t  SCAMPER_HOST_STOP_ERROR
+
  char *scamper_host_tojson(const scamper_host_t *host, size_t *l)
 
  void scamper_host_free(scamper_host_t *host)
@@ -78,6 +84,7 @@ cdef extern from "scamper_host.h":
  const char *scamper_host_qname_get(const scamper_host_t *host)
  uint8_t scamper_host_qcount_get(const scamper_host_t *host)
  const char *scamper_host_ecs_get(const scamper_host_t *host)
+ const char *scamper_host_errmsg_get(const scamper_host_t *host)
 
  scamper_host_query_t *scamper_host_query_get(const scamper_host_t *host, uint8_t i)
  scamper_host_query_t *scamper_host_query_use(scamper_host_query_t *q)

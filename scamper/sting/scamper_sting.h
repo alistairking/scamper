@@ -7,7 +7,7 @@
  *
  * Author: Matthew Luckie
  *
- * $Id: scamper_sting.h,v 1.13 2023/12/24 00:03:21 mjl Exp $
+ * $Id: scamper_sting.h,v 1.16 2025/10/19 22:06:48 mjl Exp $
  *
  * This file implements algorithms described in the sting-0.7 source code,
  * as well as the paper:
@@ -62,6 +62,9 @@ scamper_sting_pkt_t *scamper_sting_pkt_get(const scamper_sting_t *sting,
 					   uint32_t i);
 uint32_t scamper_sting_pktc_get(const scamper_sting_t *sting);
 uint8_t scamper_sting_result_get(const scamper_sting_t *sting);
+char *scamper_sting_result_tostr(const scamper_sting_t *sting,
+				 char *buf, size_t len);
+const char *scamper_sting_errmsg_get(const scamper_sting_t *sting);
 
 scamper_sting_pkt_t *scamper_sting_pkt_use(scamper_sting_pkt_t *pkt);
 void scamper_sting_pkt_free(scamper_sting_pkt_t *pkt);
@@ -72,6 +75,7 @@ const uint8_t *scamper_sting_pkt_data_get(const scamper_sting_pkt_t *pkt);
 
 #define SCAMPER_STING_RESULT_NONE       0
 #define SCAMPER_STING_RESULT_COMPLETED  1
+#define SCAMPER_STING_RESULT_ERROR      2
 
 #define SCAMPER_STING_DISTRIBUTION_EXPONENTIAL 1
 #define SCAMPER_STING_DISTRIBUTION_PERIODIC    2

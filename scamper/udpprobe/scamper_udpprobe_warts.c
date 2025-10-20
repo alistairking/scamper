@@ -5,7 +5,7 @@
  *
  * Author: Matthew Luckie
  *
- * $Id: scamper_udpprobe_warts.c,v 1.7 2025/04/20 07:34:23 mjl Exp $
+ * $Id: scamper_udpprobe_warts.c,v 1.8 2025/10/19 02:17:23 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -58,6 +58,7 @@
 #define WARTS_UDPPROBE_STOP_COUNT      17
 #define WARTS_UDPPROBE_SPORT           18
 #define WARTS_UDPPROBE_WAIT_PROBE      19
+#define WARTS_UDPPROBE_ERRMSG          20
 
 static const warts_var_t udpprobe_vars[] =
 {
@@ -80,6 +81,7 @@ static const warts_var_t udpprobe_vars[] =
   {WARTS_UDPPROBE_STOP_COUNT,   1},
   {WARTS_UDPPROBE_SPORT,        2},
   {WARTS_UDPPROBE_WAIT_PROBE,   4},
+  {WARTS_UDPPROBE_ERRMSG,      -1},
 };
 #define udpprobe_vars_mfb WARTS_VAR_MFB(udpprobe_vars)
 
@@ -309,7 +311,8 @@ static int warts_udpprobe_params(const scamper_udpprobe_t *up, uint8_t *flags,
 	 (var->id == WARTS_UDPPROBE_PROBE_COUNT && up->probe_count == 1) ||
 	 (var->id == WARTS_UDPPROBE_PROBE_SENT && up->probe_sent == 1) ||
 	 (var->id == WARTS_UDPPROBE_STOP_COUNT && up->stop_count == 0) ||
-	 (var->id == WARTS_UDPPROBE_SPORT && up->sport == 0))
+	 (var->id == WARTS_UDPPROBE_SPORT && up->sport == 0) ||
+	 (var->id == WARTS_UDPPROBE_ERRMSG && up->errmsg == NULL))
 	continue;
 
       /* Set the flag for the rest of the variables */
@@ -329,6 +332,11 @@ static int warts_udpprobe_params(const scamper_udpprobe_t *up, uint8_t *flags,
       else if(var->id == WARTS_UDPPROBE_DATA)
 	{
 	  *params_len += up->len;
+	}
+      else if(var->id == WARTS_UDPPROBE_ERRMSG)
+	{
+	  if(warts_str_size(up->errmsg, params_len) != 0)
+	    return -1;
 	}
       else
 	{
@@ -367,6 +375,7 @@ static int warts_udpprobe_params_read(scamper_udpprobe_t *up,
     {&up->stop_count,   (wpr_t)extract_byte,         NULL},
     {&up->sport,        (wpr_t)extract_uint16,       NULL},
     {&up->wait_probe,   (wpr_t)extract_rtt,          NULL},
+    {&up->errmsg,       (wpr_t)extract_string,       NULL},
   };
   const int handler_cnt = sizeof(handlers) / sizeof(warts_param_reader_t);
 
@@ -411,6 +420,7 @@ static int warts_udpprobe_params_write(const scamper_udpprobe_t *up,
     {&up->stop_count,     (wpw_t)insert_byte,         NULL},
     {&up->sport,          (wpw_t)insert_uint16,       NULL},
     {&up->wait_probe,     (wpw_t)insert_rtt,          NULL},
+    {up->errmsg,          (wpw_t)insert_string,       NULL},
   };
   const int handler_cnt = sizeof(handlers)/sizeof(warts_param_writer_t);
 

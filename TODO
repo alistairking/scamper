@@ -1,4 +1,4 @@
-$Id: TODO,v 1.43 2025/02/26 21:22:51 mjl Exp $
+$Id: TODO,v 1.45 2025/09/28 06:21:21 mjl Exp $
 
 * compile without warnings when the following is passed in CFLAGS
   -Wall -Wno-unneeded-internal-declaration -Wno-unused-const-variable
@@ -23,6 +23,11 @@ $Id: TODO,v 1.43 2025/02/26 21:22:51 mjl Exp $
 * libscamperctrl:
    unit tests
 
+* libscamperfile:
+   udpprobe.probe_count should be .attempts.
+   stop should be stop_reason consistently across measurements.
+   warts code should not allow result structures with null dst, etc.
+
 * investigate if gettimeofday has to be called so much.
 
 * check that the TOS bits are being set properly on tx.
@@ -31,13 +36,10 @@ $Id: TODO,v 1.43 2025/02/26 21:22:51 mjl Exp $
 
 * in the scamper.1 man page:
    document control socket quoting rules.
-   how to feed adhoc sources
-   how to set socket as output for traces
-   how does priority value translate into the way lists are mixed
+   how to feed commands to sources.
+   how does priority value translate into the way lists are mixed.
    what is the syntax of responses on control socket
-   what is the maximum supported length of source and outfile names and aliases
    how does the cycles value of a source change as cycles are finished
-   when does source update take effect
 
 * reduce memory consumption
   - reorg scamper_task_sig_t to pack into smaller structure

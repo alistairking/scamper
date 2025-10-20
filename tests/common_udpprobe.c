@@ -1,7 +1,7 @@
 /*
  * common_udpprobe : common functions for unit testing udpprobe
  *
- * $Id: common_udpprobe.c,v 1.1 2025/04/20 07:33:52 mjl Exp $
+ * $Id: common_udpprobe.c,v 1.3 2025/10/19 20:49:19 mjl Exp $
  *
  *        Marcus Luckie, Matthew Luckie
  *        mjl@luckie.org.nz
@@ -108,6 +108,7 @@ int udpprobe_ok(const scamper_udpprobe_t *in, const scamper_udpprobe_t *out)
      in->userid != out->userid ||
      addr_ok(in->src, out->src) != 0 ||
      addr_ok(in->dst, out->dst) != 0 ||
+     str_ok(in->errmsg, out->errmsg) != 0 ||
      in->sport != out->sport ||
      in->dport != out->dport ||
      in->probe_count != out->probe_count ||
@@ -141,11 +142,12 @@ static scamper_udpprobe_t *udpprobe_1_4(uint8_t probe_sent)
   if((up = scamper_udpprobe_alloc()) == NULL ||
      (up->src = scamper_addr_fromstr_ipv4("192.0.2.1")) == NULL ||
      (up->dst = scamper_addr_fromstr_ipv4("192.0.2.2")) == NULL ||
-     (len > 0 && (up->probes = malloc_zero(len)) == NULL))
+     (probe_sent > 0 && (up->probes = malloc_zero(len)) == NULL))
     goto err;
 
   up->userid               = 69;
-  up->sport                = probes[0].sport;
+  if(probe_sent > 0)
+    up->sport              = probes[0].sport;
   up->dport                = 154;
   up->probe_count          = 163;
   up->stop_count           = 50;
@@ -241,6 +243,22 @@ static scamper_udpprobe_t *udpprobe_6(void)
   return udpprobe_5_6(2);
 }
 
+static scamper_udpprobe_t *udpprobe_7(void)
+{
+  scamper_udpprobe_t *up = udpprobe_1_4(0);
+
+  if(up == NULL ||
+     (up->errmsg = strdup("hello world")) == NULL)
+    goto err;
+  up->stop = SCAMPER_UDPPROBE_STOP_ERROR;
+
+  return up;
+
+ err:
+  if(up != NULL) scamper_udpprobe_free(up);
+  return NULL;
+}
+
 static scamper_udpprobe_makefunc_t makers[] = {
   udpprobe_1,
   udpprobe_2,
@@ -248,6 +266,7 @@ static scamper_udpprobe_makefunc_t makers[] = {
   udpprobe_4,
   udpprobe_5,
   udpprobe_6,
+  udpprobe_7,
 };
 
 scamper_udpprobe_t *udpprobe_makers(size_t i)

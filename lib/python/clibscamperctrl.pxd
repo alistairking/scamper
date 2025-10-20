@@ -53,7 +53,7 @@ cdef extern from "libscamperctrl.h":
 				    const void *data, size_t len)
 
  scamper_ctrl_t *scamper_ctrl_alloc(scamper_ctrl_cb_t cb)
- int scamper_ctrl_wait(scamper_ctrl_t *ctrl, timeval *to)
+ int scamper_ctrl_wait(scamper_ctrl_t *ctrl, timeval *to) nogil
  void scamper_ctrl_free(scamper_ctrl_t *ctrl)
  bint scamper_ctrl_isdone(scamper_ctrl_t *ctrl)
  void *scamper_ctrl_param_get(const scamper_ctrl_t *ctrl)
@@ -106,6 +106,7 @@ cdef extern from "libscamperctrl.h":
  const char *scamper_vp_st_get(const scamper_vp_t *vp)
  const char *scamper_vp_place_get(const scamper_vp_t *vp)
  const char *scamper_vp_latlong_get(const scamper_vp_t *vp)
+ const char *scamper_vp_iata_get(const scamper_vp_t *vp)
  size_t scamper_vp_tagc_get(const scamper_vp_t *vp)
  const char *scamper_vp_tag_get(const scamper_vp_t *vp, size_t i)
 

@@ -1,12 +1,12 @@
 /*
  * unit_cmd_host : unit tests for host commands
  *
- * $Id: unit_cmd_host.c,v 1.8 2025/06/21 04:59:15 mjl Exp $
+ * $Id: unit_cmd_host.c,v 1.9 2025/09/27 00:14:34 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
  *
- * Copyright (C) 2023-2024 Matthew Luckie
+ * Copyright (C) 2023-2025 Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -166,6 +166,21 @@ static int x192_0_2_55_ptr(const scamper_host_t *in)
   return 0;
 }
 
+static int x192_0_2_55_dot(const scamper_host_t *in)
+{
+  const char *qname;
+
+  if(in == NULL ||
+     check_addr(scamper_host_dst_get(in), "2001:DB8::1") != 0 ||
+     (qname = scamper_host_qname_get(in)) == NULL ||
+     strcmp(qname, "192.0.2.55") != 0 ||
+     scamper_host_qclass_get(in) != SCAMPER_HOST_CLASS_IN ||
+     scamper_host_qtype_get(in) != SCAMPER_HOST_TYPE_A)
+    return -1;
+
+  return 0;
+}
+
 static int doesnotexist_nsid(const scamper_host_t *in)
 {
   const char *qname;
@@ -252,8 +267,16 @@ int main(int argc, char *argv[])
     {"-s 192.0.2.2 -t aaaa -r example.com", example_com_aaaa_r},
     {"-s 192.0.2.2 192.0.2.55", x192_0_2_55_ptr},
     {"-s 192.0.2.2 -t ptr 192.0.2.55", x192_0_2_55_ptr},
+    {"-s 192.0.2.2 -t ptr 192.0.2.55.", isnull},
     {"-s 192.0.2.3 -O nsid does-not-exist", doesnotexist_nsid},
     {"-s 2001:DB8::1 -O nsid does-not-exist", v6_doesnotexist_nsid},
+    {"-s 2001:DB8::1 192.0.2.55.", x192_0_2_55_dot},
+    {"-s 2001:DB8::1 192.0.2.55..", isnull},
+    {"-s 2001:DB8::1 192.0.2..55", isnull},
+    {"-s 2001:DB8::1 ..192.0.2.55", isnull},
+    {"-s 2001:DB8::1 ..example.com.", isnull},
+    {"-s 2001:DB8::1 ..example.com", isnull},
+    {"-s 192.0.2.1 example.com.", example_com_a},
   };
   size_t i, testc = sizeof(tests) / sizeof(sc_test_t);
   char filename[128];

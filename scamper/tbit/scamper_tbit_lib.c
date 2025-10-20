@@ -4,7 +4,7 @@
  * Copyright (C) 2023 Matthew Luckie
  * Author: Matthew Luckie
  *
- * $Id: scamper_tbit_lib.c,v 1.4 2023/07/29 21:22:22 mjl Exp $
+ * $Id: scamper_tbit_lib.c,v 1.5 2025/10/19 19:23:21 mjl Exp $
  *
  * This file implements algorithms described in the tbit-1.0 source code,
  * as well as the papers:
@@ -172,6 +172,11 @@ uint16_t scamper_tbit_result_get(const scamper_tbit_t *tbit)
 uint8_t scamper_tbit_type_get(const scamper_tbit_t *tbit)
 {
   return tbit->type;
+}
+
+const char *scamper_tbit_errmsg_get(const scamper_tbit_t *tbit)
+{
+  return tbit->errmsg;
 }
 
 int scamper_tbit_type_is_blind(const scamper_tbit_t *tbit)

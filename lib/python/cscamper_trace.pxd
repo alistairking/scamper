@@ -62,6 +62,18 @@ cdef extern from "scamper_trace.h":
  cdef uint32_t SCAMPER_TRACE_FLAG_RXERR
  cdef uint8_t  SCAMPER_TRACE_REPLY_FLAG_REPLY_TTL
 
+ cdef uint8_t  SCAMPER_TRACE_STOP_NONE
+ cdef uint8_t  SCAMPER_TRACE_STOP_COMPLETED
+ cdef uint8_t  SCAMPER_TRACE_STOP_UNREACH
+ cdef uint8_t  SCAMPER_TRACE_STOP_ICMP
+ cdef uint8_t  SCAMPER_TRACE_STOP_LOOP
+ cdef uint8_t  SCAMPER_TRACE_STOP_GAPLIMIT
+ cdef uint8_t  SCAMPER_TRACE_STOP_ERROR
+ cdef uint8_t  SCAMPER_TRACE_STOP_HOPLIMIT
+ cdef uint8_t  SCAMPER_TRACE_STOP_GSS
+ cdef uint8_t  SCAMPER_TRACE_STOP_HALTED
+ cdef uint8_t  SCAMPER_TRACE_STOP_INPROGRESS
+
  char *scamper_trace_tojson(const scamper_trace_t *trace, size_t *l)
  char *scamper_trace_totext(const scamper_trace_t *trace, size_t *l)
 
@@ -76,6 +88,7 @@ cdef extern from "scamper_trace.h":
  const timeval *scamper_trace_start_get(const scamper_trace_t *trace)
  uint8_t scamper_trace_stop_reason_get(const scamper_trace_t *trace)
  uint8_t scamper_trace_stop_data_get(const scamper_trace_t *trace)
+ const char *scamper_trace_errmsg_get(const scamper_trace_t *trace)
  char *scamper_trace_stop_tostr(const scamper_trace_t *trace,
                                 char *buf, size_t len)
  uint16_t scamper_trace_hop_count_get(const scamper_trace_t *trace)
