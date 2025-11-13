@@ -1,7 +1,7 @@
 /*
  * scamper_dl: manage BPF/PF_PACKET datalink instances for scamper
  *
- * $Id: scamper_dl.c,v 1.242 2025/10/19 23:33:03 mjl Exp $
+ * $Id: scamper_dl.c,v 1.243 2025/10/21 20:03:25 mjl Exp $
  *
  *          Matthew Luckie
  *          Ben Stasiewicz added fragmentation support.
@@ -2020,7 +2020,7 @@ static int dl_dlpi_promisc(int fd, int lvl, const char *lvlstr,
   promiscon_req.dl_primitive = DL_PROMISCON_REQ;
   promiscon_req.dl_level = lvl;
   if(dl_dlpi_req(fd, &promiscon_req, sizeof(promiscon_req),
-		 levelstr, ifname, error) != 0 ||
+		 lvlstr, ifname, error) != 0 ||
      dl_dlpi_ack(fd, buf, DL_OK_ACK, lvlstr, ifname, error) != 0)
     return -1;
 

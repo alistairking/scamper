@@ -1,4 +1,4 @@
-# $Id: Makefile.am,v 1.66 2025/08/04 00:00:27 mjl Exp $
+# $Id: Makefile.am,v 1.67 2025/11/01 03:18:02 mjl Exp $
 
 AUTOMAKE_OPTIONS = subdir-objects
 
@@ -46,6 +46,7 @@ noinst_PROGRAMS = \
 	unit_ping_dup \
 	unit_ping_lib \
 	unit_prefixtree \
+	unit_probe_build \
 	unit_splaytree \
 	unit_string \
 	unit_text \
@@ -448,6 +449,20 @@ unit_prefixtree_CFLAGS = $(AM_CFLAGS)
 unit_prefixtree_SOURCES = unit_prefixtree.c \
 	../mjl_prefixtree.c \
 	../utils.c
+
+unit_probe_build_CFLAGS = $(AM_CFLAGS)
+unit_probe_build_SOURCES = unit_probe_build.c \
+	../scamper/scamper_addr.c \
+	../scamper/scamper_ip4.c \
+	../scamper/scamper_ip6.c \
+	../scamper/scamper_icmp4.c \
+	../scamper/scamper_icmp6.c \
+	../scamper/scamper_tcp4.c \
+	../scamper/scamper_tcp6.c \
+	../scamper/scamper_udp4.c \
+	../scamper/scamper_udp6.c \
+	../utils.c \
+	common.c
 
 unit_splaytree_CFLAGS = $(AM_CFLAGS) \
 	-DMJLSPLAYTREE_DEBUG -DSPLAYTREE_STACK_NODEC=2

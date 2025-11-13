@@ -1,7 +1,7 @@
 /*
  * scamper_udp6.c
  *
- * $Id: scamper_udp6.c,v 1.86 2025/10/20 01:21:44 mjl Exp $
+ * $Id: scamper_udp6.c,v 1.87 2025/10/23 18:54:23 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2010 The University of Waikato
@@ -43,7 +43,7 @@
 #include "scamper_fds.h"
 #include "utils.h"
 
-#if defined(IPV6_RECVERR)
+#if defined(BUILDING_SCAMPER) && defined(IPV6_RECVERR)
 static uint8_t rxbuf[65536];
 #endif
 
@@ -129,6 +129,7 @@ int scamper_udp6_build(scamper_probe_t *probe, uint8_t *buf, size_t *len)
   return -1;
 }
 
+#ifdef BUILDING_SCAMPER
 /*
  * scamper_udp6_probe:
  *
@@ -536,3 +537,4 @@ SOCKET scamper_udp6_open_err(const void *addr, int sport, scamper_err_t *error)
 #endif /* #ifdef IPV6_RECVERR */
   return socket_invalid();
 }
+#endif /* BUILDING_SCAMPER */

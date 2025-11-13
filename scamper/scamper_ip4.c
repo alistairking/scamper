@@ -1,7 +1,7 @@
 /*
  * scamper_ip4.c
  *
- * $Id: scamper_ip4.c,v 1.32 2025/10/15 01:29:55 mjl Exp $
+ * $Id: scamper_ip4.c,v 1.33 2025/10/23 18:54:23 mjl Exp $
  *
  * Copyright (C) 2009-2011 The University of Waikato
  * Copyright (C) 2023      The Regents of the University of California
@@ -40,6 +40,7 @@
 #include "scamper_priv.h"
 #include "utils.h"
 
+#ifdef BUILDING_SCAMPER
 #ifndef _WIN32 /* SOCKET vs int on windows */
 int scamper_ip4_openraw_fd(void)
 #else
@@ -80,6 +81,7 @@ SOCKET scamper_ip4_openraw(void)
 {
   return scamper_priv_ip4raw();
 }
+#endif /* BUILDING_SCAMPER */
 
 size_t scamper_ip4_hlen(scamper_probe_t *pr, scamper_err_t *error)
 {

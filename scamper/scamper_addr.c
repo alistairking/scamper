@@ -1,7 +1,7 @@
 /*
  * scamper_addr.c
  *
- * $Id: scamper_addr.c,v 1.91 2025/08/03 23:45:33 mjl Exp $
+ * $Id: scamper_addr.c,v 1.94 2025/11/12 22:36:39 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -84,10 +84,14 @@ static void firewire_tostr(const scamper_addr_t *, char *, const size_t);
 
 static int ipv4_inprefix(const scamper_addr_t *, const void *, int len);
 static int ipv6_inprefix(const scamper_addr_t *, const void *, int len);
+static int null_inprefix(const scamper_addr_t *, const void *, int len);
 
 static int ipv4_prefix(const scamper_addr_t *, const scamper_addr_t *);
-static int ipv4_prefixhosts(const scamper_addr_t *, const scamper_addr_t *);
 static int ipv6_prefix(const scamper_addr_t *, const scamper_addr_t *);
+static int null_prefix(const scamper_addr_t *, const scamper_addr_t *);
+
+static int ipv4_prefixhosts(const scamper_addr_t *, const scamper_addr_t *);
+static int null_prefixhosts(const scamper_addr_t *, const scamper_addr_t *);
 
 static int ipv4_bit(const scamper_addr_t *, int bit);
 static int ipv6_bit(const scamper_addr_t *, int bit);
@@ -101,19 +105,28 @@ static int firewire_fbd(const scamper_addr_t *, const scamper_addr_t *);
 
 static int ipv4_islinklocal(const scamper_addr_t *);
 static int ipv6_islinklocal(const scamper_addr_t *);
+static int null_islinklocal(const scamper_addr_t *);
 
 static int ipv4_netaddr(const scamper_addr_t *, void *, int);
 static int ipv6_netaddr(const scamper_addr_t *, void *, int);
+static int null_netaddr(const scamper_addr_t *, void *, int);
 
 static int ipv4_isreserved(const scamper_addr_t *);
 static int ipv6_isreserved(const scamper_addr_t *);
+static int null_isreserved(const scamper_addr_t *);
 
 static int ipv6_isunicast(const scamper_addr_t *);
+static int null_isunicast(const scamper_addr_t *);
+
+static int ipv4_tosockaddr(const scamper_addr_t *, uint16_t, void *);
+static int ipv6_tosockaddr(const scamper_addr_t *, uint16_t, void *);
+static int null_tosockaddr(const scamper_addr_t *, uint16_t, void *);
 
 struct handler
 {
   int     type;
   size_t  size;
+  int     af;
   int    (*cmp)(const scamper_addr_t *sa, const scamper_addr_t *sb);
   int    (*human_cmp)(const scamper_addr_t *sa, const scamper_addr_t *sb);
   void   (*tostr)(const scamper_addr_t *addr, char *buf, const size_t len);
@@ -126,12 +139,14 @@ struct handler
   int    (*isreserved)(const scamper_addr_t *a);
   int    (*bit)(const scamper_addr_t *a, int bit);
   int    (*fbd)(const scamper_addr_t *a, const scamper_addr_t *b);
+  int    (*tosockaddr)(const scamper_addr_t *a, uint16_t port, void *sa);
 };
 
 static const struct handler handlers[] = {
   {
     SCAMPER_ADDR_TYPE_IPV4,
     4,
+    AF_INET,
     ipv4_cmp,
     ipv4_human_cmp,
     ipv4_tostr,
@@ -140,58 +155,65 @@ static const struct handler handlers[] = {
     ipv4_prefixhosts,
     ipv4_islinklocal,
     ipv4_netaddr,
-    NULL,
+    null_isunicast,
     ipv4_isreserved,
     ipv4_bit,
     ipv4_fbd,
+    ipv4_tosockaddr,
   },
   {
     SCAMPER_ADDR_TYPE_IPV6,
     16,
+    AF_INET6,
     ipv6_cmp,
     ipv6_human_cmp,
     ipv6_tostr,
     ipv6_inprefix,
     ipv6_prefix,
-    NULL,
+    null_prefixhosts,
     ipv6_islinklocal,
     ipv6_netaddr,
     ipv6_isunicast,
     ipv6_isreserved,
     ipv6_bit,
     ipv6_fbd,
+    ipv6_tosockaddr,
   },
   {
     SCAMPER_ADDR_TYPE_ETHERNET,
     6,
+    -1,
     ethernet_cmp,
     ethernet_cmp,
     ethernet_tostr,
-    NULL,
-    NULL,
-    NULL,
-    NULL,
-    NULL,
-    NULL,
-    NULL,
+    null_inprefix,
+    null_prefix,
+    null_prefixhosts,
+    null_islinklocal,
+    null_netaddr,
+    null_isunicast,
+    null_isreserved,
     ethernet_bit,
     ethernet_fbd,
+    null_tosockaddr,
   },
   {
     SCAMPER_ADDR_TYPE_FIREWIRE,
     8,
+    -1,
     firewire_cmp,
     firewire_cmp,
     firewire_tostr,
-    NULL,
-    NULL,
-    NULL,
-    NULL,
-    NULL,
-    NULL,
-    NULL,
+    null_inprefix,
+    null_prefix,
+    null_prefixhosts,
+    null_islinklocal,
+    null_netaddr,
+    null_isunicast,
+    null_isreserved,
     firewire_bit,
     firewire_fbd,
+    null_tosockaddr,
   }
 };
 
@@ -201,6 +223,46 @@ struct scamper_addrcache
   splaytree_t *tree[sizeof(handlers)/sizeof(struct handler)];
 };
 #endif
+
+static int null_inprefix(const scamper_addr_t *sa, const void *p, int len)
+{
+  return -1;
+}
+
+static int null_prefix(const scamper_addr_t *a, const scamper_addr_t *b)
+{
+  return -1;
+}
+
+static int null_prefixhosts(const scamper_addr_t *a, const scamper_addr_t *b)
+{
+  return -1;
+}
+
+static int null_netaddr(const scamper_addr_t *a, void *net, int netlen)
+{
+  return -1;
+}
+
+static int null_islinklocal(const scamper_addr_t *a)
+{
+  return 0;
+}
+
+static int null_isunicast(const scamper_addr_t *a)
+{
+  return -1;
+}
+
+static int null_isreserved(const scamper_addr_t *a)
+{
+  return -1;
+}
+
+static int null_tosockaddr(const scamper_addr_t *a, uint16_t port, void *sa)
+{
+  return -1;
+}
 
 static int ipv4_cmp(const scamper_addr_t *sa, const scamper_addr_t *sb)
 {
@@ -406,6 +468,23 @@ static int ipv4_fbd(const scamper_addr_t *sa, const scamper_addr_t *sb)
 #endif
 
   return r;
+}
+
+static int ipv4_tosockaddr(const scamper_addr_t *a, uint16_t port, void *va)
+{
+  struct sockaddr *sa = (struct sockaddr *)va;
+  struct sockaddr_in *sin = (struct sockaddr_in *)va;
+
+  memset(sin, 0, sizeof(struct sockaddr_in));
+  memcpy(&sin->sin_addr, a->addr, sizeof(struct in_addr));
+  sin->sin_port = htons(port);
+
+#if defined(HAVE_STRUCT_SOCKADDR_SA_LEN)
+  sa->sa_len = sizeof(struct sockaddr_in);
+#endif
+  sa->sa_family = AF_INET;
+
+  return 0;
 }
 
 static int ipv6_cmp(const scamper_addr_t *sa, const scamper_addr_t *sb)
@@ -791,6 +870,23 @@ static int ipv6_fbd(const scamper_addr_t *sa, const scamper_addr_t *sb)
   return 128;
 }
 
+static int ipv6_tosockaddr(const scamper_addr_t *a, uint16_t port, void *va)
+{
+  struct sockaddr *sa = (struct sockaddr *)va;
+  struct sockaddr_in6 *sin6 = (struct sockaddr_in6 *)va;
+
+  memset(sin6, 0, sizeof(struct sockaddr_in6));
+  memcpy(&sin6->sin6_addr, a->addr, sizeof(struct in6_addr));
+  sin6->sin6_port = htons(port);
+
+#if defined(HAVE_STRUCT_SOCKADDR_SA_LEN)
+  sa->sa_len = sizeof(struct sockaddr_in6);
+#endif
+  sa->sa_family = AF_INET6;
+
+  return 0;
+}
+
 static int ethernet_cmp(const scamper_addr_t *sa, const scamper_addr_t *sb)
 {
   assert(sa->type == SCAMPER_ADDR_TYPE_ETHERNET);
@@ -1163,9 +1259,7 @@ scamper_addr_t *scamper_addr_alloc(int type, const void *addr)
 
 int scamper_addr_inprefix(const scamper_addr_t *addr, const void *p, int len)
 {
-  if(handlers[addr->type-1].inprefix != NULL)
-    return handlers[addr->type-1].inprefix(addr, p, len);
-  return -1;
+  return handlers[addr->type-1].inprefix(addr, p, len);
 }
 
 int scamper_addr_bit(const scamper_addr_t *a, int bit)
@@ -1180,41 +1274,35 @@ int scamper_addr_fbd(const scamper_addr_t *a, const scamper_addr_t *b)
 
 int scamper_addr_prefix(const scamper_addr_t *a, const scamper_addr_t *b)
 {
-  if(a->type != b->type || handlers[a->type-1].prefix == NULL)
+  if(a->type != b->type)
     return -1;
-
   return handlers[a->type-1].prefix(a, b);
 }
 
 int scamper_addr_prefixhosts(const scamper_addr_t *a, const scamper_addr_t *b)
 {
-  if(a->type != b->type || handlers[a->type-1].prefixhosts == NULL)
+  if(a->type != b->type)
     return -1;
-
   return handlers[a->type-1].prefixhosts(a, b);
 }
 
-int scamper_addr_af(const scamper_addr_t *sa)
+int scamper_addr_af(const scamper_addr_t *a)
 {
-  if(sa->type == SCAMPER_ADDR_TYPE_IPV4)
-    return AF_INET;
-  else if(sa->type == SCAMPER_ADDR_TYPE_IPV6)
-    return AF_INET6;
-  else
-    return -1;
+  return handlers[a->type-1].af;
+}
+
+int scamper_addr_tosockaddr(const scamper_addr_t *a, uint16_t port, void *sa)
+{
+  return handlers[a->type-1].tosockaddr(a, port, sa);
 }
 
 int scamper_addr_islinklocal(const scamper_addr_t *a)
 {
-  if(handlers[a->type-1].islinklocal == NULL)
-    return 0;
   return handlers[a->type-1].islinklocal(a);
 }
 
 int scamper_addr_netaddr(const scamper_addr_t *a, void *net, int netlen)
 {
-  if(handlers[a->type-1].netaddr == NULL)
-    return -1;
   return handlers[a->type-1].netaddr(a, net, netlen);
 }
 
@@ -1256,15 +1344,11 @@ int scamper_addr_is6to4(const scamper_addr_t *sa)
 
 int scamper_addr_isunicast(const scamper_addr_t *sa)
 {
-  if(handlers[sa->type-1].isunicast == NULL)
-    return -1;
   return handlers[sa->type-1].isunicast(sa);
 }
 
 int scamper_addr_isreserved(const scamper_addr_t *sa)
 {
-  if(handlers[sa->type-1].isreserved == NULL)
-    return -1;
   return handlers[sa->type-1].isreserved(sa);
 }
 
