@@ -1868,6 +1868,7 @@ class ScamperCtrl(Generic[PT]):
                  dst: Union[ScamperAddr, str],
                  confidence: Optional[int] = ...,
                  dport: Optional[int] = ...,
+                 icmp_id: Optional[int] = ...,
                  icmp_sum: Optional[int] = ...,
                  firsthop: Optional[int] = ...,
                  gaplimit: Optional[int] = ...,

@@ -1,7 +1,7 @@
 /*
  * scamper_control.c
  *
- * $Id: scamper_control.c,v 1.292 2025/06/27 02:09:58 mjl Exp $
+ * $Id: scamper_control.c,v 1.293 2025/11/05 03:34:16 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -3060,7 +3060,7 @@ static void remote_host_cb(control_remote_t *rm, scamper_addr_t **a, int c)
 {
   struct timeval tv;
   struct sockaddr *sa;
-  struct sockaddr_in sin;
+  struct sockaddr_storage sas;
   int i;
 
 #ifndef _WIN32 /* SOCKET vs int on windows */
@@ -3069,11 +3069,12 @@ static void remote_host_cb(control_remote_t *rm, scamper_addr_t **a, int c)
   SOCKET fd = INVALID_SOCKET;
 #endif
 
+  sa = (struct sockaddr *)&sas;
   for(i=0; i<c; i++)
     {
-      sa = (struct sockaddr *)&sin;
-      sockaddr_compose(sa, AF_INET, a[i]->addr, rm->server_port);
-      fd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+      if(scamper_addr_tosockaddr(a[i], rm->server_port, sa) != 0)
+	continue;
+      fd = socket(sa->sa_family, SOCK_STREAM, IPPROTO_TCP);
       if(socket_isinvalid(fd))
 	continue;
       if(connect(fd, sa, sockaddr_len(sa)) != 0)

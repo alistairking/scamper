@@ -37,9 +37,9 @@ cdef extern from "scamper_addr.h":
 
  bint scamper_addr_islinklocal(const scamper_addr_t *a)
  bint scamper_addr_isrfc1918(const scamper_addr_t *a)
- bint scamper_addr_isunicast(const scamper_addr_t *a)
+ int scamper_addr_isunicast(const scamper_addr_t *a)
  bint scamper_addr_is6to4(const scamper_addr_t *a)
- bint scamper_addr_isreserved(const scamper_addr_t *a)
+ int scamper_addr_isreserved(const scamper_addr_t *a)
  bint scamper_addr_isipv4(const scamper_addr_t *a)
  bint scamper_addr_isipv6(const scamper_addr_t *a)
  bint scamper_addr_isethernet(const scamper_addr_t *a)

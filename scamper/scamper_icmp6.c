@@ -1,7 +1,7 @@
 /*
  * scamper_icmp6.c
  *
- * $Id: scamper_icmp6.c,v 1.124 2025/10/20 00:46:53 mjl Exp $
+ * $Id: scamper_icmp6.c,v 1.125 2025/10/23 18:54:23 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -43,9 +43,11 @@
 #include "scamper_priv.h"
 #include "utils.h"
 
+#ifdef BUILDING_SCAMPER
 static uint8_t *txbuf = NULL;
 static size_t   txbuf_len = 0;
 static uint8_t  rxbuf[65536];
+#endif
 
 static void icmp6_header(scamper_probe_t *probe, uint8_t *buf)
 {
@@ -169,6 +171,7 @@ int scamper_icmp6_build(scamper_probe_t *probe, uint8_t *buf, size_t *len)
   return -1;
 }
 
+#ifdef BUILDING_SCAMPER
 int scamper_icmp6_probe(scamper_probe_t *pr, scamper_err_t *error)
 {
   struct sockaddr_in6  sin6;
@@ -715,3 +718,4 @@ SOCKET scamper_icmp6_open(const void *addr, scamper_err_t *error)
     socket_close(fd);
   return socket_invalid();
 }
+#endif /* BUILDING_SCAMPER */
