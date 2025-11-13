@@ -1,7 +1,7 @@
 /*
  * scamper_udpprobe_do.c
  *
- * $Id: scamper_udpprobe_do.c,v 1.28 2025/10/20 02:28:06 mjl Exp $
+ * $Id: scamper_udpprobe_do.c,v 1.29 2025/11/05 03:34:16 mjl Exp $
  *
  * Copyright (C) 2023-2024 The Regents of the University of California
  *
@@ -233,7 +233,7 @@ static void do_udpprobe_handle_udp(scamper_task_t *task, scamper_udp_resp_t *ur)
   return;
 }
 
-static int udpprobe_state_alloc(scamper_task_t *task)
+static int udpprobe_state_init(scamper_task_t *task)
 {
   scamper_udpprobe_t *up = udpprobe_getdata(task);
   udpprobe_state_t *state = udpprobe_getstate(task);
@@ -259,11 +259,9 @@ static void do_udpprobe_probe(scamper_task_t *task)
   udpprobe_state_t *state = udpprobe_getstate(task);
   scamper_udpprobe_probe_t *probe = NULL;
   scamper_err_t error;
-  struct sockaddr_in6 sin6;
-  struct sockaddr_in sin;
+  struct sockaddr_storage sas;
   struct sockaddr *sa;
   struct timeval wait_tv;
-  socklen_t sl;
   int fd;
 
   SCAMPER_ERR_INIT(&error);
@@ -274,21 +272,22 @@ static void do_udpprobe_probe(scamper_task_t *task)
       return;
     }
 
-  if(state->probec == 0 && udpprobe_state_alloc(task) != 0)
+  if(state->probec == 0 && udpprobe_state_init(task) != 0)
     {
-      scamper_err_make(&error, errno, "could not alloc state");
+      scamper_err_make(&error, errno, "could not init state");
       goto err;
     }
 
   fd = scamper_fd_fd_get(state->fds[state->probec]);
 
-  if(SCAMPER_ADDR_TYPE_IS_IPV4(up->dst))
+  sa = (struct sockaddr *)&sas;
+  if(scamper_addr_tosockaddr(up->dst, up->dport, sa) != 0)
     {
-      sa = (struct sockaddr *)&sin;
-      sockaddr_compose(sa, AF_INET, up->dst->addr, up->dport);
-      sl = sizeof(sin);
+      scamper_err_make(&error, 0, "invalid destination address");
+      goto err;
     }
-  else if(SCAMPER_ADDR_TYPE_IS_IPV6(up->dst))
+
+  if(SCAMPER_ADDR_TYPE_IS_IPV6(up->dst))
     {
       if(setsockopt_int(fd, IPPROTO_IPV6, IPV6_UNICAST_HOPS, 255) != 0)
 	{
@@ -302,14 +301,6 @@ static void do_udpprobe_probe(scamper_task_t *task)
 	  goto err;
 	}
 #endif /* IPV6_TCLASS */
-      sa = (struct sockaddr *)&sin6;
-      sockaddr_compose(sa, AF_INET6, up->dst->addr, up->dport);
-      sl = sizeof(sin6);
-    }
-  else
-    {
-      scamper_err_make(&error, 0, "invalid destination address");
-      goto err;
     }
 
   if((probe = scamper_udpprobe_probe_alloc()) == NULL ||
@@ -325,7 +316,7 @@ static void do_udpprobe_probe(scamper_task_t *task)
     timeval_cpy(&up->start, &probe->tx);
   state->probec++;
 
-  if(sendto(fd, up->data, up->len, 0, sa, sl) != up->len)
+  if(sendto(fd, up->data, up->len, 0, sa, sockaddr_len(sa)) != up->len)
     {
       scamper_err_make(&error, errno, "could not send probe");
       goto err;

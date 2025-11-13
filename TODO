@@ -1,4 +1,4 @@
-$Id: TODO,v 1.45 2025/09/28 06:21:21 mjl Exp $
+$Id: TODO,v 1.46 2025/11/12 18:01:52 mjl Exp $
 
 * compile without warnings when the following is passed in CFLAGS
   -Wall -Wno-unneeded-internal-declaration -Wno-unused-const-variable
@@ -24,9 +24,23 @@ $Id: TODO,v 1.45 2025/09/28 06:21:21 mjl Exp $
    unit tests
 
 * libscamperfile:
-   udpprobe.probe_count should be .attempts.
-   stop should be stop_reason consistently across measurements.
-   warts code should not allow result structures with null dst, etc.
+   - udpprobe.probe_count should be .attempts.
+   - stop should be stop_reason consistently across measurements, or
+     perhaps result. current status of measurements:
+     - trace: stop_reason
+     - ping: stop_reason
+     - sniff: stop_reason
+     - host: stop     
+     - udpprobe: stop
+     - http: stop
+     - dealias: result
+     - sting: result
+     - tbit: result
+     - neighbourdisc: none
+     - tracelb: none
+   - warts code should not allow result structures with null dst, etc.
+   - some scamper_addr_is functions return -1, as well as 0 or 1, but
+     they should either return 0 or 1.
 
 * investigate if gettimeofday has to be called so much.
 

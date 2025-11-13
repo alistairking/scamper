@@ -1,7 +1,7 @@
 /*
  * scamper_udp4.c
  *
- * $Id: scamper_udp4.c,v 1.99 2025/10/16 00:03:34 mjl Exp $
+ * $Id: scamper_udp4.c,v 1.100 2025/10/23 18:54:23 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2010 The University of Waikato
@@ -43,6 +43,7 @@
 #include "scamper_udp_resp.h"
 #include "utils.h"
 
+#ifdef BUILDING_SCAMPER
 /*
  * these variables are used to store a packet buffer that is allocated
  * in the scamper_udp4_probe function large enough for the largest probe
@@ -50,6 +51,7 @@
  */
 static uint8_t *pktbuf = NULL;
 static size_t   pktbuf_len = 0;
+#endif
 
 uint16_t scamper_udp4_cksum(scamper_probe_t *probe)
 {
@@ -128,6 +130,7 @@ int scamper_udp4_build(scamper_probe_t *probe, uint8_t *buf, size_t *len)
   return rc;
 }
 
+#ifdef BUILDING_SCAMPER
 int scamper_udp4_probe(scamper_probe_t *pr, scamper_err_t *error)
 {
   struct sockaddr_in  sin4;
@@ -445,3 +448,4 @@ SOCKET scamper_udp4_openraw(const void *addr, scamper_err_t *error)
     socket_close(fd);
   return socket_invalid();
 }
+#endif /* BUILDING_SCAMPER */

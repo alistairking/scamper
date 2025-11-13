@@ -551,7 +551,8 @@ cdef class ScamperAddr:
         :returns: True if the address is in the unicast prefix
         :rtype: bool
         """
-        return cscamper_addr.scamper_addr_isunicast(self._c)
+        x = cscamper_addr.scamper_addr_isunicast(self._c)
+        return x == 1
 
     def is_6to4(self):
         """
@@ -575,7 +576,8 @@ cdef class ScamperAddr:
         :returns: True if the address is in one of these reserved prefixes
         :rtype: bool
         """
-        return cscamper_addr.scamper_addr_isreserved(self._c)
+        x = cscamper_addr.scamper_addr_isreserved(self._c)
+        return x == 1
 
     def is_ipv4(self):
         """
@@ -9743,7 +9745,7 @@ cdef class ScamperCtrl:
 
     # the optional parameters are ordered roughly according to the order
     # these appear in the underlying trace command
-    def do_trace(self, dst, confidence=None, dport=None,
+    def do_trace(self, dst, confidence=None, dport=None, icmp_id=None,
                  icmp_sum=None, firsthop=None, gaplimit=None, loops=None,
                  hoplimit=None, pmtud=None, squeries=None, ptr=None,
                  payload=None, method=None, attempts=None, all_attempts=None,
@@ -9816,17 +9818,26 @@ cdef class ScamperCtrl:
                 raise ValueError("specify method when specifying the source or destination port")
             elif not any(m.startswith(s) for s in ["tcp", "udp"]):
                 raise ValueError("cannot specify source or destination ports with " + method)
+            if sport is not None:
+                args.append(f"-s {sport}")
+            if dport is not None:
+                args.append(f"-d {dport}")
 
         if icmp_sum is not None:
             if m is None:
-                m = "icmp-paris"
+                method = "icmp-paris"
             elif m != "icmp-paris":
-                raise ValueError("cannot specify ICMP parameters with " + method)
+                raise ValueError("cannot specify ICMP checksum with " + method)
+            args.append(f"-d {icmp_sum}");
+        if icmp_id is not None:
+            if m is None:
+                method = "icmp-paris"
+            elif not m.startswith("icmp"):
+                raise ValueError("cannot specify ICMP ID with " + method)
+            args.append(f"-s {icmp_id}");
 
         if confidence is not None:
             args.append(f"-C {confidence}")
-        if dport is not None:
-            args.append(f"-d {dport}")
         if firsthop is not None:
             args.append(f"-f {firsthop}")
         if gaplimit is not None:
@@ -9851,8 +9862,6 @@ cdef class ScamperCtrl:
             args.append("-Q")
         if rtr is not None:
             args.append(f"-r {rtr}")
-        if sport is not None:
-            args.append(f"-s {sport}")
         if src is not None:
             args.append(f"-S {src}")
         if tos is not None:

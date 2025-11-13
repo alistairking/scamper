@@ -1,7 +1,7 @@
 /*
  * scamper_queue.c
  *
- * $Id: scamper_queue.c,v 1.51 2025/07/04 23:34:23 mjl Exp $
+ * $Id: scamper_queue.c,v 1.52 2025/11/12 18:42:38 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -29,9 +29,9 @@
 #include "internal.h"
 
 #include "scamper.h"
+#include "scamper_debug.h"
 #include "scamper_task.h"
 #include "scamper_queue.h"
-#include "scamper_debug.h"
 #include "utils.h"
 #include "mjl_list.h"
 #include "mjl_heap.h"
