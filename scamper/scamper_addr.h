@@ -1,7 +1,7 @@
 /*
  * scamper_addr.h
  *
- * $Id: scamper_addr.h,v 1.38 2024/01/09 06:16:19 mjl Exp $
+ * $Id: scamper_addr.h,v 1.41 2025/11/12 22:36:39 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -73,33 +73,10 @@ size_t scamper_addr_len_get(const scamper_addr_t *addr);
  *  allocate an address of the specified type; the reference count of the
  *  address is initialised to one
  *
- * scamper_addr_use:
- *  increment the reference count by one, and return a reference to the
- *  address passed in as a convenience.
- *
- * scamper_addr_free:
- *  decrement the reference count held on the address.  when the reference
- *  count becomes zero, the address is freed.
- *
  * scamper_addr_fromstr:
  *  attempt to resolve the string as getaddrinfo would, and return the address
  *
- * scamper_addr_af:
- *  return the address family of the address
- *
- * scamper_addr_inprefix:
- *  return if the address is in the prefix.
- *
- * scamper_addr_prefix:
- *  return the longest number of matching bits for the two addresses.
- *
- * scamper_addr_prefixhosts:
- *  return the longest network prefix that would allow for these two hosts.
- *
- * scamper_addr_netaddr:
- *  return the network address for the supplied address given prefix length.
  */
-
 #ifndef DMALLOC
 scamper_addr_t *scamper_addr_alloc(const int type, const void *addr);
 scamper_addr_t *scamper_addr_fromstr(int type, const char *str);
@@ -114,9 +91,48 @@ scamper_addr_t *scamper_addr_fromstr_dm(int type, const char *str,
   scamper_addr_fromstr_dm((type), (addr), __FILE__, __LINE__)
 #endif
 
+/*
+ * scamper_addr_use:
+ *  increment the reference count by one, and return a reference to the
+ *  address passed in as a convenience.
+ *
+ * scamper_addr_free:
+ *  decrement the reference count held on the address.  when the reference
+ *  count becomes zero, the address is freed.
+ *
+ */
 scamper_addr_t *scamper_addr_use(scamper_addr_t *sa);
 void scamper_addr_free(scamper_addr_t *sa);
 
+/*
+ * scamper_addr_af:
+ *  returns AF_INET for IPv4, or AF_INET6 for IPv6.
+ *  returns -1 if not of those types.
+ *
+ * scamper_addr_inprefix:
+ *  return if the address is in the prefix.
+ *  returns -1 if the length is invalid, or the address type is not supported.
+ *
+ * scamper_addr_prefix:
+ *  return the longest number of matching bits for the two addresses.
+ *  returns -1 if the address type is not supported.
+ *
+ * scamper_addr_prefixhosts:
+ *  return the longest network prefix that would allow for these two hosts.
+ *  returns -1 if the address type is not supported.
+ *
+ * scamper_addr_netaddr:
+ *  return the network address for the supplied address given prefix length.
+ *  returns -1 if the address type is not supported.
+ *
+ * scamper_addr_bit:
+ *  return the bit at specified position in address.  behavior is undefined
+ *  if specified bit is invalid given address type.
+ *
+ * scamper_addr_fbd:
+ *  return the first different bit between the two addresses.  behavior is
+ *  undefined if addresses are not the same type.
+ */
 int scamper_addr_af(const scamper_addr_t *sa);
 int scamper_addr_inprefix(const scamper_addr_t *sa, const void *p, int len);
 int scamper_addr_prefix(const scamper_addr_t *a, const scamper_addr_t *b);
@@ -175,11 +191,47 @@ const char *scamper_addr_tostr(const scamper_addr_t *sa,
 			       char *dst, const size_t size);
 
 /*
+ * scamper_addr_tosockaddr:
+ *  given a scamper address and port value, turn it into a sockaddr.
+ *  sockaddr must be large enough to hold the address.
+ */
+int scamper_addr_tosockaddr(const scamper_addr_t *a, uint16_t port, void *sa);
+
+/*
  * scamper_addr_islinklocal:
- * determine if the address is a link-local IPv4 or IPv6 address.
+ *  returns 1 if the address is a link-local IPv4 or IPv6 address.
+ *  returns 0 if not IPv4 or IPv6.
  *
  * scamper_addr_isrfc1918:
- * determine if the address is an RFC 1918 address.
+ *  returns 1 if the address is an RFC 1918 address.
+ *  returns 0 if not IPv4.
+ *
+ * scamper_addr_isunicast:
+ *  returns 1 if the address is an IPv6 unicast address.
+ *  returns 0 if the address is IPv6 but not unicast.
+ *  returns -1 if not IPv6.
+ *
+ * scamper_addr_is6to4:
+ *  determine if the address is an IPv6 6to4 address.
+ *  returns 0 if not IPv6.
+ *
+ * scamper_addr_isreserved:
+ *  returns 1 if the address is in one of the IPv4 or IPv6 reserved ranges.
+ *  returns 0 if the address is IPv4 or IPv6 but not reserved.
+ *  returns -1 for other address types.
+ *
+ * scamper_addr_is_ipv4:
+ *  returns 1 if the address is IPv4, otherwise 0.
+ *
+ * scamper_addr_is_ipv6:
+ *  returns 1 if the address is IPv6, otherwise 0.
+ *
+ * scamper_addr_is_ethernet:
+ *  returns 1 if the address is ethernet, otherwise 0.
+ *
+ * scamper_addr_isfirewire:
+ *  returns 1 if the address is firewire, otherwise 0.
+ *
  */
 int scamper_addr_islinklocal(const scamper_addr_t *a);
 int scamper_addr_isrfc1918(const scamper_addr_t *a);

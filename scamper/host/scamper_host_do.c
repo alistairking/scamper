@@ -1,7 +1,7 @@
 /*
  * scamper_host_do
  *
- * $Id: scamper_host_do.c,v 1.96 2025/10/12 22:50:23 mjl Exp $
+ * $Id: scamper_host_do.c,v 1.97 2025/11/05 03:34:16 mjl Exp $
  *
  * Copyright (C) 2018-2025 Matthew Luckie
  *
@@ -1286,13 +1286,12 @@ static int do_host_probe_udp(scamper_task_t *task, scamper_err_t *error)
   scamper_queue_t *sq = NULL;
   scamper_fd_t *fdn = NULL;
   scamper_host_query_t *q = NULL;
-  struct sockaddr_storage ss;
+  struct sockaddr_storage sas;
   struct sockaddr *sa;
   struct timeval tv;
   uint8_t pktbuf[1024];
   uint16_t id;
   size_t len;
-  int af;
 
 #ifndef _WIN32 /* SOCKET vs int on windows */
   int fd = -1;
@@ -1304,8 +1303,13 @@ static int do_host_probe_udp(scamper_task_t *task, scamper_err_t *error)
   char buf[128], qtype[16];
 #endif
 
-  af = scamper_addr_af(host->dst);
-  assert(af == AF_INET || af == AF_INET6);
+  sa = (struct sockaddr *)&sas;
+  if(scamper_addr_tosockaddr(host->dst, 53, sa) != 0)
+    {
+      scamper_err_make(error, 0, "could not compose sockaddr");
+      goto err;
+    }
+  assert(sa->sa_family == AF_INET || sa->sa_family == AF_INET6);
 
   /* when to close the DNS fd */
   gettimeofday_wrap(&tv); tv.tv_sec += 10;
@@ -1314,10 +1318,10 @@ static int do_host_probe_udp(scamper_task_t *task, scamper_err_t *error)
    * if we're using UDP probes, then the UDP socket is shared with other
    * DNS lookup tasks.
    */
-  if((af == AF_INET  && dns4_fd == NULL) ||
-     (af == AF_INET6 && dns6_fd == NULL))
+  if((sa->sa_family == AF_INET  && dns4_fd == NULL) ||
+     (sa->sa_family == AF_INET6 && dns6_fd == NULL))
     {
-      fd = socket(af, SOCK_DGRAM, IPPROTO_UDP);
+      fd = socket(sa->sa_family, SOCK_DGRAM, IPPROTO_UDP);
       if(socket_isinvalid(fd))
 	{
 	  scamper_err_make(error, errno, "could not open udp socket");
@@ -1339,7 +1343,7 @@ static int do_host_probe_udp(scamper_task_t *task, scamper_err_t *error)
 	  goto err;
 	}
 
-      if(af == AF_INET)
+      if(sa->sa_family == AF_INET)
 	{
 	  assert(dns4_sq == NULL);
 	  dns4_fd = fdn;
@@ -1354,7 +1358,7 @@ static int do_host_probe_udp(scamper_task_t *task, scamper_err_t *error)
     }
   else
     {
-      if(af == AF_INET)
+      if(sa->sa_family == AF_INET)
 	{
 	  sq = dns4_sq;
 	  fd = scamper_fd_fd_get(dns4_fd);
@@ -1400,8 +1404,6 @@ static int do_host_probe_udp(scamper_task_t *task, scamper_err_t *error)
   gettimeofday_wrap(&q->tx);
   q->id = id;
 
-  sa = (struct sockaddr *)&ss;
-  sockaddr_compose(sa, af, host->dst->addr, 53);
   if(sendto(fd, pktbuf, len, 0, sa, sockaddr_len(sa)) == -1)
     {
       scamper_err_make(error, errno, "could not send query");
@@ -1483,12 +1485,11 @@ static int do_host_probe_tcp(scamper_task_t *task, scamper_err_t *error)
   host_state_t *state = host_getstate(task);
   scamper_fd_t *fdn = NULL;
   scamper_host_query_t *q = NULL;
-  struct sockaddr_storage ss;
+  struct sockaddr_storage sas;
   struct sockaddr *sa;
   uint16_t id;
   uint8_t pktbuf[1024];
   size_t len;
-  int af;
 
 #ifndef _WIN32 /* SOCKET vs int on windows */
   int fd;
@@ -1505,10 +1506,15 @@ static int do_host_probe_tcp(scamper_task_t *task, scamper_err_t *error)
       gettimeofday_wrap(&state->finish);
       timeval_add_tv(&state->finish, &host->wait_timeout);
 
-      af = scamper_addr_af(host->dst);
-      assert(af == AF_INET || af == AF_INET6);
+      sa = (struct sockaddr *)&sas;
+      if(scamper_addr_tosockaddr(host->dst, 53, sa) != 0)
+	{
+	  scamper_err_make(error, 0, "could not compose sockaddr");
+	  goto err;
+	}
+      assert(sa->sa_family == AF_INET || sa->sa_family == AF_INET6);
 
-      fd = socket(af, SOCK_STREAM, IPPROTO_TCP);
+      fd = socket(sa->sa_family, SOCK_STREAM, IPPROTO_TCP);
       if(socket_isinvalid(fd))
 	{
 	  scamper_err_make(error, errno, "could not open tcp socket");
@@ -1524,8 +1530,6 @@ static int do_host_probe_tcp(scamper_task_t *task, scamper_err_t *error)
 	}
 #endif
 
-      sa = (struct sockaddr *)&ss;
-      sockaddr_compose(sa, af, host->dst->addr, 53);
       if(connect(fd, sa, sockaddr_len(sa)) != 0 && errno != EINPROGRESS)
 	{
 	  scamper_err_make(error, errno, "could not connect");

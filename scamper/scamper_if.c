@@ -1,7 +1,7 @@
 /*
  * scamper_if.c
  *
- * $Id: scamper_if.c,v 1.37 2025/10/20 00:46:53 mjl Exp $
+ * $Id: scamper_if.c,v 1.38 2025/10/21 20:03:25 mjl Exp $
  *
  * Copyright (C) 2008-2011 The University of Waikato
  * Copyright (C) 2014      The Regents of the University of California
@@ -335,7 +335,8 @@ int scamper_if_getifindex_byaddr(const struct sockaddr *addr, int *ifindex,
   return -1;
 }
 #else
-int scamper_if_getifindex_byaddr(const struct sockaddr *addr, int *ifindex)
+int scamper_if_getifindex_byaddr(const struct sockaddr *addr, int *ifindex,
+				 scamper_err_t *error)
 {
   scamper_err_make(error, 0, "getifindex_byaddr not implemented");
   return -1;

@@ -5,7 +5,7 @@
  *
  * Authors: Matthew Luckie
  *
- * $Id: scamper_tracelb_json.c,v 1.28 2025/10/15 23:58:44 mjl Exp $
+ * $Id: scamper_tracelb_json.c,v 1.29 2025/10/31 16:02:11 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -30,6 +30,9 @@
 #include "scamper_addr.h"
 #include "scamper_addr_int.h"
 #include "scamper_list.h"
+#include "scamper_list_int.h"
+#include "scamper_icmpext.h"
+#include "scamper_icmpext_int.h"
 #include "scamper_icmpext.h"
 #include "scamper_tracelb.h"
 #include "scamper_tracelb_int.h"
@@ -96,6 +99,9 @@ static char *header_tostr(const scamper_tracelb_t *trace)
   if(trace->errmsg != NULL)
     string_concat3(buf, sizeof(buf), &off, ",\"errmsg\":\"",
 		   json_esc(trace->errmsg, tmp, sizeof(tmp)), "\"");
+  if(trace->list != NULL && trace->list->monitor != NULL)
+    string_concat3(buf, sizeof(buf), &off, ",\"monitor\":\"",
+		   json_esc(trace->list->monitor, tmp, sizeof(tmp)), "\"");
 
   return strdup(buf);
 }
@@ -104,8 +110,13 @@ static char *reply_tostr(const scamper_tracelb_probe_t *probe,
 			 const scamper_tracelb_reply_t *reply)
 {
   char buf[2048], tmp[256];
+  scamper_icmpexts_t *exts;
+  scamper_icmpext_t *ie;
   struct timeval rtt;
   size_t off = 0;
+  uint32_t u32;
+  uint16_t u16;
+  int i;
 
   timeval_diff_tv(&rtt, &probe->tx, &reply->reply_rx);
   string_concat_u32(buf, sizeof(buf), &off, "{\"rx\":{\"sec\":",
@@ -136,6 +147,43 @@ static char *reply_tostr(const scamper_tracelb_probe_t *probe,
 	string_concat_u8(buf, sizeof(buf), &off, ", \"icmp_q_ttl\":",
 			 reply->reply_icmp_q_ttl);
     }
+
+  if((exts = reply->reply_icmp_exts) != NULL)
+    {
+      string_concat(buf, sizeof(buf), &off, ",\"icmpext\":[");
+      for(u16=0; u16<exts->extc; u16++)
+	{
+	  if(u16 > 0)
+	    string_concatc(buf, sizeof(buf), &off, ',');
+	  ie = exts->exts[u16];
+	  string_concat_u8(buf, sizeof(buf), &off, "{\"ie_cn\":", ie->ie_cn);
+	  string_concat_u8(buf, sizeof(buf), &off, ",\"ie_ct\":", ie->ie_ct);
+	  string_concat_u16(buf, sizeof(buf), &off, ",\"ie_dl\":", ie->ie_dl);
+	  if(SCAMPER_ICMPEXT_IS_MPLS(ie))
+	    {
+	      string_concat(buf, sizeof(buf), &off, ",\"mpls_labels\":[");
+	      for(i=0; i<SCAMPER_ICMPEXT_MPLS_COUNT(ie); i++)
+		{
+		  u32 = SCAMPER_ICMPEXT_MPLS_LABEL(ie, i);
+		  if(i > 0)
+		    string_concatc(buf, sizeof(buf), &off, ',');
+		  string_concat_u8(buf, sizeof(buf), &off, "{\"mpls_ttl\":",
+				   SCAMPER_ICMPEXT_MPLS_TTL(ie, i));
+		  string_concat_u8(buf, sizeof(buf), &off, ",\"mpls_s\":",
+				   SCAMPER_ICMPEXT_MPLS_S(ie, i));
+		  string_concat_u8(buf, sizeof(buf), &off, ",\"mpls_exp\":",
+				   SCAMPER_ICMPEXT_MPLS_EXP(ie, i));
+		  string_concat_u32(buf, sizeof(buf), &off, ",\"mpls_label\":",
+				    u32);
+		  string_concatc(buf, sizeof(buf), &off, '}');
+		}
+	      string_concatc(buf, sizeof(buf), &off, ']');
+	    }
+	  string_concatc(buf, sizeof(buf), &off, '}');
+	}
+      string_concatc(buf, sizeof(buf), &off, ']');
+    }
+
   string_concatc(buf, sizeof(buf), &off, '}');
 
   return strdup(buf);

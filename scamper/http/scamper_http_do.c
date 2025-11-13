@@ -1,7 +1,7 @@
 /*
  * scamper_http_do.c
  *
- * $Id: scamper_http_do.c,v 1.26 2025/10/12 23:16:07 mjl Exp $
+ * $Id: scamper_http_do.c,v 1.28 2025/11/05 03:34:16 mjl Exp $
  *
  * Copyright (C) 2023-2024 The Regents of the University of California
  * Copyright (C) 2024-2025 Matthew Luckie
@@ -73,8 +73,8 @@ typedef struct http_state
 #ifdef HAVE_OPENSSL
   struct timeval      now;
   SSL                *ssl;
-  BIO                *ssl_rbio;
-  BIO                *ssl_wbio;
+  BIO                *rbio;
+  BIO                *wbio;
 #endif
 } http_state_t;
 
@@ -197,7 +197,7 @@ static void http_state_free(http_state_t *state)
 #endif
 
 #ifdef HAVE_OPENSSL
-  tls_bio_free(state->ssl, state->ssl_rbio, state->ssl_wbio);
+  tls_bio_free(state->ssl, state->rbio, state->wbio);
 #endif
   if(state->htbs != NULL)
     slist_free_cb(state->htbs, (slist_free_t)scamper_http_buf_free);
@@ -312,7 +312,7 @@ static int http_tls_want_read(http_state_t *state)
   if(state->mode == STATE_MODE_TLS_HS)
     gettimeofday_wrap(&state->now);
 
-  if(tls_want_read(state->ssl_wbio, state, errbuf, sizeof(errbuf),
+  if(tls_want_read(state->wbio, state, errbuf, sizeof(errbuf),
 		   http_tls_want_read_cb) < 0)
     {
       scamper_debug(__func__, "%s", errbuf);
@@ -329,7 +329,7 @@ static int tls_handshake(scamper_task_t *task, scamper_err_t *error)
   int rc;
 
   if(tls_bio_alloc(default_tls_ctx, &state->ssl,
-		   &state->ssl_rbio, &state->ssl_wbio) != 0)
+		   &state->rbio, &state->wbio) != 0)
     {
       scamper_err_make(error, 0, "could not alloc TLS BIOs");
       return -1;
@@ -398,7 +398,7 @@ static int http_read_sock(scamper_task_t *task, scamper_err_t *error)
 #ifdef HAVE_OPENSSL
   if(state->ssl != NULL)
     {
-      BIO_write(state->ssl_rbio, buf, rrc);
+      BIO_write(state->rbio, buf, rrc);
       if(state->mode == STATE_MODE_TLS_HS)
 	{
 	  gettimeofday_wrap(&tv);
@@ -715,7 +715,7 @@ static int http_state_alloc(scamper_task_t *task, scamper_err_t *error)
   struct sockaddr *sa;
   void *addr;
   socklen_t sl;
-  int at, af;
+  int at;
 
 #ifndef _WIN32 /* SOCKET vs int on windows */
   int fd = -1;
@@ -732,15 +732,14 @@ static int http_state_alloc(scamper_task_t *task, scamper_err_t *error)
   /* set timeout */
   timeval_add_tv3(&state->finish, &http->start, &http->maxtime);
 
-  af = scamper_addr_af(http->dst);
   sa = (struct sockaddr *)&ss;
-  if(sockaddr_compose(sa, af, http->dst->addr, http->dport) != 0)
+  if(scamper_addr_tosockaddr(http->dst, http->dport, sa) != 0)
     {
       scamper_err_make(error, 0, "could not compose sockaddr");
       goto err;
     }
 
-  fd = socket(af, SOCK_STREAM, IPPROTO_TCP);
+  fd = socket(sa->sa_family, SOCK_STREAM, IPPROTO_TCP);
   if(socket_isinvalid(fd))
     {
       scamper_err_make(error, errno, "could not allocate socket");
@@ -768,13 +767,13 @@ static int http_state_alloc(scamper_task_t *task, scamper_err_t *error)
       goto err;
     }
 
-  if(af == AF_INET)
+  if(sa->sa_family == AF_INET)
     {
       addr = &((struct sockaddr_in *)&ss)->sin_addr;
       http->sport = ((struct sockaddr_in *)&ss)->sin_port;
       at = SCAMPER_ADDR_TYPE_IPV4;
     }
-  else if(af == AF_INET6)
+  else if(sa->sa_family == AF_INET6)
     {
       addr = &((struct sockaddr_in6 *)&ss)->sin6_addr;
       http->sport = ((struct sockaddr_in6 *)&ss)->sin6_port;

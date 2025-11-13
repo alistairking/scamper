@@ -1,7 +1,7 @@
 /*
  * scamper_source_control.c
  *
- * $Id: scamper_source_control.c,v 1.18 2024/12/31 04:17:31 mjl Exp $
+ * $Id: scamper_source_control.c,v 1.19 2025/11/12 18:42:38 mjl Exp $
  *
  * Copyright (C) 2007-2011 The University of Waikato
  * Copyright (C) 2024      Matthew Luckie
@@ -27,10 +27,10 @@
 #endif
 #include "internal.h"
 
+#include "scamper_debug.h"
 #include "scamper_task.h"
 #include "scamper_outfiles.h"
 #include "scamper_sources.h"
-#include "scamper_debug.h"
 #include "scamper_source_control.h"
 #include "utils.h"
 

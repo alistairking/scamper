@@ -1,7 +1,7 @@
 /*
  * scamper_sniff_do.c
  *
- * $Id: scamper_sniff_do.c,v 1.35 2025/10/19 21:53:46 mjl Exp $
+ * $Id: scamper_sniff_do.c,v 1.36 2025/11/05 03:34:16 mjl Exp $
  *
  * Copyright (C) 2011      The University of Waikato
  * Copyright (C) 2022-2025 Matthew Luckie
@@ -209,14 +209,12 @@ static int sniff_state_alloc(scamper_task_t *task, scamper_err_t *error)
   int ifindex;
 
   assert(sniff->src != NULL);
-  assert(sniff->src->addr != NULL);
-  assert(SCAMPER_ADDR_TYPE_IS_IP(sniff->src));
 
-  if(sniff->src->type == SCAMPER_ADDR_TYPE_IPV4)
-    sockaddr_compose(sa, AF_INET, sniff->src->addr, 0);
-  else
-    sockaddr_compose(sa, AF_INET6, sniff->src->addr, 0);
-
+  if(scamper_addr_tosockaddr(sniff->src, 0, sa) != 0)
+    {
+      scamper_err_make(error, 0, "invalid src address");
+      goto err;
+    }
   if(scamper_if_getifindex_byaddr(sa, &ifindex, error) != 0)
     goto err;
 

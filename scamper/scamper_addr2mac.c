@@ -1,7 +1,7 @@
 /*
  * scamper_addr2mac.c: handle a cache of IP to MAC address mappings
  *
- * $Id: scamper_addr2mac.c,v 1.51 2025/10/15 19:42:18 mjl Exp $
+ * $Id: scamper_addr2mac.c,v 1.52 2025/11/12 18:42:38 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -28,9 +28,6 @@
 #include "config.h"
 #endif
 #include "internal.h"
-
-#include "scamper_task.h"
-#include "scamper_queue.h"
 
 #if defined(__APPLE__)
 #define HAVE_BSD_ARPCACHE
@@ -97,6 +94,8 @@ struct rtattr
 #include "scamper_debug.h"
 #include "scamper_addr.h"
 #include "scamper_addr_int.h"
+#include "scamper_task.h"
+#include "scamper_queue.h"
 #include "scamper_addr2mac.h"
 #include "scamper_rtsock.h"
 #include "utils.h"

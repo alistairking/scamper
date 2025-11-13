@@ -1,7 +1,7 @@
 /*
  * sc_tracediff
  *
- * $Id: sc_tracediff.c,v 1.24 2025/05/01 02:58:04 mjl Exp $
+ * $Id: sc_tracediff.c,v 1.25 2025/11/05 03:34:16 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -119,28 +119,11 @@ static scamper_trace_reply_t *trace_reply_get(const scamper_trace_t *trace,
 
 static char *addr_toname(const scamper_addr_t *addr, char *buf, size_t len)
 {
-  const void *va = scamper_addr_addr_get(addr);
-  struct sockaddr *sa = NULL;
-  struct sockaddr_in in4;
-  struct sockaddr_in6 in6;
-  socklen_t sl;
+  struct sockaddr_storage sas;
+  struct sockaddr *sa = (struct sockaddr *)&sas;
 
-  if(scamper_addr_isipv4(addr))
-    {
-      sockaddr_compose((struct sockaddr *)&in4, AF_INET, va, 0);
-      sa = (struct sockaddr *)&in4;
-    }
-  else if(scamper_addr_isipv6(addr))
-    {
-      sockaddr_compose((struct sockaddr *)&in6, AF_INET6, va, 0);
-      sa = (struct sockaddr *)&in6;
-    }
-
-  if(sa == NULL)
-    return NULL;
-  sl = sockaddr_len(sa);
-
-  if(getnameinfo(sa, sl, buf, len, NULL, 0, NI_NAMEREQD) != 0)
+  if(scamper_addr_tosockaddr(addr, 0, sa) != 0 ||
+     getnameinfo(sa, sockaddr_len(sa), buf, len, NULL, 0, NI_NAMEREQD) != 0)
     return NULL;
 
   return buf;

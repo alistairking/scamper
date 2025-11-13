@@ -1,7 +1,7 @@
 /*
  * sc_remoted
  *
- * $Id: sc_remoted.c,v 1.147 2025/09/04 05:28:05 mjl Exp $
+ * $Id: sc_remoted.c,v 1.148 2025/11/10 05:52:11 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -1127,8 +1127,13 @@ static void sc_unit_free(sc_unit_t *scu)
 {
   if(scu == NULL)
     return;
-  if(scu->gc != 0 && scu->unode != NULL)
-    dlist_node_pop(gclist, scu->unode);
+  if(scu->unode != NULL)
+    {
+      if(scu->gc != 0)
+	dlist_node_pop(gclist, scu->unode);
+      else
+	dlist_node_pop(NULL, scu->unode);
+    }
   free(scu);
   return;
 }
@@ -1521,6 +1526,7 @@ static void sc_master_mux_notify(const sc_master_t *ms)
 static int sc_master_nameit(sc_master_t *ms)
 {
   char sab[128], tmp[512];
+  char *newname;
 
   /*
    * figure out the name for the unix domain socket.
@@ -1531,17 +1537,21 @@ static int sc_master_nameit(sc_master_t *ms)
   if(ms->monitorname != NULL)
     {
       snprintf(tmp, sizeof(tmp), "%s-%s", ms->monitorname, sab);
-      ms->name = strdup(tmp);
+      newname = strdup(tmp);
     }
   else
     {
-      ms->name = strdup(sab);
+      newname = strdup(sab);
     }
-  if(ms->name == NULL)
+  if(newname == NULL)
     {
-      remote_debug(__func__, "could not strdup ms->name: %s", strerror(errno));
+      remote_debug(__func__, "could not strdup name: %s", strerror(errno));
       return -1;
     }
+
+  if(ms->name != NULL)
+    free(ms->name);
+  ms->name = newname;
 
   return 0;
 }
