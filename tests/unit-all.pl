@@ -10,6 +10,7 @@ my @tests = (
     ["unit_cmd_dealias"],
     ["unit_cmd_host"],
     ["unit_cmd_http"],
+    ["unit_cmd_owamp"],
     ["unit_cmd_ping"],
     ["unit_cmd_sniff"],
     ["unit_cmd_sting"],

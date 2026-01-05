@@ -12,6 +12,7 @@ scamper_la_CFLAGS = \
 	-I$(top_srcdir)/scamper/host \
 	-I$(top_srcdir)/scamper/http \
 	-I$(top_srcdir)/scamper/neighbourdisc \
+	-I$(top_srcdir)/scamper/owamp \
 	-I$(top_srcdir)/scamper/ping \
 	-I$(top_srcdir)/scamper/sniff \
 	-I$(top_srcdir)/scamper/sting \

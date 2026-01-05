@@ -1,7 +1,7 @@
 /*
  * scamper_source
  *
- * $Id: scamper_sources.c,v 1.94 2025/10/20 00:07:45 mjl Exp $
+ * $Id: scamper_sources.c,v 1.95 2025/12/04 08:11:00 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -83,6 +83,10 @@
 #ifndef DISABLE_SCAMPER_UDPPROBE
 #include "udpprobe/scamper_udpprobe_cmd.h"
 #include "udpprobe/scamper_udpprobe_do.h"
+#endif
+#ifndef DISABLE_SCAMPER_OWAMP
+#include "owamp/scamper_owamp_cmd.h"
+#include "owamp/scamper_owamp_do.h"
 #endif
 
 #include "utils.h"
@@ -275,6 +279,16 @@ static const command_func_t command_funcs[] = {
     scamper_do_udpprobe_free,
     scamper_do_udpprobe_userid,
     scamper_do_udpprobe_enabled,
+  },
+#endif
+#ifndef DISABLE_SCAMPER_UDPPROBE
+  {
+    "owamp", 5,
+    scamper_do_owamp_alloc,
+    scamper_do_owamp_alloctask,
+    scamper_do_owamp_free,
+    scamper_do_owamp_userid,
+    scamper_do_owamp_enabled,
   },
 #endif
 };

@@ -1,6 +1,6 @@
 # Process this file with autoconf to produce a configure script.
 
-AC_INIT([scamper],[20251113],[mjl@luckie.org.nz])
+AC_INIT([scamper],[20260105],[mjl@luckie.org.nz])
 
 AC_CONFIG_SRCDIR([scamper/scamper.c])
 AC_CONFIG_AUX_DIR([.])
@@ -27,8 +27,9 @@ fi
 AC_ARG_ENABLE([debug-file],
   [AS_HELP_STRING([--disable-debug-file],
 		  [remove support for generating a debug file])])
-if test "x$enable_debug_file" = xno; then
-  AC_DEFINE([WITHOUT_DEBUGFILE], [1], [Defined to 1 if we don't want to be able generate a debugfile])
+if test "x$enable_debug_file" = "xno"; then
+  AC_DEFINE([WITHOUT_DEBUGFILE], [1],
+            [Defined to 1 if we don't want to be able generate a debugfile])
 fi
 
 # --enable-scamper-select
@@ -49,15 +50,16 @@ AC_ARG_ENABLE([scamper-privsep],
                   [build scamper without support for privilege separation])],
   [enable_scamper_privsep=$enableval],
   [enable_scamper_privsep=yes])
-if test "x$enable_scamper_privsep" = xno; then
+if test "x$enable_scamper_privsep" = "xno"; then
   AC_DEFINE([DISABLE_SCAMPER_PRIVSEP], [1],
             [Define to 1 to not build scamper with privilege separation])
 fi
-if test "x$enable_scamper_privsep" = xrootonly; then
+if test "x$enable_scamper_privsep" = "xrootonly"; then
   AC_DEFINE([ENABLE_SCAMPER_PRIVSEP_ROOTONLY], [1],
             [Define to 1 build scamper with privilege separation for root only])
 fi
-AM_CONDITIONAL([ENABLE_SCAMPER_PRIVSEP], [test x$enable_scamper_privsep != xno])
+AM_CONDITIONAL([ENABLE_SCAMPER_PRIVSEP],
+  [test "x$enable_scamper_privsep" != "xno"])
 
 # --disable-scamper-dnp
 AC_ARG_ENABLE([scamper-dnp],
@@ -65,28 +67,32 @@ AC_ARG_ENABLE([scamper-dnp],
                   [build scamper without support for do-not-probe list])],
   [enable_scamper_dnp=$enableval],
   [enable_scamper_dnp=yes])
-if test "x$enable_scamper_dnp" = xno; then
+if test "x$enable_scamper_dnp" = "xno"; then
   AC_DEFINE([DISABLE_SCAMPER_DNP], [1],
             [Define to 1 to not build scamper with support for do-not-probe])
 fi
-AM_CONDITIONAL([ENABLE_SCAMPER_DNP], [test x$enable_scamper_dnp != xno])
+AM_CONDITIONAL([ENABLE_SCAMPER_DNP], [test "x$enable_scamper_dnp" != "xno"])
 
 # --with-privsep-user --with-privsep-dir
 # --with-privsep-dirowner --with-privsep-dirgroup
 AC_ARG_WITH([privsep_user],
-  [AS_HELP_STRING([--with-privsep-user=USER],[sets user name for privsep process])],
+  [AS_HELP_STRING([--with-privsep-user=USER],
+                  [sets user name for privsep process])],
   [privsep_user=$withval],
   [privsep_user=nobody])
 AC_ARG_WITH([privsep_dir],
-  [AS_HELP_STRING([--with-privsep-dir=DIR],[sets chroot directory for privsep process])],
+  [AS_HELP_STRING([--with-privsep-dir=DIR],
+                  [sets chroot directory for privsep process])],
   [privsep_dir=$withval],
   [privsep_dir=/var/empty])
 AC_ARG_WITH([privsep_dir_owner],
-  [AS_HELP_STRING([--with-privsep-dir-owner=USER],[sets chroot directory owner])],
+  [AS_HELP_STRING([--with-privsep-dir-owner=USER],
+                  [sets chroot directory owner])],
   [privsep_dir_owner=$withval],
   [privsep_dir_owner=root])
 AC_ARG_WITH([privsep_dir_group],
-  [AS_HELP_STRING([--with-privsep-dir-group=GROUP],[sets chroot directory group id])],
+  [AS_HELP_STRING([--with-privsep-dir-group=GROUP],
+                  [sets chroot directory group id])],
   [privsep_dir_group=$withval],
   [privsep_dir_group=wheel])
 AC_SUBST(privsep_user)
@@ -113,23 +119,26 @@ AC_ARG_ENABLE([scamper_trace],
   [enable_scamper_trace=$enableval],
   [enable_scamper_trace=yes]
 )
-if test "x$enable_scamper_trace" = xno; then
+if test "x$enable_scamper_trace" = "xno"; then
   AC_DEFINE([DISABLE_SCAMPER_TRACE], [1],
   	    [Define to 1 to disable trace method in scamper])
 fi
-AM_CONDITIONAL([ENABLE_SCAMPER_TRACE], [test x$enable_scamper_trace = xyes])
+AM_CONDITIONAL([ENABLE_SCAMPER_TRACE],
+  [test "x$enable_scamper_trace" = "xyes"])
 
 # --disable-scamper-ping
 AC_ARG_ENABLE([scamper_ping],
-  [AS_HELP_STRING([--disable-scamper-ping], [disable ping method in scamper])],
+  [AS_HELP_STRING([--disable-scamper-ping],
+                  [disable ping method in scamper])],
   [enable_scamper_ping=$enableval],
   [enable_scamper_ping=yes]
 )
-if test "x$enable_scamper_ping" = xno; then
+if test "x$enable_scamper_ping" = "xno"; then
   AC_DEFINE([DISABLE_SCAMPER_PING], [1],
   	    [Define to 1 to disable ping method in scamper])
 fi
-AM_CONDITIONAL([ENABLE_SCAMPER_PING], [test x$enable_scamper_ping = xyes])
+AM_CONDITIONAL([ENABLE_SCAMPER_PING],
+  [test "x$enable_scamper_ping" = "xyes"])
 
 # --disable-scamper-tracelb
 AC_ARG_ENABLE([scamper_tracelb],
@@ -138,11 +147,12 @@ AC_ARG_ENABLE([scamper_tracelb],
   [enable_scamper_tracelb=$enableval],
   [enable_scamper_tracelb=yes]
 )
-if test "x$enable_scamper_tracelb" = xno; then
+if test "x$enable_scamper_tracelb" = "xno"; then
   AC_DEFINE([DISABLE_SCAMPER_TRACELB], [1],
   	    [Define to 1 to disable tracelb method in scamper])
 fi
-AM_CONDITIONAL([ENABLE_SCAMPER_TRACELB], [test x$enable_scamper_tracelb = xyes])
+AM_CONDITIONAL([ENABLE_SCAMPER_TRACELB],
+  [test "x$enable_scamper_tracelb" = "xyes"])
 
 # --disable-scamper-dealias
 AC_ARG_ENABLE([scamper_dealias],
@@ -151,23 +161,26 @@ AC_ARG_ENABLE([scamper_dealias],
   [enable_scamper_dealias=$enableval],
   [enable_scamper_dealias=yes]
 )
-if test "x$enable_scamper_dealias" = xno; then
+if test "x$enable_scamper_dealias" = "xno"; then
   AC_DEFINE([DISABLE_SCAMPER_DEALIAS], [1],
   	    [Define to 1 to disable dealias method in scamper])
 fi
-AM_CONDITIONAL([ENABLE_SCAMPER_DEALIAS], [test x$enable_scamper_dealias = xyes])
+AM_CONDITIONAL([ENABLE_SCAMPER_DEALIAS],
+  [test "x$enable_scamper_dealias" = "xyes"])
 
 # --disable-scamper-tbit
 AC_ARG_ENABLE([scamper_tbit],
-  [AS_HELP_STRING([--disable-scamper-tbit], [disable tbit method in scamper])],
+  [AS_HELP_STRING([--disable-scamper-tbit],
+                  [disable tbit method in scamper])],
   [enable_scamper_tbit=$enableval],
   [enable_scamper_tbit=yes]
 )
-if test "x$enable_scamper_tbit" = xno; then
+if test "x$enable_scamper_tbit" = "xno"; then
   AC_DEFINE([DISABLE_SCAMPER_TBIT], [1],
   	    [Define to 1 to disable tbit method in scamper])
 fi
-AM_CONDITIONAL([ENABLE_SCAMPER_TBIT], [test x$enable_scamper_tbit = xyes])
+AM_CONDITIONAL([ENABLE_SCAMPER_TBIT],
+  [test "x$enable_scamper_tbit" = "xyes"])
 
 # --disable-scamper-sting
 AC_ARG_ENABLE([scamper_sting],
@@ -176,11 +189,12 @@ AC_ARG_ENABLE([scamper_sting],
   [enable_scamper_sting=$enableval],
   [enable_scamper_sting=yes]
 )
-if test "x$enable_scamper_sting" = xno; then
+if test "x$enable_scamper_sting" = "xno"; then
   AC_DEFINE([DISABLE_SCAMPER_STING], [1],
   	    [Define to 1 to disable sting method in scamper])
 fi
-AM_CONDITIONAL([ENABLE_SCAMPER_STING], [test x$enable_scamper_sting = xyes])
+AM_CONDITIONAL([ENABLE_SCAMPER_STING],
+  [test "x$enable_scamper_sting" = "xyes"])
 
 # --disable-scamper-sniff
 AC_ARG_ENABLE([scamper_sniff],
@@ -189,11 +203,12 @@ AC_ARG_ENABLE([scamper_sniff],
   [enable_scamper_sniff=$enableval],
   [enable_scamper_sniff=yes]
 )
-if test "x$enable_scamper_sniff" = xno; then
+if test "x$enable_scamper_sniff" = "xno"; then
   AC_DEFINE([DISABLE_SCAMPER_SNIFF], [1],
   	    [Define to 1 to disable sniff method in scamper])
 fi
-AM_CONDITIONAL([ENABLE_SCAMPER_SNIFF], [test x$enable_scamper_sniff = xyes])
+AM_CONDITIONAL([ENABLE_SCAMPER_SNIFF],
+  [test "x$enable_scamper_sniff" = "xyes"])
 
 # --disable-scamper-host
 AC_ARG_ENABLE([scamper_host],
@@ -202,11 +217,12 @@ AC_ARG_ENABLE([scamper_host],
   [enable_scamper_host=$enableval],
   [enable_scamper_host=yes]
 )
-if test "x$enable_scamper_host" = xno; then
+if test "x$enable_scamper_host" = "xno"; then
   AC_DEFINE([DISABLE_SCAMPER_HOST], [1],
             [Define to 1 to disable host method in scamper])
 fi
-AM_CONDITIONAL([ENABLE_SCAMPER_HOST], [test x$enable_scamper_host = xyes])
+AM_CONDITIONAL([ENABLE_SCAMPER_HOST],
+  [test "x$enable_scamper_host" = "xyes"])
 
 # --disable-scamper-http
 AC_ARG_ENABLE([scamper_http],
@@ -215,11 +231,12 @@ AC_ARG_ENABLE([scamper_http],
   [enable_scamper_http=$enableval],
   [enable_scamper_http=yes]
 )
-if test "x$enable_scamper_http" = xno; then
+if test "x$enable_scamper_http" = "xno"; then
   AC_DEFINE([DISABLE_SCAMPER_HTTP], [1],
             [Define to 1 to disable http method in scamper])
 fi
-AM_CONDITIONAL([ENABLE_SCAMPER_HTTP], [test x$enable_scamper_http = xyes])
+AM_CONDITIONAL([ENABLE_SCAMPER_HTTP],
+  [test "x$enable_scamper_http" = "xyes"])
 
 # --disable-scamper-udpprobe
 AC_ARG_ENABLE([scamper_udpprobe],
@@ -228,16 +245,31 @@ AC_ARG_ENABLE([scamper_udpprobe],
   [enable_scamper_udpprobe=$enableval],
   [enable_scamper_udpprobe=yes]
 )
-if test "x$enable_scamper_udpprobe" = xno; then
+if test "x$enable_scamper_udpprobe" = "xno"; then
   AC_DEFINE([DISABLE_SCAMPER_UDPPROBE], [1],
             [Define to 1 to disable udpprobe method in scamper])
 fi
-AM_CONDITIONAL([ENABLE_SCAMPER_UDPPROBE], [test x$enable_scamper_udpprobe = xyes])
+AM_CONDITIONAL([ENABLE_SCAMPER_UDPPROBE],
+  [test "x$enable_scamper_udpprobe" = "xyes"])
+
+# --disable-scamper-owamp
+AC_ARG_ENABLE([scamper_owamp],
+  [AS_HELP_STRING([--disable-scamper-owamp],
+		  [disable owamp method in scamper])],
+  [enable_scamper_owamp=$enableval],
+  [enable_scamper_owamp=yes]
+)
+if test "x$enable_scamper_owamp" = "xno"; then
+  AC_DEFINE([DISABLE_SCAMPER_OWAMP], [1],
+            [Define to 1 to disable owamp method in scamper])
+fi
+AM_CONDITIONAL([ENABLE_SCAMPER_OWAMP],
+  [test "x$enable_scamper_owamp" = "xyes"])
 
 # dmalloc support
 AC_ARG_WITH([dmalloc],
   [AS_HELP_STRING([--with-dmalloc], [enable support for dmalloc])])
-if test "x$with_dmalloc" = xyes; then
+if test "x$with_dmalloc" = "xyes"; then
 	AC_CHECK_LIB([dmalloc],	[dmalloc_malloc],
 		[
 		CFLAGS="$CFLAGS -DDMALLOC"
@@ -249,7 +281,7 @@ fi
 # pcre support
 AC_ARG_WITH([pcre],
   [AS_HELP_STRING([--with-pcre], [use pcre for regex engine])])
-if test "x$with_pcre" = xyes; then
+if test "x$with_pcre" = "xyes"; then
 	AC_CHECK_LIB([pcre], [pcre_compile],
 		[
 		PCRE_CFLAGS="-DHAVE_PCRE"
@@ -261,7 +293,7 @@ fi
 # pcre2 support
 AC_ARG_WITH([pcre2],
   [AS_HELP_STRING([--with-pcre2], [use pcre2 for regex engine])])
-if test "x$with_pcre2" = xyes; then
+if test "x$with_pcre2" = "xyes"; then
 	AC_CHECK_LIB([pcre2-8], [pcre2_compile_8],
 		[
 		PCRE_CFLAGS="-DHAVE_PCRE2"
@@ -279,16 +311,16 @@ AC_ARG_ENABLE([libs],
   [enable_libs=$enableval],
   [enable_libs=yes]
 )
-AM_CONDITIONAL([ENABLE_LIBS], [test x$enable_libs = xyes])
+AM_CONDITIONAL([ENABLE_LIBS], [test "x$enable_libs" = "xyes"])
 
 # python bindings
 AC_ARG_WITH([python],
   [AS_HELP_STRING([--with-python], [build python interface to scamper])])
-if test "x$with_python" = xyes; then
+if test "x$with_python" = "xyes"; then
    AX_PYTHON_DEVEL([>='3.0'])
 fi
 AM_CONDITIONAL([ENABLE_PYTHON],
-	[test x$enable_libs = xyes && test x$with_python = xyes])
+	[test "x$enable_libs" = "xyes" && test "x$with_python" = "xyes"])
 
 # build tests
 AC_ARG_ENABLE([tests],
@@ -296,7 +328,7 @@ AC_ARG_ENABLE([tests],
   [enable_tests=$enableval],
   [enable_tests=no]
 )
-AM_CONDITIONAL([ENABLE_TESTS], [test x$enable_tests = xyes])
+AM_CONDITIONAL([ENABLE_TESTS], [test "x$enable_tests" = "xyes"])
 
 # build utils
 AC_ARG_ENABLE([utils],
@@ -304,7 +336,7 @@ AC_ARG_ENABLE([utils],
   [enable_utils=$enableval],
   [enable_utils=yes]
 )
-AM_CONDITIONAL([ENABLE_UTILS], [test x$enable_utils = xyes])
+AM_CONDITIONAL([ENABLE_UTILS], [test "x$enable_utils" = "xyes"])
 
 # sc_hoiho utility
 AC_ARG_ENABLE([sc_hoiho],
@@ -313,7 +345,7 @@ AC_ARG_ENABLE([sc_hoiho],
   [enable_sc_hoiho=no]
 )
 AM_CONDITIONAL([ENABLE_SC_HOIHO],
-	[test x$enable_utils = xyes && test x$enable_sc_hoiho = xyes])
+	[test "x$enable_utils" = "xyes" && test "x$enable_sc_hoiho" = "xyes"])
 
 # sc_minrtt utility
 AC_ARG_ENABLE([sc_minrtt],
@@ -322,7 +354,7 @@ AC_ARG_ENABLE([sc_minrtt],
   [enable_sc_minrtt=no]
 )
 AM_CONDITIONAL([ENABLE_SC_MINRTT],
-	[test x$enable_utils = xyes && test x$enable_sc_minrtt = xyes])
+	[test "x$enable_utils" = "xyes" && test "x$enable_sc_minrtt" = "xyes"])
 
 # sc_uptime prober support
 AC_ARG_ENABLE([sc_uptime],
@@ -331,7 +363,7 @@ AC_ARG_ENABLE([sc_uptime],
   [enable_sc_uptime=no]
 )
 AM_CONDITIONAL([ENABLE_SC_UPTIME],
-	[test x$enable_utils = xyes && test x$enable_sc_uptime = xyes])
+	[test "x$enable_utils" = "xyes" && test "x$enable_sc_uptime" = "xyes"])
 
 # Checks for header files.
 AC_HEADER_SYS_WAIT
@@ -436,9 +468,11 @@ AC_TYPE_UINT8_T
 AC_FUNC_CHOWN
 AC_FUNC_FORK
 AC_CHECK_FUNCS(arc4random)
+AC_CHECK_FUNCS(arc4random_buf)
 AC_CHECK_FUNCS(arc4random_uniform)
 AC_CHECK_FUNCS(atexit)
 AC_CHECK_FUNCS(calloc)
+AC_CHECK_FUNCS(chroot)
 AC_CHECK_FUNCS(daemon)
 AC_CHECK_FUNCS(endpwent)
 AC_CHECK_FUNCS(epoll_wait)
@@ -455,6 +489,7 @@ AC_CHECK_FUNCS(kqueue)
 AC_CHECK_FUNCS(memmove)
 AC_CHECK_FUNCS(memset)
 AC_CHECK_FUNCS(mkdir)
+AC_CHECK_FUNCS(pledge)
 AC_CHECK_FUNCS(poll)
 AC_CHECK_FUNCS(rmdir)
 AC_CHECK_FUNCS(select)
@@ -472,6 +507,7 @@ AC_CHECK_FUNCS(strncasecmp)
 AC_CHECK_FUNCS(strtol)
 AC_CHECK_FUNCS(sysctl)
 AC_CHECK_FUNCS(uname)
+AC_CHECK_FUNCS(unveil)
 
 AC_CHECK_SIZEOF(long)
 
@@ -481,7 +517,7 @@ AC_CHECK_MEMBER([struct sockaddr.sa_len],
 	[#include <sys/types.h>
 	 #include <sys/socket.h>])
 
-if test "x$ac_cv_header_net_pfvar_h" = xyes; then
+if test "x$ac_cv_header_net_pfvar_h" = "xyes"; then
    AC_CHECK_MEMBER([struct pfioc_trans_e.type],
 	[AC_DEFINE([HAVE_STRUCT_PFIOC_TRANS_E_TYPE],[1],
 	[Define if struct pfioc_trans_e has a type member])],[:],
@@ -613,11 +649,11 @@ AC_ARG_ENABLE([scamper-ring],
   [AS_HELP_STRING([--enable-scamper-ring], [enable ring buffer by default])],
   [enable_scamper_ring=$enableval],
   [enable_scamper_ring=no])
-if test "x$enable_scamper_ring" = xyes; then
+if test "x$enable_scamper_ring" = "xyes"; then
   AC_DEFINE([ENABLE_SCAMPER_RING], [1],
             [Define to 1 if we want to use ring buffer by default])
 fi
-AM_CONDITIONAL([ENABLE_SCAMPER_RING], [test x$enable_scamper_ring = xyes])
+AM_CONDITIONAL([ENABLE_SCAMPER_RING], [test "x$enable_scamper_ring" = "xyes"])
 
 # These libraries have to be explicitly linked in OpenSolaris
 AC_SEARCH_LIBS(getaddrinfo, socket, [], [], -lnsl)
@@ -630,9 +666,9 @@ AX_CHECK_OPENSSL(
 	[AC_DEFINE([HAVE_OPENSSL], [1], [Define to 1 if you have OpenSSL])]
 	[CFLAGS="$CFLAGS $OPENSSL_INCLUDES"]
 	[have_openssl=yes])
-AM_CONDITIONAL([HAVE_OPENSSL], [test x$have_openssl = xyes])
+AM_CONDITIONAL([HAVE_OPENSSL], [test "x$have_openssl" = "xyes"])
 
-if test "x$have_openssl" = xyes; then
+if test "x$have_openssl" = "xyes"; then
    save_LIBS="$LIBS"
    save_LDFLAGS="$LDFLAGS"
    LDFLAGS="$LDFLAGS $OPENSSL_LDFLAGS"
@@ -687,7 +723,7 @@ AC_ARG_WITH([zlib],
 		  [support gz streams @<:@default=check@:>@])],
   [],
   [with_zlib=check])
-AS_IF([test "x$with_zlib" != xno],[
+AS_IF([test "x$with_zlib" != "xno"],[
   save_LIBS="$LIBS"
   LIBS="$LIBS -lz"
   AC_MSG_CHECKING([for inflateInit2 in -lz])
@@ -710,7 +746,7 @@ AS_IF([test "x$with_zlib" != xno],[
     ZLIB_LIBS="-lz"
   ],
   [
-    if test "x$with_zlib" != xcheck; then
+    if test "x$with_zlib" != "xcheck"; then
       AC_MSG_FAILURE([--with-zlib was given, but test for zlib failed])
     fi
     AC_MSG_RESULT([no])
@@ -725,7 +761,7 @@ AC_ARG_WITH([bz2],
 		  [support bz2 streams @<:@default=check@:>@])],
   [],
   [with_bz2=check])
-AS_IF([test "x$with_bz2" != xno],[
+AS_IF([test "x$with_bz2" != "xno"],[
   save_LIBS="$LIBS"
   LIBS="$LIBS -lbz2"
   AC_MSG_CHECKING([for BZ2_bzDecompressInit in -lbz2])
@@ -748,7 +784,7 @@ AS_IF([test "x$with_bz2" != xno],[
     LIBBZ2_LIBS="-lbz2"
   ],
   [
-    if test "x$with_bz2" != xcheck; then
+    if test "x$with_bz2" != "xcheck"; then
       AC_MSG_FAILURE([--with-bz2 was given, but test for bz2 failed])
     fi
     AC_MSG_RESULT([no])
@@ -763,7 +799,7 @@ AC_ARG_WITH([lzma],
 		  [support xz streams @<:@default=check@:>@])],
   [],
   [with_lzma=check])
-AS_IF([test "x$with_lzma" != xno],[
+AS_IF([test "x$with_lzma" != "xno"],[
   save_LIBS="$LIBS"
   LIBS="$LIBS -llzma"
   AC_MSG_CHECKING([for lzma_stream_decoder in -llzma])
@@ -786,7 +822,7 @@ AS_IF([test "x$with_lzma" != xno],[
     LIBLZMA_LIBS="-llzma"
   ],
   [
-    if test "x$with_lzma" != xcheck; then
+    if test "x$with_lzma" != "xcheck"; then
       AC_MSG_FAILURE([--with-lzma was given, but test for lzma failed])
     fi
     AC_MSG_RESULT([no])
@@ -919,7 +955,7 @@ AX_GCC_BUILTIN(__builtin_clz)
 # No thread support
 AC_ARG_ENABLE([threads],
   [AS_HELP_STRING([--disable-threads], [disable use of threads])])
-if test "x$enable_threads" != xno; then
+if test "x$enable_threads" != "xno"; then
   AX_PTHREAD(
 	[AC_DEFINE([HAVE_PTHREAD], [1], [Define to 1 if you have pthread])])
 fi

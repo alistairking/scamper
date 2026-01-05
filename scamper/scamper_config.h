@@ -1,7 +1,7 @@
 /*
  * scamper_config.h
  *
- * $Id: scamper_config.h,v 1.2 2025/06/02 08:22:35 mjl Exp $
+ * $Id: scamper_config.h,v 1.3 2025/12/04 08:11:00 mjl Exp $
  *
  * Copyright (C) 2025 Matthew Luckie
  *
@@ -38,6 +38,7 @@ typedef struct scamper_config
   uint8_t   trace_enable;
   uint8_t   tracelb_enable;
   uint8_t   udpprobe_enable;
+  uint8_t   owamp_enable;
 } scamper_config_t;
 
 int scamper_config_reload(const char *filename);

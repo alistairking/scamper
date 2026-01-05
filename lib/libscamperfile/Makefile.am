@@ -1,4 +1,4 @@
-# $Id: Makefile.am,v 1.13 2025/10/20 02:48:50 mjl Exp $
+# $Id: Makefile.am,v 1.15 2026/01/04 02:24:05 mjl Exp $
 
 AUTOMAKE_OPTIONS = subdir-objects
 
@@ -8,7 +8,7 @@ lib_LTLIBRARIES = libscamperfile.la
 
 libscamperfile_la_CFLAGS = -DBUILDING_LIBSCAMPERFILE
 
-libscamperfile_la_LDFLAGS = -version-info 17:0:4 \
+libscamperfile_la_LDFLAGS = -version-info 18:0:5 \
 	-export-symbols-regex '^scamper_'
 
 libscamperfile_la_LIBADD = @ZLIB_LIBS@ @LIBBZ2_LIBS@ @LIBLZMA_LIBS@ \
@@ -74,7 +74,11 @@ libscamperfile_la_SOURCES = \
 	$(top_srcdir)/scamper/udpprobe/scamper_udpprobe.c \
 	$(top_srcdir)/scamper/udpprobe/scamper_udpprobe_warts.c \
 	$(top_srcdir)/scamper/udpprobe/scamper_udpprobe_json.c \
-	$(top_srcdir)/scamper/udpprobe/scamper_udpprobe_lib.c
+	$(top_srcdir)/scamper/udpprobe/scamper_udpprobe_lib.c \
+	$(top_srcdir)/scamper/owamp/scamper_owamp.c \
+	$(top_srcdir)/scamper/owamp/scamper_owamp_warts.c \
+	$(top_srcdir)/scamper/owamp/scamper_owamp_json.c \
+	$(top_srcdir)/scamper/owamp/scamper_owamp_lib.c
 
 include_HEADERS = \
 	$(top_srcdir)/scamper/scamper_file.h \
@@ -91,7 +95,8 @@ include_HEADERS = \
 	$(top_srcdir)/scamper/sniff/scamper_sniff.h \
 	$(top_srcdir)/scamper/host/scamper_host.h \
 	$(top_srcdir)/scamper/http/scamper_http.h \
-	$(top_srcdir)/scamper/udpprobe/scamper_udpprobe.h
+	$(top_srcdir)/scamper/udpprobe/scamper_udpprobe.h \
+	$(top_srcdir)/scamper/owamp/scamper_owamp.h
 
 man_MANS = \
 	libscamperfile.3 \

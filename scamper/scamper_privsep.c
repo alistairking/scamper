@@ -1,7 +1,7 @@
 /*
  * scamper_privsep.c: code that does root-required tasks
  *
- * $Id: scamper_privsep.c,v 1.110 2025/03/29 19:12:28 mjl Exp $
+ * $Id: scamper_privsep.c,v 1.113 2026/01/02 19:40:13 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -43,6 +43,14 @@
 
 #include "utils.h"
 
+/*
+ * add the following explicit check, to defend against accidential
+ * future use of HAVE_SETEUID guards later on in the code.
+ */
+#ifndef HAVE_SETEUID
+#error "privsep requires seteuid"
+#endif
+
 typedef struct privsep_msg
 {
   uint16_t plen;
@@ -68,22 +76,21 @@ extern pid_t privsep_unpriv_pid; /* the pid of the unpriv process */
 #define SCAMPER_PRIVSEP_OPEN_FILE     1
 #define SCAMPER_PRIVSEP_OPEN_RTSOCK   2
 #define SCAMPER_PRIVSEP_OPEN_ICMP     3
-#define SCAMPER_PRIVSEP_OPEN_SOCK     4
-#define SCAMPER_PRIVSEP_OPEN_RAWUDP   5
-#define SCAMPER_PRIVSEP_OPEN_UNIX     6
-#define SCAMPER_PRIVSEP_OPEN_RAWIP    7
-#define SCAMPER_PRIVSEP_UNLINK        8
-#define SCAMPER_PRIVSEP_IPFW_INIT     9
-#define SCAMPER_PRIVSEP_IPFW_CLEANUP  10
-#define SCAMPER_PRIVSEP_IPFW_ADD      11
-#define SCAMPER_PRIVSEP_IPFW_DEL      12
-#define SCAMPER_PRIVSEP_PF_INIT       13
-#define SCAMPER_PRIVSEP_PF_CLEANUP    14
-#define SCAMPER_PRIVSEP_PF_ADD        15
-#define SCAMPER_PRIVSEP_PF_DEL        16
-#define SCAMPER_PRIVSEP_EXIT          17
-#define SCAMPER_PRIVSEP_READY         18
-#define SCAMPER_PRIVSEP_HUP           19
+#define SCAMPER_PRIVSEP_OPEN_RAWUDP   4
+#define SCAMPER_PRIVSEP_OPEN_UNIX     5
+#define SCAMPER_PRIVSEP_OPEN_RAWIP    6
+#define SCAMPER_PRIVSEP_UNLINK        7
+#define SCAMPER_PRIVSEP_IPFW_INIT     8
+#define SCAMPER_PRIVSEP_IPFW_CLEANUP  9
+#define SCAMPER_PRIVSEP_IPFW_ADD      10
+#define SCAMPER_PRIVSEP_IPFW_DEL      11
+#define SCAMPER_PRIVSEP_PF_INIT       12
+#define SCAMPER_PRIVSEP_PF_CLEANUP    13
+#define SCAMPER_PRIVSEP_PF_ADD        14
+#define SCAMPER_PRIVSEP_PF_DEL        15
+#define SCAMPER_PRIVSEP_EXIT          16
+#define SCAMPER_PRIVSEP_READY         17
+#define SCAMPER_PRIVSEP_HUP           18
 
 #define SCAMPER_PRIVSEP_ROOT_MAXTYPE  SCAMPER_PRIVSEP_PF_DEL
 #define SCAMPER_PRIVSEP_MAXTYPE       SCAMPER_PRIVSEP_HUP
@@ -339,84 +346,6 @@ static int privsep_root_open_datalink(uint16_t plen, const uint8_t *param)
   memcpy(&ifindex, param, sizeof(ifindex));
 
   return scamper_dl_open_fd(ifindex);
-}
-
-static int privsep_root_open_sock(uint16_t plen, const uint8_t *param)
-{
-  struct sockaddr_in sin4;
-  struct sockaddr_in6 sin6;
-  int domain, type, protocol, port;
-  size_t size = sizeof(domain) + sizeof(protocol) + sizeof(port);
-  size_t off = 0;
-  int fd = -1;
-
-  if(plen != size)
-    {
-      scamper_debug(__func__, "plen %u != %d", plen, (int)size);
-      errno = EINVAL;
-      goto err;
-    }
-  off = 0;
-  memcpy(&domain,   param+off, sizeof(domain));   off += sizeof(domain);
-  memcpy(&protocol, param+off, sizeof(protocol)); off += sizeof(protocol);
-  memcpy(&port,     param+off, sizeof(port));     off += sizeof(port);
-
-  if(off != plen)
-    goto inval;
-
-  if(port < 1 || port > UINT16_MAX)
-    {
-      scamper_debug(__func__, "refusing to bind to port %d", port);
-      goto inval;
-    }
-
-  if(protocol == IPPROTO_TCP)      type = SOCK_STREAM;
-  else if(protocol == IPPROTO_UDP) type = SOCK_DGRAM;
-  else
-    {
-      scamper_debug(__func__, "unhandled IP protocol %d", protocol);
-      goto inval;
-    }
-
-  if(domain == AF_INET)
-    {
-      if((fd = socket(AF_INET, type, protocol)) == -1)
-	{
-	  printerror(__func__, "could not open IPv4 socket");
-	  goto err;
-	}
-      sockaddr_compose((struct sockaddr *)&sin4, AF_INET, NULL, port);
-      if(bind(fd, (struct sockaddr *)&sin4, sizeof(sin4)) == -1)
-	{
-	  printerror(__func__, "could not bind to IPv4 protocol %d port %d",
-		     protocol, port);
-	  goto err;
-	}
-    }
-  else if(domain == AF_INET6)
-    {
-      if((fd = socket(AF_INET6, type, protocol)) == -1)
-	{
-	  printerror(__func__, "could not open IPv6 socket");
-	  goto err;
-	}
-      sockaddr_compose((struct sockaddr *)&sin6, AF_INET6, NULL, port);
-      if(bind(fd, (struct sockaddr *)&sin6, sizeof(sin6)) == -1)
-	{
-	  printerror(__func__, "could not bind to IPv6 protocol %d port %d",
-		     protocol, port);
-	  goto err;
-	}
-    }
-  else return -1;
-
-  return fd;
-
- inval:
-  errno = EINVAL;
- err:
-  if(fd != -1) close(fd);
-  return -1;
 }
 
 static int privsep_root_open_rawudp(uint16_t plen, const uint8_t *param)
@@ -969,7 +898,6 @@ static int privsep_root_do(void)
     {privsep_root_open_file,     privsep_root_send_fd},
     {privsep_root_open_rtsock,   privsep_root_send_fd},
     {privsep_root_open_icmp,     privsep_root_send_fd},
-    {privsep_root_open_sock,     privsep_root_send_fd},
     {privsep_root_open_rawudp,   privsep_root_send_fd},
     {privsep_root_open_unix,     privsep_root_send_fd},
     {privsep_root_open_rawip,    privsep_root_send_fd},
@@ -1262,16 +1190,6 @@ static int privsep_unpriv_getfd_1int(uint8_t type, int p1)
   return privsep_unpriv_getfd(type, sizeof(param), param);
 }
 
-static int privsep_unpriv_getfd_3int(uint8_t type, int p1, int p2, int p3)
-{
-  uint8_t param[sizeof(p1)+sizeof(p2)+sizeof(p3)];
-  size_t off = 0;
-  memcpy(param+off, &p1, sizeof(p1)); off += sizeof(p1);
-  memcpy(param+off, &p2, sizeof(p2)); off += sizeof(p2);
-  memcpy(param+off, &p3, sizeof(p3));
-  return privsep_unpriv_getfd(type, sizeof(param), param);
-}
-
 int scamper_privsep_open_datalink(int ifindex)
 {
   return privsep_unpriv_getfd_1int(SCAMPER_PRIVSEP_OPEN_DATALINK, ifindex);
@@ -1331,18 +1249,6 @@ int scamper_privsep_open_rtsock(void)
 int scamper_privsep_open_icmp(int domain)
 {
   return privsep_unpriv_getfd_1int(SCAMPER_PRIVSEP_OPEN_ICMP, domain);
-}
-
-int scamper_privsep_open_tcp(int domain, int port)
-{
-  return privsep_unpriv_getfd_3int(SCAMPER_PRIVSEP_OPEN_SOCK,
-				   domain, IPPROTO_TCP, port);
-}
-
-int scamper_privsep_open_udp(int domain, int port)
-{
-  return privsep_unpriv_getfd_3int(SCAMPER_PRIVSEP_OPEN_SOCK,
-				   domain, IPPROTO_UDP, port);
 }
 
 int scamper_privsep_open_rawudp(const void *addr)

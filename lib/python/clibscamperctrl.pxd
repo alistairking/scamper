@@ -89,7 +89,7 @@ cdef extern from "libscamperctrl.h":
  void scamper_task_free(scamper_task_t *task)
  scamper_task_t *scamper_task_use(scamper_task_t *task)
 
- scamper_mux_t *scamper_mux_add(scamper_ctrl_t *ctrl, const char *path)
+ scamper_mux_t *scamper_mux_add(scamper_ctrl_t *ctrl, const char *path) nogil
 
  scamper_vpset_t *scamper_vpset_get(const scamper_mux_t *mux)
  void scamper_vpset_free(scamper_vpset_t *vps)

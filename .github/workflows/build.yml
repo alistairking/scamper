@@ -60,10 +60,12 @@ jobs:
     strategy:
       matrix:
         include:
-          - runner: macos-latest
+          - runner: macos-14
             platform: darwin-arm64
-          - runner: macos-13
-            platform: darwin-amd64
+          - runner: macos-15
+            platform: darwin-arm64
+          - runner: macos-26
+            platform: darwin-arm64
     runs-on: ${{ matrix.runner }}
     steps:
       # SETUP
@@ -84,15 +86,15 @@ jobs:
           autoreconf -vfi
           ./configure --disable-libs --disable-utils --with-openssl=disabled --disable-scamper-dnp
           make
-          mkdir -p ./build/${{matrix.platform}}
-          cp scamper/scamper ./build/${{matrix.platform}}
+          mkdir -p ./build/${{matrix.runner}}-${{matrix.platform}}
+          cp scamper/scamper ./build/${{matrix.runner}}-${{matrix.platform}}
           echo "Successfully built scamper version: $(./scamper/scamper -v)"
 
       # STORE BINARIES
       - name: Archive compiled binaries
         uses: actions/upload-artifact@v4
         with:
-          name: scamper-build-${{ matrix.platform }}
+          name: scamper-build-${{ matrix.runner }}-${{ matrix.platform }}
           path: build/**/scamper
 
   docs:
