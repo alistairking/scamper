@@ -1,7 +1,7 @@
 /*
  * sc_wartsdump
  *
- * $Id: sc_wartsdump.c,v 1.326 2025/10/19 22:06:48 mjl Exp $
+ * $Id: sc_wartsdump.c,v 1.330 2026/01/04 19:40:30 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -10,7 +10,7 @@
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2012-2015 The Regents of the University of California
  * Copyright (C) 2019-2025 Matthew Luckie
- * Copyright (C) 2023-2024 The Regents of the University of California
+ * Copyright (C) 2023-2025 The Regents of the University of California
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -46,6 +46,7 @@
 #include "host/scamper_host.h"
 #include "http/scamper_http.h"
 #include "udpprobe/scamper_udpprobe.h"
+#include "owamp/scamper_owamp.h"
 #include "scamper_file.h"
 #include "utils.h"
 
@@ -977,7 +978,7 @@ static void dump_ping(scamper_ping_t *ping)
     case SCAMPER_PING_METHOD_ICMP_TIME:
       printf(", icmp-id: %d", scamper_ping_sport_get(ping));
       if((flags & SCAMPER_PING_FLAG_ICMPSUM) != 0)
-	printf(", icmp-csum: %04x", scamper_ping_icmpsum_get(ping));
+	printf(", icmp-csum: 0x%04x", scamper_ping_icmpsum_get(ping));
       break;
 
     case SCAMPER_PING_METHOD_UDP:
@@ -1094,7 +1095,7 @@ static void dump_dealias_probedef(const scamper_dealias_probedef_t *def)
 
   if((icmp = scamper_dealias_probedef_icmp_get(def)) != NULL)
     {
-      printf("  icmp-echo csum: %04x, id: %04x\n",
+      printf("  icmp-echo csum: 0x%04x, id: 0x%04x\n",
 	     scamper_dealias_probedef_icmp_csum_get(icmp),
 	     scamper_dealias_probedef_icmp_id_get(icmp));
     }
@@ -1365,7 +1366,7 @@ static void dump_dealias(scamper_dealias_t *dealias)
 	     scamper_dealias_probe_seq_get(probe),
 	     (int)tx->tv_sec, (int)tx->tv_usec);
       if(scamper_addr_isipv4(dst))
-	printf(", ipid: %04x", scamper_dealias_probe_ipid_get(probe));
+	printf(", ipid: 0x%04x", scamper_dealias_probe_ipid_get(probe));
       printf("\n");
 
       replyc = scamper_dealias_probe_replyc_get(probe);
@@ -1382,9 +1383,9 @@ static void dump_dealias(scamper_dealias_t *dealias)
 	  if((reply_size = scamper_dealias_reply_size_get(reply)) != 0)
 	    printf(", size: %d", reply_size);
 	  if(scamper_addr_isipv4(src))
-	    printf(", ipid: %04x", scamper_dealias_reply_ipid_get(reply));
+	    printf(", ipid: 0x%04x", scamper_dealias_reply_ipid_get(reply));
 	  else if(scamper_dealias_reply_is_ipid32(reply))
-	    printf(", ipid32: %08x", scamper_dealias_reply_ipid32_get(reply));
+	    printf(", ipid32: 0x%08x", scamper_dealias_reply_ipid32_get(reply));
 	  printf("\n");
 
 	  if(scamper_dealias_reply_is_icmp(reply))
@@ -2549,6 +2550,102 @@ static void dump_udpprobe(scamper_udpprobe_t *up)
   return;
 }
 
+static void dump_owamp(scamper_owamp_t *owamp)
+{
+  const struct timeval *start, *ts;
+  const scamper_owamp_sched_t *sched;
+  const scamper_owamp_tx_t *tx;
+  const scamper_owamp_rx_t *rx;
+  const scamper_addr_t *addr;
+  const char *str;
+  struct timeval tv;
+  uint32_t i, schedc, txc, rxc;
+  uint8_t j, flags;
+  char buf[256];
+
+  printf("owamp");
+  if((addr = scamper_owamp_src_get(owamp)) != NULL)
+    printf(" from %s", scamper_addr_tostr(addr, buf, sizeof(buf)));
+  addr = scamper_owamp_dst_get(owamp);
+  printf(" to %s\n", scamper_addr_tostr(addr, buf, sizeof(buf)));
+  dump_list_summary(scamper_owamp_list_get(owamp));
+  dump_cycle_summary(scamper_owamp_cycle_get(owamp));
+  printf(" user-id: %d\n", scamper_owamp_userid_get(owamp));
+  dump_timeval("start", scamper_owamp_start_get(owamp));
+  dump_timeval("startat", scamper_owamp_startat_get(owamp));
+  dump_wait(" wait-timeout", scamper_owamp_wait_timeout_get(owamp));
+  printf(", attempts: %d, dport: %d, pktsize: %d, dscp: %d, ttl: %d\n",
+	 scamper_owamp_attempts_get(owamp), scamper_owamp_dport_get(owamp),
+	 scamper_owamp_pktsize_get(owamp), scamper_owamp_dscp_get(owamp),
+	 scamper_owamp_ttl_get(owamp));
+  printf(" dir: %s, udp_sport: %d, udp_dport: %d\n",
+	 scamper_owamp_dir_tostr(owamp, buf, sizeof(buf)),
+	 scamper_owamp_udp_sport_get(owamp),
+	 scamper_owamp_udp_dport_get(owamp));
+  if((ts = scamper_owamp_hsrtt_get(owamp)) != NULL && timeval_iszero(ts) == 0)
+    printf(" hs-rtt: %d.%06d\n", (int)ts->tv_sec, (int)ts->tv_usec);
+  printf(" result: %s\n", scamper_owamp_result_tostr(owamp, buf, sizeof(buf)));
+  if((str = scamper_owamp_errmsg_get(owamp)) != NULL)
+    printf(" errmsg: %s\n", str);
+
+  if((schedc = scamper_owamp_schedc_get(owamp)) > 0)
+    {
+      printf(" schedc: %d\n", schedc);
+      for(i=0; i<schedc; i++)
+	{
+	  if((sched = scamper_owamp_sched_get(owamp, i)) == NULL)
+	    continue;
+	  printf("  %d: %s", i,
+		 scamper_owamp_sched_type_tostr(sched, buf, sizeof(buf)));
+	  dump_wait(", value", scamper_owamp_sched_tv_get(sched));
+	  printf("\n");
+	}
+    }
+
+  if((txc = scamper_owamp_txc_get(owamp)) > 0)
+    {
+      start = scamper_owamp_startat_get(owamp);
+      printf(" txc: %d\n", txc);
+      for(i=0; i<txc; i++)
+	{
+	  if((tx = scamper_owamp_tx_get(owamp, i)) == NULL ||
+	     (ts = scamper_owamp_tx_stamp_get(tx)) == NULL)
+	    continue;
+	  timeval_diff_tv(&tv, start, ts);
+	  rxc = scamper_owamp_tx_rxc_get(tx);
+	  printf("  %u: %u.%06u, seq: %u, rxc: %u", i,
+		 (uint32_t)tv.tv_sec, (uint32_t)tv.tv_usec,
+		 scamper_owamp_tx_seq_get(tx), rxc);
+	  if((ts = scamper_owamp_tx_sched_get(tx)) != NULL &&
+	     timeval_iszero(ts) == 0)
+	    {
+	      timeval_diff_tv(&tv, start, ts);
+	      printf(", sched: %u.%06u",
+		     (uint32_t)tv.tv_sec, (uint32_t)tv.tv_usec);
+	    }
+	  printf("\n");
+
+	  for(j=0; j<rxc; j++)
+	    {
+	      if((rx = scamper_owamp_tx_rx_get(tx, j)) == NULL ||
+		 (ts = scamper_owamp_rx_stamp_get(rx)) == NULL)
+		continue;
+	      timeval_diff_tv(&tv, start, ts);
+	      flags = scamper_owamp_rx_flags_get(rx);
+	      printf("    %u.%06u", (uint32_t)tv.tv_sec, (uint32_t)tv.tv_usec);
+	      if(flags & SCAMPER_OWAMP_RX_FLAG_TTL)
+		printf(", ttl: %u", scamper_owamp_rx_ttl_get(rx));
+	      if(flags & SCAMPER_OWAMP_RX_FLAG_DSCP)
+		printf(", dscp: %u", scamper_owamp_rx_dscp_get(rx));
+	      printf("\n");
+	    }
+	}
+    }
+
+  scamper_owamp_free(owamp);
+  return;
+}
+
 static void dump_cycle(scamper_cycle_t *cycle, const char *type)
 {
   scamper_list_t *list;
@@ -2610,6 +2707,7 @@ int main(int argc, char *argv[])
     SCAMPER_FILE_OBJ_HOST,
     SCAMPER_FILE_OBJ_HTTP,
     SCAMPER_FILE_OBJ_UDPPROBE,
+    SCAMPER_FILE_OBJ_OWAMP,
   };
   uint16_t filter_cnt = sizeof(filter_types)/sizeof(uint16_t);
   void     *data;
@@ -2710,6 +2808,10 @@ int main(int argc, char *argv[])
 
 	    case SCAMPER_FILE_OBJ_UDPPROBE:
 	      dump_udpprobe(data);
+	      break;
+
+	    case SCAMPER_FILE_OBJ_OWAMP:
+	      dump_owamp(data);
 	      break;
 
 	    case SCAMPER_FILE_OBJ_LIST:

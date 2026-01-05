@@ -3,7 +3,7 @@ import textwrap
 
 setup(
     name = "scamper",
-    version = "20251113",
+    version = "20260105",
     description = "A module to interact with scamper processes and data",
     author = "Matthew Luckie",
     author_email = "mjl@luckie.org.nz",

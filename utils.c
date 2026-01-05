@@ -1,7 +1,7 @@
 /*
  * utils.c
  *
- * $Id: utils.c,v 1.279 2025/10/13 00:31:12 mjl Exp $
+ * $Id: utils.c,v 1.281 2025/12/04 08:07:49 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -868,6 +868,13 @@ int timeval_cmp_lt(const struct timeval *tv, time_t s, suseconds_t us)
 int timeval_cmp_gt(const struct timeval *tv, time_t s, suseconds_t us)
 {
   if(tv->tv_sec > s || (tv->tv_sec == s && tv->tv_usec > us))
+    return 1;
+  return 0;
+}
+
+int timeval_cmp_eq(const struct timeval *tv, time_t s, suseconds_t us)
+{
+  if(tv->tv_sec == s && tv->tv_usec == us)
     return 1;
   return 0;
 }
@@ -2307,6 +2314,48 @@ int random_u8(uint8_t *r)
   return 0;
 }
 
+int random_bytes(uint8_t *r, size_t len)
+{
+#if defined(HAVE_ARC4RANDOM_BUF)
+  arc4random_buf(r, len);
+#else
+  size_t i, off = 0, iter;  
+
+#ifdef _WIN32 /* use rand_s on windows */
+  unsigned int ui;
+  size_t cpy = sizeof(unsigned int);
+#else
+  uint32_t ui;
+  size_t cpy = sizeof(uint32_t);
+#endif
+
+  iter = len / cpy;
+  for(i=0; i<iter; i++)
+    {
+#ifdef _WIN32 /* use rand_s on windows */
+      if(rand_s(&ui) != 0)
+	return -1;
+#else
+      ui = random();
+#endif
+      memcpy(r+off, &ui, cpy);
+      off += cpy;
+    }
+
+  if(off < len)
+    {
+#ifdef _WIN32 /* use rand_s on windows */
+      if(rand_s(&ui) != 0)
+	return -1;
+#else
+      ui = random();
+#endif
+      memcpy(r+off, &ui, len - off);
+    }
+#endif /* HAVE_ARC4RANDOM_BUF */
+  return 0;
+}
+  
 /*
  * countbits32
  *

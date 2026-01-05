@@ -1,7 +1,7 @@
 /*
  * fuzz_cmd : simple program to fuzz specific command input paths
  *
- * $Id: fuzz_cmd.c,v 1.11 2024/05/02 02:34:11 mjl Exp $
+ * $Id: fuzz_cmd.c,v 1.12 2026/01/02 19:50:40 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -45,6 +45,11 @@
 #ifdef FUZZ_HTTP
 #include "scamper_http.h"
 #include "scamper_http_cmd.h"
+#endif
+
+#ifdef FUZZ_OWAMP
+#include "scamper_owamp.h"
+#include "scamper_owamp_cmd.h"
 #endif
 
 #ifdef FUZZ_NEIGHBOURDISC
@@ -91,7 +96,7 @@
 
 #if defined(FUZZ_TRACE) || defined(FUZZ_SNIFF) || defined(FUZZ_DEALIAS) || \
   defined(FUZZ_NEIGHBOURDISC) || defined(FUZZ_HTTP) || defined(FUZZ_STING) || \
-  defined(FUZZ_TBIT)
+  defined(FUZZ_TBIT) || defined(FUZZ_OWAMP)
 #define HAVE_ADDRCACHE 1
 scamper_addrcache_t *addrcache = NULL;
 #endif
@@ -135,6 +140,9 @@ static int test(char *in, void *param)
 #elif defined(FUZZ_PING)
   allocdata = scamper_do_ping_alloc;
   freedata  = (void *)scamper_ping_free;
+#elif defined(FUZZ_OWAMP)
+  allocdata = scamper_do_owamp_alloc;
+  freedata  = (void *)scamper_owamp_free;
 #elif defined(FUZZ_SNIFF)
   allocdata = scamper_do_sniff_alloc;
   freedata  = (void *)scamper_sniff_free;

@@ -1,7 +1,7 @@
 /*
  * scamper
  *
- * $Id: scamper.c,v 1.384 2025/08/04 02:00:19 mjl Exp $
+ * $Id: scamper.c,v 1.387 2026/01/03 03:22:25 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -111,6 +111,10 @@
 #ifndef DISABLE_SCAMPER_UDPPROBE
 #include "udpprobe/scamper_udpprobe_cmd.h"
 #include "udpprobe/scamper_udpprobe_do.h"
+#endif
+#ifndef DISABLE_SCAMPER_OWAMP
+#include "owamp/scamper_owamp_cmd.h"
+#include "owamp/scamper_owamp_do.h"
 #endif
 
 #include "mjl_list.h"
@@ -238,6 +242,10 @@ static char  *debugfile    = NULL;
 #ifdef HAVE_SETEUID
 static uid_t  uid;
 static uid_t  euid;
+#else
+#ifndef _WIN32 /* seteuid should be available everywhere but windows */
+#error "seteuid not available and not windows"
+#endif
 #endif
 
 /*
@@ -645,6 +653,10 @@ static int check_options(int argc, char *argv[])
 #ifndef DISABLE_SCAMPER_UDPPROBE
     {"scamper-udpprobe", "udpprobe",
      scamper_do_udpprobe_arg_validate, scamper_do_udpprobe_usage},
+#endif
+#ifndef DISABLE_SCAMPER_OWAMP
+    {"scamper-owamp", "owamp",
+     scamper_do_owamp_arg_validate, scamper_do_owamp_usage},
 #endif
   };
   int   i;
@@ -1892,6 +1904,9 @@ static void cleanup(void)
 #ifndef DISABLE_SCAMPER_UDPPROBE
   scamper_do_udpprobe_cleanup();
 #endif
+#ifndef DISABLE_SCAMPER_OWAMP
+  scamper_do_owamp_cleanup();
+#endif
 
   scamper_dl_cleanup();
 
@@ -2059,9 +2074,6 @@ static int scamper(int argc, char *argv[])
    * if we are using dmalloc, then we want to get it to register its
    * logdump function to occur after we have used cleanup to free up
    * scamper's core data structures.  this is a dirty hack.
-   *
-   * if we are running a debug build on freebsd, make poor malloc use more
-   * prone to causing scamper to crash.
    */
 #if defined(DMALLOC)
   free(malloc(1));
@@ -2343,6 +2355,10 @@ static int scamper(int argc, char *argv[])
 #endif
 #ifndef DISABLE_SCAMPER_UDPPROBE
   if(scamper_do_udpprobe_init() != 0)
+    goto done;
+#endif
+#ifndef DISABLE_SCAMPER_OWAMP
+  if(scamper_do_owamp_init() != 0)
     goto done;
 #endif
 

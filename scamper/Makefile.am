@@ -1,4 +1,4 @@
-# $Id: Makefile.am,v 1.85 2025/08/02 20:39:08 mjl Exp $
+# $Id: Makefile.am,v 1.86 2025/12/04 08:10:59 mjl Exp $
 
 AUTOMAKE_OPTIONS = subdir-objects
 
@@ -158,6 +158,14 @@ scamper_SOURCES += \
 	udpprobe/scamper_udpprobe_cmd.c \
 	udpprobe/scamper_udpprobe_do.c
 endif
+if ENABLE_SCAMPER_OWAMP
+scamper_SOURCES += \
+	owamp/scamper_owamp.c \
+	owamp/scamper_owamp_warts.c \
+	owamp/scamper_owamp_json.c \
+	owamp/scamper_owamp_cmd.c \
+	owamp/scamper_owamp_do.c
+endif
 
 scamper_CFLAGS = $(AM_CFLAGS) -DBUILDING_SCAMPER
 
@@ -172,4 +180,5 @@ man_MANS = \
 
 CLEANFILES = *~ *.core \
 	trace/*~ ping/*~ tracelb/*~ dealias/*~ sting/*~ \
-	neighbourdisc/*~ tbit/*~ sniff/*~ host/*~ http/*~ udpprobe/*~
+	neighbourdisc/*~ tbit/*~ sniff/*~ host/*~ http/*~ udpprobe/*~ \
+	owamp/*~

@@ -1,7 +1,7 @@
 /*
  * unit_json : unit tests for rendering json
  *
- * $Id: unit_json.c,v 1.1 2025/05/09 08:15:28 mjl Exp $
+ * $Id: unit_json.c,v 1.2 2026/01/04 19:54:18 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -37,6 +37,12 @@
 
 #include "scamper_host.h"
 #include "common_host.h"
+
+#include "scamper_neighbourdisc.h"
+#include "common_neighbourdisc.h"
+
+#include "scamper_owamp.h"
+#include "common_owamp.h"
 
 #include "scamper_ping.h"
 #include "common_ping.h"
@@ -82,6 +88,22 @@ int main(int argc, char *argv[])
       (makers_func_t)host_makers,
       (json_func_t)scamper_host_tojson,
       (free_func_t)scamper_host_free,
+    },
+    {
+      "neighbourdisc",
+      SCAMPER_FILE_OBJ_NEIGHBOURDISC,
+      neighbourdisc_makerc,
+      (makers_func_t)neighbourdisc_makers,
+      (json_func_t)scamper_neighbourdisc_tojson,
+      (free_func_t)scamper_neighbourdisc_free,
+    },
+    {
+      "owamp",
+      SCAMPER_FILE_OBJ_OWAMP,
+      owamp_makerc,
+      (makers_func_t)owamp_makers,
+      (json_func_t)scamper_owamp_tojson,
+      (free_func_t)scamper_owamp_free,
     },
     {
       "ping",

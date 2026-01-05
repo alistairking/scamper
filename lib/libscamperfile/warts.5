@@ -1,4 +1,4 @@
-.Dd July 29, 2025
+.Dd January 1, 2026
 .Dt WARTS 5
 .Os
 .Sh NAME
@@ -49,6 +49,8 @@ object they map to, are as follows:
 0x000f: HTTP (scamper_http_t)
 .It
 0x0010: UDP probe (scamper_udpprobe_t)
+.It
+0x0020: OWAMP (scmaper_owamp_t)
 .El
 A new type number can be requested by emailing the author of scamper.
 The structure of each warts record beyond the header is arbitrary, though

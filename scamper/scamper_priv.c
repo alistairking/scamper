@@ -1,7 +1,7 @@
 /*
  * scamper_priv : operations that require privilege
  *
- * $Id: scamper_priv.c,v 1.4 2025/10/12 01:53:38 mjl Exp $
+ * $Id: scamper_priv.c,v 1.5 2026/01/02 18:30:41 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -44,6 +44,10 @@
 
 #ifndef DISABLE_SCAMPER_PRIVSEP
 extern int privsep_do;
+#endif
+
+#if !defined(HAVE_SETEUID) && !defined(_WIN32)
+#error "seteuid not available and not windows"
 #endif
 
 int scamper_priv_open(const char *filename, int flags, mode_t mode)

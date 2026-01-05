@@ -1,13 +1,13 @@
 /*
  * scamper_file.c
  *
- * $Id: scamper_file.c,v 1.128 2025/06/24 07:05:29 mjl Exp $
+ * $Id: scamper_file.c,v 1.129 2025/12/04 08:11:00 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2012      The Regents of the University of California
  * Copyright (C) 2022-2023 Matthew Luckie
- * Copyright (C) 2023-2024 The Regents of the University of California
+ * Copyright (C) 2023-2026 The Regents of the University of California
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -92,6 +92,11 @@
 #include "udpprobe/scamper_udpprobe.h"
 #include "udpprobe/scamper_udpprobe_warts.h"
 #include "udpprobe/scamper_udpprobe_json.h"
+#endif
+#if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_OWAMP)
+#include "owamp/scamper_owamp.h"
+#include "owamp/scamper_owamp_warts.h"
+#include "owamp/scamper_owamp_json.h"
 #endif
 
 #include "utils.h"
@@ -214,6 +219,9 @@ typedef struct write_handlers
   int (*udpprobe)(const scamper_file_t *sf,
 		  const scamper_udpprobe_t *up, void *p);
 #endif
+#if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_OWAMP)
+  int (*owamp)(const scamper_file_t *sf, const scamper_owamp_t *owamp, void *p);
+#endif
 } write_handlers_t;
 
 static write_handlers_t warts_write_handlers =
@@ -250,6 +258,9 @@ static write_handlers_t warts_write_handlers =
 #endif
 #if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_UDPPROBE)
   scamper_file_warts_udpprobe_write,      /* udpprobe */
+#endif
+#if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_OWAMP)
+  scamper_file_warts_owamp_write,         /* owamp */
 #endif
 };
 
@@ -288,6 +299,9 @@ static write_handlers_t json_write_handlers =
 #if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_UDPPROBE)
  scamper_file_json_udpprobe_write,        /* udpprobe */
 #endif
+#if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_OWAMP)
+ scamper_file_json_owamp_write,           /* owamp */
+#endif
 };
 
 static write_handlers_t text_write_handlers =
@@ -325,6 +339,9 @@ static write_handlers_t text_write_handlers =
 #if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_UDPPROBE)
   NULL,                                   /* udpprobe */
 #endif
+#if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_OWAMP)
+  NULL,                                   /* owamp */
+#endif
 };
 
 static write_handlers_t null_write_handlers =
@@ -361,6 +378,9 @@ static write_handlers_t null_write_handlers =
 #endif
 #if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_UDPPROBE)
   NULL,                                   /* udpprobe */
+#endif
+#if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_OWAMP)
+  NULL,                                   /* owamp */
 #endif
 };
 
@@ -668,6 +688,17 @@ int scamper_file_write_udpprobe(scamper_file_t *sf,
 }
 #endif
 
+#if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_OWAMP)
+int scamper_file_write_owamp(scamper_file_t *sf,
+			     const scamper_owamp_t *owamp, void *p)
+{
+  assert(sf->type < handler_cnt);
+  if(handlers[sf->type].write->owamp != NULL)
+    return handlers[sf->type].write->owamp(sf, owamp, p);
+  return -1;
+}
+#endif
+
 int scamper_file_write_obj(scamper_file_t *sf, uint16_t type, const void *data)
 {
   static int (*const func[])(scamper_file_t *sf, const void *, void *) = {
@@ -711,6 +742,9 @@ int scamper_file_write_obj(scamper_file_t *sf, uint16_t type, const void *data)
 #endif
 #if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_UDPPROBE)
     (write_obj_func_t)scamper_file_write_udpprobe,
+#endif
+#if !defined(BUILDING_SCAMPER) || !defined(DISABLE_SCAMPER_OWAMP)
+    (write_obj_func_t)scamper_file_write_owamp,
 #endif
   };
   if(type > SCAMPER_FILE_OBJ_MAX)
@@ -1083,6 +1117,7 @@ const char *scamper_file_objtype_tostr(uint16_t type)
     "host",
     "http",
     "udpprobe",
+    "owamp",
   };
   uint16_t typec = sizeof(types)/sizeof(char *);
   if(typec > type)

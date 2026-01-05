@@ -1,7 +1,7 @@
 /*
  * scamper_http_do.c
  *
- * $Id: scamper_http_do.c,v 1.28 2025/11/05 03:34:16 mjl Exp $
+ * $Id: scamper_http_do.c,v 1.29 2025/11/17 01:13:00 mjl Exp $
  *
  * Copyright (C) 2023-2024 The Regents of the University of California
  * Copyright (C) 2024-2025 Matthew Luckie
@@ -682,7 +682,7 @@ static void http_write(SOCKET fd, void *param)
   /*
    * make sure that we have something to write.  otherwise we have a
    * logic error, as we should only be in this function because we
-   * unpaused write (i.e., had something in writebuf to send
+   * unpaused write (i.e., had something in writebuf to send)
    */
   if(scamper_writebuf_gtzero(state->wb) == 0)
     {

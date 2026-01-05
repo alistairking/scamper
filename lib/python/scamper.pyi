@@ -31,8 +31,8 @@ class ScamperAddr:
     def __eq__(self, other: object) -> bool: ...
     def __str__(self) -> str: ...
     def __hash__(self) -> int: ...
-    def __getstate__(self) -> dict: ...
-    def __setstate__(self, state: dict) -> None: ...
+    def __getstate__(self) -> Dict[str, object]: ...
+    def __setstate__(self, state: Dict[str, object]) -> None: ...
 
     @property
     def packed(self) -> Optional[bytes]: ...
@@ -81,6 +81,10 @@ class ScamperList:
 
 class ScamperVp:
     def __init__(self, *args: object, **kwargs: object) -> None: ...
+    def __lt__(self, other: object) -> bool: ...
+    def __eq__(self, other: object) -> bool: ...
+    def __str__(self) -> str: ...
+    def __hash__(self) -> int: ...
 
     @property
     def name(self) -> Optional[str]: ...
@@ -807,6 +811,136 @@ class ScamperNeighbourdisc:
 
     def to_json(self) -> Optional[str]: ...
 
+class ScamperOwampResult(enum.IntEnum):
+    NoReason = cast(int, ...)
+    Completed = cast(int, ...)
+    Halted = cast(int, ...)
+    Error = cast(int, ...)
+    NoConn = cast(int, ...)
+    NotAccepted = cast(int, ...)
+    NoMode = cast(int, ...)
+    Timeout = cast(int, ...)
+
+class ScamperOwampSchedType(enum.IntEnum):
+    Fixed = cast(int, ...)
+    Exponential = cast(int, ...)
+
+class ScamperOwampSched:
+    def __init__(self, *args: object, **kwargs: object) -> None: ...
+
+    @property
+    def value(self) -> datetime.timedelta: ...
+
+    @property
+    def type(self) -> ScamperOwampSchedType: ...
+
+    @property
+    def type_str(self) -> str: ...
+
+class ScamperOwampRx:
+    def __init__(self, *args: object, **kwargs: object) -> None: ...
+
+    @property
+    def stamp(self) -> datetime.datetime: ...
+
+    @property
+    def ttl(self) -> Optional[int]: ...
+
+    @property
+    def dscp(self) -> Optional[int]: ...
+
+class ScamperOwampTx:
+    def __init__(self, *args: object, **kwargs: object) -> None: ...
+
+    @property
+    def sched(self) -> datetime.datetime: ...
+
+    @property
+    def stamp(self) -> datetime.datetime: ...
+
+    @property
+    def seq(self) -> int: ...
+
+    @property
+    def rx_count(self) -> int: ...
+    def rx(self, i: int) -> Optional[ScamperOwampRx]: ...
+    def rxs(self) -> Iterator[ScamperOwampRx]: ...
+
+class ScamperOwamp:
+    def __init__(self, *args: object, **kwargs: object) -> None: ...
+
+    @property
+    def inst(self) -> Optional[ScamperInst]: ...
+
+    @property
+    def list(self) -> Optional[ScamperList]: ...
+
+    @property
+    def cycle(self) -> Optional[ScamperCycle]: ...
+
+    @property
+    def src(self) -> Optional[ScamperAddr]: ...
+
+    @property
+    def dst(self) -> Optional[ScamperAddr]: ...
+
+    @property
+    def dport(self) -> int: ...
+
+    @property
+    def userid(self) -> int: ...
+
+    @property
+    def start(self) -> Optional[datetime.datetime]: ...
+
+    @property
+    def startat(self) -> Optional[datetime.datetime]: ...
+
+    @property
+    def wait_timeout(self) -> Optional[datetime.timedelta]: ...
+
+    def to_json(self) -> Optional[str]: ...
+
+    @property
+    def errmsg(self) -> Optional[str]: ...
+
+    @property
+    def result(self) -> ScamperOwampResult: ...
+
+    @property
+    def result_str(self) -> str: ...
+
+    @property
+    def attempts(self) -> int: ...
+
+    @property
+    def dscp(self) -> int: ...
+
+    @property
+    def direction_str(self) -> int: ...
+
+    @property
+    def probe_size(self) -> int: ...
+
+    @property
+    def ttl(self) -> int: ...
+
+    @property
+    def udp_sport(self) -> int: ...
+
+    @property
+    def udp_dport(self) -> int: ...
+
+    @property
+    def sched_count(self) -> int: ...
+    def sched(self, i: int) -> Optional[ScamperOwampSched]: ...
+    def scheds(self) -> Iterator[ScamperOwampSched]: ...
+
+    @property
+    def tx_count(self) -> int: ...
+    def tx(self, i: int) -> Optional[ScamperOwampTx]: ...
+    def txs(self) -> Iterator[ScamperOwampTx]: ...
+
 class ScamperPingStop(enum.IntEnum):
     NoReason = cast(int, ...)
     Completed = cast(int, ...)
@@ -876,6 +1010,7 @@ class ScamperPingReply:
 
 class ScamperPing:
     def __init__(self, *args: object, **kwargs: object) -> None: ...
+    def __iter__(self) -> Iterator[ScamperPingReply]: ...
 
     @property
     def inst(self) -> Optional[ScamperInst]: ...
@@ -1622,9 +1757,10 @@ class ScamperUdpprobe:
     def probe(self, i: int) -> Optional[ScamperUdpprobeProbe]: ...
     def replies(self) -> Iterator[ScamperUdpprobeReply]: ...
 
-ScamperResponse: TypeAlias = Union[ScamperDealias, ScamperNeighbourdisc,
-        ScamperHost, ScamperHttp, ScamperPing, ScamperSniff, ScamperSting,
-        ScamperTbit, ScamperTrace, ScamperTracelb, ScamperUdpprobe]
+ScamperResponse: TypeAlias = Union[ScamperDealias, ScamperHost, ScamperHttp,
+        ScamperNeighbourdisc, ScamperOwamp, ScamperPing, ScamperSniff,
+        ScamperSting, ScamperTbit, ScamperTrace, ScamperTracelb,
+        ScamperUdpprobe]
 ScamperObject: TypeAlias = Union[ScamperList, ScamperCycle, ScamperResponse]
 
 class ScamperFile:
@@ -1744,7 +1880,7 @@ class ScamperCtrl(Generic[PT]):
                nsid: Optional[bool] = ...,
                ecs: Optional[bool] = ...,
                userid: Optional[int] = ...,
-               inst: Union[ScamperInst, List[ScamperInst], None] = ...,
+               inst: Union[ScamperInst, List[ScamperInst], Set[ScamperInst], None] = ...,
                sync: Optional[bool] = ...
                ) -> Union[ScamperHost, ScamperTask, List[ScamperTask]]: ...
 
@@ -1755,14 +1891,14 @@ class ScamperCtrl(Generic[PT]):
                 insecure: Optional[bool] = ...,
                 limit_time: Union[datetime.timedelta, float, None] = ...,
                 userid: Optional[int] = ...,
-                inst: Union[ScamperInst, List[ScamperInst], None] = ...,
+                inst: Union[ScamperInst, List[ScamperInst], Set[ScamperInst], None] = ...,
                 sync: Optional[bool] = ...
                 ) -> Union[ScamperHttp, ScamperTask, List[ScamperTask]]: ...
 
     def do_mercator(self,
                     dst: Union[ScamperAddr, str],
                     userid: Optional[int] = ...,
-                    inst: Union[ScamperInst, List[ScamperInst], None] = ...,
+                    inst: Union[ScamperInst, List[ScamperInst], Set[ScamperInst], None] = ...,
                     sync: Optional[bool] = ...
                     ) -> Union[ScamperDealias, ScamperTask, List[ScamperTask]]: ...
 
@@ -1788,6 +1924,21 @@ class ScamperCtrl(Generic[PT]):
                     sync: Optional[bool] = ...
                     ) -> Union[ScamperTask, ScamperDealias]: ...
 
+    def do_owamp(self,
+                 dst: Union[ScamperAddr, str],
+                 direction: str,
+                 attempts: Optional[int] = ...,
+                 dscp: Optional[int] = ...,
+                 schedule: Optional[str] = ...,
+                 size: Optional[int] = ...,
+                 startat: Optional[datetime.datetime] = ...,
+                 ttl: Optional[int] = ...,
+                 wait_timeout: Union[datetime.timedelta, float, None] = ...,
+                 userid: Optional[int] = ...,
+                 inst: Optional[ScamperInst] = ...,
+                 sync: Optional[bool] = ...
+                 ) -> Union[ScamperTask, ScamperOwamp]: ...
+
     def do_ping(self,
                 dst: Union[ScamperAddr, str],
                 tcp_ack: Optional[int] = ...,
@@ -1812,7 +1963,7 @@ class ScamperCtrl(Generic[PT]):
                 wait_timeout: Union[datetime.timedelta, float, None] = ...,
                 tos: Optional[int] = ...,
                 userid: Optional[int] = ...,
-                inst: Union[ScamperInst, List[ScamperInst], None] = ...,
+                inst: Union[ScamperInst, List[ScamperInst], Set[ScamperInst], None] = ...,
                 sync: Optional[bool] = ...
                 ) -> Union[ScamperPing, ScamperTask, List[ScamperTask]]: ...
 
@@ -1841,7 +1992,7 @@ class ScamperCtrl(Generic[PT]):
                     wait_round: Union[datetime.timedelta, float, None] = ...,
                     wait_timeout: Union[datetime.timedelta, float, None] = ...,
                     userid: Optional[int] = ...,
-                    inst: Union[ScamperInst, List[ScamperInst], None] = ...,
+                    inst: Union[ScamperInst, List[ScamperInst], Set[ScamperInst], None] = ...,
                     sync: Optional[bool] = ...
                     ) -> Union[ScamperDealias, ScamperTask, List[ScamperTask]]: ...
 
@@ -1851,7 +2002,7 @@ class ScamperCtrl(Generic[PT]):
                  limit_pkt_count: Optional[int] = ...,
                  limit_time: Union[datetime.timedelta, float, None] = ...,
                  userid: Optional[int] = ...,
-                 inst: Union[ScamperInst, List[ScamperInst], None] = ...,
+                 inst: Union[ScamperInst, List[ScamperInst], Set[ScamperInst], None] = ...,
                  sync: Optional[bool] = ...
                  ) -> Union[ScamperSniff, ScamperTask, List[ScamperTask]]: ...
 
@@ -1860,7 +2011,7 @@ class ScamperCtrl(Generic[PT]):
                 method: Optional[str] = ...,
                 url: Optional[str] = ...,
                 userid: Optional[int] = ...,
-                inst: Union[ScamperInst, List[ScamperInst], None] = ...,
+                inst: Union[ScamperInst, List[ScamperInst], Set[ScamperInst], None] = ...,
                 sync: Optional[bool] = ...
                 ) -> Union[ScamperTbit, ScamperTask, List[ScamperTask]]: ...
 
@@ -1888,7 +2039,7 @@ class ScamperCtrl(Generic[PT]):
                  wait_timeout: Union[datetime.timedelta, float, None] = ...,
                  wait_probe: Union[datetime.timedelta, float, None] = ...,
                  userid: Optional[int] = ...,
-                 inst: Union[ScamperInst, List[ScamperInst], None] = ...,
+                 inst: Union[ScamperInst, List[ScamperInst], Set[ScamperInst], None] = ...,
                  sync: Optional[bool] = ...
                  ) -> Union[ScamperTrace, ScamperTask, List[ScamperTask]]: ...
 
@@ -1907,7 +2058,7 @@ class ScamperCtrl(Generic[PT]):
                    wait_timeout: Union[datetime.timedelta, float, None] = ...,
                    wait_probe: Union[datetime.timedelta, float, None] = ...,
                    userid: Optional[int] = ...,
-                   inst: Union[ScamperInst, List[ScamperInst], None] = ...,
+                   inst: Union[ScamperInst, List[ScamperInst], Set[ScamperInst], None] = ...,
                    sync: Optional[bool] = ...
                    ) -> Union[ScamperTracelb, ScamperTask, List[ScamperTask]]: ...
 
@@ -1919,6 +2070,6 @@ class ScamperCtrl(Generic[PT]):
                     src: Union[ScamperAddr, str, None] = ...,
                     stop_count: Optional[int] = ...,
                     userid: Optional[int] = ...,
-                    inst: Union[ScamperInst, List[ScamperInst], None] = ...,
+                    inst: Union[ScamperInst, List[ScamperInst], Set[ScamperInst], None] = ...,
                     sync: Optional[bool] = ...
                     ) -> Union[ScamperUdpprobe, ScamperTask, List[ScamperTask]]: ...

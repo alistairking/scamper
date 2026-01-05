@@ -1,7 +1,7 @@
 /*
  * common_dealias : common functions for unit testing dealias
  *
- * $Id: common_dealias.c,v 1.5 2025/10/19 20:49:19 mjl Exp $
+ * $Id: common_dealias.c,v 1.7 2026/01/01 23:39:41 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -436,6 +436,7 @@ static scamper_dealias_t *dealias_3(void)
 {
   scamper_dealias_t *dealias = NULL;
   scamper_dealias_radargun_t *rg;
+  scamper_dealias_probedef_t *def;
   int methods[3], sizes[3], i;
   char buf[32];
 
@@ -465,7 +466,24 @@ static scamper_dealias_t *dealias_3(void)
 	  probedef_alloc("192.0.2.5", buf, i, methods[i%3], 255-i,
 			 sizes[i%3])) == NULL)
 	goto err;
-      
+
+      def = rg->probedefs[i];
+      if(SCAMPER_DEALIAS_PROBEDEF_PROTO_IS_TCP(def))
+	{
+	  def->un.tcp.sport = 36703;
+	  def->un.tcp.dport = 443;
+	  def->un.tcp.flags = TH_ACK;
+	}
+      else if(SCAMPER_DEALIAS_PROBEDEF_PROTO_IS_UDP(def))
+	{
+	  def->un.udp.sport = 42236;
+	  def->un.udp.dport = 33435;
+	}
+      else
+	{
+	  def->un.icmp.id = 12643;
+	  def->un.icmp.csum = 10325;
+	}
     }
 
   return dealias;
@@ -500,11 +518,96 @@ static scamper_dealias_t *dealias_4(void)
   return NULL;
 }
 
+static scamper_dealias_t *dealias_5(void)
+{
+  scamper_dealias_t *dealias = NULL;
+  scamper_dealias_radargun_t *rg;
+  struct timeval tx;
+  uint16_t ipid = 39164;
+
+  if((dealias = dealias_3()) == NULL ||
+     scamper_dealias_probes_alloc(dealias, 300) != 0)
+    goto err;
+
+  rg = dealias->data;
+  timeval_cpy(&tx, &dealias->start);
+  while(dealias->probec < 300)
+    {
+      if(probe_add(dealias, rg->probedefs[(dealias->probec-1) % 10],
+		   dealias->probec / 10, tx.tv_sec, tx.tv_usec, ipid) == NULL)
+	goto err;
+      timeval_add_tv(&tx, &rg->wait_probe);
+    }
+
+  return dealias;
+
+ err:
+  if(dealias != NULL) scamper_dealias_free(dealias);
+  return NULL;
+}
+
+static scamper_dealias_t *dealias_6(void)
+{
+  scamper_dealias_t *dealias = NULL;
+  scamper_dealias_probedef_t *def;
+  scamper_dealias_probe_t *probe;
+  scamper_dealias_reply_t *reply;
+  struct timeval tv, rtt;
+  uint16_t ipid = 0x8937;
+  uint32_t p;
+  char buf[32];
+
+  if((dealias = dealias_5()) == NULL)
+    goto err;
+  rtt.tv_sec = 0;
+  rtt.tv_usec = 242310;
+  for(p=0; p<dealias->probec; p++)
+    {
+      probe = dealias->probes[p]; assert(probe != NULL);
+      def = probe->def;
+
+      snprintf(buf, sizeof(buf), "192.0.2.%d", def->id+10);
+      timeval_add_tv3(&tv, &probe->tx, &rtt);
+      if(scamper_dealias_replies_alloc(probe, 1) != 0 ||
+	 (reply = reply_add(probe, buf, tv.tv_sec, tv.tv_usec,
+			    IPPROTO_ICMP, 255 - def->id - 4, ipid)) == NULL)
+	goto err;
+
+      if(SCAMPER_DEALIAS_PROBEDEF_PROTO_IS_ICMP(def))
+	{
+	  reply->icmp_type = ICMP_ECHOREPLY;
+	  reply->size = def->size;
+	}
+      else if(SCAMPER_DEALIAS_PROBEDEF_PROTO_IS_UDP(def))
+	{
+	  reply->icmp_type = ICMP_UNREACH;
+	  reply->icmp_code = ICMP_UNREACH_PORT;
+	  reply->icmp_q_ttl = 245;
+	  reply->size = 20 + 8 + 20 + 8;
+	}
+      else
+	{
+	  reply->proto = IPPROTO_TCP;
+	  reply->tcp_flags = TH_RST;
+	  reply->size = 20 + 20;
+	}
+      ipid++;
+    }
+
+  return dealias;
+
+ err:
+  if(dealias != NULL) scamper_dealias_free(dealias);
+  return NULL;
+}
+
 static scamper_dealias_makefunc_t makers[] = {
   dealias_1,
   dealias_2,
   dealias_3,
   dealias_4,
+  dealias_5,
+  dealias_6,
 };
 
 scamper_dealias_t *dealias_makers(size_t i)

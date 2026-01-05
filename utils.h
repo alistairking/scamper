@@ -1,7 +1,7 @@
 /*
  * utils.h
  *
- * $Id: utils.h,v 1.182 2025/07/05 10:28:05 mjl Exp $
+ * $Id: utils.h,v 1.184 2025/12/04 08:07:49 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -65,6 +65,8 @@ int timeval_cmp(const struct timeval *a, const struct timeval *b)
 int timeval_cmp_lt(const struct timeval *tv, time_t s, suseconds_t us)
   ATTRIBUTE_NONNULL_PURE;
 int timeval_cmp_gt(const struct timeval *tv, time_t s, suseconds_t us)
+  ATTRIBUTE_NONNULL_PURE;
+int timeval_cmp_eq(const struct timeval *tv, time_t s, suseconds_t us)
   ATTRIBUTE_NONNULL_PURE;
 
 int timeval_inrange_tv(const struct timeval *a, const struct timeval *b,
@@ -344,6 +346,7 @@ void random_seed(void);
 int random_u32(uint32_t *r) ATTRIBUTE_NONNULL;
 int random_u16(uint16_t *r) ATTRIBUTE_NONNULL;
 int random_u8(uint8_t *r) ATTRIBUTE_NONNULL;
+int random_bytes(uint8_t *r, size_t len) ATTRIBUTE_NONNULL;
 
 /* fisher-yates shuffle */
 int shuffle16(uint16_t *array, size_t len) ATTRIBUTE_NONNULL;

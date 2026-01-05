@@ -1,4 +1,4 @@
-# $Id: Makefile.am,v 1.67 2025/11/01 03:18:02 mjl Exp $
+# $Id: Makefile.am,v 1.70 2026/01/04 19:54:18 mjl Exp $
 
 AUTOMAKE_OPTIONS = subdir-objects
 
@@ -9,6 +9,7 @@ noinst_PROGRAMS = \
 	fuzz_cmd_dealias \
 	fuzz_cmd_host \
 	fuzz_cmd_http \
+	fuzz_cmd_owamp \
 	fuzz_cmd_ping \
 	fuzz_cmd_sniff \
 	fuzz_cmd_sting \
@@ -19,6 +20,7 @@ noinst_PROGRAMS = \
 	unit_cmd_dealias \
 	unit_cmd_host \
 	unit_cmd_http \
+	unit_cmd_owamp \
 	unit_cmd_ping \
 	unit_cmd_sniff \
 	unit_cmd_sting \
@@ -142,7 +144,11 @@ libscamperfiletest_la_SOURCES = \
 	../scamper/udpprobe/scamper_udpprobe.c \
 	../scamper/udpprobe/scamper_udpprobe_warts.c \
 	../scamper/udpprobe/scamper_udpprobe_json.c \
-	../scamper/udpprobe/scamper_udpprobe_lib.c
+	../scamper/udpprobe/scamper_udpprobe_lib.c \
+	../scamper/owamp/scamper_owamp.c \
+	../scamper/owamp/scamper_owamp_warts.c \
+	../scamper/owamp/scamper_owamp_json.c \
+	../scamper/owamp/scamper_owamp_lib.c
 
 unit_config_CFLAGS = $(AM_CFLAGS)
 unit_config_SOURCES = unit_config.c \
@@ -167,6 +173,12 @@ fuzz_cmd_http_SOURCES = fuzz_cmd.c \
 	../scamper/http/scamper_http.c \
 	../scamper/http/scamper_http_cmd.c
 fuzz_cmd_http_LDADD = libcmdtest.la
+
+fuzz_cmd_owamp_CFLAGS = -DFUZZ_OWAMP -I$(top_srcdir)/scamper/owamp
+fuzz_cmd_owamp_SOURCES = fuzz_cmd.c \
+	../scamper/owamp/scamper_owamp.c \
+	../scamper/owamp/scamper_owamp_cmd.c
+fuzz_cmd_owamp_LDADD = libcmdtest.la
 
 fuzz_cmd_ping_CFLAGS = -DFUZZ_PING -I$(top_srcdir)/scamper/ping
 fuzz_cmd_ping_SOURCES = fuzz_cmd.c \
@@ -230,6 +242,13 @@ unit_cmd_host_SOURCES = unit_cmd_host.c \
 	../scamper/host/scamper_host_lib.c \
 	../scamper/host/scamper_host_cmd.c
 unit_cmd_host_LDADD = libcmdtest.la
+
+unit_cmd_owamp_CFLAGS = -I$(top_srcdir)/scamper/owamp
+unit_cmd_owamp_SOURCES = unit_cmd_owamp.c \
+	../scamper/owamp/scamper_owamp.c \
+	../scamper/owamp/scamper_owamp_lib.c \
+	../scamper/owamp/scamper_owamp_cmd.c
+unit_cmd_owamp_LDADD = libcmdtest.la
 
 unit_cmd_ping_CFLAGS = -I$(top_srcdir)/scamper/ping
 unit_cmd_ping_SOURCES = unit_cmd_ping.c \
@@ -370,6 +389,7 @@ unit_json_CFLAGS = \
 	-I$(top_srcdir)/scamper/dealias \
 	-I$(top_srcdir)/scamper/host \
 	-I$(top_srcdir)/scamper/neighbourdisc \
+	-I$(top_srcdir)/scamper/owamp \
 	-I$(top_srcdir)/scamper/ping \
 	-I$(top_srcdir)/scamper/trace \
 	-I$(top_srcdir)/scamper/udpprobe
@@ -379,6 +399,7 @@ unit_json_SOURCES = unit_json.c \
 	common_dealias.c \
 	common_host.c \
 	common_neighbourdisc.c \
+	common_owamp.c \
 	common_ping.c \
 	common_trace.c \
 	common_udpprobe.c
@@ -401,6 +422,7 @@ unit_warts_CFLAGS = \
 	-I$(top_srcdir)/scamper/host \
 	-I$(top_srcdir)/scamper/http \
 	-I$(top_srcdir)/scamper/neighbourdisc \
+	-I$(top_srcdir)/scamper/owamp \
 	-I$(top_srcdir)/scamper/ping \
 	-I$(top_srcdir)/scamper/trace \
 	-I$(top_srcdir)/scamper/udpprobe
@@ -411,6 +433,7 @@ unit_warts_SOURCES = unit_warts.c \
 	common_host.c \
 	common_http.c \
 	common_neighbourdisc.c \
+	common_owamp.c \
 	common_ping.c \
 	common_trace.c \
 	common_udpprobe.c

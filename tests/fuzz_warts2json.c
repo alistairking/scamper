@@ -1,7 +1,7 @@
 /*
  * fuzz_warts2json : fuzzer for reading warts and converting to json
  *
- * $Id: fuzz_warts2json.c,v 1.3 2025/06/27 11:04:39 mjl Exp $
+ * $Id: fuzz_warts2json.c,v 1.4 2025/12/14 02:37:35 mjl Exp $
  *
  *        Marcus Luckie, Matthew Luckie
  *        mjl@luckie.org.nz
@@ -43,6 +43,7 @@
 #include "udpprobe/scamper_udpprobe.h"
 #include "tbit/scamper_tbit.h"
 #include "sting/scamper_sting.h"
+#include "owamp/scamper_owamp.h"
 
 static void check(const char *filename)
 {
@@ -125,6 +126,11 @@ static void check(const char *filename)
 	case SCAMPER_FILE_OBJ_UDPPROBE:
 	  json = scamper_udpprobe_tojson(obj_data, &json_len);
 	  scamper_udpprobe_free(obj_data);
+	  break;
+
+	case SCAMPER_FILE_OBJ_OWAMP:
+	  json = scamper_owamp_tojson(obj_data, &json_len);
+	  scamper_owamp_free(obj_data);
 	  break;
 	}
 
