@@ -1,9 +1,11 @@
 /*
- * scamper_http_warts.h
+ * scamper_owamp_do.h
  *
- * $Id: scamper_http_warts.h,v 1.3 2025/11/17 01:13:00 mjl Exp $
+ * $Id: scamper_owamp_do.h,v 1.1 2025/12/04 08:11:00 mjl Exp $
  *
- * Copyright (C) 2023 The Regents of the University of California
+ * Copyright (C) 2025 The Regents of the University of California
+ *
+ * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -20,13 +22,21 @@
  *
  */
 
-#ifndef __SCAMPER_HTTP_WARTS_H
-#define __SCAMPER_HTTP_WARTS_H
+#ifndef __SCAMPER_OWAMP_DO_H
+#define __SCAMPER_OWAMP_DO_H
 
-int scamper_file_warts_http_write(const scamper_file_t *sf,
-				  const scamper_http_t *http, void *p);
+scamper_task_t *scamper_do_owamp_alloctask(void *data,
+					   scamper_list_t *list,
+					   scamper_cycle_t *cycle,
+					   char *errbuf, size_t errlen);
 
-int scamper_file_warts_http_read(scamper_file_t *sf, const warts_hdr_t *hdr,
-				 scamper_http_t **http_out);
+void scamper_do_owamp_free(void *data);
 
-#endif
+uint32_t scamper_do_owamp_userid(void *data);
+
+int scamper_do_owamp_enabled(void);
+
+void scamper_do_owamp_cleanup(void);
+int scamper_do_owamp_init(void);
+
+#endif /*__SCAMPER_OWAMP_DO_H */

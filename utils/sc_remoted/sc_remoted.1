@@ -3,12 +3,12 @@
 .\"
 .\" Author: Matthew Luckie <mjl@luckie.org.nz>
 .\"
-.\" Copyright (c) 2014-2025 Matthew Luckie
+.\" Copyright (c) 2014-2026 Matthew Luckie
 .\"               All rights reserved
 .\"
-.\" $Id: sc_remoted.1,v 1.21 2025/09/04 05:30:11 mjl Exp $
+.\" $Id: sc_remoted.1,v 1.23 2026/01/03 03:05:45 mjl Exp $
 .\"
-.Dd September 4, 2025
+.Dd January 3, 2026
 .Dt SC_REMOTED 1
 .Os
 .Sh NAME
@@ -22,6 +22,7 @@
 .Op Fl M Ar mux-socket
 .Op Fl P Ar [ip:]port
 .Op Fl U Ar unix-dir
+.Op Fl R Ar chroot-dir
 .Op Fl C Ar tls-ca
 .Op Fl c Ar tls-certificate
 .Op Fl p Ar tls-privatekey
@@ -67,14 +68,14 @@ The current choices for this option are:
 .Sy allowgroup:
 allow members of the unix domain socket's group to access to the
 unix domain sockets created by
-.Nm
+.Nm .
 .It
 .Sy allowother:
 allow anyone on the system access to the unix domain sockets created by
-.Nm
+.Nm .
 .It
 .Sy debug:
-print debugging messages
+print debugging messages to stderr.
 .It
 .Sy select:
 use
@@ -82,12 +83,15 @@ use
 with all sockets, rather than
 .Xr epoll 2
 or
-.Xr kqueue 2
+.Xr kqueue 2 .
 .It
 .Sy skipnameverification:
 do not verify the monitor name, if presented, against the name in the
 certificate that the client presents if doing client TLS
 authentication.
+.It
+.Sy notimes:
+do not preface debug output with a timestamp.
 .El
 .It Fl P Ar [ip:]port
 specifies the IP address and port on the local host where
@@ -105,6 +109,15 @@ specifies the directory on the local host where
 .Nm
 should place individual unix domain sockets corresponding to
 individual remote hosts.
+.It Fl R Ar chroot-dir
+specifies the directory on the local host where
+.Nm
+should
+.Xr chroot 2
+to on start.
+If used, then other arguments that specify locations are relative to
+this directory.
+See the security considerations section for further documentation.
 .It Fl C Ar tls-ca
 specifies the certificate authority certificate file in PEM format
 for
@@ -298,8 +311,8 @@ The scamper-side of this process looks like:
 .\""""""""""""
 .Sh SIGNAL HANDLERS
 .Nm
-installs handlers for two signals: SIGINT and SIGHUP.
-SIGINT causes
+installs handlers for three signals: SIGINT, SIGTERM, and SIGHUP.
+SIGINT and SIGTERM cause
 .Nm
 to exit gracefully.
 SIGHUP causes
@@ -308,13 +321,46 @@ to reload the TLS certificate and private key, without interrupting
 existing TLS connections, and reload the metadata file.
 .Pp
 .\""""""""""""
+.Sh SECURITY CONSIDERATIONS
+.Nm
+should always be run by a non-root user.
+.Pp
+.Nm
+provides an optional
+.Xr chroot 2
+capability, which is available when
+.Xr unveil 2
+is unavailable, and it is desirable that
+.Nm
+has restricted access to files available on the system.
+If
+.Nm
+is run on OpenBSD, which provides
+.Xr unveil 2 ,
+you do not need to read further.
+.Pp
+The chroot option requires that the process is started with capabilties.
+On Linux
+.Nm
+should be provided the CAP_SYS_CHROOT capability.
+On other systems,
+.Nm
+should be installed setuid root.
+Some systems have documented methods to escape a chroot where directories
+beneath a chroot are moved out of the chroot while the process is running.
+For this reason, use of the unix-dir option to store individual unix
+domain sockets for remote scamper instances in a directory beneath the
+chroot is discouraged.
+.\""""""""""""
 .Sh SEE ALSO
 .Xr libscamperctrl 3 ,
 .Xr scamper 1 ,
 .Xr sc_attach 1 ,
 .Xr sc_wartsdump 1 ,
 .Xr warts 5 ,
-.Xr openssl 1
+.Xr openssl 1 ,
+.Xr chroot 2 ,
+.Xr pledge 2 .
 .Sh AUTHORS
 .Nm
 was written by Matthew Luckie <mjl@luckie.org.nz>.

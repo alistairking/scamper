@@ -294,6 +294,7 @@ cimport cscamper_sniff
 cimport cscamper_host
 cimport cscamper_http
 cimport cscamper_udpprobe
+cimport cscamper_owamp
 cimport clibscamperctrl
 
 class ScamperHostStop(enum.IntEnum):
@@ -344,6 +345,20 @@ class ScamperUdpprobeStop(enum.IntEnum):
     Completed = cscamper_udpprobe.SCAMPER_UDPPROBE_STOP_DONE
     Halted = cscamper_udpprobe.SCAMPER_UDPPROBE_STOP_HALTED
     Error = cscamper_udpprobe.SCAMPER_UDPPROBE_STOP_ERROR
+
+class ScamperOwampResult(enum.IntEnum):
+    NoReason = cscamper_owamp.SCAMPER_OWAMP_RESULT_NONE
+    Completed = cscamper_owamp.SCAMPER_OWAMP_RESULT_DONE
+    Halted = cscamper_owamp.SCAMPER_OWAMP_RESULT_HALTED
+    Error = cscamper_owamp.SCAMPER_OWAMP_RESULT_ERROR
+    NoConn = cscamper_owamp.SCAMPER_OWAMP_RESULT_NOCONN
+    NotAccepted = cscamper_owamp.SCAMPER_OWAMP_RESULT_NOTACCEPTED
+    NoMode = cscamper_owamp.SCAMPER_OWAMP_RESULT_NOMODE
+    Timeout = cscamper_owamp.SCAMPER_OWAMP_RESULT_TIMEOUT
+
+class ScamperOwampSchedType(enum.IntEnum):
+    Fixed = cscamper_owamp.SCAMPER_OWAMP_SCHED_TYPE_FIXED
+    Exponential = cscamper_owamp.SCAMPER_OWAMP_SCHED_TYPE_EXP
 
 class ScamperHostType(enum.IntEnum):
     A = 1
@@ -8255,7 +8270,7 @@ cdef class ScamperHttp:
         :rtype: string
         """
         cdef char *value
-        if name is None or not isinstance(name, str):
+        if not isinstance(name, str):
             return ValueError("name must be a string")
         x = cscamper_http.scamper_http_rx_hdr_name_get(self._c,
                                                        name.encode('UTF-8'),
@@ -8281,7 +8296,7 @@ cdef class ScamperHttp:
         :rtype: string
         """
         cdef char *value
-        if name is None or not isinstance(name, str):
+        if not isinstance(name, str):
             return ValueError("name must be a string")
         x = cscamper_http.scamper_http_tx_hdr_name_get(self._c,
                                                        name.encode('UTF-8'),
@@ -8725,6 +8740,582 @@ cdef class ScamperUdpprobe:
         return _ScamperUdpprobeReplyIterator(self)
 
 ####
+#### Scamper Owamp Object
+####
+
+class _ScamperOwampSchedIterator:
+    def __init__(self, owamp):
+        self._owamp = owamp
+        self._index = 0
+        self._schedc = owamp.sched_count
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        if self._index < self._schedc:
+            sched = self._owamp.sched(self._index)
+            self._index += 1
+            return sched
+        raise StopIteration
+
+class _ScamperOwampTxIterator:
+    def __init__(self, owamp):
+        self._owamp = owamp
+        self._index = 0
+        self._txc = owamp.tx_count
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        if self._index < self._txc:
+            tx = self._owamp.tx(self._index)
+            self._index += 1
+            return tx
+        raise StopIteration
+
+class _ScamperOwampRxIterator:
+    def __init__(self, tx):
+        self._tx = tx
+        self._index = 0
+        self._rxc = tx.rx_count
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        if self._index < self._rxc:
+            rx = self._tx.rx(self._index)
+            self._index += 1
+            return rx
+        raise StopIteration
+
+cdef class ScamperOwampSched:
+    """
+    :class:`ScamperOwampSched` is used by scamper to store information
+    about a specific item an OWAMP schedule.
+    """
+    cdef cscamper_owamp.scamper_owamp_sched_t *_c
+
+    def __init__(self):
+        raise TypeError("This class cannot be instantiated directly.")
+
+    def __dealloc__(self):
+        if self._c != NULL:
+            cscamper_owamp.scamper_owamp_sched_free(self._c)
+
+    @staticmethod
+    cdef ScamperOwampSched from_ptr(cscamper_owamp.scamper_owamp_sched_t *ptr):
+        cdef ScamperOwampSched sc = ScamperOwampSched.__new__(ScamperOwampSched)
+        sc._c = cscamper_owamp.scamper_owamp_sched_use(ptr)
+        return sc
+
+    @property
+    def value(self):
+        """
+        get method that returns the time offset for this schedule item.
+
+        :returns: time offset
+        :rtype: timedelta
+        """
+        c = cscamper_owamp.scamper_owamp_sched_tv_get(self._c)
+        return datetime.timedelta(seconds=c.tv_sec,
+                                  microseconds=c.tv_usec)
+
+    @property
+    def type(self):
+        """
+        get method that returns the type of this schedule item.
+
+        :returns: the type of schedule item
+        :rtype: ScamperOwampSchedType
+        """
+        c = cscamper_owamp.scamper_owamp_sched_type_get(self._c)
+        return ScamperOwampSchedType(c)
+
+    @property
+    def type_str(self):
+        """
+        get method that returns the type of this schedule item, as a string
+
+        :returns: the type of schedule item
+        :rtype: string
+        """
+        cdef char buf[128]
+        cscamper_owamp.scamper_owamp_sched_type_tostr(self._c, buf, sizeof(buf))
+        return buf.decode('UTF-8', 'strict').lower()
+
+cdef class ScamperOwampRx:
+    """
+    :class:`ScamperOwampRx` is used by scamper to store information about
+    a probe received in an OWAMP session.
+    """
+    cdef cscamper_owamp.scamper_owamp_rx_t *_c
+
+    def __init__(self):
+        raise TypeError("This class cannot be instantiated directly.")
+
+    def __dealloc__(self):
+        if self._c != NULL:
+            cscamper_owamp.scamper_owamp_rx_free(self._c)
+
+    @staticmethod
+    cdef ScamperOwampRx from_ptr(cscamper_owamp.scamper_owamp_rx_t *ptr):
+        cdef ScamperOwampRx rx = ScamperOwampRx.__new__(ScamperOwampRx)
+        rx._c = cscamper_owamp.scamper_owamp_rx_use(ptr)
+        return rx
+
+    @property
+    def stamp(self):
+        """
+        get method to obtain the time this probe was received.
+
+        :returns: the receive time
+        :rtype: datetime
+        """
+        c = cscamper_owamp.scamper_owamp_rx_stamp_get(self._c)
+        t = time.gmtime(c.tv_sec)
+        return datetime.datetime(t[0], t[1], t[2], t[3], t[4], t[5], c.tv_usec,
+                                 tzinfo=datetime.timezone.utc)
+
+    @property
+    def ttl(self):
+        """
+        get method to obtain the TTL for this received probe.
+
+        :returns: the TTL value
+        :rtype: int
+        """
+        flags = cscamper_owamp.scamper_owamp_rx_flags_get(self._c)
+        if (flags & cscamper_owamp.SCAMPER_OWAMP_RX_FLAG_TTL) == 0:
+            return None
+        return cscamper_owamp.scamper_owamp_rx_ttl_get(self._c)
+
+    @property
+    def dscp(self):
+        """
+        get method to obtain the DSCP value for this received probe.
+
+        :returns: the DSCP value
+        :rtype: int
+        """
+        flags = cscamper_owamp.scamper_owamp_rx_flags_get(self._c)
+        if (flags & cscamper_owamp.SCAMPER_OWAMP_RX_FLAG_DSCP) == 0:
+            return None
+        return cscamper_owamp.scamper_owamp_rx_dscp_get(self._c)
+
+cdef class ScamperOwampTx:
+    """
+    :class:`ScamperOwampTx` is used by scamper to store information about
+    a probe transmitted in an OWAMP session.
+    """
+    cdef cscamper_owamp.scamper_owamp_tx_t *_c
+
+    def __init__(self):
+        raise TypeError("This class cannot be instantiated directly.")
+
+    def __dealloc__(self):
+        if self._c != NULL:
+            cscamper_owamp.scamper_owamp_tx_free(self._c)
+
+    @staticmethod
+    cdef ScamperOwampTx from_ptr(cscamper_owamp.scamper_owamp_tx_t *ptr):
+        cdef ScamperOwampTx tx = ScamperOwampTx.__new__(ScamperOwampTx)
+        tx._c = cscamper_owamp.scamper_owamp_tx_use(ptr)
+        return tx
+
+    @property
+    def sched(self):
+        """
+        get method to obtain the time this probe was scheduled to be sent.
+
+        :returns: the scheduled transmit time
+        :rtype: datetime
+        """
+        c = cscamper_owamp.scamper_owamp_tx_sched_get(self._c)
+        t = time.gmtime(c.tv_sec)
+        return datetime.datetime(t[0], t[1], t[2], t[3], t[4], t[5], c.tv_usec,
+                                 tzinfo=datetime.timezone.utc)
+
+    @property
+    def stamp(self):
+        """
+        get method to obtain the time this probe was sent.
+
+        :returns: the transmit time
+        :rtype: datetime
+        """
+        c = cscamper_owamp.scamper_owamp_tx_stamp_get(self._c)
+        t = time.gmtime(c.tv_sec)
+        return datetime.datetime(t[0], t[1], t[2], t[3], t[4], t[5], c.tv_usec,
+                                 tzinfo=datetime.timezone.utc)
+
+    @property
+    def seq(self):
+        """
+        get method to obtain the sequence number of this probe.
+
+        :returns: the sequence number
+        :rtype: int
+        """
+        return cscamper_owamp.scamper_owamp_tx_seq_get(self._c)
+
+    @property
+    def rx_count(self):
+        """
+        get method to obtain the number of copies of this probe received.
+
+        :returns: number of copies of probe received
+        :rtype: int
+        """
+        return cscamper_owamp.scamper_owamp_tx_rxc_get(self._c)
+
+    def rx(self, i):
+        """
+        get method to obtain the specified received probe.
+
+        :returns: the received probe
+        :rtype: ScamperOwampRx
+        """
+        c = cscamper_owamp.scamper_owamp_tx_rx_get(self._c, i)
+        return ScamperOwampRx.from_ptr(c)
+
+    def rxs(self):
+        """
+        get method to obtain an iterator over probes received.
+
+        :returns: an iterator
+        :rtype: _ScamperOwampRxIterator
+        """
+        return _ScamperOwampRxIterator(self)
+
+cdef class ScamperOwamp:
+    """
+    :class:`ScamperOwamp` is used by scamper to store results from an OWAMP
+    measurement.
+    """
+    cdef cscamper_owamp.scamper_owamp_t *_c
+    cdef public ScamperInst _inst
+
+    def __init__(self):
+        raise TypeError("This class cannot be instantiated directly.")
+
+    def __dealloc__(self):
+        if self._c != NULL:
+            cscamper_owamp.scamper_owamp_free(self._c)
+
+    @staticmethod
+    cdef ScamperOwamp from_ptr(cscamper_owamp.scamper_owamp_t *ptr):
+        cdef ScamperOwamp owamp = ScamperOwamp.__new__(ScamperOwamp)
+        owamp._c = ptr
+        return owamp
+
+    @property
+    def inst(self):
+        """
+        get :class:`ScamperInst` associated with this measurement,
+        if the measurement was conducted using a :class:`ScamperCtrl`.
+
+        :returns: the instance
+        :rtype: ScamperInst
+        """
+        return self._inst
+
+    @property
+    def list(self):
+        """
+        get list associated with this measurement.
+
+        :returns: the list
+        :rtype: ScamperList
+        """
+        c = cscamper_owamp.scamper_owamp_list_get(self._c)
+        return ScamperList.from_ptr(c)
+
+    @property
+    def cycle(self):
+        """
+        get cycle associated with this measurement.
+
+        :returns: the cycle
+        :rtype: ScamperCycle
+        """
+        c = cscamper_owamp.scamper_owamp_cycle_get(self._c)
+        return ScamperCycle.from_ptr(c, cscamper_file.SCAMPER_FILE_OBJ_CYCLE_DEF)
+
+    @property
+    def userid(self):
+        """
+        get method to obtain the userid parameter.
+
+        :returns: the userid
+        :rtype: int
+        """
+        return cscamper_owamp.scamper_owamp_userid_get(self._c)
+
+    @property
+    def errmsg(self):
+        """
+        get method to obtain error message from scamper.
+
+        :returns: the error message
+        :rtype: string
+        """
+        cdef const char *errmsg
+        errmsg = cscamper_owamp.scamper_owamp_errmsg_get(self._c)
+        if errmsg == NULL:
+            return None
+        return errmsg.decode('UTF-8', 'strict')
+
+    @property
+    def start(self):
+        """
+        get method to obtain the time scamper started this measurement
+
+        :returns: the start timestamp
+        :rtype: datetime
+        """
+        c = cscamper_owamp.scamper_owamp_start_get(self._c)
+        t = time.gmtime(c.tv_sec)
+        return datetime.datetime(t[0], t[1], t[2], t[3], t[4], t[5], c.tv_usec,
+                                 tzinfo=datetime.timezone.utc)
+
+    @property
+    def startat(self):
+        """
+        get method to obtain the time this measurement's schedule was to start
+
+        :returns: the scheduled start timestamp
+        :rtype: datetime
+        """
+        c = cscamper_owamp.scamper_owamp_startat_get(self._c)
+        t = time.gmtime(c.tv_sec)
+        return datetime.datetime(t[0], t[1], t[2], t[3], t[4], t[5], c.tv_usec,
+                                 tzinfo=datetime.timezone.utc)
+
+    def to_json(self):
+        """
+        get method to obtain a JSON rendering of this OWAMP measurement.
+
+        :returns: json representation
+        :rtype: string
+        """
+        c = cscamper_owamp.scamper_owamp_tojson(self._c, NULL)
+        if c == NULL:
+            return None
+        out = c.decode('UTF-8', 'strict')
+        free(c)
+        return out
+
+    @property
+    def result(self):
+        """
+        get method to obtain the stop reason.
+
+        :returns: the stop reason
+        :rtype: ScamperOwampResult
+        """
+        c = cscamper_owamp.scamper_owamp_result_get(self._c)
+        return ScamperOwampResult(c)
+
+    @property
+    def result_str(self):
+        """
+        get method to obtain the result, as a string.
+
+        :returns: the result
+        :rtype: string
+        """
+        cdef char buf[128]
+        cscamper_owamp.scamper_owamp_result_tostr(self._c, buf, sizeof(buf))
+        return buf.decode('UTF-8', 'strict').lower()
+
+    @property
+    def src(self):
+        """
+        get method to obtain the source address for this measurement.
+
+        :returns: the source address
+        :rtype: ScamperAddr
+        """
+        c_a = cscamper_owamp.scamper_owamp_src_get(self._c)
+        return ScamperAddr.from_ptr(c_a)
+
+    @property
+    def dst(self):
+        """
+        get method to obtain the destination address for this measurement.
+
+        :returns: the destination address
+        :rtype: ScamperAddr
+        """
+        c_a = cscamper_owamp.scamper_owamp_dst_get(self._c)
+        return ScamperAddr.from_ptr(c_a)
+
+    @property
+    def dport(self):
+        """
+        get method to obtain the destination port the client reached the
+        server on.
+
+        :returns: the destination port
+        :rtype: int
+        """
+        return cscamper_owamp.scamper_owamp_dport_get(self._c)
+
+    @property
+    def attempts(self):
+        """
+        get method to obtain the number of probes requested for this
+        OWAMP measurement.
+
+        :returns: the number of attempts.
+        :rtype: int
+        """
+        return cscamper_owamp.scamper_owamp_attempts_get(self._c)
+
+    @property
+    def ttl(self):
+        """
+        get method to obtain the TTL to use in probe packets transmitted
+        for this OWAMP measurement.
+
+        :returns: the TTL value.
+        :rtype: int
+        """
+        return cscamper_owamp.scamper_owamp_ttl_get(self._c)
+
+    @property
+    def dscp(self):
+        """
+        get method to obtain the DSCP to use in probe packets transmitted
+        for this OWAMP measurement.
+
+        :returns: the DSCP value.
+        :rtype: int
+        """
+        return cscamper_owamp.scamper_owamp_dscp_get(self._c)
+
+    @property
+    def direction_str(self):
+        """
+        get method to obtain the direction of one way probe packets
+        transmitted for this OWAMP measurement.
+
+        :returns: the direction (tx or rx)
+        :rtype: string
+        """
+        cdef char buf[128]
+        cscamper_owamp.scamper_owamp_dir_tostr(self._c, buf, sizeof(buf))
+        return buf.decode('UTF-8', 'strict').lower()
+
+    @property
+    def probe_size(self):
+        """
+        get method to obtain the size of probes used in this OWAMP
+        measurement.
+
+        :returns: the size of probes.
+        :rtype: int
+        """
+        return cscamper_owamp.scamper_owamp_pktsize_get(self._c)
+
+    @property
+    def wait_timeout(self):
+        """
+        get method to obtain the length of time to wait before declaring
+        a probe lost.
+
+        :returns: the timeout value.
+        :rtype: timedelta
+        """
+        c = cscamper_owamp.scamper_owamp_wait_timeout_get(self._c)
+        return datetime.timedelta(seconds=c.tv_sec,
+                                  microseconds=c.tv_usec)
+
+    @property
+    def sched_count(self):
+        """
+        get method that returns the number of items in the schedule.
+
+        :return: the number of items in the schedule.
+        :rtype: int
+        """
+        return cscamper_owamp.scamper_owamp_schedc_get(self._c)
+
+    def sched(self, i):
+        """
+        get method that returns a specific item in this schedule
+
+        :returns: the schedule item
+        :rtype: ScamperOwampSched
+        """
+        c = cscamper_owamp.scamper_owamp_sched_get(self._c, i)
+        return ScamperOwampSched.from_ptr(c)
+
+    def scheds(self):
+        """
+        get method that returns an iterator over the schedule.
+
+        :returns: schedule iterator
+        :rtype: _ScamperOwampSchedIterator
+        """
+        return _ScamperOwampSchedIterator(self)
+
+    @property
+    def tx_count(self):
+        """
+        get method that returns the number of transmitted probes in this
+        session.
+
+        :return: the number of transmitted probes
+        :rtype: int
+        """
+        return cscamper_owamp.scamper_owamp_txc_get(self._c)
+
+    def tx(self, i):
+        """
+        get method that returns a specific transmitted probe
+
+        :returns: the transmitted probe
+        :rtype: ScamperOwampTx
+        """
+        c = cscamper_owamp.scamper_owamp_tx_get(self._c, i)
+        return ScamperOwampTx.from_ptr(c)
+
+    def txs(self):
+        """
+        get method to obtain an iterator over probes transmitted.
+
+        :returns: an iterator
+        :rtype: _ScamperOwampTxIterator
+        """
+        return _ScamperOwampTxIterator(self)
+
+    @property
+    def udp_sport(self):
+        """
+        get method to obtain the UDP port value used by scamper in this
+        OWAMP measurement.
+
+        :returns: the UDP source port.
+        :rtype: int
+        """
+        return cscamper_owamp.scamper_owamp_udp_sport_get(self._c)
+
+    @property
+    def udp_dport(self):
+        """
+        get method to obtain the UDP port value used by the remote system
+        in this OWAMP measurement.
+
+        :returns: the UDP port value used by the remote system.
+        :rtype: int
+        """
+        return cscamper_owamp.scamper_owamp_udp_dport_get(self._c)
+
+####
 #### Scamper File Object
 ####
 
@@ -8878,6 +9469,8 @@ cdef class ScamperFile:
                 o_type = cscamper_file.SCAMPER_FILE_OBJ_HTTP
             elif t is ScamperUdpprobe:
                 o_type = cscamper_file.SCAMPER_FILE_OBJ_UDPPROBE
+            elif t is ScamperOwamp:
+                o_type = cscamper_file.SCAMPER_FILE_OBJ_OWAMP
             else:
                 raise ValueError("invalid type")
 
@@ -8962,6 +9555,8 @@ cdef class ScamperFile:
             return ScamperHttp.from_ptr(<cscamper_http.scamper_http_t *>o_data)
         elif o_type == cscamper_file.SCAMPER_FILE_OBJ_UDPPROBE:
             return ScamperUdpprobe.from_ptr(<cscamper_udpprobe.scamper_udpprobe_t *>o_data)
+        elif o_type == cscamper_file.SCAMPER_FILE_OBJ_OWAMP:
+            return ScamperOwamp.from_ptr(<cscamper_owamp.scamper_owamp_t *>o_data)
 
         raise RuntimeError("unexpected object type " + o_type)
 
@@ -9023,6 +9618,9 @@ cdef class ScamperFile:
         elif isinstance(obj, ScamperUdpprobe):
             o_type = cscamper_file.SCAMPER_FILE_OBJ_UDPPROBE
             o_data = (<ScamperUdpprobe>obj)._c
+        elif isinstance(obj, ScamperOwamp):
+            o_type = cscamper_file.SCAMPER_FILE_OBJ_OWAMP
+            o_data = (<ScamperOwamp>obj)._c
         else:
             raise RuntimeError("unhandled object type")
 
@@ -9119,6 +9717,8 @@ cdef void _ctrl_cb(clibscamperctrl.scamper_inst_t *c_inst,
             obj = ScamperHttp.from_ptr(<cscamper_http.scamper_http_t *>o_data)
         elif o_type == cscamper_file.SCAMPER_FILE_OBJ_UDPPROBE:
             obj = ScamperUdpprobe.from_ptr(<cscamper_udpprobe.scamper_udpprobe_t *>o_data)
+        elif o_type == cscamper_file.SCAMPER_FILE_OBJ_OWAMP:
+            obj = ScamperOwamp.from_ptr(<cscamper_owamp.scamper_owamp_t *>o_data)
         else:
             obj = None
 
@@ -9394,7 +9994,11 @@ cdef class ScamperCtrl:
         add a multiplexor interface that provides access to many
         scamper VPs via a single socket.
         """
-        c = clibscamperctrl.scamper_mux_add(self._c, path.encode('UTF-8'))
+        path_bs = path.encode('UTF-8')
+        cdef char *path_str = path_bs
+        cdef clibscamperctrl.scamper_ctrl_t *ctrl = self._c
+        with nogil:
+            c = clibscamperctrl.scamper_mux_add(ctrl, path_str)
         if c == NULL:
             err = clibscamperctrl.scamper_ctrl_strerror(self._c)
             if err != NULL:
@@ -9414,10 +10018,10 @@ cdef class ScamperCtrl:
 
     def add_vps(self, vps):
         insts = []
-        if isinstance(vps, list):
+        if isinstance(vps, (list, set)):
             for vp in vps:
                 if not isinstance(vp, ScamperVp):
-                    raise TypeError("vps list containts non ScamperVp")
+                    raise TypeError(f"vps {type(vps).__name__} contains non ScamperVp")
             for vp in vps:
                 inst = self._add_vp(vp)
                 if inst is not None:
@@ -9427,7 +10031,7 @@ cdef class ScamperCtrl:
             if inst is not None:
                 insts.append(inst)
         else:
-            raise TypeError("vps containts non ScamperVp")
+            raise TypeError("vps contains non ScamperVp")
         return insts
 
     def exceptions(self):
@@ -9668,17 +10272,17 @@ cdef class ScamperCtrl:
 
     def _getinst(self, inst, primitive, sync, listallowed=True):
         if inst is not None:
-            if isinstance(inst, list):
+            if isinstance(inst, (list, set)):
                 if not listallowed:
-                    raise RuntimeError("list not allowed with {primitive}")
+                    raise RuntimeError(f"{type(inst).__name__} of ScamperInst not allowed with {primitive}")
                 if sync is True:
                     raise RuntimeError("cannot run synchronous measurements with list")
-                out = []
+                out = set()
                 for i in inst:
                     if not isinstance(i, ScamperInst):
                         raise TypeError("inst list contains non ScamperInst")
                     if not i._eof:
-                        out.append(i)
+                        out.add(i)
                 if len(out) == 0:
                     raise RuntimeError("no usable ScamperInst")
                 return out
@@ -9726,7 +10330,7 @@ cdef class ScamperCtrl:
     def _dotasks(self, cmd, inst, sync):
         cstr = cmd.encode('UTF-8')
 
-        if isinstance(inst, list):
+        if isinstance(inst, set):
             tasks = []
             for i in inst:
                 c = clibscamperctrl.scamper_inst_do((<ScamperInst>i)._c,
@@ -10387,7 +10991,7 @@ cdef class ScamperCtrl:
                 raise ValueError("expected probedef in probedefs")
             args.append(f"-p '{pd}'")
         for addr in addrs:
-            if not isinstance(addr, str) and not isinstance(addr, ScamperAddr):
+            if not isinstance(addr, (str, ScamperAddr)):
                 raise ValueError("expected str in addrs")
             args.append(f"{addr}")
 
@@ -10830,6 +11434,44 @@ cdef class ScamperCtrl:
 
         return self._dotasks(' '.join(args), inst, sync)
 
+    def do_owamp(self, dst, direction, attempts=None, dscp=None, 
+                 schedule=None, size=None, startat=None, ttl=None,
+                 wait_timeout=None,
+                 userid=None, inst=None, sync=False):
+        args = []
+        args.append("owamp")
+        inst = self._getinst(inst, "owamp", sync)
+
+        if dst is None or direction is None:
+            raise ValueError("must specify dst and direction")
+        if direction not in ['tx', 'rx']:
+            raise ValueError("direction must be tx or rx")
+
+        if isinstance(startat, datetime.datetime):
+            args.append(f"-@ {startat.timestamp()}")
+
+        if wait_timeout is not None:
+            if not isinstance(wait_timeout, datetime.timedelta):
+                wait_timeout = datetime.timedelta(seconds=wait_timeout)
+            args.append(f"-w {wait_timeout.total_seconds()}s")
+
+        if isinstance(schedule, str):
+            args.append(f"-i {schedule}")
+
+        if attempts is not None:
+            args.append(f"-c {attempts}")
+        if size is not None:
+            args.append(f"-s {size}")
+        if ttl is not None:
+            args.append(f"-m {ttl}")
+        if dscp is not None:
+            args.append(f"-D {dscp}")
+
+        if userid is not None:
+            args.append(f"-U {userid}")
+        args.append(f"-d {direction} {dst}")
+        return self._dotasks(' '.join(args), inst, sync)
+
     def is_done(self):
         """
         get method to determine if all of the :class:`ScamperInst` have
@@ -10880,6 +11522,26 @@ cdef class ScamperVp:
 
     def __dealloc__(self):
         clibscamperctrl.scamper_vp_free(self._c)
+
+    def __richcmp__(self, other, int op):
+        if not isinstance(other, ScamperVp):
+            return NotImplemented
+        if op == Py_EQ:
+            return self._c == (<ScamperVp>other)._c
+        if op == Py_NE:
+            return self._c != (<ScamperVp>other)._c
+        if op == Py_LT:
+            return self._c < (<ScamperVp>other)._c
+        if op == Py_LE:
+            return self._c <= (<ScamperVp>other)._c
+        if op == Py_GT:
+            return self._c > (<ScamperVp>other)._c
+        if op == Py_GE:
+            return self._c >= (<ScamperVp>other)._c
+        return NotImplemented
+
+    def __hash__(self):
+        return hash((<Py_ssize_t>self._c))
 
     def __str__(self):
         name = self.name

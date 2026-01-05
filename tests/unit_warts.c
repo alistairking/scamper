@@ -1,7 +1,7 @@
 /*
  * unit_warts : unit tests for warts storage
  *
- * $Id: unit_warts.c,v 1.5 2025/06/29 21:52:12 mjl Exp $
+ * $Id: unit_warts.c,v 1.6 2026/01/04 19:54:18 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -44,6 +44,9 @@
 
 #include "scamper_neighbourdisc.h"
 #include "common_neighbourdisc.h"
+
+#include "scamper_owamp.h"
+#include "common_owamp.h"
 
 #include "scamper_ping.h"
 #include "common_ping.h"
@@ -151,6 +154,15 @@ int main(int argc, char *argv[])
       (write_func_t)scamper_file_write_neighbourdisc,
       (check_func_t)neighbourdisc_ok,
       (free_func_t)scamper_neighbourdisc_free,
+    },
+    {
+      "owamp",
+      SCAMPER_FILE_OBJ_OWAMP,
+      owamp_makerc,
+      (makers_func_t)owamp_makers,
+      (write_func_t)scamper_file_write_owamp,
+      (check_func_t)owamp_ok,
+      (free_func_t)scamper_owamp_free,
     },
     {
       "ping",

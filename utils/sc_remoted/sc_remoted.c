@@ -1,12 +1,12 @@
 /*
  * sc_remoted
  *
- * $Id: sc_remoted.c,v 1.148 2025/11/10 05:52:11 mjl Exp $
+ * $Id: sc_remoted.c,v 1.154 2026/01/03 03:05:45 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
  *
- * Copyright (C) 2014-2025 Matthew Luckie
+ * Copyright (C) 2014-2026 Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -487,6 +487,9 @@ typedef struct sc_message
 #endif
 #define OPT_METADATA 0x2000
 #define OPT_MUXSOCK 0x4000
+#if defined(HAVE_CHROOT) && defined(HAVE_SETEUID) && !defined(HAVE_UNVEIL)
+#define OPT_CHROOT  0x8000
+#endif
 #define OPT_ALL     0xffff
 
 #define FLAG_DEBUG      0x0001 /* verbose debugging */
@@ -494,6 +497,7 @@ typedef struct sc_message
 #define FLAG_ALLOW_G    0x0004 /* allow group members to connect */
 #define FLAG_ALLOW_O    0x0008 /* allow everyone to connect */
 #define FLAG_SKIP_VERIF 0x0010 /* skip TLS name verification */
+#define FLAG_NO_TIMES   0x0020 /* do not print times in stderr */
 
 #define CHANNEL_FLAG_EOF_TX  0x01
 #define CHANNEL_FLAG_EOF_RX  0x02
@@ -556,7 +560,12 @@ static int          muxsocket      = -1;
 static int          zombie         = 60 * 15;
 static char        *pidfile        = NULL;
 static uint32_t     master_id      = 1;
+static int          in_loop        = 0;
 static struct timeval now;
+
+#ifdef OPT_CHROOT
+static char        *chroot_dir     = NULL;
+#endif
 
 #if defined(HAVE_EPOLL)
 static int          epfd           = -1;
@@ -623,22 +632,21 @@ static int sc_mux_unix_send(sc_mux_t *mux, uint8_t *buf, size_t len);
 
 static void usage(uint32_t opt_mask)
 {
-  const char *v;
-
-#ifdef OPT_VERSION
-  v = "v";
-#else
-  v = "";
-#endif
-
   fprintf(stderr,
-	  "usage: sc_remoted [-?46D%s] -P [ip:]port\n"
-	  "                  [-M mux-socket] [-U unix-dir] [-O option]\n"
+	  "usage: sc_remoted [-?46D"
+#ifdef OPT_VERSION
+	  "v"
+#endif
+	  "] -P [ip:]port [-M mux-socket] [-U unix-dir]\n"
+	  "                  [-O option]"
+#ifdef OPT_CHROOT
+	  " [-R chroot-dir]"
+#endif
+	  "\n"
 #ifdef HAVE_OPENSSL
 	  "                  [-C CA-file] [-c cert-file] [-p priv-file]\n"
 #endif
-	  "                  [-e pid-file] [-m meta-file] [-Z zombie-time]\n",
-	  v);
+	  "                  [-e pid-file] [-m meta-file] [-Z zombie-time]\n");
 
   if(opt_mask == 0)
     {
@@ -682,6 +690,11 @@ static void usage(uint32_t opt_mask)
   if(opt_mask & OPT_PORT)
     fprintf(stderr, "     -P [ip:]port to accept remote scamper connections\n");
 
+#ifdef OPT_CHROOT
+  if(opt_mask & OPT_CHROOT)
+    fprintf(stderr, "     -R directory to chroot into\n");
+#endif
+
   if(opt_mask & OPT_UNIXDIR)
     fprintf(stderr, "     -U directory for individual unix domain sockets\n");
 
@@ -708,7 +721,13 @@ static int check_options(int argc, char *argv[])
   long lo;
   int ch;
 
-  string_concat(opts, sizeof(opts), &off, "?46DO:c:C:e:m:M:p:P:U:Z:");
+  string_concat(opts, sizeof(opts), &off, "?46DO:e:m:M:P:U:Z:");
+#ifdef HAVE_OPENSSL
+  string_concat(opts, sizeof(opts), &off, "c:C:p:");
+#endif
+#ifdef OPT_CHROOT
+  string_concat(opts, sizeof(opts), &off, "R:");
+#endif
 #ifdef OPT_VERSION
   string_concatc(opts, sizeof(opts), &off, 'v');
 #endif
@@ -755,6 +774,8 @@ static int check_options(int argc, char *argv[])
 	    flags |= FLAG_DEBUG;
 	  else if(strcasecmp(optarg, "skipnameverification") == 0)
 	    flags |= FLAG_SKIP_VERIF;
+	  else if(strcasecmp(optarg, "notimes") == 0)
+	    flags |= FLAG_NO_TIMES;
 	  else
 	    {
 	      usage(OPT_ALL);
@@ -765,6 +786,12 @@ static int check_options(int argc, char *argv[])
 	case 'P':
 	  opt_addrport = optarg;
 	  break;
+
+#ifdef OPT_CHROOT
+	case 'R':
+	  chroot_dir = optarg;
+	  break;
+#endif
 
 #ifdef HAVE_OPENSSL
 	case 'c':
@@ -882,26 +909,80 @@ static int check_options(int argc, char *argv[])
 #ifdef HAVE_FUNC_ATTRIBUTE_FORMAT
 static void remote_debug(const char *func, const char *format, ...)
   __attribute__((format(printf, 2, 3)));
+static void remote_error(const char *func, const char *format, ...)
+  __attribute__((format(printf, 2, 3)));
 #endif
 
-static void remote_debug(const char *func, const char *format, ...)
+static void remote_stderr(const char *func, const char *format, va_list ap)
 {
   char message[512], ts[16];
-  va_list ap;
 
   if(options & OPT_DAEMON)
     return;
 
+  vsnprintf(message, sizeof(message), format, ap);
+
+  if(in_loop != 0 && (flags & FLAG_NO_TIMES) == 0)
+    fprintf(stderr, "[%s] ", timeval_tostr_hhmmssms(&now, ts));
+  fprintf(stderr, "%s: %s\n", func, message);
+  fflush(stderr);
+
+  return;
+}
+
+static void remote_debug(const char *func, const char *format, ...)
+{
+  va_list ap;
+
   if((flags & FLAG_DEBUG) == 0)
     return;
-
   va_start(ap, format);
-  vsnprintf(message, sizeof(message), format, ap);
+  remote_stderr(func, format, ap);
   va_end(ap);
 
-  fprintf(stderr, "[%s] %s: %s\n",
-	  timeval_tostr_hhmmssms(&now, ts), func, message);
-  fflush(stderr);
+  return;
+}
+
+static void remote_error(const char *func, const char *format, ...)
+{
+  va_list ap;
+
+  va_start(ap, format);
+  remote_stderr(func, format, ap);
+  va_end(ap);
+
+  return;
+}
+
+static char *magic_str(char *buf, size_t len, uint8_t *mag, uint8_t maglen)
+{
+  size_t off = 0;
+  string_concat_u8(buf, len, &off, NULL, maglen);
+  string_concatc(buf, len, &off, ':');
+  string_byte2hex(buf, len, &off, mag, maglen >= 8 ? 8 : maglen);
+  if(maglen > 8)
+    string_concat(buf, len, &off, "...");
+  return buf;
+}
+
+#ifdef HAVE_UNVEIL
+static int unveil_wrap(const char *path, const char *permissions)
+{
+  if(path != NULL && unveil(path, permissions) != 0)
+    {
+      remote_error(__func__, "could not unveil %s: %s", path,
+		   strerror(errno));
+      return -1;
+    }
+  return 0;
+}
+#endif
+
+static void unlink_wrap(const char *path)
+{
+  if(unlink(path) != 0)
+    remote_error(__func__, "could not unlink %s: %s", path,
+		 strerror(errno));
   return;
 }
 
@@ -913,12 +994,12 @@ static int fd_peername(int fd, char *buf, size_t len, int with_port)
   socklen = sizeof(sas);
   if(getpeername(fd, (struct sockaddr *)&sas, &socklen) != 0)
     {
-      remote_debug(__func__, "could not getpeername: %s", strerror(errno));
+      remote_error(__func__, "could not getpeername: %s", strerror(errno));
       return -1;
     }
   if(sockaddr_tostr((struct sockaddr *)&sas, buf, len, with_port) == NULL)
     {
-      remote_debug(__func__, "could not convert to string");
+      remote_error(__func__, "could not convert to string");
       return -1;
     }
   return 0;
@@ -1085,7 +1166,7 @@ static int ssl_want_read(sc_master_t *ms)
   if((rc = tls_want_read(ms->inet_wbio, ms, errbuf, sizeof(errbuf),
 			 ssl_want_read_cb)) < 0)
     {
-      remote_debug(__func__, "%s", errbuf);
+      remote_error(__func__, "%s", errbuf);
       return -1;
     }
 
@@ -1226,7 +1307,7 @@ static int sc_master_inet_write(sc_master_t *ms, void *ptr, uint16_t len,
   if(scamper_writebuf_send(ms->inet_wb, hdr, SC_MESSAGE_HDRLEN) != 0 ||
      scamper_writebuf_send(ms->inet_wb, ptr, len) != 0)
     {
-      remote_debug(__func__, "could not write message");
+      remote_error(__func__, "could not write message");
       return -1;
     }
 
@@ -1262,13 +1343,13 @@ static int sc_master_inet_send(sc_master_t *ms, void *ptr, uint16_t len,
     {
       if((msg = malloc(sizeof(sc_message_t))) == NULL)
 	{
-	  remote_debug(__func__, "could not malloc message");
+	  remote_error(__func__, "could not malloc message");
 	  goto err;
 	}
       msg->data = NULL;
       if((msg->data = memdup(ptr, len)) == NULL)
 	{
-	  remote_debug(__func__, "could not dup data");
+	  remote_error(__func__, "could not dup data");
 	  goto err;
 	}
       msg->sequence = sequence;
@@ -1276,7 +1357,7 @@ static int sc_master_inet_send(sc_master_t *ms, void *ptr, uint16_t len,
       msg->msglen = len;
       if(slist_tail_push(ms->messages, msg) == NULL)
 	{
-	  remote_debug(__func__, "could not push message");
+	  remote_error(__func__, "could not push message");
 	  goto err;
 	}
       msg = NULL;
@@ -1302,7 +1383,8 @@ static int sc_master_inet_send(sc_master_t *ms, void *ptr, uint16_t len,
 
 static void sc_master_inet_free(sc_master_t *ms)
 {
-  remote_debug(__func__, "%s", ms->name);
+  if(ms->name != NULL)
+    remote_debug(__func__, "%s", ms->name);
 
   if(ms->inet_fd.fd != -1)
     {
@@ -1393,7 +1475,7 @@ static int unix_create(const char *filename)
   /* create a unix domain control socket */
   if((fd = unix_bind_listen(filename, -1)) == -1)
     {
-      remote_debug(__func__, "could not create unix socket: %s",
+      remote_error(__func__, "could not create unix socket: %s",
 		   strerror(errno));
       goto err;
     }
@@ -1404,7 +1486,7 @@ static int unix_create(const char *filename)
   if(flags & FLAG_ALLOW_O) mode |= S_IRWXO;
   if(chmod(filename, mode) != 0)
     {
-      remote_debug(__func__, "could not chmod: %s", strerror(errno));
+      remote_error(__func__, "could not chmod: %s", strerror(errno));
       goto err;
     }
 
@@ -1413,7 +1495,7 @@ static int unix_create(const char *filename)
  err:
   if(fd != -1)
     {
-      unlink(filename);
+      unlink_wrap(filename);
       close(fd);
     }
   return -1;
@@ -1517,7 +1599,7 @@ static void sc_master_mux_notify(const sc_master_t *ms)
     {
       mux = dlist_node_item(dn);
       if(sc_mux_unix_send(mux, buf, len) != 0)
-	remote_debug(__func__, "could not write instance update message");
+	remote_error(__func__, "could not write instance update message");
     }
 
   return;
@@ -1530,7 +1612,7 @@ static int sc_master_nameit(sc_master_t *ms)
 
   /*
    * figure out the name for the unix domain socket.
-   * fd_peername calls remote_debug itself on error.
+   * fd_peername calls remote_error itself on error.
    */
   if(fd_peername(ms->inet_fd.fd, sab, sizeof(sab), 1) != 0)
     return -1;
@@ -1545,7 +1627,7 @@ static int sc_master_nameit(sc_master_t *ms)
     }
   if(newname == NULL)
     {
-      remote_debug(__func__, "could not strdup name: %s", strerror(errno));
+      remote_error(__func__, "could not strdup name: %s", strerror(errno));
       return -1;
     }
 
@@ -1580,14 +1662,14 @@ static int sc_master_unix_create(sc_master_t *ms)
    */
   if((ms->unix_fd = sc_fd_alloc(fd, FD_TYPE_MASTER_UNIX, ms->unit)) == NULL)
     {
-      remote_debug(__func__, "could not alloc unix fd: %s", strerror(errno));
+      remote_error(__func__, "could not alloc unix fd: %s", strerror(errno));
       goto err;
     }
   filename[0] = '\0'; fd = -1;
 
   if(sc_fd_read_add(ms->unix_fd) != 0)
     {
-      remote_debug(__func__, "could not monitor unix fd: %s", strerror(errno));
+      remote_error(__func__, "could not monitor unix fd: %s", strerror(errno));
       goto err;
     }
 
@@ -1596,7 +1678,7 @@ static int sc_master_unix_create(sc_master_t *ms)
  err:
   if(fd != -1)
     {
-      if(filename[0] != '\0') unlink(filename);
+      if(filename[0] != '\0') unlink_wrap(filename);
       close(fd);
     }
   return -1;
@@ -1611,7 +1693,7 @@ static void sc_master_unix_free(sc_master_t *ms)
       sc_fd_free(ms->unix_fd);
       ms->unix_fd = NULL;
       snprintf(filename, sizeof(filename), "%s/%s", unix_dir, ms->name);
-      unlink(filename);
+      unlink_wrap(filename);
     }
 
   return;
@@ -1626,6 +1708,7 @@ static void sc_master_unix_free(sc_master_t *ms)
  */
 static void sc_master_zombie(sc_master_t *ms)
 {
+  char mag[32];
   if(ms->mode == MASTER_MODE_FLUSH)
     {
       sc_unit_gc(ms->unit);
@@ -1635,7 +1718,8 @@ static void sc_master_zombie(sc_master_t *ms)
   sc_master_unix_free(ms);
   sc_master_inet_free(ms);
   timeval_add_s(&ms->zombie, &now, zombie);
-  remote_debug(__func__, "%s zombie until %ld", ms->name,
+  remote_debug(__func__, "%s %s until %ld", ms->name,
+	       magic_str(mag, sizeof(mag), ms->magic, ms->magic_len),
 	       (long)ms->zombie.tv_sec);
   return;
 }
@@ -1713,7 +1797,7 @@ static int sc_master_tx_rej(sc_master_t *ms)
  */
 static int sc_master_control_master(sc_master_t *ms, uint8_t *buf, size_t len)
 {
-  char     sab[128];
+  char     sab[128], mag[32];
   uint8_t  resp[1+1+128];
   uint8_t *magic = NULL;
   char    *monitorname = NULL;
@@ -1750,14 +1834,29 @@ static int sc_master_control_master(sc_master_t *ms, uint8_t *buf, size_t len)
       monitorname = (char *)(buf+off);
       for(u8=0; u8<monitorname_len-1; u8++)
 	{
+	  /*
+	   * allow alphanumerics and '-' and '.'
+	   * a valid monitorname will not have a slash '/' in it.
+	   */
 	  if(monitorname[u8] != '.' && monitorname[u8] != '-' &&
 	     isalnum((unsigned char)monitorname[u8]) == 0)
-	    goto err;
+	    {
+	      remote_debug(__func__, "rejected monitorname 0x%02x",
+			   monitorname[u8]);
+	      goto err;
+	    }
 	}
       if(monitorname[monitorname_len-1] != '\0')
-	goto err;
+	{
+	  remote_debug(__func__, "expected null in monitorname at %u",
+		       monitorname_len-1);
+	  goto err;
+	}
       if((ms->monitorname = memdup(monitorname, monitorname_len)) == NULL)
-	goto err;
+	{
+	  remote_error(__func__, "could not dup monitorname");
+	  goto err;
+	}
       off += monitorname_len;
       assert(off <= len);
     }
@@ -1771,13 +1870,13 @@ static int sc_master_control_master(sc_master_t *ms, uint8_t *buf, size_t len)
   /* copy the magic value out.  check that the magic value is unique */
   if((ms->magic = memdup(magic, magic_len)) == NULL)
     {
-      remote_debug(__func__, "could not memdup magic: %s", strerror(errno));
+      remote_error(__func__, "could not memdup magic: %s", strerror(errno));
       goto err;
     }
   ms->magic_len = magic_len;
   if((ms->tree_node = splaytree_insert(mstree, ms)) == NULL)
     {
-      remote_debug(__func__, "could not insert magic node into tree");
+      remote_error(__func__, "could not insert magic node into tree");
       goto err;
     }
 
@@ -1792,7 +1891,8 @@ static int sc_master_control_master(sc_master_t *ms, uint8_t *buf, size_t len)
   /* send the list name to the client. do not expect an ack */
   if(fd_peername(ms->inet_fd.fd, sab, sizeof(sab), 1) != 0)
     goto err;
-  remote_debug(__func__, "%s", sab);
+  remote_debug(__func__, "%s %s", ms->name,
+	       magic_str(mag, sizeof(mag), ms->magic, ms->magic_len));
   ms->mode = MASTER_MODE_GO;
   ms->id = master_id; master_id++;
   gettimeofday_wrap(&ms->arrival);
@@ -1802,7 +1902,7 @@ static int sc_master_control_master(sc_master_t *ms, uint8_t *buf, size_t len)
   memcpy(resp+2, sab, off + 1);
   if(sc_master_inet_send(ms, resp, 1 + 1 + off + 1, 0, 0) != 0)
     {
-      remote_debug(__func__, "could not write ID: %s", strerror(errno));
+      remote_error(__func__, "could not write ID: %s", strerror(errno));
       goto err;
     }
 
@@ -1837,7 +1937,7 @@ static void muxchan_fin(sc_muxchan_t *mcn)
   bytes_htonl(buf + MUX_HDRLEN + 2, mcn->channel_id);
 
   if(sc_mux_unix_send(mcn->mux, buf, MUX_HDRLEN + 2 + 4) != 0)
-    remote_debug(__func__, "could not write mux channel close message");
+    remote_error(__func__, "could not write mux channel close message");
 
   return;
 }
@@ -1924,8 +2024,9 @@ static int sc_master_control_resume(sc_master_t *ms, uint8_t *buf, size_t len)
   sc_message_t *msg;
   slist_node_t *sn;
   uint8_t *magic = NULL, magic_len;
-  size_t   off = 0;
+  size_t   off = 0, off2;
   uint32_t rcv_nxt, snd_una, snd_nxt;
+  char     str[256], tmp[128];
   uint8_t  ok[5];
 
   /* ensure that there is a magic value present */
@@ -1962,7 +2063,16 @@ static int sc_master_control_resume(sc_master_t *ms, uint8_t *buf, size_t len)
   fm.magic_len = magic_len;
   if((ms2 = splaytree_find(mstree, &fm)) == NULL)
     {
-      remote_debug(__func__, "could not find master given magic");
+      /* render a debug string that we rejected a connection */
+      off2 = 0;
+      string_concat(str, sizeof(str), &off2, "reject ");
+      if(fd_peername(ms->inet_fd.fd, tmp, sizeof(tmp), 1) == 0)
+	string_concat2(str, sizeof(str), &off2, tmp, " ");
+      string_concat(str, sizeof(str), &off2,
+		    magic_str(tmp, sizeof(tmp), magic, magic_len));
+      remote_debug(__func__, "%s", str);
+
+      /* send the rejection control message */
       if(sc_master_tx_rej(ms) != 0)
 	goto err;
       goto done;
@@ -2067,7 +2177,8 @@ static int sc_master_control_resume(sc_master_t *ms, uint8_t *buf, size_t len)
   bytes_htonl(ok+1, ms2->rcv_nxt);
   if(sc_master_inet_write(ms2, ok, 5, 0, 0) != 0)
     goto err;
-  remote_debug(__func__, "ok");
+  remote_debug(__func__, "ok %s %s", ms2->name,
+	       magic_str(tmp, sizeof(tmp), ms2->magic, ms2->magic_len));
 
   for(sn=slist_head_node(ms2->messages); sn != NULL; sn=slist_node_next(sn))
     {
@@ -2375,7 +2486,7 @@ static void sc_master_unix_accept_do(sc_master_t *ms)
 
   if((s = accept(ms->unix_fd->fd, NULL, NULL)) == -1)
     {
-      remote_debug(__func__, "accept failed: %s", strerror(errno));
+      remote_error(__func__, "accept failed: %s", strerror(errno));
       goto err;
     }
 
@@ -2390,13 +2501,13 @@ static void sc_master_unix_accept_do(sc_master_t *ms)
   /* allocate a unit to describe this structure */
   if((ocn->unit = sc_unit_alloc(UNIT_TYPE_ONECHAN, ocn)) == NULL)
     {
-      remote_debug(__func__, "could not alloc unit: %s", strerror(errno));
+      remote_error(__func__, "could not alloc unit: %s", strerror(errno));
       goto err;
     }
 
   if((ocn->unix_fd = sc_fd_alloc(s, FD_TYPE_ONECHAN_UNIX, ocn->unit)) == NULL)
     {
-      remote_debug(__func__, "could not alloc unix_fd: %s", strerror(errno));
+      remote_error(__func__, "could not alloc unix_fd: %s", strerror(errno));
       goto err;
     }
   s = -1;
@@ -2449,7 +2560,7 @@ static void sc_master_free(sc_master_t *ms)
 	{
 	  mux = dlist_node_item(dn);
 	  if(sc_mux_unix_send(mux, dep, MUX_HDRLEN + 2 + 4) != 0)
-	    remote_debug(__func__, "could not write instance depart message");
+	    remote_error(__func__, "could not write instance depart message");
 	}
     }
 
@@ -2495,7 +2606,7 @@ static sc_master_t *sc_master_alloc(int fd)
 
   if((ms->channels = dlist_alloc()) == NULL)
     {
-      remote_debug(__func__, "could not alloc channels: %s", strerror(errno));
+      remote_error(__func__, "could not alloc channels: %s", strerror(errno));
       goto err;
     }
   ms->next_channel = 1;
@@ -2503,20 +2614,20 @@ static sc_master_t *sc_master_alloc(int fd)
   /* allocate a unit to describe this */
   if((ms->unit = sc_unit_alloc(UNIT_TYPE_MASTER, ms)) == NULL)
     {
-      remote_debug(__func__, "could not alloc unit: %s", strerror(errno));
+      remote_error(__func__, "could not alloc unit: %s", strerror(errno));
       goto err;
     }
   ms->inet_fd.unit = ms->unit;
 
   if((ms->inet_wb = scamper_writebuf_alloc()) == NULL)
     {
-      remote_debug(__func__, "could not alloc wb: %s", strerror(errno));
+      remote_error(__func__, "could not alloc wb: %s", strerror(errno));
       goto err;
     }
 
   if((ms->messages = slist_alloc()) == NULL)
     {
-      remote_debug(__func__, "could not alloc messages: %s", strerror(errno));
+      remote_error(__func__, "could not alloc messages: %s", strerror(errno));
       goto err;
     }
 
@@ -2526,7 +2637,7 @@ static sc_master_t *sc_master_alloc(int fd)
       if(tls_bio_alloc(tls_ctx, &ms->inet_ssl,
 		       &ms->inet_rbio, &ms->inet_wbio) != 0)
 	{
-	  remote_debug(__func__, "could not alloc SSL");
+	  remote_error(__func__, "could not alloc SSL");
 	  goto err;
 	}
       SSL_set_accept_state(ms->inet_ssl);
@@ -2604,7 +2715,7 @@ static void sc_onechan_unix_write_do(sc_onechan_t *ocn)
   /* nothing more to write, so remove fd */
   if(sc_fd_write_del(ocn->unix_fd) != 0)
     {
-      remote_debug(__func__, "could not delete unix write for %s channel %u",
+      remote_error(__func__, "could not delete unix write for %s channel %u",
 		   cn->master->name, cn->id);
       goto err;
     }
@@ -2761,12 +2872,12 @@ static int serversocket_accept(int ss)
 
   if((inet_fd = accept(ss, NULL, NULL)) == -1)
     {
-      remote_debug(__func__, "could not accept: %s", strerror(errno));
+      remote_error(__func__, "could not accept: %s", strerror(errno));
       goto err;
     }
   if(fcntl_set(inet_fd, O_NONBLOCK) == -1)
     {
-      remote_debug(__func__, "could not set O_NONBLOCK: %s", strerror(errno));
+      remote_error(__func__, "could not set O_NONBLOCK: %s", strerror(errno));
       goto err;
     }
 
@@ -2780,7 +2891,7 @@ static int serversocket_accept(int ss)
 
   if(sc_fd_read_add(&ms->inet_fd) != 0)
     {
-      remote_debug(__func__, "could not monitor inet fd: %s", strerror(errno));
+      remote_error(__func__, "could not monitor inet fd: %s", strerror(errno));
       goto err;
     }
 
@@ -2789,7 +2900,7 @@ static int serversocket_accept(int ss)
 
   if((ms->mnode = dlist_tail_push(mslist, ms)) == NULL)
     {
-      remote_debug(__func__, "could not push to mslist: %s", strerror(errno));
+      remote_error(__func__, "could not push to mslist: %s", strerror(errno));
       goto err;
     }
 
@@ -2808,14 +2919,14 @@ static int serversocket_init_sa(const struct sockaddr *sa)
 
   if((fd = socket(sa->sa_family, SOCK_STREAM, IPPROTO_TCP)) < 0)
     {
-      remote_debug(__func__, "could not open %s socket: %s",
+      remote_error(__func__, "could not open %s socket: %s",
 		   sa->sa_family == AF_INET ? "ipv4" : "ipv6", strerror(errno));
       goto err;
     }
 
   if(setsockopt_int(fd, SOL_SOCKET, SO_REUSEADDR, 1) != 0)
     {
-      remote_debug(__func__, "could not set SO_REUSEADDR on %s socket: %s",
+      remote_error(__func__, "could not set SO_REUSEADDR on %s socket: %s",
 		   sa->sa_family == AF_INET ? "ipv4" : "ipv6", strerror(errno));
       goto err;
     }
@@ -2825,7 +2936,7 @@ static int serversocket_init_sa(const struct sockaddr *sa)
     {
       if(setsockopt_int(fd, IPPROTO_IPV6, IPV6_V6ONLY, 1) != 0)
 	{
-	  remote_debug(__func__, "could not set IPV6_V6ONLY: %s",
+	  remote_error(__func__, "could not set IPV6_V6ONLY: %s",
 		       strerror(errno));
 	  goto err;
 	}
@@ -2834,7 +2945,7 @@ static int serversocket_init_sa(const struct sockaddr *sa)
 
   if(bind(fd, sa, sockaddr_len(sa)) != 0)
     {
-      remote_debug(__func__, "could not bind %s socket to %s: %s",
+      remote_error(__func__, "could not bind %s socket to %s: %s",
 		   sa->sa_family == AF_INET ? "ipv4" : "ipv6",
 		   sockaddr_tostr(sa, buf, sizeof(buf), 1), strerror(errno));
       goto err;
@@ -2842,7 +2953,7 @@ static int serversocket_init_sa(const struct sockaddr *sa)
 
   if(listen(fd, -1) != 0)
     {
-      remote_debug(__func__, "could not listen %s socket: %s",
+      remote_error(__func__, "could not listen %s socket: %s",
 		   sa->sa_family == AF_INET ? "ipv4" : "ipv6", strerror(errno));
       goto err;
     }
@@ -2870,7 +2981,7 @@ static int serversocket_init(void)
       if(sockaddr_compose_str((struct sockaddr *)&sas, AF_UNSPEC,
 			      ss_addr, ss_port) != 0)
 	{
-	  remote_debug(__func__, "could not compose sockaddr");
+	  remote_error(__func__, "could not compose sockaddr");
 	  return -1;
 	}
       if((fd = serversocket_init_sa((struct sockaddr *)&sas)) == -1)
@@ -2932,7 +3043,7 @@ static sc_mux_t *sc_mux_alloc(void)
      (mux->channels = dlist_alloc()) == NULL ||
      (mux->unit = sc_unit_alloc(UNIT_TYPE_MUX, mux)) == NULL)
     {
-      remote_debug(__func__, "could not alloc mux: %s", strerror(errno));
+      remote_error(__func__, "could not alloc mux: %s", strerror(errno));
       goto err;
     }
 
@@ -3060,9 +3171,9 @@ static void sc_mux_unix_read_do(sc_mux_t *mux)
       if(rrc == -1 && (errno == EAGAIN || errno == EINTR))
 	return;
       if(rrc == 0)
-	remote_debug(__func__, "mux disconnected");
+	remote_debug(__func__, "disconnected");
       else
-	remote_debug(__func__, "mux read failed: %s", strerror(errno));
+	remote_debug(__func__, "read failed: %s", strerror(errno));
       goto zombie;
     }
 
@@ -3154,7 +3265,7 @@ static void sc_mux_unix_write_do(sc_mux_t *mux)
 
   if(scamper_writebuf_write(mux->unix_fd->fd, mux->unix_wb) != 0)
     {
-      remote_debug(__func__, "write to mux failed");
+      remote_debug(__func__, "write failed");
       goto err;
     }
 
@@ -3168,14 +3279,13 @@ static void sc_mux_unix_write_do(sc_mux_t *mux)
   /* nothing more to write, so remove fd */
   if(sc_fd_write_del(mux->unix_fd) != 0)
     {
-      remote_debug(__func__, "could not delete unix write mux");
+      remote_error(__func__, "could not delete unix write");
       goto err;
     }
 
   return;
 
  err:
-  remote_debug(__func__, "err");
   return;
 }
 
@@ -3192,14 +3302,14 @@ static int muxsocket_accept(int muxsock)
 
   if((s = accept(muxsock, NULL, NULL)) == -1)
     {
-      remote_debug(__func__, "accept failed: %s", strerror(errno));
+      remote_error(__func__, "accept failed: %s", strerror(errno));
       goto err;
     }
 
   if((mux = sc_mux_alloc()) == NULL ||
      (mux->unix_fd  = sc_fd_alloc(s, FD_TYPE_MUX, mux->unit)) == NULL)
     {
-      remote_debug(__func__, "could not alloc mux: %s", strerror(errno));
+      remote_error(__func__, "could not alloc mux: %s", strerror(errno));
       goto err;
     }
   s = -1;
@@ -3213,7 +3323,7 @@ static int muxsocket_accept(int muxsock)
       len = sizeof(buf);
       if(sc_master_mux_encode(ms, buf, &len) == 0 &&
 	 scamper_writebuf_send(mux->unix_wb, buf, len) != 0)
-	remote_debug(__func__, "could not write VP update message");
+	remote_error(__func__, "could not write VP update message");
     }
 
   /* send GO message */
@@ -3222,13 +3332,13 @@ static int muxsocket_accept(int muxsock)
   bytes_htons(buf + MUX_HDRLEN, MUX_GO);  /* type */
   if(scamper_writebuf_send(mux->unix_wb, buf, MUX_HDRLEN + 2) != 0)
     {
-      remote_debug(__func__, "could not write go message");
+      remote_error(__func__, "could not write go message");
       goto err;
     }
 
   if((mux->mxnode = dlist_tail_push(mxlist, mux)) == NULL)
     {
-      remote_debug(__func__, "could not add mux to list");
+      remote_error(__func__, "could not add mux to list");
       goto err;
     }
 
@@ -3250,23 +3360,23 @@ static int muxsocket_init(void)
 }
 
 /*
- * unixdomain_direxists
+ * stat_direxists
  *
  * make sure the directory specified actually exists
  */
-static int unixdomain_direxists(void)
+static int stat_direxists(const char *path, int opt)
 {
   struct stat sb;
-  if(stat(unix_dir, &sb) != 0)
+  if(stat(path, &sb) != 0)
     {
-      usage(OPT_UNIXDIR);
-      remote_debug(__func__, "stat failed %s: %s", unix_dir, strerror(errno));
+      usage(opt);
+      remote_error(__func__, "stat failed %s: %s", path, strerror(errno));
       return -1;
     }
   if(S_ISDIR(sb.st_mode) == 0)
     {
-      usage(OPT_UNIXDIR);
-      remote_debug(__func__, "%s is not a directory", unix_dir);
+      usage(opt);
+      remote_error(__func__, "%s is not a directory", path);
       return -1;
     }
 
@@ -3290,7 +3400,7 @@ static void cleanup(void)
 
   if(muxsocket != -1)
     {
-      unlink(muxsocket_name);
+      unlink_wrap(muxsocket_name);
       close(muxsocket);
       muxsocket = -1;
     }
@@ -3348,7 +3458,7 @@ static void cleanup(void)
 
   if(pidfile != NULL)
     {
-      unlink(pidfile);
+      unlink_wrap(pidfile);
       free(pidfile);
       pidfile = NULL;
     }
@@ -3378,19 +3488,26 @@ static int remoted_tlsctx(void)
   STACK_OF(X509_NAME) *cert_names;
 
   if((tls_ctx = SSL_CTX_new(SSLv23_method())) == NULL)
-    return -1;
+    {
+      remote_error(__func__, "could not SSL_CTX_new(SSLv23_method())");
+      if((options & OPT_DAEMON) == 0)
+	ERR_print_errors_fp(stderr);
+      return -1;
+    }
 
   /* load the server key materials */
   if(SSL_CTX_use_certificate_chain_file(tls_ctx,tls_certfile)!=1)
     {
-      remote_debug(__func__, "could not SSL_CTX_use_certificate_file");
-      ERR_print_errors_fp(stderr);
+      remote_error(__func__, "could not SSL_CTX_use_certificate_file");
+      if((options & OPT_DAEMON) == 0)
+	ERR_print_errors_fp(stderr);
       return -1;
     }
   if(SSL_CTX_use_PrivateKey_file(tls_ctx,tls_privfile,SSL_FILETYPE_PEM)!=1)
     {
-      remote_debug(__func__, "could not SSL_CTX_use_PrivateKey_file");
-      ERR_print_errors_fp(stderr);
+      remote_error(__func__, "could not SSL_CTX_use_PrivateKey_file");
+      if((options & OPT_DAEMON) == 0)
+	ERR_print_errors_fp(stderr);
       return -1;
     }
 
@@ -3399,14 +3516,16 @@ static int remoted_tlsctx(void)
       /* load the materials to verify client certificates */
       if(SSL_CTX_load_verify_locations(tls_ctx, tls_cafile, NULL) != 1)
 	{
-	  remote_debug(__func__, "could not SSL_CTX_load_verify_locations");
-	  ERR_print_errors_fp(stderr);
+	  remote_error(__func__, "could not SSL_CTX_load_verify_locations");
+	  if((options & OPT_DAEMON) == 0)
+	    ERR_print_errors_fp(stderr);
 	  return -1;
 	}
       if((cert_names = SSL_load_client_CA_file(tls_cafile)) == NULL)
 	{
-	  remote_debug(__func__, "could not SSL_load_client_CA_file");
-	  ERR_print_errors_fp(stderr);
+	  remote_error(__func__, "could not SSL_load_client_CA_file");
+	  if((options & OPT_DAEMON) == 0)
+	    ERR_print_errors_fp(stderr);
 	  return -1;
 	}
       SSL_CTX_set_client_CA_list(tls_ctx, cert_names);
@@ -3435,7 +3554,7 @@ static int remoted_pidfile(void)
 {
   char buf[32];
   size_t len;
-  int fd, fd_flags = O_WRONLY | O_TRUNC | O_CREAT;
+  int fd, rc = -1, fd_flags = O_WRONLY | O_TRUNC | O_CREAT;
 
 #ifndef _WIN32 /* windows does not have getpid */
   pid_t pid = getpid();
@@ -3445,24 +3564,23 @@ static int remoted_pidfile(void)
 
   if((fd = open(pidfile, fd_flags, MODE_644)) == -1)
     {
-      remote_debug(__func__, "could not open %s: %s", pidfile, strerror(errno));
-      return -1;
+      remote_error(__func__, "could not open %s: %s", pidfile, strerror(errno));
+      goto done;
     }
 
   snprintf(buf, sizeof(buf), "%ld\n", (long)pid);
   len = strlen(buf);
   if(write_wrap(fd, buf, NULL, len) != 0)
     {
-      remote_debug(__func__, "could not write pid: %s", strerror(errno));
-      goto err;
+      remote_error(__func__, "could not write pid: %s", strerror(errno));
+      goto done;
     }
-  close(fd);
+  rc = 0;
 
-  return 0;
-
- err:
-  if(fd != -1) close(fd);
-  return -1;
+ done:
+  if(fd != -1)
+    close(fd);
+  return rc;
 }
 
 /*
@@ -3618,13 +3736,13 @@ static int kqueue_loop(void)
 #if defined(HAVE_EPOLL)
   if((epfd = epoll_create(1000)) == -1)
     {
-      remote_debug(__func__, "epoll_create failed: %s", strerror(errno));
+      remote_error(__func__, "epoll_create failed: %s", strerror(errno));
       return -1;
     }
 #else
   if((kqfd = kqueue()) == -1)
     {
-      remote_debug(__func__, "kqueue failed: %s", strerror(errno));
+      remote_error(__func__, "kqueue failed: %s", strerror(errno));
       return -1;
     }
 #endif
@@ -3650,6 +3768,9 @@ static int kqueue_loop(void)
 	return -1;
     }
   scfd = NULL;
+
+  /* print timestamps in debug/error messages */
+  in_loop = 1;
 
   /* main event loop */
   while(stop == 0)
@@ -3757,7 +3878,7 @@ static int kqueue_loop(void)
 	{
 	  if(errno == EINTR)
 	    continue;
-	  remote_debug(__func__, "epoll_wait failed: %s", strerror(errno));
+	  remote_error(__func__, "epoll_wait failed: %s", strerror(errno));
 	  return -1;
 	}
 #else
@@ -3771,7 +3892,7 @@ static int kqueue_loop(void)
 	{
 	  if(errno == EINTR)
 	    continue;
-	  remote_debug(__func__, "kevent failed: %s", strerror(errno));
+	  remote_error(__func__, "kevent failed: %s", strerror(errno));
 	  return -1;
 	}
 #endif
@@ -3837,6 +3958,9 @@ static int select_loop(void)
   sc_onechan_t *ocn;
   sc_mux_t *mux;
   sc_unit_t *scu;
+
+  /* print timestamps in debug/error messages */
+  in_loop = 1;
 
   while(stop == 0)
     {
@@ -4007,7 +4131,7 @@ static int select_loop(void)
 	{
 	  if(errno == EINTR || errno == EAGAIN)
 	    continue;
-	  remote_debug(__func__, "select failed: %s", strerror(errno));
+	  remote_error(__func__, "select failed: %s", strerror(errno));
 	  return -1;
 	}
 
@@ -4082,8 +4206,17 @@ static int remoted(int argc, char *argv[])
 {
   int i, rc = -1;
 
+#ifdef HAVE_PLEDGE
+  char buf[64];
+  size_t off = 0;
+#endif
+
 #ifdef HAVE_SIGACTION
   struct sigaction si_sa;
+#endif
+
+#ifdef HAVE_SETEUID
+  uid_t uid, euid;
 #endif
 
 #ifdef DMALLOC
@@ -4091,6 +4224,16 @@ static int remoted(int argc, char *argv[])
 #endif
 
   gettimeofday_wrap(&now);
+
+#ifdef HAVE_SETEUID
+  uid = getuid();
+  euid = geteuid();
+  if(euid != uid && seteuid(uid) != 0)
+    {
+      remote_error(__func__, "could not lower euid: %s", strerror(errno));
+      goto done;
+    }
+#endif
 
   for(i=0; i<2; i++)
     serversockets[i] = -1;
@@ -4107,25 +4250,63 @@ static int remoted(int argc, char *argv[])
     }
 #endif
 
-  /*
-   * check that specified directory exists, if we are going to provide
-   * per-instance unix domain sockets.
-   */
-  if(unix_dir != NULL && unixdomain_direxists() != 0)
+#ifdef OPT_CHROOT
+  if(chroot_dir != NULL && stat_direxists(chroot_dir, OPT_CHROOT) != 0)
     goto done;
+#endif
 
 #ifdef HAVE_OPENSSL
   if(tls_certfile != NULL)
     {
       SSL_library_init();
       SSL_load_error_strings();
-      if(remoted_tlsctx() != 0)
-	goto done;
     }
 #endif
 
 #ifdef HAVE_DAEMON
+  /*
+   * daemon:
+   *  - first param: do not chdir /
+   *  - second param: redirect stdio to /dev/null
+   */
   if((options & OPT_DAEMON) != 0 && daemon(1, 0) != 0)
+    goto done;
+#endif
+
+#ifdef OPT_CHROOT
+  if(chroot_dir != NULL)
+    {
+      if(euid != uid && seteuid(euid) != 0)
+	{
+	  remote_error(__func__, "could not raise euid: %s", strerror(errno));
+	  goto done;
+	}
+      if(chroot(chroot_dir) != 0 || chdir("/") != 0)
+	{
+	  remote_error(__func__, "could not chroot to %s: %s", chroot_dir,
+		       strerror(errno));
+	  goto done;
+	}
+    }
+#endif
+
+#ifdef HAVE_SETEUID
+  if(euid != uid && setuid(uid) != 0)
+    {
+      remote_error(__func__, "could not lower uid: %s", strerror(errno));
+      goto done;
+    }
+#endif
+
+  /*
+   * check that specified directory exists, if we are going to provide
+   * per-instance unix domain sockets.
+   */
+  if(unix_dir != NULL && stat_direxists(unix_dir, OPT_UNIXDIR) != 0)
+    goto done;
+
+#ifdef HAVE_OPENSSL
+  if(tls_certfile != NULL && remoted_tlsctx() != 0)
     goto done;
 #endif
 
@@ -4135,7 +4316,7 @@ static int remoted(int argc, char *argv[])
 #ifdef HAVE_SIGNAL
   if(signal(SIGPIPE, SIG_IGN) == SIG_ERR)
     {
-      remote_debug(__func__, "could not ignore SIGPIPE");
+      remote_error(__func__, "could not ignore SIGPIPE");
       goto done;
     }
 #endif
@@ -4146,7 +4327,7 @@ static int remoted(int argc, char *argv[])
   si_sa.sa_handler = remoted_sigaction;
   if(sigaction(SIGHUP, &si_sa, 0) == -1)
     {
-      remote_debug(__func__, "could not set sigaction for SIGHUP");
+      remote_error(__func__, "could not set sigaction for SIGHUP");
       goto done;
     }
 
@@ -4155,7 +4336,7 @@ static int remoted(int argc, char *argv[])
   si_sa.sa_handler = remoted_sigaction;
   if(sigaction(SIGINT, &si_sa, 0) == -1)
     {
-      remote_debug(__func__, "could not set sigaction for SIGINT");
+      remote_error(__func__, "could not set sigaction for SIGINT");
       goto done;
     }
 
@@ -4164,7 +4345,7 @@ static int remoted(int argc, char *argv[])
   si_sa.sa_handler = remoted_sigaction;
   if(sigaction(SIGTERM, &si_sa, 0) == -1)
     {
-      remote_debug(__func__, "could not set sigaction for SIGTERM");
+      remote_error(__func__, "could not set sigaction for SIGTERM");
       goto done;
     }
 #endif
@@ -4177,6 +4358,39 @@ static int remoted(int argc, char *argv[])
      (mxlist = dlist_alloc()) == NULL ||
      metadata_load() != 0)
     goto done;
+
+#ifdef HAVE_UNVEIL
+  if(unveil_wrap(unix_dir, "crwx") != 0 || /* bind, unlink, chmod */
+     unveil_wrap(pidfile, "c") != 0 || /* unlink */
+     unveil_wrap(muxsocket_name, "c") != 0 || /* unlink */
+#ifdef HAVE_OPENSSL
+     unveil_wrap(tls_certfile, "r") != 0 || /* open */
+     unveil_wrap(tls_privfile, "r") != 0 || /* open */
+     unveil_wrap(tls_cafile, "r") != 0 || /* open */
+#endif
+     unveil_wrap(metadata_file, "r") != 0) /* open */
+    goto done;
+  unveil(NULL, NULL);
+#endif
+
+#ifdef HAVE_PLEDGE
+  /*
+   * always claim cpath so that we can unlink sockets.
+   *
+   * any unix domain sockets placed in unix_dir will have chmod called
+   * on them, even without using -O allowgroup or -O allowother.  in
+   * that case, the sockets are set to 700.  this is why we always
+   * need fattr when -U is used.
+   */
+  string_concat(buf, sizeof(buf), &off, "stdio inet rpath cpath");
+  if(unix_dir != NULL)
+    string_concat(buf, sizeof(buf), &off, " unix fattr");
+  if(pledge(buf, NULL) != 0)
+    {
+      remote_error(__func__, "could not pledge: %s", strerror(errno));
+      goto done;
+    }
+#endif
 
 #if defined(HAVE_EPOLL)
   if((flags & FLAG_SELECT) == 0)

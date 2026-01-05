@@ -1,7 +1,7 @@
 /*
  * fuzz_warts : fuzzer for reading warts
  *
- * $Id: fuzz_warts.c,v 1.3 2024/09/23 09:47:28 mjl Exp $
+ * $Id: fuzz_warts.c,v 1.4 2025/12/14 02:39:49 mjl Exp $
  *
  *        Marcus Luckie, Matthew Luckie
  *        mjl@luckie.org.nz
@@ -43,6 +43,7 @@
 #include "udpprobe/scamper_udpprobe.h"
 #include "tbit/scamper_tbit.h"
 #include "sting/scamper_sting.h"
+#include "owamp/scamper_owamp.h"
 
 static void check(const char *filename)
 {
@@ -90,6 +91,8 @@ static void check(const char *filename)
 	  scamper_http_free(obj_data); break;
 	case SCAMPER_FILE_OBJ_UDPPROBE:
 	  scamper_udpprobe_free(obj_data); break;
+	case SCAMPER_FILE_OBJ_OWAMP:
+	  scamper_owamp_free(obj_data); break;
 	}
     }
 

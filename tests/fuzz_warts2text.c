@@ -1,7 +1,7 @@
 /*
  * fuzz_warts2text : fuzzer for reading warts and converting to text
  *
- * $Id: fuzz_warts2text.c,v 1.3 2025/05/18 03:39:53 mjl Exp $
+ * $Id: fuzz_warts2text.c,v 1.4 2025/12/14 02:37:22 mjl Exp $
  *
  *        Marcus Luckie, Matthew Luckie
  *        mjl@luckie.org.nz
@@ -43,6 +43,7 @@
 #include "trace/scamper_trace.h"
 #include "tracelb/scamper_tracelb.h"
 #include "udpprobe/scamper_udpprobe.h"
+#include "owamp/scamper_owamp.h"
 
 static void check(const char *filename)
 {
@@ -121,6 +122,10 @@ static void check(const char *filename)
 
 	case SCAMPER_FILE_OBJ_UDPPROBE:
 	  scamper_udpprobe_free(obj_data);
+	  break;
+
+	case SCAMPER_FILE_OBJ_OWAMP:
+	  scamper_owamp_free(obj_data);
 	  break;
 	}
 
