@@ -60,10 +60,12 @@ jobs:
     strategy:
       matrix:
         include:
-          - runner: macos-latest
+          - runner: macos-14
             platform: darwin-arm64
-          - runner: macos-13
-            platform: darwin-amd64
+          - runner: macos-15
+            platform: darwin-arm64
+          - runner: macos-26
+            platform: darwin-arm64
     runs-on: ${{ matrix.runner }}
     steps:
       # SETUP
