@@ -1,7 +1,7 @@
 /*
  * libscamperctrl
  *
- * $Id: libscamperctrl.h,v 1.27 2025/09/04 05:28:05 mjl Exp $
+ * $Id: libscamperctrl.h,v 1.28 2025/12/18 00:11:09 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -73,6 +73,8 @@ const char *scamper_ctrl_strerror(const scamper_ctrl_t *ctrl);
  * functions for interacting with a sc_remoted multiplexor socket
  */
 scamper_mux_t *scamper_mux_add(scamper_ctrl_t *ctrl, const char *path);
+scamper_mux_t *scamper_mux_add_inet(scamper_ctrl_t *ctrl, const char *ip,
+				    uint16_t port);
 void scamper_mux_free(scamper_mux_t *mux);
 
 /*

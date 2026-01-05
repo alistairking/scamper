@@ -8,6 +8,7 @@ include cscamper_host.pxd
 include cscamper_http.pxd
 include cscamper_icmpext.pxd
 include cscamper_list.pxd
+include cscamper_owamp.pxd
 include cscamper_neighbourdisc.pxd
 include cscamper_ping.pxd
 include cscamper_sniff.pxd

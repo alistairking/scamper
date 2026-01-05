@@ -3,7 +3,7 @@
  *
  * the warts file format
  *
- * $Id: scamper_file_warts.c,v 1.286 2025/05/05 03:32:38 mjl Exp $
+ * $Id: scamper_file_warts.c,v 1.287 2025/12/04 08:11:00 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -66,6 +66,8 @@
 #include "http/scamper_http_warts.h"
 #include "udpprobe/scamper_udpprobe.h"
 #include "udpprobe/scamper_udpprobe_warts.h"
+#include "owamp/scamper_owamp.h"
+#include "owamp/scamper_owamp_warts.h"
 
 #include "mjl_splaytree.h"
 #include "mjl_list.h"
@@ -2346,6 +2348,7 @@ int scamper_file_warts_read(scamper_file_t *sf,
     (warts_obj_read_t)scamper_file_warts_host_read,
     (warts_obj_read_t)scamper_file_warts_http_read,
     (warts_obj_read_t)scamper_file_warts_udpprobe_read,
+    (warts_obj_read_t)scamper_file_warts_owamp_read,
   };
   warts_state_t   *state = scamper_file_getstate(sf);
   warts_hdr_t      hdr;

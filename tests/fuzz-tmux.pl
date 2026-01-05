@@ -55,6 +55,7 @@ my %fuzzers;
 $fuzzers{"cmd_dealias"}  = [0, "cmd_dealias"];
 $fuzzers{"cmd_host"}     = [0, "cmd_host"];
 $fuzzers{"cmd_http"}     = [0, "cmd_http"];
+$fuzzers{"cmd_owamp"}    = [0, "cmd_owamp"];
 $fuzzers{"cmd_ping"}     = [0, "cmd_ping"];
 $fuzzers{"cmd_sniff"}    = [0, "cmd_sniff"];
 $fuzzers{"cmd_tbit"}     = [0, "cmd_tbit"];

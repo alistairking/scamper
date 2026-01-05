@@ -6,13 +6,13 @@
 .\"
 .\" Copyright (c) 2007-2011 University of Waikato
 .\" Copyright (c) 2012-2015 The Regents of the University of California
-.\" Copyright (c) 2015-2024 Matthew Luckie
-.\" Copyright (c) 2024      The Regents of the University of California
+.\" Copyright (c) 2015-2025 Matthew Luckie
+.\" Copyright (c) 2024-2026 The Regents of the University of California
 .\"                         All rights reserved
 .\"
-.\" $Id: scamper.1,v 1.160 2025/10/02 07:06:32 mjl Exp $
+.\" $Id: scamper.1,v 1.162 2026/01/04 02:17:53 mjl Exp $
 .\"
-.Dd October 2, 2025
+.Dd January 4, 2026
 .Dt SCAMPER 1
 .Os
 .\""""""""""""
@@ -50,7 +50,8 @@ packets-per-second rate.  Currently,
 .Nm
 supports the well-known traceroute and ping techniques, DNS,
 as well as MDA traceroute, six different alias resolution techniques,
-most tbit methods, sting, neighbour discovery, HTTP(S), and UDP probes.
+most tbit methods, sting, neighbour discovery, HTTP(S), UDP probes,
+and OWAMP.
 .Pp
 .Nm
 has five modes of operation.
@@ -129,6 +130,10 @@ perform an HTTP request.
 .It
 .Sy host:
 issue simple DNS queries to a domain name server.
+.It
+.Sy owamp:
+conduct a one-way active measurement with a system that implements
+OWAMP.
 .It
 .Sy neighbourdisc:
 issue an IPv4 ARP or IPv6 Neighbour discovery query to determine the
@@ -1364,6 +1369,88 @@ By default, a value of 2 seconds is used.
 specifies the minimum time to wait, in seconds, between sending
 consecutive probes.
 By default, a value of 1 second is used.
+.El
+.\""""""""""""
+.Sh OWAMP OPTIONS
+The owamp command is used to send UDP packets as part of an OWAMP measurement.
+The following options are available for the
+.Nm
+owamp command:
+.Pp
+owamp
+.\"owamp [-c count] [-d dir] [-D dscp] [-i sched] [-m ttl] [-O option] [-s size] [-U userid] [-w wait-timeout] [-@ start-time]"
+.Bk -words
+.Op Fl c Ar count
+.Op Fl d Ar dir
+.Op Fl D Ar dscp
+.Op Fl i Ar sched
+.Op Fl m Ar ttl
+.Op Fl O Ar option
+.Op Fl s Ar size
+.Op Fl U Ar userid
+.Op Fl w Ar wait-timeout
+.Op Fl @ Ar start-time
+.Ek
+.Bl -tag -width Ds
+.It Fl c Ar count
+specifies the number of probes to send before exiting.  By default,
+ten probes are sent.
+.It Fl d Ar dir
+specifies the direction of the measurement (tx or rx).  By default,
+probes are transmitted to the OWAMP server.
+.It Fl D Ar dscp
+specifies the six bits of the DSCP value to include in probes.  By default,
+a zero DSCP value is used.
+.It Fl i Ar sched
+specifies the schedule of probes.
+.Nm
+currently only supports a fixed intervals between probes.
+By default,
+.Nm
+sends packets at a fixed interval of 0.1 seconds.
+A schedule of 0.1,0.5 means to send a series of packets with a
+repeating alternating interval of 0.1s and 0.5s, such that the first
+four packets would be sent at 0.1, 0.6, 0.7, and 1.2 seconds after the
+measurement starts.
+.It Fl m Ar ttl
+specifies the initial TTL to use in transmitted probes.  By default, a
+value of 255 is used.  This option has no effect when the direction is
+rx, as OWAMP provides no way to communicate an initial TTL value to a
+server.
+.It Fl O Ar option
+specifies optional arguments to use.
+The current choices for this option are:
+.Bl -dash -offset 2n -compact -width 1n
+.It
+.Sy zero:
+specifies that the payload of each probe should be all zeroes.  This
+option has no effect when the direction is rx, as OWAMP provides no
+way to communicate information about payloads to a server.
+.El
+.It Fl s Ar size
+specifies the size of the probes to send.
+The probe size includes the length of the IP and UDP headers.
+The minimum size of packets for IPv4 and IPv6 measurements is 42 and 62
+bytes, respectively.
+By default, an OWAMP session uses minimum size packets.
+.It Fl U Ar userid
+specifies an unsigned integer to include with the data collected; the meaning
+of the user-id is entirely up to the user and has no effect on the behaviour
+of owamp.
+.It Fl w Ar wait-timeout
+specifies how long to wait for a probe to arrive before declaring it lost.
+By default this is two seconds.
+.It Fl @ Ar start-time
+specifies the time, in seconds since the Unix epoch, when the OWAMP
+measurement should begin.  Note that the first packet will be sent at
+the first specified interval after that time.
+By default,
+.Nm
+requests that the measurement starts one second after it sends the OWAMP
+Request-Session header.
+.Nm
+will reject startat times more than 1 second in the past, or more than
+10 seconds in the future.
 .El
 .\""""""""""""
 .Sh DATA COLLECTION FEATURES

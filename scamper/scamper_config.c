@@ -1,7 +1,7 @@
 /*
  * scamper_config.c
  *
- * $Id: scamper_config.c,v 1.9 2025/06/23 21:05:45 mjl Exp $
+ * $Id: scamper_config.c,v 1.10 2025/12/04 08:11:00 mjl Exp $
  *
  * Copyright (C) 2025 Matthew Luckie
  *
@@ -94,6 +94,14 @@ static int neighbourdisc_cb(const char *key_in, char *val, scamper_config_t *cf)
   return rc < 0 ? rc : 0;
 }
 
+static int owamp_cb(const char *key_in, char *val, scamper_config_t *cf)
+{
+  const char *key = key_in + 6;
+  int rc;
+  rc = check_enable(key_in, key, val, &cf->owamp_enable);
+  return rc < 0 ? rc : 0;
+}
+
 static int ping_cb(const char *key_in, char *val, scamper_config_t *cf)
 {
   const char *key = key_in + 5;
@@ -157,6 +165,7 @@ static int config_line(char *line, void *param)
     {"host.",           5, host_cb},
     {"http.",           5, http_cb},
     {"neighbourdisc.", 14, neighbourdisc_cb},
+    {"owamp.",          6, owamp_cb},
     {"ping.",           5, ping_cb},
     {"sniff.",          6, sniff_cb},
     {"sting.",          6, sting_cb},
@@ -252,6 +261,7 @@ static scamper_config_t *config_alloc(void)
   cf->host_enable = 1;
   cf->neighbourdisc_enable = 1;
   cf->sniff_enable = 1;
+  cf->owamp_enable = 1;
 
   return cf;
 

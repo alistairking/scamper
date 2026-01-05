@@ -1,7 +1,7 @@
 /*
  * libscamperctrl
  *
- * $Id: libscamperctrl.c,v 1.94 2025/09/04 05:28:05 mjl Exp $
+ * $Id: libscamperctrl.c,v 1.98 2025/12/30 18:26:57 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -445,6 +445,42 @@ static int unix_fd(const char *path, char *err, size_t errlen)
   return -1;
 }
 #endif
+
+static int inet_fd(const struct sockaddr *sa, char *err, size_t errlen)
+{
+  socklen_t sl;
+
+#ifndef _WIN32 /* type: int vs SOCKET */
+  int fd = -1;
+#else
+  SOCKET fd = INVALID_SOCKET;
+#endif
+
+  fd = socket(sa->sa_family, SOCK_STREAM, IPPROTO_TCP);
+  if(socket_isinvalid(fd))
+    {
+      snprintf(err, errlen, "could not create inet socket: %s",
+	       strerror(errno));
+      goto err;
+    }
+
+  if(sa->sa_family == AF_INET)
+    sl = sizeof(struct sockaddr_in);
+  else
+    sl = sizeof(struct sockaddr_in6);
+  if(connect(fd, sa, sl) != 0)
+    {
+      snprintf(err, errlen, "could not connect: %s", strerror(errno));
+      goto err;
+    }
+
+  return fd;
+
+ err:
+  if(socket_isvalid(fd))
+    socket_close(fd);
+  return socket_invalid();
+}
 
 static void tx_free(sc_tx_t *tx)
 {
@@ -1994,7 +2030,6 @@ scamper_inst_t *scamper_inst_inet(scamper_ctrl_t *ctrl,
 {
   struct sockaddr_storage sas;
   scamper_inst_t *inst = NULL;
-  socklen_t sl;
   char buf[256], attp_buf[512];
 
 #ifndef _WIN32 /* type: int vs SOCKET */
@@ -2018,32 +2053,14 @@ scamper_inst_t *scamper_inst_inet(scamper_ctrl_t *ctrl,
       goto err;
     }
   if(sas.ss_family == AF_INET)
-    {
-      sl = sizeof(struct sockaddr_in);
-      snprintf(buf, sizeof(buf), "%s:%d", addr, port);
-    }
+    snprintf(buf, sizeof(buf), "%s:%d", addr, port);
   else
-    {
-      sl = sizeof(struct sockaddr_in6);
-      snprintf(buf, sizeof(buf), "[%s]:%d", addr, port);
-    }
+    snprintf(buf, sizeof(buf), "[%s]:%d", addr, port);
 
   /* connect to the scamper instance and set non-blocking */
-  fd = socket(sas.ss_family, SOCK_STREAM, IPPROTO_TCP);
-  if(socket_isinvalid(fd))
-    {
-      snprintf(ctrl->err, sizeof(ctrl->err),
-	       "could not create inet socket: %s", strerror(errno));
-      goto err;
-    }
-  if(connect(fd, (struct sockaddr *)&sas, sl) != 0)
-    {
-      snprintf(ctrl->err, sizeof(ctrl->err),
-	       "could not connect: %s", strerror(errno));
-      goto err;
-    }
-
-  if(fd_nonblock(fd, ctrl->err, sizeof(ctrl->err)) != 0 ||
+  fd = inet_fd((struct sockaddr *)&sas, ctrl->err, sizeof(ctrl->err));
+  if(socket_isinvalid(fd) ||
+     fd_nonblock(fd, ctrl->err, sizeof(ctrl->err)) != 0 ||
      (inst = inst_alloc(ctrl, SCAMPER_INST_TYPE_INET, buf)) == NULL ||
      inst_set_fd(inst, &fd) != 0 ||
      inst_tx(inst, TX_TYPE_ATTACH, attp_buf) == NULL)
@@ -2222,7 +2239,11 @@ static int ctrl_wait_done(scamper_ctrl_t *ctrl, int rc)
   return rc;
 }
 
-scamper_mux_t *scamper_mux_add(scamper_ctrl_t *ctrl, const char *path)
+#ifndef _WIN32 /* type: int vs SOCKET */
+static scamper_mux_t *ctrl_mux_go(scamper_ctrl_t *ctrl, int fd)
+#else
+static scamper_mux_t *ctrl_mux_go(scamper_ctrl_t *ctrl, SOCKET fd)
+#endif
 {
   uint8_t buf[MUX_HDRLEN + 65536];
   scamper_mux_t *mux;
@@ -2230,7 +2251,6 @@ scamper_mux_t *scamper_mux_add(scamper_ctrl_t *ctrl, const char *path)
   uint32_t msg_len;
   uint16_t msg_type = 0;
   sc_fd_t *fdn = NULL;
-  int fd = -1;
 
   if((mux = malloc_zero(sizeof(scamper_mux_t))) == NULL ||
      (mux->vps = dlist_alloc()) == NULL ||
@@ -2239,8 +2259,6 @@ scamper_mux_t *scamper_mux_add(scamper_ctrl_t *ctrl, const char *path)
       snprintf(ctrl->err, sizeof(ctrl->err), "could not alloc mux");
       goto err;
     }
-  if((fd = unix_fd(path, ctrl->err, sizeof(ctrl->err))) == -1)
-    goto err;
   mux->next_chan = 1;
 
   /* read until we get a go message */
@@ -2255,7 +2273,7 @@ scamper_mux_t *scamper_mux_add(scamper_ctrl_t *ctrl, const char *path)
 	  goto err;
 	}
 
-      /* read until we have at least a 6 byte header */
+      /* read until we have at least a header */
       if((rc = recv(fd, buf + off, sizeof(buf) - off, 0)) <= 0)
 	{
 	  if(rc == 0)
@@ -2267,7 +2285,7 @@ scamper_mux_t *scamper_mux_add(scamper_ctrl_t *ctrl, const char *path)
 	}
       off += rc;
 
-      while(off >= 6)
+      while(off >= MUX_HDRLEN)
 	{
 	  /*
 	   * make sure we're dealing with channel zero, the message is
@@ -2287,7 +2305,10 @@ scamper_mux_t *scamper_mux_add(scamper_ctrl_t *ctrl, const char *path)
 	  if((msg_type = bytes_ntohs(buf + MUX_HDRLEN)) == MUX_VP_UPDATE)
 	    {
 	      if(mux_vp_update(mux, buf + MUX_HDRLEN + 2, msg_len - 2) != 0)
-		goto err;
+		{
+		  snprintf(ctrl->err, sizeof(ctrl->err), "mux_vp_update failed");
+		  goto err;
+		}
 	    }
 
 	  /* shuffle any buffered data */
@@ -2329,7 +2350,10 @@ scamper_mux_t *scamper_mux_add(scamper_ctrl_t *ctrl, const char *path)
   fdn = NULL;
 
   if(dlist_tail_push(ctrl->muxs, mux) == NULL)
-    goto err;
+    {
+      snprintf(ctrl->err, sizeof(ctrl->err), "could not add to mux list");
+      goto err;
+    }
   mux->ctrl = ctrl;
 
   return mux;
@@ -2339,6 +2363,38 @@ scamper_mux_t *scamper_mux_add(scamper_ctrl_t *ctrl, const char *path)
   if(fdn != NULL) fd_free(fdn);
   if(mux != NULL) mux_free(mux);
   return NULL;
+}
+
+scamper_mux_t *scamper_mux_add_inet(scamper_ctrl_t *ctrl, const char *addr,
+				    uint16_t port)
+{
+  struct sockaddr_storage sas;
+
+#ifndef _WIN32 /* type: int vs SOCKET */
+  int fd;
+#else
+  SOCKET fd;
+#endif
+
+  if(sa_fromstr((struct sockaddr *)&sas, addr, port) != 0)
+    {
+      snprintf(ctrl->err, sizeof(ctrl->err), "could not resolve");
+      return NULL;
+    }
+
+  fd = inet_fd((struct sockaddr *)&sas, ctrl->err, sizeof(ctrl->err));
+  if(socket_isinvalid(fd))
+    return NULL;
+
+  return ctrl_mux_go(ctrl, fd);
+}
+
+scamper_mux_t *scamper_mux_add(scamper_ctrl_t *ctrl, const char *path)
+{
+  int fd;
+  if((fd = unix_fd(path, ctrl->err, sizeof(ctrl->err))) == -1)
+    return NULL;
+  return ctrl_mux_go(ctrl, fd);
 }
 
 void scamper_mux_free(scamper_mux_t *mux)

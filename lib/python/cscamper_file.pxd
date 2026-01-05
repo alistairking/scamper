@@ -45,6 +45,7 @@ cdef extern from "scamper_file.h":
  cdef uint16_t SCAMPER_FILE_OBJ_HOST
  cdef uint16_t SCAMPER_FILE_OBJ_HTTP
  cdef uint16_t SCAMPER_FILE_OBJ_UDPPROBE
+ cdef uint16_t SCAMPER_FILE_OBJ_OWAMP
 
  ctypedef int (*scamper_file_readfunc_t)(void *param,
 				         uint8_t **data, size_t len)
