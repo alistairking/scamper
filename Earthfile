@@ -78,6 +78,7 @@ build-multiarch-debian:
                   --release=trixie \
                   --release=bookworm \
                   --release=bullseye
+
 build-multiarch-ubuntu:
         BUILD \
               --platform=linux/arm/v7 \
@@ -88,12 +89,19 @@ build-multiarch-ubuntu:
                   --release=noble \
                   --release=jammy \
                   --release=focal
+
 build-multiarch-alpine:
         BUILD \
               --platform=linux/arm/v7 \
               --platform=linux/arm64 \
               --platform=linux/amd64 \
               +build --base=alpine
+
+build-multiarch:
+        BUILD +build-multiarch-debian
+        BUILD +build-multiarch-ubuntu
+        BUILD +build-multiarch-alpine
+
 
 # TODO: fix
 dist:
