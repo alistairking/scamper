@@ -8,6 +8,11 @@ base-debian:
         FROM debian:${release}-slim
         WORKDIR /scamper
 
+base-ubuntu:
+        ARG release=focal
+        FROM ubuntu:${release}-slim
+        WORKDIR /scamper
+
 base-alpine:
         FROM alpine:latest
         WORKDIR /scamper
@@ -15,6 +20,15 @@ base-alpine:
 deps-debian:
         ARG release
         FROM +base-debian --release=${release}
+        RUN apt-get update && \
+            apt-get install -y \
+                    build-essential \
+                    autoconf \
+                    libtool
+
+deps-ubuntu:
+        ARG release
+        FROM +base-ubuntu --release=${release}
         RUN apt-get update && \
             apt-get install -y \
                     build-essential \
