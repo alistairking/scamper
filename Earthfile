@@ -10,7 +10,7 @@ base-debian:
 
 base-ubuntu:
         ARG release=focal
-        FROM ubuntu:${release}-slim
+        FROM ubuntu:${release}
         WORKDIR /scamper
 
 base-alpine:
