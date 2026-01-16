@@ -8,6 +8,11 @@ base-debian:
         FROM debian:${release}-slim
         WORKDIR /scamper
 
+base-ubuntu:
+        ARG release=focal
+        FROM ubuntu:${release}
+        WORKDIR /scamper
+
 base-alpine:
         FROM alpine:latest
         WORKDIR /scamper
@@ -15,6 +20,15 @@ base-alpine:
 deps-debian:
         ARG release
         FROM +base-debian --release=${release}
+        RUN apt-get update && \
+            apt-get install -y \
+                    build-essential \
+                    autoconf \
+                    libtool
+
+deps-ubuntu:
+        ARG release
+        FROM +base-ubuntu --release=${release}
         RUN apt-get update && \
             apt-get install -y \
                     build-essential \
@@ -54,22 +68,38 @@ build:
         SAVE ARTIFACT scamper/scamper ${baserelease}/${TARGETPLATFORM}/scamper \
              AS LOCAL ./build/${baserelease}/${TARGETPLATFORM}/scamper
 
+build-debian:
+        BUILD \
+              +build \
+                --base=debian \
+                  --release=trixie \
+                  --release=bookworm \
+                  --release=bullseye
+
+build-ubuntu:
+        BUILD \
+              +build \
+                --base=ubuntu \
+                  --release=noble \
+                  --release=jammy \
+                  --release=focal
+
+build-alpine:
+        BUILD +build --base=alpine
+
 build-multiarch:
-        BUILD \
-              --platform=linux/arm/v7 \
+        BUILD --platform=linux/arm/v7 \
               --platform=linux/arm64 \
               --platform=linux/amd64 \
-              +build --base=debian --release=bullseye
-        BUILD \
-              --platform=linux/arm/v7 \
+                +build-debian
+        BUILD --platform=linux/arm/v7 \
               --platform=linux/arm64 \
               --platform=linux/amd64 \
-              +build --base=debian --release=bookworm
-        BUILD \
-              --platform=linux/arm/v7 \
+                +build-ubuntu
+        BUILD --platform=linux/arm/v7 \
               --platform=linux/arm64 \
               --platform=linux/amd64 \
-              +build --base=alpine
+                +build-alpine
 
 # TODO: fix
 dist:
