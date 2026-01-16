@@ -8,13 +8,11 @@ on:
 jobs:
   build-multiarch:
     name: Build (multiarch)
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
     strategy:
       matrix:
-        include:
-          - os: debian
-          - os: ubuntu
-          - os: alpine
+        - os: [debian, ubuntu, alpine]
+        - runner: [ubuntu-latest, ubuntu-latest-arm]
     steps:
       # SETUP
       - name: Checkout code
