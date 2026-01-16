@@ -36,7 +36,7 @@ jobs:
       - name: Archive compiled binaries
         uses: actions/upload-artifact@v4
         with:
-          name: scamper-build-multiarch
+          name: scamper-build-multiarch-${{ matrix.os }}
           path: build/**/scamper
   
   build-packages:
