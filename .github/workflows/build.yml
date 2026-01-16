@@ -28,13 +28,13 @@ jobs:
 
       - name: Build binaries
         run: |
-          earthly +build-multiarch-${{ matrix.os }}
+          earthly +build-${{ matrix.os }}
 
       # STORE BINARIES
       - name: Archive compiled binaries
         uses: actions/upload-artifact@v4
         with:
-          name: scamper-build-multiarch-${{ matrix.os }}
+          name: scamper-build-multiarch-${{ matrix.os }}-${{ matrix.runner }}
           path: build/**/scamper
   
   build-packages:
