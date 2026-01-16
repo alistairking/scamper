@@ -153,6 +153,8 @@ jobs:
             # the platform variable will result in "linux-x86"
             dir_name=$(dirname "$file")
             platform=${dir_name#./scamper-build-}
+            
+            platform=${platform//\//-}
 
             # Copy only the specific binary file and rename it accordingly
             cp "$file" "scamper-$platform"
