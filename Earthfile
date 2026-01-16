@@ -68,7 +68,7 @@ build:
         SAVE ARTIFACT scamper/scamper ${baserelease}/${TARGETPLATFORM}/scamper \
              AS LOCAL ./build/${baserelease}/${TARGETPLATFORM}/scamper
 
-build-multiarch:
+build-multiarch-debian:
         BUILD \
               --platform=linux/arm/v7 \
               --platform=linux/arm64 \
@@ -78,6 +78,7 @@ build-multiarch:
                   --release=trixie \
                   --release=bookworm \
                   --release=bullseye
+build-multiarch-ubuntu:
         BUILD \
               --platform=linux/arm/v7 \
               --platform=linux/arm64 \
@@ -87,6 +88,7 @@ build-multiarch:
                   --release=noble \
                   --release=jammy \
                   --release=focal
+build-multiarch-alpine:
         BUILD \
               --platform=linux/arm/v7 \
               --platform=linux/arm64 \
