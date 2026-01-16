@@ -146,15 +146,14 @@ jobs:
         uses: actions/download-artifact@v4
       - name: Organize things
         run: |
+          ls -alhR ./scamper-build-*
           # Iterate directly through directories matching the scamper-build-* pattern
           for file in $(find ./scamper-build-* -type f -name scamper); do
-            # Extract the platform name from the directory path
-            # Example: if path is ./scamper-build-linux-x86/scamper,
-            # the platform variable will result in "linux-x86"
-            dir_name=$(dirname "$file")
-            platform=${dir_name#./scamper-build-}
-            
-            platform=${platform//\//-}
+            # Get the path to the folder containing the file (e.g., ./scamper-build-macos-14/darwin-arm64)
+            dir_path=$(dirname "$file")
+          
+            # Extract only the last directory name (e.g., darwin-arm64)
+            platform=$(basename "$dir_path")
 
             # Copy only the specific binary file and rename it accordingly
             cp "$file" "scamper-$platform"
