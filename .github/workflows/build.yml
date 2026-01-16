@@ -9,10 +9,16 @@ jobs:
   build-multiarch:
     name: Build (multiarch)
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - os: debian
+          - os: ubuntu
+          - od: alpine
     steps:
       # SETUP
       - name: Checkout code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
       - name: Setup Earthly
         uses: earthly/actions/setup-earthly@v1
       - name: Set up QEMU
@@ -24,7 +30,7 @@ jobs:
 
       - name: Build binaries
         run: |
-          earthly +build-multiarch
+          earthly +build-multiarch-${{ matrix.os }}
 
       # STORE BINARIES
       - name: Archive compiled binaries
@@ -32,17 +38,22 @@ jobs:
         with:
           name: scamper-build-multiarch
           path: build/**/scamper
-
-      # DOCKER IMAGES
-      - name: Login to Docker Hub
-        uses: docker/login-action@v1
+  
+  build-packages:
+    name: Build packages
+    runs-on: ubuntu-latest
+    steps:
+      # SETUP
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Setup Earthly
+        uses: earthly/actions/setup-earthly@v1
+      - name: Set up QEMU
+        id: qemu
+        uses: docker/setup-qemu-action@v1
         with:
-          username: ${{ secrets.DOCKER_HUB_USERNAME }}
-          password: ${{ secrets.DOCKER_HUB_TOKEN }}
-      - name: Push docker image (branch-only)
-        run: |
-          earthly --push +docker-multiarch
-
+          image: tonistiigi/binfmt:latest
+          platforms: all
       # PACKAGES
       # TODO: fix version for branch builds
       # TODO: include man pages in docs
@@ -54,6 +65,16 @@ jobs:
         with:
           name: scamper-packages
           path: pkg/*
+      
+      # DOCKER IMAGES
+      - name: Login to Docker Hub
+        uses: docker/login-action@v1
+        with:
+          username: ${{ secrets.DOCKER_HUB_USERNAME }}
+          password: ${{ secrets.DOCKER_HUB_TOKEN }}
+      - name: Push docker image (branch-only)
+        run: |
+          earthly --push +docker-multiarch
 
   build-macos:
     name: Build (macos)
@@ -119,6 +140,7 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - build-multiarch
+      - build-packages
       - build-macos
       - docs
     steps:
