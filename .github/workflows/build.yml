@@ -149,14 +149,17 @@ jobs:
           ls -alhR ./scamper-build-*
           # Iterate directly through directories matching the scamper-build-* pattern
           for file in $(find ./scamper-build-* -type f -name scamper); do
-            # Get the path to the folder containing the file (e.g., ./scamper-build-macos-14/darwin-arm64)
+            # 1. Get the directory path (e.g., ./scamper-build-multiarch-debian-ubuntu-latest/debian/bookworm/linux/amd64)
             dir_path=$(dirname "$file")
-          
-            # Extract only the last directory name (e.g., darwin-arm64)
-            platform=$(basename "$dir_path")
 
-            # Copy only the specific binary file and rename it accordingly
-            cp "$file" "scamper-$platform"
+            # 2. Remove the prefix "./scamper-build-[something]-" 
+            # This handles both "macos-14-..." and "multiarch-..." prefixes
+            # It looks for the first dash after 'build' and takes everything after it
+            platform_raw=${dir_path#./scamper-build-*[0-9a-z]-}
+          
+            # 3. If it's a simple macos build, the above might leave the full name. 
+            # We ensure any slashes are converted to dashes.
+            platform=${platform_raw//\//-}
           
             echo "Copied: scamper-$platform"
           done
