@@ -68,40 +68,38 @@ build:
         SAVE ARTIFACT scamper/scamper ${baserelease}/${TARGETPLATFORM}/scamper \
              AS LOCAL ./build/${baserelease}/${TARGETPLATFORM}/scamper
 
-build-multiarch-debian:
+build-debian:
         BUILD \
-              --platform=linux/arm/v7 \
-              --platform=linux/arm64 \
-              --platform=linux/amd64 \
               +build \
                 --base=debian \
                   --release=trixie \
                   --release=bookworm \
                   --release=bullseye
 
-build-multiarch-ubuntu:
+build-ubuntu:
         BUILD \
-              --platform=linux/arm/v7 \
-              --platform=linux/arm64 \
-              --platform=linux/amd64 \
               +build \
                 --base=ubuntu \
                   --release=noble \
                   --release=jammy \
                   --release=focal
 
-build-multiarch-alpine:
-        BUILD \
-              --platform=linux/arm/v7 \
-              --platform=linux/arm64 \
-              --platform=linux/amd64 \
-              +build --base=alpine
+build-alpine:
+        BUILD +build --base=alpine
 
 build-multiarch:
-        BUILD +build-multiarch-debian
-        BUILD +build-multiarch-ubuntu
-        BUILD +build-multiarch-alpine
-
+        BUILD --platform=linux/arm/v7 \
+              --platform=linux/arm64 \
+              --platform=linux/amd64 \
+                +build-debian
+        BUILD --platform=linux/arm/v7 \
+              --platform=linux/arm64 \
+              --platform=linux/amd64 \
+                +build-ubuntu
+        BUILD --platform=linux/arm/v7 \
+              --platform=linux/arm64 \
+              --platform=linux/amd64 \
+                +build-alpine
 
 # TODO: fix
 dist:
