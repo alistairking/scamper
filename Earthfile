@@ -59,17 +59,20 @@ build-multiarch:
               --platform=linux/arm/v7 \
               --platform=linux/arm64 \
               --platform=linux/amd64 \
-              +build --base=debian --release=trixie
+              +build 
+                --base=debian
+                --release=trixie
+                --release=bookworm
+                --release=bullseye
         BUILD \
               --platform=linux/arm/v7 \
               --platform=linux/arm64 \
               --platform=linux/amd64 \
-              +build --base=debian --release=bullseye
-        BUILD \
-              --platform=linux/arm/v7 \
-              --platform=linux/arm64 \
-              --platform=linux/amd64 \
-              +build --base=debian --release=bookworm
+              +build 
+                --base=ubuntu
+                --release=noble
+                --release=jammy
+                --release=focal
         BUILD \
               --platform=linux/arm/v7 \
               --platform=linux/arm64 \
