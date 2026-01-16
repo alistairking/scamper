@@ -11,8 +11,8 @@ jobs:
     runs-on: ${{ matrix.runner }}
     strategy:
       matrix:
-        - os: [debian, ubuntu, alpine]
-        - runner: [ubuntu-latest, ubuntu-latest-arm]
+        os: [debian, ubuntu, alpine]
+        runner: [ubuntu-latest, ubuntu-latest-arm]
     steps:
       # SETUP
       - name: Checkout code
