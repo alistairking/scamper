@@ -59,6 +59,11 @@ build-multiarch:
               --platform=linux/arm/v7 \
               --platform=linux/arm64 \
               --platform=linux/amd64 \
+              +build --base=debian --release=trixie
+        BUILD \
+              --platform=linux/arm/v7 \
+              --platform=linux/arm64 \
+              --platform=linux/amd64 \
               +build --base=debian --release=bullseye
         BUILD \
               --platform=linux/arm/v7 \
