@@ -152,10 +152,11 @@ jobs:
             # 1. Get the directory path (e.g., ./scamper-build-multiarch-debian-ubuntu-latest/debian/bookworm/linux/amd64)
             dir_path=$(dirname "$file")
 
-            # 2. Remove the prefix "./scamper-build-[something]-" 
-            # This handles both "macos-14-..." and "multiarch-..." prefixes
-            # It looks for the first dash after 'build' and takes everything after it
-            platform_raw=${dir_path#./scamper-build-*[0-9a-z]-}
+            echo dir_path
+
+            # 2. Cut the first two parts ('.' and the build folder) and keep the rest
+            # Result: alpine/linux/amd64
+            platform_path=$(echo "$dir_path" | cut -d'/' -f3-)
           
             # 3. If it's a simple macos build, the above might leave the full name. 
             # We ensure any slashes are converted to dashes.
