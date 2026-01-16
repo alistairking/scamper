@@ -149,18 +149,13 @@ jobs:
           ls -alhR ./scamper-build-*
           # Iterate directly through directories matching the scamper-build-* pattern
           for file in $(find ./scamper-build-* -type f -name scamper); do
-            echo "file: '$file'"
             # 1. Get the directory path (e.g., ./scamper-build-multiarch-debian-ubuntu-latest/debian/bookworm/linux/amd64)
             dir_path=$(dirname "$file")
         
-            echo "dir_path: '$dir_path'"
-
             # 2. Cut the first two parts ('.' and the build folder) and keep the rest
             # Result: alpine/linux/amd64
             platform_path=$(echo "$dir_path" | cut -d'/' -f3-)
 
-            echo "platform_path: '$platform_path'"
-          
             # 3. If it's a simple macos build, the above might leave the full name. 
             # We ensure any slashes are converted to dashes.
             platform=${platform_path//\//-}
