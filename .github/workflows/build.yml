@@ -14,7 +14,7 @@ jobs:
         include:
           - os: debian
           - os: ubuntu
-          - od: alpine
+          - os: alpine
     steps:
       # SETUP
       - name: Checkout code
