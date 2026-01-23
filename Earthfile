@@ -6,7 +6,6 @@ all:
 deps-debian:
         ARG --required release
         FROM debian:${release}-slim
-        WORKDIR /scamper
         RUN apt-get update && \
             apt-get install -y \
                     build-essential \
@@ -16,7 +15,6 @@ deps-debian:
 deps-ubuntu:
         ARG --required release
         FROM ubuntu:${release}
-        WORKDIR /scamper
         RUN apt-get update && \
             apt-get install -y \
                     build-essential \
@@ -32,17 +30,14 @@ deps-el:
             FROM oraclelinux:9
         END
         RUN \
-            if grep -iq "el-8" /etc/os-release ; then \
-              sed -i 's/^mirrorlist/#mirrorlist/g' /etc/yum.repos.d/CentOS-Linux-* \
-              sed -i 's|#baseurl=http://mirror.centos.org|baseurl=https://vault.centos.org|g' /etc/yum.repos.d/CentOS-Linux-* \
-              dnf install -y dnf-plugins-core \
-              dnf config-manager --set-enabled powertools \
-            elif grep -iq "el-9" /etc/os-release ; then \
-              dnf install -y dnf-plugins-core \
-              dnf config-manager --set-enabled crb \
+            if grep -iq "el8" /etc/os-release ; then \
+              sed -i 's/^mirrorlist/#mirrorlist/g' /etc/yum.repos.d/CentOS-Linux-* ; \
+              sed -i 's|#baseurl=http://mirror.centos.org|baseurl=https://vault.centos.org|g' /etc/yum.repos.d/CentOS-Linux-* ; \
+              dnf install -y dnf-plugins-core ; \
+              dnf config-manager --set-enabled powertools ; \
             else \
-              dnf install -y dnf-plugins-core \
-            fi \
+              dnf install -y dnf-plugins-core ; \
+            fi && \
             dnf update -y && \
             dnf install -y \
                 gcc \
@@ -57,7 +52,6 @@ deps-el:
 
 deps-alpine:
         FROM alpine:latest
-        WORKDIR /scamper
         RUN apk add --update \
              alpine-sdk \
              autoconf \
@@ -72,6 +66,7 @@ build:
         ARG EARTHLY_TARGET_TAG
         ARG EARTHLY_GIT_SHORT_HASH
         FROM +deps-${base} --release=${release}
+        WORKDIR /scamper
         COPY --dir --keep-ts \
              *.[ch] lib scamper tests utils configure.ac Makefile.am m4 set-version.sh \
              ./
