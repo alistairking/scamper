@@ -3,23 +3,10 @@ VERSION 0.8
 all:
         BUILD +build
 
-base-debian:
-        ARG release=bullseye
+deps-debian:
+        ARG --required release
         FROM debian:${release}-slim
         WORKDIR /scamper
-
-base-ubuntu:
-        ARG release=focal
-        FROM ubuntu:${release}
-        WORKDIR /scamper
-
-base-alpine:
-        FROM alpine:latest
-        WORKDIR /scamper
-
-deps-debian:
-        ARG release
-        FROM +base-debian --release=${release}
         RUN apt-get update && \
             apt-get install -y \
                     build-essential \
@@ -27,17 +14,51 @@ deps-debian:
                     libtool
 
 deps-ubuntu:
-        ARG release
-        FROM +base-ubuntu --release=${release}
+        ARG --required release
+        FROM ubuntu:${release}
+        WORKDIR /scamper
         RUN apt-get update && \
             apt-get install -y \
                     build-essential \
                     autoconf \
                     libtool
 
+deps-el:
+        ARG --required release
+        FROM alpine:latest
+        IF [ "$release" = "8]
+            FROM centos:8
+        ELSE
+            FROM oraclelinux:9
+        END
+        RUN \
+            if grep -iq "el-8" /etc/os-release ; then \
+              sed -i 's/^mirrorlist/#mirrorlist/g' /etc/yum.repos.d/CentOS-Linux-* \
+              sed -i 's|#baseurl=http://mirror.centos.org|baseurl=https://vault.centos.org|g' /etc/yum.repos.d/CentOS-Linux-* \
+              dnf install -y dnf-plugins-core \
+              dnf config-manager --set-enabled powertools \
+            elif grep -iq "el-9" /etc/os-release ; then \
+              dnf install -y dnf-plugins-core \
+              dnf config-manager --set-enabled crb \
+            else \
+              dnf install -y dnf-plugins-core \
+            fi \
+            dnf update -y && \
+            dnf install -y \
+                gcc \
+                gcc-c++ \
+                make \
+                autoconf \
+                automake \
+                libtool \
+                binutils \
+                glibc-devel \
+                pkgconf-pkg-config
+
+
 deps-alpine:
-        ARG release
-        FROM +base-alpine
+        FROM alpine:latest
+        WORKDIR /scamper
         RUN apk add --update \
              alpine-sdk \
              autoconf \
@@ -84,20 +105,27 @@ build-ubuntu:
                   --release=jammy \
                   --release=focal
 
+build-el:
+        BUILD \
+              +build \
+                --base=el \
+                  --release=8 \
+                  --release=9
+
 build-alpine:
         BUILD +build --base=alpine
 
 build-multiarch:
-        BUILD --platform=linux/arm/v7 \
-              --platform=linux/arm64 \
+        BUILD --platform=linux/arm64 \
               --platform=linux/amd64 \
                 +build-debian
-        BUILD --platform=linux/arm/v7 \
-              --platform=linux/arm64 \
+        BUILD --platform=linux/arm64 \
               --platform=linux/amd64 \
                 +build-ubuntu
-        BUILD --platform=linux/arm/v7 \
-              --platform=linux/arm64 \
+        BUILD --platform=linux/arm64 \
+              --platform=linux/amd64 \
+                +build-el
+        BUILD --platform=linux/arm64 \
               --platform=linux/amd64 \
                 +build-alpine
 
