@@ -26,7 +26,7 @@ deps-ubuntu:
 deps-el:
         ARG --required release
         FROM alpine:latest
-        IF [ "$release" = "8]
+        IF [ "$release" = "8 ]
             FROM centos:8
         ELSE
             FROM oraclelinux:9
@@ -54,7 +54,6 @@ deps-el:
                 binutils \
                 glibc-devel \
                 pkgconf-pkg-config
-
 
 deps-alpine:
         FROM alpine:latest
