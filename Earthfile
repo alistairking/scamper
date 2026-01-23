@@ -3,25 +3,35 @@ VERSION 0.8
 all:
         BUILD +build
 
-deps-debian:
+base-debian:
         ARG --required release
         FROM debian:${release}-slim
+        WORKDIR /scamper
+
+deps-debian:
+        ARG --required release
+        FROM +base-debian --release=${release}
         RUN apt-get update && \
             apt-get install -y \
                     build-essential \
                     autoconf \
                     libtool
+
+base-ubuntu:
+        ARG --required release
+        FROM ubuntu:${release}
+        WORKDIR /scamper
 
 deps-ubuntu:
         ARG --required release
-        FROM ubuntu:${release}
+        FROM +base-ubuntu --release=${release}
         RUN apt-get update && \
             apt-get install -y \
                     build-essential \
                     autoconf \
                     libtool
 
-deps-el:
+base-el:
         ARG --required release
         FROM alpine:latest
         IF [ "$release" = "8" ]
@@ -29,6 +39,11 @@ deps-el:
         ELSE
             FROM oraclelinux:9
         END
+        WORKDIR /scamper
+
+deps-el:
+        ARG --required release
+        FROM +base-el --release=${release}
         RUN \
             if grep -iq "el8" /etc/os-release ; then \
               sed -i 's/^mirrorlist/#mirrorlist/g' /etc/yum.repos.d/CentOS-Linux-* ; \
@@ -50,8 +65,12 @@ deps-el:
                 glibc-devel \
                 pkgconf-pkg-config
 
-deps-alpine:
+base-alpine:
         FROM alpine:latest
+        WORKDIR /scamper
+
+deps-alpine:
+        FROM +base-alpine
         RUN apk add --update \
              alpine-sdk \
              autoconf \
@@ -66,7 +85,6 @@ build:
         ARG EARTHLY_TARGET_TAG
         ARG EARTHLY_GIT_SHORT_HASH
         FROM +deps-${base} --release=${release}
-        WORKDIR /scamper
         COPY --dir --keep-ts \
              *.[ch] lib scamper tests utils configure.ac Makefile.am m4 set-version.sh \
              ./
