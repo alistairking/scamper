@@ -8,12 +8,8 @@ base-debian:
         FROM debian:${release}-slim
         WORKDIR /scamper
 
-base-alpine:
-        FROM alpine:latest
-        WORKDIR /scamper
-
 deps-debian:
-        ARG release
+        ARG --required release
         FROM +base-debian --release=${release}
         RUN apt-get update && \
             apt-get install -y \
@@ -21,8 +17,59 @@ deps-debian:
                     autoconf \
                     libtool
 
+base-ubuntu:
+        ARG --required release
+        FROM ubuntu:${release}
+        WORKDIR /scamper
+
+deps-ubuntu:
+        ARG --required release
+        FROM +base-ubuntu --release=${release}
+        RUN apt-get update && \
+            apt-get install -y \
+                    build-essential \
+                    autoconf \
+                    libtool
+
+base-el:
+        ARG --required release
+        FROM alpine:latest
+        IF [ "$release" = "8" ]
+            FROM centos:8
+        ELSE
+            FROM oraclelinux:9
+        END
+        WORKDIR /scamper
+
+deps-el:
+        ARG --required release
+        FROM +base-el --release=${release}
+        RUN \
+            if grep -iq "el8" /etc/os-release ; then \
+              sed -i 's/^mirrorlist/#mirrorlist/g' /etc/yum.repos.d/CentOS-Linux-* ; \
+              sed -i 's|#baseurl=http://mirror.centos.org|baseurl=https://vault.centos.org|g' /etc/yum.repos.d/CentOS-Linux-* ; \
+              dnf install -y dnf-plugins-core ; \
+              dnf config-manager --set-enabled powertools ; \
+            else \
+              dnf install -y dnf-plugins-core ; \
+            fi && \
+            dnf update -y && \
+            dnf install -y \
+                gcc \
+                gcc-c++ \
+                make \
+                autoconf \
+                automake \
+                libtool \
+                binutils \
+                glibc-devel \
+                pkgconf-pkg-config
+
+base-alpine:
+        FROM alpine:latest
+        WORKDIR /scamper
+
 deps-alpine:
-        ARG release
         FROM +base-alpine
         RUN apk add --update \
              alpine-sdk \
@@ -54,22 +101,45 @@ build:
         SAVE ARTIFACT scamper/scamper ${baserelease}/${TARGETPLATFORM}/scamper \
              AS LOCAL ./build/${baserelease}/${TARGETPLATFORM}/scamper
 
+build-debian:
+        BUILD \
+              +build \
+                --base=debian \
+                  --release=trixie \
+                  --release=bookworm \
+                  --release=bullseye
+
+build-ubuntu:
+        BUILD \
+              +build \
+                --base=ubuntu \
+                  --release=noble \
+                  --release=jammy \
+                  --release=focal
+
+build-el:
+        BUILD \
+              +build \
+                --base=el \
+                  --release=8 \
+                  --release=9
+
+build-alpine:
+        BUILD +build --base=alpine
+
 build-multiarch:
-        BUILD \
-              --platform=linux/arm/v7 \
-              --platform=linux/arm64 \
+        BUILD --platform=linux/arm64 \
               --platform=linux/amd64 \
-              +build --base=debian --release=bullseye
-        BUILD \
-              --platform=linux/arm/v7 \
-              --platform=linux/arm64 \
+                +build-debian
+        BUILD --platform=linux/arm64 \
               --platform=linux/amd64 \
-              +build --base=debian --release=bookworm
-        BUILD \
-              --platform=linux/arm/v7 \
-              --platform=linux/arm64 \
+                +build-ubuntu
+        BUILD --platform=linux/arm64 \
               --platform=linux/amd64 \
-              +build --base=alpine
+                +build-el
+        BUILD --platform=linux/arm64 \
+              --platform=linux/amd64 \
+                +build-alpine
 
 # TODO: fix
 dist:
