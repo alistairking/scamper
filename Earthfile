@@ -4,7 +4,7 @@ all:
         BUILD +build
 
 base-debian:
-        ARG --required release
+        ARG release=bullseye
         FROM debian:${release}-slim
         WORKDIR /scamper
 
