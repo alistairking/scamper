@@ -11,7 +11,7 @@ jobs:
     runs-on: ${{ matrix.runner }}
     strategy:
       matrix:
-        os: [debian, ubuntu, alpine]
+        os: [debian, ubuntu, el, alpine]
         runner: [ubuntu-latest, ubuntu-22.04-arm]
     steps:
       # SETUP
