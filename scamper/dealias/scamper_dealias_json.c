@@ -3,10 +3,10 @@
  *
  * Copyright (c) 2013      Matthew Luckie
  * Copyright (c) 2013-2014 The Regents of the University of California
- * Copyright (c) 2022-2025 Matthew Luckie
+ * Copyright (c) 2022-2026 Matthew Luckie
  * Author: Matthew Luckie
  *
- * $Id: scamper_dealias_json.c,v 1.31 2025/10/15 23:58:44 mjl Exp $
+ * $Id: scamper_dealias_json.c,v 1.32 2026/01/07 07:13:13 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -31,6 +31,7 @@
 #include "scamper_addr.h"
 #include "scamper_addr_int.h"
 #include "scamper_list.h"
+#include "scamper_list_int.h"
 #include "scamper_dealias.h"
 #include "scamper_dealias_int.h"
 #include "scamper_file.h"
@@ -191,6 +192,10 @@ static char *dealias_header_tostr(const scamper_dealias_t *dealias)
       string_concat_u8(buf, sizeof(buf), &off, ", \"attempts\":",
 		       bump->attempts);
     }
+
+  if(dealias->list != NULL && dealias->list->monitor != NULL)
+    string_concat3(buf, sizeof(buf), &off, ",\"monitor\":\"",
+		   json_esc(dealias->list->monitor, tmp, sizeof(tmp)), "\"");
 
   return strdup(buf);
 }
