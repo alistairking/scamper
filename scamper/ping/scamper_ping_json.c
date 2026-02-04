@@ -6,10 +6,10 @@
  * Copyright (c) 2011-2013 Internap Network Services Corporation
  * Copyright (c) 2013      Matthew Luckie
  * Copyright (c) 2013-2015 The Regents of the University of California
- * Copyright (c) 2019-2025 Matthew Luckie
+ * Copyright (c) 2019-2026 Matthew Luckie
  * Authors: Brian Hammond, Matthew Luckie
  *
- * $Id: scamper_ping_json.c,v 1.56 2025/10/15 23:47:47 mjl Exp $
+ * $Id: scamper_ping_json.c,v 1.57 2026/01/07 07:13:13 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -36,6 +36,7 @@
 #include "scamper_ifname.h"
 #include "scamper_ifname_int.h"
 #include "scamper_list.h"
+#include "scamper_list_int.h"
 #include "scamper_ping.h"
 #include "scamper_ping_int.h"
 #include "scamper_file.h"
@@ -158,6 +159,10 @@ static char *ping_header(const scamper_ping_t *ping)
 	}
       string_concatc(buf, sizeof(buf), &off, ']');
     }
+
+  if(ping->list != NULL && ping->list->monitor != NULL)
+    string_concat3(buf, sizeof(buf), &off, ",\"monitor\":\"",
+		   json_esc(ping->list->monitor, tmp, sizeof(tmp)), "\"");
 
   return strdup(buf);
 }

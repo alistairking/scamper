@@ -1,10 +1,10 @@
 /*
  * scamper_owamp_json.c
  *
- * Copyright (c) 2025 The Regents of the University of California
+ * Copyright (c) 2025-2026 The Regents of the University of California
  * Author: Matthew Luckie
  *
- * $Id: scamper_owamp_json.c,v 1.1 2025/12/04 08:11:00 mjl Exp $
+ * $Id: scamper_owamp_json.c,v 1.2 2026/01/07 07:13:13 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -28,6 +28,7 @@
 #include "scamper_addr.h"
 #include "scamper_addr_int.h"
 #include "scamper_list.h"
+#include "scamper_list_int.h"
 #include "scamper_owamp.h"
 #include "scamper_owamp_int.h"
 #include "scamper_file.h"
@@ -197,6 +198,10 @@ static char *owamp_header(const scamper_owamp_t *owamp)
   if(owamp->errmsg != NULL)
     string_concat3(buf, sizeof(buf), &off, ",\"errmsg\":\"",
 		   json_esc(owamp->errmsg, tmp, sizeof(tmp)), "\"");
+  if(owamp->list != NULL && owamp->list->monitor != NULL)
+    string_concat3(buf, sizeof(buf), &off, ",\"monitor\":\"",
+		   json_esc(owamp->list->monitor, tmp, sizeof(tmp)), "\"");
+  
   if(owamp->sched == NULL || owamp->schedc == 0)
     return strdup(buf);
 

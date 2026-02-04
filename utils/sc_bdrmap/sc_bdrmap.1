@@ -6,7 +6,7 @@
 .\" Copyright (c) 2016 The University of Waikato
 .\"                    All rights reserved
 .\"
-.\" $Id: sc_bdrmap.1,v 1.13 2024/09/16 08:55:36 mjl Exp $
+.\" $Id: sc_bdrmap.1,v 1.14 2026/01/15 20:01:07 mjl Exp $
 .\"
 .Dd September 16, 2024
 .Dt SC_BDRMAP 1
@@ -27,8 +27,8 @@
 .Op Fl o Ar output-file
 .Op Fl O Ar option
 .Op Fl p Ar port
-.Op Fl U Ar unix
-.Op Fl R Ar unix
+.Op Fl U Ar unix-local
+.Op Fl R Ar unix-remote
 .Op Fl S Ar srcaddr
 .Op Fl V Ar vpases
 .Op Fl x Ar ixp-file
@@ -216,15 +216,22 @@ is accepting control socket connections.
 .It Fl r Ar relationships-file
 specifies the AS relationships file which is used in the analysis phase
 to reason about who owns each router in the observed topology.
-.It Fl R Ar unix
+.It Fl R Ar unix-remote
 specifies the name of a unix domain socket where a remote
 .Xr scamper 1
 instance is accepting remote control socket connections.
+The unix-remote parameter can either be a unix domain socket for a single
+remote
+.Xr scamper 1
+instance, or be a
+.Xr sc_remoted 1
+mux socket with the name of the remote VP encoded after a trailing
+slash.
 .It Fl S Ar srcaddr
 specifies the source address that
 .Xr scamper 1
 should use in probes.
-.It Fl U Ar unix
+.It Fl U Ar unix-local
 specifies the name of a unix domain socket where a local
 .Xr scamper 1
 instance is accepting control socket connections.
