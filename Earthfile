@@ -202,7 +202,7 @@ pkg-fix:
 
 pkg:
         ARG base=debian
-        ARG release=bullseye
+        ARG release=${DEFAULT_RELEASE}
         FROM +base-debian
         COPY +pkg-fix/kentik-pkg /usr/bin/pkg
         ARG EARTHLY_TARGET_TAG
