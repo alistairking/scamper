@@ -1,10 +1,12 @@
 VERSION 0.8
 
+ARG --global DEFAULT_RELEASE=trixie
+
 all:
         BUILD +build
 
 base-debian:
-        ARG release=bullseye
+        ARG release=${DEFAULT_RELEASE}
         FROM debian:${release}-slim
         WORKDIR /scamper
 
@@ -81,7 +83,7 @@ deps-alpine:
 # TODO: figure out how to get this to cache properly
 build:
         ARG base=debian
-        ARG release=bullseye
+        ARG release=${DEFAULT_RELEASE}
         ARG EARTHLY_TARGET_TAG
         ARG EARTHLY_GIT_SHORT_HASH
         FROM +deps-${base} --release=${release}
@@ -152,7 +154,7 @@ dist:
 docker:
         ARG TARGETPLATFORM
         ARG base=debian
-        ARG release=bullseye
+        ARG release=${DEFAULT_RELEASE}
         FROM +base-${base}
         LET baserelease="${base}"
         LET relpath="${base}"
@@ -169,8 +171,8 @@ docker:
         LET base_latest=""
         LET latest=""
         IF [ "${EARTHLY_TARGET_TAG_DOCKER}" = "master" ]
-           # if the base is debian/bookworm, then make it the default
-           IF [ "${base}" = "debian" && "${release}" == "bookworm" ]
+           # if the base is debian/${DEFAULT_RELEASE}, then make it the default
+           IF [ "${base}" = "debian" && "${release}" = "${DEFAULT_RELEASE}" ]
               SET latest="${img}:latest"
            END
            # tag this as the latest image for this base
@@ -184,17 +186,10 @@ docker:
 
 docker-multiarch:
         BUILD \
-              --platform=linux/arm/v7 \
               --platform=linux/arm64 \
               --platform=linux/amd64 \
-              +docker --base=debian --release=bullseye
+              +docker --base=debian
         BUILD \
-              --platform=linux/arm/v7 \
-              --platform=linux/arm64 \
-              --platform=linux/amd64 \
-              +docker --base=debian --release=bookworm
-        BUILD \
-              --platform=linux/arm/v7 \
               --platform=linux/arm64 \
               --platform=linux/amd64 \
               +docker --base=alpine
@@ -207,7 +202,7 @@ pkg-fix:
 
 pkg:
         ARG base=debian
-        ARG release=bullseye
+        ARG release=${DEFAULT_RELEASE}
         FROM +base-debian
         COPY +pkg-fix/kentik-pkg /usr/bin/pkg
         ARG EARTHLY_TARGET_TAG
@@ -236,7 +231,6 @@ pkg-deb-rpm:
 # TODO: support bookworm/bullseye packages
 pkg-multiarch:
         BUILD \
-              --platform=linux/arm/v7 \
               --platform=linux/arm64 \
               --platform=linux/amd64 \
               +pkg-deb-rpm
