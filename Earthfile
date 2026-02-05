@@ -4,7 +4,7 @@ all:
         BUILD +build
 
 base-debian:
-        ARG release=bullseye
+        ARG release=trixie
         FROM debian:${release}-slim
         WORKDIR /scamper
 
@@ -81,7 +81,7 @@ deps-alpine:
 # TODO: figure out how to get this to cache properly
 build:
         ARG base=debian
-        ARG release=bullseye
+        ARG release=trixie
         ARG EARTHLY_TARGET_TAG
         ARG EARTHLY_GIT_SHORT_HASH
         FROM +deps-${base} --release=${release}
@@ -101,31 +101,65 @@ build:
         SAVE ARTIFACT scamper/scamper ${baserelease}/${TARGETPLATFORM}/scamper \
              AS LOCAL ./build/${baserelease}/${TARGETPLATFORM}/scamper
 
-build-debian:
+# Earthly has a bug so can't RUN without /bin/sh
+# https://github.com/earthly/earthly/issues/1097
+pkg-fix:
+        FROM kentik/pkg:latest
+        SAVE ARTIFACT /pkg kentik-pkg
+
+pkg:
+        ARG base=debian
+        ARG release=trixie
+        FROM +base-debian
+        COPY +pkg-fix/kentik-pkg /usr/bin/pkg
+        ARG EARTHLY_TARGET_TAG
+        ARG TARGETPLATFORM
+        ARG TARGETARCH
+        ARG TARGETVARIANT
+        ARG type=deb
+        ARG version="${EARTHLY_TARGET_TAG}"
+        ARG pkg_arch="${TARGETARCH}${TARGETVARIANT}"
+        COPY +build/${base}/${release}/${TARGETPLATFORM}/scamper ./
+        COPY package.yml ./
+        RUN rm -f *.${type}
+        RUN /usr/bin/pkg \
+            --name scamper \
+            --version ${version} \
+            --arch ${pkg_arch} \
+            --${type} \
+            package.yml
+        SAVE ARTIFACT scamper*.${type} \
+             AS LOCAL ./pkg/
+
+build-and-package:
+        BUILD --pass-args +build
+        BUILD --pass-args +pkg
+
+build-and-package-debian:
         BUILD \
-              +build \
+              +build-and-package \
                 --base=debian \
                   --release=trixie \
                   --release=bookworm \
                   --release=bullseye
 
-build-ubuntu:
+build-and-package-ubuntu:
         BUILD \
-              +build \
+              +build-and-package \
                 --base=ubuntu \
                   --release=noble \
                   --release=jammy \
                   --release=focal
 
-build-el:
+build-and-package-el:
         BUILD \
-              +build \
+              +build-and-package \
                 --base=el \
                   --release=8 \
                   --release=9
 
-build-alpine:
-        BUILD +build --base=alpine
+build-and-package-alpine:
+        BUILD +build-and-package --base=alpine
 
 build-multiarch:
         BUILD --platform=linux/arm64 \
@@ -152,7 +186,7 @@ dist:
 docker:
         ARG TARGETPLATFORM
         ARG base=debian
-        ARG release=bullseye
+        ARG release=trixie
         FROM +base-${base}
         LET baserelease="${base}"
         LET relpath="${base}"
@@ -169,8 +203,8 @@ docker:
         LET base_latest=""
         LET latest=""
         IF [ "${EARTHLY_TARGET_TAG_DOCKER}" = "master" ]
-           # if the base is debian/bookworm, then make it the default
-           IF [ "${base}" = "debian" && "${release}" == "bookworm" ]
+           # if the base is debian/trixie, then make it the default
+           IF [ "${base}" = "debian" && "${release}" == "trixie" ]
               SET latest="${img}:latest"
            END
            # tag this as the latest image for this base
@@ -184,50 +218,9 @@ docker:
 
 docker-multiarch:
         BUILD \
-              --platform=linux/arm/v7 \
               --platform=linux/arm64 \
               --platform=linux/amd64 \
-              +docker --base=debian --release=bullseye
-        BUILD \
-              --platform=linux/arm/v7 \
-              --platform=linux/arm64 \
-              --platform=linux/amd64 \
-              +docker --base=debian --release=bookworm
-        BUILD \
-              --platform=linux/arm/v7 \
-              --platform=linux/arm64 \
-              --platform=linux/amd64 \
-              +docker --base=alpine
-
-# Earthly has a bug so can't RUN without /bin/sh
-# https://github.com/earthly/earthly/issues/1097
-pkg-fix:
-        FROM kentik/pkg:latest
-        SAVE ARTIFACT /pkg kentik-pkg
-
-pkg:
-        ARG base=debian
-        ARG release=bullseye
-        FROM +base-debian
-        COPY +pkg-fix/kentik-pkg /usr/bin/pkg
-        ARG EARTHLY_TARGET_TAG
-        ARG TARGETPLATFORM
-        ARG TARGETARCH
-        ARG TARGETVARIANT
-        ARG type=deb
-        ARG version="${EARTHLY_TARGET_TAG}"
-        ARG pkg_arch="${TARGETARCH}${TARGETVARIANT}"
-        COPY +build/${base}/${release}/${TARGETPLATFORM}/scamper ./
-        COPY package.yml ./
-        RUN rm -f *.${type}
-        RUN /usr/bin/pkg \
-            --name scamper \
-            --version ${version} \
-            --arch ${pkg_arch} \
-            --${type} \
-            package.yml
-        SAVE ARTIFACT scamper*.${type} \
-             AS LOCAL ./pkg/
+              +docker --base=debian --release=trixie
 
 pkg-deb-rpm:
         BUILD +pkg --type=deb
@@ -236,7 +229,6 @@ pkg-deb-rpm:
 # TODO: support bookworm/bullseye packages
 pkg-multiarch:
         BUILD \
-              --platform=linux/arm/v7 \
               --platform=linux/arm64 \
               --platform=linux/amd64 \
               +pkg-deb-rpm
