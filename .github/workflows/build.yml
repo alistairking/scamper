@@ -142,7 +142,7 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - build-multiarch
-      - build-packages
+      - build-docker
       - build-macos
       - docs
     steps:
