@@ -1,7 +1,7 @@
 /*
  * sc_remoted
  *
- * $Id: sc_remoted.c,v 1.154 2026/01/03 03:05:45 mjl Exp $
+ * $Id: sc_remoted.c,v 1.156 2026/02/02 17:43:23 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -650,7 +650,7 @@ static void usage(uint32_t opt_mask)
 
   if(opt_mask == 0)
     {
-      fprintf(stderr, "\n     sc_remoted -?\n\n");
+      fprintf(stderr, "\n       sc_remoted -?\n\n");
       return;
     }
 
@@ -679,6 +679,7 @@ static void usage(uint32_t opt_mask)
       fprintf(stderr, "        debug: print debugging messages\n");
       fprintf(stderr, "        select: use select\n");
       fprintf(stderr, "        skipnameverification: skip TLS name verif\n");
+      fprintf(stderr, "        notimes: no timestamps in debug output\n");
     }
 
   if(opt_mask & OPT_MUXSOCK)
@@ -829,6 +830,13 @@ static int check_options(int argc, char *argv[])
 	  usage(OPT_ALL);
 	  return -1;
 	}
+    }
+
+  if(argc - optind > 0)
+    {
+      usage(0);
+      fprintf(stderr, "sc_remoted does not accept positional arguments\n");
+      return -1;
     }
 
   if(opt_addrport == NULL)
@@ -1260,6 +1268,17 @@ static void sc_metadata_free(sc_metadata_t *md)
   return;
 }
 
+static sc_metadata_t *sc_metadata_find(const char *name)
+{
+  sc_metadata_t fm;
+  if(metadata != NULL)
+    {
+      fm.name = (char *)name;
+      return splaytree_find(metadata, &fm);
+    }
+  return NULL;
+}
+
 static int sc_master_cmp(const sc_master_t *a, const sc_master_t *b)
 {
   if(a->magic_len < b->magic_len) return -1;
@@ -1527,7 +1546,7 @@ static int tags_embed(uint8_t *buf, size_t len, size_t *off, slist_t *tags)
 
 static int sc_master_mux_encode(const sc_master_t *ms,uint8_t *buf,size_t *len)
 {
-  sc_metadata_t fm, *md = NULL;
+  sc_metadata_t *md = NULL;
   char tmp[128];
   size_t off;
 
@@ -1544,8 +1563,7 @@ static int sc_master_mux_encode(const sc_master_t *ms,uint8_t *buf,size_t *len)
     {
       if(attr_embed(buf, *len, &off, VP_ATTR_NAME, ms->monitorname) != 0)
 	return -1;
-      fm.name = ms->monitorname;
-      md = splaytree_find(metadata, &fm);
+      md = sc_metadata_find(ms->monitorname);
     }
 
   snprintf(tmp, sizeof(tmp), "%ld.%06d",
@@ -3680,23 +3698,46 @@ static int metadata_line(char *line, void *param)
 static int metadata_load(void)
 {
   splaytree_t *tree = NULL;
+  int fd, rc = -1;
 
-  if((tree = splaytree_alloc((splaytree_cmp_t)sc_metadata_cmp)) == NULL ||
-     (metadata_file != NULL &&
-      file_lines(metadata_file, metadata_line, tree) != 0))
-    goto err;
+  if(metadata_file == NULL)
+    return 0;
+
+  if((fd = open(metadata_file, O_RDONLY)) < 0)
+    {
+      if(in_loop == 0)
+	remote_error(__func__, "could not open %s: %s", metadata_file,
+		     strerror(errno));
+      goto done;
+    }
+
+  if((tree = splaytree_alloc((splaytree_cmp_t)sc_metadata_cmp)) == NULL)
+    {
+      if(in_loop == 0)
+	remote_error(__func__, "could not alloc tree: %s", strerror(errno));
+      goto done;
+    }
+
+  if(fd_lines(fd, metadata_line, tree) != 0)
+    {
+      if(in_loop == 0)
+	remote_error(__func__, "malformed metadata file");
+      goto done;
+    }
 
   /* switch over the metadata trees */
   if(metadata != NULL)
     splaytree_free(metadata, (splaytree_free_t)sc_metadata_free);
   metadata = tree; tree = NULL;
 
-  return 0;
+  rc = 0;
 
- err:
+ done:
   if(tree != NULL)
     splaytree_free(tree, (splaytree_free_t)sc_metadata_free);
-  return -1;
+  if(fd != -1)
+    close(fd);
+  return rc;
 }
 
 #ifdef HAVE_SIGACTION
@@ -4352,12 +4393,17 @@ static int remoted(int argc, char *argv[])
 
   if(serversocket_init() != 0 ||
      muxsocket_init() != 0 ||
-     (mslist = dlist_alloc()) == NULL ||
-     (mstree = splaytree_alloc((splaytree_cmp_t)sc_master_cmp)) == NULL ||
-     (gclist = dlist_alloc()) == NULL ||
-     (mxlist = dlist_alloc()) == NULL ||
      metadata_load() != 0)
     goto done;
+
+  if((mslist = dlist_alloc()) == NULL ||
+     (mstree = splaytree_alloc((splaytree_cmp_t)sc_master_cmp)) == NULL ||
+     (gclist = dlist_alloc()) == NULL ||
+     (mxlist = dlist_alloc()) == NULL)
+    {
+      remote_error(__func__, "could not alloc data structures");
+      goto done;
+    }
 
 #ifdef HAVE_UNVEIL
   if(unveil_wrap(unix_dir, "crwx") != 0 || /* bind, unlink, chmod */

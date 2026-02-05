@@ -3,11 +3,11 @@
  *
  * Copyright (c) 2014      Matthew Luckie
  * Copyright (C) 2015      The Regents of the University of California
- * Copyright (C) 2022-2024 Matthew Luckie
+ * Copyright (C) 2022-2026 Matthew Luckie
  *
  * Author: Matthew Luckie
  *
- * $Id: scamper_tbit_json.c,v 1.40 2025/10/15 23:58:44 mjl Exp $
+ * $Id: scamper_tbit_json.c,v 1.41 2026/01/07 07:13:13 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -31,6 +31,7 @@
 
 #include "scamper_addr.h"
 #include "scamper_list.h"
+#include "scamper_list_int.h"
 #include "scamper_tbit.h"
 #include "scamper_tbit_int.h"
 #include "scamper_file.h"
@@ -206,6 +207,10 @@ static char *tbit_header_tostr(const scamper_tbit_t *tbit,
       string_concat_u32(buf, sizeof(buf), &off,
 			", \"app\":\"bgp\", \"bgp_asn\":", bgp->asn);
     }
+
+  if(tbit->list != NULL && tbit->list->monitor != NULL)
+    string_concat3(buf, sizeof(buf), &off, ",\"monitor\":\"",
+		   json_esc(tbit->list->monitor, tmp, sizeof(tmp)), "\"");
 
   return strdup(buf);
 }

@@ -1,9 +1,9 @@
 /*
  * scamper_neighbourdisc_json.c
  *
- * $Id: scamper_neighbourdisc_json.c,v 1.2 2025/10/15 23:58:44 mjl Exp $
+ * $Id: scamper_neighbourdisc_json.c,v 1.3 2026/01/07 07:13:13 mjl Exp $
  *
- * Copyright (C) 2025 Matthew Luckie
+ * Copyright (C) 2025-2026 Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -28,6 +28,7 @@
 #include "scamper_addr.h"
 #include "scamper_addr_int.h"
 #include "scamper_list.h"
+#include "scamper_list_int.h"
 #include "scamper_neighbourdisc.h"
 #include "scamper_neighbourdisc_int.h"
 #include "scamper_file.h"
@@ -103,6 +104,10 @@ static char *header_tostr(const scamper_neighbourdisc_t *nd)
 	}
       string_concatc(buf, sizeof(buf), &off, ']');
     }
+
+  if(nd->list != NULL && nd->list->monitor != NULL)
+    string_concat3(buf, sizeof(buf), &off, ",\"monitor\":\"",
+		   json_esc(nd->list->monitor, tmp, sizeof(tmp)), "\"");
 
   return strdup(buf);
 }
