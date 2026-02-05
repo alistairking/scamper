@@ -171,8 +171,8 @@ docker:
         LET base_latest=""
         LET latest=""
         IF [ "${EARTHLY_TARGET_TAG_DOCKER}" = "master" ]
-           # if the base is debian/{DEFAULT_REALEASE}, then make it the default
-           IF [ "${base}" = "debian" && "${release}" = "${DEFAULT_REALEASE}" ]
+           # if the base is debian/${DEFAULT_RELEASE}, then make it the default
+           IF [ "${base}" = "debian" && "${release}" = "${DEFAULT_RELEASE}" ]
               SET latest="${img}:latest"
            END
            # tag this as the latest image for this base
