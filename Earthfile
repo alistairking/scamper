@@ -170,7 +170,7 @@ docker:
         LET latest=""
         IF [ "${EARTHLY_TARGET_TAG_DOCKER}" = "master" ]
            # if the base is debian/bookworm, then make it the default
-           IF [ "${base}" = "debian" && "${release}" == "bookworm" ]
+           IF [ "${base}" = "debian" && "${release}" = "bookworm" ]
               SET latest="${img}:latest"
            END
            # tag this as the latest image for this base
@@ -184,17 +184,14 @@ docker:
 
 docker-multiarch:
         BUILD \
-              --platform=linux/arm/v7 \
               --platform=linux/arm64 \
               --platform=linux/amd64 \
               +docker --base=debian --release=bullseye
         BUILD \
-              --platform=linux/arm/v7 \
               --platform=linux/arm64 \
               --platform=linux/amd64 \
               +docker --base=debian --release=bookworm
         BUILD \
-              --platform=linux/arm/v7 \
               --platform=linux/arm64 \
               --platform=linux/amd64 \
               +docker --base=alpine
@@ -236,7 +233,6 @@ pkg-deb-rpm:
 # TODO: support bookworm/bullseye packages
 pkg-multiarch:
         BUILD \
-              --platform=linux/arm/v7 \
               --platform=linux/arm64 \
               --platform=linux/amd64 \
               +pkg-deb-rpm
