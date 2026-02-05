@@ -119,7 +119,11 @@ pkg:
         ARG type=deb
         ARG version="${EARTHLY_TARGET_TAG}"
         ARG pkg_arch="${TARGETARCH}${TARGETVARIANT}"
-        COPY +build/${base}/${release}/${TARGETPLATFORM}/scamper ./
+        LET baserelease="${base}"
+        IF [ "${base}" = "debian" ]
+            SET baserelease="${base}/${release}"
+        END
+        COPY +build/${baserelease}/${TARGETPLATFORM}/scamper ./
         COPY package.yml ./
         RUN rm -f *.${type}
         RUN /usr/bin/pkg \
