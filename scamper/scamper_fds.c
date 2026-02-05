@@ -1,7 +1,7 @@
 /*
  * scamper_fds: manage events and file descriptors
  *
- * $Id: scamper_fds.c,v 1.145 2025/10/20 00:46:53 mjl Exp $
+ * $Id: scamper_fds.c,v 1.146 2026/02/03 22:19:15 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -296,6 +296,7 @@ static void fd_close(scamper_fd_t *fdn)
     case SCAMPER_FD_TYPE_TCP4:
     case SCAMPER_FD_TYPE_TCP6:
     case SCAMPER_FD_TYPE_DL:
+    case SCAMPER_FD_TYPE_IP4:
 #ifdef SCAMPER_FD_TYPE_RTSOCK
     case SCAMPER_FD_TYPE_RTSOCK:
 #endif

@@ -1,10 +1,10 @@
 /*
  * scamper_host_json.c
  *
- * Copyright (c) 2023-2025 Matthew Luckie
+ * Copyright (c) 2023-2026 Matthew Luckie
  * Author: Matthew Luckie
  *
- * $Id: scamper_host_json.c,v 1.21 2025/10/15 23:58:44 mjl Exp $
+ * $Id: scamper_host_json.c,v 1.22 2026/01/07 07:13:13 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -28,6 +28,7 @@
 
 #include "scamper_addr.h"
 #include "scamper_list.h"
+#include "scamper_list_int.h"
 #include "scamper_host.h"
 #include "scamper_host_int.h"
 #include "scamper_file.h"
@@ -90,6 +91,10 @@ static char *header_tostr(const scamper_host_t *host)
   string_concat_u8(buf, sizeof(buf), &off, ", \"qcount\":", host->qcount);
   if(host->ecs != NULL)
     string_concat3(buf, sizeof(buf), &off, ", \"ecs\":\"", host->ecs, "\"");
+
+  if(host->list != NULL && host->list->monitor != NULL)
+    string_concat3(buf, sizeof(buf), &off, ",\"monitor\":\"",
+		   json_esc(host->list->monitor, tmp, sizeof(tmp)), "\"");
 
   return strdup(buf);
 }

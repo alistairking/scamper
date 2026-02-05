@@ -12,7 +12,9 @@ sc_bdrmap_SOURCES = \
 	$(top_srcdir)/mjl_splaytree.c \
 	$(top_srcdir)/mjl_prefixtree.c
 
-sc_bdrmap_LDADD = $(top_srcdir)/lib/libscamperfile/libscamperfile.la
+sc_bdrmap_LDADD = \
+	$(top_srcdir)/lib/libscamperfile/libscamperfile.la \
+	$(top_srcdir)/lib/libscamperctrl/libscamperctrl.la
 
 man_MANS = sc_bdrmap.1
 
