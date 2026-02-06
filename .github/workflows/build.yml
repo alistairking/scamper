@@ -153,8 +153,12 @@ jobs:
         uses: actions/download-artifact@v4
       - name: Organize things
         run: |
-          # Iterate directly through directories matching the scamper-build-* pattern
-          for file in $(find ./scamper-build-* -type f -name scamper); do
+          # Iterate directly through directories matching the scamper-build-* patterns
+          for file in $(find ./scamper-build-macos* -type f -name scamper); do
+            platform=$(basename $(dirname "$file"))
+            cp "${file}" "scamper-${platform}"
+          done
+          for file in $(find ./scamper-build-multiarch* -type f -name scamper); do
             # 1. Get the directory path (e.g., ./scamper-build-multiarch-debian-ubuntu-latest/debian/bookworm/linux/amd64)
             dir_path=$(dirname "$file")
         
@@ -162,14 +166,13 @@ jobs:
             # Result: alpine/linux/amd64
             platform_path=$(echo "$dir_path" | cut -d'/' -f3-)
 
-            # 3. If it's a simple macos build, the above might leave the full name. 
-            # We ensure any slashes are converted to dashes.
+            # 3. Convert slashes to dashes.
             platform=${platform_path//\//-}
-          
-            echo "Copied: scamper-$platform"
+
+            cp "${file}" "scamper-${platform}"
           done
 
-          # Optional: remove the source build directories once finished
+          # Remove the source build directories once finished
           rm -rf ./scamper-build-*/
           tar zcf scamper-docs.tar.gz scamper-docs/
           rm -r scamper-docs/
