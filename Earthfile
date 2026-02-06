@@ -96,7 +96,7 @@ build:
         RUN make
         RUN echo "Successfully built scamper version: $(./scamper/scamper -v)"
         LET baserelease="${base}"
-        IF [ "${base}" = "debian" ]
+        IF [ "${base}" != "alpine" ]
            SET baserelease="${base}/${release}"
         END
         ARG TARGETPLATFORM
@@ -158,7 +158,7 @@ docker:
         FROM +base-${base}
         LET baserelease="${base}"
         LET relpath="${base}"
-        IF [ "${base}" = "debian" ]
+        IF [ "${base}" != "alpine" ]
            SET baserelease="${base}-${release}"
            SET relpath="${base}/${release}"
         END
