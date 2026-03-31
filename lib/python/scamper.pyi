@@ -173,6 +173,10 @@ class ScamperInstError(Exception):
 
 class ScamperMux:
     def __init__(self, *args: object, **kwargs: object) -> None: ...
+    def __lt__(self, other: object) -> bool: ...
+    def __eq__(self, other: object) -> bool: ...
+    def __str__(self) -> str: ...
+    def __hash__(self) -> int: ...
 
     def vps(self) -> List[ScamperVp]: ...
 
@@ -397,11 +401,14 @@ class ScamperHostType(enum.IntEnum):
     MX = 15
     TXT = 16
     AAAA = 28
+    OPT = 41
     DS = 43
     SSHFP = 44
     RRSIG = 46
     NSEC = 47
     DNSKEY = 48
+    SVCB = 64
+    HTTPS = 65
 
 class ScamperHostStop(enum.IntEnum):
     NoReason = cast(int, ...)
@@ -544,6 +551,9 @@ class ScamperHostRR:
 
     @property
     def svcb(self) -> Optional[ScamperHostSVCB]: ...
+
+    @property
+    def https(self) -> Optional[ScamperHostSVCB]: ...
 
     @property
     def udpsize(self) -> Optional[int]: ...
@@ -715,6 +725,21 @@ class ScamperHttpStop(enum.IntEnum):
     Timeout = cast(int, ...)
     Insecure = cast(int, ...)
 
+class ScamperHttpEchStatus(enum.IntEnum):
+    NoStatus = cast(int, ...)
+    Unknown = cast(int, ...)
+    Failed = cast(int, ...)
+    Success = cast(int, ...)
+    Grease = cast(int, ...)
+    GreaseEch = cast(int, ...)
+    Backend = cast(int, ...)
+    BadCall = cast(int, ...)
+    NotTried = cast(int, ...)
+    BadName = cast(int, ...)
+    NotConfigured = cast(int, ...)
+    FailedEch = cast(int, ...)
+    FailedEchBadName = cast(int, ...)
+
 class ScamperHttpBuf:
     def __init__(self, *args: object, **kwargs: object) -> None: ...
 
@@ -779,6 +804,9 @@ class ScamperHttp:
     def url(self) -> Optional[str]: ...
 
     @property
+    def ech_config_list(self) -> Optional[bytes]: ...
+
+    @property
     def status_code(self) -> Optional[int]: ...
 
     @property
@@ -802,6 +830,15 @@ class ScamperHttp:
     def buf_count(self) -> int: ...
     def buf(self, i: int) -> Optional[ScamperHttpBuf]: ...
     def bufs(self) -> Iterator[ScamperHttpBuf]: ...
+
+    @property
+    def ech_retry_config(self) -> Optional[bytes]: ...
+
+    @property
+    def ech_status(self) -> ScamperHttpEchStatus: ...
+
+    @property
+    def ech_outer_sni(self) -> Optional[str]: ...
 
 class ScamperNeighbourdisc:
     def __init__(self, *args: object, **kwargs: object) -> None: ...
@@ -1890,6 +1927,8 @@ class ScamperCtrl(Generic[PT]):
                 headers: Optional[Dict[str, str]] = ...,
                 insecure: Optional[bool] = ...,
                 limit_time: Union[datetime.timedelta, float, None] = ...,
+                ech_grease: Optional[bool] = ...,
+                ech_config_list: Optional[str] = ...,
                 userid: Optional[int] = ...,
                 inst: Union[ScamperInst, List[ScamperInst], Set[ScamperInst], None] = ...,
                 sync: Optional[bool] = ...

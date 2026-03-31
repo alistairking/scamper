@@ -1,7 +1,7 @@
 /*
  * sc_bdrmap: driver to map first hop border routers of networks
  *
- * $Id: sc_bdrmap.c,v 1.73 2026/01/22 19:56:57 mjl Exp $
+ * $Id: sc_bdrmap.c,v 1.75 2026/03/29 23:55:56 mjl Exp $
  *
  *         Matthew Luckie
  *         mjl@caida.org / mjl@wand.net.nz
@@ -3964,7 +3964,7 @@ static int do_method_ping(sc_test_t *test, char *cmd, size_t len,
       string_concat2(cmd, len, &off, " -P ", method[pt->method]);
       string_concat2(cmd, len, &off, " ",
 		     scamper_addr_tostr(ping->addr, buf, sizeof(buf)));
-      
+
     }
 
   *out = test;
@@ -4557,7 +4557,7 @@ static int test_allyconf_next(sc_test_t *test)
     {
       sc_allyconftest_free(act);
       sc_test_free(test);
-    }  
+    }
 
   return 0;
 }
@@ -5284,7 +5284,8 @@ static void ctrlcb(scamper_inst_t *inst, uint8_t type, scamper_task_t *task,
 	rc = test_ally_err(test);
       else if(test->type == TEST_ALLYCONF)
 	rc = test_allyconf_err(test);
-      else
+
+      if(rc != 0)
 	goto err;
     }
   else if(type == SCAMPER_CTRL_TYPE_EOF)

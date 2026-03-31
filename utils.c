@@ -1,13 +1,13 @@
 /*
  * utils.c
  *
- * $Id: utils.c,v 1.281 2025/12/04 08:07:49 mjl Exp $
+ * $Id: utils.c,v 1.284 2026/03/27 00:14:50 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2011      Matthew Luckie
  * Copyright (C) 2012-2015 The Regents of the University of California
- * Copyright (C) 2015-2025 Matthew Luckie
+ * Copyright (C) 2015-2026 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -2544,107 +2544,6 @@ int uudecode_line(const char *in, size_t ilen, uint8_t *out, size_t *olen)
   return -1;
 }
 
-void *uudecode(const char *in, size_t len)
-{
-  uint8_t *out = NULL;
-  size_t i, j, k, x;
-
-  /* if the first character is a ` (EOF) there is nothing to decode */
-  if(in[0] == '`')
-    return NULL;
-
-  i = 0;
-  x = 0;
-
-  /* first, figure out how much memory to allocate */
-  for(;;)
-    {
-      /* make sure character is valid */
-      if(in[i] < '!' || in[i] > '`')
-	{
-	  goto err;
-	}
-
-      /* check for EOF */
-      if(in[i] == '`')
-	break;
-
-      /* number of uuencoded bytes on this line */
-      j = in[i++] - 32;
-
-      /* number of ascii bytes required */
-      k = j + (j/3);
-      if((k % 4) != 0)
-	{
-	  k /= 4;
-	  k++;
-	  k *= 4;
-	}
-
-      /* advance to the end of the line */
-      if(len - i < k+1 || in[i+k] != '\n')
-	{
-	  goto err;
-	}
-      i += k + 1;
-      x += j;
-    }
-
-  /* make sure the uuencoded data ends with a new line */
-  if(len - i < 1 || in[i+1] != '\n')
-    {
-      goto err;
-    }
-
-  if((out = malloc(x)) == NULL)
-    goto err;
-
-  i = 0;
-  j = 0;
-  for(;;)
-    {
-      /* number of uuencoded bytes on this line */
-      k = in[i++] - 32;
-      for(;;)
-	{
-	  /* there needs to be at least four characters remaining */
-	  if(len - i < 4)
-	    goto err;
-
-	  /* decode the next four */
-	  if(uudecode_4(out+j, in+i, x-j) != 0)
-	    goto err;
-
-	  i += 4;
-
-	  if(k > 3)
-	    {
-	      j += 3;
-	      k -= 3;
-	    }
-	  else
-	    {
-	      j += k;
-	      break;
-	    }
-	}
-
-      /* advance to next line */
-      if(in[i] != '\n')
-	goto err;
-      i++;
-
-      if(j == x)
-	break;
-    }
-
-  return out;
-
- err:
-  if(out != NULL) free(out);
-  return NULL;
-}
-
 static void uuencode_3(uint8_t *out, uint8_t a, uint8_t b, uint8_t c)
 {
   uint8_t t;
@@ -2768,64 +2667,149 @@ size_t uuencode_bytes(const uint8_t *in, size_t len, size_t *off,
   return ooff;
 }
 
-int uuencode(const uint8_t *in, size_t ilen, uint8_t **out, size_t *olen)
+static size_t base64_len(size_t ilen)
 {
-  uint8_t *ptr;
+  return ((ilen + 2) / 3) * 4;
+}
+
+int base64_encode(const uint8_t *in, size_t ilen, char **out, size_t *olen)
+{
+  static const char table[] =
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  char *ptr;
   size_t len;
-  size_t complete_lines;
-  size_t leftover_bytes;
-  size_t i, j;
 
   /* figure out how large the allocated buffer needs to be */
-  len = uuencode_len(ilen, &complete_lines, &leftover_bytes);
+  len = base64_len(ilen);
   assert(len != 0);
 
   /* allocate memory to encode the data to */
-  if((ptr = malloc(len)) == NULL)
+  if((ptr = malloc(len + 1)) == NULL)
     return -1;
   *out  = ptr;
   *olen = len;
 
-  /* encode all complete lines */
-  for(i=0; i<complete_lines; i++)
+  while(ilen >= 3)
     {
-      *ptr = (32 + 45); ptr++;
-      for(j=0; j<15; j++)
-	{
-	  uuencode_3(ptr, in[0], in[1], in[2]);
-	  in  += 3;
-	  ptr += 4;
-	}
-      *ptr = '\n'; ptr++;
+      ptr[0] = table[ ((in[0] >> 2)                         & 0x3f)];
+      ptr[1] = table[(((in[0] << 4) | ((in[1] >> 4) & 0xf)) & 0x3f)];
+      ptr[2] = table[(((in[1] << 2) | ((in[2] >> 6) & 0x3)) & 0x3f)];
+      ptr[3] = table[  (in[2]                               & 0x3f)];
+
+      ptr += 4;
+      in += 3;
+      ilen -= 3;
     }
 
-  /* encode the last line */
-  if(leftover_bytes != 0)
+  if(ilen > 0)
     {
-      /* encode groups of 3 input bytes */
-      *ptr = (32 + leftover_bytes); ptr++;
-      for(j=0; j<leftover_bytes/3; j++)
+      ptr[0] = table[(in[0] >> 2) & 0x3f];
+      if(ilen == 1)
 	{
-	  uuencode_3(ptr, in[0], in[1], in[2]);
-	  in  += 3;
-	  ptr += 4;
+	  ptr[1] = table[(in[0] << 4) & 0x3f];
+	  ptr[2] = '=';
 	}
-
-      /* if there are one or two straggling bytes left, encode those */
-      if((leftover_bytes % 3) > 0)
+      else
 	{
-	  uuencode_3(ptr, in[0], (leftover_bytes % 3) == 2 ? in[1] : 0, 0);
-	  ptr += 4;
+	  ptr[1] = table[((in[0] << 4) | ((in[1] >> 4) & 0xf)) & 0x3f];
+	  ptr[2] = table[(in[1] << 2) & 0x3f];
 	}
-
-      *ptr = '\n'; ptr++;
+      ptr[3] = '=';
+      ptr += 4;
     }
 
-  /* this line has no data -- uuencode EOF */
-  *ptr = '`'; ptr++;
-  *ptr = '\n';
-
+  /* null terminate */
+  *ptr = '\0';
   return 0;
+}
+
+static uint8_t base64_decode_c(uint8_t c)
+{
+  if(c >= 'A' && c <= 'Z')
+    return 0 + (c - 'A');
+  if(c >= 'a' && c <= 'z')
+    return 26 + (c - 'a');
+  if(c >= '0' && c <= '9')
+    return 52 + (c - '0');
+  if(c == '+')
+    return 62;
+  if(c == '/')
+    return 63;
+  return 64;
+}
+
+int base64_decode(const uint8_t *in, uint8_t **out, size_t *olen)
+{
+  size_t ilen, i, off, padding, len;
+  uint8_t a, b, c, d;
+  uint32_t tmp;
+  uint8_t *buf = NULL;
+
+  ilen = strlen((const char *)in);
+  if(ilen == 0 || (ilen % 4) != 0)
+    goto err;
+
+  if(in[ilen-1] == '=')
+    {
+      if(in[ilen-2] == '=')
+	padding = 2;
+      else
+	padding = 1;
+    }
+  else padding = 0;
+
+  len = ((ilen / 4) * 3) - padding;
+  if((buf = malloc(len)) == NULL)
+    goto err;
+
+  ilen = ilen - padding;
+  off = 0;
+  while(ilen >= 4)
+    {
+      a = base64_decode_c(in[0]);
+      b = base64_decode_c(in[1]);
+      c = base64_decode_c(in[2]);
+      d = base64_decode_c(in[3]);
+      in += 4;
+      ilen -= 4;
+
+      if(a >= 64 || b >= 64 || c >= 64 || d >= 64)
+	goto err;
+      tmp = a;
+      tmp = (tmp << 6) | b;
+      tmp = (tmp << 6) | c;
+      tmp = (tmp << 6) | d;
+      buf[off++] = ((tmp >> 16) & 0xff);
+      buf[off++] = ((tmp >> 8) & 0xff);
+      buf[off++] = (tmp & 0xff);
+    }
+
+  if(padding > 0)
+    {
+      tmp = 0;
+      for(i=0; i<4; i++)
+	{
+	  if(i < ilen)
+	    {
+	      if((a = base64_decode_c(*in)) >= 64)
+		goto err;
+	      in++;
+	    }
+	  else a = 0;
+	  tmp = (tmp << 6) | a;
+	}
+      buf[off++] = ((tmp >> 16) & 0xff);
+      if(padding == 1)
+	buf[off++] = (tmp >> 8) & 0xff;
+    }
+
+  *out = buf;
+  *olen = len;
+  return 0;
+
+ err:
+  if(buf != NULL) free(buf);
+  return -1;
 }
 
 uint16_t byteswap16(uint16_t word)

@@ -1,12 +1,12 @@
 /*
  * libscamperctrl
  *
- * $Id: libscamperctrl.c,v 1.98 2025/12/30 18:26:57 mjl Exp $
+ * $Id: libscamperctrl.c,v 1.104 2026/03/30 00:02:17 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
  *
- * Copyright (C) 2021-2025 Matthew Luckie. All rights reserved.
+ * Copyright (C) 2021-2026 Matthew Luckie. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -132,7 +132,7 @@ struct scamper_ctrl
   dlist_t           *muxs;     /* mux sockets under management */
   dlist_t           *waitlist; /* insts waiting to be processed after wait() */
   scamper_ctrl_cb_t  cb;       /* callback to call */
-  uint8_t            wait;     /* are we currently in scamper_ctrl_wait */
+  uint8_t            flags;    /* flags: inwait, gomux */
   char               err[128]; /* error string */
   void              *param;    /* optional parameter */
 #ifdef HAVE_KQUEUE
@@ -156,10 +156,7 @@ struct scamper_inst
   splaytree_t       *tree;     /* tasks searchable by their ID */
   char               err[128]; /* error string */
 
-  /*
-   * temporary buffer for storing incomplete lines in between to calls
-   * to recv
-   */
+  /* buffer for storing incomplete lines in between calls to recv */
   uint8_t            line[128];
   size_t             line_off;
 
@@ -256,6 +253,9 @@ struct scamper_vp
 #define TX_TYPE_TASK             3
 #define TX_TYPE_DONE             4
 #define TX_TYPE_MUXVP_OPEN       5
+
+#define SCAMPER_CTRL_FLAG_INWAIT 0x01 /* in scamper_ctrl_wait() */
+#define SCAMPER_CTRL_FLAG_MUXGO  0x02 /* data left post GO */
 
 #define SCAMPER_INST_FLAG_DONE   0x01 /* "done" sent for this inst */
 #define SCAMPER_INST_FLAG_FREE   0x02 /* the inst is in the waitlist to free */
@@ -491,7 +491,7 @@ static void tx_free(sc_tx_t *tx)
 
 static int fd_nonblock(int fd, char *err, size_t errlen)
 {
-#ifdef HAVE_FCNTL
+#ifdef O_NONBLOCK
   if(fcntl(fd, F_SETFL, O_NONBLOCK) == -1)
     {
       snprintf(err, errlen, "could not set nonblocking: %s", strerror(errno));
@@ -1182,7 +1182,8 @@ static int inst_set_fd(scamper_inst_t *inst, int *fd)
   fdn->data = inst;
   fdn = NULL;
 
-  if(ctrl->wait == 0 && fd_set_read(ctrl, inst->fdn) != 0)
+  if((ctrl->flags & SCAMPER_CTRL_FLAG_INWAIT) == 0 &&
+     fd_set_read(ctrl, inst->fdn) != 0)
     {
       snprintf(ctrl->err, sizeof(ctrl->err), "could not set read");
       return -1;
@@ -1260,7 +1261,7 @@ static scamper_inst_t *inst_alloc_dm(scamper_ctrl_t *ctrl, uint8_t type,
     }
 
   /* put the instance in the appropriate list */
-  if(ctrl->wait == 0)
+  if((ctrl->flags & SCAMPER_CTRL_FLAG_INWAIT) == 0)
     list = ctrl->insts;
   else
     list = ctrl->waitlist;
@@ -1532,14 +1533,85 @@ static void mux_free(scamper_mux_t *mux)
   return;
 }
 
+static int mux_buf_process(scamper_mux_t *mux)
+{
+  scamper_ctrl_t *ctrl;
+  sc_muxchan_t *mc;
+  size_t off = 0, left, x;
+  uint32_t msg_chan, msg_len;
+
+  while(off < mux->buf_len)
+    {
+      /* how much is left in the buf? */
+      left = mux->buf_len - off;
+
+      /* pass non-channel zero messages to the appropriate instance */
+      if(mux->recv_chan != 0)
+	{
+	  x = mux->recv_left <= left ? mux->recv_left : left;
+	  if((mc = mc_get(mux, mux->recv_chan)) != NULL && mc->inst != NULL)
+	    {
+	      if(inst_rx(mc->inst, mux->buf + off, x) != 0)
+		return -1;
+	    }
+	  mux->recv_left -= x;
+	  off += x;
+	  if(mux->recv_left == 0)
+	    mux->recv_chan = 0;
+	  continue;
+	}
+
+      /* need to buffer the remainder */
+      if(left < MUX_HDRLEN)
+	break;
+
+      msg_chan = bytes_ntohl(mux->buf + off);
+      msg_len  = bytes_ntohl(mux->buf + off + 4);
+
+      /* have the code block at the top of the loop handle frame */
+      if(msg_chan != 0)
+	{
+	  off += MUX_HDRLEN;
+	  mux->recv_chan = msg_chan;
+	  mux->recv_left = msg_len;
+	  continue;
+	}
+
+      /* require all of a channel zero message before processing it */
+      if(left < MUX_HDRLEN + msg_len)
+	break;
+      off += MUX_HDRLEN;
+
+      /* process the channel zero message */
+      if(mux_read_zero(mux, mux->buf + off, msg_len) != 0)
+	{
+	  if((ctrl = mux->ctrl) != NULL)
+	    snprintf(ctrl->err, sizeof(ctrl->err), "mux_read_zero failed");
+	  return -1;
+	}
+
+      off += msg_len;
+    }
+
+  assert(off <= mux->buf_len);
+
+  if(off > 0)
+    {
+      mux->buf_len = mux->buf_len - off;
+      if(mux->buf_len > 0)
+	memmove(mux->buf, mux->buf + off, mux->buf_len);
+      realloc_wrap((void **)&mux->buf, mux->buf_len);
+    }
+
+  return 0;
+}
+
 static int mux_read(scamper_mux_t *mux)
 {
   scamper_ctrl_t *ctrl;
   scamper_inst_t *inst;
   sc_muxchan_t *mc;
-  size_t off, len, left, x;
   ssize_t rc;
-  uint32_t msg_chan, msg_len;
 
   if(realloc_wrap((void **)&mux->buf, mux->buf_len + 8192) != 0)
     {
@@ -1592,70 +1664,9 @@ static int mux_read(scamper_mux_t *mux)
       return 0;
     }
 
-  len = mux->buf_len + rc;
-  off = 0;
-  mux->buf_len = 0;
+  mux->buf_len += rc;
 
-  while(off < len)
-    {
-      /* how much is left in the buf? */
-      left = len - off;
-
-      /* pass non-channel zero messages to the appropriate instance */
-      if(mux->recv_chan != 0)
-	{
-	  x = mux->recv_left <= left ? mux->recv_left : left;
-	  if((mc = mc_get(mux, mux->recv_chan)) != NULL && mc->inst != NULL)
-	    {
-	      if(inst_rx(mc->inst, mux->buf + off, x) != 0)
-		return -1;
-	    }
-	  mux->recv_left -= x;
-	  off += x;
-	  if(mux->recv_left == 0)
-	    mux->recv_chan = 0;
-	  continue;
-	}
-
-      /* need to buffer the remainder */
-      if(left < MUX_HDRLEN)
-	break;
-
-      msg_chan = bytes_ntohl(mux->buf + off);
-      msg_len  = bytes_ntohl(mux->buf + off + 4);
-
-      /* have the code block at the top of the loop handle frame */
-      if(msg_chan != 0)
-	{
-	  off += MUX_HDRLEN;
-	  mux->recv_chan = msg_chan;
-	  mux->recv_left = msg_len;
-	  continue;
-	}
-
-      /* require all of a channel zero message before processing it */
-      if(left < MUX_HDRLEN + msg_len)
-	break;
-      off += MUX_HDRLEN;
-
-      /* process the channel zero message */
-      if(mux_read_zero(mux, mux->buf + off, msg_len) != 0)
-	{
-	  if((ctrl = mux->ctrl) != NULL)
-	    snprintf(ctrl->err, sizeof(ctrl->err), "mux_read_zero failed");
-	  return -1;
-	}
-
-      off += msg_len;
-    }
-
-  assert(off <= len);
-  mux->buf_len = len - off;
-  if(mux->buf_len > 0)
-    memmove(mux->buf, mux->buf + off, mux->buf_len);
-  realloc_wrap((void **)&mux->buf, mux->buf_len);
-
-  return 0;
+  return mux_buf_process(mux);
 }
 
 void scamper_task_free(scamper_task_t *task)
@@ -1888,10 +1899,11 @@ void scamper_inst_free(scamper_inst_t *inst)
   assert(inst != NULL);
 
   /*
-   * if we are in the body of a scamper_inst_wait call, then mark the
+   * if we are in the body of a scamper_ctrl_wait call, then mark the
    * instance for garbage collection by placing it in the waitlist
    */
-  if(inst->list != NULL && inst->ctrl != NULL && inst->ctrl->wait != 0)
+  if(inst->list != NULL && inst->ctrl != NULL &&
+     (inst->ctrl->flags & SCAMPER_CTRL_FLAG_INWAIT) != 0)
     {
       inst->flags |= SCAMPER_INST_FLAG_FREE;
       if(inst->list != inst->ctrl->waitlist)
@@ -2204,7 +2216,7 @@ static int ctrl_wait_done(scamper_ctrl_t *ctrl, int rc)
   scamper_inst_t *inst;
 
   /* no longer going to be in scamper_ctrl_wait() */
-  ctrl->wait = 0;
+  ctrl->flags &= (~SCAMPER_CTRL_FLAG_INWAIT);
 
   /*
    * the nodes in the waitlist were put in there by the user calling
@@ -2324,8 +2336,14 @@ static scamper_mux_t *ctrl_mux_go(scamper_ctrl_t *ctrl, SOCKET fd)
   assert(msg_type == MUX_GO);
   if(off != 0)
     {
-      snprintf(ctrl->err, sizeof(ctrl->err), "unexpected data after GO");
-      goto err;
+      if((mux->buf = malloc(off)) == NULL)
+	{
+	  snprintf(ctrl->err, sizeof(ctrl->err), "could not dup data post GO");
+	  goto err;
+	}
+      memcpy(mux->buf, buf, off);
+      mux->buf_len = off;
+      ctrl->flags |= SCAMPER_CTRL_FLAG_MUXGO;
     }
 
   if(fd_nonblock(fd, ctrl->err, sizeof(ctrl->err)) != 0)
@@ -2341,7 +2359,6 @@ static scamper_mux_t *ctrl_mux_go(scamper_ctrl_t *ctrl, SOCKET fd)
   if((fdn->fdsdn = dlist_tail_push(ctrl->fds, fdn)) == NULL)
     {
       snprintf(ctrl->err, sizeof(ctrl->err), "could not add to fd list");
-      fd_free(fdn);
       goto err;
     }
   mux->fdn = fdn;
@@ -2570,6 +2587,26 @@ scamper_vpset_t *scamper_vpset_get(const scamper_mux_t *mux)
   return NULL;
 }
 
+static int ctrl_flag_muxgo(scamper_ctrl_t *ctrl)
+{
+  dlist_node_t *dn, *dn_next;
+  scamper_mux_t *mux;
+
+  ctrl->flags &= (~SCAMPER_CTRL_FLAG_MUXGO);
+
+  dn = dlist_head_node(ctrl->muxs);
+  while(dn != NULL)
+    {
+      dn_next = dlist_node_next(dn);
+      mux = dlist_node_item(dn);
+      if(mux->buf_len > 0 && mux_buf_process(mux) != 0)
+	return -1;
+      dn = dn_next;
+    }
+
+  return 0;
+}
+
 #ifdef HAVE_KQUEUE
 int scamper_ctrl_wait(scamper_ctrl_t *ctrl, struct timeval *to)
 {
@@ -2578,6 +2615,10 @@ int scamper_ctrl_wait(scamper_ctrl_t *ctrl, struct timeval *to)
   struct timespec ts, *timeout;
   sc_fd_t *fdn;
   int i, c, rc = -1;
+
+  if((ctrl->flags & SCAMPER_CTRL_FLAG_MUXGO) != 0 &&
+     ctrl_flag_muxgo(ctrl) != 0)
+    goto done;	
 
   if(to != NULL)
     {
@@ -2599,7 +2640,7 @@ int scamper_ctrl_wait(scamper_ctrl_t *ctrl, struct timeval *to)
       goto done;
     }
 
-  ctrl->wait = 1;
+  ctrl->flags |= SCAMPER_CTRL_FLAG_INWAIT;
   for(i=0; i<c; i++)
     {
       fdn = events[i].udata;
@@ -2644,6 +2685,10 @@ int scamper_ctrl_wait(scamper_ctrl_t *ctrl, struct timeval *to)
   SOCKET fd;
 #endif
 
+  if((ctrl->flags & SCAMPER_CTRL_FLAG_MUXGO) != 0 &&
+     ctrl_flag_muxgo(ctrl) != 0)
+    goto done;	
+
   nfds = -1; FD_ZERO(&rfds); FD_ZERO(&wfds); wfdsp = NULL; rfdsp = NULL;
   for(dn=dlist_head_node(ctrl->fds); dn != NULL; dn=dlist_node_next(dn))
     {
@@ -2671,7 +2716,7 @@ int scamper_ctrl_wait(scamper_ctrl_t *ctrl, struct timeval *to)
   if(rfdsp == NULL)
     return 0;
 
-  ctrl->wait = 1;
+  ctrl->flags |= SCAMPER_CTRL_FLAG_INWAIT;
   dn = dlist_head_node(ctrl->fds);
   while(dn != NULL && count > 0)
     {

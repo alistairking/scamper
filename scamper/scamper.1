@@ -10,9 +10,9 @@
 .\" Copyright (c) 2024-2026 The Regents of the University of California
 .\"                         All rights reserved
 .\"
-.\" $Id: scamper.1,v 1.162 2026/01/04 02:17:53 mjl Exp $
+.\" $Id: scamper.1,v 1.164 2026/03/30 00:11:22 mjl Exp $
 .\"
-.Dd January 4, 2026
+.Dd March 30, 2026
 .Dt SCAMPER 1
 .Os
 .\""""""""""""
@@ -513,6 +513,10 @@ specifies optional arguments to use.
 The current choices for this option are:
 .Bl -dash -offset 2n -compact -width 1n
 .It
+.Sy back:
+conduct traceroutes with decreasing TTL values, rather than increasing
+TTL values.
+.It
 .Sy const-payload:
 specifies that the payload should not be altered in order to arrive
 at a desired UDP checksum value for probe/response matching.
@@ -894,7 +898,9 @@ host command:
 .Pp
 host
 .Bk -words
-.Op Fl r
+.Op Fl rT
+.Op Fl c Ar class
+.Op Fl O Ar option
 .Op Fl R Ar retry-count
 .Op Fl s Ar server-ip
 .Op Fl t Ar type
@@ -905,6 +911,26 @@ host
 .It Fl r
 specifies that this query is a non-recursive query.
 The default is to issue a recursive query.
+.It Fl T
+specifies that this query should use TCP.
+The default is to use UDP.
+.It Fl c Ar class
+specifies the query class to use.
+Valid classes are IN and CH.
+The default is to issue an IN query.
+.It Fl O Ar option
+specifies optional arguments to use.
+The current choices for this option are:
+.Bl -dash -offset 2n -compact -width 1n
+.It
+.Sy nsid:
+specifies that the query should request that the server embed an
+NSID OPT record in the response.
+.It
+.Sy ecs=subnet:
+specifies that the query should embed the specified subnet in an
+EDNS-client-subnet (ECS) option.
+.El
 .It Fl R Ar retry-count
 specifies the number of retries until giving up.
 The default is to not send any retries.
@@ -913,7 +939,7 @@ specifies the IP address of the name server to query instead of the
 default nameserver.
 .It Fl t Ar type
 specifies the DNS query type.  The type argument can be one of the
-following: A, AAAA, PTR, MX, NS, SOA.
+following: A, AAAA, PTR, MX, NS, SOA, TXT, SVCB, HTTPS.
 The default is A if a name is queried, or a PTR if an IP address is queried.
 .It Fl U Ar userid
 specifies an unsigned integer to include with the data collected; the meaning
@@ -1296,6 +1322,15 @@ The current choices for this option are:
 .Sy insecure:
 specifies that no validation of a presented TLS certificate should take
 place.
+.It
+.Sy grease:
+specifies that the TLS handshake should include a GREASE
+EncryptedClientHello (ECH) extension in the TLS handshake.
+.It
+.Sy ecl=ECHConfigList:
+specifies that the TLS handshake should include the specified
+ECHConfigList in an ECH extension in the TLS handshake.
+The ECHConfigList must be base64 encoded.
 .El
 .It Fl u Ar url
 specifies the URL for the HTTP request.

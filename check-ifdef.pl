@@ -2,7 +2,7 @@
 #
 # process source code looking for #ifdef-related bugs.
 #
-# $Id: check-ifdef.pl,v 1.12 2026/01/03 03:32:16 mjl Exp $
+# $Id: check-ifdef.pl,v 1.13 2026/02/19 05:24:28 mjl Exp $
 
 use strict;
 use warnings;
@@ -17,6 +17,7 @@ $defs{$_} = 0 foreach (
     "ARPHRD_IEEE1394", "ARPHRD_SIT", "ARPHRD_VOID", "ARPHRD_NONE",
     "DLT_APPLE_IP_OVER_IEEE1394",
     "BIOCSETFNR", "DIOCGETSTATUSNV", "SIOCGSTAMP",
+    "FD_SETSIZE",
     "ICMP6_FILTER", "ICMP_FILTER",
     "IPV6_DONTFRAG", "IPV6_HOPLIMIT",
     "IPV6_PKTINFO", "IPV6_RECVERR", "IPV6_RECVHOPLIMIT",

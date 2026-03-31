@@ -1,7 +1,7 @@
 /*
  * scamper_trace.h
  *
- * $Id: scamper_trace.h,v 1.180 2025/10/19 19:23:21 mjl Exp $
+ * $Id: scamper_trace.h,v 1.182 2026/03/29 02:52:18 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -53,6 +53,7 @@
 #define SCAMPER_TRACE_FLAG_RXERR        0x80 /* used rxerr socket */
 #define SCAMPER_TRACE_FLAG_PTR          0x100 /* do ptr lookups */
 #define SCAMPER_TRACE_FLAG_RAW          0x200 /* use raw socket */
+#define SCAMPER_TRACE_FLAG_BACK         0x400 /* probe backwards from hlim */
 
 #define SCAMPER_TRACE_TYPE_ICMP_ECHO       0x01 /* ICMP echo requests */
 #define SCAMPER_TRACE_TYPE_UDP             0x02 /* UDP to unused ports */
@@ -145,6 +146,7 @@ uint16_t scamper_trace_sport_get(const scamper_trace_t *trace);
 uint16_t scamper_trace_dport_get(const scamper_trace_t *trace);
 uint16_t scamper_trace_offset_get(const scamper_trace_t *trace);
 uint32_t scamper_trace_flags_get(const scamper_trace_t *trace);
+char *scamper_trace_flag_tostr(uint32_t flag, char *buf, size_t len);
 uint16_t scamper_trace_payload_len_get(const scamper_trace_t *trace);
 const uint8_t *scamper_trace_payload_get(const scamper_trace_t *trace);
 uint16_t scamper_trace_probec_get(const scamper_trace_t *trace);

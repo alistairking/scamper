@@ -2,24 +2,29 @@ from setuptools import Extension, setup
 import textwrap
 
 setup(
-    name = "scamper",
-    version = "20260105",
-    description = "A module to interact with scamper processes and data",
-    author = "Matthew Luckie",
-    author_email = "mjl@luckie.org.nz",
-    url = "https://www.caida.org/tools/measurement/scamper/",
-    project_urls = {
+    name="scamper",
+    version="20260331",
+    description="A module to interact with scamper processes and data",
+    author="Matthew Luckie",
+    author_email="mjl@luckie.org.nz",
+    url="https://www.caida.org/tools/measurement/scamper/",
+    project_urls={
         "Documentation": "https://www.caida.org/catalog/software/scamper/python/",
     },
-    license = "GPL-2.0-only",
-    ext_modules = [
+    license="GPL-2.0-only",
+    ext_modules=[
         Extension("scamper", ["scamper.c"],
                   libraries=["scamperfile", "scamperctrl"]),
     ],
-    keywords = ["Internet measurement", "ping", "traceroute", "dns", "http",
-                "alias resolution"
+    keywords=[
+        "Internet measurement",
+        "ping",
+        "traceroute",
+        "dns",
+        "http",
+        "alias resolution",
     ],
-    classifiers = [
+    classifiers=[
         "Programming Language :: Python :: 3",
         "Intended Audience :: Developers",
         "Intended Audience :: Science/Research",
@@ -29,8 +34,8 @@ setup(
         "Topic :: Software Development :: Libraries :: Python Modules",
         "Topic :: Scientific/Engineering",
     ],
-    long_description_content_type = "text/x-rst",
-    long_description = textwrap.dedent("""\
+    long_description_content_type="text/x-rst",
+    long_description=textwrap.dedent("""\
     scamper_ is a tool that actively probes the Internet in order to
     analyze Internet topology and performance.
 
@@ -58,5 +63,5 @@ setup(
 
     .. _scamper: https://www.caida.org/tools/measurement/scamper/
     .. _documentation: https://www.caida.org/catalog/software/scamper/python/
-    """)
+    """),
 )

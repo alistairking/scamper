@@ -1,9 +1,9 @@
 /*
  * scamper_http_int.h
  *
- * $Id: scamper_http_int.h,v 1.7 2025/10/12 21:21:29 mjl Exp $
+ * $Id: scamper_http_int.h,v 1.8 2026/03/26 23:26:43 mjl Exp $
  *
- * Copyright (C) 2023-2024 The Regents of the University of California
+ * Copyright (C) 2023-2026 The Regents of the University of California
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -34,6 +34,9 @@ scamper_http_buf_t *scamper_http_buf_alloc(void);
 
 #define SCAMPER_HTTP_FLAG_IS_INSECURE(http) ( \
   ((http)->flags & SCAMPER_HTTP_FLAG_INSECURE))
+
+#define SCAMPER_HTTP_FLAG_IS_GREASE(http) ( \
+  ((http)->flags & SCAMPER_HTTP_FLAG_GREASE))
 
 struct scamper_http_hdr_field
 {
@@ -76,10 +79,17 @@ struct scamper_http
   struct timeval             maxtime; /* length of time to let http run */
   char                      *host;    /* domain name portion of host */
   char                      *file;    /* resource requested */
+  uint8_t                   *ech_config_list; /* -O ecl= */
+  uint32_t                   ech_config_list_len;
 
   char                      *errmsg;
   uint8_t                    stop;    /* stop reason */
   uint8_t                    type;    /* http or https */
+
+  uint8_t                    ech_status;
+  char                      *ech_outer_sni;
+  uint8_t                   *ech_retry_config;
+  uint32_t                   ech_retry_config_len;
 
   /* headers supplied by the user to set in the request */
   char                     **headers;

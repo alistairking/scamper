@@ -3,7 +3,7 @@
  *
  * the warts file format
  *
- * $Id: scamper_file_warts.c,v 1.287 2025/12/04 08:11:00 mjl Exp $
+ * $Id: scamper_file_warts.c,v 1.288 2026/03/26 06:17:56 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -684,6 +684,15 @@ void insert_bytes_uint16(uint8_t *buf,uint32_t *off,const uint32_t len,
   return;
 }
 
+void insert_bytes_uint32(uint8_t *buf,uint32_t *off,const uint32_t len,
+			 const void *vin, uint32_t *count)
+{
+  assert(len - *off >= *count);
+  memcpy(buf + *off, vin, *count);
+  *off += *count;
+  return;
+}
+
 void insert_string(uint8_t *buf, uint32_t *off, const uint32_t len,
 		   const char *in, void *param)
 {
@@ -899,9 +908,9 @@ int extract_bytes_ptr(const uint8_t *buf, uint32_t *off,
   return 0;
 }
 
-int extract_bytes_alloc(const uint8_t *buf, uint32_t *off,
-			       const uint32_t len, uint8_t **out,
-			       uint16_t *req)
+int extract_bytes_alloc32(const uint8_t *buf, uint32_t *off,
+			  const uint32_t len, uint8_t **out,
+			  uint32_t *req)
 {
   if(*off >= len || len - *off < *req)
     return -1;
@@ -919,6 +928,14 @@ int extract_bytes_alloc(const uint8_t *buf, uint32_t *off,
     }
 
   return 0;
+}
+
+int extract_bytes_alloc(const uint8_t *buf, uint32_t *off,
+			const uint32_t len, uint8_t **out,
+			uint16_t *req)
+{
+  uint32_t req32 = *req;
+  return extract_bytes_alloc32(buf, off, len, out, &req32);
 }
 
 /*

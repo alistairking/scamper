@@ -10,7 +10,7 @@
  *
  * Authors: Brian Hammond, Matthew Luckie
  *
- * $Id: scamper_trace_json.c,v 1.55 2025/10/15 23:58:44 mjl Exp $
+ * $Id: scamper_trace_json.c,v 1.56 2026/03/29 02:52:18 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -220,8 +220,9 @@ static char *header_tostr(const scamper_trace_t *trace)
   char buf[1024], tmp[512];
   size_t off = 0;
   time_t tt = trace->start.tv_sec;
-  uint32_t cs;
+  uint32_t cs, i, flag;
   uint16_t hop_count;
+  int comma = 0;
 
   string_concat(buf,sizeof(buf),&off,"\"type\":\"trace\",\"version\":\"0.1\"");
   string_concat_u32(buf, sizeof(buf), &off, ",\"userid\":", trace->userid);
@@ -276,6 +277,23 @@ static char *header_tostr(const scamper_trace_t *trace)
   if(trace->list != NULL && trace->list->monitor != NULL)
     string_concat3(buf, sizeof(buf), &off, ",\"monitor\":\"",
 		   json_esc(trace->list->monitor, tmp, sizeof(tmp)), "\"");
+  if(trace->flags != 0)
+    {
+      string_concat(buf, sizeof(buf), &off, ",\"flags\":[");
+      for(i=0; i<32; i++)
+	{
+	  if((flag = trace->flags & (0x1 << i)) != 0)
+	    {
+	      if(comma != 0)
+		string_concatc(buf, sizeof(buf), &off, ',');
+	      string_concat3(buf, sizeof(buf), &off, "\"",
+			     scamper_trace_flag_tostr(flag, tmp, sizeof(tmp)),
+			     "\"");
+	      comma = 1;
+	    }
+	}
+      string_concatc(buf, sizeof(buf), &off, ']');
+    }
 
   return strdup(buf);
 }

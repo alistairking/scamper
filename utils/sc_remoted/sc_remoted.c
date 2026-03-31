@@ -1,7 +1,7 @@
 /*
  * sc_remoted
  *
- * $Id: sc_remoted.c,v 1.156 2026/02/02 17:43:23 mjl Exp $
+ * $Id: sc_remoted.c,v 1.159 2026/02/19 05:24:28 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -1389,6 +1389,7 @@ static int sc_master_inet_send(sc_master_t *ms, void *ptr, uint16_t len,
       return 0;
     }
 
+  /* sc_master_inet_write() emits error messages */
   if(sc_master_inet_write(ms, ptr, len, sequence, channel) != 0)
     goto err;
   timeval_add_s(&ms->tx_ka, &now, 30);
@@ -1482,7 +1483,13 @@ static int sc_master_is_valid_client_cert_1(sc_master_t *ms)
       return 0;
     }
 
-  return tls_is_valid_cert(ms->inet_ssl, ms->monitorname);
+  if(tls_is_valid_cert(ms->inet_ssl, ms->monitorname) == 0)
+    {
+      remote_debug(__func__, "invalid cert");
+      return 0;
+    }
+
+  return 1;
 }
 #endif /* HAVE_OPENSSL */
 
@@ -1671,6 +1678,8 @@ static int sc_master_unix_create(sc_master_t *ms)
   int fd;
 
   snprintf(filename, sizeof(filename), "%s/%s", unix_dir, ms->name);
+
+  /* unix_create() emits error messages */
   if((fd = unix_create(filename)) == -1)
     goto err;
 
@@ -1750,7 +1759,10 @@ static void sc_master_inet_write_do(sc_master_t *ms)
   assert(ms->inet_wb != NULL);
 
   if(scamper_writebuf_write(ms->inet_fd.fd, ms->inet_wb) != 0)
-    goto zombie;
+    {
+      remote_debug(__func__, "write failed: %s", strerror(errno));
+      goto zombie;
+    }
 
   if(scamper_writebuf_len(ms->inet_wb) == 0)
     {
@@ -1760,7 +1772,10 @@ static void sc_master_inet_write_do(sc_master_t *ms)
 	  return;
 	}
       if(sc_fd_write_del(&ms->inet_fd) != 0)
-	goto zombie;
+	{
+	  remote_error(__func__, "could not delete inet write");
+	  goto zombie;
+	}
     }
 
   return;
@@ -1880,7 +1895,10 @@ static int sc_master_control_master(sc_master_t *ms, uint8_t *buf, size_t len)
     }
 
 #ifdef HAVE_OPENSSL
-  /* verify the monitorname if we are verifying TLS client certificates */
+  /*
+   * verify the monitorname if we are verifying TLS client certificates.
+   * sc_master_is_valid_client_cert_1() emits error messages.
+   */
   if(sc_master_is_valid_client_cert_1(ms) == 0)
     goto err;
 #endif
@@ -1898,15 +1916,24 @@ static int sc_master_control_master(sc_master_t *ms, uint8_t *buf, size_t len)
       goto err;
     }
 
-  /* set ms->name */
+  /*
+   * set ms->name.
+   * sc_master_nameit() emits error messages.
+   */
   if(sc_master_nameit(ms) != 0)
     goto err;
 
-  /* create the unix domain socket for the scamper instance */
+  /*
+   * create the unix domain socket for the scamper instance.
+   * sc_master_unix_create() emits error messages.
+   */
   if(unix_dir != NULL && sc_master_unix_create(ms) != 0)
     goto err;
 
-  /* send the list name to the client. do not expect an ack */
+  /*
+   * send the list name to the client. do not expect an ack
+   * fd_peername() emits error messages.
+   */
   if(fd_peername(ms->inet_fd.fd, sab, sizeof(sab), 1) != 0)
     goto err;
   remote_debug(__func__, "%s %s", ms->name,
@@ -2090,9 +2117,13 @@ static int sc_master_control_resume(sc_master_t *ms, uint8_t *buf, size_t len)
 		    magic_str(tmp, sizeof(tmp), magic, magic_len));
       remote_debug(__func__, "%s", str);
 
-      /* send the rejection control message */
+      /*
+       * send the rejection control message.
+       * sc_master_tx_rej() emits error messages via sc_master_inet_send().
+       */
       if(sc_master_tx_rej(ms) != 0)
 	goto err;
+
       goto done;
     }
 
@@ -2112,8 +2143,14 @@ static int sc_master_control_resume(sc_master_t *ms, uint8_t *buf, size_t len)
 	{
 	  remote_debug(__func__, "rcv_nxt value %u expected %u",
 		       rcv_nxt, ms2->snd_nxt);
+
+	  /*
+	   * send the rejection control message.
+	   * sc_master_tx_rej() emits error messages via sc_master_inet_send().
+	   */
 	  if(sc_master_tx_rej(ms) != 0)
 	    goto err;
+
 	  goto done;
 	}
     }
@@ -2127,8 +2164,14 @@ static int sc_master_control_resume(sc_master_t *ms, uint8_t *buf, size_t len)
       remote_debug(__func__,
 		   "scamper's send window %u:%u not expected %u",
 		   snd_una, snd_nxt, ms2->rcv_nxt);
+
+      /*
+       * send the rejection control message.
+       * sc_master_tx_rej() emits error messages via sc_master_inet_send().
+       */
       if(sc_master_tx_rej(ms) != 0)
 	goto err;
+
       goto done;
     }
 
@@ -2175,11 +2218,17 @@ static int sc_master_control_resume(sc_master_t *ms, uint8_t *buf, size_t len)
       sc_fd_write_add(&ms2->inet_fd);
     }
 
-  /* set ms2->name */
+  /*
+   * set ms2->name.
+   * sc_master_nameit() emits error messages.
+   */
   if(sc_master_nameit(ms2) != 0)
     goto err;
 
-  /* create a new unix domain socket */
+  /*
+   * create a new unix domain socket.
+   * sc_master_unix_create() emits error messages.
+   */
   if(unix_dir != NULL && sc_master_unix_create(ms2) != 0)
     goto err;
 
@@ -2193,6 +2242,7 @@ static int sc_master_control_resume(sc_master_t *ms, uint8_t *buf, size_t len)
   ms2->mode = MASTER_MODE_GO;
   ok[0] = CONTROL_MASTER_OK;
   bytes_htonl(ok+1, ms2->rcv_nxt);
+  /* sc_master_inet_write() emits error messages */
   if(sc_master_inet_write(ms2, ok, 5, 0, 0) != 0)
     goto err;
   remote_debug(__func__, "ok %s %s", ms2->name,
@@ -2201,6 +2251,7 @@ static int sc_master_control_resume(sc_master_t *ms, uint8_t *buf, size_t len)
   for(sn=slist_head_node(ms2->messages); sn != NULL; sn=slist_node_next(sn))
     {
       msg = slist_node_item(sn);
+      /* sc_master_inet_write() emits error messages */
       if(sc_master_inet_write(ms2, msg->data, msg->msglen, msg->sequence,
 			      msg->channel) != 0)
 	goto err;
@@ -2267,6 +2318,10 @@ static int sc_master_control(sc_master_t *ms)
 
       if(type == CONTROL_CHANNEL_FIN)
 	{
+	  /*
+	   * sc_master_tx_ack() emits error messages via
+	   * sc_master_inet_send()
+	   */
 	  if(sc_master_tx_ack(ms, seq) != 0)
 	    return -1;
 	  ms->rcv_nxt++;
@@ -2283,7 +2338,7 @@ static int sc_master_control(sc_master_t *ms)
 	}
     }
 
-  remote_debug(__func__, "unhandled type %d", type);
+  remote_debug(__func__, "unhandled type %d in mode %d", type, ms->mode);
   return -1;
 }
 
@@ -2349,11 +2404,13 @@ static void sc_master_inet_read_cb(sc_master_t *ms, uint8_t *buf, size_t len)
       /* if the message is a control message */
       if(id == 0)
 	{
+	  /* sc_master_control() emits error messages */
 	  if(sc_master_control(ms) != 0)
 	    goto err;
 	  continue;
 	}
 
+      /* sc_master_tx_ack() emits error messages via sc_master_inet_send() */
       if(sc_master_tx_ack(ms, seq) != 0)
 	goto err;
       ms->rcv_nxt++;
@@ -2426,6 +2483,7 @@ static void sc_master_inet_read_do(sc_master_t *ms)
 		  remote_debug(__func__, "ssl_want_read failed");
 		  goto err;
 		}
+	      /* sc_master_is_valid_client_cert_0() emits error messages */
 	      if(sc_master_is_valid_client_cert_0(ms) == 0)
 		goto err;
 	    }
@@ -2508,9 +2566,26 @@ static void sc_master_unix_accept_do(sc_master_t *ms)
       goto err;
     }
 
+#ifdef FD_SETSIZE
+  if((flags & FLAG_SELECT) && s >= FD_SETSIZE)
+    {
+      remote_debug(__func__, "accepted fd %d >= FD_SETSIZE %d", s, FD_SETSIZE);
+      goto err;
+    }
+#endif
+  
+  if(fcntl_set(s, O_NONBLOCK) == -1)
+    {
+      remote_error(__func__, "could not set O_NONBLOCK: %s", strerror(errno));
+      goto err;
+    }
+
   if((cn = malloc_zero(sizeof(sc_channel_t))) == NULL ||
      (ocn = malloc_zero(sizeof(sc_onechan_t))) == NULL)
-    goto err;
+    {
+      remote_error(__func__, "could not alloc channel: %s", strerror(errno));
+      goto err;
+    }
   cn->flags |= CHANNEL_FLAG_ONECHAN;
   cn->id = ms->next_channel++;
   if(ms->next_channel == 0)
@@ -2532,12 +2607,22 @@ static void sc_master_unix_accept_do(sc_master_t *ms)
   sc_fd_read_add(ocn->unix_fd);
 
   if((ocn->unix_wb = scamper_writebuf_alloc()) == NULL)
-    goto err;
+    {
+      remote_error(__func__, "could not alloc wb: %s", strerror(errno));
+      goto err;
+    }
   if((cn->cnode = dlist_tail_push(ms->channels, cn)) == NULL)
-    goto err;
+    {
+      remote_error(__func__, "could not add channel: %s", strerror(errno));
+      goto err;
+    }
   cn->master = ms;
 
-  /* send a new channel message to scamper. expect an acknowledgement */
+  /*
+   * send a new channel message to scamper. expect an acknowledgement.
+   * sc_master_inet_send_channel_new() emits error messages via
+   * sc_master_inet_send().
+   */
   if(sc_master_inet_send_channel_new(ms, cn) != 0)
     goto err;
 
@@ -2666,6 +2751,7 @@ static sc_master_t *sc_master_alloc(int fd)
 	  remote_debug(__func__, "unexpected %d from SSL_accept", rc);
 	  goto err;
 	}
+      /* ssl_want_read() emits error messages */
       if(ssl_want_read(ms) < 0)
 	goto err;
     }
@@ -2882,7 +2968,7 @@ static void sc_channel_free(sc_channel_t *cn)
  * a new connection has arrived.  accept the new connection while we wait
  * to understand the intention behind the socket.
  */
-static int serversocket_accept(int ss)
+static void serversocket_accept(int ss)
 {
   sc_master_t *ms = NULL;
   int inet_fd = -1;
@@ -2893,6 +2979,16 @@ static int serversocket_accept(int ss)
       remote_error(__func__, "could not accept: %s", strerror(errno));
       goto err;
     }
+
+#ifdef FD_SETSIZE
+  if((flags & FLAG_SELECT) && inet_fd >= FD_SETSIZE)
+    {
+      remote_debug(__func__, "accepted fd %d >= FD_SETSIZE %d",
+		   inet_fd, FD_SETSIZE);
+      goto err;
+    }
+#endif
+
   if(fcntl_set(inet_fd, O_NONBLOCK) == -1)
     {
       remote_error(__func__, "could not set O_NONBLOCK: %s", strerror(errno));
@@ -2901,6 +2997,7 @@ static int serversocket_accept(int ss)
 
   ms = sc_master_alloc(inet_fd);
   inet_fd = -1;
+  /* sc_master_alloc() emits error messages */
   if(ms == NULL)
     goto err;
 
@@ -2922,12 +3019,12 @@ static int serversocket_accept(int ss)
       goto err;
     }
 
-  return 0;
+  return;
 
  err:
   if(inet_fd != -1) close(inet_fd);
   if(ms != NULL) sc_master_free(ms);
-  return -1;
+  return;
 }
 
 static int serversocket_init_sa(const struct sockaddr *sa)
@@ -3098,13 +3195,19 @@ static int sc_mux_read_channel_open(sc_mux_t *mux,const uint8_t *buf,size_t len)
   uint32_t channel_id;
 
   if(len < 8)
-    return -1;
+    {
+      remote_debug(__func__, "channel open length is less than 8 bytes");
+      return -1;
+    }
   instance_id = bytes_ntohl(buf);
   channel_id = bytes_ntohl(buf+4);
 
   /* do not allow re-use of channel ids */
   if(sc_mux_chan_get(mux, channel_id) != NULL)
-    goto err;
+    {
+      remote_debug(__func__, "channel id %u is already used", channel_id);
+      goto err;
+    }
 
   /* find the master instance referred to */
   for(dn=dlist_head_node(mslist); dn != NULL; dn=dlist_node_next(dn))
@@ -3114,20 +3217,33 @@ static int sc_mux_read_channel_open(sc_mux_t *mux,const uint8_t *buf,size_t len)
 	break;
     }
   if(ms == NULL || ms->id != instance_id)
-    goto err;
+    {
+      remote_debug(__func__, "no master with instance id %u", instance_id);
+      goto err;
+    }
 
   if((cn = malloc_zero(sizeof(sc_channel_t))) == NULL ||
      (mcn = malloc_zero(sizeof(sc_muxchan_t))) == NULL)
-    goto err;
+    {
+      remote_error(__func__, "could not alloc channel: %s", strerror(errno));
+      goto err;
+    }
   cn->flags |= CHANNEL_FLAG_MUXCHAN;
   cn->id = ms->next_channel++;
   if(ms->next_channel == 0)
     ms->next_channel++;
   if((cn->cnode = dlist_tail_push(ms->channels, cn)) == NULL)
-    goto err;
+    {
+      remote_error(__func__, "could not add channel: %s", strerror(errno));
+      goto err;
+    }
   cn->master = ms;
 
-  /* send a new channel message to scamper. expect an acknowledgement */
+  /*
+   * send a new channel message to scamper. expect an acknowledgement
+   * sc_master_inet_send_channel_new() emits error messages via
+   * sc_master_inet_send().
+   */
   if(sc_master_inet_send_channel_new(ms, cn) != 0)
     goto err;
 
@@ -3137,7 +3253,10 @@ static int sc_mux_read_channel_open(sc_mux_t *mux,const uint8_t *buf,size_t len)
   mcn->channel_id = channel_id;
 
   if((mcn->mxcnode = dlist_tail_push(mux->channels, mcn)) == NULL)
-    goto err;
+    {
+      remote_error(__func__, "could not add mux channel: %s", strerror(errno));
+      goto err;
+    }
 
   return 0;
 
@@ -3160,11 +3279,15 @@ static int sc_mux_read_channel_zero(sc_mux_t *mux,const uint8_t *buf,size_t len)
   uint16_t msg_type;
 
   if(len < 2)
-    return -1;
+    {
+      remote_debug(__func__, "channel zero length is less than 2 bytes");
+      return -1;
+    }
 
   msg_type = bytes_ntohs(buf);
   if(msg_type == MUX_CHANNEL_OPEN)
     {
+      /* sc_mux_read_channel_open() emits error messages */
       if(sc_mux_read_channel_open(mux, buf+2, len-2) != 0)
 	return -1;
     }
@@ -3182,7 +3305,10 @@ static void sc_mux_unix_read_do(sc_mux_t *mux)
   ssize_t rrc;
 
   if(realloc_wrap((void **)&mux->buf, mux->buf_len + 8192) != 0)
-    goto zombie;
+    {
+      remote_error(__func__, "could not realloc mux buf");
+      goto zombie;
+    }
 
   if((rrc = recv(mux->unix_fd->fd, mux->buf + mux->buf_len, 8192, 0)) <= 0)
     {
@@ -3237,6 +3363,7 @@ static void sc_mux_unix_read_do(sc_mux_t *mux)
       if(left < msg_len)
 	break;
 
+      /* sc_mux_read_channel_zero() emits error messages */
       if(sc_mux_read_channel_zero(mux, mux->buf + off, msg_len) != 0)
 	goto zombie;
 
@@ -3268,6 +3395,7 @@ static void sc_mux_unix_read_do(sc_mux_t *mux)
 
 static int sc_mux_unix_send(sc_mux_t *mux, uint8_t *buf, size_t len)
 {
+  /* all callers emit an error message of their own */
   if(mux->unix_wb == NULL || mux->unix_fd == NULL)
     return -1;
   if(scamper_writebuf_send(mux->unix_wb, buf, len) != 0)
@@ -3284,7 +3412,7 @@ static void sc_mux_unix_write_do(sc_mux_t *mux)
   if(scamper_writebuf_write(mux->unix_fd->fd, mux->unix_wb) != 0)
     {
       remote_debug(__func__, "write failed");
-      goto err;
+      return;
     }
 
   /*
@@ -3298,16 +3426,13 @@ static void sc_mux_unix_write_do(sc_mux_t *mux)
   if(sc_fd_write_del(mux->unix_fd) != 0)
     {
       remote_error(__func__, "could not delete unix write");
-      goto err;
+      return;
     }
 
   return;
-
- err:
-  return;
 }
 
-static int muxsocket_accept(int muxsock)
+static void muxsocket_accept(int muxsock)
 {
   sc_mux_t *mux = NULL;
   dlist_node_t *dn;
@@ -3321,6 +3446,20 @@ static int muxsocket_accept(int muxsock)
   if((s = accept(muxsock, NULL, NULL)) == -1)
     {
       remote_error(__func__, "accept failed: %s", strerror(errno));
+      goto err;
+    }
+
+#ifdef FD_SETSIZE
+  if((flags & FLAG_SELECT) && s >= FD_SETSIZE)
+    {
+      remote_debug(__func__, "accepted fd %d >= FD_SETSIZE %d", s, FD_SETSIZE);
+      goto err;
+    }
+#endif
+
+  if(fcntl_set(s, O_NONBLOCK) == -1)
+    {
+      remote_error(__func__, "could not set O_NONBLOCK: %s", strerror(errno));
       goto err;
     }
 
@@ -3362,12 +3501,12 @@ static int muxsocket_accept(int muxsock)
 
   sc_fd_write_add(mux->unix_fd);
 
-  return 0;
+  return;
 
  err:
   if(s != -1) close(s);
   if(mux != NULL) sc_mux_free(mux);
-  return -1;
+  return;
 }
 
 static int muxsocket_init(void)
@@ -3798,7 +3937,10 @@ static int kqueue_loop(void)
       scfd->type = FD_TYPE_SERVER;
       scfd->fd = serversockets[i];
       if(sc_fd_read_add(scfd) != 0)
-	return -1;
+	{
+	  remote_error(__func__, "could not monitor server socket read events");
+	  return -1;
+	}
       scfd++;
     }
   if(muxsocket != -1)
@@ -3806,7 +3948,10 @@ static int kqueue_loop(void)
       scfd->type = FD_TYPE_MUX_ACCEPT;
       scfd->fd = muxsocket;
       if(sc_fd_read_add(scfd) != 0)
-	return -1;
+	{
+	  remote_error(__func__, "could not monitor mux socket read events");
+	  return -1;
+	}
     }
   scfd = NULL;
 
@@ -3821,6 +3966,10 @@ static int kqueue_loop(void)
 	  reload = 0;
 	  metadata_load();
 #ifdef HAVE_OPENSSL
+	  /*
+	   * remoted_tlsctx_reload() emits error messages via
+	   * remoted_tlsctx()
+	   */
 	  if(remoted_tlsctx_reload() != 0)
 	    return -1;
 #endif
@@ -4010,6 +4159,10 @@ static int select_loop(void)
 	  reload = 0;
 	  metadata_load();
 #ifdef HAVE_OPENSSL
+	  /*
+	   * remoted_tlsctx_reload() emits error messages via
+	   * remoted_tlsctx()
+	   */
 	  if(remoted_tlsctx_reload() != 0)
 	    return -1;
 #endif
@@ -4183,14 +4336,12 @@ static int select_loop(void)
 	  for(i=0; i<2; i++)
 	    {
 	      if(serversockets[i] != -1 &&
-		 FD_ISSET(serversockets[i], &rfds) &&
-		 serversocket_accept(serversockets[i]) != 0)
-		return -1;
+		 FD_ISSET(serversockets[i], &rfds))
+		serversocket_accept(serversockets[i]);
 	    }
 
-	  if(muxsocket != -1 && FD_ISSET(muxsocket, &rfds) &&
-	     muxsocket_accept(muxsocket) != 0)
-	    return -1;
+	  if(muxsocket != -1 && FD_ISSET(muxsocket, &rfds))
+	    muxsocket_accept(muxsocket);
 
 	  for(dn=dlist_head_node(mslist); dn != NULL; dn=dlist_node_next(dn))
 	    {
