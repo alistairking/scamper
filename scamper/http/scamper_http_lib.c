@@ -1,9 +1,9 @@
 /*
  * scamper_http_lib.c
  *
- * $Id: scamper_http_lib.c,v 1.17 2025/10/19 19:23:21 mjl Exp $
+ * $Id: scamper_http_lib.c,v 1.18 2026/03/26 23:26:43 mjl Exp $
  *
- * Copyright (C) 2023-2024 The Regents of the University of California
+ * Copyright (C) 2023-2026 The Regents of the University of California
  *
  * Authors: Matthew Luckie
  *
@@ -73,6 +73,61 @@ const char *scamper_http_errmsg_get(const scamper_http_t *http)
   return http->errmsg;
 }
 
+uint32_t scamper_http_ech_config_list_len_get(const scamper_http_t *http)
+{
+  return http->ech_config_list_len;
+}
+
+const uint8_t *scamper_http_ech_config_list_get(const scamper_http_t *http)
+{
+  return http->ech_config_list;
+}
+
+uint8_t scamper_http_ech_status_get(const scamper_http_t *http)
+{
+  return http->ech_status;
+}
+
+char *scamper_http_ech_status_tostr(const scamper_http_t *http,
+				    char *buf, size_t len)
+{
+  static const char *r[] = {
+    "none",
+    "unknown",
+    "failed",
+    "success",
+    "grease",
+    "grease-ech",
+    "backend",
+    "bad-call",
+    "not-tried",
+    "bad-name",
+    "not-configured",
+    "failed-ech",
+    "failed-ech-bad-name",
+  };
+  if(http->ech_status >= sizeof(r) / sizeof(char *))
+    snprintf(buf, len, "%d", http->ech_status);
+  else
+    snprintf(buf, len, "%s", r[http->ech_status]);
+  return buf;
+}
+
+const char *scamper_http_ech_outer_sni_get(const scamper_http_t *http)
+{
+  return http->ech_outer_sni;
+}
+
+uint32_t scamper_http_ech_retry_config_len_get(const scamper_http_t *http)
+{
+  return http->ech_retry_config_len;
+}
+
+const uint8_t *scamper_http_ech_retry_config_get(const scamper_http_t *http)
+{
+  return http->ech_retry_config;
+}
+
 const struct timeval *scamper_http_start_get(const scamper_http_t *http)
 {
   return &http->start;
@@ -96,6 +151,11 @@ uint32_t scamper_http_flags_get(const scamper_http_t *http)
 int scamper_http_flag_is_insecure(const scamper_http_t *http)
 {
   return SCAMPER_HTTP_FLAG_IS_INSECURE(http);
+}
+
+int scamper_http_flag_is_grease(const scamper_http_t *http)
+{
+  return SCAMPER_HTTP_FLAG_IS_GREASE(http);
 }
 
 uint8_t scamper_http_stop_get(const scamper_http_t *http)

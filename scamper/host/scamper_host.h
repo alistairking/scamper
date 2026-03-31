@@ -1,9 +1,9 @@
 /*
  * scamper_host
  *
- * $Id: scamper_host.h,v 1.33 2025/10/19 19:23:21 mjl Exp $
+ * $Id: scamper_host.h,v 1.34 2026/03/19 06:41:38 mjl Exp $
  *
- * Copyright (C) 2018-2025 Matthew Luckie
+ * Copyright (C) 2018-2026 Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -161,6 +161,7 @@ const uint8_t *scamper_host_rr_svcb_param_val_get(const scamper_host_rr_svcb_par
 #define SCAMPER_HOST_TYPE_NSEC   47
 #define SCAMPER_HOST_TYPE_DNSKEY 48
 #define SCAMPER_HOST_TYPE_SVCB   64
+#define SCAMPER_HOST_TYPE_HTTPS  65
 
 #define SCAMPER_HOST_STOP_NONE    0
 #define SCAMPER_HOST_STOP_DONE    1

@@ -1,6 +1,6 @@
 # Process this file with autoconf to produce a configure script.
 
-AC_INIT([scamper],[20260204],[mjl@luckie.org.nz])
+AC_INIT([scamper],[20260331],[mjl@luckie.org.nz])
 
 AC_CONFIG_SRCDIR([scamper/scamper.c])
 AC_CONFIG_AUX_DIR([.])
@@ -708,7 +708,25 @@ if test "x$have_openssl" = "xyes"; then
    [
 	AC_MSG_RESULT([yes])
 	AC_DEFINE_UNQUOTED([HAVE_ASN1_STRING_GET0_DATA], 1,
-		[Define to 1 if you have the HAVE_ASN1_STRING_GET0_DATA function])
+		[Define to 1 if you have the ASN1_STRING_get0_data function])
+   ],
+   [
+	AC_MSG_RESULT([no])
+   ])
+   AC_MSG_CHECKING([for SSL_set1_ech_config_list])
+   AC_LINK_IFELSE([
+     AC_LANG_PROGRAM([
+	[#include <openssl/bio.h>]
+	[#include <openssl/ssl.h>]
+	[#include <openssl/err.h>]],
+	[
+	 [SSL_set1_ech_config_list(NULL, NULL, 0);]
+	])
+   ],
+   [
+	AC_MSG_RESULT([yes])
+	AC_DEFINE_UNQUOTED([HAVE_SSL_SET1_ECH_CONFIG_LIST], 1,
+		[Define to 1 if you have the SSL_set1_ech_config_list function])
    ],
    [
 	AC_MSG_RESULT([no])

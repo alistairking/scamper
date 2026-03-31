@@ -2,7 +2,7 @@
 #
 # Author: Matthew Luckie
 #
-# Copyright (C) 2023 The Regents of the University of California
+# Copyright (C) 2023-2026 The Regents of the University of California
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -51,6 +51,20 @@ cdef extern from "scamper_http.h":
  cdef uint8_t  SCAMPER_HTTP_STOP_TIMEOUT
  cdef uint8_t  SCAMPER_HTTP_STOP_INSECURE
 
+ cdef uint8_t  SCAMPER_HTTP_ECH_STATUS_NONE
+ cdef uint8_t  SCAMPER_HTTP_ECH_STATUS_UNKNOWN
+ cdef uint8_t  SCAMPER_HTTP_ECH_STATUS_FAILED
+ cdef uint8_t  SCAMPER_HTTP_ECH_STATUS_SUCCESS
+ cdef uint8_t  SCAMPER_HTTP_ECH_STATUS_GREASE
+ cdef uint8_t  SCAMPER_HTTP_ECH_STATUS_GREASE_ECH
+ cdef uint8_t  SCAMPER_HTTP_ECH_STATUS_BACKEND
+ cdef uint8_t  SCAMPER_HTTP_ECH_STATUS_BAD_CALL
+ cdef uint8_t  SCAMPER_HTTP_ECH_STATUS_NOT_TRIED
+ cdef uint8_t  SCAMPER_HTTP_ECH_STATUS_BAD_NAME
+ cdef uint8_t  SCAMPER_HTTP_ECH_STATUS_NOT_CONFIGURED
+ cdef uint8_t  SCAMPER_HTTP_ECH_STATUS_FAILED_ECH
+ cdef uint8_t  SCAMPER_HTTP_ECH_STATUS_FAILED_ECH_BAD_NAME
+
  void scamper_http_free(scamper_http_t *http)
 
  scamper_list_t *scamper_http_list_get(const scamper_http_t *http)
@@ -68,6 +82,14 @@ cdef extern from "scamper_http.h":
  char *scamper_http_type_tostr(const scamper_http_t *http, char *buf, size_t len)
  const char *scamper_http_host_get(const scamper_http_t *http)
  const char *scamper_http_file_get(const scamper_http_t *http)
+
+ const uint8_t *scamper_http_ech_config_list_get(const scamper_http_t *http)
+ uint32_t scamper_http_ech_config_list_len_get(const scamper_http_t *http)
+ uint8_t scamper_http_ech_status_get(const scamper_http_t *http)
+ char *scamper_http_ech_status_tostr(const scamper_http_t *http, char *buf, size_t len)
+ const char *scamper_http_ech_outer_sni_get(const scamper_http_t *http)
+ const uint8_t *scamper_http_ech_retry_config_get(const scamper_http_t *http)
+ uint32_t scamper_http_ech_retry_config_len_get(const scamper_http_t *http)
 
  uint32_t scamper_http_bufc_get(const scamper_http_t *http)
  scamper_http_buf_t *scamper_http_buf_get(const scamper_http_t *http, uint32_t i)

@@ -1,9 +1,9 @@
 /*
  * scamper_host_cmd
  *
- * $Id: scamper_host_cmd.c,v 1.21 2025/10/02 06:47:06 mjl Exp $
+ * $Id: scamper_host_cmd.c,v 1.22 2026/03/19 06:41:38 mjl Exp $
  *
- * Copyright (C) 2018-2025 Matthew Luckie
+ * Copyright (C) 2018-2026 Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -187,6 +187,8 @@ static int host_arg_param_validate(int optid, char *param, long long *out,
 	tmp = SCAMPER_HOST_TYPE_TXT;
       else if(strcasecmp(param, "SVCB") == 0)
 	tmp = SCAMPER_HOST_TYPE_SVCB;
+      else if(strcasecmp(param, "HTTPS") == 0)
+	tmp = SCAMPER_HOST_TYPE_HTTPS;
       else
 	{
 	  snprintf(errbuf, errlen, "unsupported query type");
@@ -391,7 +393,8 @@ void *scamper_do_host_alloc(char *str, char *errbuf, size_t errlen)
     }
   else if(qtype == SCAMPER_HOST_TYPE_A || qtype == SCAMPER_HOST_TYPE_AAAA ||
 	  qtype == SCAMPER_HOST_TYPE_MX || qtype == SCAMPER_HOST_TYPE_NS ||
-	  qtype == SCAMPER_HOST_TYPE_SOA || qtype == SCAMPER_HOST_TYPE_SVCB)
+	  qtype == SCAMPER_HOST_TYPE_SOA || qtype == SCAMPER_HOST_TYPE_SVCB ||
+	  qtype == SCAMPER_HOST_TYPE_HTTPS)
     {
       /*
        * for A, AAAA, MX, NS, SOA, the name to look up MUST NOT be an

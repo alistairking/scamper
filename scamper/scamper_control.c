@@ -1,7 +1,7 @@
 /*
  * scamper_control.c
  *
- * $Id: scamper_control.c,v 1.293 2025/11/05 03:34:16 mjl Exp $
+ * $Id: scamper_control.c,v 1.295 2026/03/30 18:24:59 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -1873,7 +1873,7 @@ static void client_write(const int fd, client_t *client)
 
   if(scamper_writebuf_write(fd, client->un.sock.wb) != 0)
     {
-      printerror(__func__, "fd %d", fd);
+      scamper_debug(__func__, "fd %d", fd);
       goto err;
     }
 
@@ -3236,7 +3236,7 @@ static void control_accept(SOCKET fd, void *param)
   scamper_debug(__func__, "fd %d", s);
 
   /* make the socket non-blocking, so a read or write will not hang scamper */
-#ifdef HAVE_FCNTL
+#ifdef O_NONBLOCK
   if(fcntl_set(s, O_NONBLOCK) == -1)
     {
       printerror(__func__, "could not set NONBLOCK");

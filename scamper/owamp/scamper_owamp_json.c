@@ -4,7 +4,7 @@
  * Copyright (c) 2025-2026 The Regents of the University of California
  * Author: Matthew Luckie
  *
- * $Id: scamper_owamp_json.c,v 1.2 2026/01/07 07:13:13 mjl Exp $
+ * $Id: scamper_owamp_json.c,v 1.3 2026/02/13 03:52:42 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -201,7 +201,7 @@ static char *owamp_header(const scamper_owamp_t *owamp)
   if(owamp->list != NULL && owamp->list->monitor != NULL)
     string_concat3(buf, sizeof(buf), &off, ",\"monitor\":\"",
 		   json_esc(owamp->list->monitor, tmp, sizeof(tmp)), "\"");
-  
+
   if(owamp->sched == NULL || owamp->schedc == 0)
     return strdup(buf);
 

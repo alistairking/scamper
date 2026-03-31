@@ -2,7 +2,7 @@
  * sc_pinger : scamper driver to probe destinations with various ping
  *             methods
  *
- * $Id: sc_pinger.c,v 1.49 2025/06/29 22:32:14 mjl Exp $
+ * $Id: sc_pinger.c,v 1.51 2026/03/30 01:37:52 mjl Exp $
  *
  * Copyright (C) 2020      The University of Waikato
  * Copyright (C) 2022-2025 Matthew Luckie
@@ -74,7 +74,7 @@ static slist_t               *waiting       = NULL;
 static char                 **methods       = NULL;
 static int                    methodc       = 0;
 static int                    methodc_ok    = 0;
-static int                    error         = 0;
+static uint8_t                pinger_stop   = 0;
 static struct timeval         zombie;
 static int                    ctrlcb_called = 0;
 static sc_methstats_t       **method_stats  = NULL;
@@ -100,6 +100,9 @@ static size_t                 rxttl_thresh  = 0;
 #ifdef PACKAGE_VERSION
 #define OPT_VERSION     0x8000
 #endif
+
+#define PINGER_STOP_ERROR   0x01
+#define PINGER_STOP_SIGNAL  0x02
 
 /*
  * sc_pingtest
@@ -1514,7 +1517,7 @@ static void ctrlcb(scamper_inst_t *inst, uint8_t type, scamper_task_t *task,
 
  err:
   if(cs != NULL) free(cs);
-  error = 1;
+  pinger_stop |= PINGER_STOP_ERROR;
   return;
 }
 
@@ -1596,6 +1599,13 @@ static int do_scamperconnect(void)
   return 0;
 }
 
+static void pinger_sigint(int signo)
+{
+  if(signo == SIGINT || signo == SIGTERM)
+    pinger_stop |= PINGER_STOP_SIGNAL;
+  return;
+}
+
 static int pinger_data(void)
 {
   uint16_t types[] = {SCAMPER_FILE_OBJ_CYCLE_START,
@@ -1649,7 +1659,9 @@ static int pinger_data(void)
      (virgin = slist_alloc()) == NULL || (waiting = slist_alloc()) == NULL ||
      do_scamperconnect() != 0 || openfile() != 0 ||
      (decode_sf = scamper_file_opennull('r', "warts")) == NULL ||
-     (decode_rb = scamper_file_readbuf_alloc()) == NULL)
+     (decode_rb = scamper_file_readbuf_alloc()) == NULL ||
+     signal(SIGINT, pinger_sigint) == SIG_ERR ||
+     signal(SIGTERM, pinger_sigint) == SIG_ERR)
     {
       print("%s: could not init", __func__);
       return -1;
@@ -1665,14 +1677,17 @@ static int pinger_data(void)
 
   scamper_file_setreadfunc(decode_sf, decode_rb, scamper_file_readbuf_read);
 
-  while(error == 0 && scamper_ctrl_isdone(scamper_ctrl) == 0)
+  while(pinger_stop == 0 && scamper_ctrl_isdone(scamper_ctrl) == 0)
     {
       if(more > 0 &&
 	 (slist_count(waiting) > 0 || slist_count(virgin) > 0 ||
 	  addrfile_fd != -1))
 	{
 	  if(do_method() != 0)
-	    return -1;
+	    {
+	      pinger_stop |= PINGER_STOP_ERROR;
+	      break;
+	    }
 	}
 
       if(probing == 0 && slist_count(virgin) == 0 &&
@@ -1689,7 +1704,12 @@ static int pinger_data(void)
 	  timeval_cpy(&tv_diff, &zombie);
 	  gettimeofday_wrap(&tv_in);
 	}
-      scamper_ctrl_wait(scamper_ctrl, timeout);
+      if(scamper_ctrl_wait(scamper_ctrl, timeout) != 0)
+	{
+	  print("scamper_ctrl_wait: %s", scamper_ctrl_strerror(scamper_ctrl));
+	  pinger_stop |= PINGER_STOP_ERROR;
+	  break;
+	}
       if(timeout != NULL && ctrlcb_called == 0)
 	{
 	  gettimeofday_wrap(&tv_out);
@@ -1714,7 +1734,8 @@ static int pinger_data(void)
 	goto done;
     }
 
-  rc = 0;
+  if((pinger_stop & PINGER_STOP_ERROR) == 0)
+    rc = 0;
 
  done:
   if(fn != NULL) free(fn);

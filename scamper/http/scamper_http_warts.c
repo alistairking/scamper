@@ -1,11 +1,11 @@
 /*
  * scamper_http_warts.c
  *
- * Copyright (C) 2023-2025 The Regents of the University of California
+ * Copyright (C) 2023-2026 The Regents of the University of California
  *
  * Author: Matthew Luckie
  *
- * $Id: scamper_http_warts.c,v 1.7 2025/10/19 02:17:23 mjl Exp $
+ * $Id: scamper_http_warts.c,v 1.8 2026/03/26 23:26:43 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -39,6 +39,14 @@
 #include "utils.h"
 
 /*
+ * bits of HTTP that could be too large to fit into regular http parameters.
+ * type: 1 byte
+ * len:  4 bytes
+ */
+#define WARTS_HTTP_ATTR_ECS_CONFIG_LIST  1
+#define WARTS_HTTP_ATTR_ECS_RETRY_CONFIG 2
+
+/*
  * the bits of a http structure
  */
 #define WARTS_HTTP_LIST            1
@@ -59,6 +67,8 @@
 #define WARTS_HTTP_FLAGS           16
 #define WARTS_HTTP_MAXTIME         17
 #define WARTS_HTTP_ERRMSG          18
+#define WARTS_HTTP_ECH_STATUS      19
+#define WARTS_HTTP_ECH_OUTER_SNI   20
 
 static const warts_var_t http_vars[] =
 {
@@ -80,6 +90,8 @@ static const warts_var_t http_vars[] =
  {WARTS_HTTP_FLAGS,           4},
  {WARTS_HTTP_MAXTIME,         8},
  {WARTS_HTTP_ERRMSG,         -1},
+ {WARTS_HTTP_ECH_STATUS,      1},
+ {WARTS_HTTP_ECH_OUTER_SNI,  -1},
 };
 #define http_vars_mfb WARTS_VAR_MFB(http_vars)
 
@@ -274,7 +286,9 @@ static int warts_http_params(const scamper_http_t *http, uint8_t *flags,
 	 (var->id == WARTS_HTTP_HSRTT   && timeval_iszero(&http->hsrtt)) ||
 	 (var->id == WARTS_HTTP_FLAGS   && http->flags == 0) ||
 	 (var->id == WARTS_HTTP_MAXTIME && timeval_iszero(&http->maxtime)) ||
-	 (var->id == WARTS_HTTP_ERRMSG  && http->errmsg == NULL))
+	 (var->id == WARTS_HTTP_ERRMSG  && http->errmsg == NULL) ||
+	 (var->id == WARTS_HTTP_ECH_STATUS && http->ech_status == 0) ||
+	 (var->id == WARTS_HTTP_ECH_OUTER_SNI && http->ech_outer_sni == NULL))
 	continue;
 
       /* Set the flag for the rest of the variables */
@@ -311,6 +325,11 @@ static int warts_http_params(const scamper_http_t *http, uint8_t *flags,
 	  if(warts_str_size(http->errmsg, params_len) != 0)
 	    return -1;
 	}
+      else if(var->id == WARTS_HTTP_ECH_OUTER_SNI)
+	{
+	  if(warts_str_size(http->ech_outer_sni, params_len) != 0)
+	    return -1;
+	}
       else
 	{
 	  assert(var->size >= 0);
@@ -344,6 +363,8 @@ static int warts_http_params_read(scamper_http_t *http, warts_state_t *state,
     {&http->flags,        (wpr_t)extract_uint32,       NULL},
     {&http->maxtime,      (wpr_t)extract_timeval,      NULL},
     {&http->errmsg,       (wpr_t)extract_string,       NULL},
+    {&http->ech_status,    (wpr_t)extract_byte,         NULL},
+    {&http->ech_outer_sni, (wpr_t)extract_string,       NULL},
   };
   const int handler_cnt = sizeof(handlers) / sizeof(warts_param_reader_t);
   uint32_t o = *off;
@@ -391,6 +412,8 @@ static int warts_http_params_write(const scamper_http_t *http,
     {&http->flags,        (wpw_t)insert_uint32,       NULL},
     {&http->maxtime,      (wpw_t)insert_timeval,      NULL},
     {http->errmsg,        (wpw_t)insert_string,       NULL},
+    {&http->ech_status,   (wpw_t)insert_byte,         NULL},
+    {http->ech_outer_sni, (wpw_t)insert_string,       NULL},
   };
   const int handler_cnt = sizeof(handlers)/sizeof(warts_param_writer_t);
 
@@ -409,7 +432,7 @@ int scamper_file_warts_http_read(scamper_file_t *sf, const warts_hdr_t *hdr,
   scamper_http_t *http = NULL;
   scamper_http_buf_t *htb = NULL;
   slist_t *list = NULL;
-  uint8_t *buf = NULL;
+  uint8_t *buf = NULL, type;
   uint32_t i, off = 0, bufc;
   int rc = -1;
   size_t sz;
@@ -450,6 +473,32 @@ int scamper_file_warts_http_read(scamper_file_t *sf, const warts_hdr_t *hdr,
 	http->bufs[http->bufc++] = htb;
     }
 
+  while(off < hdr->len && hdr->len - off >= 5)
+    {
+      type = buf[off++];
+      if(extract_uint32(buf, &off, hdr->len, &i, NULL) != 0 ||
+	 hdr->len - off < i)
+	goto done;
+      if(type == WARTS_HTTP_ATTR_ECS_CONFIG_LIST)
+	{
+	  if(extract_bytes_alloc32(buf, &off, hdr->len,
+				   &http->ech_config_list, &i) != 0)
+	    goto done;
+	  http->ech_config_list_len = i;
+	}
+      else if(type == WARTS_HTTP_ATTR_ECS_RETRY_CONFIG)
+	{
+	  if(extract_bytes_alloc32(buf, &off, hdr->len,
+				   &http->ech_retry_config, &i) != 0)
+	    goto done;
+	  http->ech_retry_config_len = i;
+	}
+      else
+	{
+	  off += i;
+	}
+    }
+
   *http_out = http; http = NULL;
   rc = 0;
 
@@ -487,6 +536,12 @@ int scamper_file_warts_http_write(const scamper_file_t *sf,
 	}
     }
 
+  if(http->ech_config_list_len > 0 && http->ech_config_list != NULL)
+    len += 1 + 4 + http->ech_config_list_len;
+
+  if(http->ech_retry_config_len > 0 && http->ech_retry_config != NULL)
+    len += 1 + 4 + http->ech_retry_config_len;
+
   /* Allocate memory to store all of the data (including packets) */
   if((buf = malloc_zero(len)) == NULL)
     goto done;
@@ -502,6 +557,20 @@ int scamper_file_warts_http_write(const scamper_file_t *sf,
     {
       for(i=0; i<http->bufc; i++)
 	warts_http_buf_write(http->bufs[i], buf, &off, len, &htbs[i]);
+    }
+
+  if((i = http->ech_config_list_len) > 0)
+    {
+      buf[off++] = WARTS_HTTP_ATTR_ECS_CONFIG_LIST;
+      insert_uint32(buf, &off, len, &http->ech_config_list_len, NULL);
+      insert_bytes_uint32(buf, &off, len, http->ech_config_list, &i);
+    }
+
+  if((i = http->ech_retry_config_len) > 0)
+    {
+      buf[off++] = WARTS_HTTP_ATTR_ECS_RETRY_CONFIG;
+      insert_uint32(buf, &off, len, &http->ech_retry_config_len, NULL);
+      insert_bytes_uint32(buf, &off, len, http->ech_retry_config, &i);
     }
 
   assert(off == len);

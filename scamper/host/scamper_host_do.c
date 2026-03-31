@@ -1,9 +1,9 @@
 /*
  * scamper_host_do
  *
- * $Id: scamper_host_do.c,v 1.97 2025/11/05 03:34:16 mjl Exp $
+ * $Id: scamper_host_do.c,v 1.99 2026/03/19 06:41:38 mjl Exp $
  *
- * Copyright (C) 2018-2025 Matthew Luckie
+ * Copyright (C) 2018-2026 Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -880,7 +880,8 @@ static slist_t *host_rr_list(const uint8_t *buf, size_t off, size_t len)
 		goto err;
 	    }
 	  else if(class == SCAMPER_HOST_CLASS_IN &&
-		  type == SCAMPER_HOST_TYPE_SVCB)
+		  (type == SCAMPER_HOST_TYPE_SVCB ||
+		   type == SCAMPER_HOST_TYPE_HTTPS))
 	    {
 	      if(extract_svcb(rr, buf, len, off, rdlength) != 0)
 		goto err;
@@ -1521,7 +1522,7 @@ static int do_host_probe_tcp(scamper_task_t *task, scamper_err_t *error)
 	  goto err;
 	}
 
-#ifdef HAVE_FCNTL
+#ifdef O_NONBLOCK
       if(fcntl_set(fd, O_NONBLOCK) == -1)
 	{
 	  scamper_err_make(error, errno, "could not set O_NONBLOCK");

@@ -21,7 +21,7 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
- * $Id: sc_attach.c,v 1.50 2025/06/10 07:10:03 mjl Exp $
+ * $Id: sc_attach.c,v 1.51 2026/02/27 22:55:07 mjl Exp $
  *
  */
 
@@ -372,7 +372,7 @@ static int check_options(int argc, char *argv[])
   if(options & OPT_STDOUT)
     {
       stdout_fd = STDOUT_FILENO;
-#ifdef HAVE_FCNTL
+#ifdef O_NONBLOCK
       if(fcntl_set(stdout_fd, O_NONBLOCK) == -1)
 	return -1;
 #endif
@@ -706,7 +706,7 @@ static int do_scamperconnect(void)
       return -1;
     }
 
-#ifdef HAVE_FCNTL
+#ifdef O_NONBLOCK
   if(fcntl_set(scamper_fd, O_NONBLOCK) == -1)
     {
       fprintf(stderr, "%s: could not set nonblock: %s\n",
