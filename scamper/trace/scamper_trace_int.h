@@ -1,7 +1,7 @@
 /*
  * scamper_trace_int.h
  *
- * $Id: scamper_trace_int.h,v 1.20 2025/10/15 23:47:47 mjl Exp $
+ * $Id: scamper_trace_int.h,v 1.21 2026/03/28 21:10:19 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -205,6 +205,9 @@ scamper_addr_t *scamper_trace_dtree_gss_find(const scamper_trace_dtree_t *dtree,
 
 #define SCAMPER_TRACE_FLAG_IS_CONSTPAYLOAD(trace) (		\
  (trace)->flags & SCAMPER_TRACE_FLAG_CONSTPAYLOAD)
+
+#define SCAMPER_TRACE_FLAG_IS_BACK(trace) ( \
+ (trace)->flags & SCAMPER_TRACE_FLAG_BACK)
 
 struct scamper_trace
 {

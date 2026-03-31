@@ -2,7 +2,7 @@
 #
 # Author: Matthew Luckie
 #
-# Copyright (C) 2023-2025 The Regents of the University of California
+# Copyright (C) 2023-2026 The Regents of the University of California
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -278,6 +278,7 @@ import os, stat
 import binascii
 import enum
 import re
+import collections
 
 cimport cscamper_addr
 cimport cscamper_list
@@ -340,6 +341,21 @@ class ScamperTraceStop(enum.IntEnum):
     Halted = cscamper_trace.SCAMPER_TRACE_STOP_HALTED
     InProgress = cscamper_trace.SCAMPER_TRACE_STOP_INPROGRESS
 
+class ScamperHttpEchStatus(enum.IntEnum):
+    NoStatus = cscamper_http.SCAMPER_HTTP_ECH_STATUS_NONE
+    Unknown = cscamper_http.SCAMPER_HTTP_ECH_STATUS_UNKNOWN
+    Failed = cscamper_http.SCAMPER_HTTP_ECH_STATUS_FAILED
+    Success = cscamper_http.SCAMPER_HTTP_ECH_STATUS_SUCCESS
+    Grease = cscamper_http.SCAMPER_HTTP_ECH_STATUS_GREASE
+    GreaseEch = cscamper_http.SCAMPER_HTTP_ECH_STATUS_GREASE_ECH
+    Backend = cscamper_http.SCAMPER_HTTP_ECH_STATUS_BACKEND
+    BadCall = cscamper_http.SCAMPER_HTTP_ECH_STATUS_BAD_CALL
+    NotTried = cscamper_http.SCAMPER_HTTP_ECH_STATUS_NOT_TRIED
+    BadName = cscamper_http.SCAMPER_HTTP_ECH_STATUS_BAD_NAME
+    NotConfigured = cscamper_http.SCAMPER_HTTP_ECH_STATUS_NOT_CONFIGURED
+    FailedEch = cscamper_http.SCAMPER_HTTP_ECH_STATUS_FAILED_ECH
+    FailedEchBadName = cscamper_http.SCAMPER_HTTP_ECH_STATUS_FAILED_ECH_BAD_NAME
+
 class ScamperUdpprobeStop(enum.IntEnum):
     NoReason = cscamper_udpprobe.SCAMPER_UDPPROBE_STOP_NONE
     Completed = cscamper_udpprobe.SCAMPER_UDPPROBE_STOP_DONE
@@ -369,11 +385,14 @@ class ScamperHostType(enum.IntEnum):
     MX = 15
     TXT = 16
     AAAA = 28
+    OPT = 41
     DS = 43
     SSHFP = 44
     RRSIG = 46
     NSEC = 47
     DNSKEY = 48
+    SVCB = 64
+    HTTPS = 65
 
 # from scamper_tracelb.h
 class ScamperTracelbMethod(enum.IntEnum):
@@ -1977,12 +1996,12 @@ cdef class ScamperTrace:
         :returns: a list of unique addresses, according to selection.
         :rtype: list[ScamperAddr]
         """
-        addrs = {}
+        addrs = set()
         for hop in self.hops():
             if hop is None or (not reserved and hop.src.is_reserved()):
                 continue
-            addrs[hop.src] = 1
-        return list(addrs.keys())
+            addrs.add(hop.src)
+        return list(addrs)
 
     @property
     def attempts(self):
@@ -6889,6 +6908,25 @@ cdef class ScamperHostRR:
         :returns: the SVCB record
         :rtype: ScamperHostSVCB
         """
+        cls = cscamper_host.scamper_host_rr_class_get(self._c)
+        typ = cscamper_host.scamper_host_rr_type_get(self._c)
+        if cls != cscamper_host.SCAMPER_HOST_CLASS_IN or typ != ScamperHostType.SVCB:
+            return None
+        svcb = cscamper_host.scamper_host_rr_svcb_get(self._c)
+        return ScamperHostSVCB.from_ptr(svcb)
+
+    @property
+    def https(self):
+        """
+        get method to obtain an object that contains the HTTPS record.
+
+        :returns: the HTTPS record (as an SVCB type, as they are the same)
+        :rtype: ScamperHostSVCB
+        """
+        cls = cscamper_host.scamper_host_rr_class_get(self._c)
+        typ = cscamper_host.scamper_host_rr_type_get(self._c)
+        if cls != cscamper_host.SCAMPER_HOST_CLASS_IN or typ != ScamperHostType.HTTPS:
+            return None
         svcb = cscamper_host.scamper_host_rr_svcb_get(self._c)
         return ScamperHostSVCB.from_ptr(svcb)
 
@@ -6962,29 +7000,31 @@ class _ScamperHostRRIterator:
             else:
                 self._count = query.arcount
         if rrtypes is not None:
-            self._rrtypes = {}
+            self._rrtypes = set()
             for rrtype in rrtypes:
                 if not isinstance(rrtype, str):
                     raise ValueError("expected str in rrtypes")
                 rrtl = rrtype.lower()
                 if rrtl == 'a':
-                    self._rrtypes[1] = 1
+                    self._rrtypes.add(1)
                 elif rrtl == 'aaaa':
-                    self._rrtypes[28] = 1
+                    self._rrtypes.add(28)
                 elif rrtl == 'ptr':
-                    self._rrtypes[12] = 1
+                    self._rrtypes.add(12)
                 elif rrtl == 'mx':
-                    self._rrtypes[15] = 1
+                    self._rrtypes.add(15)
                 elif rrtl == 'ns':
-                    self._rrtypes[2] = 1
+                    self._rrtypes.add(2)
                 elif rrtl == 'soa':
-                    self._rrtypes[6] = 1
+                    self._rrtypes.add(6)
                 elif rrtl == 'txt':
-                    self._rrtypes[16] = 1
+                    self._rrtypes.add(16)
                 elif rrtl == 'opt':
-                    self._rrtypes[41] = 1
+                    self._rrtypes.add(41)
                 elif rrtl == 'svcb':
-                    self._rrtypes[64] = 1
+                    self._rrtypes.add(64)
+                elif rrtl == 'https':
+                    self._rrtypes.add(65)
                 else:
                     raise ValueError(f"cannot filter {rrtype}")
 
@@ -7689,11 +7729,11 @@ cdef class ScamperHost:
         :returns: a list of :class:`ScamperAddr`
         :rtype: a list of :class:`ScamperAddr`
         """
-        addrs = {}
+        addrs = set()
         for rec in self.ans():
             if rec.addr is not None:
-                addrs[rec.addr] = 1
-        return list(addrs.keys())
+                addrs.add(rec.addr)
+        return list(addrs)
 
     def ans_nses(self):
         """
@@ -7702,11 +7742,11 @@ cdef class ScamperHost:
         :returns: a list of :str:
         :rtype: a list of :str:
         """
-        nses = {}
+        nses = set()
         for rec in self.ans():
             if rec.ns is not None:
-                nses[rec.ns] = 1
-        return list(nses.keys())
+                nses.add(rec.ns)
+        return list(nses)
 
     def ans_ptrs(self):
         """
@@ -7715,11 +7755,11 @@ cdef class ScamperHost:
         :returns: a list of :str:
         :rtype: a list of :str:
         """
-        ptrs = {}
+        ptrs = set()
         for rec in self.ans():
             if rec.ptr is not None:
-                ptrs[rec.ptr] = 1
-        return list(ptrs.keys())
+                ptrs.add(rec.ptr)
+        return list(ptrs)
 
     def ans_txts(self):
         """
@@ -8337,6 +8377,62 @@ cdef class ScamperHttp:
         the exchange.
         """
         return _ScamperHttpIterator(self)
+
+    @property
+    def ech_config_list(self):
+        """
+        get method that returns the ECH Config List provided to the measurement.
+
+        :returns: the ECH Config List parameter
+        :rtype: bytes
+        """
+        cdef size_t s
+        cdef const uint8_t *buf
+        s = cscamper_http.scamper_http_ech_config_list_len_get(self._c)
+        buf = cscamper_http.scamper_http_ech_config_list_get(self._c)
+        if s == 0 or buf == NULL:
+            return None
+        return buf[:s]
+
+    @property
+    def ech_status(self):
+        """
+        get method to obtain the ECH status.
+
+        :returns: the ECH status
+        :rtype: ScamperHttpEchStatus
+        """
+        c = cscamper_http.scamper_http_ech_status_get(self._c)
+        return ScamperHttpEchStatus(c)
+
+    @property
+    def ech_outer_sni(self):
+        """
+        get method that returns the outer SNI that was used.
+
+        :returns: the outer SNI
+        :rtype: str
+        """
+        c = cscamper_http.scamper_http_ech_outer_sni_get(self._c)
+        if c == NULL:
+            return None
+        return c.decode('UTF-8', 'strict')
+
+    @property
+    def ech_retry_config(self):
+        """
+        get method that returns the ECH Retry Config provided by the server
+
+        :returns: the ECH Retry Config
+        :rtype: bytes
+        """
+        cdef size_t s
+        cdef const uint8_t *buf
+        s = cscamper_http.scamper_http_ech_retry_config_len_get(self._c)
+        buf = cscamper_http.scamper_http_ech_retry_config_get(self._c)
+        if s == 0 or buf == NULL:
+            return None
+        return buf[:s]
 
 ####
 #### Scamper Udpprobe Object
@@ -9767,7 +9863,7 @@ cdef void _ctrl_cb(clibscamperctrl.scamper_inst_t *c_inst,
         # got an eof on an instance.  remove the references to the tasks
         # managed by inst from both the inst and ctrl objects.
         while len(inst._tasks) > 0:
-            task = inst._tasks.pop(0)
+            task = inst._tasks.pop()
             ctrl._tasks.remove(task)
 
         # mark the inst as having reached eof incase holder attempts to
@@ -9830,11 +9926,11 @@ cdef class ScamperCtrl:
     # initialize these lists in __init__, otherwise there's a chance
     # that a second ScamperCtrl object will initially refer to the
     # lists in the first ScamperCtrl object
-    cdef object _objs # = []
-    cdef object _exceptions # = []
-    cdef object _insts # = []
-    cdef object _tasks # = []
-    cdef object _muxs # = []
+    cdef object _objs # = collections.deque()
+    cdef object _exceptions # = collections.deque()
+    cdef object _insts # = set()
+    cdef object _tasks # = set()
+    cdef object _muxs # = collections.deque()
 
     def __init__(self, meta=False, morecb=None, eofcb=None, param=None,
                  unix=None, remote=None, remote_dir=None, mux=None,
@@ -9852,11 +9948,11 @@ cdef class ScamperCtrl:
         self._eofcb = eofcb
         self._outfile = outfile
         self._param = param
-        self._objs = []
-        self._exceptions = []
-        self._insts = []
-        self._tasks = []
-        self._muxs = []
+        self._objs = collections.deque()
+        self._exceptions = collections.deque()
+        self._insts = set()
+        self._tasks = set()
+        self._muxs = collections.deque()
 
         if unix is not None:
             self.add_unix(unix)
@@ -9868,22 +9964,17 @@ cdef class ScamperCtrl:
             self.add_mux(mux)
 
     def __dealloc__(self):
-        # cython does not seem to empty lists on dealloc, so explicitly empty
+        # cython does not seem to clear structs on dealloc, so explicitly clear
         if self._insts is not None:
-            while len(self._insts) > 0:
-                self._insts.pop(0)
+            self._insts.clear()
         if self._objs is not None:
-            while len(self._objs) > 0:
-                self._objs.pop(0)
+            self._objs.clear()
         if self._exceptions is not None:
-            while len(self._exceptions) > 0:
-                self._exceptions.pop(0)
+            self._exceptions.clear()
         if self._tasks is not None:
-            while len(self._tasks) > 0:
-                self._tasks.pop(0)
+            self._tasks.clear()
         if self._muxs is not None:
-            while len(self._muxs) > 0:
-                self._muxs.pop(0)
+            self._muxs.clear()
 
         # free the control structure
         if self._c != NULL:
@@ -9916,7 +10007,7 @@ cdef class ScamperCtrl:
             else:
                 raise RuntimeError("could not connect to " + path)
         inst = ScamperInst.from_ptr(c)
-        self._insts.append(inst)
+        self._insts.add(inst)
         return inst
 
     def add_inet(self, port, addr=None):
@@ -9945,7 +10036,7 @@ cdef class ScamperCtrl:
                 msg = (a + ":" if a is not None else "") + str(port)
                 raise RuntimeError("could not connect to " + msg)
         inst = ScamperInst.from_ptr(c)
-        self._insts.append(inst)
+        self._insts.add(inst)
         return inst
 
     def add_remote(self, path):
@@ -9968,7 +10059,7 @@ cdef class ScamperCtrl:
             else:
                 raise RuntimeError("could not connect to " + path)
         inst = ScamperInst.from_ptr(c)
-        self._insts.append(inst)
+        self._insts.add(inst)
         return inst
 
     def add_remote_dir(self, path):
@@ -9986,7 +10077,7 @@ cdef class ScamperCtrl:
             if c == NULL:
                 continue
             inst = ScamperInst.from_ptr(c)
-            self._insts.append(inst)
+            self._insts.add(inst)
 
     def add_mux(self, path):
         """
@@ -10013,7 +10104,7 @@ cdef class ScamperCtrl:
         if c == NULL:
             return
         inst = ScamperInst.from_ptr(c)
-        self._insts.append(inst)
+        self._insts.add(inst)
         return inst
 
     def add_vps(self, vps):
@@ -10041,7 +10132,7 @@ cdef class ScamperCtrl:
         from a :class:`ScamperInst`.
         """
         while len(self._exceptions) > 0:
-            yield self._exceptions.pop(0)
+            yield self._exceptions.popleft()
 
     def responses(self, timeout=None, until=None):
         """
@@ -10081,7 +10172,7 @@ cdef class ScamperCtrl:
             # - return all objects in the queue
             # - exit when there are no outstanding tasks left
             while len(self._objs) > 0:
-                onion = self._objs.pop(0)
+                onion = self._objs.popleft()
                 inst = onion._inst
                 o = onion._data
 
@@ -10135,9 +10226,9 @@ cdef class ScamperCtrl:
         cdef timeval *tv_ptr = NULL
 
         if len(self._exceptions) > 0:
-            raise self._exceptions.pop(0)
+            raise self._exceptions.popleft()
         while len(self._objs) > 0:
-            onion = self._objs.pop(0)
+            onion = self._objs.popleft()
 
             inst = onion._inst
             o = onion._data
@@ -10166,9 +10257,9 @@ cdef class ScamperCtrl:
 
         while 1:
             if len(self._exceptions) > 0:
-                raise self._exceptions.pop(0)
+                raise self._exceptions.popleft()
             while len(self._objs) > 0:
-                onion = self._objs.pop(0)
+                onion = self._objs.popleft()
                 inst = onion._inst
                 o = onion._data
                 inst._queued -= 1
@@ -10220,7 +10311,7 @@ cdef class ScamperCtrl:
         get method that returns a list of :class:`ScamperInst` managed by
         this :class:`ScamperCtrl` object.
         """
-        return self._insts
+        return list(self._insts)
 
     @property
     def param(self):
@@ -10294,7 +10385,7 @@ cdef class ScamperCtrl:
             elif len(self._insts) != 1:
                 raise RuntimeError("specify a ScamperInst")
             else:
-                inst = self._insts[0]
+                inst = list(self._insts)[0]
         if inst._eof:
             if inst.name:
                 raise RuntimeError(f"ScamperInst {inst.name} has signalled EOF")
@@ -10312,7 +10403,7 @@ cdef class ScamperCtrl:
                 # handle any signals (e.g. KeyboardInterrupt)
                 PyErr_CheckSignals()
                 if len(self._exceptions) > 0:
-                    raise self._exceptions.pop(0)
+                    raise self._exceptions.popleft()
                 with nogil:
                     clibscamperctrl.scamper_ctrl_wait(self._c, NULL)
             onion = self._syncdata
@@ -10322,9 +10413,9 @@ cdef class ScamperCtrl:
             return onion._data
         else:
             t = ScamperTask.from_ptr(task, inst)
-            self._tasks.append(t)
+            self._tasks.add(t)
             i = <ScamperInst> clibscamperctrl.scamper_inst_param_get(inst)
-            i._tasks.append(t)
+            i._tasks.add(t)
             return t
 
     def _dotasks(self, cmd, inst, sync):
@@ -11299,9 +11390,11 @@ cdef class ScamperCtrl:
         return self._dotasks(' '.join(args), inst, sync)
 
     def do_http(self, dst, url, headers=None, insecure=False, limit_time=None,
+                ech_grease=False, ech_config_list=None,
                 userid=None, inst=None, sync=False):
         """
         do_http(dst, url, headers=None, insecure=False, limit_time=None,\
+                ech_grease=False, ech_config_list=None,\
                 userid=None, inst=None, sync=False)
         conduct a HTTP request of the URL with the specified
         destination.  If this method could not queue the measurement,
@@ -11312,6 +11405,8 @@ cdef class ScamperCtrl:
         :param dict headers: a dictionary of headers to include in the request
         :param bool insecure: do not do TLS validation on certificate
         :param timedelta limit_time: the maximum time for this measurement to run
+        :param bool ech_grease: use ECH grease operation
+        :param string ech_config_list: the ECH config list to include in TLS handshake
         :param int userid: the userid value to tag with this measurement
         :param ScamperInst inst: The specific instance to issue command over
         :param bool sync: operate the measurement synchronously
@@ -11328,6 +11423,11 @@ cdef class ScamperCtrl:
             raise ValueError("invalid dst")
         if url is None:
             raise ValueError("invalid url")
+        if ech_config_list:
+            if ech_grease:
+                raise ValueError("cannot provide both grease and config list")
+            if not isinstance(ech_config_list, str) or not ech_config_list.isascii():
+                raise ValueError("ech_config_list is not ascii")
 
         if insecure is True:
             args.append("-O insecure")
@@ -11347,6 +11447,11 @@ cdef class ScamperCtrl:
                 if not isinstance(fbody, str) or not fbody.isascii():
                     raise ValueError("header field-body is not ascii")
                 args.append(f"-H '{fname}: {fbody}'")
+
+        if ech_grease:
+            args.append("-O grease")
+        if ech_config_list:
+            args.append(f"-O ecl={ech_config_list}")
 
         esc = str(url).replace("'", "\\'")
         args.append(f"-u '{esc}' {dst}")
@@ -11491,6 +11596,26 @@ cdef class ScamperMux:
 
     def __init__(self):
         raise TypeError("This class cannot be instantiated directly.")
+
+    def __richcmp__(self, other, int op):
+        if not isinstance(other, ScamperMux):
+            return NotImplemented
+        if op == Py_EQ:
+            return self._c == (<ScamperMux>other)._c
+        if op == Py_NE:
+            return self._c != (<ScamperMux>other)._c
+        if op == Py_LT:
+            return self._c < (<ScamperMux>other)._c
+        if op == Py_LE:
+            return self._c <= (<ScamperMux>other)._c
+        if op == Py_GT:
+            return self._c > (<ScamperMux>other)._c
+        if op == Py_GE:
+            return self._c >= (<ScamperMux>other)._c
+        return NotImplemented
+
+    def __hash__(self):
+        return hash((<Py_ssize_t>self._c))
 
     @staticmethod
     cdef ScamperMux from_ptr(clibscamperctrl.scamper_mux_t *ptr):
@@ -11715,7 +11840,7 @@ cdef class ScamperInst:
     cdef clibscamperctrl.scamper_inst_t *_c
     cdef cscamper_file.scamper_file_t *_c_f
     cdef cscamper_file.scamper_file_readbuf_t *_c_rb
-    cdef object _tasks  # = []
+    cdef object _tasks  # = set()
 
     # has the remote instance disconnected?
     cdef public bint _eof
@@ -11728,8 +11853,7 @@ cdef class ScamperInst:
 
     def __dealloc__(self):
         if self._tasks is not None:
-            while len(self._tasks) > 0:
-                self._tasks.pop(0)
+            self._tasks.clear()
         if self._c_f != NULL:
             cscamper_file.scamper_file_close(self._c_f)
         if self._c_rb != NULL:
@@ -11769,7 +11893,7 @@ cdef class ScamperInst:
         inst._c = ptr
         inst._c_f = cscamper_file.scamper_file_opennull(ord('r'), "warts")
         inst._c_rb = cscamper_file.scamper_file_readbuf_alloc()
-        inst._tasks = []
+        inst._tasks = set()
         inst._eof = False
         inst._queued = 0
         cscamper_file.scamper_file_setreadfunc(inst._c_f, inst._c_rb,

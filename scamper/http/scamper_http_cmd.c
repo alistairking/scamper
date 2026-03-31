@@ -1,9 +1,9 @@
 /*
  * scamper_http_cmd.c
  *
- * $Id: scamper_http_cmd.c,v 1.9 2025/08/04 00:00:27 mjl Exp $
+ * $Id: scamper_http_cmd.c,v 1.12 2026/03/27 00:24:32 mjl Exp $
  *
- * Copyright (C) 2023-2024 The Regents of the University of California
+ * Copyright (C) 2023-2026 The Regents of the University of California
  *
  * Author: Matthew Luckie
  *
@@ -134,6 +134,10 @@ static int http_arg_param_validate(int optid, char *param, long long *out,
     case HTTP_OPT_OPTION:
       if(strcasecmp(param, "insecure") == 0)
 	tmp = SCAMPER_HTTP_FLAG_INSECURE;
+      else if(strcasecmp(param, "grease") == 0)
+	tmp = SCAMPER_HTTP_FLAG_GREASE;
+      else if(strncasecmp(param, "ecl=", 4) == 0)
+	break;
       else
 	{
 	  snprintf(errbuf, errlen, "unknown option");
@@ -186,10 +190,11 @@ void *scamper_do_http_alloc(char *str, char *errbuf, size_t errlen)
   long long tmp = 0;
   uint16_t dport;
   uint8_t h;
-  char *scheme = NULL, *host = NULL, *file = NULL;
+  char *scheme = NULL, *host = NULL, *file = NULL, *ecl = NULL;
   uint32_t flags = 0;
   struct timeval maxtime;
   char buf[256];
+  size_t len;
 
 #ifndef NDEBUG
   errbuf[0] = '\0';
@@ -241,7 +246,14 @@ void *scamper_do_http_alloc(char *str, char *errbuf, size_t errlen)
 	  break;
 
 	case HTTP_OPT_OPTION:
-	  flags |= (uint32_t)tmp;
+	  if(tmp != 0)
+	    {
+	      flags |= (uint32_t)tmp;
+	    }
+	  else if(strncasecmp(opt->str, "ecl=", 4) == 0)
+	    {
+	      ecl = opt->str+4;
+	    }
 	  break;
 
 	case HTTP_OPT_URL:
@@ -355,6 +367,39 @@ void *scamper_do_http_alloc(char *str, char *errbuf, size_t errlen)
     {
       snprintf(errbuf, errlen, "could not set default file to fetch");
       goto err;
+    }
+
+#if defined(BUILDING_SCAMPER) && !defined(HAVE_SSL_SET1_ECH_CONFIG_LIST)
+  if(ecl != NULL || SCAMPER_HTTP_FLAG_IS_GREASE(http))
+    {
+      snprintf(errbuf, errlen, "ech requested but no openssl ech support");
+      goto err;
+    }
+#endif
+
+  if(ecl != NULL)
+    {
+      if(http->type != SCAMPER_HTTP_TYPE_HTTPS)
+	{
+	  snprintf(errbuf, errlen, "ecl but http type not https");
+	  goto err;
+	}
+      if(http->host == NULL)
+	{
+	  snprintf(errbuf, errlen, "ecl but no http host");
+	  goto err;
+	}
+      if(SCAMPER_HTTP_FLAG_IS_GREASE(http))
+	{
+	  snprintf(errbuf, errlen, "cannot provide both ecl and grease");
+	  goto err;
+	}
+      if(base64_decode((const uint8_t *)ecl, &http->ech_config_list, &len) != 0)
+	{
+	  snprintf(errbuf, errlen, "could not set ecl");
+	  goto err;
+	}
+      http->ech_config_list_len = (uint32_t)len;
     }
 
   return http;

@@ -1,7 +1,7 @@
 /*
  * scamper_trace.c
  *
- * $Id: scamper_trace.c,v 1.143 2025/10/15 23:47:47 mjl Exp $
+ * $Id: scamper_trace.c,v 1.144 2026/03/29 02:52:18 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2003-2011 The University of Waikato
@@ -898,6 +898,51 @@ int scamper_trace_hops_alloc(scamper_trace_t *trace, uint16_t hops)
 
   trace->hops = h;
   return 0;
+}
+
+char *scamper_trace_flag_tostr(uint32_t flag, char *buf, size_t len)
+{
+  size_t off = 0;
+  switch(flag)
+    {
+    case SCAMPER_TRACE_FLAG_ALLATTEMPTS:
+      string_concat(buf, len, &off, "all-attempts");
+      break;
+    case SCAMPER_TRACE_FLAG_PMTUD:
+      string_concat(buf, len, &off, "pmtud");
+      break;
+    case SCAMPER_TRACE_FLAG_DL:
+      string_concat(buf, len, &off, "dl");
+      break;
+    case SCAMPER_TRACE_FLAG_IGNORETTLDST:
+      string_concat(buf, len, &off, "ignorettldst");
+      break;
+    case SCAMPER_TRACE_FLAG_DOUBLETREE:
+      string_concat(buf, len, &off, "doubletree");
+      break;
+    case SCAMPER_TRACE_FLAG_ICMPCSUMDP:
+      string_concat(buf, len, &off, "icmp-csum-dport");
+      break;
+    case SCAMPER_TRACE_FLAG_CONSTPAYLOAD:
+      string_concat(buf, len, &off, "const-payload");
+      break;
+    case SCAMPER_TRACE_FLAG_RXERR:
+      string_concat(buf, len, &off, "rxerr");
+      break;
+    case SCAMPER_TRACE_FLAG_PTR:
+      string_concat(buf, len, &off, "ptr");
+      break;
+    case SCAMPER_TRACE_FLAG_RAW:
+      string_concat(buf, len, &off, "raw");
+      break;
+    case SCAMPER_TRACE_FLAG_BACK:
+      string_concat(buf, len, &off, "back");
+      break;
+    default:
+      snprintf(buf, len, "0x%08x", flag);
+      break;
+    }
+  return buf;
 }
 
 char *scamper_trace_type_tostr(const scamper_trace_t *trace,

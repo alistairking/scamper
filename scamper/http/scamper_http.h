@@ -1,9 +1,9 @@
 /*
  * scamper_http.h
  *
- * $Id: scamper_http.h,v 1.9 2025/10/19 19:23:21 mjl Exp $
+ * $Id: scamper_http.h,v 1.10 2026/03/26 23:26:43 mjl Exp $
  *
- * Copyright (C) 2023-2024 The Regents of the University of California
+ * Copyright (C) 2023-2026 The Regents of the University of California
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -47,6 +47,21 @@ typedef struct scamper_http_hdr_fields scamper_http_hdr_fields_t;
 #define SCAMPER_HTTP_BUF_TYPE_TLS  2
 
 #define SCAMPER_HTTP_FLAG_INSECURE 0x0001
+#define SCAMPER_HTTP_FLAG_GREASE   0x0002
+
+#define SCAMPER_HTTP_ECH_STATUS_NONE           0
+#define SCAMPER_HTTP_ECH_STATUS_UNKNOWN        1
+#define SCAMPER_HTTP_ECH_STATUS_FAILED         2 /* SSL_ECH_STATUS_FAILED */
+#define SCAMPER_HTTP_ECH_STATUS_SUCCESS        3 /* SSL_ECH_STATUS_SUCCESS */
+#define SCAMPER_HTTP_ECH_STATUS_GREASE         4 /* SSL_ECH_STATUS_GREASE */
+#define SCAMPER_HTTP_ECH_STATUS_GREASE_ECH     5 /* SSL_ECH_STATUS_GREASE_ECH */
+#define SCAMPER_HTTP_ECH_STATUS_BACKEND        6 /* SSL_ECH_STATUS_BACKEND */
+#define SCAMPER_HTTP_ECH_STATUS_BAD_CALL       7 /* SSL_ECH_STATUS_BAD_CALL */
+#define SCAMPER_HTTP_ECH_STATUS_NOT_TRIED      8 /* SSL_ECH_STATUS_NOT_TRIED */
+#define SCAMPER_HTTP_ECH_STATUS_BAD_NAME       9 /* SSL_ECH_STATUS_BAD_NAME */
+#define SCAMPER_HTTP_ECH_STATUS_NOT_CONFIGURED 10
+#define SCAMPER_HTTP_ECH_STATUS_FAILED_ECH   11 /* SSL_ECH_STATUS_FAILED_ECH */
+#define SCAMPER_HTTP_ECH_STATUS_FAILED_ECH_BAD_NAME 12
 
 /* scamper_http_t functions */
 void scamper_http_free(scamper_http_t *http);
@@ -63,18 +78,28 @@ const struct timeval *scamper_http_hsrtt_get(const scamper_http_t *http);
 const struct timeval *scamper_http_maxtime_get(const scamper_http_t *http);
 uint32_t scamper_http_flags_get(const scamper_http_t *http);
 int scamper_http_flag_is_insecure(const scamper_http_t *http);
+int scamper_http_flag_is_grease(const scamper_http_t *http);
 uint8_t scamper_http_stop_get(const scamper_http_t *http);
 char *scamper_http_stop_tostr(const scamper_http_t *http,
 			      char *buf, size_t len);
 uint8_t scamper_http_type_get(const scamper_http_t *http);
 char *scamper_http_type_tostr(const scamper_http_t *http,
 			      char *buf, size_t len);
+const uint8_t *scamper_http_ech_config_list_get(const scamper_http_t *http);
+uint32_t scamper_http_ech_config_list_len_get(const scamper_http_t *http);
+uint8_t scamper_http_ech_status_get(const scamper_http_t *http);
+char *scamper_http_ech_status_tostr(const scamper_http_t *http,
+				    char *buf, size_t len);
+const char *scamper_http_ech_outer_sni_get(const scamper_http_t *http);
+const uint8_t *scamper_http_ech_retry_config_get(const scamper_http_t *http);
+uint32_t scamper_http_ech_retry_config_len_get(const scamper_http_t *http);
 const char *scamper_http_host_get(const scamper_http_t *http);
 const char *scamper_http_file_get(const scamper_http_t *http);
 uint8_t scamper_http_headerc_get(const scamper_http_t *http);
 const char *scamper_http_header_get(const scamper_http_t *http, uint8_t i);
 uint32_t scamper_http_bufc_get(const scamper_http_t *http);
-scamper_http_buf_t *scamper_http_buf_get(const scamper_http_t *http, uint32_t i);
+scamper_http_buf_t *scamper_http_buf_get(const scamper_http_t *http,
+					 uint32_t i);
 
 /* scamper_http_buf_t functions */
 scamper_http_buf_t *scamper_http_buf_use(scamper_http_buf_t *htb);

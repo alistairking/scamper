@@ -7,6 +7,7 @@ my $rc = 0;
 
 my @tests = (
     ["unit_addr"],
+    ["unit_base64"],
     ["unit_cmd_dealias"],
     ["unit_cmd_host"],
     ["unit_cmd_http"],

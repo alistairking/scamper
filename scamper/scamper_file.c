@@ -1,7 +1,7 @@
 /*
  * scamper_file.c
  *
- * $Id: scamper_file.c,v 1.129 2025/12/04 08:11:00 mjl Exp $
+ * $Id: scamper_file.c,v 1.132 2026/03/30 02:54:14 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -1342,6 +1342,15 @@ static int z_read(scamper_file_t *sf, uint8_t **data, size_t len)
 	    goto err;
 	}
       while(have == 0 && sf->z->eof == 0);
+
+      if(have == 0 && sf->z->eof != 0)
+	{
+	  /*
+	   * if there's nothing more to come, then we can't fill the
+	   * buffer, so we've got an error condition
+	   */
+	  goto err;
+	}
     }
 
   free(tmp);

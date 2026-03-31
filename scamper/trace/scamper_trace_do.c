@@ -1,7 +1,7 @@
 /*
  * scamper_do_trace.c
  *
- * $Id: scamper_trace_do.c,v 1.453 2025/10/20 00:46:53 mjl Exp $
+ * $Id: scamper_trace_do.c,v 1.461 2026/03/30 19:11:18 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -206,7 +206,7 @@ typedef struct trace_para_state
   slist_t             *probeq;        /* probes to retry */
   heap_t              *hopwait;       /* hops waiting to be re-probed */
   uint8_t              max_ttl;       /* max TTL that got a response */
-  uint8_t              floor;         /* lower bound of parallel window */
+  uint8_t              bounds;        /* lower bound of parallel window */
 } trace_para_state_t;
 
 /*
@@ -266,7 +266,8 @@ typedef struct trace_state
   trace_para_state_t  *para;          /* parallel probing state */
 } trace_state_t;
 
-#define TRACE_STATE_FLAG_ICMP_ID 0x01
+#define TRACE_STATE_FLAG_ICMP_ID    0x01
+#define TRACE_STATE_FLAG_LOOP_PRIOR 0x02
 
 static const uint8_t MODE_RTSOCK           = 0;
 static const uint8_t MODE_DLHDR            = 1;
@@ -360,6 +361,7 @@ static const pmtud_L2_t *L2_1500 = &L2[12];
 static const int         L2_cnt  = sizeof(L2) / sizeof(pmtud_L2_t);
 
 static void trace_next_mode(scamper_task_t *task, const struct timeval *now);
+static void trace_stop_process(scamper_task_t *task);
 
 static scamper_trace_t *trace_getdata(const scamper_task_t *task)
 {
@@ -650,8 +652,16 @@ static void trace_queue_parallel(scamper_task_t *task,
 	}
 
       assert(tp->probe->ttl == hs->ttl);
-      if(tp->probe->ttl > para->floor)
-	para->floor = tp->probe->ttl;
+      if(SCAMPER_TRACE_FLAG_IS_BACK(trace) == 0)
+	{
+	  if(tp->probe->ttl > para->bounds)
+	    para->bounds = tp->probe->ttl;
+	}
+      else
+	{
+	  if(tp->probe->ttl < para->bounds && tp->probe->ttl > 1)
+	    para->bounds = tp->probe->ttl - 1;
+	}
       free(hs);
     }
 
@@ -665,18 +675,31 @@ static void trace_queue_parallel(scamper_task_t *task,
    */
   if(state->mode == MODE_PARALLEL)
     {
-      if(state->ttl <= (trace->hoplimit == 0 ? 255 : trace->hoplimit) &&
-	 state->ttl - para->floor <= trace->squeries &&
-	 state->ttl - para->max_ttl <= trace->gaplimit)
-	goto probe;
+      if(SCAMPER_TRACE_FLAG_IS_BACK(trace) == 0)
+	{
+	  if(state->ttl <= (trace->hoplimit == 0 ? 255 : trace->hoplimit) &&
+	     state->ttl - para->bounds <= trace->squeries &&
+	     state->ttl - para->max_ttl <= trace->gaplimit)
+	    goto probe;
+	}
+      else
+	{
+	  if(state->ttl >= trace->firsthop &&
+	     para->bounds - state->ttl < trace->squeries)
+	    goto probe;
+	}
     }
   else if(state->mode == MODE_PARALLEL_FINISH)
     {
       if(trace_parallel_isempty(para))
-	goto next_mode;
+	{
+	  if(SCAMPER_TRACE_FLAG_IS_BACK(trace))
+	    trace_stop_process(task); 
+	  goto next_mode;
+	}
     }
 
-  if(trace_parallel_isempty(para))
+  if(SCAMPER_TRACE_FLAG_IS_BACK(trace) == 0 && trace_parallel_isempty(para))
     {
       /*
        * if we haven't checked to see if the path is dead yet, check
@@ -684,11 +707,11 @@ static void trace_queue_parallel(scamper_task_t *task,
        * defined as a path that has an unresponsive target host, which
        * we stop tracing after the gaplimit is reached.
        */
-      if(para->floor - (trace->firsthop - 1) >= trace->gaplimit)
+      if(para->bounds - (trace->firsthop - 1) >= trace->gaplimit)
 	{
 	  /* see if there are any responses for the possible gaplimit hops */
 	  for(i=0; i<trace->gaplimit; i++)
-	    if(trace_hop_get(trace, para->floor-1-i) != NULL)
+	    if(trace_hop_get(trace, para->bounds-1-i) != NULL)
 	      break;
 
 	  /* gaplimit reached */
@@ -703,6 +726,14 @@ static void trace_queue_parallel(scamper_task_t *task,
       if((trace->hoplimit == 0 ? 255 : trace->hoplimit) <= trace->hop_count)
 	{
 	  trace_stop_hoplimit(trace);
+	  goto next_mode;
+	}
+    }
+  else if(SCAMPER_TRACE_FLAG_IS_BACK(trace) && trace_parallel_isempty(para))
+    {
+      if(state->ttl <= trace->firsthop)
+	{
+	  trace_stop_process(task);
 	  goto next_mode;
 	}
     }
@@ -1385,7 +1416,7 @@ static int trace_isloop(const scamper_trace_t *trace,
 {
   scamper_trace_hopiter_t hi;
   scamper_trace_reply_t *tmp;
-  uint16_t i;
+  uint16_t i, last_hop;
 
   /* need at least a couple of probes first */
   if(hop->probe->ttl <= trace->firsthop)
@@ -1401,8 +1432,18 @@ static int trace_isloop(const scamper_trace_t *trace,
     if(scamper_addr_cmp(hop->addr, tmp->addr) == 0)
       return 0;
 
-  /* compare all hop records until the hop prior to this one */
-  for(i=trace->firsthop-1; i<trace->hop_count; i++)
+  /*
+   * compare all hop records when we are probing
+   * (TRACE_STATE_FLAG_LOOP_PRIOR is unset).
+   * when we are serializing the traceroute data
+   * (TRACE_STATE_FLAG_LOOP_PRIOR is set) compare hops prior to this one.
+   */
+  if((state->flags & TRACE_STATE_FLAG_LOOP_PRIOR) == 0)
+    last_hop = trace->hop_count;
+  else
+    last_hop = hop->probe->ttl;
+
+  for(i=trace->firsthop-1; i<last_hop; i++)
     {
       /* skip over hops at the same distance as the one we are comparing to */
       if(i == hop->probe->ttl-1)
@@ -1799,10 +1840,9 @@ static void trace_next_mode(scamper_task_t *task, const struct timeval *now)
  *
  * check to see if we have a stop condition based on the hop record
  */
-static void trace_stop_reason(scamper_trace_t *trace,
-			      scamper_trace_reply_t *hop,
-			      trace_state_t *state,
-			      uint8_t *stop_reason, uint8_t *stop_data)
+static int trace_stop_reason(scamper_trace_t *trace,
+			     scamper_trace_reply_t *hop, trace_state_t *state,
+			     uint8_t *stop_reason, uint8_t *stop_data)
 {
   /*
    * the message received is an ICMP port unreachable -- something that
@@ -1837,6 +1877,7 @@ static void trace_stop_reason(scamper_trace_t *trace,
 	{
 	  *stop_reason = SCAMPER_TRACE_STOP_NONE;
 	  *stop_data = 0;
+	  return 0;
 	}
     }
   else if(SCAMPER_ADDR_TYPE_IS_IPV6(trace->dst) &&
@@ -1883,6 +1924,53 @@ static void trace_stop_reason(scamper_trace_t *trace,
     {
       *stop_reason = SCAMPER_TRACE_STOP_NONE;
       *stop_data   = 0;
+      return 0;
+    }
+
+  return 1;
+}
+
+static void trace_stop_process(scamper_task_t *task)
+{
+  scamper_trace_t *trace = trace_getdata(task);
+  trace_state_t *state = trace_getstate(task);
+  scamper_trace_reply_t *hop;
+  scamper_trace_hopiter_t hi;
+  uint8_t stop_reason, stop_data;
+  int i;
+
+  state->loopc = 0;
+  state->flags |= TRACE_STATE_FLAG_LOOP_PRIOR;
+
+  scamper_trace_hopiter_ttl_set(&hi, trace->firsthop, 0);
+  while((hop = scamper_trace_hopiter_next(trace, &hi)) != NULL)
+    {
+      if(trace_stop_reason(trace, hop, state, &stop_reason, &stop_data))
+	{
+	  if(trace->hop_count > hop->probe->ttl)
+	    {
+	      trace->stop_reason = stop_reason;
+	      trace->stop_data = stop_data;
+	      if(trace->squeries > 1)
+		trace->stop_hop = hop->probe->ttl;
+	    }
+	  break;
+	}
+    }
+
+  if(SCAMPER_TRACE_FLAG_IS_BACK(trace) &&
+     trace->stop_reason == SCAMPER_TRACE_STOP_NONE)
+    {
+      if(trace->hop_count - (trace->firsthop - 1) >= trace->gaplimit)
+	{
+	  for(i=0; i<trace->gaplimit; i++)
+	    if(trace_hop_get(trace, trace->hop_count - 1 - i) != NULL)
+	      break;
+	  if(i >= trace->gaplimit)
+	    trace->stop_reason = SCAMPER_TRACE_STOP_GAPLIMIT;
+	}
+      if(trace->stop_reason == SCAMPER_TRACE_STOP_NONE)
+	trace->stop_reason = SCAMPER_TRACE_STOP_HOPLIMIT;
     }
 
   return;
@@ -1929,11 +2017,10 @@ static void handleicmp_trace(scamper_task_t *task,
    * if the response is not for the current working hop (i.e. a late reply)
    * check if probing should now halt.  otherwise keep waiting.
    */
-  if(tp->probe->ttl != state->ttl)
+  if(tp->probe->ttl != state->ttl && SCAMPER_TRACE_FLAG_IS_BACK(trace) == 0)
     {
       /* XXX: handle doubletree */
-      trace_stop_reason(trace, hop, state, &stop_reason, &stop_data);
-      if(stop_reason != SCAMPER_TRACE_STOP_NONE)
+      if(trace_stop_reason(trace, hop, state, &stop_reason, &stop_data))
 	{
 	  trace_stop(trace, stop_reason, stop_data);
 	  goto next_mode;
@@ -2039,6 +2126,16 @@ static void handleicmp_trace(scamper_task_t *task,
       trace->dtree->lss_stop = scamper_addr_use(hop->addr);
       goto next_mode;
     }
+  else if(SCAMPER_TRACE_FLAG_IS_BACK(trace))
+    {
+      if(state->ttl > trace->firsthop)
+	{
+	  state->ttl--;
+	  goto probe;
+	}
+      trace_stop_process(task);
+      goto next_mode;
+    }
 
   state->ttl++;
 
@@ -2050,10 +2147,8 @@ static void handleicmp_trace(scamper_task_t *task,
   if(trace->confidence == 0 && SCAMPER_TRACE_FLAG_IS_ALLATTEMPTS(trace) == 0)
     {
       /* check to see if we have a stop reason from the ICMP response */
-      trace_stop_reason(trace, hop, state, &stop_reason, &stop_data);
-      if(stop_reason != SCAMPER_TRACE_STOP_NONE)
+      if(trace_stop_reason(trace, hop, state, &stop_reason, &stop_data))
 	{
-	  /* did we get a stop condition out of all that? */
 	  trace_stop(trace, stop_reason, stop_data);
 	  goto next_mode;
 	}
@@ -2064,10 +2159,8 @@ static void handleicmp_trace(scamper_task_t *task,
       scamper_trace_hopiter_ttl_set(&hi, trace->hop_count, trace->hop_count);
       while((hop = scamper_trace_hopiter_next(trace, &hi)) != NULL)
 	{
-	  trace_stop_reason(trace, hop, state, &stop_reason, &stop_data);
-	  if(stop_reason != SCAMPER_TRACE_STOP_NONE)
+	  if(trace_stop_reason(trace, hop, state, &stop_reason, &stop_data))
 	    {
-	      /* did we get a stop condition out of all that? */
 	      trace_stop(trace, stop_reason, stop_data);
 	      goto next_mode;
 	    }
@@ -2497,11 +2590,18 @@ static void handleicmp_parallel(scamper_task_t *task,
       goto err;
     }
 
-  if(tp->probe->ttl > para->floor)
-    para->floor = tp->probe->ttl;
-
-  if(tp->probe->ttl > para->max_ttl)
-    para->max_ttl = tp->probe->ttl;
+  if(SCAMPER_TRACE_FLAG_IS_BACK(trace) == 0)
+    {
+      if(tp->probe->ttl > para->bounds)
+	para->bounds = tp->probe->ttl;
+      if(tp->probe->ttl > para->max_ttl)
+	para->max_ttl = tp->probe->ttl;
+    }
+  else
+    {
+      if(tp->probe->ttl < para->bounds)
+	para->bounds = tp->probe->ttl;
+    }
 
   /*
    * find the hop state, which we will do if this response is the
@@ -2558,15 +2658,12 @@ static void handleicmp_parallel(scamper_task_t *task,
       else free(hs);
     }
 
-  if(trace->stop_reason == SCAMPER_TRACE_STOP_NONE)
+  if(trace->stop_reason == SCAMPER_TRACE_STOP_NONE &&
+     SCAMPER_TRACE_FLAG_IS_BACK(trace) == 0 &&
+     trace_stop_reason(trace, hop, state, &stop_reason, &stop_data))
     {
-      trace_stop_reason(trace, hop, state, &stop_reason, &stop_data);
-      if(stop_reason != SCAMPER_TRACE_STOP_NONE)
-	{
-	  /* did we get a stop condition out of all that? */
-	  trace_stop(trace, stop_reason, stop_data);
-	  goto next_mode;
-	}
+      trace_stop(trace, stop_reason, stop_data);
+      goto next_mode;
     }
 
   if(state->mode == MODE_PARALLEL_FINISH && trace_parallel_isempty(para))
@@ -2841,9 +2938,6 @@ static void timeout_trace(scamper_task_t *task)
   struct timeval now;
   int i;
 
-  /* we tried this hop, so move onto the next */
-  state->ttl++;
-
   /* tidy up after any confidence probing */
   if(state->conf != NULL && state->conf->interfaces != NULL)
     {
@@ -2857,6 +2951,21 @@ static void timeout_trace(scamper_task_t *task)
       assert(state->conf->interfacec == 0);
       state->conf->n = 2;
     }
+
+  if(SCAMPER_TRACE_FLAG_IS_BACK(trace))
+    {
+      /* we tried this hop, so move onto the next */
+      if(state->ttl <= trace->firsthop)
+	{
+	  trace_stop(trace, SCAMPER_TRACE_STOP_COMPLETED, 0);
+	  goto next_mode;
+	}
+      state->ttl--;
+      return;
+    }
+
+  /* we tried this hop, so move onto the next */
+  state->ttl++;
 
   /*
    * if we probed for all attempts on the hop, then check to see if we
@@ -2872,8 +2981,7 @@ static void timeout_trace(scamper_task_t *task)
 	   * first, check to see if there is a reason to stop probing with
 	   * this particular hop record
 	   */
-	  trace_stop_reason(trace, hop, state, &stop_reason, &stop_data);
-	  if(stop_reason != SCAMPER_TRACE_STOP_NONE)
+	  if(trace_stop_reason(trace, hop, state, &stop_reason, &stop_data))
 	    {
 	      trace_stop(trace, stop_reason, stop_data);
 	      goto next_mode;
@@ -3240,7 +3348,21 @@ static void handletp_trace(scamper_task_t *task,
 	goto probe;
     }
 
+  if(SCAMPER_TRACE_FLAG_IS_BACK(trace))
+    {
+      if(state->ttl > trace->firsthop)
+	{
+	  state->attempt = 0;
+	  state->ttl--;
+	  goto probe;
+	}
+      trace_stop_process(task);
+      goto next_mode;
+    }
+
   trace_stop_completed(trace);
+
+ next_mode:
   gettimeofday_wrap(&now);
   trace_next_mode(task, &now);
   return;
@@ -3972,37 +4094,15 @@ static void trace_clear_pending(scamper_task_t *task, const struct timeval *now)
 static void do_trace_write(scamper_file_t *sf, scamper_task_t *task)
 {
   scamper_trace_t *trace = trace_getdata(task);
-  scamper_trace_reply_t *hop;
-  scamper_trace_hopiter_t hi;
-  trace_state_t *state;
-  uint8_t stop_reason, stop_data;
   struct timeval now;
 
   gettimeofday_wrap(&now);
   trace_clear_pending(task, &now);
 
-  if(trace->squeries > 1 && (state = trace_getstate(task)) != NULL)
-    {
-      state->loopc = 0;
+  if(trace->squeries > 1 && trace_getstate(task) != NULL &&
+     trace->stop_reason != SCAMPER_TRACE_STOP_INPROGRESS)
+    trace_stop_process(task);
 
-      scamper_trace_hopiter_ttl_set(&hi, trace->firsthop, 0);
-      while((hop = scamper_trace_hopiter_next(trace, &hi)) != NULL)
-	{
-	  trace_stop_reason(trace, hop, state, &stop_reason, &stop_data);
-	  if(stop_reason != SCAMPER_TRACE_STOP_NONE)
-	    {
-	      if(trace->hop_count > hop->probe->ttl)
-		{
-		  trace->stop_reason = stop_reason;
-		  trace->stop_data = stop_data;
-		  trace->stop_hop = hop->probe->ttl;
-		}
-	      goto write;
-	    }
-	}
-    }
-
- write:
   scamper_file_write_trace(sf, trace, task);
   return;
 }
@@ -4162,13 +4262,28 @@ static int trace_state_init(scamper_task_t *task, scamper_err_t *error)
     }
 
   /* allocate memory to record hops */
-  state->alloc_hops = TRACE_ALLOC_HOPS;
-  if(trace->firsthop >= state->alloc_hops)
+  if(SCAMPER_TRACE_FLAG_IS_BACK(trace) == 0)
     {
-      if(state->alloc_hops + (uint16_t)trace->firsthop > 256)
-	state->alloc_hops = 256;
-      else
-	state->alloc_hops += trace->firsthop;
+      state->alloc_hops = TRACE_ALLOC_HOPS;
+      if(trace->firsthop >= state->alloc_hops)
+	{
+	  if(state->alloc_hops + (uint16_t)trace->firsthop > 256)
+	    state->alloc_hops = 256;
+	  else
+	    state->alloc_hops += trace->firsthop;
+	}
+    }
+  else
+    {
+      state->alloc_hops = trace->hoplimit;
+      if(state->para != NULL)
+	state->para->bounds = trace->hoplimit;
+    }
+
+  if(scamper_trace_hops_alloc(trace, state->alloc_hops) == -1)
+    {
+      scamper_err_make(error, errno, "could not alloc hops");
+      return -1;
     }
 
   /* if we're doing doubletree probing, then allocate state for that */
@@ -4181,12 +4296,6 @@ static int trace_state_init(scamper_task_t *task, scamper_err_t *error)
 	  scamper_err_make(error, errno, "could not alloc dtree state");
 	  return -1;
 	}
-    }
-
-  if(scamper_trace_hops_alloc(trace, state->alloc_hops) == -1)
-    {
-      scamper_err_make(error, errno, "could not alloc hops");
-      return -1;
     }
 
   /* allocate enough ids to probe each hop with max number of attempts */
@@ -4208,7 +4317,10 @@ static int trace_state_init(scamper_task_t *task, scamper_err_t *error)
 
   state->dl           = NULL;
   state->dlhdr        = NULL;
-  state->ttl          = trace->firsthop;
+  if(SCAMPER_TRACE_FLAG_IS_BACK(trace) == 0)
+    state->ttl        = trace->firsthop;
+  else
+    state->ttl        = trace->hoplimit;
   state->payload_size = trace->probe_size - state->header_size;
   state->id_max       = id_max;
 
@@ -4469,7 +4581,10 @@ static void do_trace_probe(scamper_task_t *task)
 	      goto err;
 	    }
 	  hs->ttl = state->ttl;
-	  state->ttl++;
+	  if(SCAMPER_TRACE_FLAG_IS_BACK(trace) == 0)
+	    state->ttl++;
+	  else
+	    state->ttl--;
 	}
 
       probe.pr_ip_ttl = hs->ttl;
@@ -4705,7 +4820,6 @@ static void do_trace_probe(scamper_task_t *task)
       hs->attempt++;
       hs->id = state->id_next;
       stp->id = hs->attempt;
-      assert(trace->hop_count + trace->squeries + 1 >= state->ttl);
     }
   else
     {
