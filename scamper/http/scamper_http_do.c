@@ -1,10 +1,11 @@
 /*
  * scamper_http_do.c
  *
- * $Id: scamper_http_do.c,v 1.29 2025/11/17 01:13:00 mjl Exp $
+ * $Id: scamper_http_do.c,v 1.34 2026/03/26 23:26:43 mjl Exp $
  *
  * Copyright (C) 2023-2024 The Regents of the University of California
  * Copyright (C) 2024-2025 Matthew Luckie
+ * Copyright (C) 2026      The Regents of the University of California
  *
  * Authors: Matthew Luckie
  *
@@ -336,8 +337,37 @@ static int tls_handshake(scamper_task_t *task, scamper_err_t *error)
     }
 
 #ifdef SSL_CTRL_SET_TLSEXT_HOSTNAME
-  if(http->host != NULL) SSL_set_tlsext_host_name(state->ssl, http->host);
+  /* SSL_set_tlsext_host_name() returns 1 on success, 0 in case of error */
+  if(http->host != NULL &&
+     SSL_set_tlsext_host_name(state->ssl, http->host) == 0)
+    {
+      scamper_err_make(error, 0, "SSL_set_tlsext_host_name error");
+      return -1;
+    }
 #endif
+
+#ifdef HAVE_SSL_SET1_ECH_CONFIG_LIST
+  /* SSL_set1_ech_config_list() returns 1 on success, 0 in case of error */
+  if(SCAMPER_HTTP_FLAG_IS_GREASE(http))
+    {
+      SSL_set_options(state->ssl, SSL_OP_ECH_GREASE);
+    }
+  else if(http->ech_config_list != NULL)
+    {
+      if(SSL_set1_ech_config_list(state->ssl, http->ech_config_list,
+				  http->ech_config_list_len) == 0)
+	{
+	  scamper_err_make(error, 0, "SSL_set1_ech_config_list error");
+	  return -1;
+	}
+      if(SSL_set_min_proto_version(state->ssl, TLS1_3_VERSION) == 0)
+	{
+	  scamper_err_make(error, 0, "SSL_set_min_proto_version error");
+	  return -1;
+	}
+    }
+#endif
+
   SSL_set_connect_state(state->ssl);
 
   rc = SSL_do_handshake(state->ssl);
@@ -358,6 +388,79 @@ static int tls_handshake(scamper_task_t *task, scamper_err_t *error)
     }
 
   return 0;
+}
+
+#ifdef HAVE_SSL_SET1_ECH_CONFIG_LIST
+static uint8_t tls_ech_status(int ech_status)
+{
+  switch(ech_status)
+    {
+    case SSL_ECH_STATUS_FAILED:
+      return SCAMPER_HTTP_ECH_STATUS_FAILED;
+    case SSL_ECH_STATUS_SUCCESS:
+      return SCAMPER_HTTP_ECH_STATUS_SUCCESS;
+    case SSL_ECH_STATUS_GREASE:
+      return SCAMPER_HTTP_ECH_STATUS_GREASE;
+    case SSL_ECH_STATUS_GREASE_ECH:
+      return SCAMPER_HTTP_ECH_STATUS_GREASE_ECH;
+    case SSL_ECH_STATUS_BACKEND:
+      return SCAMPER_HTTP_ECH_STATUS_BACKEND;
+    case SSL_ECH_STATUS_BAD_CALL:
+      return SCAMPER_HTTP_ECH_STATUS_BAD_CALL;
+    case SSL_ECH_STATUS_NOT_TRIED:
+      return SCAMPER_HTTP_ECH_STATUS_NOT_TRIED;
+    case SSL_ECH_STATUS_BAD_NAME:
+      return SCAMPER_HTTP_ECH_STATUS_BAD_NAME;
+    case SSL_ECH_STATUS_NOT_CONFIGURED:
+      return SCAMPER_HTTP_ECH_STATUS_NOT_CONFIGURED;
+    case SSL_ECH_STATUS_FAILED_ECH:
+      return SCAMPER_HTTP_ECH_STATUS_FAILED_ECH;
+    case SSL_ECH_STATUS_FAILED_ECH_BAD_NAME:
+      return SCAMPER_HTTP_ECH_STATUS_FAILED_ECH_BAD_NAME;
+    }
+
+  return SCAMPER_HTTP_ECH_STATUS_UNKNOWN;
+}
+#endif
+
+static int tls_checkcert(scamper_http_t *http, http_state_t *state)
+{
+#ifdef HAVE_SSL_SET1_ECH_CONFIG_LIST
+  char *inner_sni = NULL, *outer_sni = NULL;
+  int ech_status;
+  unsigned char *ec = NULL;
+  size_t eclen = 0;
+
+  if(http->ech_config_list != NULL || SCAMPER_HTTP_FLAG_IS_GREASE(http))
+    {
+      ech_status = SSL_ech_get1_status(state->ssl, &inner_sni, &outer_sni);
+      http->ech_status = tls_ech_status(ech_status);
+      if(inner_sni != NULL)
+	OPENSSL_free(inner_sni);
+      if(outer_sni != NULL)
+	{
+	  http->ech_outer_sni = strdup(outer_sni);
+	  OPENSSL_free(outer_sni);
+	}
+      if((ech_status == SSL_ECH_STATUS_GREASE_ECH ||
+	  ech_status == SSL_ECH_STATUS_FAILED_ECH) &&
+	 SSL_ech_get1_retry_config(state->ssl, &ec, &eclen) != 0 && ec != NULL)
+	{
+	  if(eclen > 0 && (http->ech_retry_config = memdup(ec, eclen)) != NULL)
+	    http->ech_retry_config_len = (uint32_t)eclen;
+	  OPENSSL_free(ec);
+	}
+    }
+#endif /* HAVE_SSL_SET1_ECH_CONFIG_LIST */
+
+  if(SCAMPER_HTTP_FLAG_IS_INSECURE(http) == 0 &&
+     tls_is_valid_cert(state->ssl, http->host) == 0)
+    {
+      http->stop = SCAMPER_HTTP_STOP_INSECURE;
+      return -1;
+    }
+  state->mode = STATE_MODE_TLS_EST;
+  return 1;
 }
 #endif /* HAVE_OPENSSL */
 
@@ -412,29 +515,11 @@ static int http_read_sock(scamper_task_t *task, scamper_err_t *error)
 	  http = http_getdata(task);
 
 	  if(SSL_is_init_finished(state->ssl) != 0)
-	    {
-	      if(SCAMPER_HTTP_FLAG_IS_INSECURE(http) == 0 &&
-		 tls_is_valid_cert(state->ssl, http->host) == 0)
-		{
-		  http->stop = SCAMPER_HTTP_STOP_INSECURE;
-		  return -1;
-		}
-	      state->mode = STATE_MODE_TLS_EST;
-	      return 1;
-	    }
+	    return tls_checkcert(http, state);
 
 	  ERR_clear_error();
 	  if((ret = SSL_do_handshake(state->ssl)) > 0)
-	    {
-	      if(SCAMPER_HTTP_FLAG_IS_INSECURE(http) == 0 &&
-		 tls_is_valid_cert(state->ssl, http->host) == 0)
-		{
-		  http->stop = SCAMPER_HTTP_STOP_INSECURE;
-		  return -1;
-		}
-	      state->mode = STATE_MODE_TLS_EST;
-	      return 1;
-	    }
+	    return tls_checkcert(http, state);
 	}
       else
 	{
@@ -601,6 +686,7 @@ static void http_read(SOCKET fd, void *param)
 #endif
 {
   scamper_task_t *task = param;
+  scamper_http_t *http = http_getdata(task);
   http_state_t *state = http_getstate(task);
   scamper_err_t error;
   socklen_t sl;
@@ -644,7 +730,10 @@ static void http_read(SOCKET fd, void *param)
   return;
 
  err:
-  http_handleerror(task, &error);
+  if(http->stop == SCAMPER_HTTP_STOP_NONE)
+    http_handleerror(task, &error);
+  else
+    http_stop(task, http->stop);
   state->mode = STATE_MODE_DONE;
   return;  
 }
@@ -746,7 +835,7 @@ static int http_state_alloc(scamper_task_t *task, scamper_err_t *error)
       goto err;
     }
 
-#ifdef HAVE_FCNTL
+#ifdef O_NONBLOCK
   if(fcntl_set(fd, O_NONBLOCK) == -1)
     {
       scamper_err_make(error, errno, "could not set O_NONBLOCK");

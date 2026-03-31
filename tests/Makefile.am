@@ -1,4 +1,4 @@
-# $Id: Makefile.am,v 1.70 2026/01/04 19:54:18 mjl Exp $
+# $Id: Makefile.am,v 1.71 2026/03/26 06:07:05 mjl Exp $
 
 AUTOMAKE_OPTIONS = subdir-objects
 
@@ -6,6 +6,7 @@ AM_CPPFLAGS = -I$(top_srcdir) -I$(top_srcdir)/scamper
 
 noinst_PROGRAMS = \
 	unit_addr \
+	unit_base64 \
 	fuzz_cmd_dealias \
 	fuzz_cmd_host \
 	fuzz_cmd_http \
@@ -304,6 +305,11 @@ unit_addr_SOURCES = unit_addr.c \
 	../scamper/scamper_addr.c \
 	../utils.c \
 	../mjl_splaytree.c
+
+unit_base64_CFLAGS = $(AM_CFLAGS)
+unit_base64_SOURCES = unit_base64.c \
+	../utils.c \
+	common.c
 
 fuzz_osinfo_CFLAGS = $(AM_CFLAGS)
 fuzz_osinfo_SOURCES = fuzz_osinfo.c

@@ -1,7 +1,7 @@
 /*
  * scamper_trace_cmd.c
  *
- * $Id: scamper_trace_cmd.c,v 1.30 2025/10/10 01:43:03 mjl Exp $
+ * $Id: scamper_trace_cmd.c,v 1.32 2026/03/30 00:12:01 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -197,7 +197,9 @@ static int trace_arg_param_validate(int optid, char *param, long long *out,
       break;
 
     case TRACE_OPT_OPTION:
-      if(strcasecmp(param, "const-payload") == 0)
+      if(strcasecmp(param, "back") == 0)
+	tmp = SCAMPER_TRACE_FLAG_BACK;
+      else if(strcasecmp(param, "const-payload") == 0)
 	tmp = SCAMPER_TRACE_FLAG_CONSTPAYLOAD;
       else if(strcasecmp(param, "dl") == 0)
 	tmp = SCAMPER_TRACE_FLAG_DL;
@@ -590,6 +592,20 @@ void *scamper_do_trace_alloc(char *str, char *errbuf, size_t errlen)
     {
       wait_timeout.tv_sec = 5;
       wait_timeout.tv_usec = 0;
+    }
+
+  if(flags & SCAMPER_TRACE_FLAG_BACK)
+    {
+      if(flags & SCAMPER_TRACE_FLAG_DOUBLETREE)
+	{
+	  snprintf(errbuf, errlen, "backwards probing cannot be used with doubletree");
+	  goto err;
+	}
+      if((optids & (0x1 << TRACE_OPT_HOPLIMIT)) == 0)
+	{
+	  snprintf(errbuf, errlen, "backwards probing must be used with a hoplimit");
+	  goto err;
+	}
     }
 
   /* sanity check that we don't begin beyond our probe hoplimit */

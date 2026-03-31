@@ -1,7 +1,7 @@
 /*
  * sc_wartsdump
  *
- * $Id: sc_wartsdump.c,v 1.330 2026/01/04 19:40:30 mjl Exp $
+ * $Id: sc_wartsdump.c,v 1.334 2026/03/29 02:52:18 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -296,7 +296,7 @@ static void dump_trace(scamper_trace_t *trace)
   const struct timeval *tv;
   scamper_addr_t *addr, *dst;
   const char *str;
-  uint32_t flags;
+  uint32_t u32, flags;
   uint16_t u16, sport, dport, hop_count;
   uint8_t u8, stop_reason, stop_data, notec, n_type;
   char buf[256], buf2[256];
@@ -398,34 +398,17 @@ static void dump_trace(scamper_trace_t *trace)
     dump_wait(", wait-probe", tv);
   if((u8 = scamper_trace_confidence_get(trace)) != 0)
     printf(", confidence: %d%%", u8);
-  printf(", tos: 0x%02x\n", scamper_trace_tos_get(trace));
+  printf(", tos: 0x%x\n", scamper_trace_tos_get(trace));
 
-  flags = scamper_trace_flags_get(trace);
-  printf(" flags: 0x%02x", flags);
-  if(flags != 0)
+  if((flags = scamper_trace_flags_get(trace)) != 0)
     {
-      printf(" (");
-      if(flags & SCAMPER_TRACE_FLAG_ALLATTEMPTS)
-	printf(" all-attempts");
-      if(flags & SCAMPER_TRACE_FLAG_PMTUD)
-	printf(" pmtud");
-      if(flags & SCAMPER_TRACE_FLAG_DL)
-	printf(" dl");
-      if(flags & SCAMPER_TRACE_FLAG_IGNORETTLDST)
-	printf(" ignorettldst");
-      if(flags & SCAMPER_TRACE_FLAG_DOUBLETREE)
-	printf(" doubletree");
-      if(flags & SCAMPER_TRACE_FLAG_ICMPCSUMDP)
-	printf(" icmp-csum-dport");
-      if(flags & SCAMPER_TRACE_FLAG_CONSTPAYLOAD)
-	printf(" const-payload");
-      if(flags & SCAMPER_TRACE_FLAG_RXERR)
-	printf(" rxerr");
-      if(flags & SCAMPER_TRACE_FLAG_PTR)
-	printf(" ptr");
-      printf(" )");
+      printf(" flags: 0x%08x (", flags);
+      for(u32=0; u32<32; u32++)
+	if((flags & (0x1 << u32)) != 0)
+	  printf(" %s", scamper_trace_flag_tostr(flags & (0x1 << u32),
+						 buf, sizeof(buf)));
+      printf(" )\n");
     }
-  printf("\n");
 
   scamper_trace_stop_tostr(trace, buf, sizeof(buf));
   printf(" stop reason: %s", string_tolower(buf2, sizeof(buf2), buf));
@@ -2386,13 +2369,14 @@ static void dump_http(scamper_http_t *http)
   const scamper_http_buf_t *htb;
   const struct timeval *start, *ts;
   const scamper_addr_t *addr;
-  const uint8_t *htb_data;
+  const uint8_t *data;
   struct timeval tv;
   uint32_t bufc, u32;
   uint16_t dport, len, u16;
   uint8_t hdrc, u8;
   char buf[256], dir[8], type[8], *tmp;
   const char *str;
+  char *base64;
   size_t s;
 
   printf("http");
@@ -2408,15 +2392,45 @@ static void dump_http(scamper_http_t *http)
   dport = scamper_http_dport_get(http);
   printf(" sport: %d, dport: %d\n", scamper_http_sport_get(http), dport);
   if((u32 = scamper_http_flags_get(http)) != 0)
-    printf(" flags: 0x%x (%s )\n", u32,
-	   (u32 & SCAMPER_HTTP_FLAG_INSECURE) ? " insecure" : "");
+    printf(" flags: 0x%x (%s%s )\n", u32,
+	   (u32 & SCAMPER_HTTP_FLAG_INSECURE) ? " insecure" : "",
+	   (u32 & SCAMPER_HTTP_FLAG_GREASE) ? " grease" : "");
   dump_wait(" maxtime", scamper_http_maxtime_get(http));
   if((ts = scamper_http_hsrtt_get(http)) != NULL && timeval_iszero(ts) == 0)
     printf(", hs-rtt: %d.%06d", (int)ts->tv_sec, (int)ts->tv_usec);
   printf(", stop: %s", scamper_http_stop_tostr(http, buf, sizeof(buf)));
   if(scamper_http_status_code_get(http, &u16) == 0)
-    printf(", status-code: %u", u16);
+    printf(", http-status-code: %u", u16);
   printf("\n");
+  u8 = scamper_http_ech_status_get(http);
+  str = scamper_http_ech_outer_sni_get(http);
+  if(u8 != 0 || str != NULL)
+    {
+      if(u8 != 0)
+	printf(" ech-status: %s",
+	       scamper_http_ech_status_tostr(http, buf, sizeof(buf)));
+      if(str != NULL)
+	printf("%s ech-outer-sni: %s", u8 != 0 ? "," : "", str);
+      printf("\n");
+    }
+  if((data = scamper_http_ech_config_list_get(http)) != NULL)
+    {
+      u32 = scamper_http_ech_config_list_len_get(http);
+      if(base64_encode(data, u32, &base64, &s) == 0)
+	{
+	  printf(" ech-config-list: %s\n", base64);
+	  free(base64);
+	}
+    }
+  if((data = scamper_http_ech_retry_config_get(http)) != NULL)
+    {
+      u32 = scamper_http_ech_retry_config_len_get(http);
+      if(base64_encode(data, u32, &base64, &s) == 0)
+	{
+	  printf(" ech-retry-config: %s\n", base64);
+	  free(base64);
+	}
+    }
   if((str = scamper_http_errmsg_get(http)) != NULL)
     printf(" errmsg: %s\n", str);
 
@@ -2449,16 +2463,16 @@ static void dump_http(scamper_http_t *http)
 	  printf("  %d.%06d %s %-10s", (int)tv.tv_sec, (int)tv.tv_usec,
 		 scamper_http_buf_dir_tostr(htb, dir, sizeof(dir)), buf);
 
-	  if((htb_data = scamper_http_buf_data_get(htb)) != NULL)
+	  if((data = scamper_http_buf_data_get(htb)) != NULL)
 	    {
 	      u8 = 16;
 	      for(u16=0; u16<((len < u8) ? len : u8); u16++)
-		printf("%02x", htb_data[u16]);
+		printf("%02x", data[u16]);
 	      while(u16++ < u8)
 		printf("  ");
 	      printf("  |");
 	      for(u16=0; u16<((len < u8) ? len : u8); u16++)
-		printf("%c", (isprint(htb_data[u16]) ? htb_data[u16] : '.'));
+		printf("%c", (isprint(data[u16]) ? data[u16] : '.'));
 	      printf("|");
 	    }
 	  printf("\n");

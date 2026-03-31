@@ -1,12 +1,12 @@
 /*
  * utils.h
  *
- * $Id: utils.h,v 1.184 2025/12/04 08:07:49 mjl Exp $
+ * $Id: utils.h,v 1.187 2026/03/27 00:14:50 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2012-2014 The Regents of the University of California
- * Copyright (C) 2015-2025 Matthew Luckie
+ * Copyright (C) 2015-2026 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -362,14 +362,16 @@ int min_array(const int *array, size_t len) ATTRIBUTE_NONNULL;
  * Functions for uuencode and uudecode.
  */
 size_t uuencode_len(size_t ilen, size_t *complete, size_t *leftover);
-int uuencode(const uint8_t *in, size_t ilen, uint8_t **out, size_t *olen)
-  ATTRIBUTE_NONNULL;
 size_t uuencode_bytes(const uint8_t *in, size_t len, size_t *off,
 		      uint8_t *out, size_t olen)
   ATTRIBUTE_NONNULL;
-void *uudecode(const char *in, size_t len)
-  ATTRIBUTE_NONNULL;
 int uudecode_line(const char *in, size_t ilen, uint8_t *out, size_t *olen)
+  ATTRIBUTE_NONNULL;
+
+/* functions for base64 encoding and decoding */
+int base64_encode(const uint8_t *in, size_t ilen, char **out, size_t *olen)
+  ATTRIBUTE_NONNULL;
+int base64_decode(const uint8_t *in, uint8_t **out, size_t *olen)
   ATTRIBUTE_NONNULL;
 
 /* swap bytes in a 16 bit word */

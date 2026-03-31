@@ -1,9 +1,9 @@
 /*
  * scamper_host
  *
- * $Id: scamper_host.c,v 1.29 2025/10/12 21:20:47 mjl Exp $
+ * $Id: scamper_host.c,v 1.30 2026/03/19 06:41:38 mjl Exp $
  *
- * Copyright (C) 2018-2025 Matthew Luckie
+ * Copyright (C) 2018-2026 Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -373,6 +373,7 @@ int scamper_host_rr_data_type(uint16_t class, uint16_t type)
 	  return SCAMPER_HOST_RR_DATA_TYPE_TXT;
 
 	case SCAMPER_HOST_TYPE_SVCB:
+	case SCAMPER_HOST_TYPE_HTTPS:
 	  return SCAMPER_HOST_RR_DATA_TYPE_SVCB;
 	}
     }
@@ -571,6 +572,7 @@ char *scamper_host_qtype_tostr(uint16_t qtype, char *b, size_t l)
     case SCAMPER_HOST_TYPE_DNSKEY: snprintf(b, l, "DNSKEY"); break;
     case SCAMPER_HOST_TYPE_OPT: snprintf(b, l, "OPT"); break;
     case SCAMPER_HOST_TYPE_SVCB: snprintf(b, l, "SVCB"); break;
+    case SCAMPER_HOST_TYPE_HTTPS: snprintf(b, l, "HTTPS"); break;
     default: snprintf(b, l, "%u", qtype); break;
     }
 

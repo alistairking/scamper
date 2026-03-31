@@ -2,11 +2,11 @@
 .\" libscamperctrl.3
 .\"
 .\" Author: Matthew Luckie
-.\" Copyright (c) 2022-2023 Matthew Luckie
+.\" Copyright (c) 2022-2026 Matthew Luckie
 .\"
-.\" $Id: libscamperctrl.3,v 1.8 2025/02/17 20:15:03 mjl Exp $
+.\" $Id: libscamperctrl.3,v 1.9 2026/03/15 06:47:05 mjl Exp $
 .\"
-.Dd February 24, 2023
+.Dd March 15, 2026
 .Dt LIBSCAMPERCTRL 3
 .Os
 .Sh NAME
@@ -24,7 +24,7 @@ measurements using the control mechanisms available for a set of
 external
 .Xr scamper 1
 processes.
-.Sh ROUTINES
+.Sh SCAMPER_CTRL_T ROUTINES
 .Ft scamper_ctrl_t *
 .Fn scamper_ctrl_alloc "scamper_ctrl_cb_t cb"
 .br
@@ -94,24 +94,204 @@ instances.
 Returns 0 if there is at least one active scamper instance.
 Returns non-zero if there are no active scamper instances.
 .Pp
+.Ft void
+.Fn scamper_ctrl_param_set "scamper_ctrl_t *ctrl" "void *param"
+.br
+Associates the specified pointer with the scamper_ctrl_t structure.
+.Pp
+.Ft void *
+.Fn scamper_ctrl_param_get "const scamper_ctrl_t *ctrl"
+.br
+Returns the current value of the parameter set with
+.Fn scamper_ctrl_param_set .
+.Pp
+.Ft const char *
+.Fn scamper_ctrl_strerror "const scamper_ctrl_t *ctrl"
+.br
+Returns a pointer to the contents of the error buffer held internally
+by scamper_ctrl_t, which is set when a function associated with the
+scamper_ctrl_t encounters an error.
+.Sh SCAMPER_MUX_T ROUTINES
+.Ft scamper_mux_t *
+.Fn scamper_mux_add "scamper_ctrl_t *ctrl" "const char *path"
+.br
+Adds a
+.Xr sc_remoted 1
+mux socket found at the specified path in the filesystem to the
+scamper_ctrl_t.
+.Pp
+.Ft scamper_mux_t *
+.Fn scamper_mux_add_inet "scamper_ctrl_t *ctrl" "const char *ip" "uint16_t port"
+.br
+Add a
+.Xr sc_remoted 1
+mux socket found at the specified IP address and port to the scamper_ctrl_t.
+Note that
+.Xr sc_remoted 1
+currently has no ability to provide a mux socket itself on IP socket, but
+it is possible to forward a
+.Xr sc_remoted 1
+mux socket from a unix domain socket to an IP socket using
+.Xr socat 1
+or
+.Xr ssh 1 .
+.Sh SCAMPER_VPSET_T ROUTINES
+.Ft scamper_vpset_t *
+.Fn scamper_vpset_get "const scamper_mux_t *mux"
+.br
+Return an opaque scamper_vpset_t pointer that refers to a set of scamper_vp_t.
+The contents of a given scamper_vpset_t does not change for the lifetime
+of the program.
+The caller must use
+.Fn scamper_vpset_free
+to deallocate the scamper_vpset_t once it is no longer needed.
+.Pp
+.Ft void
+.Fn scamper_vpset_free "scamper_vpset_t *vps"
+.br
+Free the opaque scamper_vpset_t.
+.Pp
+.Ft size_t
+.Fn scamper_vpset_vp_count "const scamper_vpset_t *vps"
+.br
+Return the number of scamper_vp_t items in the scamper_vpset_t.
+.Pp
+.Ft scamper_vp_t *
+.Fn scamper_vpset_vp_get "const scamper_vpset_t *vps" "size_t i"
+.br
+Return the opaque scamper_vp_t referred to at the given index.
+Valid index values are between zero and
+.Fn scamper_vpset_vp_count
+- 1, inclusive, for the specified scamper_vpset_t.
+.Sh SCAMPER_VP_T ROUTINES
+.Ft scamper_vp_t *
+.Fn scamper_vp_use "scamper_vp_t *vp"
+.br
+Advise
+.Xr libscamperctrl 3
+that the programmer is keeping a copy of the vp in their program.
+.Pp
+.Ft void
+.Fn scamper_vp_free "scamper_vp_t *vp"
+.br
+Free vp resources, if the programmer previously called
+.Fn scamper_vp_use
+to advise
+.Xr libscamperctrl 3
+that the programmer would also be keeping a copy of a vp pointer.
+.Pp
+.Ft const char *
+.Fn scamper_vp_name_get "const scamper_vp_t *vp"
+.br
+Returns a pointer to a string that contains the full name of a remote
+scamper vantage point, or NULL.
+.Pp
+.Ft const char *
+.Fn scamper_vp_shortname_get "const scamper_vp_t *vp"
+.br
+Returns a pointer to a string that contains the short name of a remote
+scamper vantage point, or NULL.
+.Pp
+.Ft const char *
+.Fn scamper_vp_ipv4_get "const scamper_vp_t *vp"
+.br
+Returns a pointer to a string that contains the IPv4 address observed
+by
+.Xr sc_remoted 1 .
+.Pp
+.Ft const char *
+.Fn scamper_vp_asn4_get "const scamper_vp_t *vp"
+.br
+Returns a pointer to a string that contains an ASN value associated with
+the IPv4 address of the VP.
+.Pp
+.Ft const char *
+.Fn scamper_vp_cc_get "const scamper_vp_t *vp"
+.br
+Returns a pointer to a string that contains, by convention, an
+uppercase ISO-3166 2-letter country code associated with the VP.
+.Pp
+.Ft const char *
+.Fn scamper_vp_st_get "const scamper_vp_t *vp"
+.br
+Returns a pointer to a string that contains, by convention, an
+uppercase ISO-3166 state code associated with the VP.
+.Pp
+.Ft const char *
+.Fn scamper_vp_place_get "const scamper_vp_t *vp"
+.br
+Returns a pointer to a string that contains the name of the city or
+town where the VP is located.
+.Pp
+.Ft const char *
+.Fn scamper_vp_latlong_get "const scamper_vp_t *vp"
+.br
+Returns a pointer to a string that contains, by convention, the
+latitude and longitude values where the VP is located, separated by a
+comma.
+.Pp
+.Ft const char *
+.Fn scamper_vp_iata_get "const scamper_vp_t *vp"
+.br
+Returns a pointer to a string that contains, by convention, an
+uppercase 3-letter IATA airport code closes to the VP.
+.Pp
+.Ft size_t
+.Fn scamper_vp_tagc_get "const scamper_vp_t *vp"
+.br
+Returns the number of tags associated with the VP.
+.Pp
+.Ft const char *
+.Fn scamper_vp_tag_get "const scamper_vp_t *vp" "size_t i"
+.br
+Returns a pointer to a string containing the specified tag, or NULL.
+Tag numbers are zero-indexed, so valid tag numbers are between zero
+and
+.Fn scamper_vp_tagc_get
+- 1, inclusive, for the specified scamper_vpset_t.
+.Sh SCAMPER_INST_T ROUTINES
 .Ft scamper_inst_t *
-.Fn scamper_inst_unix "scamper_ctrl_t *ctrl" "const char *path"
+.Fn scamper_inst_vp "scamper_ctrl_t *ctrl" "scamper_vp_t *vp"
+.br
+Attach to a remote scamper instance specified in the scamper_vp_t.
+.Pp
+.Ft scamper_inst_t *
+.Fn scamper_inst_muxvp "scamper_ctrl_t *ctrl" "const char *str"
+.br
+Attach to a remote scamper instance connected to an
+.Xr sc_remoted 1
+mux at the specified
+path.
+If the mux socket is in the file system at /path/to/mux, and the name
+of the VP to connect is hlz2-nz, then the string parameter should be
+/path/to/mux/hlz2-nz.
+Internally, the name of the VP can be either the short name or full name of
+the VP, and
+.Fn scamper_inst_muxvp
+will match the first one.
+.Pp
+.Ft scamper_inst_t *
+.Fn scamper_inst_unix "scamper_ctrl_t *ctrl" "const scamper_attp_t *attp" "const char *path"
 .br
 Attach to a local scamper instance via the unix domain socket at the
 supplied path.
+Attach parameters for local scamper instances can be supplied via
+the scamper_attp_t parameter.
 .Pp
 .Ft scamper_inst_t *
-.Fn scamper_inst_inet "scamper_ctrl_t *ctrl" "const char *addr" "uint16_t port"
+.Fn scamper_inst_inet "scamper_ctrl_t *ctrl" "const scamper_attp_t *attp" "const char *addr" "uint16_t port"
 .br
 Attach to a local scamper instance via the supplied IP address and port.
+Attach parameters for local scamper instances can be supplied via
+the scamper_attp_t parameter.
 .Pp
 .Ft scamper_inst_t *
 .Fn scamper_inst_remote "scamper_ctrl_t *ctrl" "const char *path"
 .br
-Attach to a remote scamper instance via the unix domain socket at the
-supplied path.
+Attach to a remote scamper instance via the instance-specific unix domain
+socket at the supplied path.
 The remote scamper instance is connected to the local machine using a
-.Xr sc_remoted 3
+.Xr sc_remoted 1
 process.
 .Pp
 .Ft void
@@ -139,6 +319,95 @@ Send a done command, which will cause the
 instance to disconnect when it has returned all completed
 measurements.
 .Pp
+.Ft void
+.Fn scamper_inst_param_set "scamper_inst_t *inst" "void *param"
+.br
+Associates the specified pointer with the scamper_inst_t structure.
+.Pp
+.Ft void *
+.Fn scamper_inst_param_get "const scamper_inst_t *inst"
+.br
+Returns the current value of the parameter set with
+.Fn scamper_inst_param_set .
+.Pp
+.Ft int
+.Fn scamper_inst_is_muxvp "const scamper_inst_t *inst"
+.br
+Returns non-zero if the instance is associated with a
+.Xr sc_remoted 1
+mux.
+.Pp
+.Ft int
+.Fn scamper_inst_is_inet "const scamper_inst_t *inst"
+.br
+Returns non-zero if the instance is associated with a
+local scamper instance directly reachable via an IP address.
+.Pp
+.Ft int
+.Fn scamper_inst_is_unix "const scamper_inst_t *inst"
+.br
+Returns non-zero if the instance is associated with a
+local scamper instance directly reachable via a unix domain socket.
+.Pp
+.Ft int
+.Fn scamper_inst_is_remote "const scamper_inst_t *inst"
+.br
+Returns non-zero if the instance is associated with a
+remote scamper instance reachable via a unix domain socket from
+.Xr sc_remoted 1 .
+.Pp
+.Ft const char *
+.Fn scamper_inst_name_get "const scamper_inst_t *inst"
+.br
+Returns a pointer to a string that contains the name of the instance.
+For instances from a mux, it will be the name of the VP.
+For other types of instance, the name will be derived from how the
+instance is reached.
+.Pp
+.Ft uint8_t
+.Fn scamper_inst_type_get "const scamper_inst_t *inst"
+.br
+Returns one of the following values, identifying the type of instance:
+.Bl -dash -offset 2n -compact -width 1n
+.It
+.Sy SCAMPER_INST_TYPE_UNIX:
+a local scamper instance directly reached via a unix domain socket.
+.It
+.Sy SCAMPER_INST_TYPE_INET:
+a local scamper instance directly reached via an IP socket.
+.It
+.Sy SCAMPER_INST_TYPE_REMOTE:
+a remote scamper instance provided by
+.Xr sc_remoted 3
+via a unix domain socket.
+.It
+.Sy SCAMPER_INST_TYPE_MUXVP:
+a remote scamper instance provided by
+.Xr sc_remoted 3
+via a mux socket.
+.El
+.Pp
+.Ft const char *
+.Fn scamper_inst_strerror "const scamper_inst_t *inst"
+.br
+Returns a pointer to the contents of the error buffer held internally
+by scamper_inst_t, which is set when a function associated with the
+scamper_inst_t encounters an error.
+.Pp
+.Ft scamper_ctrl_t *
+.Fn scamper_inst_ctrl_get "const scamper_inst_t *inst"
+.br
+Returns a pointer to the scamper_ctrl_t associated with the supplied
+scamper_inst_t.
+.Pp
+.Ft scamper_vp_t *
+.Fn scamper_inst_vp_get "const scamper_inst_t *inst"
+.br
+Returns a pointer to the scamper_vp_t associated with the supplied
+scamper_inst_t, if the scamper_inst_t were created via an
+.Xr sc_remoted 3
+mux.
+.Sh SCAMPER_TASK_T ROUTINES
 .Ft int
 .Fn scamper_task_halt "scamper_task_t *task"
 .br
@@ -151,7 +420,7 @@ will be returned; otherwise, a DATA object will be returned.
 .br
 Free task resources, if the programmer previously called
 .Fn scamper_task_use
-to advice
+to advise
 .Xr libscamperctrl 3
 that the programmer would also be keeping a copy of a task pointer.
 .Pp
@@ -161,6 +430,64 @@ that the programmer would also be keeping a copy of a task pointer.
 Advise
 .Xr libscamperctrl 3
 that the programmer is keeping a copy of the task in their program.
+.Sh SCAMPER_ATTP_T ROUTINES
+.Ft scamper_attp_t *
+.Fn scamper_attp_alloc "void"
+.br
+Allocate an opaque scamper_attp_t structure that can be used with
+.Fn scamper_inst_unix
+and
+.Fn scamper_inst_inet
+to specify parameters to a local scamper during the attach phase.
+It is the responsibility of the caller to free the scamper_attp_t once
+it is no longer needed with
+.Fn scamper_attp_free
+.Pp
+.Ft void
+.Fn scamper_attp_free "scamper_attp_t *attp"
+.br
+Free the scamper_attp_t structure.
+.Pp
+.Ft void
+.Fn scamper_attp_listid_set "scamper_attp_t *attp" "uint32_t id"
+.br
+Set the list ID parameter that will be passed to scamper during the attach
+phase.
+.Pp
+.Ft int
+.Fn scamper_attp_listname_set "scamper_attp_t *attp" "char *name"
+.br
+Set the list name parameter that will be passed to scamper during the attach
+phase.
+This function returns zero on success.
+.Pp
+.Ft int
+.Fn scamper_attp_listdescr_set "scamper_attp_t *attp" "char *descr"
+.br
+Set the list description parameter that will be passed to scamper
+during the attach phase.
+This function returns zero on success.
+.Pp
+.Ft int
+.Fn scamper_attp_listmonitor_set "scamper_attp_t *attp" "char *monitor"
+.br
+Set the list monitor name parameter that will be passed to scamper
+during the attach phase.
+This function returns zero on success.
+.Pp
+.Ft void
+.Fn scamper_attp_cycleid_set "scamper_attp_t *attp" "uint32_t id"
+.br
+Set the cycle ID parameter that will be passed to scamper during the attach
+phase.
+.Pp
+.Ft void
+.Fn scamper_attp_priority_set "scamper_attp_t *attp" "uint32_t priority"
+.br
+Set the cycle priority parameter that will be passed to scamper during
+the attach phase.  This parameter controls the mixing rate of tasks
+from the associated source relative to other sources also managed by
+the same scamper process.
 .Pp
 .Sh SEE ALSO
 .Xr scamper 1 ,

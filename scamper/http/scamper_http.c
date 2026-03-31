@@ -1,9 +1,9 @@
 /*
  * scamper_http.c
  *
- * $Id: scamper_http.c,v 1.4 2025/10/12 21:21:29 mjl Exp $
+ * $Id: scamper_http.c,v 1.5 2026/03/26 23:26:43 mjl Exp $
  *
- * Copyright (C) 2023 The Regents of the University of California
+ * Copyright (C) 2023-2026 The Regents of the University of California
  *
  * Authors: Matthew Luckie
  *
@@ -65,6 +65,9 @@ void scamper_http_free(scamper_http_t *http)
   if(http->host != NULL) free(http->host);
   if(http->file != NULL) free(http->file);
   if(http->errmsg != NULL) free(http->errmsg);
+  if(http->ech_config_list != NULL) free(http->ech_config_list);
+  if(http->ech_outer_sni != NULL) free(http->ech_outer_sni);
+  if(http->ech_retry_config != NULL) free(http->ech_retry_config);
   if(http->bufs != NULL)
     {
       for(i=0; i<http->bufc; i++)

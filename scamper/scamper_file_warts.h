@@ -3,7 +3,7 @@
  *
  * the warts file format
  *
- * $Id: scamper_file_warts.h,v 1.36 2025/02/11 14:31:43 mjl Exp $
+ * $Id: scamper_file_warts.h,v 1.37 2026/03/26 06:17:56 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -141,6 +141,8 @@ void insert_byte(uint8_t *buf, uint32_t *off, const uint32_t len,
 			const uint8_t *in, void *param);
 void insert_bytes_uint16(uint8_t *buf,uint32_t *off,const uint32_t len,
 				const void *vin, uint16_t *count);
+void insert_bytes_uint32(uint8_t *buf, uint32_t *off, const uint32_t len,
+			 const void *vin, uint32_t *count);
 void insert_string(uint8_t *buf, uint32_t *off, const uint32_t len,
 			  const char *in, void *param);
 void insert_timeval(uint8_t *buf, uint32_t *off, const uint32_t len,
@@ -168,6 +170,9 @@ int extract_bytes_ptr(const uint8_t *buf, uint32_t *off,
 int extract_bytes_alloc(const uint8_t *buf, uint32_t *off,
 			       const uint32_t len, uint8_t **out,
 			       uint16_t *req);
+int extract_bytes_alloc32(const uint8_t *buf, uint32_t *off,
+			  const uint32_t len, uint8_t **out,
+			  uint32_t *req);
 int extract_bytes(const uint8_t *buf, uint32_t *off, const uint32_t len,
 			 uint8_t *out, uint16_t *req);
 int extract_addr_gid(const uint8_t *buf, uint32_t *off,

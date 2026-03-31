@@ -1,7 +1,7 @@
 /*
  * scamper_owamp_do.c
  *
- * $Id: scamper_owamp_do.c,v 1.3 2026/01/03 03:32:46 mjl Exp $
+ * $Id: scamper_owamp_do.c,v 1.4 2026/02/27 22:55:07 mjl Exp $
  *
  * Copyright (C) 2025 The Regents of the University of California
  *
@@ -1035,7 +1035,7 @@ static int owamp_state_alloc(scamper_task_t *task, scamper_err_t *error)
       goto err;
     }
 
-#ifdef HAVE_FCNTL
+#ifdef O_NONBLOCK
   if(fcntl_set(fd, O_NONBLOCK) == -1)
     {
       scamper_err_make(error, errno, "could not set O_NONBLOCK");

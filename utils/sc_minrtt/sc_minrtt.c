@@ -1,12 +1,12 @@
 /*
  * sc_minrtt: dump RTT values by node for use by sc_hoiho
  *
- * $Id: sc_minrtt.c,v 1.29 2025/09/17 00:32:56 mjl Exp $
+ * $Id: sc_minrtt.c,v 1.30 2026/03/30 03:37:44 mjl Exp $
  *
  *         Matthew Luckie
  *         mjl@luckie.org.nz
  *
- * Copyright (C) 2023-2025 The Regents of the University of California
+ * Copyright (C) 2023-2026 The Regents of the University of California
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -1725,6 +1725,7 @@ static void do_file_read(sc_filedata_t *fd)
   if((file = scamper_file_open(fd->filename, 'r', NULL)) == NULL)
     {
       fprintf(stderr, "%s: could not open %s\n", __func__, fd->filename);
+      ok = 1;
       goto done;
     }
   if((ffilter = scamper_file_filter_alloc(filter_types, filter_cnt)) == NULL)
@@ -1959,6 +1960,8 @@ static int do_import_filenames(slist_t *fd_list)
   for(sn=slist_head_node(fd_list); sn != NULL; sn=slist_node_next(sn))
     {
       fd = slist_node_item(sn);
+      if(slist_head_item(fd->samples) == NULL)
+	continue;
       if(do_import_filename(fd->filename) != 0)
 	return -1;
     }
@@ -2071,6 +2074,8 @@ static int do_import_runlens(slist_t *fd_list)
   for(sn=slist_head_node(fd_list); sn != NULL; sn=slist_node_next(sn))
     {
       fd = slist_node_item(sn);
+      if(slist_head_item(fd->samples) == NULL)
+	continue;
       for(i=1; i<4; i++)
 	{
 	  for(j=0; j<256; j++)
