@@ -2,7 +2,7 @@
 #
 # Authors: Matthew Luckie, Ken Keys
 #
-# Copyright (C) 2025 The Regents of the University of California
+# Copyright (C) 2025-2026 The Regents of the University of California
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -102,6 +102,12 @@ class ScamperVp:
     def ipv4(self) -> Optional[str]: ...
 
     @property
+    def asn6(self) -> Union[int, str, None]: ...
+
+    @property
+    def ipv6(self) -> Optional[str]: ...
+
+    @property
     def loc(self) -> Optional[Tuple[float, float]]: ...
 
     @property
@@ -142,6 +148,12 @@ class ScamperInst:
 
     @property
     def ipv4(self) -> Optional[str]: ...
+
+    @property
+    def asn6(self) -> Union[int, str, None]: ...
+
+    @property
+    def ipv6(self) -> Optional[str]: ...
 
     @property
     def loc(self) -> Optional[Tuple[float, float]]: ...
@@ -799,6 +811,12 @@ class ScamperHttp:
 
     @property
     def dport(self) -> int: ...
+
+    @property
+    def maxtime(self) -> datetime.timedelta: ...
+
+    @property
+    def hsrtt(self) -> datetime.timedelta: ...
 
     @property
     def url(self) -> Optional[str]: ...

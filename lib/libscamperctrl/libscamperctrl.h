@@ -1,12 +1,12 @@
 /*
  * libscamperctrl
  *
- * $Id: libscamperctrl.h,v 1.28 2025/12/18 00:11:09 mjl Exp $
+ * $Id: libscamperctrl.h,v 1.29 2026/04/10 05:15:04 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
  *
- * Copyright (C) 2021-2025 Matthew Luckie. All rights reserved.
+ * Copyright (C) 2021-2026 Matthew Luckie. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -98,6 +98,8 @@ const char *scamper_vp_name_get(const scamper_vp_t *vp);
 const char *scamper_vp_shortname_get(const scamper_vp_t *vp);
 const char *scamper_vp_ipv4_get(const scamper_vp_t *vp);
 const char *scamper_vp_asn4_get(const scamper_vp_t *vp);
+const char *scamper_vp_ipv6_get(const scamper_vp_t *vp);
+const char *scamper_vp_asn6_get(const scamper_vp_t *vp);
 const char *scamper_vp_cc_get(const scamper_vp_t *vp);
 const char *scamper_vp_st_get(const scamper_vp_t *vp);
 const char *scamper_vp_place_get(const scamper_vp_t *vp);

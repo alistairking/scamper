@@ -102,6 +102,8 @@ cdef extern from "libscamperctrl.h":
  const char *scamper_vp_shortname_get(const scamper_vp_t *vp)
  const char *scamper_vp_ipv4_get(const scamper_vp_t *vp)
  const char *scamper_vp_asn4_get(const scamper_vp_t *vp)
+ const char *scamper_vp_ipv6_get(const scamper_vp_t *vp)
+ const char *scamper_vp_asn6_get(const scamper_vp_t *vp)
  const char *scamper_vp_cc_get(const scamper_vp_t *vp)
  const char *scamper_vp_st_get(const scamper_vp_t *vp)
  const char *scamper_vp_place_get(const scamper_vp_t *vp)

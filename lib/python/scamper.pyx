@@ -8135,6 +8135,30 @@ cdef class ScamperHttp:
         return cscamper_http.scamper_http_dport_get(self._c)
 
     @property
+    def maxtime(self):
+        """
+        get method to obtain the maximum time the measurement may run.
+
+        :returns: the maximum time value.
+        :rtype: timedelta
+        """
+        c = cscamper_http.scamper_http_maxtime_get(self._c)
+        return datetime.timedelta(seconds=c.tv_sec,
+                                  microseconds=c.tv_usec)
+
+    @property
+    def hsrtt(self):
+        """
+        get method to obtain the time the TCP handshake took.
+
+        :returns: the time the TCP handshake took.
+        :rtype: timedelta
+        """
+        c = cscamper_http.scamper_http_hsrtt_get(self._c)
+        return datetime.timedelta(seconds=c.tv_sec,
+                                  microseconds=c.tv_usec)
+
+    @property
     def url(self):
         """
         get method to obtain the URL for this measurement.
@@ -11764,6 +11788,39 @@ cdef class ScamperVp:
         return c_ipv4.decode('UTF-8', 'strict')
 
     @property
+    def asn6(self):
+        """
+        get method to obtain the IPv6 ASN associated with the VP.
+
+        :returns: the IPv6 ASN
+        :rtype: int or string
+        """
+        c_asn6 = clibscamperctrl.scamper_vp_asn6_get(self._c)
+        if c_asn6 == NULL:
+            return None
+        asn6 = c_asn6.decode('UTF-8', 'strict')
+        if asn6.isdecimal():
+            try:
+                return int(asn6, base=10)
+            except:
+                pass
+        return asn6
+
+    @property
+    def ipv6(self):
+        """
+        get method to obtain the public IPv6 address from where the VP
+        connected.
+
+        :returns: the IPv6 address
+        :rtype: string
+        """
+        c_ipv6 = clibscamperctrl.scamper_vp_ipv6_get(self._c)
+        if c_ipv6 == NULL:
+            return None
+        return c_ipv6.decode('UTF-8', 'strict')
+
+    @property
     def iata(self):
         """
         get method to obtain the nearest airport's IATA code, if known.
@@ -11984,6 +12041,28 @@ cdef class ScamperInst:
         if vp is None:
             return None
         return vp.asn4
+
+    @property
+    def ipv6(self):
+        """
+        return the IPv6 address associated with the instance, if known.
+        """
+        c_vp = clibscamperctrl.scamper_inst_vp_get(self._c)
+        vp = ScamperVp.from_ptr(c_vp)
+        if vp is None:
+            return None
+        return vp.ipv6
+
+    @property
+    def asn6(self):
+        """
+        return the IPv6 ASN associated with the instance, if known.
+        """
+        c_vp = clibscamperctrl.scamper_inst_vp_get(self._c)
+        vp = ScamperVp.from_ptr(c_vp)
+        if vp is None:
+            return None
+        return vp.asn6
 
     @property
     def loc(self):

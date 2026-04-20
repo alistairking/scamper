@@ -1,7 +1,7 @@
 /*
  * scamper_owamp_do.c
  *
- * $Id: scamper_owamp_do.c,v 1.4 2026/02/27 22:55:07 mjl Exp $
+ * $Id: scamper_owamp_do.c,v 1.7 2026/04/17 22:14:20 mjl Exp $
  *
  * Copyright (C) 2025 The Regents of the University of California
  *
@@ -976,8 +976,16 @@ static void do_owamp_handle_udp(scamper_task_t *task, scamper_udp_resp_t *ur)
   if((rx = scamper_owamp_rx_alloc()) == NULL)
     return;
   timeval_cpy(&rx->stamp, &ur->rx);
-  rx->ttl = ur->ttl;
-  rx->flags |= SCAMPER_OWAMP_RX_FLAG_TTL;
+  if((ur->flags & SCAMPER_UDP_RESP_FLAG_TTL) != 0)
+    {
+      rx->ttl = ur->ttl;
+      rx->flags |= SCAMPER_OWAMP_RX_FLAG_TTL;
+    }
+  if((ur->flags & SCAMPER_UDP_RESP_FLAG_TOS) != 0)
+    {
+      rx->dscp = ur->tos >> 2;
+      rx->flags |= SCAMPER_OWAMP_RX_FLAG_DSCP;
+    }
   if(scamper_owamp_tx_rxadd(tx, rx) != 0)
     {
       scamper_owamp_rx_free(rx);

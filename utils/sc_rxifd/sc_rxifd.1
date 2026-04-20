@@ -1,0 +1,139 @@
+.\"
+.\" sc_rxifd.1
+.\"
+.\" Author: Matthew Luckie <mjl@luckie.org.nz>
+.\"
+.\" Copyright (c) 2026 The Regents of the University of California
+.\"               All rights reserved
+.\"
+.\" $Id: sc_rxifd.1,v 1.1 2026/04/17 18:05:11 mjl Exp $
+.\"
+.Dd April 18, 2026
+.Dt SC_RXIFD 1
+.Os
+.Sh NAME
+.Nm sc_rxifd
+.Nd respond with receive interface name in a DNS TXT packet
+.Sh SYNOPSIS
+.Nm
+.Bk -words
+.Op Fl ?46Dv
+.Op Fl n Ar name
+.Op Fl p Ar pps
+.Op Fl P Ar port
+.Ek
+.\""""""""""""
+.Sh DESCRIPTION
+The
+.Nm
+utility provides the ability for a UDP client to determine the interface
+on a UDP listener that received the packet.
+This is useful when inferring routing policy.
+.Nm
+uses DNS as a wire format for queries and responses.
+The options are as follows:
+.Bl -tag -width Ds
+.It Fl ?
+prints a list of command line options and a synopsis of each.
+.It Fl v
+prints the version of
+.Nm
+and exits.
+.It Fl D
+causes
+.Nm
+to operate as a daemon.
+.It Fl 4
+causes
+.Nm
+to only listen for IPv4-based requests.
+.It Fl 6
+causes
+.Nm
+to only listen for IPv6-based requests.
+.It Fl n Ar name
+specifies the name that
+.Nm
+will respond to TXT queries for.
+.Nm
+will silently ignore non-TXT queries, and TXT queries for names other than
+the specified name.
+This is a mandatory parameter.
+.It Fl p Ar pps
+specifies the maximum number of responses per second that
+.Nm
+can send.
+This is a mandatory parameter.
+.It Fl P Ar port
+specifies the UDP port to listen for queries on.
+Typically port 53 requires privilege to listen on, and some networks
+intercept all UDP port 53 traffic, so it is recommended to choose a
+higher-numbered port.
+This is a mandatory parameter.
+.El
+.\""""""""""""
+.Sh EXAMPLES
+The intended use of
+.Nm
+is on a multi-homed system where clients could reach IP addresses on
+the system in different ways.
+Typically those IP addresses are assigned to the loopback interface.
+.Nm
+will respond to a TXT query for a specific name with a TXT record that
+contains the name of the physical interface that received the query,
+even if that packet were destined to an address assigned to the
+loopback interface, and the source IP address that
+.Nm
+saw the query from.
+.Pp
+Given
+.Nm
+listening on port 53535 for TXT queries for rxif.example.net
+.Pp
+.Dl sc_rxifd -P 53535 -n rxif.example.net
+.Pp
+Then the following query
+.Pp
+.Dl dig @192.0.2.1 rxif.example.net -t txt -p 53535 +short
+.Pp
+will obtain a response that looks similar to
+.Pp
+.Dl \(dqsrc=192.0.31.8\(dq \(dqrxif=em0\(dq
+.Pp
+.\""""""""""""
+.Sh SIGNAL HANDLERS
+.Nm
+installs handlers for SIGHUP, SIGINT, and SIGTERM.
+These signals cause
+.Nm
+to exit gracefully.
+.\""""""""""""
+.Sh SECURITY CONSIDERATIONS
+.Nm
+should always be run by a non-root user.
+.Pp
+.Nm
+provides an amplification opportunity, as a DNS response is typically
+larger than a DNS query.
+The size of a response depends on the length of the interface name and
+the length of the string representation of the source IP address
+reported.
+.\""""""""""""
+.Sh SEE ALSO
+.Xr dig 1 ,
+.Rs
+.%A "M. Luckie"
+.%A "S. Wallace"
+.%A "K. Newell"
+.%A "J. Bartig"
+.%A "S. Ko\(,cak"
+.%A "N. Den Otter"
+.%A "K. Koole"
+.%A "J. Deaton"
+.%A "k. claffy"
+.%T "R&E Routing Policy: Inference and Implication"
+.%O "Proc. ACM/SIGCOMM Internet Measurement Conference 2025"
+.Re
+.Sh AUTHORS
+.Nm
+was written by Matthew Luckie <mjl@luckie.org.nz>.
