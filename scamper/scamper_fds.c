@@ -400,7 +400,7 @@ static void fd_refcnt_0(scamper_fd_t *fdn)
    * along and wants to use it.
    */
   gettimeofday_wrap(&fdn->tv);
-  fdn->tv.tv_sec += 10;
+  fdn->tv.tv_sec += 60;
 
   return;
 }
