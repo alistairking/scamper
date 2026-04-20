@@ -1,7 +1,7 @@
 /*
  * scamper_privsep.c: code that does root-required tasks
  *
- * $Id: scamper_privsep.c,v 1.113 2026/01/02 19:40:13 mjl Exp $
+ * $Id: scamper_privsep.c,v 1.114 2026/04/17 20:51:45 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -97,26 +97,25 @@ extern pid_t privsep_unpriv_pid; /* the pid of the unpriv process */
 
 #ifdef HAVE_SCAMPER_DEBUG
 static const char *msg_typestr[] = {
-  "open-datalink",
-  "open-file",
-  "open-rtsock",
-  "open-icmp",
-  "open-sock",
-  "open-rawudp",
-  "open-unix",
-  "open-rawip",
-  "unlink",
-  "ipfw-init",
-  "ipfw-cleanup",
-  "ipfw-add",
-  "ipfw-del",
-  "pf-init",
-  "pf-cleanup",
-  "pf-add",
-  "pf-del",
-  "exit",
-  "ready",
-  "hup",
+  "open-datalink", /* SCAMPER_PRIVSEP_OPEN_DATALINK */
+  "open-file",     /* SCAMPER_PRIVSEP_OPEN_FILE */
+  "open-rtsock",   /* SCAMPER_PRIVSEP_OPEN_RTSOCK */
+  "open-icmp",     /* SCAMPER_PRIVSEP_OPEN_ICMP */
+  "open-rawudp",   /* SCAMPER_PRIVSEP_OPEN_RAWUDP */
+  "open-unix",     /* SCAMPER_PRIVSEP_OPEN_UNIX */
+  "open-rawip",    /* SCAMPER_PRIVSEP_OPEN_RAWIP */
+  "unlink",        /* SCAMPER_PRIVSEP_UNLINK */
+  "ipfw-init",     /* SCAMPER_PRIVSEP_IPFW_INIT */
+  "ipfw-cleanup",  /* SCAMPER_PRIVSEP_IPFW_CLEANUP */
+  "ipfw-add",      /* SCAMPER_PRIVSEP_IPFW_ADD */
+  "ipfw-del",      /* SCAMPER_PRIVSEP_IPFW_DEL */
+  "pf-init",       /* SCAMPER_PRIVSEP_PF_INIT */
+  "pf-cleanup",    /* SCAMPER_PRIVSEP_PF_CLEANUP */
+  "pf-add",        /* SCAMPER_PRIVSEP_PF_ADD */
+  "pf-del",        /* SCAMPER_PRIVSEP_PF_DEL */
+  "exit",          /* SCAMPER_PRIVSEP_EXIT */
+  "ready",         /* SCAMPER_PRIVSEP_READY */
+  "hup",           /* SCAMPER_PRIVSEP_HUP */
 };
 #endif
 

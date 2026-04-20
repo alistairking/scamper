@@ -1,6 +1,6 @@
 # Process this file with autoconf to produce a configure script.
 
-AC_INIT([scamper],[20260331],[mjl@luckie.org.nz])
+AC_INIT([scamper],[20260420],[mjl@luckie.org.nz])
 
 AC_CONFIG_SRCDIR([scamper/scamper.c])
 AC_CONFIG_AUX_DIR([.])
@@ -355,6 +355,15 @@ AC_ARG_ENABLE([sc_minrtt],
 )
 AM_CONDITIONAL([ENABLE_SC_MINRTT],
 	[test "x$enable_utils" = "xyes" && test "x$enable_sc_minrtt" = "xyes"])
+
+# sc_rxifd utility
+AC_ARG_ENABLE([sc_rxifd],
+  [AS_HELP_STRING([--enable-sc_rxifd], [enable support for sc_rxifd])],
+  [enable_sc_rxifd=$enableval],
+  [enable_sc_rxifd=no]
+)
+AM_CONDITIONAL([ENABLE_SC_RXIFD],
+	[test "x$enable_utils" = "xyes" && test "x$enable_sc_rxifd" = "xyes"])
 
 # sc_uptime prober support
 AC_ARG_ENABLE([sc_uptime],
@@ -1038,6 +1047,15 @@ AM_COND_IF([ENABLE_UTILS],
 	utils/sc_prefixscan/Makefile
 	utils/sc_radargun/Makefile
 	utils/sc_remoted/Makefile
+	])])
+
+AM_COND_IF([ENABLE_SC_RXIFD],
+	[AC_CONFIG_FILES([
+	utils/sc_rxifd/Makefile
+	])])
+
+AM_COND_IF([ENABLE_UTILS],
+	[AC_CONFIG_FILES([
 	utils/sc_speedtrap/Makefile
 	utils/sc_tbitblind/Makefile
 	utils/sc_tbitpmtud/Makefile

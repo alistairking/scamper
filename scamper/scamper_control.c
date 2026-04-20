@@ -1,12 +1,12 @@
 /*
  * scamper_control.c
  *
- * $Id: scamper_control.c,v 1.295 2026/03/30 18:24:59 mjl Exp $
+ * $Id: scamper_control.c,v 1.296 2026/04/11 21:56:15 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2012-2014 The Regents of the University of California
- * Copyright (C) 2014-2025 Matthew Luckie
+ * Copyright (C) 2014-2026 Matthew Luckie
  * Copyright (C) 2023      The Regents of the University of California
  * Author: Matthew Luckie
  *
@@ -3138,6 +3138,10 @@ static int remote_connect(control_remote_t *rm)
   struct sockaddr *sa = (struct sockaddr *)&sas;
   struct timeval tv;
 
+#ifndef DISABLE_SCAMPER_HOST
+  scamper_host_do_t *hostdo;
+#endif
+
 #ifndef _WIN32 /* SOCKET vs int on windows */
   int fd = -1;
 #else
@@ -3151,8 +3155,9 @@ static int remote_connect(control_remote_t *rm)
   if(sockaddr_compose_str(sa, AF_UNSPEC, rm->server_name, rm->server_port) != 0)
     {
 #ifndef DISABLE_SCAMPER_HOST
-      if(scamper_do_host_do_a(rm->server_name, rm,
-			      (scamper_host_do_a_cb_t)remote_host_cb) == NULL)
+      hostdo = scamper_do_host_do_a(rm->server_name, rm,
+				    (scamper_host_do_addr_cb_t)remote_host_cb);
+      if(hostdo == NULL)
 	remote_retry(rm, 0);
       return 0;
 #else

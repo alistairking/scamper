@@ -1,7 +1,7 @@
 /*
  * scamper_icmp4.c
  *
- * $Id: scamper_icmp4.c,v 1.153 2025/10/23 18:54:23 mjl Exp $
+ * $Id: scamper_icmp4.c,v 1.154 2026/04/17 21:34:22 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -623,7 +623,7 @@ static int scamper_icmp4_recv_err(int fd, scamper_icmp_resp_t *resp)
   struct msghdr msg;
   struct iovec iov;
   ssize_t pbuflen;
-  uint8_t type, code;
+  uint8_t type, code, *u8_ptr;
   uint8_t ctrlbuf[2048];
   int *ptr;
 
@@ -684,13 +684,25 @@ static int scamper_icmp4_recv_err(int fd, scamper_icmp_resp_t *resp)
 	}
       else if(cmsg->cmsg_level == SOL_IP && cmsg->cmsg_type == IP_TTL)
 	{
+	  /*
+	   * IP_RECVTTL (since Linux 2.2)
+	   * When this flag is set, pass a IP_TTL control message with
+	   * the time-to-live field of the received packet as a 32 bit
+	   * integer.
+	   */
 	  ptr = (int *)CMSG_DATA(cmsg);
 	  resp->ir_ip_ttl = *ptr;
 	}
       else if(cmsg->cmsg_level == SOL_IP && cmsg->cmsg_type == IP_TOS)
 	{
-	  ptr = (int *)CMSG_DATA(cmsg);
-	  resp->ir_ip_tos = *ptr;
+	  /*
+	   * IP_RECVTOS (since Linux 2.2)
+	   * If enabled, the IP_TOS ancillary message is passed with
+	   * incoming packets.  It contains a byte which specifies the
+	   * Type of Service/Precedence field of the packet header
+	   */
+	  u8_ptr = (uint8_t *)CMSG_DATA(cmsg);
+	  resp->ir_ip_tos = *u8_ptr;
 	}
       cmsg = (struct cmsghdr *)CMSG_NXTHDR(&msg, cmsg);
     }

@@ -1,9 +1,10 @@
-from setuptools import Extension, setup
 import textwrap
+
+from setuptools import Extension, setup
 
 setup(
     name="scamper",
-    version="20260331",
+    version="20260420",
     description="A module to interact with scamper processes and data",
     author="Matthew Luckie",
     author_email="mjl@luckie.org.nz",
@@ -13,8 +14,9 @@ setup(
     },
     license="GPL-2.0-only",
     ext_modules=[
-        Extension("scamper", ["scamper.c"],
-                  libraries=["scamperfile", "scamperctrl"]),
+        Extension(
+            "scamper", ["scamper.c"], libraries=["scamperfile", "scamperctrl"]
+        ),
     ],
     keywords=[
         "Internet measurement",

@@ -1,7 +1,7 @@
 /*
  * sc_remoted
  *
- * $Id: sc_remoted.c,v 1.159 2026/02/19 05:24:28 mjl Exp $
+ * $Id: sc_remoted.c,v 1.162 2026/04/16 06:36:10 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -289,6 +289,7 @@ typedef struct sc_metadata
 {
   char               *name;
   char               *asn4;
+  char               *asn6;
   char               *latlong;
   char               *cc;
   char               *st;
@@ -540,6 +541,8 @@ typedef struct sc_message
 #define VP_ATTR_SHORTNAME      9
 #define VP_ATTR_TAG           10
 #define VP_ATTR_IATA          11
+#define VP_ATTR_IPV6          12
+#define VP_ATTR_IPV6_ASN      13
 
 static uint16_t     options        = 0;
 static char        *unix_dir       = NULL;
@@ -1257,6 +1260,7 @@ static void sc_metadata_free(sc_metadata_t *md)
 {
   if(md->name != NULL) free(md->name);
   if(md->asn4 != NULL) free(md->asn4);
+  if(md->asn6 != NULL) free(md->asn6);
   if(md->latlong != NULL) free(md->latlong);
   if(md->cc != NULL) free(md->cc);
   if(md->st != NULL) free(md->st);
@@ -1554,6 +1558,8 @@ static int tags_embed(uint8_t *buf, size_t len, size_t *off, slist_t *tags)
 static int sc_master_mux_encode(const sc_master_t *ms,uint8_t *buf,size_t *len)
 {
   sc_metadata_t *md = NULL;
+  struct sockaddr_storage sas;
+  socklen_t socklen;
   char tmp[128];
   size_t off;
 
@@ -1578,15 +1584,37 @@ static int sc_master_mux_encode(const sc_master_t *ms,uint8_t *buf,size_t *len)
   if(attr_embed(buf, *len, &off, VP_ATTR_ARRIVAL, tmp) != 0)
     return -1;
 
-  if(ms->inet_fd.fd != -1 &&
-     fd_peername(ms->inet_fd.fd, tmp, sizeof(tmp), 0) == 0 &&
-     attr_embed(buf, *len, &off, VP_ATTR_IPV4, tmp) != 0)
-    return -1;
+  if(ms->inet_fd.fd != -1)
+    {
+      socklen = sizeof(sas);
+      if(getpeername(ms->inet_fd.fd, (struct sockaddr *)&sas, &socklen) != 0)
+	{
+	  remote_error(__func__, "could not getpeername: %s", strerror(errno));
+	  return -1;
+	}
+      if(sockaddr_tostr((struct sockaddr *)&sas, tmp, sizeof(tmp), 0) == NULL)
+	{
+	  remote_error(__func__, "could not convert to string");
+	  return -1;
+	}
+      if(sas.ss_family == AF_INET)
+	{
+	  if(attr_embed(buf, *len, &off, VP_ATTR_IPV4, tmp) != 0)
+	    return -1;
+	}
+      else if(sas.ss_family == AF_INET6)
+	{
+	  if(attr_embed(buf, *len, &off, VP_ATTR_IPV6, tmp) != 0)
+	    return -1;
+	}
+    }
 
   /* append external metadata */
   if(md != NULL &&
      ((md->asn4 != NULL &&
        attr_embed(buf, *len, &off, VP_ATTR_IPV4_ASN, md->asn4) != 0) ||
+      (md->asn6 != NULL &&
+       attr_embed(buf, *len, &off, VP_ATTR_IPV6_ASN, md->asn6) != 0) ||
       (md->latlong != NULL &&
        attr_embed(buf, *len, &off, VP_ATTR_LATLONG, md->latlong) != 0) ||
       (md->cc != NULL &&
@@ -3820,6 +3848,7 @@ static int metadata_line(char *line, void *param)
     }
 
   if(strcasecmp(attr, "asn4") == 0) out = &md->asn4;
+  else if(strcasecmp(attr, "asn6") == 0) out = &md->asn6;
   else if(strcasecmp(attr, "cc") == 0) out = &md->cc;
   else if(strcasecmp(attr, "st") == 0) out = &md->st;
   else if(strcasecmp(attr, "place") == 0) out = &md->place;
@@ -4567,7 +4596,11 @@ static int remoted(int argc, char *argv[])
 #endif
      unveil_wrap(metadata_file, "r") != 0) /* open */
     goto done;
-  unveil(NULL, NULL);
+  if(unveil(NULL, NULL) != 0)
+    {
+      remote_error(__func__, "could not do final unveil: %s", strerror(errno));
+      goto done;
+    }
 #endif
 
 #ifdef HAVE_PLEDGE
