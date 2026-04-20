@@ -1,7 +1,7 @@
 /*
  * libscamperctrl
  *
- * $Id: libscamperctrl.c,v 1.104 2026/03/30 00:02:17 mjl Exp $
+ * $Id: libscamperctrl.c,v 1.105 2026/04/10 05:15:04 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -226,6 +226,8 @@ struct scamper_vp
   char              *arrival;
   char              *ipv4;
   char              *asn4;
+  char              *ipv6;
+  char              *asn6;
   char              *cc;
   char              *st;
   char              *place;
@@ -290,6 +292,8 @@ struct scamper_vp
 #define VP_ATTR_SHORTNAME      9
 #define VP_ATTR_TAG           10
 #define VP_ATTR_IATA          11
+#define VP_ATTR_IPV6          12
+#define VP_ATTR_IPV6_ASN      13
 
 #define FD_TYPE_INST           0
 #define FD_TYPE_MUX            1
@@ -1373,6 +1377,8 @@ static int mux_vp_update(scamper_mux_t *mux, const uint8_t *buf, size_t len)
 	  else if(attr_type == VP_ATTR_ARRIVAL) out = &vp->arrival;
 	  else if(attr_type == VP_ATTR_IPV4) out = &vp->ipv4;
 	  else if(attr_type == VP_ATTR_IPV4_ASN) out = &vp->asn4;
+	  else if(attr_type == VP_ATTR_IPV6) out = &vp->ipv6;
+	  else if(attr_type == VP_ATTR_IPV6_ASN) out = &vp->asn6;
 	  else if(attr_type == VP_ATTR_CC) out = &vp->cc;
 	  else if(attr_type == VP_ATTR_ST) out = &vp->st;
 	  else if(attr_type == VP_ATTR_PLACE) out = &vp->place;
@@ -2006,6 +2012,8 @@ scamper_inst_t *scamper_inst_vp(scamper_ctrl_t *ctrl, scamper_vp_t *vp)
     name = vp->name;
   else if(vp->ipv4 != NULL)
     name = vp->ipv4;
+  else if(vp->ipv6 != NULL)
+    name = vp->ipv6;
   else
     goto err;
 
@@ -2428,7 +2436,9 @@ void scamper_vp_free(scamper_vp_t *vp)
   if(vp->name != NULL) free(vp->name);
   if(vp->arrival != NULL) free(vp->arrival);
   if(vp->ipv4 != NULL) free(vp->ipv4);
+  if(vp->ipv6 != NULL) free(vp->ipv6);
   if(vp->asn4 != NULL) free(vp->asn4);
+  if(vp->asn6 != NULL) free(vp->asn6);
   if(vp->cc != NULL) free(vp->cc);
   if(vp->st != NULL) free(vp->st);
   if(vp->place != NULL) free(vp->place);
@@ -2477,6 +2487,20 @@ const char *scamper_vp_asn4_get(const scamper_vp_t *vp)
 {
   if(vp != NULL)
     return vp->asn4;
+  return NULL;
+}
+
+const char *scamper_vp_ipv6_get(const scamper_vp_t *vp)
+{
+  if(vp != NULL)
+    return vp->ipv6;
+  return NULL;
+}
+
+const char *scamper_vp_asn6_get(const scamper_vp_t *vp)
+{
+  if(vp != NULL)
+    return vp->asn6;
   return NULL;
 }
 

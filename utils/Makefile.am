@@ -22,7 +22,13 @@ SUBDIRS+= \
 	sc_prefixprober \
 	sc_prefixscan \
 	sc_radargun \
-	sc_remoted \
+	sc_remoted
+
+if ENABLE_SC_RXIFD
+SUBDIRS+= sc_rxifd
+endif
+
+SUBDIRS+= \
 	sc_speedtrap \
 	sc_tbitblind \
 	sc_tbitpmtud \

@@ -1,12 +1,13 @@
 /*
  * scamper_udp6.c
  *
- * $Id: scamper_udp6.c,v 1.87 2025/10/23 18:54:23 mjl Exp $
+ * $Id: scamper_udp6.c,v 1.90 2026/04/18 06:08:16 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2010 The University of Waikato
  * Copyright (C) 2020-2023 Matthew Luckie
  * Copyright (C) 2024      The Regents of the University of California
+ * Copyright (C) 2026      Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -235,8 +236,8 @@ void scamper_udp6_read_cb(SOCKET fd, void *param)
   ssize_t rrc;
   int v;
 
-#ifdef IP_PKTINFO
-  struct in_pktinfo *pi;
+#ifdef IPV6_PKTINFO
+  struct in6_pktinfo *pi;
 #endif
 
   memset(&iov, 0, sizeof(iov));
@@ -254,7 +255,6 @@ void scamper_udp6_read_cb(SOCKET fd, void *param)
     return;
 
   memset(&ur, 0, sizeof(ur));
-  ur.ttl = -1;
 
   if(msg.msg_controllen >= sizeof(struct cmsghdr))
     {
@@ -269,14 +269,24 @@ void scamper_udp6_read_cb(SOCKET fd, void *param)
 	    {
 	      v = *((int *)CMSG_DATA(cmsg));
 	      ur.ttl = (uint8_t)v;
+	      ur.flags |= SCAMPER_UDP_RESP_FLAG_TTL;
 	    }
 #endif
-#if defined(IP_PKTINFO)
+#if defined(IPV6_TCLASS)
 	  else if(cmsg->cmsg_level == IPPROTO_IPV6 &&
-		  cmsg->cmsg_type == IP_PKTINFO)
+		  cmsg->cmsg_type == IPV6_TCLASS)
 	    {
-	      pi = (struct in_pktinfo *)CMSG_DATA(cmsg);
-	      ur.ifindex = pi->ipi_ifindex;
+	      v = *((int *)CMSG_DATA(cmsg));
+	      ur.tos = (uint8_t)v;
+	      ur.flags |= SCAMPER_UDP_RESP_FLAG_TOS;
+	    }
+#endif
+#if defined(IPV6_PKTINFO)
+	  else if(cmsg->cmsg_level == IPPROTO_IPV6 &&
+		  cmsg->cmsg_type == IPV6_PKTINFO)
+	    {
+	      pi = (struct in6_pktinfo *)CMSG_DATA(cmsg);
+	      ur.ifindex = pi->ipi6_ifindex;
 	      ur.flags |= SCAMPER_UDP_RESP_FLAG_IFINDEX;
 	    }
 #endif
@@ -472,6 +482,11 @@ SOCKET scamper_udp6_open(const void *addr, int sport, scamper_err_t *error)
 #elif defined(IPV6_HOPLIMIT)
   if(setsockopt_int(fd, IPPROTO_IPV6, IPV6_HOPLIMIT, 1) != 0)
     printerror(__func__, "could not set IPV6_HOPLIMIT");
+#endif
+
+#if defined(IPV6_RECVTCLASS)
+  if(setsockopt_int(fd, IPPROTO_IPV6, IPV6_RECVTCLASS, 1) != 0)
+    printerror(__func__, "could not set IPV6_RECVTCLASS");
 #endif
 
 #if defined(SO_TIMESTAMP)

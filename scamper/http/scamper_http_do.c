@@ -1,7 +1,7 @@
 /*
  * scamper_http_do.c
  *
- * $Id: scamper_http_do.c,v 1.34 2026/03/26 23:26:43 mjl Exp $
+ * $Id: scamper_http_do.c,v 1.35 2026/04/12 23:49:56 mjl Exp $
  *
  * Copyright (C) 2023-2024 The Regents of the University of California
  * Copyright (C) 2024-2025 Matthew Luckie
@@ -251,8 +251,6 @@ static int http_read_payload(http_state_t *state, uint8_t *buf, size_t len)
 
   gettimeofday_wrap(&tv);
 
-  buf[len+1] = '\0';
-
   if(state->mode == STATE_MODE_REQ || state->mode == STATE_MODE_WAIT)
     {
       for(i=0; i<len; i++)
@@ -484,7 +482,7 @@ static int http_read_sock(scamper_task_t *task, scamper_err_t *error)
 
   fd = scamper_fd_fd_get(state->fdn);
 
-  if((rrc = recv(fd, buf, sizeof(buf)-1, 0)) < 0)
+  if((rrc = recv(fd, buf, sizeof(buf), 0)) < 0)
     {
       if(errno == EAGAIN || errno == EINTR)
 	return 1;

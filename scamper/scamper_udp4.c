@@ -1,7 +1,7 @@
 /*
  * scamper_udp4.c
  *
- * $Id: scamper_udp4.c,v 1.100 2025/10/23 18:54:23 mjl Exp $
+ * $Id: scamper_udp4.c,v 1.105 2026/04/17 22:19:19 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2010 The University of Waikato
@@ -243,7 +243,6 @@ void scamper_udp4_read_cb(SOCKET fd, void *param)
     return;
 
   memset(&ur, 0, sizeof(ur));
-  ur.ttl = -1;
 
   if(msg.msg_controllen >= sizeof(struct cmsghdr))
     {
@@ -258,9 +257,50 @@ void scamper_udp4_read_cb(SOCKET fd, void *param)
 
 	  if(cmsg->cmsg_level == IPPROTO_IP && cmsg->cmsg_type == IP_TTL)
 	    {
+	      /*
+	       * IP_RECVTTL (since Linux 2.2)
+	       * When this flag is set, pass a IP_TTL control message
+	       * with the time-to-live field of the received packet as
+	       * a 32 bit integer.
+	       */
 	      ur.ttl = *((int *)CMSG_DATA(cmsg));
+	      ur.flags |= SCAMPER_UDP_RESP_FLAG_TTL;
 	      goto next;
 	    }
+
+	  if((cmsg->cmsg_level == IPPROTO_IP && cmsg->cmsg_type == IP_TOS)
+#if defined(IP_RECVTOS)
+	     || (cmsg->cmsg_level == IPPROTO_IP && cmsg->cmsg_type == IP_RECVTOS)
+#endif
+	     )
+	    {
+	      ur.tos = *((uint8_t *)CMSG_DATA(cmsg));
+	      ur.flags |= SCAMPER_UDP_RESP_FLAG_TOS;
+	      goto next;
+	    }
+
+#if defined(IP_RECVTTL)
+	  if(cmsg->cmsg_level == IPPROTO_IP && cmsg->cmsg_type == IP_RECVTTL)
+	    {
+	      /*
+	       * FreeBSD, OpenBSD, NetBSD:
+	       *
+	       * If the IP_RECVTTL option is enabled on a SOCK_DGRAM
+	       * socket, the recvmsg(2) call will return the IP TTL
+	       * (time to live) field for a UDP datagram.  The
+	       * msg_control field in the msghdr structure points to a
+	       * buffer that contains a cmsghdr structure followed by
+	       * the TTL.  The cmsghdr fields have the following
+	       * values:
+	       *   cmsg_len = CMSG_LEN(sizeof(u_char))
+	       *   cmsg_level = IPPROTO_IP
+	       *   cmsg_type = IP_RECVTTL
+	       */
+	      ur.ttl = *((uint8_t *)CMSG_DATA(cmsg));
+	      ur.flags |= SCAMPER_UDP_RESP_FLAG_TTL;
+	      goto next;
+	    }
+#endif
 
 #if defined(IP_PKTINFO)
 	  if(cmsg->cmsg_level == IPPROTO_IP && cmsg->cmsg_type == IP_PKTINFO)
@@ -341,8 +381,15 @@ SOCKET scamper_udp4_opendgram(const void *addr, int sport, scamper_err_t *error)
     printerror(__func__, "could not set SO_TIMESTAMP");
 #endif
 
+#if defined(IP_RECVTTL)
   if(setsockopt_int(fd, IPPROTO_IP, IP_RECVTTL, 1) != 0)
     printerror(__func__, "could not set IP_RECVTTL");
+#endif
+
+#if defined(IP_RECVTOS)
+  if(setsockopt_int(fd, IPPROTO_IP, IP_RECVTOS, 1) != 0)
+    printerror(__func__, "could not set IP_RECVTOS");
+#endif
 
   /*
    * ask the udp4 socket to supply the interface on which it receives
