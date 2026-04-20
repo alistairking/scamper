@@ -1,7 +1,7 @@
 /*
- * scamper_icmp_resp.h
+ * scamper_udp_resp.h
  *
- * $Id: scamper_udp_resp.h,v 1.2 2024/09/06 01:34:54 mjl Exp $
+ * $Id: scamper_udp_resp.h,v 1.4 2026/04/17 22:14:20 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -28,6 +28,8 @@
 #define __SCAMPER_UDP_RESP_H
 
 #define SCAMPER_UDP_RESP_FLAG_IFINDEX 0x01
+#define SCAMPER_UDP_RESP_FLAG_TTL     0x02
+#define SCAMPER_UDP_RESP_FLAG_TOS     0x04
 
 typedef struct scamper_udp_resp
 {
@@ -36,11 +38,12 @@ typedef struct scamper_udp_resp
   uint16_t         sport;
   int              fd;
   struct timeval   rx;
-  int              ttl;
   uint8_t         *data;
   uint16_t         datalen;
-  unsigned int     ifindex;
   uint8_t          flags;
+  uint8_t          ttl;
+  uint8_t          tos;
+  unsigned int     ifindex;
 } scamper_udp_resp_t;
 
 #endif /* __SCAMPER_UDP_RESP_H */

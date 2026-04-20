@@ -1,9 +1,9 @@
 /*
  * scamper_do_host.h
  *
- * $Id: scamper_host_do.h,v 1.10 2025/08/04 00:00:27 mjl Exp $
+ * $Id: scamper_host_do.h,v 1.11 2026/04/11 21:56:15 mjl Exp $
  *
- * Copyright (C) 2018-2020 Matthew Luckie
+ * Copyright (C) 2018-2026 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -38,10 +38,13 @@ typedef void (*scamper_host_do_ptr_cb_t)(void *param, const char *name);
 scamper_host_do_t *scamper_do_host_do_ptr(scamper_addr_t *ip, void *param,
 					  scamper_host_do_ptr_cb_t cb);
 
-/* code to use the host code to do A record lookup */
-typedef void (*scamper_host_do_a_cb_t)(void *param, scamper_addr_t **a, int c);
+/* code to use the host code to do A/AAAA record lookup */
+typedef void (*scamper_host_do_addr_cb_t)(void *param,
+					  scamper_addr_t **a, int c);
 scamper_host_do_t *scamper_do_host_do_a(const char *name, void *param,
-					scamper_host_do_a_cb_t cb);
+					scamper_host_do_addr_cb_t cb);
+scamper_host_do_t *scamper_do_host_do_aaaa(const char *name, void *param,
+					   scamper_host_do_addr_cb_t cb);
 
 void scamper_host_do_free(scamper_host_do_t *hostdo);
 

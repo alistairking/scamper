@@ -2,7 +2,7 @@
 #
 # process source code looking for #ifdef-related bugs.
 #
-# $Id: check-ifdef.pl,v 1.13 2026/02/19 05:24:28 mjl Exp $
+# $Id: check-ifdef.pl,v 1.15 2026/04/20 05:19:11 mjl Exp $
 
 use strict;
 use warnings;
@@ -23,6 +23,7 @@ $defs{$_} = 0 foreach (
     "IPV6_PKTINFO", "IPV6_RECVERR", "IPV6_RECVHOPLIMIT",
     "IPV6_RECVPKTINFO", "IPV6_RECVTCLASS", "IPV6_TCLASS", "IPV6_V6ONLY",
     "IP_PKTINFO", "IP_RECVERR", "IP_RECVOPTS", "IP_RECVPKTINFO", "IP_RECVIF",
+    "IP_RECVDSTADDR", "IP_SENDSRCADDR", "IP_RECVTOS", "IP_RECVTTL",
     "MJLHEAP_DEBUG", "MJLLIST_DEBUG", "MJLSPLAYTREE_DEBUG",
     "O_NONBLOCK", "PCRE_STUDY_JIT_COMPILE", "RTF_LLINFO",
     "SIGCHLD", "SIGPIPE",
