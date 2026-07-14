@@ -3,7 +3,7 @@
  * By Matthew Luckie
  * U of Waikato 0657.317b 1999
  *
- * Copyright (C) 1999-2025 Matthew Luckie. All rights reserved.
+ * Copyright (C) 1999-2026 Matthew Luckie. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -915,7 +915,7 @@ void *splaytree_getrmrb(const splaytree_t *tree)
 
   tn = tree->head;
   while(tn->right != NULL)
-    tn = tn->left;
+    tn = tn->right;
 
   return tn->item;
 }

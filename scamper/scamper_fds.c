@@ -1,7 +1,7 @@
 /*
  * scamper_fds: manage events and file descriptors
  *
- * $Id: scamper_fds.c,v 1.146 2026/02/03 22:19:15 mjl Exp $
+ * $Id: scamper_fds.c,v 1.148 2026/06/10 19:45:12 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -9,6 +9,7 @@
  * Copyright (C) 2012-2015 The Regents of the University of California
  * Copyright (C) 2016-2024 Matthew Luckie
  * Copyright (C) 2024      The Regents of the University of California
+ * Copyright (C) 2026      Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -1578,7 +1579,7 @@ void scamper_fd_write_unpause(scamper_fd_t *fdn)
        * list.
        */
 #ifndef DISABLE_SCAMPER_SELECT
-      if(fdn->write.list != write_fds && fdn->read.list != write_queue)
+      if(fdn->write.list != write_fds && fdn->write.list != write_queue)
 	{
 	  assert(fdn->write.list == NULL);
 	  dlist_node_tail_push(write_queue, fdn->write.node);
@@ -2053,7 +2054,7 @@ int scamper_fds_init()
 #endif
 
     default:
-      printerror(__func__, "did not select pollfunc");
+      printerror_msg(__func__, "did not select pollfunc");
       return -1;
     }
 

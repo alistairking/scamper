@@ -1,7 +1,7 @@
 /*
  * scamper_do_tbit.c
  *
- * $Id: scamper_tbit_do.c,v 1.233 2025/10/16 00:37:42 mjl Exp $
+ * $Id: scamper_tbit_do.c,v 1.234 2026/07/04 20:41:38 mjl Exp $
  *
  * Copyright (C) 2009-2010 Ben Stasiewicz
  * Copyright (C) 2009-2010 Stephen Eichler
@@ -703,7 +703,7 @@ static int tbit_reassemble(scamper_task_t *task, scamper_dl_rec_t **out,
 	mtu = 1280;
 
       /*
-       * if the packet is larger than the psuedo mtu, we can't reassemble
+       * if the packet is larger than the pseudo mtu, we can't reassemble
        * it since in theory we didn't receive it.
        * if the fragment offset is zero, pass it back to trigger a PTB.
        */

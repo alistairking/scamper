@@ -1,12 +1,12 @@
 /*
  * scamper_do_ping.c
  *
- * $Id: scamper_ping_do.c,v 1.232 2025/10/20 00:46:53 mjl Exp $
+ * $Id: scamper_ping_do.c,v 1.235 2026/06/17 08:06:38 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2012-2015 The Regents of the University of California
- * Copyright (C) 2016-2025 Matthew Luckie
+ * Copyright (C) 2016-2026 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -93,7 +93,6 @@ typedef struct ping_state
   scamper_fd_t      *raw;           /* raw socket to use with udp/tcp probes */
   scamper_dlhdr_t   *dlhdr;         /* header to use with datalink */
   scamper_route_t   *route;         /* looking up a route */
-
 } ping_state_t;
 
 static const uint8_t MODE_PING   = 0;
@@ -549,6 +548,10 @@ static void do_ping_handle_dl(scamper_task_t *task, scamper_dl_rec_t *dl)
 
   if(direction == DIR_INBOUND)
     {
+      /* do not record more probes than probe->replyc can store */
+      if(probe->replyc == UINT16_MAX)
+	return;
+
       /* allocate a reply structure for the response */
       if((reply = scamper_ping_reply_alloc()) == NULL)
 	{
@@ -866,6 +869,10 @@ static void do_ping_handle_icmp(scamper_task_t *task, scamper_icmp_resp_t *ir)
 
   probe = ping->probes[seq];
   assert(probe != NULL);
+
+  /* do not record more probes than probe->replyc can store */
+  if(probe->replyc == UINT16_MAX)
+    return;
 
   /* allocate a reply structure for the response */
   if((reply = scamper_ping_reply_alloc()) == NULL)
@@ -1210,11 +1217,7 @@ static int ping_state_payload(scamper_ping_t *ping, ping_state_t *state,
     }
 
   if(SCAMPER_PING_METHOD_IS_ICMP(ping))
-    {
-      state->payload_len = ping->size - hdr - 8;
-      if(SCAMPER_PING_METHOD_IS_ICMP_TIME(ping))
-	state->payload_len -= 12;
-    }
+    state->payload_len = ping->size - hdr - 8;
   else if(SCAMPER_PING_METHOD_IS_TCP(ping))
     state->payload_len = ping->size - hdr - 20;
   else if(SCAMPER_PING_METHOD_IS_UDP(ping))
@@ -1236,7 +1239,7 @@ static int ping_state_payload(scamper_ping_t *ping, ping_state_t *state,
 
   if(SCAMPER_PING_METHOD_IS_ICMP_TIME(ping))
     {
-      assert(state->payload_len > 12);
+      assert(state->payload_len >= 12);
       memset(state->payload, 0, 12);
       off += 12;
     }
@@ -1319,6 +1322,9 @@ static void ping_state_free(ping_state_t *state)
 
   if(state->sports != NULL)
     free(state->sports);
+
+  if(state->quote != NULL)
+    free(state->quote);
 
   free(state);
   return;
@@ -1612,6 +1618,8 @@ static void do_ping_probe(scamper_task_t *task)
 	  probe.pr_icmp_sum = u16 = htons(ping->icmpsum);
 	  if(SCAMPER_PING_FLAG_IS_SPOOF(ping))
 	    i += 4;
+	  assert(i < state->payload_len);
+	  assert(state->payload_len - i >= 2);
 	  memcpy(state->payload+i, &u16, 2);
 	  if(SCAMPER_ADDR_TYPE_IS_IPV4(ping->dst))
 	    u16 = scamper_icmp4_cksum(&probe);

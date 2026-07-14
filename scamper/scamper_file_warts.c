@@ -3,12 +3,12 @@
  *
  * the warts file format
  *
- * $Id: scamper_file_warts.c,v 1.288 2026/03/26 06:17:56 mjl Exp $
+ * $Id: scamper_file_warts.c,v 1.302 2026/07/11 21:17:09 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2012-2015 The Regents of the University of California
- * Copyright (C) 2015-2025 Matthew Luckie
+ * Copyright (C) 2015-2026 Matthew Luckie
  * Copyright (C) 2024      The Regents of the University of California
  * Author: Matthew Luckie
  *
@@ -194,7 +194,7 @@ struct warts_ifnametable
   size_t             ifnc;
 };
 
-void flag_ij(const int id, int *i, int *j)
+static void flag_ij(const int id, int *i, int *j)
 {
   int x = id - 1;
   *i = (x / 7);
@@ -221,19 +221,6 @@ void flag_set(uint8_t *flags, const int id, int *max_id)
     *max_id = id;
 
   return;
-}
-
-int flag_isset(const uint8_t *flags, const int id)
-{
-  int i, j;
-
-  assert(id > 0);
-  flag_ij(id, &i, &j);
-
-  if((flags[i] & (0x1 << (j-1))) == 0)
-    return 0;
-
-  return 1;
 }
 
 /*
@@ -471,6 +458,14 @@ int extract_ifname(const uint8_t *buf, uint32_t *off, uint32_t len,
   return -1;
 }
 
+static uint8_t warts_addr_type2len(uint8_t type)
+{
+  uint8_t sizes[5] = {0, 4, 16, 6, 8};
+  if(type < sizeof(sizes) / sizeof(uint8_t))
+    return sizes[type];
+  return 0;
+}
+
 static int warts_addr_cmp(const warts_addr_t *a, const warts_addr_t *b)
 {
   return scamper_addr_cmp(a->addr, b->addr);
@@ -676,7 +671,7 @@ void insert_byte(uint8_t *buf, uint32_t *off, const uint32_t len,
 }
 
 void insert_bytes_uint16(uint8_t *buf,uint32_t *off,const uint32_t len,
-			 const void *vin, uint16_t *count)
+			 const void *vin, const uint16_t *count)
 {
   assert(len - *off >= *count);
   memcpy(buf + *off, vin, *count);
@@ -685,7 +680,7 @@ void insert_bytes_uint16(uint8_t *buf,uint32_t *off,const uint32_t len,
 }
 
 void insert_bytes_uint32(uint8_t *buf,uint32_t *off,const uint32_t len,
-			 const void *vin, uint32_t *count)
+			 const void *vin, const uint32_t *count)
 {
   assert(len - *off >= *count);
   memcpy(buf + *off, vin, *count);
@@ -744,30 +739,29 @@ int extract_addr_static(const uint8_t *buf, uint32_t *off, const uint32_t len,
 			scamper_addr_t **out, void *param)
 {
   scamper_addr_t *addr;
-  uint8_t size, type;
+  uint8_t size, type, x;
 
   /* make sure the offset is sane */
   if(*off >= len || len - *off < 2)
     return -1;
-
-  size = buf[(*off)++];
-  type = buf[(*off)++];
-  if(type == 0 || size == 0 || type > SCAMPER_ADDR_TYPE_MAX ||
-     (addr = scamper_addr_alloc(type, &buf[*off])) == NULL)
+  size = buf[(*off)+0];
+  type = buf[(*off)+1];
+  if((x = warts_addr_type2len(type)) == 0 || size < x ||
+     len - *off < (uint32_t)(2 + size) ||
+     (addr = scamper_addr_alloc(type, &buf[(*off)+2])) == NULL)
     return -1;
 
   *out = addr;
-  *off += size;
+  *off += 2 + size;
   return 0;
 }
 
 int extract_addr(const uint8_t *buf, uint32_t *off, uint32_t len,
 		 scamper_addr_t **out, warts_addrtable_t *table)
 {
-  warts_addr_t *wa;
+  warts_addr_t *wa = NULL;
   uint32_t u32;
-  uint8_t size;
-  uint8_t type;
+  uint8_t size, type, x;
 
   assert(table != NULL);
 
@@ -776,11 +770,11 @@ int extract_addr(const uint8_t *buf, uint32_t *off, uint32_t len,
     return -1;
 
   /* make sure there is enough data left for the address header */
-  if(len - *off < 1)
+  if(len - *off < 2)
     return -1;
 
   /* get the byte saying how large the record is */
-  size = buf[(*off)++];
+  size = buf[*off];
 
   /*
    * if the address length field is zero, then we have a 4 byte index value
@@ -788,16 +782,16 @@ int extract_addr(const uint8_t *buf, uint32_t *off, uint32_t len,
    */
   if(size == 0)
     {
-      if(len - *off < 4)
+      if(len - *off < 1 + 4)
 	return -1;
 
       /* load the index value out, and sanity check it */
-      memcpy(&u32, &buf[*off], 4); u32 = ntohl(u32);
+      memcpy(&u32, &buf[(*off)+1], 4); u32 = ntohl(u32);
       if(u32 >= table->addrc)
 	return -1;
 
       *out = scamper_addr_use(table->addrs[u32]->addr);
-      *off += 4;
+      *off += 5;
       return 0;
     }
 
@@ -806,18 +800,18 @@ int extract_addr(const uint8_t *buf, uint32_t *off, uint32_t len,
    * it in a table, incase it is referenced shortly.  sanity check the type
    * of address
    */
-  type = buf[(*off)++];
-  if(type == 0 || type > SCAMPER_ADDR_TYPE_MAX)
-    return -1;
-  if((wa = malloc_zero(sizeof(warts_addr_t))) == NULL ||
-     (wa->addr = scamper_addr_alloc(type, &buf[*off])) == NULL ||
+  type = buf[(*off)+1];
+  if((x = warts_addr_type2len(type)) == 0 || size < x ||
+     len - *off < (uint32_t)(2 + size) ||
+     (wa = malloc_zero(sizeof(warts_addr_t))) == NULL ||
+     (wa->addr = scamper_addr_alloc(type, &buf[(*off)+2])) == NULL ||
      array_insert((void ***)&table->addrs, &table->addrc, wa, NULL) != 0)
     {
       goto err;
     }
 
   *out = scamper_addr_use(wa->addr);
-  *off += size;
+  *off += 2 + size;
   return 0;
 
  err:
@@ -852,13 +846,22 @@ int extract_string(const uint8_t *buf, uint32_t *off,
   return -1;
 }
 
-int extract_uint16(const uint8_t *buf, uint32_t *off,
-		   const uint32_t len, uint16_t *out, void *param)
+int extract_uint16(const uint8_t *buf, uint32_t *off, uint32_t len,
+		   uint16_t *out, void *param)
 {
   if(*off >= len || len - *off < 2)
     return -1;
   memcpy(out, buf + *off, 2); *off += 2;
   *out = ntohs(*out);
+  return 0;
+}
+
+int extract_uint16_set(const uint8_t *buf, uint32_t *off, uint32_t len,
+		       uint16_t *out, uint8_t *set)
+{
+  if(extract_uint16(buf, off, len, out, NULL) != 0)
+    return -1;
+  *set = 1;
   return 0;
 }
 
@@ -883,12 +886,21 @@ int extract_int32(const uint8_t *buf, uint32_t *off,
   return 0;
 }
 
-int extract_byte(const uint8_t *buf, uint32_t *off,
-			const uint32_t len, uint8_t *out, void *param)
+int extract_byte(const uint8_t *buf, uint32_t *off, uint32_t len,
+		 uint8_t *out, void *param)
 {
   if(*off >= len || len - *off < 1)
     return -1;
   *out = buf[(*off)++];
+  return 0;
+}
+
+int extract_byte_set(const uint8_t *buf, uint32_t *off, uint32_t len,
+		     uint8_t *out, uint8_t *set)
+{
+  if(extract_byte(buf, off, len, out, NULL) != 0)
+    return -1;
+  *set = 1;
   return 0;
 }
 
@@ -936,26 +948,6 @@ int extract_bytes_alloc(const uint8_t *buf, uint32_t *off,
 {
   uint32_t req32 = *req;
   return extract_bytes_alloc32(buf, off, len, out, &req32);
-}
-
-/*
- * extract_bytes
- *
- * copy the number of requested bytes into the specified array
- */
-int extract_bytes(const uint8_t *buf, uint32_t *off, const uint32_t len,
-			 uint8_t *out, uint16_t *req)
-{
-  if(*off >= len || len - *off < *req)
-    return -1;
-
-  if(req == 0)
-    return 0;
-
-  memcpy(out, buf + *off, *req);
-  *off += *req;
-
-  return 0;
 }
 
 int extract_addr_gid(const uint8_t *buf, uint32_t *off,
@@ -1072,15 +1064,15 @@ int warts_params_read(const uint8_t *buf, uint32_t *off, uint32_t len,
 
   /* figure out how long the flags block is */
   flags_len = 0;
-  while((buf[*off] & 0x80) != 0 && *off < len)
+  while(*off < len && (buf[*off] & 0x80) != 0)
     {
-      (*off)++; flags_len++;
+      (*off)++;
+      flags_len++;
     }
-  flags_len++; (*off)++;
-  if(*off > len)
-    {
-      goto err;
-    }
+  if(len - *off < 1)
+    goto err;
+  (*off)++;
+  flags_len++;
 
   /* the length field */
   if(extract_uint16(buf, off, len, &params_len, NULL) != 0)
@@ -1402,12 +1394,12 @@ int warts_hdr_read(scamper_file_t *sf, warts_hdr_t *hdr)
  *   - the address [length determined by record length]
  */
 int warts_addr_read(scamper_file_t *sf, const warts_hdr_t *hdr,
-			   scamper_addr_t **addr_out)
+		    scamper_addr_t **addr_out)
 {
   warts_state_t  *state = scamper_file_getstate(sf);
   scamper_addr_t *addr = NULL, **table;
   uint8_t        *buf = NULL;
-  size_t          size;
+  size_t          size, x;
 
   /* the data has to be at least 3 bytes long to be valid */
   if(hdr->len < 3)
@@ -1442,8 +1434,8 @@ int warts_addr_read(scamper_file_t *sf, const warts_hdr_t *hdr,
   if(state->addr_count % 255 != buf[0])
     goto err;
 
-  /* sanity check the type of address */
-  if(buf[1] == 0 || buf[1] > SCAMPER_ADDR_TYPE_MAX)
+  /* sanity check the type/length of the address */
+  if((x = warts_addr_type2len(buf[1])) == 0 || hdr->len < 2 + x)
     goto err;
 
   /* allocate a scamper address using the record read from disk */
@@ -2247,7 +2239,7 @@ int warts_icmpexts_read(const uint8_t *buf, uint32_t *off, uint32_t len,
   while(tmp >= 4)
     {
       u16 = bytes_ntohs(buf + *off);
-      if(len - *off < (uint32_t)(u16 + 2 + 1 + 1))
+      if(tmp - 4 < u16)
 	goto err;
 
       cn = buf[*off+2];

@@ -1,13 +1,13 @@
 /*
  * scamper_trace.c
  *
- * $Id: scamper_trace.c,v 1.144 2026/03/29 02:52:18 mjl Exp $
+ * $Id: scamper_trace.c,v 1.145 2026/06/19 22:03:49 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2003-2011 The University of Waikato
  * Copyright (C) 2008      Alistair King
  * Copyright (C) 2012-2015 The Regents of the University of California
- * Copyright (C) 2019-2025 Matthew Luckie
+ * Copyright (C) 2019-2026 Matthew Luckie
  *
  * Authors: Matthew Luckie
  *          Doubletree implementation by Alistair King
@@ -366,7 +366,7 @@ int scamper_trace_probe_reply_add(scamper_trace_probe_t *probe,
   len = (probe->replyc + 1) * sizeof(scamper_trace_reply_t *);
   if(realloc_wrap((void **)&probe->replies, len) != 0)
     return -1;
-  probe->replies[probe->replyc++] = hop;
+  probe->replies[probe->replyc++] = hop; /* probe->replyc < UINT16_MAX */
 
   return 0;
 }
@@ -456,7 +456,7 @@ int scamper_trace_probettl_probe_add(scamper_trace_probettl_t *pttl,
   len = (pttl->probec + 1) * sizeof(scamper_trace_probe_t *);
   if(realloc_wrap((void **)&pttl->probes, len) != 0)
     return -1;
-  pttl->probes[pttl->probec++] = probe;
+  pttl->probes[pttl->probec++] = probe; /* pttl->probec < UINT8_MAX */
 
   return 0;
 }
@@ -590,7 +590,7 @@ int scamper_trace_pmtud_note_add(scamper_trace_pmtud_t *pmtud,
   len = (pmtud->notec + 1) * sizeof(scamper_trace_pmtud_note_t *);
   if(realloc_wrap((void **)&pmtud->notes, len) != 0)
     return -1;
-  pmtud->notes[pmtud->notec++] = n;
+  pmtud->notes[pmtud->notec++] = n; /* pmtud->notec < UINT8_MAX */
 
   return 0;
 }
@@ -612,7 +612,7 @@ int scamper_trace_pmtud_probe_add(scamper_trace_pmtud_t *pmtud,
   len = (pmtud->probec + 1) * sizeof(scamper_trace_probe_t *);
   if(realloc_wrap((void **)&pmtud->probes, len) != 0)
     return -1;
-  pmtud->probes[pmtud->probec++] = probe;
+  pmtud->probes[pmtud->probec++] = probe; /* pmtud->probec < UINT16_MAX */
 
   return 0;
 }
@@ -741,7 +741,7 @@ int scamper_trace_lastditch_probe_add(scamper_trace_lastditch_t *ld,
   len = (ld->probec + 1) * sizeof(scamper_trace_probe_t *);
   if(realloc_wrap((void **)&ld->probes, len) != 0)
     return -1;
-  ld->probes[ld->probec++] = probe;
+  ld->probes[ld->probec++] = probe; /* ld->probec < UINT8_MAX */
 
   return 0;
 }

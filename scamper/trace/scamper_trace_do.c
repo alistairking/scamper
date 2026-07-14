@@ -1,14 +1,14 @@
 /*
  * scamper_do_trace.c
  *
- * $Id: scamper_trace_do.c,v 1.461 2026/03/30 19:11:18 mjl Exp $
+ * $Id: scamper_trace_do.c,v 1.465 2026/07/11 03:42:44 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2008      Alistair King
  * Copyright (C) 2012-2015 The Regents of the University of California
  * Copyright (C) 2015      The University of Waikato
- * Copyright (C) 2019-2025 Matthew Luckie
+ * Copyright (C) 2019-2026 Matthew Luckie
  * Copyright (C) 2024      The Regents of the University of California
  *
  * Authors: Matthew Luckie
@@ -1081,7 +1081,7 @@ static int pmtud_TTL_init(scamper_task_t *task)
    * fragmentation required message
    */
   hop = pmtud->last_fragmsg;
-  if(hop == NULL || hop->probe->ttl > hop->reply_icmp_q_ttl)
+  if(hop == NULL || hop->probe->ttl < hop->reply_icmp_q_ttl)
     lower = 0;
   else
     lower = hop->probe->ttl - hop->reply_icmp_q_ttl;
@@ -1096,7 +1096,10 @@ static int pmtud_TTL_init(scamper_task_t *task)
     }
   else
     {
-      upper = l2->hop->probe->ttl - l2->hop->reply_icmp_q_ttl + 1;
+      if(l2->hop->probe->ttl < l2->hop->reply_icmp_q_ttl)
+	upper = l2->hop->probe->ttl;
+      else
+	upper = l2->hop->probe->ttl - l2->hop->reply_icmp_q_ttl + 1;
     }
 
   /* if the TTL limited search is a null operation, then say so */
@@ -1319,7 +1322,7 @@ static int conf_iface_add(trace_conf_state_t *conf, scamper_addr_t *iface)
   if(realloc_wrap((void **)&conf->interfaces, len) != 0)
     return -1;
 
-  conf->interfaces[conf->interfacec++] = iface;
+  conf->interfaces[conf->interfacec++] = iface; /* size_t conf->interfacec */
   if(conf->interfacec > 1)
     {
       array_qsort((void **)conf->interfaces, conf->interfacec,
@@ -1666,12 +1669,9 @@ static scamper_trace_reply_t *trace_icmp_hop(const scamper_task_t *task,
       hop->reply_icmp_q_tos = ir->ir_inner_ip_tos;
     }
 
-  /* if ICMP extensions are included, then parse and include them. */
-  if(ir->ir_ext != NULL &&
-     scamper_icmpext_parse(&hop->icmp_exts, ir->ir_ext, ir->ir_extlen) != 0)
-    {
-      goto err;
-    }
+  /* if ICMP extensions are included, then attempt to parse and include them */
+  if(ir->ir_ext != NULL)
+    scamper_icmpext_parse(&hop->icmp_exts, ir->ir_ext, ir->ir_extlen);
 
   assert(tp->probe->replyc < UINT16_MAX);
   if(scamper_trace_probe_reply_add(tp->probe, hop) != 0)
@@ -4524,6 +4524,11 @@ static void do_trace_probe(scamper_task_t *task)
   /* allocate some more space to store probes, if necessary */
   if(state->id_next == state->id_max)
     {
+      if(UINT16_MAX - state->id_max < TRACE_ALLOC_HOPS)
+	{
+	  scamper_err_make(&error, 0, "state->id_max would wrap");
+	  goto err;
+	}
       u16  = state->id_max + TRACE_ALLOC_HOPS;
       size = sizeof(trace_probe_t *) * u16;
       if(realloc_wrap((void **)&state->probes, size) != 0)

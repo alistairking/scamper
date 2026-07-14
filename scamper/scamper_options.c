@@ -1,11 +1,11 @@
 /*
  * scamper_options.c: code to handle parsing of options
  *
- * $Id: scamper_options.c,v 1.19 2025/04/27 02:41:38 mjl Exp $
+ * $Id: scamper_options.c,v 1.20 2026/07/11 22:17:17 mjl Exp $
  *
  * Copyright (C) 2006-2010 The University of Waikato
  * Copyright (C) 2014-2015 The Regents of the University of California
- * Copyright (C) 2023      Matthew Luckie
+ * Copyright (C) 2023-2026 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -127,10 +127,10 @@ static int opt_parse_param(int type, char **str, char **next)
 		  if(*tmp != '\\' && *tmp != delim)
 		    goto err;
 		  off++;
-		  tmp[-off] = *tmp;
+		  *(tmp - off) = *tmp;
 		}
 	      if(off != 0)
-		tmp[-off] = *tmp;
+		*(tmp - off) = *tmp;
 	      tmp++;
 	    }
 	  if(*tmp == '\0')
@@ -151,7 +151,7 @@ static int opt_parse_param(int type, char **str, char **next)
     }
 
   /* null terminate the option parameter string */
-  tmp[-off] = '\0'; tmp++;
+  *(tmp - off) = '\0'; tmp++;
 
   /*
    * skip past whitespace and advance to the next string in the option.

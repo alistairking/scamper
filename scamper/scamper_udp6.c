@@ -1,7 +1,7 @@
 /*
  * scamper_udp6.c
  *
- * $Id: scamper_udp6.c,v 1.90 2026/04/18 06:08:16 mjl Exp $
+ * $Id: scamper_udp6.c,v 1.95 2026/07/03 21:57:47 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2010 The University of Waikato
@@ -44,16 +44,16 @@
 #include "scamper_fds.h"
 #include "utils.h"
 
-#if defined(BUILDING_SCAMPER) && defined(IPV6_RECVERR)
+#if defined(BUILDING_SCAMPER) && defined(IPV6_RECVERR) && !defined(_WIN32)
 static uint8_t rxbuf[65536];
 #endif
 
 uint16_t scamper_udp6_cksum(scamper_probe_t *probe)
 {
   uint16_t *w, tmp;
-  int i, sum = 0;
+  uint32_t sum = 0;
 
-  /* compute the checksum over the psuedo header */
+  /* compute the checksum over the pseudo header */
   w = (uint16_t *)probe->pr_ip_src->addr;
   sum += *w++; sum += *w++; sum += *w++; sum += *w++;
   sum += *w++; sum += *w++; sum += *w++; sum += *w++;
@@ -69,15 +69,7 @@ uint16_t scamper_udp6_cksum(scamper_probe_t *probe)
   sum += htons(probe->pr_len + 8);
 
   /* compute the checksum over the payload of the UDP message */
-  w = (uint16_t *)probe->pr_data;
-  for(i = probe->pr_len; i > 1; i -= 2)
-    {
-      sum += *w++;
-    }
-  if(i != 0)
-    {
-      sum += ((uint8_t *)w)[0];
-    }
+  sum += in_cksum_sum((uint16_t *)probe->pr_data, probe->pr_len);
 
   /* fold the checksum */
   sum  = (sum >> 16) + (sum & 0xffff);
@@ -229,33 +221,44 @@ void scamper_udp6_read_cb(SOCKET fd, void *param)
 {
   scamper_udp_resp_t ur;
   struct sockaddr_in6 from;
-  uint8_t buf[8192], ctrlbuf[256];
+  uint8_t buf[8192];
+  ssize_t rrc;
+
+#ifndef _WIN32 /* windows does not have msghdr or iovec */
+  uint8_t ctrlbuf[256];
   struct msghdr msg;
   struct cmsghdr *cmsg;
   struct iovec iov;
-  ssize_t rrc;
-  int v;
+  uint8_t u8;
 
 #ifdef IPV6_PKTINFO
   struct in6_pktinfo *pi;
 #endif
 
   memset(&iov, 0, sizeof(iov));
-  iov.iov_base = (caddr_t)buf;
+  iov.iov_base = (void *)buf;
   iov.iov_len  = sizeof(buf);
 
-  msg.msg_name       = (caddr_t)&from;
+  memset(&msg, 0, sizeof(msg));
+  msg.msg_name       = (void *)&from;
   msg.msg_namelen    = sizeof(from);
   msg.msg_iov        = &iov;
   msg.msg_iovlen     = 1;
-  msg.msg_control    = (caddr_t)ctrlbuf;
+  msg.msg_control    = (void *)ctrlbuf;
   msg.msg_controllen = sizeof(ctrlbuf);
 
   if((rrc = recvmsg(fd, &msg, 0)) <= 0)
     return;
+#else
+  socklen_t fromlen = sizeof(from);
+  if((rrc = recvfrom(fd, buf, sizeof(buf), 0,
+		     (struct sockaddr *)&from, &fromlen)) <= 0)
+    return;
+#endif /* _WIN32 */
 
   memset(&ur, 0, sizeof(ur));
 
+#ifndef _WIN32 /* windows does not have msghdr or iovec */
   if(msg.msg_controllen >= sizeof(struct cmsghdr))
     {
       cmsg = (struct cmsghdr *)CMSG_FIRSTHDR(&msg);
@@ -267,18 +270,22 @@ void scamper_udp6_read_cb(SOCKET fd, void *param)
 	  else if(cmsg->cmsg_level == IPPROTO_IPV6 &&
 		  cmsg->cmsg_type == IPV6_HOPLIMIT)
 	    {
-	      v = *((int *)CMSG_DATA(cmsg));
-	      ur.ttl = (uint8_t)v;
-	      ur.flags |= SCAMPER_UDP_RESP_FLAG_TTL;
+	      if(cmsg_data_as_uint8(cmsg, &u8) == 0)
+		{
+		  ur.ttl = u8;
+		  ur.flags |= SCAMPER_UDP_RESP_FLAG_TTL;
+		}
 	    }
 #endif
 #if defined(IPV6_TCLASS)
 	  else if(cmsg->cmsg_level == IPPROTO_IPV6 &&
 		  cmsg->cmsg_type == IPV6_TCLASS)
 	    {
-	      v = *((int *)CMSG_DATA(cmsg));
-	      ur.tos = (uint8_t)v;
-	      ur.flags |= SCAMPER_UDP_RESP_FLAG_TOS;
+	      if(cmsg_data_as_uint8(cmsg, &u8) == 0)
+		{
+		  ur.tos = u8;
+		  ur.flags |= SCAMPER_UDP_RESP_FLAG_TOS;
+		}
 	    }
 #endif
 #if defined(IPV6_PKTINFO)
@@ -293,6 +300,10 @@ void scamper_udp6_read_cb(SOCKET fd, void *param)
 	  cmsg = (struct cmsghdr *)CMSG_NXTHDR(&msg, cmsg);
 	}
     }
+#endif /* _WIN32 */
+
+  if(timeval_iszero(&ur.rx))
+    gettimeofday_wrap(&ur.rx);
 
   ur.af = AF_INET6;
   ur.addr = &from.sin6_addr;
@@ -315,26 +326,30 @@ static int scamper_udp6_read_err(int fd, scamper_icmp_resp_t *resp)
   struct msghdr msg;
   struct iovec iov;
   ssize_t pbuflen;
-  uint8_t ctrlbuf[2048];
-  int v;
+  uint8_t ctrlbuf[2048], u8;
+  int i, flags;
 
   memset(&iov, 0, sizeof(iov));
-  iov.iov_base = (caddr_t)rxbuf;
+  iov.iov_base = (void *)rxbuf;
   iov.iov_len  = sizeof(rxbuf);
 
-  msg.msg_name       = (caddr_t)&from;
-  msg.msg_namelen    = sizeof(from);
-  msg.msg_iov        = &iov;
-  msg.msg_iovlen     = 1;
-  msg.msg_control    = (caddr_t)ctrlbuf;
-  msg.msg_controllen = sizeof(ctrlbuf);
-
-  /* two calls to recvmsg, first one looking in the error queue */
-  if((pbuflen = recvmsg(fd, &msg, MSG_ERRQUEUE)) == -1)
+  for(i=0; i<2; i++)
     {
-      recvmsg(fd, &msg, 0);
-      return -1;
+      memset(&msg, 0, sizeof(msg));
+      msg.msg_name       = (void *)&from;
+      msg.msg_namelen    = sizeof(from);
+      msg.msg_iov        = &iov;
+      msg.msg_iovlen     = 1;
+      msg.msg_control    = (void *)ctrlbuf;
+      msg.msg_controllen = sizeof(ctrlbuf);
+
+      /* two calls to recvmsg, first one looking in the error queue */
+      flags = (i == 0 ? MSG_ERRQUEUE : 0);
+      if((pbuflen = recvmsg(fd, &msg, flags)) != -1)
+	break;
     }
+  if(i != 0)
+    return -1;
 
   if(msg.msg_controllen < sizeof(struct cmsghdr))
     return -1;
@@ -365,16 +380,18 @@ static int scamper_udp6_read_err(int fd, scamper_icmp_resp_t *resp)
 #if defined(IPV6_HOPLIMIT)
       else if(cm->cmsg_level == IPPROTO_IPV6 && cm->cmsg_type == IPV6_HOPLIMIT)
 	{
-	  v = *((int *)CMSG_DATA(cm));
-	  resp->ir_ip_ttl = (uint8_t)v;
+	  if(cmsg_data_as_uint8(cm, &u8) == 0)
+	    resp->ir_ip_ttl = u8;
 	}
 #endif
 #if defined(IPV6_TCLASS)
       else if(cm->cmsg_level == IPPROTO_IPV6 && cm->cmsg_type == IPV6_TCLASS)
 	{
-	  v = *((int *)CMSG_DATA(cm));
-	  resp->ir_ip_tos = (uint8_t)v;
-	  resp->ir_flags |= SCAMPER_ICMP_RESP_FLAG_TCLASS;
+	  if(cmsg_data_as_uint8(cm, &u8) == 0)
+	    {
+	      resp->ir_ip_tos = u8;
+	      resp->ir_flags |= SCAMPER_ICMP_RESP_FLAG_TCLASS;
+	    }
 	}
 #endif
       cm = (struct cmsghdr *)CMSG_NXTHDR(&msg, cm);

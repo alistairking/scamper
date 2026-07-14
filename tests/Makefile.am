@@ -1,4 +1,4 @@
-# $Id: Makefile.am,v 1.71 2026/03/26 06:07:05 mjl Exp $
+# $Id: Makefile.am,v 1.81 2026/07/13 22:49:25 mjl Exp $
 
 AUTOMAKE_OPTIONS = subdir-objects
 
@@ -37,11 +37,16 @@ noinst_PROGRAMS = \
 	unit_dl_parse_ip \
 	unit_fds \
 	unit_heap \
+	unit_huffman \
 	fuzz_http_lib_chunked \
 	fuzz_http_lib_hdrs \
 	unit_http_lib \
 	fuzz_host_rr_list \
 	unit_host_rr_list \
+	fuzz_icmp4_parse \
+	fuzz_icmp6_parse \
+	fuzz_icmpext_parse \
+	unit_icmpext \
 	unit_json \
 	unit_options \
 	fuzz_osinfo \
@@ -50,6 +55,8 @@ noinst_PROGRAMS = \
 	unit_ping_lib \
 	unit_prefixtree \
 	unit_probe_build \
+	fuzz_rxifd_h3_request \
+	unit_rxifd_h3_request \
 	unit_splaytree \
 	unit_string \
 	unit_text \
@@ -391,6 +398,36 @@ unit_host_rr_list_SOURCES = unit_host_rr_list.c \
 	../utils.c \
 	common.c
 
+fuzz_icmp4_parse_CFLAGS = -DTEST_ICMP4_PARSE
+fuzz_icmp4_parse_SOURCES = fuzz_icmp_parse.c \
+	../scamper/scamper_icmp4.c \
+	../scamper/scamper_icmp_resp.c \
+	../utils.c \
+	common.c
+
+fuzz_icmp6_parse_CFLAGS = -DTEST_ICMP6_PARSE
+fuzz_icmp6_parse_SOURCES = fuzz_icmp_parse.c \
+	../scamper/scamper_icmp6.c \
+	../scamper/scamper_icmp_resp.c \
+	../utils.c \
+	common.c
+
+fuzz_icmpext_parse_CFLAGS = $(AM_CFLAGS)
+fuzz_icmpext_parse_SOURCES = fuzz_icmpext_parse.c \
+	../scamper/scamper_icmpext.c \
+	../scamper/scamper_icmpext_int.c \
+	../mjl_list.c \
+	../utils.c
+
+unit_icmpext_CFLAGS = $(AM_CFLAGS)
+unit_icmpext_SOURCES = unit_icmpext.c \
+	../scamper/scamper_icmpext.c \
+	../scamper/scamper_icmpext_int.c \
+	../scamper/scamper_icmpext_lib.c \
+	../mjl_list.c \
+	../utils.c \
+	common.c
+
 unit_json_CFLAGS = \
 	-I$(top_srcdir)/scamper/dealias \
 	-I$(top_srcdir)/scamper/host \
@@ -470,16 +507,22 @@ unit_trace_dup_SOURCES = unit_trace_dup.c \
 	common_trace.c
 unit_trace_dup_LDADD = libscamperfiletest.la
 
+unit_huffman_CFLAGS = $(AM_CFLAGS)
+unit_huffman_SOURCES = unit_huffman.c \
+	../mjl_huffman.c \
+	../utils.c \
+	common.c
+
 unit_heap_CFLAGS = $(AM_CFLAGS) -DMJLHEAP_DEBUG
 unit_heap_SOURCES = unit_heap.c \
 	../mjl_heap.c
 
-unit_prefixtree_CFLAGS = $(AM_CFLAGS)
+unit_prefixtree_CFLAGS = $(AM_CFLAGS) -DTEST_PREFIXTREE
 unit_prefixtree_SOURCES = unit_prefixtree.c \
 	../mjl_prefixtree.c \
 	../utils.c
 
-unit_probe_build_CFLAGS = $(AM_CFLAGS)
+unit_probe_build_CFLAGS = -DTEST_PROBE_BUILD
 unit_probe_build_SOURCES = unit_probe_build.c \
 	../scamper/scamper_addr.c \
 	../scamper/scamper_ip4.c \
@@ -490,6 +533,21 @@ unit_probe_build_SOURCES = unit_probe_build.c \
 	../scamper/scamper_tcp6.c \
 	../scamper/scamper_udp4.c \
 	../scamper/scamper_udp6.c \
+	../utils.c \
+	common.c
+
+fuzz_rxifd_h3_request_CFLAGS = \
+	-DTEST_RXIFD_H3_REQUEST -I$(top_srcdir)/utils/sc_rxifd
+fuzz_rxifd_h3_request_SOURCES = fuzz_rxifd_h3_request.c \
+	../utils/sc_rxifd/sc_rxifd.c \
+	../mjl_huffman.c \
+	../utils.c
+
+unit_rxifd_h3_request_CFLAGS = \
+	-DTEST_RXIFD_H3_REQUEST -I$(top_srcdir)/utils/sc_rxifd
+unit_rxifd_h3_request_SOURCES = unit_rxifd_h3_request.c \
+	../utils/sc_rxifd/sc_rxifd.c \
+	../mjl_huffman.c \
 	../utils.c \
 	common.c
 
@@ -535,4 +593,5 @@ CLEANFILES = *~ *.core config-*.txt \
 	neighbourdisc-*.warts \
 	ping-*warts \
 	trace-*.warts \
-	udpprobe-*.warts
+	udpprobe-*.warts \
+	h3-frame-*.dat

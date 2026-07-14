@@ -1,13 +1,13 @@
 /*
  * common_udpprobe : common functions for unit testing udpprobe
  *
- * $Id: common_udpprobe.c,v 1.3 2025/10/19 20:49:19 mjl Exp $
+ * $Id: common_udpprobe.c,v 1.4 2026/07/10 03:11:58 mjl Exp $
  *
  *        Marcus Luckie, Matthew Luckie
  *        mjl@luckie.org.nz
  *
  * Copyright (C) 2024 Marcus Luckie
- * Copyright (C) 2024-2025 Matthew Luckie
+ * Copyright (C) 2024-2026 Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -200,7 +200,7 @@ static scamper_udpprobe_t *udpprobe_4(void)
   return udpprobe_1_4(3);
 }
 
-static scamper_udpprobe_t *udpprobe_5_6(uint8_t replyc)
+static scamper_udpprobe_t *udpprobe_5_6(uint8_t replyc, char *ifname)
 {
   scamper_udpprobe_t *up = NULL;
   scamper_udpprobe_reply_t *reply = NULL;
@@ -216,7 +216,9 @@ static scamper_udpprobe_t *udpprobe_5_6(uint8_t replyc)
   for(i=0; i<replyc; i++)
     {
       if((reply = scamper_udpprobe_reply_alloc()) == NULL ||
-	 (reply->data = memdup(data, 6)) == NULL)
+	 (reply->data = memdup(data, 6)) == NULL ||
+	 (ifname != NULL &&
+	  (reply->ifname = scamper_ifname_alloc(ifname)) == NULL))
 	goto err;
       reply->rx.tv_sec  = probes[0].tv_sec;
       reply->rx.tv_usec = probes[0].tv_usec + 52301 + (i * 20);
@@ -235,12 +237,12 @@ static scamper_udpprobe_t *udpprobe_5_6(uint8_t replyc)
 
 static scamper_udpprobe_t *udpprobe_5(void)
 {
-  return udpprobe_5_6(1);
+  return udpprobe_5_6(1, NULL);
 }
 
 static scamper_udpprobe_t *udpprobe_6(void)
 {
-  return udpprobe_5_6(2);
+  return udpprobe_5_6(2, "em0");
 }
 
 static scamper_udpprobe_t *udpprobe_7(void)

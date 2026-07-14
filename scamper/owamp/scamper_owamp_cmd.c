@@ -1,7 +1,7 @@
 /*
  * scamper_owamp_cmd.c
  *
- * $Id: scamper_owamp_cmd.c,v 1.4 2026/01/04 19:19:15 mjl Exp $
+ * $Id: scamper_owamp_cmd.c,v 1.5 2026/05/19 05:27:50 mjl Exp $
  *
  * Copyright (C) 2025-2026 The Regents of the University of California
  *
@@ -480,8 +480,6 @@ void *scamper_do_owamp_alloc(char *str, char *errbuf, size_t errlen)
       sched->type = SCAMPER_OWAMP_SCHED_TYPE_FIXED;
       owamp->sched[owamp->schedc++] = sched;
     }
-
-  timeval_cpy(&owamp->wait_timeout, &wait_timeout);
 
   return owamp;
 

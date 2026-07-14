@@ -4,11 +4,11 @@
  * Copyright (C) 2008-2011 The University of Waikato
  * Copyright (C) 2012      Matthew Luckie
  * Copyright (C) 2012-2014 The Regents of the University of California
- * Copyright (C) 2015-2025 Matthew Luckie
+ * Copyright (C) 2015-2026 Matthew Luckie
  * Copyright (C) 2023,2025 The Regents of the University of California
  * Author: Matthew Luckie
  *
- * $Id: scamper_dealias_warts.c,v 1.51 2025/10/19 02:17:23 mjl Exp $
+ * $Id: scamper_dealias_warts.c,v 1.55 2026/07/11 20:47:07 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -387,6 +387,24 @@ static int warts_dealias_params_write(const scamper_dealias_t *dealias,
   return 0;
 }
 
+/*
+ * extract_4bytes
+ *
+ * copy 4 bytes into the specified array, and *set = 1
+ */
+static int extract_4bytes(const uint8_t *buf, uint32_t *off, uint32_t len,
+			  uint8_t *out, uint8_t *set)
+{
+  if(*off >= len || len - *off < 4)
+    return -1;
+
+  memcpy(out, buf + *off, 4);
+  *off += 4;
+  *set = 1;
+
+  return 0;
+}
+
 static int warts_dealias_probedef_params(const scamper_file_t *sf,
 					 const scamper_dealias_probedef_t *p,
 					 warts_dealias_probedef_t *state,
@@ -455,7 +473,7 @@ static int warts_dealias_probedef_read(scamper_dealias_probedef_t *p,
 				       warts_addrtable_t *table,
 				       uint8_t *buf,uint32_t *off,uint32_t len)
 {
-  uint8_t bytes[4]; uint16_t bytes_len = 4;
+  uint8_t bytes[4], bytes_set = 0;
   uint8_t tcp_flags = 0;
   uint16_t icmpid = 0, csum = 0;
   warts_param_reader_t handlers[] = {
@@ -465,7 +483,7 @@ static int warts_dealias_probedef_read(scamper_dealias_probedef_t *p,
     {&p->method, (wpr_t)extract_byte,      NULL},
     {&p->ttl,    (wpr_t)extract_byte,      NULL},
     {&p->tos,    (wpr_t)extract_byte,      NULL},
-    {bytes,      (wpr_t)extract_bytes,     &bytes_len},
+    {bytes,      (wpr_t)extract_4bytes,    &bytes_set},
     {&tcp_flags, (wpr_t)extract_byte,      NULL},
     {&icmpid,    (wpr_t)extract_uint16,    NULL},
     {&p->dst,    (wpr_t)extract_addr,      table},
@@ -475,7 +493,6 @@ static int warts_dealias_probedef_read(scamper_dealias_probedef_t *p,
     {&csum,      (wpr_t)extract_uint16,    NULL},
   };
   const int handler_cnt = sizeof(handlers)/sizeof(warts_param_reader_t);
-  uint32_t o = *off;
 
   if(warts_params_read(buf, off, len, handlers, handler_cnt) != 0)
     return -1;
@@ -485,7 +502,7 @@ static int warts_dealias_probedef_read(scamper_dealias_probedef_t *p,
 
   if(SCAMPER_DEALIAS_PROBEDEF_PROTO_IS_ICMP(p))
     {
-      if(flag_isset(&buf[o], WARTS_DEALIAS_PROBEDEF_4BYTES))
+      if(bytes_set != 0)
 	p->un.icmp.csum = bytes_ntohs(bytes+2);
       else
 	p->un.icmp.csum = csum;
@@ -493,12 +510,16 @@ static int warts_dealias_probedef_read(scamper_dealias_probedef_t *p,
     }
   else if(SCAMPER_DEALIAS_PROBEDEF_PROTO_IS_TCP(p))
     {
+      if(bytes_set == 0)
+	return -1;
       p->un.tcp.sport = bytes_ntohs(bytes+0);
       p->un.tcp.dport = bytes_ntohs(bytes+2);
       p->un.tcp.flags = tcp_flags;
     }
   else if(SCAMPER_DEALIAS_PROBEDEF_PROTO_IS_UDP(p))
     {
+      if(bytes_set == 0)
+	return -1;
       p->un.udp.sport = bytes_ntohs(bytes+0);
       p->un.udp.dport = bytes_ntohs(bytes+2);
     }
@@ -755,7 +776,6 @@ static int warts_dealias_prefixscan_read(scamper_dealias_t *dealias,
     {NULL,          (wpr_t)extract_byte,                  NULL},
   };
   const int handler_cnt = sizeof(handlers)/sizeof(warts_param_reader_t);
-  uint32_t o = *off;
   uint16_t i;
 
   if((p = scamper_dealias_prefixscan_alloc()) == NULL)
@@ -772,16 +792,15 @@ static int warts_dealias_prefixscan_read(scamper_dealias_t *dealias,
   handlers[10].data = &p->flags;
   handlers[11].data = &p->replyc;
 
+  /* by default we require five replies before inferring an alias */
+  p->replyc = 5;
+
   if(warts_params_read(buf, off, len, handlers, handler_cnt) != 0)
     goto err;
 
   p->wait_probe.tv_sec = wait_probe / 1000;
   p->wait_probe.tv_usec = (wait_probe % 1000) * 1000;
   p->wait_timeout.tv_sec = wait_timeout;
-
-  /* by default we require five replies before inferring an alias */
-  if(flag_isset(&buf[o], WARTS_DEALIAS_PREFIXSCAN_REPLYC) == 0)
-    p->replyc = 5;
 
   if(p->probedefc > 0)
     {
@@ -1224,7 +1243,6 @@ static int warts_dealias_midardisc_read(scamper_dealias_t *dealias,
     {&startat, (wpr_t)extract_timeval,   NULL}, /* startat */
   };
   const int handler_cnt = sizeof(handlers)/sizeof(warts_param_reader_t);
-  uint32_t o = *off;
   slist_t *list = NULL;
 
   if((md = scamper_dealias_midardisc_alloc()) == NULL)
@@ -1233,9 +1251,11 @@ static int warts_dealias_midardisc_read(scamper_dealias_t *dealias,
   handlers[1].data = &md->wait_timeout;
   handlers[2].data = md; /* schedule */
 
+  memset(&startat, 0, sizeof(startat));
+
   if(warts_params_read(buf, off, len, handlers, handler_cnt) != 0 ||
      probedefc == 0 ||
-     (flag_isset(&buf[o], WARTS_DEALIAS_MIDARDISC_STARTAT) &&
+     (timeval_iszero(&startat) == 0 &&
       (md->startat = memdup(&startat, sizeof(struct timeval))) == NULL) ||
      (list = warts_dealias_probedefs_read(state, table, probedefc,
 					  buf, off, len)) == NULL ||
@@ -1716,14 +1736,13 @@ static int warts_dealias_reply_read(scamper_dealias_reply_t *reply,
     {&reply->size,          (wpr_t)extract_uint16,                NULL},
   };
   const int handler_cnt = sizeof(handlers)/sizeof(warts_param_reader_t);
-  uint32_t o = *off;
 
   if(warts_params_read(buf, off, len, handlers, handler_cnt) != 0)
     return -1;
   if(reply->src == NULL)
     return -1;
 
-  if(flag_isset(&buf[o], WARTS_DEALIAS_REPLY_PROTO) == 0)
+  if(reply->proto == 0)
     {
       if(reply->src->type == SCAMPER_ADDR_TYPE_IPV4)
 	reply->proto = IPPROTO_ICMP;

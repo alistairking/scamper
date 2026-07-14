@@ -1,11 +1,11 @@
 /*
  * scamper_ip4.c
  *
- * $Id: scamper_ip4.c,v 1.33 2025/10/23 18:54:23 mjl Exp $
+ * $Id: scamper_ip4.c,v 1.36 2026/06/22 19:56:43 mjl Exp $
  *
  * Copyright (C) 2009-2011 The University of Waikato
  * Copyright (C) 2023      The Regents of the University of California
- * Copyright (C) 2023      Matthew Luckie
+ * Copyright (C) 2023-2026 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -101,7 +101,7 @@ size_t scamper_ip4_hlen(scamper_probe_t *pr, scamper_err_t *error)
 	  if(ip4hlen + 8 > 60)
 	    {
 	      scamper_err_make(error, 0, "ip4hlen would be too big");
-	      return -1;
+	      return 0;
 	    }
 
 	  /* for now assume this option fills the rest of the option space */
@@ -112,7 +112,7 @@ size_t scamper_ip4_hlen(scamper_probe_t *pr, scamper_err_t *error)
 	  if(opt->opt_v4tsps_ipc < 1 || opt->opt_v4tsps_ipc > 4)
 	    {
 	      scamper_err_make(error, 0, "invalid number of tsps");
-	      return -1;
+	      return 0;
 	    }
 	  ip4hlen += (opt->opt_v4tsps_ipc * 4 * 2) + 4;
 	}
@@ -131,17 +131,48 @@ size_t scamper_ip4_hlen(scamper_probe_t *pr, scamper_err_t *error)
       else
 	{
 	  scamper_err_make(error, 0, "unknown ipopt type %d", opt->type);
-	  return -1;
+	  return 0;
 	}
 
       if(ip4hlen > 60)
 	{
 	  scamper_err_make(error, 0, "ip4hlen would be too big");
-	  return -1;
+	  return 0;
 	}
     }
 
   return ip4hlen;
+}
+
+static uint16_t ip4_hdr_cksum(const uint16_t *buf, size_t len)
+{
+  uint32_t sum = 0;
+
+  assert(len >= 20);
+  assert(len <= 60);
+  assert(len % 4 == 0);
+
+  /* first twenty bytes */
+  sum += *buf++; sum += *buf++; sum += *buf++; sum += *buf++; sum += *buf++;
+  sum += *buf++; sum += *buf++; sum += *buf++; sum += *buf++; sum += *buf++;
+  len -= 20;
+
+  /* IPv4 headers are a multiple of 4 bytes */
+  while(len >= 4)
+    {
+      sum += *buf++; sum += *buf++;
+      len -= 4;
+    }
+
+  /*
+   * a strictly valid IPv4 header, like the one produced by
+   * scamper_ip_build(), requires only a single fold, but we do two
+   * folds for safety
+   */
+  sum  = (sum >> 16) + (sum & 0xffff);
+  sum += (sum >> 16);
+
+  return ~sum;
 }
 
 int scamper_ip4_build(scamper_probe_t *pr, uint8_t *buf, size_t *len)
@@ -250,7 +281,7 @@ int scamper_ip4_build(scamper_probe_t *pr, uint8_t *buf, size_t *len)
     }
 
   assert(off == ip4hlen);
-  ip->ip_sum = in_cksum(ip, ip4hlen);
+  ip->ip_sum = ip4_hdr_cksum((const uint16_t *)ip, ip4hlen);
 
   *len = off;
   return 0;

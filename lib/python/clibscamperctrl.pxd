@@ -71,6 +71,7 @@ cdef extern from "libscamperctrl.h":
 
  void scamper_inst_free(scamper_inst_t *inst)
  scamper_task_t *scamper_inst_do(scamper_inst_t *inst, const char *cmd, void *p)
+ const char *scamper_inst_strerror(const scamper_inst_t *inst)
  int scamper_inst_done(scamper_inst_t *inst)
  void *scamper_inst_param_get(const scamper_inst_t *inst)
  void scamper_inst_param_set(scamper_inst_t *inst, void *param)

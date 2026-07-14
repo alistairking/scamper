@@ -1,10 +1,10 @@
 /*
  * scamper_firewall.c
  *
- * $Id: scamper_firewall.c,v 1.63 2025/07/04 07:28:27 mjl Exp $
+ * $Id: scamper_firewall.c,v 1.64 2026/06/14 02:55:18 mjl Exp $
  *
  * Copyright (C) 2008-2011 The University of Waikato
- * Copyright (C) 2016-2025 Matthew Luckie
+ * Copyright (C) 2016-2026 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -977,7 +977,7 @@ int scamper_firewall_pf_add(int n,int af,int p,void *s,void *d,int sp,int dp)
     {
       memcpy(&pfr.rule.src.addr.v.a.addr.v6, s, 16);
       memset(&pfr.rule.src.addr.v.a.mask.v6, 255, 16);
-      memcpy(&pfr.rule.src.addr.v.a.addr.v6, d, 16);
+      memcpy(&pfr.rule.dst.addr.v.a.addr.v6, d, 16);
       memset(&pfr.rule.dst.addr.v.a.mask.v6, 255, 16);
     }
 

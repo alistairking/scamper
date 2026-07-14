@@ -1,7 +1,7 @@
 /*
  * scamper_ifname_int.c
  *
- * $Id: scamper_ifname_int.c,v 1.3 2024/11/30 18:18:38 mjl Exp $
+ * $Id: scamper_ifname_int.c,v 1.4 2026/06/10 06:12:08 mjl Exp $
  *
  * Copyright (C) 2024 The Regents of the University of California
  * Copyright (C) 2024 Matthew Luckie
@@ -74,7 +74,7 @@ scamper_ifname_t *scamper_ifname_int_get(unsigned int ifindex,
   ifname_int_t *ifni = NULL, *ptr, fm;
   scamper_ifname_t *ifn = NULL;
   dlist_node_t *dn;
-  char ifname[IFNAMSIZ];
+  char ifname[IF_NAMESIZE];
   int push = 0;
 
   /*

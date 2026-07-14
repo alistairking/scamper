@@ -1,7 +1,7 @@
 /*
  * utils.c
  *
- * $Id: utils.c,v 1.284 2026/03/27 00:14:50 mjl Exp $
+ * $Id: utils.c,v 1.304 2026/07/13 11:12:53 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -172,7 +172,6 @@ int sockaddr_compose_str(struct sockaddr *sa, int af, const char *addr,
 #if defined(AF_LINK) && !defined(_WIN32)
 static char *link_tostr(const struct sockaddr_dl *sdl, char *buf, size_t len)
 {
-  static const char hex[] = "01234567890abcdef";
   size_t off = 0;
   uint8_t *u8, i;
 
@@ -216,8 +215,7 @@ static char *link_tostr(const struct sockaddr_dl *sdl, char *buf, size_t len)
       u8 = (uint8_t *)LLADDR(sdl);
       for(i=0; i<sdl->sdl_alen; i++)
 	{
-	  buf[off++] = hex[u8[i] & 0xf];
-	  buf[off++] = hex[(u8[i] >> 4) & 0xf];
+	  byte2hex(u8[i], buf+off); off += 2;
 	  buf[off++] = ':';
 	}
       buf[off-1] = '\0';
@@ -330,6 +328,7 @@ int prefix_to_sockaddr(const char *prefix, struct sockaddr *sa)
   return rc;
 }
 
+#ifdef HAVE_SOCKADDR_UN
 int unix_bind(const char *filename)
 {
   struct sockaddr_un sn;
@@ -362,6 +361,7 @@ int unix_bind_listen(const char *filename, int backlog)
 
   return fd;
 }
+#endif
 
 int addr4_cmp(const struct in_addr *a, const struct in_addr *b)
 {
@@ -412,8 +412,13 @@ int addr6_human_cmp(const struct in6_addr *a, const struct in6_addr *b)
 int addr6_add_netlen(struct in6_addr *in, int netlen)
 {
   static const uint8_t add[] = {0x80,0x40,0x20,0x10,0x08,0x04,0x02,0x01};
-  int j = (netlen-1) / 8;
-  int k = (netlen-1) % 8;
+  int j, k;
+
+  if(netlen < 1 || netlen > 128)
+    return -1;
+
+  j = (netlen-1) / 8;
+  k = (netlen-1) % 8;
 
   if(((int)in->s6_addr[j]) + add[k] <= 255)
     {
@@ -983,14 +988,14 @@ void timeval_div(struct timeval *out, const struct timeval *in, uint32_t d)
   /* 4,294,967,295 */
   if(in->tv_sec < 4294)
     {
-      u32 = ((in->tv_sec * 1000000) + in->tv_usec) / d;
+      u32 = (((uint32_t)in->tv_sec * 1000000) + (uint32_t)in->tv_usec) / d;
       out->tv_sec  = u32 / 1000000;
       out->tv_usec = u32 % 1000000;
       return;
     }
 #endif
 
-  u64 = ((in->tv_sec * 1000000) + in->tv_usec) / d;
+  u64 = (((uint64_t)in->tv_sec * 1000000) + (uint64_t)in->tv_usec) / d;
   out->tv_sec  = u64 / 1000000;
   out->tv_usec = u64 % 1000000;
 
@@ -1006,7 +1011,7 @@ void timeval_mul(struct timeval *out, const struct timeval *in, uint32_t m)
   assert(in->tv_usec >= 0);
   assert(in->tv_usec < 1000000);
 
-  u64 = ((in->tv_sec * 1000000) + in->tv_usec) * m;
+  u64 = (((uint64_t)in->tv_sec * 1000000) + (uint64_t)in->tv_usec) * m;
   out->tv_sec  = u64 / 1000000;
   out->tv_usec = u64 % 1000000;
 
@@ -1226,18 +1231,19 @@ int fcntl_set(int fd, int flags)
 }
 #endif
 
-size_t json_esc_len(const char *in)
+size_t json_esc_len(const char *in_str)
 {
+  const uint8_t *in = (const uint8_t *)in_str;
   size_t len = 0;
 
   assert(in != NULL);
   while(*in != '\0')
     {
-      if(isprint((unsigned char)*in) == 0)
-	break;
-
-      if(*in == '"' || *in == '\\')
+      if(*in == '"' || *in == '\\' || *in == '\b' || *in == '\t' ||
+	 *in == '\n' || *in == '\f' || *in == '\r')
 	len++;
+      else if(*in < 0x20 || *in >= 0x7f)
+	len += 5; /* \u00XX */
       len++;
       in++;
     }
@@ -1246,8 +1252,9 @@ size_t json_esc_len(const char *in)
   return len;
 }
 
-char *json_esc(const char *in, char *out, size_t len)
+char *json_esc(const char *in_str, char *out, size_t len)
 {
+  const uint8_t *in = (const uint8_t *)in_str;
   size_t off = 0;
 
   if(len == 0)
@@ -1256,15 +1263,31 @@ char *json_esc(const char *in, char *out, size_t len)
   assert(in != NULL);
   while(*in != '\0')
     {
-      if(isprint((unsigned char)*in) == 0)
-	break;
-
-      if(*in == '"' || *in == '\\')
+      if(*in == '"' || *in == '\\' || *in == '\b' || *in == '\t' ||
+	 *in == '\n' || *in == '\f' || *in == '\r')
 	{
 	  if(len - off <= 2)
 	    break;
 	  out[off++] = '\\';
-	  out[off++] = *in;
+	  switch(*in)
+	    {
+	    case '\b': out[off++] = 'b'; break;
+	    case '\t': out[off++] = 't'; break;
+	    case '\n': out[off++] = 'n'; break;
+	    case '\f': out[off++] = 'f'; break;
+	    case '\r': out[off++] = 'r'; break;
+	    default:   out[off++] = *in; break; /* " or \ */
+	    }
+	}
+      else if(*in < 0x20 || *in >= 0x7f)
+	{
+	  if(len - off <= 6)
+	    break;
+	  out[off++] = '\\';
+	  out[off++] = 'u';
+	  out[off++] = '0';
+	  out[off++] = '0';
+	  byte2hex(*in, out+off); off += 2;
 	}
       else
 	{
@@ -1321,11 +1344,19 @@ int url_parse(const char *url, uint16_t *port,
   if(*ptr == ':')
     {
       ptr++;
-      lo = strtol(ptr, &endptr, 10);
-      if(lo < 1 || lo > 65535)
-	goto err;
-      ptr = endptr;
-      *port = (uint16_t)lo;
+      /* allow an empty port, RFC3986 6.2.3 */
+      if(*ptr != '/' && *ptr != '\0')
+	{
+	  /* enforce base10 with no leading sign */
+	  if(isdigit((unsigned char)*ptr) == 0)
+	    goto err;
+	  lo = strtol(ptr, &endptr, 10);
+	  /* enforce valid port, and no garbage after port number */
+	  if(lo < 1 || lo > 65535 || (*endptr != '/' && *endptr != '\0'))
+	    goto err;
+	  ptr = endptr;
+	  *port = (uint16_t)lo;
+	}
     }
 
   /* extract the file */
@@ -1376,6 +1407,7 @@ int string_isprint(const char *str, size_t len)
 char *string_toupper(char *buf, size_t len, const char *in)
 {
   size_t off = 0;
+  assert(len > 0);
   while(in[off] != '\0' && len - off > 1)
     {
       buf[off] = toupper((unsigned char)in[off]);
@@ -1388,6 +1420,7 @@ char *string_toupper(char *buf, size_t len, const char *in)
 char *string_tolower(char *buf, size_t len, const char *in)
 {
   size_t off = 0;
+  assert(len > 0);
   while(in[off] != '\0' && len - off > 1)
     {
       buf[off] = tolower((unsigned char)in[off]);
@@ -1497,22 +1530,22 @@ int string_isalpha(const char *str)
  */
 int string_isnumber(const char *str)
 {
-  int i = 1;
+  int i = 0;
 
-  if(str[0] != '-' && str[0] != '+' && isdigit((unsigned char)str[0]) == 0)
+  if(str[0] == '-' || str[0] == '+')
     {
-      return 0;
+      if(isdigit((unsigned char)str[1]) == 0)
+	return 0;
+      i = 2;
     }
+  else if(str[0] == '\0')
+    return 0;
 
   while(str[i] != '\0')
     {
-      if(isdigit((unsigned char)str[i]) != 0)
-	{
-	  i++;
-	  continue;
-	}
-
-      return 0;
+      if(isdigit((unsigned char)str[i]) == 0)
+	return 0;
+      i++;
     }
 
   return 1;
@@ -1525,41 +1558,29 @@ int string_isnumber(const char *str)
  */
 int string_isfloat(const char *str)
 {
-  int seen_dp = 0;
-  int i = 1;
+  int i = 0, seen_dp = 0, seen_digit = 0;
 
-  if(str[0] != '-' && str[0] != '+' && isdigit((unsigned char)str[0]) == 0)
-    {
-      if(str[0] == '.')
-	{
-	  seen_dp = 1;
-	}
-      else return 0;
-    }
+  if(str[0] == '-' || str[0] == '+')
+    i = 1;
 
   while(str[i] != '\0')
     {
       if(isdigit((unsigned char)str[i]) != 0)
 	{
-	  i++;
-	  continue;
+	  seen_digit = 1;
 	}
       else if(str[i] == '.')
 	{
 	  /* if the decimal point has already been seen */
 	  if(seen_dp == 1)
-	    {
-	      return 0;
-	    }
-
-	  i++;
+	    return 0;
 	  seen_dp = 1;
-	  continue;
 	}
-      return 0;
+      else return 0;
+      i++;
     }
 
-  return 1;
+  return seen_digit;
 }
 
 /*
@@ -1606,7 +1627,7 @@ const char *string_findlc(const char *str, const char *find)
   for(;;)
     {
       for(i=0; find[i] != '\0'; i++)
-	if(tolower((int)sp[i]) != find[i])
+	if(tolower((unsigned char)sp[i]) != find[i])
 	  break;
       if(find[i] == '\0')
 	return sp;
@@ -1822,11 +1843,11 @@ static void string_concat_post(char *str, size_t *off, size_t cp)
 
 void string_concatc(char *str, size_t len, size_t *off, char c)
 {
+  if(*off >= len)
+    return;
   if(len - *off >= 2)
-    {
-      str[(*off)++] = c;
-      str[*off] = '\0';
-    }
+    str[(*off)++] = c;
+  str[*off] = '\0';
   return;
 }
 
@@ -1913,7 +1934,7 @@ void string_concaf(char *str, size_t len, size_t *off, const char *fs, ...)
   if(wc < 0)
     return;
 
-  *off = *off + ((size_t)wc < left ? (size_t)wc : left);
+  *off = *off + ((size_t)wc < left ? (size_t)wc : left - 1);
   return;
 }
 
@@ -1987,9 +2008,9 @@ int string_addrport(const char *in, char **first, uint16_t *port)
   char *ptr, *dup = NULL, *first_tmp = NULL;
   long lo;
 
-  if(string_isnumber(in))
+  if(string_isdigit(in))
     {
-      if(string_tolong(in, &lo) == -1 || lo < 1 || lo > 65535)
+      if(string_tolong(in, &lo) != 0 || lo < 1 || lo > 65535)
 	goto err;
       *first = NULL;
       *port  = (uint16_t)lo;
@@ -2013,7 +2034,8 @@ int string_addrport(const char *in, char **first, uint16_t *port)
 	goto err;
     }
 
-  if(string_tolong(ptr, &lo) != 0 || lo < 1 || lo > 65535)
+  if(string_isdigit(ptr) == 0 || string_tolong(ptr, &lo) != 0 ||
+     lo < 1 || lo > 65535)
     goto err;
 
   *first = first_tmp;
@@ -2036,19 +2058,31 @@ int string_isdash(const char *str)
 }
 #endif
 
+/*
+ * string_endswith:
+ *
+ * return non-zero if a string ends with a given ending.  there has to
+ * be a string before the suffix.
+ */
 int string_endswith(const char *in, const char *ending)
 {
   size_t in_len = strlen(in);
   size_t end_len = strlen(ending);
-  if(end_len >= in_len ||
+  if(end_len >= in_len || /* there has to be something before the ending */
      strcasecmp(in + in_len - end_len, ending) != 0)
     return 0;
   return 1;
 }
 
+/*
+ * mem_concat:
+ *
+ * copy len bytes from src to dst + *off.  the size parameter is provided to
+ * allow for asserts.
+ */
 void mem_concat(void *dst,const void *src,size_t len,size_t *off,size_t size)
 {
-  assert(*off + len <= size);
+  assert(size >= *off && size - *off >= len);
   memcpy(((uint8_t *)dst) + *off, src, len);
   *off += len;
   return;
@@ -2257,6 +2291,28 @@ int sysctl_wrap(int *mib, u_int len, void **buf, size_t *size)
 }
 #endif
 
+#ifndef _WIN32 /* windows does not have cmsghdr */
+int cmsg_data_as_uint8(const struct cmsghdr *cmsg, uint8_t *val)
+{
+  int tmp;
+  if(cmsg->cmsg_len == CMSG_LEN(sizeof(uint8_t)))
+    {
+      *val = *((uint8_t *)CMSG_DATA(cmsg));
+      return 0;
+    }
+  else if(cmsg->cmsg_len == CMSG_LEN(sizeof(int)))
+    {
+      memcpy(&tmp, CMSG_DATA(cmsg), sizeof(int));
+      if(tmp >= 0 && tmp <= 255)
+	{
+	  *val = (uint8_t)tmp;
+	  return 0;
+	}
+    }
+  return -1;
+}
+#endif /* _WIN32 */
+
 void random_seed(void)
 {
 #if defined(_WIN32) || defined(HAVE_ARC4RANDOM) /* seed crypto-insecure prng */
@@ -2418,6 +2474,7 @@ int min_array(const int *array, size_t len)
 {
   int x;
   size_t i;
+  assert(len > 0);
   x = array[0];
   for(i=1; i<len; i++)
     if(x > array[i])
@@ -2425,23 +2482,37 @@ int min_array(const int *array, size_t len)
   return x;
 }
 
+uint32_t in_cksum_sum(const uint16_t *buf, size_t len)
+{
+  uint32_t sum = 0;
+  uint16_t mop;
+
+  while(len >= 16)
+    {
+      sum += *buf++; sum += *buf++; sum += *buf++; sum += *buf++;
+      sum += *buf++; sum += *buf++; sum += *buf++; sum += *buf++;
+      len -= 16;
+    }
+  while(len >= 2)
+    {
+      sum += *buf++;
+      len -= 2;
+    }
+  if(len != 0)
+    {
+      mop = 0;
+      *(uint8_t *)(&mop) = *(uint8_t *)buf;
+      sum += mop;
+    }
+
+  return sum;
+}
+
 uint16_t in_cksum(const void *buf, size_t len)
 {
-  uint16_t *w = (uint16_t *)buf;
-  size_t l = len;
-  int sum = 0;
+  uint32_t sum;
 
-  while(l > 1)
-    {
-      sum += *w++;
-      l   -= 2;
-    }
-
-  if(l != 0)
-    {
-      sum += ((uint8_t *)w)[0];
-    }
-
+  sum  = in_cksum_sum((const uint16_t *)buf, len);
   sum  = (sum >> 16) + (sum & 0xffff);
   sum += (sum >> 16);
 
@@ -2878,6 +2949,12 @@ int fd_lines(int fd, int (*func)(char *, void *), void *param)
   readbuf_len = 8192; readbuf_off = 0;
   if((readbuf = malloc(readbuf_len)) == NULL)
     goto done;
+
+  /*
+   * prevent a '\n' at the start of the malloc'd buffer from acting as
+   * an end of line character for a zero-length file
+   */
+  readbuf[0] = '\0';
 
   while((ss = read(fd, readbuf+readbuf_off, readbuf_len-readbuf_off-1)) >= 0)
     {

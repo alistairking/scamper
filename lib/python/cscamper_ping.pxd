@@ -56,6 +56,7 @@ cdef extern from "scamper_ping.h":
 
  cdef uint32_t SCAMPER_PING_REPLY_FLAG_REPLY_TTL
  cdef uint32_t SCAMPER_PING_REPLY_FLAG_REPLY_IPID
+ cdef uint32_t SCAMPER_PING_REPLY_FLAG_REPLY_TOS
  cdef uint32_t SCAMPER_PING_REPLY_FLAG_PROBE_IPID
 
  char *scamper_ping_tojson(const scamper_ping_t *ping, size_t *l)
@@ -117,6 +118,7 @@ cdef extern from "scamper_ping.h":
  scamper_addr_t *scamper_ping_reply_addr_get(const scamper_ping_reply_t *reply)
  uint8_t scamper_ping_reply_proto_get(const scamper_ping_reply_t *reply)
  uint8_t scamper_ping_reply_ttl_get(const scamper_ping_reply_t *reply)
+ uint8_t scamper_ping_reply_tos_get(const scamper_ping_reply_t *reply)
  uint16_t scamper_ping_reply_size_get(const scamper_ping_reply_t *reply)
  uint16_t scamper_ping_reply_ipid_get(const scamper_ping_reply_t *reply)
  uint32_t scamper_ping_reply_ipid32_get(const scamper_ping_reply_t *reply)

@@ -4,7 +4,7 @@ from setuptools import Extension, setup
 
 setup(
     name="scamper",
-    version="20260420",
+    version="20260713",
     description="A module to interact with scamper processes and data",
     author="Matthew Luckie",
     author_email="mjl@luckie.org.nz",

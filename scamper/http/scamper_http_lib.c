@@ -1,7 +1,7 @@
 /*
  * scamper_http_lib.c
  *
- * $Id: scamper_http_lib.c,v 1.18 2026/03/26 23:26:43 mjl Exp $
+ * $Id: scamper_http_lib.c,v 1.19 2026/05/19 05:35:16 mjl Exp $
  *
  * Copyright (C) 2023-2026 The Regents of the University of California
  *
@@ -271,7 +271,7 @@ char *scamper_http_buf_type_tostr(const scamper_http_buf_t *htb,
 				 char *buf, size_t len)
 {
   static const char *t[] = {"data", "hdr", "tls"};
-  if(htb->dir >= sizeof(t) / sizeof(char *))
+  if(htb->type >= sizeof(t) / sizeof(char *))
     snprintf(buf, len, "%d", htb->type);
   else
     snprintf(buf, len, "%s", t[htb->type]);
@@ -426,10 +426,10 @@ int scamper_http_url_get(const scamper_http_t *http, char *buf, size_t len)
   needed = strlen(type) + /* http or https */
     3 + /* :// */
     strlen(http->host) + strlen(port) + strlen(http->file) + 1;
-  if(needed < len)
+  if(needed > len)
     return -1;
 
-  snprintf(buf, len, "%s://%s%s%s\n", type, http->host, port, http->file);
+  snprintf(buf, len, "%s://%s%s%s", type, http->host, port, http->file);
   return 0;
 }
 
@@ -873,7 +873,6 @@ int scamper_http_tx_hdr_name_get(const scamper_http_t *http,
   rc = hdr_name_get(htfs, name, value);
   scamper_http_hdr_fields_free(htfs);
   return rc;
-  return 0;
 }
 
 static void scamper_http_hdr_field_free(scamper_http_hdr_field_t *htf)

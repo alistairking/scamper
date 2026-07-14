@@ -2,7 +2,7 @@
 #
 # process source code looking for #ifdef-related bugs.
 #
-# $Id: check-ifdef.pl,v 1.15 2026/04/20 05:19:11 mjl Exp $
+# $Id: check-ifdef.pl,v 1.17 2026/07/13 09:24:57 mjl Exp $
 
 use strict;
 use warnings;
@@ -46,7 +46,8 @@ $defs{$_} = 0 foreach (
     "FUZZ_HTTP", "FUZZ_OWAMP", "FUZZ_NEIGHBOURDISC", "FUZZ_PING", "FUZZ_SNIFF",
     "FUZZ_STING", "FUZZ_TBIT", "FUZZ_TRACE", "FUZZ_TRACELB",
     "FUZZ_UDPPROBE", "TEST_DL_PARSE_ARP", "TEST_DL_PARSE_IP",
-    "TEST_HOST_RR_LIST", "TEST_DL_FILTER_COMPILE",
+    "TEST_HOST_RR_LIST", "TEST_DL_FILTER_COMPILE", "TEST_RXIFD_H3_REQUEST",
+    "TEST_ICMP4_PARSE", "TEST_ICMP6_PARSE", "TEST_PROBE_BUILD"
     );
 
 my %hdrdefs;

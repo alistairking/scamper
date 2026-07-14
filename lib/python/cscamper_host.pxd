@@ -76,7 +76,7 @@ cdef extern from "scamper_host.h":
  uint32_t scamper_host_userid_get(const scamper_host_t *host)
  const timeval *scamper_host_start_get(const scamper_host_t *host)
  uint16_t scamper_host_flags_get(const scamper_host_t *host)
- uint16_t scamper_host_wait_get(const scamper_host_t *host)
+ const timeval *scamper_host_wait_timeout_get(const scamper_host_t *host)
  uint8_t scamper_host_stop_get(const scamper_host_t *host)
  uint8_t scamper_host_retries_get(const scamper_host_t *host)
  uint16_t scamper_host_qtype_get(const scamper_host_t *host)

@@ -1,10 +1,10 @@
 /*
  * scamper_http_do.c
  *
- * $Id: scamper_http_do.c,v 1.35 2026/04/12 23:49:56 mjl Exp $
+ * $Id: scamper_http_do.c,v 1.40 2026/06/10 07:29:52 mjl Exp $
  *
  * Copyright (C) 2023-2024 The Regents of the University of California
- * Copyright (C) 2024-2025 Matthew Luckie
+ * Copyright (C) 2024-2026 Matthew Luckie
  * Copyright (C) 2026      The Regents of the University of California
  *
  * Authors: Matthew Luckie
@@ -71,6 +71,7 @@ typedef struct http_state
   scamper_writebuf_t *wb;
   slist_t            *htbs;
   struct timeval      finish;
+  uint8_t             flags;
 #ifdef HAVE_OPENSSL
   struct timeval      now;
   SSL                *ssl;
@@ -87,6 +88,8 @@ typedef struct http_state
 #define STATE_MODE_WAIT    3 /* waiting for response */
 #define STATE_MODE_DATA    4 /* got all of header, reading data */
 #define STATE_MODE_DONE    1
+
+#define STATE_FLAG_SHUTWR  0x01
 
 static const char *http_mode(int mode)
 {
@@ -247,7 +250,12 @@ static int http_read_payload(http_state_t *state, uint8_t *buf, size_t len)
 #endif
 
   fd = scamper_fd_fd_get(state->fdn);
-  shutdown(fd, SHUT_WR);
+
+  if((state->flags & STATE_FLAG_SHUTWR) == 0)
+    {
+      shutdown(fd, SHUT_WR);
+      state->flags |= STATE_FLAG_SHUTWR;
+    }
 
   gettimeofday_wrap(&tv);
 
@@ -255,28 +263,35 @@ static int http_read_payload(http_state_t *state, uint8_t *buf, size_t len)
     {
       for(i=0; i<len; i++)
 	{
-	  if(((state->eoh == 0 || state->eoh == 2) && buf[i] == '\r') ||
-	     ((state->eoh == 1 || state->eoh == 3) && buf[i] == '\n'))
+	  switch(state->eoh)
 	    {
-	      state->eoh++;
-	      if(state->eoh == 4)
-		{
-		  i++;
-		  if(http_buf_add(state, SCAMPER_HTTP_BUF_DIR_RX,
-				  SCAMPER_HTTP_BUF_TYPE_HDR, &tv, buf, i) != 0)
-		    return -1;
-		  state->mode = STATE_MODE_DATA;
-		  if(i < len)
-		    {
-		      if(http_buf_add(state, SCAMPER_HTTP_BUF_DIR_RX,
-				      SCAMPER_HTTP_BUF_TYPE_DATA,
-				      &tv, buf+i, len-i) != 0)
-			return -1;
-		    }
-		  return 0;
-		}
+	    case 0:
+	      state->eoh = (buf[i] == '\r') ? 1 : 0;
+	      break;
+	    case 1:
+	      state->eoh = (buf[i] == '\n') ? 2 : (buf[i] == '\r') ? 1 : 0;
+	      break;
+	    case 2:
+	      state->eoh = (buf[i] == '\r') ? 3 : 0;
+	      break;
+	    case 3:
+	      state->eoh = (buf[i] == '\n') ? 4 : (buf[i] == '\r') ? 1 : 0;
+	      break;
 	    }
-	  else state->eoh = 0;
+
+	  if(state->eoh == 4)
+	    {
+	      i++;
+	      if(http_buf_add(state, SCAMPER_HTTP_BUF_DIR_RX,
+			      SCAMPER_HTTP_BUF_TYPE_HDR, &tv, buf, i) != 0)
+		return -1;
+	      state->mode = STATE_MODE_DATA;
+	      if(i < len && http_buf_add(state, SCAMPER_HTTP_BUF_DIR_RX,
+					 SCAMPER_HTTP_BUF_TYPE_DATA,
+					 &tv, buf+i, len-i) != 0)
+		return -1;
+	      return 0;
+	    }
 	}
       if(http_buf_add(state, SCAMPER_HTTP_BUF_DIR_RX,
 		      SCAMPER_HTTP_BUF_TYPE_HDR, &tv, buf, len) != 0)
@@ -444,7 +459,8 @@ static int tls_checkcert(scamper_http_t *http, http_state_t *state)
 	  ech_status == SSL_ECH_STATUS_FAILED_ECH) &&
 	 SSL_ech_get1_retry_config(state->ssl, &ec, &eclen) != 0 && ec != NULL)
 	{
-	  if(eclen > 0 && (http->ech_retry_config = memdup(ec, eclen)) != NULL)
+	  if(eclen > 0 && eclen <= UINT32_MAX &&
+	     (http->ech_retry_config = memdup(ec, eclen)) != NULL)
 	    http->ech_retry_config_len = (uint32_t)eclen;
 	  OPENSSL_free(ec);
 	}
@@ -587,7 +603,7 @@ static int http_req(scamper_task_t *task, scamper_err_t *error)
   scamper_http_t *http = http_getdata(task);
   http_state_t *state = http_getstate(task);
   struct timeval tv;
-  size_t off = 0, len;
+  size_t off, len;
   char *buf = NULL;
   int rc = -1;
   uint8_t h;
@@ -610,8 +626,9 @@ static int http_req(scamper_task_t *task, scamper_err_t *error)
 
   if(h_ua == NULL)
     {
-      snprintf(ua_buf, sizeof(ua_buf),
-	       "User-Agent: scamper/%s", scamper_version());
+      off = 0;
+      string_concat2(ua_buf, sizeof(ua_buf), &off, "User-Agent: scamper/",
+		     scamper_version());
       h_ua = ua_buf;
     }
   len += strlen(h_ua) + 2;
@@ -628,6 +645,7 @@ static int http_req(scamper_task_t *task, scamper_err_t *error)
     }
 
   /* form the headers */
+  off = 0;
   string_concat3(buf, len, &off, "GET ", http->file, " HTTP/1.1\r\n");
   if(http->host != NULL)
     string_concat3(buf, len, &off, "Host: ", http->host, "\r\n");
@@ -646,7 +664,7 @@ static int http_req(scamper_task_t *task, scamper_err_t *error)
 
   gettimeofday_wrap(&tv);
   if(http_buf_add(state, SCAMPER_HTTP_BUF_DIR_TX,
-		  SCAMPER_HTTP_BUF_TYPE_HDR, &tv, buf, len) != 0)
+		  SCAMPER_HTTP_BUF_TYPE_HDR, &tv, buf, off) != 0)
     {
       scamper_err_make(error, errno, "could not add hdr http buf");
       goto done;
@@ -700,7 +718,7 @@ static void http_read(SOCKET fd, void *param)
   if(state->mode == STATE_MODE_CONNECT)
     {
       sl = sizeof(ecode);
-      if(getsockopt(fd, SOL_SOCKET, SO_ERROR, &ecode, &sl) == 0)
+      if(getsockopt(fd, SOL_SOCKET, SO_ERROR, (void *)&ecode, &sl) == 0)
 	scamper_debug(__func__, "could not connect: %s", strerror(ecode));
       http_stop(task, SCAMPER_HTTP_STOP_NOCONN);
       state->mode = STATE_MODE_DONE;

@@ -1,9 +1,9 @@
 /*
  * scamper_neighbourdisc.c
  *
- * $Id: scamper_neighbourdisc.c,v 1.12 2025/10/09 22:35:42 mjl Exp $
+ * $Id: scamper_neighbourdisc.c,v 1.13 2026/06/17 08:12:33 mjl Exp $
  *
- * Copyright (C) 2009-2023 Matthew Luckie
+ * Copyright (C) 2009-2026 Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -74,7 +74,10 @@ void scamper_neighbourdisc_reply_free(scamper_neighbourdisc_reply_t *reply)
 int scamper_neighbourdisc_reply_add(scamper_neighbourdisc_probe_t *probe,
 				    scamper_neighbourdisc_reply_t *reply)
 {
-  size_t len = sizeof(scamper_neighbourdisc_reply_t *) * (probe->rxc+1);
+  size_t len;
+  if(probe->rxc == UINT16_MAX)
+    return -1;
+  len = sizeof(scamper_neighbourdisc_reply_t *) * (probe->rxc+1);
   if(realloc_wrap((void **)&probe->rxs, len) != 0)
     return -1;
   probe->rxs[probe->rxc++] = reply;

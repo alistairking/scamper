@@ -1,12 +1,12 @@
 /*
  * scamper_addr.c
  *
- * $Id: scamper_addr.c,v 1.94 2025/11/12 22:36:39 mjl Exp $
+ * $Id: scamper_addr.c,v 1.100 2026/06/13 19:25:32 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2013-2014 The Regents of the University of California
- * Copyright (C) 2016-2025 Matthew Luckie
+ * Copyright (C) 2016-2026 Matthew Luckie
  * Copyright (C) 2025      The Regents of the University of California
  * Author: Matthew Luckie
  *
@@ -217,6 +217,11 @@ static const struct handler handlers[] = {
   }
 };
 
+#define SCAMPER_ADDR_TYPE_ASSERT(sa) do { \
+    assert((sa)->type > 0); \
+    assert((size_t)((sa)->type) <= sizeof(handlers)/sizeof(struct handler)); \
+    } while(0)
+
 #if defined(BUILDING_SCAMPER) || defined(BUILD_ADDRCACHE)
 struct scamper_addrcache
 {
@@ -270,6 +275,7 @@ static int ipv4_cmp(const scamper_addr_t *sa, const scamper_addr_t *sb)
 
   assert(sa->type == SCAMPER_ADDR_TYPE_IPV4);
   assert(sb->type == SCAMPER_ADDR_TYPE_IPV4);
+  assert(sa->addr != NULL); assert(sb->addr != NULL);
 
   a = (struct in_addr *)sa->addr;
   b = (struct in_addr *)sb->addr;
@@ -283,6 +289,7 @@ static int ipv4_human_cmp(const scamper_addr_t *sa, const scamper_addr_t *sb)
 
   assert(sa->type == SCAMPER_ADDR_TYPE_IPV4);
   assert(sb->type == SCAMPER_ADDR_TYPE_IPV4);
+  assert(sa->addr != NULL); assert(sb->addr != NULL);
 
   a = ntohl(((struct in_addr *)sa->addr)->s_addr);
   b = ntohl(((struct in_addr *)sb->addr)->s_addr);
@@ -304,9 +311,11 @@ static int ipv4_inprefix(const scamper_addr_t *sa, const void *p, int len)
   if(len == 0)
     return 1;
 
-  if(len > 32)
+  if(len < 0 || len > 32)
     return -1;
 
+  assert(addr != NULL);
+  assert(prefix != NULL);
   if(((addr->s_addr ^ prefix->s_addr) & htonl(uint32_netmask[len-1])) == 0)
     return 1;
 
@@ -319,6 +328,7 @@ static int ipv4_prefix(const scamper_addr_t *sa, const scamper_addr_t *sb)
   const struct in_addr *b = sb->addr;
   uint32_t v, r;
 
+  assert(a != NULL); assert(b != NULL);
   if((v = ntohl(a->s_addr ^ b->s_addr)) == 0)
     return 32;
 
@@ -339,13 +349,15 @@ static int ipv4_prefix(const scamper_addr_t *sa, const scamper_addr_t *sb)
 
 static int ipv4_prefixhosts(const scamper_addr_t *sa, const scamper_addr_t *sb)
 {
-  const struct in_addr *a = sa->addr;
-  const struct in_addr *b = sb->addr;
+  const struct in_addr *a;
+  const struct in_addr *b;
   struct in_addr c;
   int i;
 
   if((i = ipv4_prefix(sa, sb)) >= 31)
     return i;
+  a = sa->addr; assert(a != NULL);
+  b = sb->addr; assert(b != NULL);
 
   while(i>0)
     {
@@ -377,6 +389,7 @@ static int ipv4_prefixhosts(const scamper_addr_t *sa, const scamper_addr_t *sb)
 static int ipv4_islinklocal(const scamper_addr_t *sa)
 {
   const struct in_addr *a = sa->addr;
+  assert(a != NULL);
   if((ntohl(a->s_addr) & 0xffff0000) == 0xa9fe0000)
     return 1;
   return 0;
@@ -384,10 +397,11 @@ static int ipv4_islinklocal(const scamper_addr_t *sa)
 
 static int ipv4_netaddr(const scamper_addr_t *sa, void *net, int netlen)
 {
-  const struct in_addr *a = sa->addr;
+  const struct in_addr *a;
   struct in_addr p;
-  if(netlen <= 0 || netlen > 32 || sa == NULL || net == NULL)
+  if(netlen <= 0 || netlen > 32 || net == NULL)
     return -1;
+  a = sa->addr; assert(a != NULL);
   p.s_addr = htonl(ntohl(a->s_addr) & uint32_netmask[netlen-1]);
   memcpy(net, &p, sizeof(p));
   return 0;
@@ -447,8 +461,8 @@ static int ipv4_fbd(const scamper_addr_t *sa, const scamper_addr_t *sb)
 
   assert(sa->type == SCAMPER_ADDR_TYPE_IPV4);
   assert(sb->type == SCAMPER_ADDR_TYPE_IPV4);
-  a = (const struct in_addr *)sa->addr;
-  b = (const struct in_addr *)sb->addr;
+  a = (const struct in_addr *)sa->addr; assert(a != NULL);
+  b = (const struct in_addr *)sb->addr; assert(b != NULL);
 
   v = ntohl(a->s_addr ^ b->s_addr);
 
@@ -474,6 +488,8 @@ static int ipv4_tosockaddr(const scamper_addr_t *a, uint16_t port, void *va)
 {
   struct sockaddr *sa = (struct sockaddr *)va;
   struct sockaddr_in *sin = (struct sockaddr_in *)va;
+
+  assert(a->addr != NULL);
 
   memset(sin, 0, sizeof(struct sockaddr_in));
   memcpy(&sin->sin_addr, a->addr, sizeof(struct in_addr));
@@ -502,8 +518,8 @@ static int ipv6_cmp(const scamper_addr_t *sa, const scamper_addr_t *sb)
   assert(sa->type == SCAMPER_ADDR_TYPE_IPV6);
   assert(sb->type == SCAMPER_ADDR_TYPE_IPV6);
 
-  a = (struct in6_addr *)sa->addr;
-  b = (struct in6_addr *)sb->addr;
+  a = (struct in6_addr *)sa->addr; assert(a != NULL);
+  b = (struct in6_addr *)sb->addr; assert(b != NULL);
 
 #if SIZEOF_LONG == 8
 #ifndef _WIN32 /* windows does not have s6_addr32 for in6_addr */
@@ -549,8 +565,8 @@ static int ipv6_human_cmp(const scamper_addr_t *sa, const scamper_addr_t *sb)
   assert(sa->type == SCAMPER_ADDR_TYPE_IPV6);
   assert(sb->type == SCAMPER_ADDR_TYPE_IPV6);
 
-  a = (struct in6_addr *)sa->addr;
-  b = (struct in6_addr *)sb->addr;
+  a = (struct in6_addr *)sa->addr; assert(a != NULL);
+  b = (struct in6_addr *)sb->addr; assert(b != NULL);
 
 #ifndef _WIN32 /* windows does not have s6_addr32 for in6_addr */
   for(i=0; i<4; i++)
@@ -596,8 +612,11 @@ static int ipv6_inprefix(const scamper_addr_t *sa, const void *p, int len)
   if(len == 0)
     return 1;
 
-  if(len > 128)
+  if(len < 0 || len > 128)
     return -1;
+
+  assert(addr != NULL);
+  assert(prefix != NULL);
 
 #ifndef _WIN32 /* windows does not have s6_addr32 for in6_addr */
   for(i=0; i<4; i++)
@@ -653,6 +672,9 @@ static int ipv6_prefix(const scamper_addr_t *sa, const scamper_addr_t *sb)
   uint16_t ua, ub;
 #endif
 
+  assert(a != NULL);
+  assert(b != NULL);
+
 #ifndef _WIN32 /* windows does not have s6_addr32 for in6_addr */
   for(i=0; i<4; i++)
     {
@@ -704,6 +726,7 @@ static int ipv6_prefix(const scamper_addr_t *sa, const scamper_addr_t *sb)
 static int ipv6_islinklocal(const scamper_addr_t *sa)
 {
   const struct in6_addr *a = sa->addr;
+  assert(a != NULL);
   if(a->s6_addr[0] == 0xfe && (a->s6_addr[1] & 0xc0) == 0x80)
     return 1;
   return 0;
@@ -711,12 +734,14 @@ static int ipv6_islinklocal(const scamper_addr_t *sa)
 
 static int ipv6_netaddr(const scamper_addr_t *sa, void *net, int nl)
 {
-  const struct in6_addr *a = sa->addr;
+  const struct in6_addr *a;
   struct in6_addr p;
   int i;
 
-  if(nl <= 0 || nl > 128 || sa == NULL || net == NULL)
+  if(nl <= 0 || nl > 128 || net == NULL)
     return -1;
+
+  a = sa->addr; assert(a != NULL);
   memset(&p, 0, sizeof(p));
 
 #ifndef _WIN32 /* windows does not have s6_addr32 for in6_addr */
@@ -751,6 +776,8 @@ static int ipv6_netaddr(const scamper_addr_t *sa, void *net, int nl)
 static int ipv6_isreserved(const scamper_addr_t *sa)
 {
   const struct in6_addr *a = sa->addr;
+
+  assert(a != NULL);
 
   /* if the address falls outside of 2000::/3, then its reserved */
   if((a->s6_addr[0] & 0xe0) != 0x20)
@@ -788,7 +815,7 @@ static int ipv6_isreserved(const scamper_addr_t *sa)
 	    return 1;
 	}
 
-      /* 2001:db8::/32 (documentation */
+      /* 2001:db8::/32 (documentation) */
       if(a->s6_addr[2] == 0x0d && a->s6_addr[3] == 0xb8)
 	return 1;
     }
@@ -799,6 +826,7 @@ static int ipv6_isreserved(const scamper_addr_t *sa)
 static int ipv6_isunicast(const scamper_addr_t *sa)
 {
   const struct in6_addr *a = sa->addr;
+  assert(a != NULL);
   if((a->s6_addr[0] & 0xe0) == 0x20)
     return 1;
   return 0;
@@ -807,7 +835,10 @@ static int ipv6_isunicast(const scamper_addr_t *sa)
 static int ipv6_bit(const scamper_addr_t *sa, int bit)
 {
   struct in6_addr *a = (struct in6_addr *)sa->addr;
+
   assert(bit > 0); assert(bit <= 128);
+  assert(a != NULL);
+
 #ifndef _WIN32 /* windows does not have s6_addr32 for in6_addr */
   return (ntohl(a->s6_addr32[(bit-1)/32]) >> (31 - ((bit-1) % 32))) & 1;
 #else
@@ -823,8 +854,8 @@ static int ipv6_fbd(const scamper_addr_t *sa, const scamper_addr_t *sb)
 
   assert(sa->type == SCAMPER_ADDR_TYPE_IPV6);
   assert(sb->type == SCAMPER_ADDR_TYPE_IPV6);
-  a = (const struct in6_addr *)sa->addr;
-  b = (const struct in6_addr *)sb->addr;
+  a = (const struct in6_addr *)sa->addr; assert(a != NULL);
+  b = (const struct in6_addr *)sb->addr; assert(b != NULL);
 
 #ifndef _WIN32 /* windows does not have s6_addr32 for in6_addr */
   for(i=0; i<4; i++)
@@ -875,6 +906,8 @@ static int ipv6_tosockaddr(const scamper_addr_t *a, uint16_t port, void *va)
   struct sockaddr *sa = (struct sockaddr *)va;
   struct sockaddr_in6 *sin6 = (struct sockaddr_in6 *)va;
 
+  assert(a->addr != NULL);
+
   memset(sin6, 0, sizeof(struct sockaddr_in6));
   memcpy(&sin6->sin6_addr, a->addr, sizeof(struct in6_addr));
   sin6->sin6_port = htons(port);
@@ -891,6 +924,8 @@ static int ethernet_cmp(const scamper_addr_t *sa, const scamper_addr_t *sb)
 {
   assert(sa->type == SCAMPER_ADDR_TYPE_ETHERNET);
   assert(sb->type == SCAMPER_ADDR_TYPE_ETHERNET);
+  assert(sa->addr != NULL);
+  assert(sb->addr != NULL);
   return memcmp(sa->addr, sb->addr, 6);
 }
 
@@ -898,6 +933,7 @@ static void ethernet_tostr(const scamper_addr_t *addr,
 			   char *buf, const size_t len)
 {
   uint8_t *mac = (uint8_t *)addr->addr;
+  assert(addr->addr != NULL);
   snprintf(buf, len, "%02x:%02x:%02x:%02x:%02x:%02x",
 	   mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
   return;
@@ -908,7 +944,10 @@ static int ethernet_bit(const scamper_addr_t *addr, int bit)
   static const uint8_t mask[] = {0x01,0x80,0x40,0x20,0x10,0x08,0x04,0x02};
   static const uint8_t shift[] = {0, 7, 6, 5, 4, 3, 2, 1};
   uint8_t *mac = (uint8_t *)addr->addr;
+
   assert(bit > 0 && bit <= 48);
+  assert(addr->addr != NULL);
+
   return (mac[(bit-1)/8] & mask[bit%8]) >> shift[bit%8];
 }
 
@@ -920,8 +959,8 @@ static int ethernet_fbd(const scamper_addr_t *sa, const scamper_addr_t *sb)
 
   assert(sa->type == SCAMPER_ADDR_TYPE_ETHERNET);
   assert(sb->type == SCAMPER_ADDR_TYPE_ETHERNET);
-  a = (const uint8_t *)sa->addr;
-  b = (const uint8_t *)sb->addr;
+  a = (const uint8_t *)sa->addr; assert(a != NULL);
+  b = (const uint8_t *)sb->addr; assert(b != NULL);
 
   for(i=0; i<6; i++)
     {
@@ -941,6 +980,8 @@ static int firewire_cmp(const scamper_addr_t *sa, const scamper_addr_t *sb)
 {
   assert(sa->type == SCAMPER_ADDR_TYPE_FIREWIRE);
   assert(sb->type == SCAMPER_ADDR_TYPE_FIREWIRE);
+  assert(sa->addr != NULL);
+  assert(sb->addr != NULL);
   return memcmp(sa->addr, sb->addr, 8);
 }
 
@@ -948,6 +989,7 @@ static void firewire_tostr(const scamper_addr_t *addr,
 			   char *buf, const size_t len)
 {
   uint8_t *lla = (uint8_t *)addr->addr;
+  assert(addr->addr != NULL);
   snprintf(buf, len, "%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x",
 	   lla[0], lla[1], lla[2], lla[3], lla[4], lla[5], lla[6], lla[7]);
   return;
@@ -958,8 +1000,11 @@ static int firewire_bit(const scamper_addr_t *addr, int bit)
   static const uint8_t mask[] = {0x01,0x80,0x40,0x20,0x10,0x08,0x04,0x02};
   static const uint8_t shift[] = {0, 7, 6, 5, 4, 3, 2, 1};
   uint8_t *lla = (uint8_t *)addr->addr;
+
   assert(bit > 0 && bit <= 64);
-  return (lla[(bit-1)/8] >> mask[bit%8]) >> shift[bit%8];
+  assert(addr->addr != NULL);
+
+  return (lla[(bit-1)/8] & mask[bit%8]) >> shift[bit%8];
 }
 
 static int firewire_fbd(const scamper_addr_t *sa, const scamper_addr_t *sb)
@@ -970,8 +1015,8 @@ static int firewire_fbd(const scamper_addr_t *sa, const scamper_addr_t *sb)
 
   assert(sa->type == SCAMPER_ADDR_TYPE_FIREWIRE);
   assert(sb->type == SCAMPER_ADDR_TYPE_FIREWIRE);
-  a = (const uint8_t *)sa->addr;
-  b = (const uint8_t *)sb->addr;
+  a = (const uint8_t *)sa->addr; assert(a != NULL);
+  b = (const uint8_t *)sb->addr; assert(b != NULL);
 
   for(i=0; i<8; i++)
     {
@@ -1038,6 +1083,10 @@ scamper_addr_t *scamper_addrcache_get_dm(scamper_addrcache_t *ac,
 #endif
 {
   scamper_addr_t *sa, findme;
+
+  assert(addr != NULL);
+  assert(type > 0);
+  assert((size_t)type <= sizeof(handlers)/sizeof(struct handler));
 
   findme.type = type;
   findme.addr = (void *)addr;
@@ -1131,23 +1180,29 @@ scamper_addr_t *scamper_addrcache_resolve(scamper_addrcache_t *addrcache,
 
 size_t scamper_addr_len_get(const scamper_addr_t *sa)
 {
+  assert(sa != NULL);
+  SCAMPER_ADDR_TYPE_ASSERT(sa);
   return handlers[sa->type-1].size;
 }
 
 const char *scamper_addr_tostr(const scamper_addr_t *sa,
 			       char *dst, const size_t size)
 {
+  assert(sa != NULL);
+  SCAMPER_ADDR_TYPE_ASSERT(sa);
   handlers[sa->type-1].tostr(sa, dst, size);
   return dst;
 }
 
 int scamper_addr_type_get(const scamper_addr_t *addr)
 {
+  assert(addr != NULL);
   return addr->type;
 }
 
 const void *scamper_addr_addr_get(const scamper_addr_t *addr)
 {
+  assert(addr != NULL);
   return addr->addr;
 }
 
@@ -1161,8 +1216,8 @@ scamper_addr_t *scamper_addr_alloc_dm(const int type, const void *addr,
   scamper_addr_t *sa;
 
   assert(addr != NULL);
-  assert(type-1 >= 0);
-  assert((size_t)(type-1) < sizeof(handlers)/sizeof(struct handler));
+  assert(type > 0);
+  assert((size_t)type <= sizeof(handlers)/sizeof(struct handler));
 
 #ifndef DMALLOC
   sa = malloc_zero(sizeof(scamper_addr_t));
@@ -1259,21 +1314,31 @@ scamper_addr_t *scamper_addr_alloc(int type, const void *addr)
 
 int scamper_addr_inprefix(const scamper_addr_t *addr, const void *p, int len)
 {
+  assert(addr != NULL);
+  SCAMPER_ADDR_TYPE_ASSERT(addr);
   return handlers[addr->type-1].inprefix(addr, p, len);
 }
 
 int scamper_addr_bit(const scamper_addr_t *a, int bit)
 {
+  assert(a != NULL);
+  SCAMPER_ADDR_TYPE_ASSERT(a);
   return handlers[a->type-1].bit(a, bit);
 }
 
 int scamper_addr_fbd(const scamper_addr_t *a, const scamper_addr_t *b)
 {
+  assert(a != NULL); assert(b != NULL);
+  SCAMPER_ADDR_TYPE_ASSERT(a);
+  SCAMPER_ADDR_TYPE_ASSERT(b);
   return handlers[a->type-1].fbd(a, b);
 }
 
 int scamper_addr_prefix(const scamper_addr_t *a, const scamper_addr_t *b)
 {
+  assert(a != NULL); assert(b != NULL);
+  SCAMPER_ADDR_TYPE_ASSERT(a);
+  SCAMPER_ADDR_TYPE_ASSERT(b);
   if(a->type != b->type)
     return -1;
   return handlers[a->type-1].prefix(a, b);
@@ -1281,6 +1346,9 @@ int scamper_addr_prefix(const scamper_addr_t *a, const scamper_addr_t *b)
 
 int scamper_addr_prefixhosts(const scamper_addr_t *a, const scamper_addr_t *b)
 {
+  assert(a != NULL); assert(b != NULL);
+  SCAMPER_ADDR_TYPE_ASSERT(a);
+  SCAMPER_ADDR_TYPE_ASSERT(b);
   if(a->type != b->type)
     return -1;
   return handlers[a->type-1].prefixhosts(a, b);
@@ -1288,21 +1356,30 @@ int scamper_addr_prefixhosts(const scamper_addr_t *a, const scamper_addr_t *b)
 
 int scamper_addr_af(const scamper_addr_t *a)
 {
+  assert(a != NULL);
+  SCAMPER_ADDR_TYPE_ASSERT(a);
   return handlers[a->type-1].af;
 }
 
 int scamper_addr_tosockaddr(const scamper_addr_t *a, uint16_t port, void *sa)
 {
+  assert(a != NULL);
+  SCAMPER_ADDR_TYPE_ASSERT(a);
+  assert(sa != NULL);
   return handlers[a->type-1].tosockaddr(a, port, sa);
 }
 
 int scamper_addr_islinklocal(const scamper_addr_t *a)
 {
+  assert(a != NULL);
+  SCAMPER_ADDR_TYPE_ASSERT(a);
   return handlers[a->type-1].islinklocal(a);
 }
 
 int scamper_addr_netaddr(const scamper_addr_t *a, void *net, int netlen)
 {
+  assert(a != NULL);
+  SCAMPER_ADDR_TYPE_ASSERT(a);
   return handlers[a->type-1].netaddr(a, net, netlen);
 }
 
@@ -1310,8 +1387,10 @@ int scamper_addr_isrfc1918(const scamper_addr_t *sa)
 {
   uint32_t x;
 
+  assert(sa != NULL);
   if(sa->type != SCAMPER_ADDR_TYPE_IPV4)
     return 0;
+  assert(sa->addr != NULL);
 
   x = ntohl(((const struct in_addr *)sa->addr)->s_addr);
   if((x & 0xff000000) == 0x0a000000 || /* 10.0.0.0    /8  */
@@ -1327,8 +1406,10 @@ int scamper_addr_is6to4(const scamper_addr_t *sa)
 {
   const struct in6_addr *a;
 
+  assert(sa != NULL);
   if(sa->type != SCAMPER_ADDR_TYPE_IPV6)
     return 0;
+  assert(sa->addr != NULL);
 
   a = sa->addr;
 #ifndef _WIN32 /* windows does not have s6_addr32 for in6_addr */
@@ -1336,7 +1417,7 @@ int scamper_addr_is6to4(const scamper_addr_t *sa)
     return 1;
 #else
   if(a->u.Word[0] == htons(0x2002))
-     return 1;
+    return 1;
 #endif
 
   return 0;
@@ -1344,11 +1425,13 @@ int scamper_addr_is6to4(const scamper_addr_t *sa)
 
 int scamper_addr_isunicast(const scamper_addr_t *sa)
 {
+  SCAMPER_ADDR_TYPE_ASSERT(sa);
   return handlers[sa->type-1].isunicast(sa);
 }
 
 int scamper_addr_isreserved(const scamper_addr_t *sa)
 {
+  SCAMPER_ADDR_TYPE_ASSERT(sa);
   return handlers[sa->type-1].isreserved(sa);
 }
 
@@ -1389,13 +1472,15 @@ void scamper_addr_free(scamper_addr_t *sa)
     return;
 
   assert(sa->refcnt > 0);
-
   if(--sa->refcnt > 0)
     return;
 
 #if defined(BUILDING_SCAMPER) || defined(BUILD_ADDRCACHE)
   if((ac = sa->internal) != NULL)
-    splaytree_remove_item(ac->tree[sa->type-1], sa);
+    {
+      SCAMPER_ADDR_TYPE_ASSERT(sa);
+      splaytree_remove_item(ac->tree[sa->type-1], sa);
+    }
 #endif
 
   free(sa->addr);
@@ -1405,10 +1490,8 @@ void scamper_addr_free(scamper_addr_t *sa)
 
 int scamper_addr_cmp(const scamper_addr_t *a, const scamper_addr_t *b)
 {
-  assert(a->type > 0);
-  assert((size_t)a->type <= sizeof(handlers)/sizeof(struct handler));
-  assert(b->type > 0);
-  assert((size_t)b->type <= sizeof(handlers)/sizeof(struct handler));
+  SCAMPER_ADDR_TYPE_ASSERT(a);
+  SCAMPER_ADDR_TYPE_ASSERT(b);
 
   /*
    * if the two address types are the same, then do a comparison on the
@@ -1422,10 +1505,8 @@ int scamper_addr_cmp(const scamper_addr_t *a, const scamper_addr_t *b)
 
 int scamper_addr_human_cmp(const scamper_addr_t *a, const scamper_addr_t *b)
 {
-  assert(a->type > 0);
-  assert((size_t)a->type <= sizeof(handlers)/sizeof(struct handler));
-  assert(b->type > 0);
-  assert((size_t)b->type <= sizeof(handlers)/sizeof(struct handler));
+  SCAMPER_ADDR_TYPE_ASSERT(a);
+  SCAMPER_ADDR_TYPE_ASSERT(b);
 
   /*
    * if the two address types are the same, then do a comparison on the
@@ -1440,5 +1521,6 @@ int scamper_addr_human_cmp(const scamper_addr_t *a, const scamper_addr_t *b)
 
 int scamper_addr_raw_cmp(const scamper_addr_t *a, const void *raw)
 {
+  SCAMPER_ADDR_TYPE_ASSERT(a);
   return memcmp(a->addr, raw, handlers[a->type-1].size);
 }

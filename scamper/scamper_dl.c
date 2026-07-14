@@ -1,7 +1,7 @@
 /*
  * scamper_dl: manage BPF/PF_PACKET datalink instances for scamper
  *
- * $Id: scamper_dl.c,v 1.243 2025/10/21 20:03:25 mjl Exp $
+ * $Id: scamper_dl.c,v 1.251 2026/07/03 21:57:47 mjl Exp $
  *
  *          Matthew Luckie
  *          Ben Stasiewicz added fragmentation support.
@@ -18,7 +18,7 @@
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2012      Matthew Luckie
  * Copyright (C) 2014-2015 The Regents of the University of California
- * Copyright (C) 2022-2025 Matthew Luckie
+ * Copyright (C) 2022-2026 Matthew Luckie
  * Copyright (C) 2023-2024 The Regents of the University of California
  *
  * This program is free software; you can redistribute it and/or modify
@@ -229,7 +229,7 @@ static int dl_parse_ip(scamper_dl_rec_t *dl, uint8_t *pktbuf, size_t pktlen)
       dl->dl_ip_proto = ip6->ip6_nxt;
       dl->dl_ip_size  = ntohs(ip6->ip6_plen) + sizeof(struct ip6_hdr);
       dl->dl_ip_hlim  = ip6->ip6_hlim;
-      dl->dl_ip_tos   = (((pkt[0] & 0x0f) << 4) | (pkt[1] & 0xf0) >> 4);
+      dl->dl_ip_tos   = ((pkt[0] & 0x0f) << 4) | ((pkt[1] & 0xf0) >> 4);
       dl->dl_ip_src   = (uint8_t *)&ip6->ip6_src;
       dl->dl_ip_dst   = (uint8_t *)&ip6->ip6_dst;
 
@@ -345,11 +345,12 @@ static int dl_parse_ip(scamper_dl_rec_t *dl, uint8_t *pktbuf, size_t pktlen)
 		  continue;
 		}
 
-	      if(tmp[1] == 0)
+	      /* make sure enough space left for length byte */
+	      if(dl->dl_tcp_hl - off < 2)
 		break;
 
 	      /* make sure the option's length is sensible */
-	      if(off + tmp[1] > dl->dl_tcp_hl)
+	      if(tmp[1] == 0 || off + tmp[1] > dl->dl_tcp_hl)
 		break;
 
 	      if(tmp[0] == 2 && tmp[1] == 4) /* mss option */
@@ -396,9 +397,12 @@ static int dl_parse_ip(scamper_dl_rec_t *dl, uint8_t *pktbuf, size_t pktlen)
 	      off += tmp[1];
 	    }
 
-	  dl->dl_tcp_datalen = dl->dl_ip_size - dl->dl_ip_hl - dl->dl_tcp_hl;
-	  if(dl->dl_tcp_datalen > 0)
-	    dl->dl_tcp_data = pkt + dl->dl_tcp_hl;
+	  if(dl->dl_ip_hl + dl->dl_tcp_hl < dl->dl_ip_size)
+	    {
+	      dl->dl_tcp_datalen =
+		dl->dl_ip_size - dl->dl_ip_hl - dl->dl_tcp_hl;
+	      dl->dl_tcp_data = pkt + dl->dl_tcp_hl;
+	    }
 	}
     }
   else if(dl->dl_ip_proto == IPPROTO_ICMP && dl->dl_af == AF_INET)
@@ -565,6 +569,8 @@ static int dl_parse_ip(scamper_dl_rec_t *dl, uint8_t *pktbuf, size_t pktlen)
 	  break;
 
 	case ND_NEIGHBOR_ADVERT:
+	  if(len < 16)
+	    return 0;
 	  dl->dl_icmp6_nd_target   = pkt;
 	  dl->dl_icmp6_nd_opts     = pkt + 16;
 	  dl->dl_icmp6_nd_opts_len = len - 16;
@@ -1014,7 +1020,7 @@ static int dlt_null_cb(scamper_dl_rec_t *dl, uint8_t *pkt, size_t len)
 {
   uint32_t pf;
 
-  /* ensure the packet holds at least 4 bytes for the psuedo header */
+  /* ensure the packet holds at least 4 bytes for the pseudo header */
   if(len <= 4)
     return 0;
 
@@ -1781,14 +1787,14 @@ static int linux_read(int fd, scamper_dl_t *node)
   struct iovec       iov;
 
   memset(&iov, 0, sizeof(iov));
-  iov.iov_base = (caddr_t)readbuf;
+  iov.iov_base = (void *)readbuf;
   iov.iov_len  = readbuf_len;
 
-  msg.msg_name       = (caddr_t)&sll;
+  msg.msg_name       = (void *)&sll;
   msg.msg_namelen    = sizeof(sll);
   msg.msg_iov        = &iov;
   msg.msg_iovlen     = 1;
-  msg.msg_control    = (caddr_t)ctrlbuf;
+  msg.msg_control    = (void *)ctrlbuf;
   msg.msg_controllen = sizeof(ctrlbuf);
 
   if((len = recvmsg(fd, &msg, 0)) <= 0)
@@ -2204,7 +2210,7 @@ static int dl_dlpi_read(int fd, scamper_dl_t *node)
       buf += sbh->sbh_totlen;
     }
 
-  return -1;
+  return 0;
 }
 
 static int dl_dlpi_tx(const scamper_dl_t *node, const uint8_t *pkt, size_t len,
@@ -2297,12 +2303,12 @@ int scamper_dl_filter(const scamper_dl_t *node,
 
 #ifdef HAVE_BPF
 #ifndef BIOCSETFNR
-  if((rc = ioctl(fd, BIOCSETF, (caddr_t)&prog)) != -1)
+  if((rc = ioctl(fd, BIOCSETF, (void *)&prog)) != -1)
     rc = 0;
   else
     printerror(__func__, "BIOCSETF failed");
 #else
-  if((rc = ioctl(fd, dyn == 0 ? BIOCSETF : BIOCSETFNR, (caddr_t)&prog)) != -1)
+  if((rc = ioctl(fd, dyn == 0 ? BIOCSETF : BIOCSETFNR, (void *)&prog)) != -1)
     {
       rc = 0;
       scamper_debug(__func__, "filter %d successful", prog.bf_len);
@@ -2321,7 +2327,7 @@ int scamper_dl_filter(const scamper_dl_t *node,
 	{
 	  prog.bf_insns = open;
 	  prog.bf_len = 1;
-	  if((rc = ioctl(fd, BIOCSETFNR, (caddr_t)&prog)) != -1)
+	  if((rc = ioctl(fd, BIOCSETFNR, (void *)&prog)) != -1)
 	    {
 	      rc = 0;
 	      scamper_debug(__func__, "installed open filter");
@@ -2332,7 +2338,7 @@ int scamper_dl_filter(const scamper_dl_t *node,
 #endif /* BIOCSETFNR */
 #else
   if((rc = setsockopt(fd, SOL_SOCKET, SO_ATTACH_FILTER,
-		      (caddr_t)&prog, sizeof(prog))) != -1)
+		      (void *)&prog, sizeof(prog))) != -1)
     {
       rc = 0;
       scamper_debug(__func__, "filter %d successful", prog.len);
@@ -2347,7 +2353,7 @@ int scamper_dl_filter(const scamper_dl_t *node,
 	  prog.filter = open;
 	  prog.len = 1;
 	  if((rc = setsockopt(fd, SOL_SOCKET, SO_ATTACH_FILTER,
-			      (caddr_t)&prog, sizeof(prog))) != -1)
+			      (void *)&prog, sizeof(prog))) != -1)
 	    {
 	      rc = 0;
 	      scamper_debug(__func__, "installed open filter");
@@ -2447,7 +2453,7 @@ void scamper_dl_rec_udp_print(const scamper_dl_rec_t *dl)
 
   scamper_debug(NULL, "from %s %sudp %d:%d len %d",
 		addr_tostr(dl->dl_af, dl->dl_ip_src, addr, sizeof(addr)),
-		ipid, dl->dl_tcp_sport, dl->dl_tcp_dport, dl->dl_ip_size);
+		ipid, dl->dl_udp_sport, dl->dl_udp_dport, dl->dl_ip_size);
   return;
 }
 

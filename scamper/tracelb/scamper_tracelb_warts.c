@@ -2,10 +2,10 @@
  * scamper_tracelb_warts.c
  *
  * Copyright (C) 2008-2011 The University of Waikato
- * Copyright (C) 2016-2025 Matthew Luckie
+ * Copyright (C) 2016-2026 Matthew Luckie
  * Author: Matthew Luckie
  *
- * $Id: scamper_tracelb_warts.c,v 1.25 2025/10/19 02:17:23 mjl Exp $
+ * $Id: scamper_tracelb_warts.c,v 1.26 2026/07/11 20:12:46 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -998,26 +998,26 @@ static int warts_tracelb_link_read(scamper_tracelb_t *trace,
 				   uint32_t *off, uint32_t len)
 {
   uint16_t from, to;
+  uint8_t from_set = 0, to_set = 0;
   warts_param_reader_t handlers[] = {
-    {&from,         (wpr_t)extract_uint16, NULL},
-    {&to,           (wpr_t)extract_uint16, NULL},
-    {&link->hopc,   (wpr_t)extract_byte,   NULL},
+    {&from,         (wpr_t)extract_uint16_set, &from_set},
+    {&to,           (wpr_t)extract_uint16_set, &to_set},
+    {&link->hopc,   (wpr_t)extract_byte,       NULL},
   };
   const int handler_cnt = sizeof(handlers)/sizeof(warts_param_reader_t);
   scamper_tracelb_probeset_t *set;
   uint8_t i;
-  uint32_t o = *off;
 
   if(warts_params_read(buf, off, len, handlers, handler_cnt) != 0)
     {
       return -1;
     }
 
-  if(from >= trace->nodec)
+  if(from_set == 0 || from >= trace->nodec)
     return -1;
   link->from = trace->nodes[from];
 
-  if(flag_isset(&buf[o], WARTS_TRACELB_LINK_TO) != 0)
+  if(to_set != 0)
     {
       if(to >= trace->nodec)
 	return -1;

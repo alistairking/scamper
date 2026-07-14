@@ -1,11 +1,11 @@
 /*
  * scamper_tracelb_do.c
  *
- * $Id: scamper_tracelb_do.c,v 1.335 2025/10/16 00:18:44 mjl Exp $
+ * $Id: scamper_tracelb_do.c,v 1.340 2026/07/11 03:42:44 mjl Exp $
  *
  * Copyright (C) 2008-2011 The University of Waikato
  * Copyright (C) 2012      The Regents of the University of California
- * Copyright (C) 2016-2025 Matthew Luckie
+ * Copyright (C) 2016-2026 Matthew Luckie
  * Copyright (C) 2024      The Regents of the University of California
  * Author: Matthew Luckie
  *
@@ -1156,18 +1156,21 @@ static void tracelb_link_flowids_add_list(tracelb_link_t *tlbl, slist_t *list)
 static int tracelb_probe_add(tracelb_state_t *state, tracelb_branch_t *br,
 			     tracelb_probe_t *pr)
 {
-  size_t len = sizeof(tracelb_probe_t *) * (state->id_next + 1);
+  size_t len;
+
+  if(state->id_next == UINT16_MAX)
+    return -1;
+  len = sizeof(tracelb_probe_t *) * (state->id_next + 1);
   if(realloc_wrap((void **)&state->probes, len) != 0)
     return -1;
   pr->id = state->id_next;
-
   state->probes[state->id_next] = pr;
-  state->id_next++;
 
   if(array_insert((void ***)&br->probes, &br->probec, pr, NULL) != 0)
     return -1;
   pr->branch = br;
 
+  state->id_next++; /* state->id_next < UINT16_MAX */
   return 0;
 }
 
@@ -1763,24 +1766,34 @@ static int tracelb_link_add(scamper_tracelb_t *trace,
   assert(node != NULL);
 
   /* add the link to the node */
+  if(node->linkc == UINT16_MAX)
+    {
+      scamper_err_make(error, 0, "node->linkc would wrap");
+      return -1;
+    }
   size = sizeof(scamper_tracelb_link_t *) * (node->linkc+1);
   if(realloc_wrap((void **)&node->links, size) != 0)
     {
       scamper_err_make(error, errno, "could not tracelb_link_add");
       return -1;
     }
-  node->links[node->linkc++] = link;
+  node->links[node->linkc++] = link; /* node->linkc < UINT16_MAX */
   array_qsort((void **)node->links, node->linkc,
 	      (array_cmp_t)scamper_tracelb_link_cmp);
 
   /* add the link to the set of links held in the trace */
+  if(trace->linkc == UINT16_MAX)
+    {
+      scamper_err_make(error, 0, "trace->linkc would wrap");
+      return -1;
+    }
   size = sizeof(scamper_tracelb_link_t *) * (trace->linkc+1);
   if(realloc_wrap((void **)&trace->links, size) != 0)
     {
       scamper_err_make(error, errno, "could not tracelb_link_add");
       return -1;
     }
-  trace->links[trace->linkc++] = link;
+  trace->links[trace->linkc++] = link; /* trace->linkc < UINT16_MAX */
   array_qsort((void **)trace->links, trace->linkc,
 	      (array_cmp_t)scamper_tracelb_link_cmp);
 
@@ -1790,13 +1803,19 @@ static int tracelb_link_add(scamper_tracelb_t *trace,
 static int tracelb_node_add(scamper_tracelb_t *trace,
 			    scamper_tracelb_node_t *node, scamper_err_t *error)
 {
-  size_t len = (trace->nodec + 1) * sizeof(scamper_tracelb_node_t *);
+  size_t len;
+  if(trace->nodec == UINT16_MAX)
+    {
+      scamper_err_make(error, 0, "trace->nodec would wrap");
+      return -1;
+    }
+  len = (trace->nodec + 1) * sizeof(scamper_tracelb_node_t *);
   if(realloc_wrap((void **)&trace->nodes, len) != 0)
     {
       scamper_err_make(error, errno, "could not tracelb_node_add");
       return -1;
     }
-  trace->nodes[trace->nodec++] = node;
+  trace->nodes[trace->nodec++] = node; /* trace->nodec < UINT16_MAX */
   return 0;
 }
 
@@ -1810,13 +1829,22 @@ static int tracelb_probe_reply(scamper_tracelb_probe_t *probe,
 			       scamper_err_t *error)
 {
   size_t len;
+  if(probe->rxc == UINT16_MAX)
+    {
+      /*
+       * this should never happen because do_tracelb_handle_[dl|icmp]
+       * functions also enforce this.
+       */
+      scamper_err_make(error, 0, "probe->rxc would wrap");
+      return -1;
+    }
   len = (probe->rxc + 1) * sizeof(scamper_tracelb_reply_t *);
   if(realloc_wrap((void **)&probe->rxs, len) != 0)
     {
       scamper_err_make(error, errno, "could not tracelb_probe_reply");
       return -1;
     }
-  probe->rxs[probe->rxc++] = reply;
+  probe->rxs[probe->rxc++] = reply; /* probe->rxc < UINT16_MAX */
   return 0;
 }
 
@@ -2753,14 +2781,9 @@ static scamper_tracelb_reply_t *handleicmp_reply(const scamper_icmp_resp_t *ir,
       reply->reply_flags |= SCAMPER_TRACELB_REPLY_FLAG_REPLY_TTL;
     }
 
-  if(ir->ir_ext != NULL &&
-     scamper_icmpext_parse(&reply->reply_icmp_exts,
-			   ir->ir_ext, ir->ir_extlen) != 0)
-    {
-      scamper_err_make(error, 0, "could not include icmp extension data");
-      scamper_tracelb_reply_free(reply);
-      return NULL;
-    }
+  /* if ICMP extensions are included, then attempt to parse and include them */
+  if(ir->ir_ext != NULL)
+     scamper_icmpext_parse(&reply->reply_icmp_exts, ir->ir_ext, ir->ir_extlen);
 
   return reply;
 }
@@ -2959,7 +2982,7 @@ static void handleicmp_perpacket(scamper_task_t *task, scamper_icmp_resp_t *ir,
   scamper_tracelb_t *trace     = tracelb_getdata(task);
   tracelb_state_t   *state     = tracelb_getstate(task);
   tracelb_branch_t  *branch    = pr->branch;
-  scamper_tracelb_node_t *node = branch->newnodes[0]->node;
+  scamper_tracelb_node_t *node;
   scamper_tracelb_reply_t *reply;
   scamper_err_t error;
   int process = 0;
@@ -2967,6 +2990,7 @@ static void handleicmp_perpacket(scamper_task_t *task, scamper_icmp_resp_t *ir,
   if(pr->branch == NULL)
     return;
   assert(branch->newnodec > 1);
+  node = branch->newnodes[0]->node;
 
   SCAMPER_ERR_INIT(&error);
 
@@ -3318,6 +3342,10 @@ static void do_tracelb_handle_icmp(scamper_task_t *task,
       scamper_debug(__func__, "pr->branch is null");
       return;
     }
+
+  /* do not record more probes than probe->rxc can store */
+  if(pr->probe->rxc == UINT16_MAX)
+    return;
 
   /* get the address of the icmp response */
   if(ir->ir_af == AF_INET)
@@ -3702,6 +3730,9 @@ static void do_tracelb_handle_dl(scamper_task_t *task, scamper_dl_rec_t *dl)
       from = tracelb_addr(state, trace->dst->type, dl->dl_ip_src, &error);
       if(from == NULL)
 	goto err;
+      /* do not record more probes than probe->rxc can store */
+      if(pr->probe->rxc == UINT16_MAX)
+	return;
       handletcp_func[pr->mode](task, dl, pr, from);
     }
 
@@ -4004,7 +4035,7 @@ static int tracelb_state_alloc(scamper_task_t *task, scamper_err_t *error)
       break;
 
     default:
-      scamper_err_make(error, errno, "invalid confidence value");
+      scamper_err_make(error, EINVAL, "invalid confidence value");
       goto err;
     }
 
