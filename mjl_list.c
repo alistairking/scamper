@@ -1,12 +1,12 @@
 /*
  * linked list routines
  *
- * $Id: mjl_list.c,v 1.91 2025/07/12 21:36:31 mjl Exp $
+ * $Id: mjl_list.c,v 1.92 2026/06/13 21:32:35 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
  *
- * Copyright (C) 2004-2025 Matthew Luckie. All rights reserved.
+ * Copyright (C) 2004-2026 Matthew Luckie. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -183,6 +183,31 @@ static void slist_assert(const slist_t *list)
 #define slist_assert_sort(list,cmp)((void)0)
 #endif
 
+static void slist_flush_noassert(slist_t *list, slist_free_t free_func)
+{
+  slist_node_t *node;
+  slist_node_t *next;
+
+  node = list->head;
+  while(node != NULL)
+    {
+      next = node->next;
+      if(free_func != NULL)
+	free_func(node->item);
+      free(node);
+      node = next;
+    }
+
+  return;
+}
+
+static void slist_free_noassert(slist_t *list)
+{
+  slist_flush_noassert(list, NULL);
+  free(list);
+  return;
+}
+
 void slist_lock(slist_t *list)
 {
   assert(list != NULL);
@@ -329,7 +354,11 @@ slist_t *slist_dup_dm(slist_t *oldlist,const slist_foreach_t func,void *param,
   return list;
 
  err:
-  slist_free(list);
+  /*
+   * slist_free() asserts length and tail, but the dup list doesn't
+   * comply before it is built
+   */
+  slist_free_noassert(list);
   return NULL;
 }
 
@@ -402,22 +431,11 @@ dlist_t *slist_to_dlist(slist_t *in, dlist_t *out)
 
 static void slist_flush(slist_t *list, slist_free_t free_func)
 {
-  slist_node_t *node;
-  slist_node_t *next;
-
   assert(list != NULL);
   slist_assert(list);
   assert(list->lock == 0);
 
-  node = list->head;
-  while(node != NULL)
-    {
-      next = node->next;
-      if(free_func != NULL)
-	free_func(node->item);
-      free(node);
-      node = next;
-    }
+  slist_flush_noassert(list, free_func);
   return;
 }
 
@@ -795,6 +813,31 @@ static void dlist_assert(const dlist_t *list)
 #define dlist_assert_sort(list,cmp)((void)0)
 #endif
 
+static void dlist_flush_noassert(dlist_t *list, dlist_free_t free_func)
+{
+  dlist_node_t *node;
+  dlist_node_t *next;
+
+  node = list->head;
+  while(node != NULL)
+    {
+      next = node->next;
+      if(free_func != NULL)
+	free_func(node->item);
+      free(node);
+      node = next;
+    }
+
+  return;
+}
+
+static void dlist_free_noassert(dlist_t *list)
+{
+  dlist_flush_noassert(list, NULL);
+  free(list);
+  return;
+}
+
 void dlist_lock(dlist_t *list)
 {
   assert(list != NULL);
@@ -947,7 +990,11 @@ dlist_t *dlist_dup_dm(dlist_t *oldlist,const dlist_foreach_t func,void *param,
   return list;
 
  err:
-  dlist_free(list);
+  /*
+   * dlist_free() asserts length and tail, but the dup list doesn't
+   * comply before it is built
+   */
+  dlist_free_noassert(list);
   return NULL;
 }
 
@@ -965,22 +1012,11 @@ dlist_node_t *dlist_node_alloc_dm(void *item, const char *file, const int line)
 
 static void dlist_flush(dlist_t *list, dlist_free_t free_func)
 {
-  dlist_node_t *node;
-  dlist_node_t *next;
-
   assert(list != NULL);
   dlist_assert(list);
   assert(list->lock == 0);
 
-  node = list->head;
-  while(node != NULL)
-    {
-      next = node->next;
-      if(free_func != NULL)
-	free_func(node->item);
-      free(node);
-      node = next;
-    }
+  dlist_flush_noassert(list, free_func);
   return;
 }
 

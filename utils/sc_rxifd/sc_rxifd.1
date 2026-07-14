@@ -6,31 +6,36 @@
 .\" Copyright (c) 2026 The Regents of the University of California
 .\"               All rights reserved
 .\"
-.\" $Id: sc_rxifd.1,v 1.1 2026/04/17 18:05:11 mjl Exp $
+.\" $Id: sc_rxifd.1,v 1.3 2026/05/25 01:42:18 mjl Exp $
 .\"
-.Dd April 18, 2026
+.Dd May 25, 2026
 .Dt SC_RXIFD 1
 .Os
 .Sh NAME
 .Nm sc_rxifd
-.Nd respond with receive interface name in a DNS TXT packet
+.Nd respond with receive interface name in a UDP transport
 .Sh SYNOPSIS
 .Nm
 .Bk -words
 .Op Fl ?46Dv
-.Op Fl n Ar name
-.Op Fl p Ar pps
-.Op Fl P Ar port
+.Op Fl R Ar chroot-dir
+.Op Fl P Ar dns-port
+.Op Fl n Ar dns-name
+.Op Fl p Ar dns-pps
+.Op Fl Q Ar h3-port
+.Op Fl U Ar h3-url
+.Op Fl c Ar certfile
+.Op Fl k Ar keyfile
 .Ek
 .\""""""""""""
 .Sh DESCRIPTION
 The
 .Nm
 utility provides the ability for a UDP client to determine the interface
-on a UDP listener that received the packet.
+on a remote UDP listener that receives packets from the client.
 This is useful when inferring routing policy.
 .Nm
-uses DNS as a wire format for queries and responses.
+can use either DNS or HTTP/3 as a wire format for queries and responses.
 The options are as follows:
 .Bl -tag -width Ds
 .It Fl ?
@@ -51,25 +56,75 @@ to only listen for IPv4-based requests.
 causes
 .Nm
 to only listen for IPv6-based requests.
-.It Fl n Ar name
-specifies the name that
+.It Fl R
+specifies the directory on the local host where
 .Nm
-will respond to TXT queries for.
-.Nm
-will silently ignore non-TXT queries, and TXT queries for names other than
-the specified name.
-This is a mandatory parameter.
-.It Fl p Ar pps
-specifies the maximum number of responses per second that
-.Nm
-can send.
-This is a mandatory parameter.
-.It Fl P Ar port
-specifies the UDP port to listen for queries on.
+should
+.Xr chroot 2
+to on start.
+If used, then other arguments that specify locations in the local file
+system are relative to this directory.
+See the security considerations section for further documentation.
+.It Fl P Ar dns-port
+enables a DNS endpoint on the supplied UDP port.
 Typically port 53 requires privilege to listen on, and some networks
 intercept all UDP port 53 traffic, so it is recommended to choose a
 higher-numbered port.
-This is a mandatory parameter.
+This option also requires use of
+.Fl n
+and
+.Fl p
+options.
+.It Fl n Ar dns-name
+specifies the name that
+.Nm
+will respond to TXT DNS queries for.
+.Nm
+will silently ignore non-TXT DNS queries, and TXT queries for names
+other than the specified name.
+.It Fl p Ar dns-pps
+specifies the maximum number of DNS responses per second that
+.Nm
+can send.
+.It Fl Q Ar h3-port
+enables an HTTP/3 endpoint on the supplied UDP port.
+Typically port 443 requires privilege to listen on.
+However, some browsers unfortunately refuse to use HTTP/3 with a UDP
+endpoint above port 1024.
+When enabled,
+.Nm
+accepts QUIC connections that negotiate the
+.Dq h3
+ALPN and answers
+.Dq GET
+for a path specified with
+.Fl U
+with a JSON object containing the
+.Sy rxif
+and
+.Sy src
+fields (the receiving interface name and the peer's source IP address).
+The response includes
+.Sy Access-Control-Allow-Origin: *
+so it can be called from a browser fetch on any origin.
+This option also requires use of
+.Fl U ,
+.Fl c ,
+and
+.Fl k
+options.
+.It Fl U Ar h3-path
+specifies the path to answer queries for.
+The path must begin with a forward slash.
+Any request other than for that path returns a 404 with a JSON error
+body.
+.It Fl c Ar certfile
+specifies the PEM-encoded server certificate chain used by the HTTP/3
+endpoint.
+.It Fl k Ar keyfile
+specifies the PEM-encoded server private key matching the certificate
+supplied via
+.Fl c .
 .El
 .\""""""""""""
 .Sh EXAMPLES
@@ -78,6 +133,8 @@ The intended use of
 is on a multi-homed system where clients could reach IP addresses on
 the system in different ways.
 Typically those IP addresses are assigned to the loopback interface.
+.Pp
+If configured to do so,
 .Nm
 will respond to a TXT query for a specific name with a TXT record that
 contains the name of the physical interface that received the query,
@@ -90,7 +147,7 @@ Given
 .Nm
 listening on port 53535 for TXT queries for rxif.example.net
 .Pp
-.Dl sc_rxifd -P 53535 -n rxif.example.net
+.Dl sc_rxifd -P 53535 -n rxif.example.net -p 100
 .Pp
 Then the following query
 .Pp
@@ -100,17 +157,68 @@ will obtain a response that looks similar to
 .Pp
 .Dl \(dqsrc=192.0.31.8\(dq \(dqrxif=em0\(dq
 .Pp
+If configured to do so,
+.Nm
+will respond to an HTTP/3 GET for a specific path with a JSON record that
+contains the name of the physical interface that received the query,
+even if that packet were destined to an address assigned to the
+loopback interface, and the source IP address that
+.Nm
+inferred to establish the associated QUIC channel on the QUIC connection.
+.Pp
+Given
+.Nm
+listening on port 443 for GET /rxif
+.Pp
+.Dl sc_rxifd -Q 443 -U /rxif -c fullchain.pem -k privkey.pem
+.Pp
+Then the following query
+.Pp
+.Dl curl --http3-only https://rxif.example.net/rxif
+.Pp
+will obtain a response that looks similar to
+.Pp
+.Dl {\(dqsrc\(dq:\(dq192.0.31.8\(dq, \(dqrxif\(dq:\(dqem0\(dq}
+.Pp
+Browsers need help to find the HTTP/3 endpoint.
+One option is the Alt-Svc header provided over TCP HTTP.
+A more convenient option is to use HTTPS DNS records, such as:
+.Pp
+.Dl rxif.example.net. 3600 IN HTTPS 1 \&. alpn=\(dqh3\(dq port=443
+.Pp
+Note that some browsers unfortunately refuse to use HTTP/3 with a UDP
+endpoint above port 1024.
+.Pp
+A single running
+.Nm
+instance can provide both DNS and HTTP/3 endpoints.
 .\""""""""""""
 .Sh SIGNAL HANDLERS
 .Nm
 installs handlers for SIGHUP, SIGINT, and SIGTERM.
-These signals cause
+SIGINT and SIGTERM signals cause
 .Nm
 to exit gracefully.
+SIGHUP causes
+.Nm
+to reload the TLS certificate and private key, without interrupting
+existing QUIC connections.
 .\""""""""""""
 .Sh SECURITY CONSIDERATIONS
 .Nm
 should always be run by a non-root user.
+If installed setuid root,
+.Nm
+will use root capabilities to open privileged ports and use
+.Xr chroot 2 ,
+and then change uid to the user that started the process.
+.Pp
+To let
+.Nm
+bind to privileged ports, provide the CAP_NET_BIND_SERVICE capability,
+or install
+.Nm
+setuid root.
 .Pp
 .Nm
 provides an amplification opportunity, as a DNS response is typically
@@ -118,9 +226,34 @@ larger than a DNS query.
 The size of a response depends on the length of the interface name and
 the length of the string representation of the source IP address
 reported.
+.Pp
+.Nm
+provides an optional
+.Xr chroot 2
+capability, which is available when
+.Xr unveil 2
+is unavailable, and it is desirable that
+.Nm
+has restricted access to files available on the system.
+If
+.Nm
+is run on OpenBSD, which provides
+.Xr unveil 2 ,
+you do not need to read further.
+.Pp
+The chroot option requires that the process is started with capabilties.
+On Linux
+.Nm
+should be provided the CAP_SYS_CHROOT capability.
+On other systems,
+.Nm
+should be installed setuid root.
+Some systems have documented methods to escape a chroot where directories
+beneath a chroot are moved out of the chroot while the process is running.
 .\""""""""""""
 .Sh SEE ALSO
 .Xr dig 1 ,
+.Xr curl 1 ,
 .Rs
 .%A "M. Luckie"
 .%A "S. Wallace"

@@ -4,9 +4,9 @@
 .\" Author: Matthew Luckie
 .\" Copyright (c) 2022-2026 Matthew Luckie
 .\"
-.\" $Id: libscamperctrl.3,v 1.10 2026/04/10 05:15:04 mjl Exp $
+.\" $Id: libscamperctrl.3,v 1.11 2026/06/15 19:04:18 mjl Exp $
 .\"
-.Dd April 10, 2026
+.Dd June 16, 2026
 .Dt LIBSCAMPERCTRL 3
 .Os
 .Sh NAME
@@ -331,6 +331,14 @@ Send a done command, which will cause the
 .Xr scamper 1
 instance to disconnect when it has returned all completed
 measurements.
+The instance cannot accept new measurements after this function is called.
+.Pp
+.Ft int
+.Fn scamper_inst_isdone "const scamper_inst_t *inst"
+.br
+Returns non-zero if
+.Fn scamper_inst_done
+has been called on this instance.
 .Pp
 .Ft void
 .Fn scamper_inst_param_set "scamper_inst_t *inst" "void *param"

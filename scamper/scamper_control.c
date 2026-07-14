@@ -1,7 +1,7 @@
 /*
  * scamper_control.c
  *
- * $Id: scamper_control.c,v 1.296 2026/04/11 21:56:15 mjl Exp $
+ * $Id: scamper_control.c,v 1.301 2026/06/16 20:19:53 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -184,11 +184,14 @@ typedef struct control_inet
  */
 typedef struct client
 {
-  /* the mode the client is in: interactive, attached, flush*/
+  /* the mode the client is in: interactive, attached, flush */
   uint8_t             mode;
 
   /* the type the client is: socket or channel */
   uint8_t             type;
+
+  /* flags: CLIENT_FLAG_STOPLINEPOLL */
+  uint8_t             flags;
 
   /* node for this client in the list of connected clients */
   dlist_node_t       *node;
@@ -240,6 +243,8 @@ typedef struct client
 
 #define CLIENT_TYPE_SOCKET      0
 #define CLIENT_TYPE_CHANNEL     1
+
+#define CLIENT_FLAG_STOPLINEPOLL 0x01
 
 #define CLIENT_FORMAT_WARTS     0
 #define CLIENT_FORMAT_JSON      1
@@ -304,7 +309,7 @@ static void remote_free(control_remote_t *rm, int mode);
 #endif
 
 static int command_handler(command_t *handler, int cnt, client_t *client,
-			   char *word, char *param, int *retval)
+			   char *word, char *param)
 {
   int i;
 
@@ -312,7 +317,7 @@ static int command_handler(command_t *handler, int cnt, client_t *client,
     {
       if(strcasecmp(handler[i].word, word) == 0)
 	{
-	  *retval = handler[i].handler(client, param);
+	  handler[i].handler(client, param);
 	  return 0;
 	}
     }
@@ -372,7 +377,7 @@ static int params_get(char *line, char **words, int *count)
       line[i++] = '\0';
 
       /* skip to the next word */
-      while(line[i] == ' ' && line[i] != '\0') i++;
+      while(line[i] == ' ') i++;
     }
 
   if(line[i] == '\0')
@@ -535,58 +540,27 @@ static void client_free(client_t *client)
   return;
 }
 
-#ifdef HAVE_FUNC_ATTRIBUTE_FORMAT
-static int client_send(client_t *client, char *fs, ...)
-  __attribute__((format(printf, 2, 3)));
-#endif
-
-static int client_send(client_t *client, char *fs, ...)
+static int client_send(client_t *client, char *str)
 {
-  char msg[512], *str = NULL;
   client_txt_t *t = NULL;
-  size_t len, size = sizeof(msg) - 1;
-  va_list ap;
-  int ret;
+  size_t len = strlen(str);
 
-  va_start(ap, fs);
-  len = vsnprintf(msg, sizeof(msg), fs, ap);
-  ret = (int)len;
-  if(len < size)
-    {
-      va_end(ap);
-      str = msg;
-    }
-  else
-    {
-      if((str = malloc_zero((size_t)(len+1))) == NULL)
-	{
-	  va_end(ap);
-	  goto err;
-	}
-      vsnprintf(str, len+1, fs, ap);
-      va_end(ap);
-    }
-  str[len++] = '\n';
-
-  if(str == msg && (str = memdup(msg, len)) == NULL)
+  if((t = malloc_zero(sizeof(client_txt_t))) == NULL ||
+     (t->str = memdup(str, len+1)) == NULL ||
+     slist_tail_push(client->txt, t) == NULL)
     goto err;
-  if((t = malloc_zero(sizeof(client_txt_t))) == NULL)
-    goto err;
-  if(slist_tail_push(client->txt, t) == NULL)
-    goto err;
-  t->str = str;
-  t->len = len;
+  t->str[len] = '\n';
+  t->len = len+1;
 
   if(client->type == CLIENT_TYPE_SOCKET)
     scamper_fd_write_unpause(client->un.sock.fdn);
   else if(client->un.chan.rem->fd != NULL)
     scamper_fd_write_unpause(client->un.chan.rem->fd);
 
-  return ret;
+  return t->len;
 
  err:
-  if(str != NULL && str != msg)
-    free(str);
+  if(t != NULL) client_txt_free(t);
   return -1;
 }
 
@@ -629,16 +603,18 @@ static int param_handler(param_t *handler, int cnt, client_t *client,
   return -1;
 }
 
-static int set_long(client_t *client, char *buf, char *name,
-		    int (*setfunc)(int), int min, int max)
+static int set_long(client_t *client, char *name, char *value,
+		    int (*setfunc)(int))
 {
+  char buf[256];
+  size_t off = 0;
   long l;
-  char *err;
 
-  if(buf == NULL)
+  if(value == NULL)
     {
-      client_send(client, "ERR set %s requires argument", name);
-      scamper_debug(__func__, "set %s required argument", name);
+      string_concat3(buf, sizeof(buf), &off, "ERR set ", name,
+		     " requires argument");
+      client_send(client, buf);
       return -1;
     }
 
@@ -646,107 +622,101 @@ static int set_long(client_t *client, char *buf, char *name,
    * null terminate this word.  discard the return value, we don't care
    * about any further words.
    */
-  string_nextword(buf);
+  string_nextword(value);
 
-  /* make sure the argument is an integer argument */
-  if(string_isnumber(buf) == 0)
+  /* make sure the argument is an integer */
+  if(string_isdigit(value) == 0)
     {
-      client_send(client, "ERR set %s argument is not an integer", name);
-      scamper_debug(__func__, "set %s argument is not an integer", name);
+      string_concat3(buf, sizeof(buf), &off, "ERR set ", name,
+		     " argument is not all digits");
+      client_send(client, buf);
       return -1;
     }
 
   /* convert the argument to a long.  catch any error */
-  if(string_tolong(buf, &l) != 0)
+  if(string_tolong(value, &l) != 0)
     {
-      err = strerror(errno);
-      client_send(client, "ERR could not convert %s to long: %s", buf, err);
-      scamper_debug(__func__, "could not convert %s to long: %s", buf, err);
+      string_concat3(buf, sizeof(buf), &off, "ERR set ", name,
+		     " argument could not be converted to long");
+      client_send(client, buf);
       return -1;
     }
 
-  if(setfunc(l) == -1)
+  if(setfunc(l) != 0)
     {
-      client_send(client, "ERR %s: %ld out of range (%d, %d)", name,l,min,max);
-      scamper_debug(__func__, "%s: %ld out of range (%d, %d)", name,l,min,max);
+      string_concat3(buf, sizeof(buf), &off, "ERR set ", name,
+		     " argument out of range");
+      client_send(client, buf);
       return -1;
     }
 
-  client_send(client, "OK %s %ld", name, l);
+  string_concat2(buf, sizeof(buf), &off, "OK ", name);
+  string_concat_u32(buf, sizeof(buf), &off, " ", (uint32_t)l);
+  client_send(client, buf);
   return 0;
 }
 
-static int get_switch(client_t *client, char *name, char *buf, long *l)
+static int get_switch(client_t *client, char *name, char *value, long *l)
 {
-  if(strcasecmp(buf, "on") == 0)
-    {
-      *l = 1;
-    }
-  else if(strcasecmp(buf, "off") == 0)
-    {
-      *l = 0;
-    }
+  char buf[256];
+  size_t off = 0;
+
+  if(strcasecmp(value, "on") == 0)
+    *l = 1;
+  else if(strcasecmp(value, "off") == 0)
+    *l = 0;
   else
     {
-      client_send(client, "ERR %s <on|off>", name);
+      string_concat3(buf, sizeof(buf), &off, "ERR ", name, " <on|off>");
+      client_send(client, buf);
       return -1;
     }
 
   return 0;
 }
 
-static char *source_tostr(char *str, const size_t len,
-			  const scamper_source_t *source)
+static void source_info(char *buf, size_t len, const scamper_source_t *source)
 {
   const char *ptr;
-  char descr[256], outfile[256], type[512];
-  int i;
+  size_t off = 0;
+
+  if((ptr = scamper_source_getname(source)) == NULL)
+    ptr = "(null)";
+  string_concat3(buf, len, &off, "INFO name '", ptr, "'");
+  if((ptr = scamper_source_getdescr(source)) != NULL)
+    string_concat3(buf, len, &off, " descr '", ptr, "'");
+  string_concat_u32(buf, len, &off, " list_id ",
+		    scamper_source_getlistid(source));
+  string_concat_u32(buf, len, &off, " cycle_id ",
+		    scamper_source_getcycleid(source));
+  string_concat_u32(buf, len, &off, " priority ",
+		    scamper_source_getpriority(source));
+  if((ptr = scamper_source_getoutfile(source)) != NULL)
+    string_concat3(buf, len, &off, " outfile '", ptr, "'");
 
   /* format type-specific data */
-  switch((i = scamper_source_gettype(source)))
+  switch(scamper_source_gettype(source))
     {
     case SCAMPER_SOURCE_TYPE_FILE:
-      snprintf(type, sizeof(type),
-	       "type 'file' file '%s'",
-	       scamper_source_file_getfilename(source));
+      string_concat(buf, len, &off, " type 'file'");
+      if((ptr = scamper_source_file_getfilename(source)) != NULL)
+	string_concat3(buf, len, &off, " file '", ptr, "'");
       break;
 
     case SCAMPER_SOURCE_TYPE_CMDLINE:
-      snprintf(type, sizeof(type), "type 'cmdline'");
+      string_concat(buf, len, &off, " type 'cmdline'");
       break;
 
     case SCAMPER_SOURCE_TYPE_CONTROL:
-      snprintf(type, sizeof(type), "type 'control'");
+      string_concat(buf, len, &off, " type 'control'");
       break;
 
     default:
-      printerror_msg(__func__, "unknown source type %d", i);
-      return NULL;
+      string_concat(buf, len, &off, " type 'unknown'");
+      break;
     }
 
-  /* if there is a description for the source, then format it in */
-  if((ptr = scamper_source_getdescr(source)) != NULL)
-    snprintf(descr, sizeof(descr), " descr '%s'", ptr);
-  else
-    descr[0] = '\0';
-
-  /* outfile */
-  if((ptr = scamper_source_getoutfile(source)) != NULL)
-    snprintf(outfile, sizeof(outfile), " outfile '%s'", ptr);
-  else
-    outfile[0] = '\0';
-
-  snprintf(str, len,
-	   "name '%s'%s list_id %u cycle_id %u priority %u%s %s",
-	   scamper_source_getname(source),
-	   descr,
-	   scamper_source_getlistid(source),
-	   scamper_source_getcycleid(source),
-	   scamper_source_getpriority(source),
-	   outfile,
-	   type);
-
-  return str;
+  return;
 }
 
 /*
@@ -874,7 +844,7 @@ static int command_attach(client_t *client, char *buf)
 {
   scamper_source_params_t ssp;
   scamper_file_t *sf;
-  char sab[128];
+  char sab[128], msgbuf[256];
   long long ll;
   char *cycleid_str = NULL, *descr = NULL, *format = NULL;
   char *listid_str = NULL, *monitor = NULL, *name = NULL, *priority_str = NULL;
@@ -890,6 +860,7 @@ static int command_attach(client_t *client, char *buf)
     {"priority", &priority_str},
   };
   int handler_cnt = sizeof(handlers) / sizeof(param_t);
+  size_t off = 0;
 
   if(params_get(buf, params, &cnt) != 0)
     {
@@ -902,7 +873,9 @@ static int command_attach(client_t *client, char *buf)
       else next = NULL;
       if(param_handler(handlers, handler_cnt, client, params[i], next) == -1)
 	{
-	  client_send(client,"ERR command attach param '%s' failed",params[i]);
+	  string_concat3(msgbuf, sizeof(msgbuf), &off,
+			 "ERR command attach param '", params[i], "' failed");
+	  client_send(client, msgbuf);
 	  return 0;
 	}
     }
@@ -1012,22 +985,28 @@ static int command_attach(client_t *client, char *buf)
 
  err:
   client_send(client, "ERR internal error");
-  client_free(client);
+  client->flags |= CLIENT_FLAG_STOPLINEPOLL;
   return 0;
 }
 
-static int command_lss_clear(client_t *client, char *buf)
+static int command_lss_clear(client_t *client, char *name)
 {
 #ifndef DISABLE_SCAMPER_TRACE
-  if(buf == NULL)
+  char buf[256];
+  size_t off = 0;
+  if(name == NULL)
     {
       client_send(client, "ERR usage: lss-clear [lss-name]");
       return 0;
     }
-  string_nextword(buf);
-  if(scamper_do_trace_dtree_lss_clear(buf) != 0)
-    return client_send(client, "ERR lss-clear %s failed", buf);
-  return client_send(client, "OK lss-clear %s", buf);
+  string_nextword(name);
+  if(scamper_do_trace_dtree_lss_clear(name) != 0)
+    {
+      string_concat3(buf, sizeof(buf), &off, "ERR lss-clear ", name, " failed");
+      return client_send(client, buf);
+    }
+  string_concat2(buf, sizeof(buf), &off, "OK lss-clear ", name);
+  return client_send(client, buf);
 #else
   return client_send(client, "ERR scamper not built with trace support");
 #endif
@@ -1035,69 +1014,77 @@ static int command_lss_clear(client_t *client, char *buf)
 
 static int command_exit(client_t *client, char *buf)
 {
-  client_free(client);
+  client->flags |= CLIENT_FLAG_STOPLINEPOLL;
   return 0;
 }
 
-static int command_get_command(client_t *client, char *buf)
+static int command_get_command(client_t *client, char *spare)
 {
   const char *command = scamper_option_command_get();
+  char buf[256]; size_t off = 0;
   if(command == NULL)
-    {
-      return client_send(client, "OK null command");
-    }
-  return client_send(client, "OK command %s", command);
+    return client_send(client, "OK null command");
+  string_concat2(buf, sizeof(buf), &off, "OK command ", command);
+  return client_send(client, buf);
 }
 
-static int command_get_monitorname(client_t *client, char *buf)
+static int command_get_monitorname(client_t *client, char *spare)
 {
   const char *monitorname = scamper_option_monitorname_get();
+  char buf[256]; size_t off = 0;
   if(monitorname == NULL)
-    {
-      return client_send(client, "OK null monitorname");
-    }
-  return client_send(client, "OK monitorname %s", monitorname);
+    return client_send(client, "OK null monitorname");
+  string_concat2(buf, sizeof(buf), &off, "OK monitorname ", monitorname);
+  return client_send(client, buf);
 }
 
-static int command_get_nameserver(client_t *client, char *buf)
+static int command_get_nameserver(client_t *client, char *spare)
 {
 #ifndef DISABLE_SCAMPER_HOST
   const scamper_addr_t *nsip = scamper_do_host_getns();
-  char nsbuf[128];
-  if(nsip == NULL)
+  char nsbuf[128], buf[256]; size_t off = 0;
+  if(nsip == NULL ||
+     scamper_addr_tostr(nsip, nsbuf, sizeof(nsbuf)) == NULL)
     return client_send(client, "OK null nameserver");
-  return client_send(client, "OK nameserver %s",
-		     scamper_addr_tostr(nsip, nsbuf, sizeof(nsbuf)));
+  string_concat2(buf, sizeof(buf), &off, "OK nameserver ", nsbuf);
+  return client_send(client, buf);
 #else
   return client_send(client, "ERR scamper not built with host support");
 #endif
 }
 
-static int command_get_pid(client_t *client, char *buf)
+static int command_get_pid(client_t *client, char *spare)
 {
 #ifndef _WIN32 /* windows does not have getpid */
   pid_t pid = getpid();
 #else
   DWORD pid = GetCurrentProcessId();
 #endif
-  return client_send(client, "OK pid %d", pid);
+  char buf[256]; size_t off = 0;
+  string_concat_u32(buf, sizeof(buf), &off, "OK pid ", (uint32_t)pid);
+  return client_send(client, buf);
 }
 
-static int command_get_pps(client_t *client, char *buf)
+static int command_get_pps(client_t *client, char *spare)
 {
   int pps = scamper_option_pps_get();
-  return client_send(client, "OK pps %d", pps);
+  char buf[256]; size_t off = 0;
+  string_concat_u32(buf, sizeof(buf), &off, "OK pps ", (uint32_t)pps);
+  return client_send(client, buf);
 }
 
-static int command_get_version(client_t *client, char *buf)
+static int command_get_version(client_t *client, char *spare)
 {
   return client_send(client, "OK version " SCAMPER_VERSION);
 }
 
-static int command_get_window(client_t *client, char *buf)
+static int command_get_window(client_t *client, char *spare)
 {
-  return client_send(client, "OK window %d/%d",
-		     scamper_queue_windowcount(), scamper_option_window_get());
+  char buf[256]; size_t off = 0;
+  string_concat_u32(buf, sizeof(buf), &off, "OK window ",
+		    scamper_queue_windowcount());
+  string_concat_u32(buf, sizeof(buf), &off, "/", scamper_option_window_get());
+  return client_send(client, buf);
 }
 
 static int command_get(client_t *client, char *buf)
@@ -1112,7 +1099,7 @@ static int command_get(client_t *client, char *buf)
     {"window",      command_get_window},
   };
   static int handler_cnt = sizeof(handlers) / sizeof(command_t);
-  int ret;
+  char msgbuf[256]; size_t off = 0;
 
   if(buf == NULL)
     {
@@ -1121,9 +1108,11 @@ static int command_get(client_t *client, char *buf)
       return 0;
     }
 
-  if(command_handler(handlers, handler_cnt, client, buf, NULL, &ret) == -1)
+  if(command_handler(handlers, handler_cnt, client, buf, NULL) == -1)
     {
-      client_send(client, "ERR unhandled get command '%s'", buf);
+      string_concat3(msgbuf, sizeof(msgbuf), &off,
+		     "ERR unhandled get command '", buf, "'");
+      client_send(client, msgbuf);
       return 0;
     }
 
@@ -1153,6 +1142,7 @@ static int command_remote_add(client_t *client, char *buf)
   uint16_t server_port;
   int server_ssl = 0;
   long lo;
+  char msgbuf[256]; size_t off = 0;
 
   assert(client->type == CLIENT_TYPE_SOCKET);
 
@@ -1168,7 +1158,9 @@ static int command_remote_add(client_t *client, char *buf)
       else next = NULL;
       if(param_handler(handlers, handler_cnt, client, params[i], next) == -1)
 	{
-	  client_send(client, "ERR remote add param '%s' failed", params[i]);
+	  string_concat3(msgbuf, sizeof(msgbuf), &off,
+			 "ERR remote add param '", params[i], "' failed");
+	  client_send(client, msgbuf);
 	  goto done;
 	}
     }
@@ -1185,7 +1177,10 @@ static int command_remote_add(client_t *client, char *buf)
     }
   if(remote_find(server_name, server_port) != NULL)
     {
-      client_send(client, "ERR %s:%u already exists", server_name, server_port);
+      string_concat2(msgbuf, sizeof(msgbuf), &off, "ERR ", server_name);
+      string_concat_u16(msgbuf, sizeof(msgbuf), &off, ":", server_port);
+      string_concat(msgbuf, sizeof(msgbuf), &off, " already exists");
+      client_send(client, msgbuf);
       goto done;
     }
 
@@ -1236,6 +1231,7 @@ static int command_remote_delete(client_t *client, char *buf)
   char *params[1], *server, *server_name = NULL;
   int cnt = sizeof(params) / sizeof(char *);
   uint16_t server_port;
+  char msgbuf[256]; size_t off = 0;
 
   if(remote_list == NULL)
     {
@@ -1262,7 +1258,10 @@ static int command_remote_delete(client_t *client, char *buf)
     }
   if((rm = remote_find(server_name, server_port)) == NULL)
     {
-      client_send(client, "ERR %s:%u not found", server_name, server_port);
+      string_concat2(msgbuf, sizeof(msgbuf), &off, "ERR ", server_name);
+      string_concat_u16(msgbuf, sizeof(msgbuf), &off, ":", server_port);
+      string_concat(msgbuf, sizeof(msgbuf), &off, " not found");
+      client_send(client, msgbuf);
       goto done;
     }
 
@@ -1297,7 +1296,7 @@ static int command_remote_list(client_t *client, char *buf)
 	  string_concat_u16(tmp, sizeof(tmp), &off, ":", rm->server_port);
 	  if(rm->alias != NULL)
 	    string_concat2(tmp, sizeof(tmp), &off, " alias ", rm->alias);
-	  client_send(client, "%s", tmp);
+	  client_send(client, tmp);
 	}
     }
   client_send(client, "OK");
@@ -1314,7 +1313,6 @@ static int command_remote(client_t *client, char *buf)
   };
   static int handler_cnt = sizeof(handlers) / sizeof(command_t);
   char *next;
-  int ret;
 
   if(buf == NULL)
     {
@@ -1323,9 +1321,9 @@ static int command_remote(client_t *client, char *buf)
     }
   next = string_nextword(buf);
 
-  if(command_handler(handlers, handler_cnt, client, buf, next, &ret) == -1)
+  if(command_handler(handlers, handler_cnt, client, buf, next) == -1)
     {
-      client_send(client, "ERR unhandled outfile command '%s'", buf);
+      client_send(client, "ERR unhandled outfile command");
     }
 
   return 0;
@@ -1373,14 +1371,12 @@ static int command_set_nameserver(client_t *client, char *buf)
 
 static int command_set_pps(client_t *client, char *buf)
 {
-  return set_long(client, buf, "pps", scamper_option_pps_set,
-		  SCAMPER_OPTION_PPS_MIN, SCAMPER_OPTION_PPS_MAX);
+  return set_long(client, "pps", buf, scamper_option_pps_set);
 }
 
 static int command_set_window(client_t *client, char *buf)
 {
-  return set_long(client, buf, "window", scamper_option_window_set,
-		  SCAMPER_OPTION_WINDOW_MIN, SCAMPER_OPTION_WINDOW_MAX);
+  return set_long(client, "window", buf, scamper_option_window_set);
 }
 
 static int command_set(client_t *client, char *buf)
@@ -1394,19 +1390,18 @@ static int command_set(client_t *client, char *buf)
   };
   static int handler_cnt = sizeof(handlers) / sizeof(command_t);
   char *next;
-  int ret;
 
   if(buf == NULL)
     {
       client_send(client, "ERR usage: "
-		  "set [command | monitorname | pps | window]");
+		  "set [command | monitorname | nameserver | pps | window]");
       return 0;
     }
   next = string_nextword(buf);
 
-  if(command_handler(handlers, handler_cnt, client, buf, next, &ret) == -1)
+  if(command_handler(handlers, handler_cnt, client, buf, next) == -1)
     {
-      client_send(client, "ERR unhandled set command '%s'", buf);
+      client_send(client, "ERR unhandled set command");
     }
   return 0;
 }
@@ -1414,13 +1409,9 @@ static int command_set(client_t *client, char *buf)
 static int source_foreach(void *param, scamper_source_t *source)
 {
   client_t *client = (client_t *)param;
-  char str[1024];
-
-  if(source_tostr(str, sizeof(str), source) != NULL)
-    {
-      client_send(client, "INFO %s", str);
-    }
-
+  char buf[1024];
+  source_info(buf, sizeof(buf), source);
+  client_send(client, buf);
   return 0;
 }
 
@@ -1454,10 +1445,11 @@ static int command_source_list(client_t *client, char *buf)
   name = params[0];
   if((source = scamper_sources_get(name)) == NULL)
     {
-      client_send(client, "ERR no source '%s'", name);
+      client_send(client, "ERR no source with that name");
       return 0;
     }
-  client_send(client, "INFO %s", source_tostr(str, sizeof(str), source));
+  source_info(str, sizeof(str), source);
+  client_send(client, str);
   client_send(client, "OK");
 
   return 0;
@@ -1470,7 +1462,6 @@ static int command_source(client_t *client, char *buf)
   };
   static int handler_cnt = sizeof(handlers) / sizeof(command_t);
   char *next;
-  int ret;
 
   if(buf == NULL)
     {
@@ -1480,9 +1471,9 @@ static int command_source(client_t *client, char *buf)
     }
 
   next = string_nextword(buf);
-  if(command_handler(handlers, handler_cnt, client, buf, next, &ret) == -1)
+  if(command_handler(handlers, handler_cnt, client, buf, next) == -1)
     {
-      client_send(client, "ERR unhandled command '%s'", buf);
+      client_send(client, "ERR unhandled command");
       return 0;
     }
 
@@ -1541,7 +1532,6 @@ static int command_shutdown(client_t *client, char *buf)
   };
   static int handler_cnt = sizeof(handlers) / sizeof(command_t);
   char *next;
-  int ret;
 
   if(buf == NULL)
     {
@@ -1550,9 +1540,9 @@ static int command_shutdown(client_t *client, char *buf)
     }
 
   next = string_nextword(buf);
-  if(command_handler(handlers, handler_cnt, client, buf, next, &ret) == -1)
+  if(command_handler(handlers, handler_cnt, client, buf, next) == -1)
     {
-      client_send(client, "ERR unhandled command '%s'", buf);
+      client_send(client, "ERR unhandled command");
       return 0;
     }
 
@@ -1601,10 +1591,11 @@ static int client_isdone(client_t *client)
  */
 static int client_attached_cb(client_t *client, uint8_t *buf, size_t len)
 {
-  char errbuf[256];
+  char errbuf[256], msgbuf[384];
   char *str;
   long long ll;
   uint32_t id, userid;
+  size_t off = 0;
 
   assert(client->source != NULL);
 
@@ -1625,8 +1616,12 @@ static int client_attached_cb(client_t *client, uint8_t *buf, size_t len)
 	return client_send(client, "ERR halt number invalid");
       id = (uint32_t)ll;
       if(scamper_source_halttask(client->source, id) != 0)
-	return client_send(client, "ERR no task id-%u", id);
-      return client_send(client, "OK halted %u", id);
+	{
+	  string_concat_u32(msgbuf,sizeof(msgbuf),&off, "ERR no task id-", id);
+	  return client_send(client, msgbuf);
+	}
+      string_concat_u32(msgbuf,sizeof(msgbuf),&off, "OK halted ", id);
+      return client_send(client, msgbuf);
     }
 
   /* try the command to see if it is valid and acceptable */
@@ -1634,11 +1629,17 @@ static int client_attached_cb(client_t *client, uint8_t *buf, size_t len)
 			     errbuf, sizeof(errbuf)) != 0)
     {
       if(errbuf[0] != '\0')
-	return client_send(client, "ERR command not accepted: %s", errbuf);
+	{
+	  string_concat2(msgbuf, sizeof(msgbuf), &off,
+			 "ERR command not accepted: ", errbuf);
+	  return client_send(client, msgbuf);
+	}
       return client_send(client, "ERR command not accepted");
     }
 
-  return client_send(client, "OK id-%d userid-%d", id, userid);
+  string_concat_u32(msgbuf, sizeof(msgbuf), &off, "OK id-", id);
+  string_concat_u32(msgbuf, sizeof(msgbuf), &off, " userid-", userid);
+  return client_send(client, msgbuf);
 }
 
 static int client_interactive_cb(client_t *client, uint8_t *buf, size_t len)
@@ -1656,14 +1657,13 @@ static int client_interactive_cb(client_t *client, uint8_t *buf, size_t len)
   };
   static int handler_cnt = sizeof(handlers) / sizeof(command_t);
   char *next;
-  int ret;
 
   /* XXX: should check for null? */
   next = string_nextword((char *)buf);
 
-  if(command_handler(handlers,handler_cnt,client,(char *)buf,next,&ret) == -1)
+  if(command_handler(handlers, handler_cnt, client, (char *)buf, next) == -1)
     {
-      client_send(client, "ERR unhandled command '%s'", buf);
+      client_send(client, "ERR unhandled command");
       return 0;
     }
 
@@ -1685,6 +1685,10 @@ static int client_read_line(void *param, uint8_t *buf, size_t len)
     NULL,                    /* CLIENT_MODE_FLUSH       == 0x02 */
   };
   client_t *client = (client_t *)param;
+
+  /* silently ignore any lines from scamper_linepoll_handle() */
+  if((client->flags & CLIENT_FLAG_STOPLINEPOLL) != 0)
+    return 0;
 
   /* make sure all the characters in the string are printable */
   if(string_isprint((char *)buf, len) == 0)
@@ -1767,6 +1771,10 @@ static void client_read(const int fd, client_t *client)
     }
 
   scamper_linepoll_handle(client->lp, buf, (size_t)rrc);
+
+  if((client->flags & CLIENT_FLAG_STOPLINEPOLL) != 0)
+    client_free(client);
+  
   return;
 }
 

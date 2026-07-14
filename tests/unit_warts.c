@@ -1,13 +1,13 @@
 /*
  * unit_warts : unit tests for warts storage
  *
- * $Id: unit_warts.c,v 1.6 2026/01/04 19:54:18 mjl Exp $
+ * $Id: unit_warts.c,v 1.8 2026/07/04 11:06:20 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
  *
  * Copyright (C) 2024      Marcus Luckie
- * Copyright (C) 2024-2025 Matthew Luckie
+ * Copyright (C) 2024-2026 Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -116,6 +116,67 @@ static int check_file(const char *filename, check_func_t cf, free_func_t ff,
   return rc;  
 }
 
+static int check_filters(void)
+{
+  scamper_file_filter_t *ff = NULL;
+  uint16_t i, j, filter[1];
+
+#ifdef DMALLOC
+  unsigned long start_mem, stop_mem;
+#endif
+
+  for(i=1; i<66; i++)
+    {
+#ifdef DMALLOC
+      dmalloc_get_stats(NULL, NULL, NULL, NULL,
+			&start_mem, NULL, NULL, NULL, NULL);
+#endif
+
+      filter[0] = i;
+      if((ff = scamper_file_filter_alloc(filter, 1)) == NULL)
+	{
+	  printf("scamper_file_filter_alloc() %d failed\n", i);
+	  goto err;
+	}
+      for(j=0; j<70; j++)
+	{
+	  if(i == j)
+	    {
+	      if(scamper_file_filter_isset(ff, j) == 0)
+		{
+		  printf("scamper_file_filter_isset() %d %d failed\n", i, j);
+		  goto err;
+		}
+	    }
+	  else
+	    {
+	      if(scamper_file_filter_isset(ff, j) != 0)
+		{
+		  printf("scamper_file_filter_isset() %d %d failed\n", i, j);
+		  goto err;
+		}
+	    }
+	}
+      scamper_file_filter_free(ff); ff = NULL;
+
+#ifdef DMALLOC
+      dmalloc_get_stats(NULL, NULL, NULL, NULL,
+			&stop_mem, NULL, NULL, NULL, NULL);
+      if(start_mem != stop_mem)
+	{
+	  printf("scamper_file_filter memory leak: %d\n", i);
+	  return -1;
+	}
+#endif
+    }
+
+  return 0;
+
+ err:
+  if(ff != NULL) scamper_file_filter_free(ff);
+  return -1;
+}
+
 int main(int argc, char *argv[])
 {
   sc_test_t tests[] = {
@@ -211,7 +272,11 @@ int main(int argc, char *argv[])
     }
 
   if(strcasecmp(argv[1], "check") == 0)
-    check = 1;
+    {
+      check = 1;
+      if(check_filters() != 0)
+	return -1;
+    }
 
   for(i=0; i<testc; i++)
     {

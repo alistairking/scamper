@@ -1,13 +1,13 @@
 /*
  * common_trace : common functions for unit testing trace
  *
- * $Id: common_trace.c,v 1.18 2025/10/19 20:49:19 mjl Exp $
+ * $Id: common_trace.c,v 1.25 2026/07/13 01:10:35 mjl Exp $
  *
  *        Marcus Luckie, Matthew Luckie
  *        mjl@luckie.org.nz
  *
  * Copyright (C) 2024 Marcus Luckie
- * Copyright (C) 2024-2025 Matthew Luckie
+ * Copyright (C) 2024-2026 Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -33,6 +33,7 @@
 #include "scamper_addr.h"
 #include "scamper_file.h"
 #include "scamper_icmpext.h"
+#include "scamper_icmpext_int.h"
 #include "scamper_trace.h"
 #include "scamper_trace_int.h"
 #include "scamper_ifname.h"
@@ -286,6 +287,7 @@ static scamper_trace_reply_t *reply_alloc(const char *str, uint16_t probe_size,
   if((reply = scamper_trace_reply_alloc()) == NULL ||
      (reply->addr = scamper_addr_fromstr(AF_UNSPEC, str)) == NULL)
     goto err;
+  reply->flags |= SCAMPER_TRACE_REPLY_FLAG_REPLY_TTL;
   reply->ttl = ttl;
   reply->size = size;
   reply->rtt.tv_sec = rtt_sec;
@@ -468,6 +470,7 @@ scamper_trace_t *trace_1(void)
   trace->userid               = 69;
   trace->sport                = 120;
   trace->dport                = 154;
+  trace->probe_size           = 44;
   trace->start.tv_sec         = 1724828853;
   trace->start.tv_usec        = 123456;
   trace->wait_timeout.tv_sec  = 1;
@@ -482,6 +485,7 @@ scamper_trace_t *trace_1(void)
   trace->attempts             = 2;
   trace->probec               = 10;
   trace->flags               |= SCAMPER_TRACE_FLAG_ALLATTEMPTS;
+  trace->flags               |= SCAMPER_TRACE_FLAG_ICMPCSUMDP;
   trace->stop_reason          = SCAMPER_TRACE_STOP_GAPLIMIT;
   trace->type                 = SCAMPER_TRACE_TYPE_ICMP_ECHO_PARIS;
 
@@ -542,6 +546,7 @@ static scamper_trace_t *trace_3_base(void)
   trace->userid               = 69;
   trace->sport                = 24419;
   trace->dport                = 34634;
+  trace->probe_size           = 44;
   trace->start.tv_sec         = 1724828853;
   trace->start.tv_usec        = 123456;
   trace->wait_timeout.tv_sec  = 1;
@@ -693,6 +698,7 @@ scamper_trace_t *trace_6(void)
   trace->userid               = 69;
   trace->sport                = 120;
   trace->dport                = 154;
+  trace->probe_size           = 44;
   trace->start.tv_sec         = 1724828853;
   trace->start.tv_usec        = 123456;
   trace->wait_timeout.tv_sec  = 1;
@@ -708,6 +714,7 @@ scamper_trace_t *trace_6(void)
   trace->attempts             = 2;
   trace->probec               = 14;
   trace->flags               |= SCAMPER_TRACE_FLAG_ALLATTEMPTS;
+  trace->flags               |= SCAMPER_TRACE_FLAG_ICMPCSUMDP;
   trace->stop_reason          = SCAMPER_TRACE_STOP_COMPLETED;
   trace->type                 = SCAMPER_TRACE_TYPE_ICMP_ECHO_PARIS;
 
@@ -806,15 +813,18 @@ static scamper_trace_t *trace_7(void)
 scamper_trace_t *trace_8(void)
 {
   scamper_trace_t *trace = NULL;
+  uint8_t payload[4] = {1, 2, 3, 4};
 
   if((trace = scamper_trace_alloc()) == NULL ||
      (trace->dst = scamper_addr_fromstr_ipv4("192.0.2.2")) == NULL ||
+     (trace->payload = memdup(payload, 4)) == NULL ||
      (trace->errmsg = strdup("hello world")) == NULL)
     goto err;
 
   trace->userid               = 70;
   trace->sport                = 120;
-  trace->dport                = 154;
+  trace->probe_size           = 20 + 8 + 4;
+  trace->payload_len          = 4;
   trace->start.tv_sec         = 1724828853;
   trace->start.tv_usec        = 123456;
   trace->wait_timeout.tv_sec  = 1;
@@ -840,6 +850,113 @@ scamper_trace_t *trace_8(void)
   return NULL;
 }
 
+scamper_trace_t *trace_9(void)
+{
+  scamper_trace_t *trace = NULL;
+  scamper_trace_reply_t *r, *rs[5];
+
+  if((trace = scamper_trace_alloc()) == NULL ||
+     (trace->src = scamper_addr_fromstr_ipv6("2001:db8::1")) == NULL ||
+     (trace->dst = scamper_addr_fromstr_ipv6("2001:db8::72")) == NULL ||
+     scamper_trace_hops_alloc(trace, 5) != 0 ||
+     probettl_alloc(trace, 5) != 0)
+    goto err;
+
+  trace->userid               = 71;
+  trace->sport                = 33535;
+  trace->dport                = 443;
+  trace->probe_size           = 40 + 20;
+  trace->start.tv_sec         = 1724828854;
+  trace->start.tv_usec        = 245876;
+  trace->wait_timeout.tv_sec  = 1;
+  trace->wait_timeout.tv_usec = 0;
+  trace->wait_probe.tv_sec    = 0;
+  trace->wait_probe.tv_usec   = 0;
+  trace->flags                = 0;
+  trace->stop_hop             = 0;
+  trace->hop_count            = 5;
+  trace->firsthop             = 1;
+  trace->tos                  = 32;
+  trace->squeries             = 1;
+  trace->gaplimit             = 3;
+  trace->attempts             = 1;
+  trace->probec               = 5;
+  trace->stop_reason          = SCAMPER_TRACE_STOP_COMPLETED;
+  trace->type                 = SCAMPER_TRACE_TYPE_TCP;
+
+  /* probe id, ttl, size, tx; reply addr, ttl, size, rtt */
+  if(trace_prply_add(trace, 1, 1, 60, 1724828854, 321023,         /* ttl: 1 */
+		     "2001:db8::4", 255, 108, 0,   1021, NULL, &rs[0]) != 0 ||
+     trace_prply_add(trace, 1, 2, 60, 1724828854, 330000,         /* ttl: 2 */
+		     "2001:db8::5", 254, 108, 0,   4287, NULL, &rs[1]) != 0 ||
+     trace_prply_add(trace, 1, 3, 60, 1724828854, 335231,         /* ttl: 3 */
+		     "2001:db8::6", 253, 108, 0,   8201, NULL, &rs[2]) != 0 ||
+     trace_prply_add(trace, 1, 4, 60, 1724828854, 348312,         /* ttl: 4 */
+		     "2001:db8::7", 252, 108, 0, 279734, NULL, &rs[3]) != 0 ||
+     trace_prply_add(trace, 1, 5, 60, 1724828854, 657032,
+		     "2001:db8::72", 252, 60, 0, 290129, NULL, &rs[4]) != 0)
+    goto err;
+
+  rs[0]->reply_icmp_q_tos = 32;
+  rs[1]->reply_icmp_q_tos = 32;
+  rs[2]->reply_icmp_q_tos = 32;
+
+  r = rs[4];
+  r->flags |= SCAMPER_TRACE_REPLY_FLAG_TCP;
+  r->un.tcp.tcp_flags = TH_SYN | TH_ACK;
+  r->reply_icmp_q_ipl = 0;
+  r->reply_icmp_q_ttl = 0;
+
+  return trace;
+
+ err:
+  if(trace != NULL) scamper_trace_free(trace);
+  return NULL;
+}
+
+scamper_trace_t *trace_10(void)
+{
+  scamper_trace_t *trace = NULL;
+  scamper_icmpexts_t *exts = NULL;
+  uint8_t ext1[8] = {0x03, 0x2e, 0xd0, 0x01,  /* label: 13037, ttl 1, S=0 */
+		     0x00, 0x01, 0x11, 0x01}; /* label: 17, ttl 1, S=1 */
+  uint8_t ext2[4] = {0x4D, 0xBF, 0xC1, 0xFF}; /* label: 318460, ttl 255, S=1 */
+
+  if((trace = trace_9()) == NULL ||
+     (trace->hops[1]->probes[0]->replies[0]->icmp_exts = exts =
+      scamper_icmpexts_alloc(1)) == NULL ||
+     (exts->exts[exts->extc++] = scamper_icmpext_alloc(1,1, 8,ext1)) == NULL ||
+     (trace->hops[3]->probes[0]->replies[0]->icmp_exts = exts =
+      scamper_icmpexts_alloc(1)) == NULL ||
+     (exts->exts[exts->extc++] = scamper_icmpext_alloc(1,1, 4,ext2)) == NULL)
+    goto err;
+
+  return trace;
+
+ err:
+  if(trace != NULL) scamper_trace_free(trace);
+  return NULL;
+}
+
+scamper_trace_t *trace_11(void)
+{
+  scamper_trace_t *trace = NULL;
+  scamper_icmpexts_t *exts = NULL;
+
+  /* trace_9 with a single ICMP extension with no data */
+  if((trace = trace_9()) == NULL ||
+     (trace->hops[1]->probes[0]->replies[0]->icmp_exts = exts =
+      scamper_icmpexts_alloc(1)) == NULL ||
+     (exts->exts[exts->extc++] = scamper_icmpext_alloc(1, 1, 0, NULL)) == NULL)
+    goto err;
+
+  return trace;
+
+ err:
+  if(trace != NULL) scamper_trace_free(trace);
+  return NULL;
+}
+
 static scamper_trace_makefunc_t makers[] = {
   trace_1,
   trace_2,
@@ -849,6 +966,9 @@ static scamper_trace_makefunc_t makers[] = {
   trace_6,
   trace_7,
   trace_8,
+  trace_9,
+  trace_10,
+  trace_11,
 };
 
 scamper_trace_t *trace_makers(size_t i)

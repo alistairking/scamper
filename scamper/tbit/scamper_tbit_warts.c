@@ -8,7 +8,7 @@
  * Copyright (C) 2025      The Regents of the University of California
  * Authors: Matthew Luckie, Ben Stasiewicz
  *
- * $Id: scamper_tbit_warts.c,v 1.44 2025/10/19 02:17:23 mjl Exp $
+ * $Id: scamper_tbit_warts.c,v 1.45 2026/07/11 05:15:57 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -801,15 +801,16 @@ void insert_cookie(uint8_t *buf, uint32_t *off, const uint32_t len,
 }
 
 int extract_cookie(const uint8_t *buf, uint32_t *off,
-		   const uint32_t len, uint8_t *out, void *param)
+		   const uint32_t len, scamper_tbit_t *tbit, void *param)
 {
   uint8_t cookielen;
   if(*off >= len || len - *off < 1)
     return -1;
-  out[0] = cookielen = buf[(*off)++];
+  cookielen = buf[(*off)++];
   if(cookielen > 16 || cookielen > len - *off)
     return -1;
-  memcpy(out+1, buf + *off, cookielen);
+  if(scamper_tbit_client_fo_cookie_set(tbit, buf + *off, cookielen) != 0)
+    return -1;
   *off += cookielen;
   return 0;
 }
@@ -886,8 +887,6 @@ static int warts_tbit_params_read(scamper_tbit_t *tbit,
 {
   uint16_t pktc16 = 0;
   uint32_t pktc32 = 0;
-  uint8_t cookie[17];
-  uint32_t o = *off;
 
   warts_param_reader_t handlers[] = {
     {&tbit->list,         (wpr_t)extract_list,    state},
@@ -907,13 +906,15 @@ static int warts_tbit_params_read(scamper_tbit_t *tbit,
     {&tbit->client_dat_retx, (wpr_t)extract_byte,    NULL},
     {&pktc16,             (wpr_t)extract_uint16,  NULL},
     {&pktc32,             (wpr_t)extract_uint32,  NULL},
-    {cookie,              (wpr_t)extract_cookie,  NULL},
+    {tbit,                (wpr_t)extract_cookie,  NULL},
     {&tbit->client_wscale,(wpr_t)extract_byte,    NULL},
     {&tbit->options,      (wpr_t)extract_uint32,  NULL},
     {&tbit->client_ipttl, (wpr_t)extract_byte,    NULL},
     {&tbit->errmsg,       (wpr_t)extract_string,  NULL},
   };
   const int handler_cnt = sizeof(handlers)/sizeof(warts_param_reader_t);
+
+  tbit->client_ipttl = 255;
 
   if(warts_params_read(buf, off, len, handlers, handler_cnt) != 0)
     return -1;
@@ -926,13 +927,6 @@ static int warts_tbit_params_read(scamper_tbit_t *tbit,
     tbit->pktc = pktc32;
   else if(pktc16 != 0)
     tbit->pktc = pktc16;
-
-  if(flag_isset(&buf[o], WARTS_TBIT_COOKIE) &&
-     scamper_tbit_client_fo_cookie_set(tbit, cookie+1, cookie[0]) != 0)
-    return -1;
-
-  if(flag_isset(&buf[o], WARTS_TBIT_TTL) == 0)
-    tbit->client_ipttl = 255;
 
   return 0;
 }

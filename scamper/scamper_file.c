@@ -1,13 +1,14 @@
 /*
  * scamper_file.c
  *
- * $Id: scamper_file.c,v 1.132 2026/03/30 02:54:14 mjl Exp $
+ * $Id: scamper_file.c,v 1.140 2026/07/04 19:53:25 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2012      The Regents of the University of California
  * Copyright (C) 2022-2023 Matthew Luckie
  * Copyright (C) 2023-2026 The Regents of the University of California
+ * Copyright (C) 2026      Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -795,8 +796,10 @@ int scamper_file_filter_isset(const scamper_file_filter_t *filter,
     }
   else
     {
-      if(type <= filter->max &&
-	 (filter->flags[type/32] & (0x1 << ((type%32)-1))) != 0)
+      if(type > filter->max)
+	return 0;
+      type--;
+      if((filter->flags[type / 32] & ((uint32_t)0x1 << (type % 32))) != 0)
 	return 1;
     }
 
@@ -870,7 +873,7 @@ scamper_file_filter_t *scamper_file_filter_alloc(const uint16_t *types,
 	  k = types[i] % 32;
 	}
 
-      filter->flags[j] |= (0x1 << (k-1));
+      filter->flags[j] |= ((uint32_t)0x1 << (k-1));
     }
 
   return filter;
@@ -917,7 +920,7 @@ void scamper_file_seteof(scamper_file_t *sf)
 }
 
 #ifdef HAVE_SCAMPER_FILE_Z
-static void z_free(scamper_file_z_t *z, char mode)
+static void z_free(scamper_file_z_t *z, char mode, int end)
 {
   switch(z->type)
     {
@@ -925,10 +928,13 @@ static void z_free(scamper_file_z_t *z, char mode)
     case 'g':
       if(z->s.gzs != NULL)
 	{
-	  if(mode == 'r')
-	    inflateEnd(z->s.gzs);
-	  else if(mode == 'w')
-	    deflateEnd(z->s.gzs);
+	  if(end != 0)
+	    {
+	      if(mode == 'r')
+		inflateEnd(z->s.gzs);
+	      else if(mode == 'w')
+		deflateEnd(z->s.gzs);
+	    }
 	  free(z->s.gzs);
 	}
       break;
@@ -938,10 +944,13 @@ static void z_free(scamper_file_z_t *z, char mode)
     case 'b':
       if(z->s.bzs != NULL)
 	{
-	  if(mode == 'r')
-	    BZ2_bzDecompressEnd(z->s.bzs);
-	  else if(mode == 'w')
-	    BZ2_bzCompressEnd(z->s.bzs);
+	  if(end != 0)
+	    {
+	      if(mode == 'r')
+		BZ2_bzDecompressEnd(z->s.bzs);
+	      else if(mode == 'w')
+		BZ2_bzCompressEnd(z->s.bzs);
+	    }
 	  free(z->s.bzs);
 	}
       break;
@@ -951,7 +960,8 @@ static void z_free(scamper_file_z_t *z, char mode)
     case 'x':
       if(z->s.xzs != NULL)
 	{
-	  lzma_end(z->s.xzs);
+	  if(end != 0)
+	    lzma_end(z->s.xzs);
 	  free(z->s.xzs);
 	}
       break;
@@ -975,24 +985,23 @@ static scamper_file_z_t *z_alloc(char type)
 static void z_flush(scamper_file_z_t *z, int fd)
 {
   size_t have;
-
-#if defined(HAVE_LIBBZ2) || defined(HAVE_LIBLZMA)
   int rc;
-#endif
 
 #ifdef HAVE_ZLIB
   if(z->type == 'g')
     {
       z->s.gzs->next_in = NULL;
       z->s.gzs->avail_in = 0;
-      z->s.gzs->avail_out = sizeof(z->out);
-      z->s.gzs->next_out = z->out;
-      if(deflate(z->s.gzs, Z_FINISH) != Z_STREAM_ERROR)
+      do
 	{
-	  have = sizeof(z->out) - z->s.gzs->avail_out;
-	  if(have > 0)
+	  z->s.gzs->avail_out = sizeof(z->out);
+	  z->s.gzs->next_out = z->out;
+	  rc = deflate(z->s.gzs, Z_FINISH);
+	  if((rc == Z_OK || rc == Z_STREAM_END) &&
+	     (have = sizeof(z->out) - z->s.gzs->avail_out) > 0)
 	    write_wrap(fd, z->out, NULL, have);
 	}
+      while(rc == Z_OK);
       return;
     }
 #endif
@@ -1026,11 +1035,11 @@ static void z_flush(scamper_file_z_t *z, int fd)
 	  z->s.xzs->avail_out = sizeof(z->out);
 	  z->s.xzs->next_out = z->out;
 	  rc = lzma_code(z->s.xzs, LZMA_FINISH);
-	  have = sizeof(z->out) - z->s.xzs->avail_out;
-	  if(have > 0)
+	  if((rc == LZMA_OK || rc == LZMA_STREAM_END) &&
+	     (have = sizeof(z->out) - z->s.xzs->avail_out) > 0)
 	    write_wrap(fd, z->out, NULL, have);
 	}
-      while(rc != LZMA_STREAM_END);
+      while(rc == LZMA_OK);
       return;
     }
 #endif
@@ -1053,7 +1062,7 @@ void scamper_file_free(scamper_file_t *sf)
 
 #ifdef HAVE_SCAMPER_FILE_Z
       if(sf->z != NULL)
-	z_free(sf->z, sf->mode);
+	z_free(sf->z, sf->mode, 1);
 #endif
 
       free(sf);
@@ -1090,10 +1099,11 @@ void scamper_file_close(scamper_file_t *sf)
 
 char *scamper_file_type_tostr(scamper_file_t *sf, char *buf, size_t len)
 {
+  size_t off = 0;
   assert(sf->type < handler_cnt);
   if(handlers[sf->type].type == NULL)
     return NULL;
-  strncpy(buf, handlers[sf->type].type, len);
+  string_concat(buf, len, &off, handlers[sf->type].type);
   return buf;
 }
 
@@ -1462,6 +1472,7 @@ static int file_type_detect(scamper_file_t *sf)
   uint8_t buf[6], *ptr = buf;
 
 #if defined(HAVE_ZLIB) || defined(HAVE_LIBBZ2) || defined(HAVE_LIBLZMA)
+  scamper_file_z_t *z;
   ssize_t readc;
   int rc;
 #endif
@@ -1474,10 +1485,15 @@ static int file_type_detect(scamper_file_t *sf)
   if(buf[0] == 0x1F && buf[1] == 0x8B)
     {
 #ifdef HAVE_ZLIB
-      if((sf->z = z_alloc('g')) == NULL ||
-	 (sf->z->s.gzs = malloc_zero(sizeof(z_stream))) == NULL ||
-	 inflateInit2(sf->z->s.gzs, MAX_WBITS + 32) != Z_OK)
-	return SCAMPER_FILE_TYPE_NONE;
+      if((z = z_alloc('g')) == NULL ||
+	 (z->s.gzs = malloc_zero(sizeof(z_stream))) == NULL ||
+	 inflateInit2(z->s.gzs, MAX_WBITS + 32) != Z_OK)
+	{
+	  if(z != NULL)
+	    z_free(z, 'g', 0);
+	  return SCAMPER_FILE_TYPE_NONE;
+	}
+      sf->z = z;
       sf->readfunc = (scamper_file_readfunc_t)z_read;
       sf->readparam = sf;
       sf->z->s.gzs->next_out = sf->z->out;
@@ -1501,10 +1517,15 @@ static int file_type_detect(scamper_file_t *sf)
   else if(buf[0] == 0x42 && buf[1] == 0x5A)
     {
 #ifdef HAVE_LIBBZ2
-      if((sf->z = z_alloc('b')) == NULL ||
-	 (sf->z->s.bzs = malloc_zero(sizeof(bz_stream))) == NULL ||
-	 BZ2_bzDecompressInit(sf->z->s.bzs, 0, 0) != BZ_OK)
-	return SCAMPER_FILE_TYPE_NONE;
+      if((z = z_alloc('b')) == NULL ||
+	 (z->s.bzs = malloc_zero(sizeof(bz_stream))) == NULL ||
+	 BZ2_bzDecompressInit(z->s.bzs, 0, 0) != BZ_OK)
+	{
+	  if(z != NULL)
+	    z_free(z, 'b', 0);
+	  return SCAMPER_FILE_TYPE_NONE;
+	}
+      sf->z = z;
       sf->readfunc = (scamper_file_readfunc_t)z_read;
       sf->readparam = sf;
       sf->z->s.bzs->next_out = (char *)sf->z->out;
@@ -1534,10 +1555,15 @@ static int file_type_detect(scamper_file_t *sf)
 	  buf[3] == 0x58 && buf[4] == 0x5A && buf[5] == 0x00)
     {
 #ifdef HAVE_LIBLZMA
-      if((sf->z = z_alloc('x')) == NULL ||
-	 (sf->z->s.xzs = malloc_zero(sizeof(lzma_stream))) == NULL ||
-	 lzma_stream_decoder(sf->z->s.xzs, UINT64_MAX, 0) != LZMA_OK)
-	return SCAMPER_FILE_TYPE_NONE;
+      if((z = z_alloc('x')) == NULL ||
+	 (z->s.xzs = malloc_zero(sizeof(lzma_stream))) == NULL ||
+	 lzma_stream_decoder(z->s.xzs, UINT64_MAX, 0) != LZMA_OK)
+	{
+	  if(z != NULL)
+	    z_free(z, 'x', 0);
+	  return SCAMPER_FILE_TYPE_NONE;
+	}
+      sf->z = z;
       sf->readfunc = (scamper_file_readfunc_t)z_read;
       sf->readparam = sf;
       sf->z->s.xzs->next_out = sf->z->out;
@@ -1581,7 +1607,7 @@ static int file_open_read(scamper_file_t *sf)
       if(fstat(sf->fd, &sb) != 0)
 	return -1;
 
-      if(sb.st_size != 0 && (sb.st_mode & S_IFIFO) == 0)
+      if(sb.st_size != 0 && S_ISFIFO(sb.st_mode) == 0)
 	sf->type = file_type_detect(sf);
     }
 
@@ -1608,11 +1634,17 @@ static int init_fail(scamper_file_t *sf)
 static int init_write_warts_gz(scamper_file_t *sf)
 {
 #ifdef HAVE_ZLIB
-  if((sf->z = z_alloc('g')) == NULL ||
-     (sf->z->s.gzs = malloc_zero(sizeof(z_stream))) == NULL ||
-     deflateInit2(sf->z->s.gzs, Z_DEFAULT_COMPRESSION, Z_DEFLATED,
+  scamper_file_z_t *z;
+  if((z = z_alloc('g')) == NULL ||
+     (z->s.gzs = malloc_zero(sizeof(z_stream))) == NULL ||
+     deflateInit2(z->s.gzs, Z_DEFAULT_COMPRESSION, Z_DEFLATED,
 		  15 | 16, 8, Z_DEFAULT_STRATEGY) != Z_OK)
-    return -1;
+    {
+      if(z != NULL)
+	z_free(z, 'g', 0);
+      return -1;
+    }
+  sf->z = z;
   sf->writefunc = (scamper_file_writefunc_t)zlib_write;
   sf->writeparam = sf;
   return handlers[SCAMPER_FILE_TYPE_WARTS].init_write(sf);
@@ -1624,10 +1656,16 @@ static int init_write_warts_gz(scamper_file_t *sf)
 static int init_write_warts_bz2(scamper_file_t *sf)
 {
 #ifdef HAVE_LIBBZ2
-  if((sf->z = z_alloc('b')) == NULL ||
-     (sf->z->s.bzs = malloc_zero(sizeof(bz_stream))) == NULL ||
-     BZ2_bzCompressInit(sf->z->s.bzs, 6, 0, 0) != BZ_OK)
-    return -1;
+  scamper_file_z_t *z;
+  if((z = z_alloc('b')) == NULL ||
+     (z->s.bzs = malloc_zero(sizeof(bz_stream))) == NULL ||
+     BZ2_bzCompressInit(z->s.bzs, 6, 0, 0) != BZ_OK)
+    {
+      if(z != NULL)
+	z_free(z, 'b', 0);
+      return -1;
+    }
+  sf->z = z;
   sf->writefunc = (scamper_file_writefunc_t)libbz2_write;
   sf->writeparam = sf;
   return handlers[SCAMPER_FILE_TYPE_WARTS].init_write(sf);
@@ -1639,11 +1677,17 @@ static int init_write_warts_bz2(scamper_file_t *sf)
 static int init_write_warts_xz(scamper_file_t *sf)
 {
 #ifdef HAVE_LIBLZMA
-  if((sf->z = z_alloc('x')) == NULL ||
-     (sf->z->s.xzs = malloc_zero(sizeof(lzma_stream))) == NULL ||
-     lzma_easy_encoder(sf->z->s.xzs, LZMA_PRESET_DEFAULT,
+  scamper_file_z_t *z;
+  if((z = z_alloc('x')) == NULL ||
+     (z->s.xzs = malloc_zero(sizeof(lzma_stream))) == NULL ||
+     lzma_easy_encoder(z->s.xzs, LZMA_PRESET_DEFAULT,
 		       LZMA_CHECK_CRC64) != LZMA_OK)
-    return -1;
+    {
+      if(z != NULL)
+	z_free(z, 'x', 0);
+      return -1;
+    }
+  sf->z = z;
   sf->writefunc = (scamper_file_writefunc_t)xz_write;
   sf->writeparam = sf;
   return handlers[SCAMPER_FILE_TYPE_WARTS].init_write(sf);
@@ -1667,7 +1711,7 @@ static int file_open_append(scamper_file_t *sf)
     return handlers[sf->type].init_write(sf);
 
   /* can't append to pipes */
-  if((sb.st_mode & S_IFIFO) != 0)
+  if(S_ISFIFO(sb.st_mode))
     return -1;
 
   sf->type = file_type_detect(sf);
@@ -1763,7 +1807,7 @@ scamper_file_t *scamper_file_open(const char *filename, char mode,
 
       if(string_isdash(filename) != 0)
 	{
-	  fd = STDIN_FILENO;
+	  fd = STDOUT_FILENO;
 	}
       else
 	{

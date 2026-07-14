@@ -1,7 +1,7 @@
 /*
  * scamper_owamp.c
  *
- * $Id: scamper_owamp.c,v 1.3 2026/01/04 19:43:21 mjl Exp $
+ * $Id: scamper_owamp.c,v 1.4 2026/06/19 22:17:01 mjl Exp $
  *
  * Copyright (C) 2025-2026 The Regents of the University of California
  *
@@ -110,12 +110,12 @@ int scamper_owamp_tx_rxadd(scamper_owamp_tx_t *tx, scamper_owamp_rx_t *rx)
 {
   size_t len;
 
-  if(tx->rxc == 255)
+  if(tx->rxc == UINT8_MAX)
     return -1;
   len = (tx->rxc + 1) * sizeof(scamper_owamp_rx_t *);
   if(realloc_wrap((void **)&tx->rxs, len) != 0)
     return -1;
-  tx->rxs[tx->rxc++] = rx;
+  tx->rxs[tx->rxc++] = rx; /* tx->rxc < UINT8_MAX */
   return 0;
 }
 

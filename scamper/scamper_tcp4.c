@@ -1,12 +1,12 @@
 /*
  * scamper_tcp4.c
  *
- * $Id: scamper_tcp4.c,v 1.71 2025/10/15 23:42:35 mjl Exp $
+ * $Id: scamper_tcp4.c,v 1.74 2026/07/03 21:57:47 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2012,2015 The Regents of the University of California
- * Copyright (C) 2022-2023 Matthew Luckie
+ * Copyright (C) 2022-2026 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -41,7 +41,7 @@
 
 /*
  * these variables are used to store a packet buffer that is allocated
- * in the scamper_udp4_probe function large enough for the largest probe
+ * in the scamper_tcp4_probe function large enough for the largest probe
  * the routine sends
  */
 static uint8_t *pktbuf = NULL;
@@ -131,10 +131,10 @@ static size_t tcp_ts(uint8_t *buf, const scamper_probe_t *probe)
 static void tcp_cksum(scamper_probe_t *probe, struct tcphdr *tcp, size_t len)
 {
   uint16_t *w;
-  int sum = 0;
+  uint32_t sum = 0;
 
   /*
-   * the TCP checksum includes a checksum calculated over a psuedo header
+   * the TCP checksum includes a checksum calculated over a pseudo header
    * that includes the src and dst IP addresses, the protocol type, and
    * the TCP length.
    */
@@ -146,15 +146,7 @@ static void tcp_cksum(scamper_probe_t *probe, struct tcphdr *tcp, size_t len)
   sum += htons(IPPROTO_TCP);
 
   /* compute the checksum over the body of the TCP message */
-  w = (uint16_t *)tcp;
-  while(len > 1)
-    {
-      sum += *w++;
-      len -= 2;
-    }
-
-  if(len != 0)
-    sum += ((uint8_t *)w)[0];
+  sum += in_cksum_sum((uint16_t *)tcp, len);
 
   /* fold the checksum */
   sum  = (sum >> 16) + (sum & 0xffff);
@@ -347,7 +339,7 @@ int scamper_tcp4_probe(scamper_probe_t *pr, scamper_err_t *error)
   return 0;
 }
 
-void scamper_tcp4_cleanup()
+void scamper_tcp4_cleanup(void)
 {
   if(pktbuf != NULL)
     {

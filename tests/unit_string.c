@@ -1,12 +1,12 @@
 /*
  * unit_string: unit tests for string_* functions in utils.c
  *
- * $Id: unit_string.c,v 1.13 2025/07/04 19:26:21 mjl Exp $
+ * $Id: unit_string.c,v 1.18 2026/06/13 07:50:06 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
  *
- * Copyright (C) 2024-2025 Matthew Luckie
+ * Copyright (C) 2024-2026 Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -73,6 +73,13 @@ typedef struct sc_concatc_test
   size_t      off_out;
 } sc_concatc_test_t;
 
+typedef struct sc_concaf_test
+{
+  const char *str;
+  size_t      len;
+  size_t      off;
+} sc_concaf_test_t;
+
 typedef struct sc_nullterm_test
 {
   const char *str;
@@ -80,6 +87,20 @@ typedef struct sc_nullterm_test
   size_t      rc;
   ssize_t     next;
 } sc_nullterm_test_t;
+
+typedef struct sc_isnumber_test
+{
+  const char *str;
+  int         rc;
+} sc_isnumber_test_t;
+
+typedef struct sc_addrport_test
+{
+  const char *str;
+  const char *addr;
+  uint16_t    port;
+  int         rc;
+} sc_addrport_test_t;
 
 static int byte2hex_tests(void)
 {
@@ -126,6 +147,12 @@ static int jsonesc_tests(void)
     {"test\"", "test", 5, 7},
     {"foo", NULL, 0, 4},
     {"bar\\", "bar\\\\", 6, 6},
+    {"a\tb", "a\\tb", 5, 5},
+    {"x\ny", "x\\ny", 5, 5},
+    {"\x01", "\\u0001", 7, 7},
+    {"\x01", "", 6, 7},
+    {"\x7f", "\\u007f", 7, 7},
+    {"\x80", "\\u0080", 7, 7},
   };
   size_t i, l, testc = sizeof(tests) / sizeof(sc_jsonesc_test_t);
   char buf[12], *rc;
@@ -357,6 +384,34 @@ static int concat_c_tests(void)
   return 0;
 }
 
+static int concaf_tests(void)
+{
+  sc_concaf_test_t tests[] = {
+    {"012345",  7, 6},
+    {"01234",   6, 5},
+    {"012345", 12, 6},
+  };
+  size_t i, testc = sizeof(tests) / sizeof(sc_concaf_test_t);
+  const char *fstr = "%06d";
+  int fval = 12345;
+  char buf[12];
+  size_t off;
+  int rc = 0;
+
+  for(i=0; i<testc; i++)
+    {
+      off = 0;
+      string_concaf(buf, tests[i].len, &off, fstr, fval);
+      if(strcmp(buf, tests[i].str) != 0 || off != tests[i].off)
+	{
+	  printf("concaf %d failed %d\n", (int)i, (int)off);
+	  rc = -1;
+	}
+    }
+
+  return rc;
+}
+
 static int nullterm_tests(void)
 {
   sc_nullterm_test_t tests[] = {
@@ -431,13 +486,122 @@ static int nullterm_char_tests(void)
   return 0;
 }
 
+static int isnumber_tests(void)
+{
+  sc_isnumber_test_t tests[] = {
+    {"", 0},
+    {"-", 0},
+    {"+", 0},
+    {"5", 1},
+    {"-5", 1},
+    {"+5", 1},
+    {"007", 1},
+    {"-712", 1},
+    {"+982395", 1},
+    {"+982395.1", 0},
+    {"-12a", 0},
+  };
+  size_t i, testc = sizeof(tests) / sizeof(sc_isnumber_test_t);
+
+  for(i=0; i<testc; i++)
+    {
+      if(string_isnumber(tests[i].str) != tests[i].rc)
+	{
+	  printf("isnumber %d failed\n", (int)i);
+	  return -1;
+	}
+    }
+
+  return 0;
+}
+
+static int isfloat_tests(void)
+{
+  sc_isnumber_test_t tests[] = {
+    {"", 0},
+    {"-", 0},
+    {"+", 0},
+    {".", 0},
+    {"-.", 0},
+    {"+.", 0},
+    {".5", 1},
+    {"5.", 1},
+    {"-.5", 1},
+    {"1.223", 1},
+    {"-91.999", 1},
+    {"+1291.001", 1},
+    {"98762.21", 1},
+    {"987", 1},
+  };
+  size_t i, testc = sizeof(tests) / sizeof(sc_isnumber_test_t);
+  int rc = 0;
+
+  for(i=0; i<testc; i++)
+    {
+      if(string_isfloat(tests[i].str) != tests[i].rc)
+	{
+	  printf("isfloat %d failed\n", (int)i);
+	  rc = -1;
+	}
+    }
+
+  return rc;
+}
+
+static int addrport_tests(void)
+{
+  sc_addrport_test_t tests[] = {
+    {"12345",                      NULL, 12345,  0},
+    {"+12345",                     NULL,     0, -1},
+    {"123456",                     NULL,     0, -1},
+    {"192.0.2.1:12345",     "192.0.2.1", 12345,  0},
+    {"192.0.2.1:+12345",           NULL,     0, -1},
+    {"192.0.2.1:0x40",             NULL,     0, -1},
+    {"0x40",                       NULL,     0, -1},
+    {"192.0.2.1:123456",           NULL,     0, -1},
+    {"[192.0.2.1:12345",           NULL,     0, -1},
+    {"[192.0.2.1]:12345",   "192.0.2.1", 12345,  0},
+    {"192.0.2.1]:12345",   "192.0.2.1]", 12345,  0},
+    {"[192.0.2.1]:123456",         NULL,     0, -1},
+    {"[192.0.2.1]:a12345",         NULL,     0, -1},
+    {"[192.0.2.1]:12345f",         NULL,     0, -1},
+  };
+  size_t i, testc = sizeof(tests) / sizeof(sc_addrport_test_t);
+  int rc = 0;
+  char *addr = NULL;
+  uint16_t port;
+
+  for(i=0; i<testc; i++)
+    {
+      if(string_addrport(tests[i].str, &addr, &port) != tests[i].rc ||
+	 (tests[i].rc == 0 &&
+	  ((tests[i].addr == NULL && addr != NULL) ||
+	   (tests[i].addr != NULL && addr == NULL) ||
+	   (tests[i].addr != NULL && strcmp(tests[i].addr, addr) != 0) ||
+	   tests[i].port != port)))
+	{
+	  printf("addrport %d failed\n", (int)i);
+	  rc = -1;
+	}
+      if(addr != NULL)
+	{
+	  free(addr);
+	  addr = NULL;
+	}
+    }
+
+  return rc;
+}
+
 int main(int argc, char *argv[])
 {
   if(byte2hex_tests() != 0 || jsonesc_tests() != 0 ||
      concat_tests() != 0 || concat_u8_tests() != 0 ||
      concat_u16_tests() != 0 || concat_u32_tests() != 0 ||
-     concat_c_tests() != 0 ||
-     nullterm_tests() != 0 || nullterm_char_tests() != 0)
+     concat_c_tests() != 0 || concaf_tests() != 0 ||
+     nullterm_tests() != 0 || nullterm_char_tests() != 0 ||
+     isnumber_tests() != 0 || isfloat_tests() != 0 ||
+     addrport_tests() != 0)
     return -1;
 
   printf("OK\n");

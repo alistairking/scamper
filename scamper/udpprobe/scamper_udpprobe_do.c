@@ -1,9 +1,10 @@
 /*
  * scamper_udpprobe_do.c
  *
- * $Id: scamper_udpprobe_do.c,v 1.29 2025/11/05 03:34:16 mjl Exp $
+ * $Id: scamper_udpprobe_do.c,v 1.31 2026/06/16 20:45:11 mjl Exp $
  *
  * Copyright (C) 2023-2024 The Regents of the University of California
+ * Copyright (C) 2026      The Regents of the University of California
  *
  * Authors: Matthew Luckie
  *
@@ -161,8 +162,9 @@ static void udpprobe_state_free(scamper_udpprobe_t *up, udpprobe_state_t *state)
   if(state->replies != NULL)
     {
       for(i=0; i<up->probe_count; i++)
-	slist_free_cb(state->replies[i],
-		      (slist_free_t)scamper_udpprobe_reply_free);
+	if(state->replies[i] != NULL)
+	  slist_free_cb(state->replies[i],
+			(slist_free_t)scamper_udpprobe_reply_free);
       free(state->replies);
     }
 
@@ -199,6 +201,10 @@ static void do_udpprobe_handle_udp(scamper_task_t *task, scamper_udp_resp_t *ur)
     if(ur->fd == scamper_fd_fd_get(state->fds[i]))
       break;
   if(i == state->probec)
+    return;
+
+  /* do not record more probes than probe->replyc can store */
+  if(slist_count(state->replies[i]) >= UINT8_MAX)
     return;
 
   if((reply = scamper_udpprobe_reply_alloc()) == NULL ||
@@ -245,10 +251,8 @@ static int udpprobe_state_init(scamper_task_t *task)
     return -1;
 
   for(i=0; i<up->probe_count; i++)
-    {
-      if((state->replies[i] = slist_alloc()) == NULL)
-	return -1;
-    }
+    if((state->replies[i] = slist_alloc()) == NULL)
+      return -1;
 
   return 0;
 }

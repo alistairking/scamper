@@ -1,12 +1,12 @@
 # Process this file with autoconf to produce a configure script.
 
-AC_INIT([scamper],[20260420],[mjl@luckie.org.nz])
+AC_INIT([scamper],[20260713],[mjl@luckie.org.nz])
 
 AC_CONFIG_SRCDIR([scamper/scamper.c])
 AC_CONFIG_AUX_DIR([.])
 AC_CONFIG_HEADERS([config.h])
 AC_CONFIG_MACRO_DIR([m4])
-AC_CANONICAL_TARGET
+AC_CANONICAL_HOST
 AM_INIT_AUTOMAKE([foreign])
 AM_MAINTAINER_MODE([disable])
 
@@ -32,18 +32,6 @@ if test "x$enable_debug_file" = "xno"; then
             [Defined to 1 if we don't want to be able generate a debugfile])
 fi
 
-# --enable-scamper-select
-AC_ARG_ENABLE([scamper-select],
-  [AS_HELP_STRING([--enable-scamper-select],
-                  [build scamper with support for select syscall])],
-  [enable_scamper_select=$enableval],
-  [enable_scamper_select=no]
-)
-if test "x$enable_scamper_select" = "xno"; then
-  AC_DEFINE([DISABLE_SCAMPER_SELECT],[1],
-            [Define to 1 to not build scamper with support for select syscall])
-fi
-
 # --disable-scamper-privsep
 AC_ARG_ENABLE([scamper-privsep],
   [AS_HELP_STRING([--disable-scamper-privsep],
@@ -53,10 +41,11 @@ AC_ARG_ENABLE([scamper-privsep],
 if test "x$enable_scamper_privsep" = "xno"; then
   AC_DEFINE([DISABLE_SCAMPER_PRIVSEP], [1],
             [Define to 1 to not build scamper with privilege separation])
-fi
-if test "x$enable_scamper_privsep" = "xrootonly"; then
+elif test "x$enable_scamper_privsep" = "xrootonly"; then
   AC_DEFINE([ENABLE_SCAMPER_PRIVSEP_ROOTONLY], [1],
-            [Define to 1 build scamper with privilege separation for root only])
+            [Define to 1 to build scamper with privilege separation for root only])
+elif test "x$enable_scamper_privsep" != "xyes"; then
+  AC_MSG_ERROR([invalid value $enable_scamper_privsep for --enable-scamper-privsep])
 fi
 AM_CONDITIONAL([ENABLE_SCAMPER_PRIVSEP],
   [test "x$enable_scamper_privsep" != "xno"])
@@ -272,15 +261,20 @@ AC_ARG_WITH([dmalloc],
 if test "x$with_dmalloc" = "xyes"; then
 	AC_CHECK_LIB([dmalloc],	[dmalloc_malloc],
 		[
-		CFLAGS="$CFLAGS -DDMALLOC"
-		LDFLAGS="$LDFLAGS -ldmalloc"
+		CPPFLAGS="$CPPFLAGS -DDMALLOC"
+		LIBS="$LIBS -ldmalloc"
 		],
 		[AC_MSG_FAILURE([dmalloc test failed (remove --with-dmalloc)])])
 fi
 
-# pcre support
+# pcre / pcre2 support
 AC_ARG_WITH([pcre],
   [AS_HELP_STRING([--with-pcre], [use pcre for regex engine])])
+AC_ARG_WITH([pcre2],
+  [AS_HELP_STRING([--with-pcre2], [use pcre2 for regex engine])])
+if test "x$with_pcre" = "xyes" && test "x$with_pcre2" = "xyes"; then
+  AC_MSG_ERROR([--with-pcre and --with-pcre2 are mutually exclusive])
+fi
 if test "x$with_pcre" = "xyes"; then
 	AC_CHECK_LIB([pcre], [pcre_compile],
 		[
@@ -289,10 +283,6 @@ if test "x$with_pcre" = "xyes"; then
 		],
 		[AC_MSG_FAILURE([pcre test failed (remove --with-pcre)])])
 fi
-
-# pcre2 support
-AC_ARG_WITH([pcre2],
-  [AS_HELP_STRING([--with-pcre2], [use pcre2 for regex engine])])
 if test "x$with_pcre2" = "xyes"; then
 	AC_CHECK_LIB([pcre2-8], [pcre2_compile_8],
 		[
@@ -520,6 +510,64 @@ AC_CHECK_FUNCS(unveil)
 
 AC_CHECK_SIZEOF(long)
 
+# select() on windows requires linking against the winsock library,
+# which AC_CHECK_FUNCS does not do
+if test "x$ac_cv_func_select" != "xyes"; then
+   save_LIBS="$LIBS"
+   LIBS="$LIBS -lws2_32"
+   AC_MSG_CHECKING([for select in -lws2_32])
+   AC_LINK_IFELSE([
+     AC_LANG_PROGRAM([
+	[#include <winsock2.h>]],
+	[
+	 [fd_set fds;]
+	 [struct timeval tv;]
+	 [FD_ZERO(&fds);]
+	 [tv.tv_sec = 0; tv.tv_usec = 0;]
+	 [select(0, &fds, 0, 0, &tv);]
+	])
+   ],
+   [
+	AC_MSG_RESULT([yes])
+	AC_DEFINE([HAVE_SELECT], [1],
+		[Define to 1 if you have the `select' function.])
+	have_winsock_select=yes
+   ],
+   [
+	AC_MSG_RESULT([no])
+	have_winsock_select=no
+   ])
+   LIBS="$save_LIBS"
+else
+   have_winsock_select=no
+fi
+
+# --enable-scamper-select
+AC_ARG_ENABLE([scamper-select],
+  [AS_HELP_STRING([--enable-scamper-select],
+                  [build scamper with support for select syscall @<:@default=auto@:>@])],
+  [enable_scamper_select=$enableval],
+  [enable_scamper_select=auto]
+)
+# by default, only build with select support if we did not find poll,
+# kqueue, or epoll_wait.
+if test "x$enable_scamper_select" = "xauto"; then
+  if test "x$ac_cv_func_poll" = "xyes" -o \
+          "x$ac_cv_func_kqueue" = "xyes" -o \
+          "x$ac_cv_func_epoll_wait" = "xyes"; then
+    enable_scamper_select=no
+  elif test "x$ac_cv_func_select" = "xyes" -o \
+            "x$have_winsock_select" = "xyes"; then
+    enable_scamper_select=yes
+  else
+    AC_MSG_ERROR([no poll, kqueue, epoll_wait, or select])
+  fi
+fi
+if test "x$enable_scamper_select" = "xno"; then
+  AC_DEFINE([DISABLE_SCAMPER_SELECT],[1],
+            [Define to 1 to not build scamper with support for select syscall])
+fi
+
 AC_CHECK_MEMBER([struct sockaddr.sa_len],
 	[AC_DEFINE([HAVE_STRUCT_SOCKADDR_SA_LEN],[1],
 	[Define if struct sockaddr has an sa_len member])],[:],
@@ -574,7 +622,7 @@ AC_COMPILE_IFELSE([AC_LANG_PROGRAM(
 	]])],
 	[
 		AC_MSG_RESULT([yes])
-		AC_DEFINE_UNQUOTED([HAVE_STRUCT_NLMSGHDR], 1,
+		AC_DEFINE([HAVE_STRUCT_NLMSGHDR], [1],
 		[Define to 1 if you have the `nlmsghdr' struct.])
 	],
 	[
@@ -593,7 +641,7 @@ AC_COMPILE_IFELSE([AC_LANG_PROGRAM(
 	]])],
 	[
 		AC_MSG_RESULT([yes])
-		AC_DEFINE_UNQUOTED([HAVE_STRUCT_NLMSGERR], 1,
+		AC_DEFINE([HAVE_STRUCT_NLMSGERR], [1],
 		[Define to 1 if you have the `nlmsgerr' struct.])
 	],
 	[
@@ -612,7 +660,7 @@ AC_COMPILE_IFELSE([AC_LANG_PROGRAM(
 	]])],
 	[
 		AC_MSG_RESULT([yes])
-		AC_DEFINE_UNQUOTED([HAVE_STRUCT_SOCKADDR_NL], 1,
+		AC_DEFINE([HAVE_STRUCT_SOCKADDR_NL], [1],
 		[Define to 1 if you have the `sockaddr_nl' struct.])
 	],
 	[
@@ -629,7 +677,7 @@ AC_COMPILE_IFELSE([AC_LANG_PROGRAM(
 	]])],
 	[
 		AC_MSG_RESULT([yes])
-		AC_DEFINE_UNQUOTED([HAVE_STRUCT_TPACKET_REQ3], 1,
+		AC_DEFINE([HAVE_STRUCT_TPACKET_REQ3], [1],
 		[Define to 1 if you have the `tpacket_req3' struct.])
 	],
 	[
@@ -647,8 +695,8 @@ AC_COMPILE_IFELSE([AC_LANG_PROGRAM(
 	]])],
 	[
 		AC_MSG_RESULT([yes])
-		AC_DEFINE_UNQUOTED([HAVE_CLOCK_MONOTONIC], 1,
-		[Define to 1 if you have CLOCK_MONOTONIC.])
+		AC_DEFINE([HAVE_CLOCK_MONOTONIC], [1],
+		[Define to 1 if you have `CLOCK_MONOTONIC'.])
 	],
 	[
 		AC_MSG_RESULT([no])
@@ -697,8 +745,8 @@ if test "x$have_openssl" = "xyes"; then
    ],
    [
 	AC_MSG_RESULT([yes])
-	AC_DEFINE_UNQUOTED([HAVE_X509_VERIFY_PARAM_SET1_HOST], 1,
-		[Define to 1 if you have the X509_VERIFY_PARAM_set1_host function])
+	AC_DEFINE([HAVE_X509_VERIFY_PARAM_SET1_HOST], [1],
+		[Define to 1 if you have the `X509_VERIFY_PARAM_set1_host' function])
    ],
    [
 	AC_MSG_RESULT([no])
@@ -716,8 +764,8 @@ if test "x$have_openssl" = "xyes"; then
    ],
    [
 	AC_MSG_RESULT([yes])
-	AC_DEFINE_UNQUOTED([HAVE_ASN1_STRING_GET0_DATA], 1,
-		[Define to 1 if you have the ASN1_STRING_get0_data function])
+	AC_DEFINE([HAVE_ASN1_STRING_GET0_DATA], [1],
+		[Define to 1 if you have the `ASN1_STRING_get0_data' function])
    ],
    [
 	AC_MSG_RESULT([no])
@@ -734,8 +782,27 @@ if test "x$have_openssl" = "xyes"; then
    ],
    [
 	AC_MSG_RESULT([yes])
-	AC_DEFINE_UNQUOTED([HAVE_SSL_SET1_ECH_CONFIG_LIST], 1,
-		[Define to 1 if you have the SSL_set1_ech_config_list function])
+	AC_DEFINE([HAVE_SSL_SET1_ECH_CONFIG_LIST], [1],
+		[Define to 1 if you have the `SSL_set1_ech_config_list' function])
+   ],
+   [
+	AC_MSG_RESULT([no])
+   ])
+   AC_MSG_CHECKING([for OSSL_QUIC_server_method])
+   AC_LINK_IFELSE([
+     AC_LANG_PROGRAM([
+	[#include <openssl/bio.h>]
+	[#include <openssl/ssl.h>]
+	[#include <openssl/err.h>]],
+	[
+	 [SSL_CTX_new(OSSL_QUIC_server_method());]
+	])
+   ],
+   [
+	AC_MSG_RESULT([yes])
+	AC_DEFINE([HAVE_OSSL_QUIC_SERVER_METHOD], [1],
+		[Define to 1 if you have the `OSSL_QUIC_server_method' function])
+	have_ossl_quic_server_method=yes
    ],
    [
 	AC_MSG_RESULT([no])
@@ -743,6 +810,9 @@ if test "x$have_openssl" = "xyes"; then
    LDFLAGS="$save_LDFLAGS"
    LIBS="$save_LIBS"
 fi
+
+AM_CONDITIONAL([HAVE_OSSL_QUIC_SERVER_METHOD],
+	[test "x$have_ossl_quic_server_method" = "xyes"])
 
 # zlib support
 AC_ARG_WITH([zlib],
@@ -873,7 +943,7 @@ AC_LINK_IFELSE([AC_LANG_PROGRAM(
 )],
 [
  AC_MSG_RESULT([yes])
- AC_DEFINE([HAVE_WSASTARTUP], [1], [Define to 1 if you have WSAStartup])
+ AC_DEFINE([HAVE_WSASTARTUP], [1], [Define to 1 if you have the `WSAStartup' function])
  WINSOCK_LIBS="-lws2_32"
 ],
 [
@@ -897,7 +967,7 @@ AC_LINK_IFELSE([AC_LANG_PROGRAM(
 )],
 [
  AC_MSG_RESULT([yes])
- AC_DEFINE([HAVE_GETIPNETTABLE], [1], [Define to 1 if you have GetIpNetTable])
+ AC_DEFINE([HAVE_GETIPNETTABLE], [1], [Define to 1 if you have the `GetIpNetTable' function.])
  IPHLPAPI_LIBS="-liphlpapi"
 ],
 [
@@ -920,7 +990,7 @@ AC_LINK_IFELSE([AC_LANG_PROGRAM(
 )],
 [
  AC_MSG_RESULT([yes])
- AC_DEFINE([HAVE_TIMEBEGINPERIOD], [1], [Define to 1 if you have timeBeginPeriod])
+ AC_DEFINE([HAVE_TIMEBEGINPERIOD], [1], [Define to 1 if you have the `timeBeginPeriod' function.])
  WINMM_LIBS="-lwinmm"
 ],
 [
@@ -979,7 +1049,6 @@ AC_SUBST(LIBNV_LIBS)
 
 AX_GCC_BUILTIN(__builtin_clz)
 
-# No thread support
 AC_ARG_ENABLE([threads],
   [AS_HELP_STRING([--disable-threads], [disable use of threads])])
 if test "x$enable_threads" != "xno"; then

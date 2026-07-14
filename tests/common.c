@@ -1,7 +1,7 @@
 /*
  * common.c: common functions that we might need for linking unit tests
  *
- * $Id: common.c,v 1.12 2025/10/13 00:29:07 mjl Exp $
+ * $Id: common.c,v 1.13 2026/07/13 09:06:44 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -193,6 +193,11 @@ void scamper_debug(const char *func, const char *format, ...)
   printf("%s%s\n", fs, message);
 #endif
   return;
+}
+
+int scamper_debug_would(void)
+{
+  return 0;
 }
 
 void printerror(const char *func, const char *format, ...)

@@ -1,7 +1,7 @@
 /*
  * scamper
  *
- * $Id: scamper.c,v 1.387 2026/01/03 03:22:25 mjl Exp $
+ * $Id: scamper.c,v 1.393 2026/05/23 07:39:22 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -12,6 +12,7 @@
  * Copyright (C) 2014      The Regents of the University of California
  * Copyright (C) 2014-2024 Matthew Luckie
  * Copyright (C) 2023-2024 The Regents of the University of California
+ * Copyright (C) 2026      Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -176,6 +177,12 @@
 #define SCAMPER_OPTION_HOLDTIME_MIN  0
 #define SCAMPER_OPTION_HOLDTIME_DEF  5
 #define SCAMPER_OPTION_HOLDTIME_MAX  60
+
+#define SCAMPER_OPTION_LISTID_MIN    1
+#define SCAMPER_OPTION_LISTID_MAX    0x7fffffff
+
+#define SCAMPER_OPTION_CYCLEID_MIN   1
+#define SCAMPER_OPTION_CYCLEID_MAX   0x7fffffff
 
 #define SCAMPER_OPTION_COMMAND_DEF   "trace"
 
@@ -392,10 +399,10 @@ static void usage(uint32_t opt_mask)
   if((opt_mask & OPT_CMDLIST) != 0)
     usage_str('I', "list of scamper commands provided on the command line");
 
-  if((opt_mask & OPT_LISTID) != 0)
+  if((opt_mask & OPT_LISTNAME) != 0)
     usage_str('l', "name to assign to default list");
 
-  if((opt_mask & OPT_LISTNAME) != 0)
+  if((opt_mask & OPT_LISTID) != 0)
     usage_str('L', "list id for default list");
 
   if((opt_mask & OPT_MONITORNAME) != 0)
@@ -488,25 +495,12 @@ static void usage(uint32_t opt_mask)
   return;
 }
 
-static int set_opt(uint32_t opt, char *str, int (*setfunc)(int))
-{
-  long l = 0;
-
-  if(string_isnumber(str) == 0 || string_tolong(str, &l) == -1)
-    {
-      usage(opt);
-      return -1;
-    }
-
-  return setfunc(l);
-}
-
 static int multicall_do(const scamper_multicall_t *mc, int argc, char *argv[])
 {
   char errbuf[256];
-  char *str;
-  size_t off, len, tmp;
-  int i, stop;
+  char *str = NULL;
+  size_t off = 0, len;
+  int i, stop, rc = -1;
 
   errbuf[0] = '\0';
   if(argc == 1 ||
@@ -517,62 +511,39 @@ static int multicall_do(const scamper_multicall_t *mc, int argc, char *argv[])
 	printf("usage: scamper-%s <ip list>\n", mc->usage());
       if(errbuf[0] != '\0')
 	printf("%s\n", errbuf);
-      return -1;
+      goto done;
     }
 
   /* assemble the command string */
   len = strlen(mc->cmd) + 1;
   for(i=1; i<stop; i++)
-    {
-      len += strlen(argv[i]) + 1;
-    }
+    len += 1 + strlen(argv[i]); /* ' ' */
+  len++;
   if((str = malloc_zero(len)) == NULL)
     {
       printerror(__func__, "could not assemble %s command", mc->cmd);
-      return -1;
+      goto done;
     }
-  off = strlen(mc->cmd);
-  memcpy(str, mc->cmd, off);
-  str[off++] = ' ';
+  string_concat(str, len, &off, mc->cmd);
   for(i=1; i<stop; i++)
     {
-      tmp = strlen(argv[i]);
-      memcpy(str+off, argv[i], tmp);
-      off += tmp;
-      str[off++] = ' ';
+      string_concatc(str, len, &off, ' ');
+      string_concat(str, len, &off, argv[i]);
     }
-  str[off] = '\0';
 
   /* set the command */
-  scamper_option_command_set(str);
-  free(str);
+  if(scamper_option_command_set(str) != 0)
+    goto done;
 
   options    |= OPT_IP;
   outtype     = "text";
   arglist     = argv + stop;
   arglist_len = argc - stop;
+  rc = 0;
 
-  return 0;
-}
-
-static int cycleid_set(const int cid)
-{
-  if(cid > 0 && cid <= 0x7fffffff)
-    {
-      cycleid = cid;
-      return 0;
-    }
-  return -1;
-}
-
-static int listid_set(const int lid)
-{
-  if(lid > 0 && lid <= 0x7fffffff)
-    {
-      listid = lid;
-      return 0;
-    }
-  return -1;
+ done:
+  if(str != NULL) free(str);
+  return rc;
 }
 
 static int ppswindow_set(int p, int w)
@@ -891,7 +862,7 @@ static int check_options(int argc, char *argv[])
 #ifndef DISABLE_SCAMPER_DNP
 	  else if(strncasecmp(optarg, "dnp=", 4) == 0)
 	    {
-	      if((dnp_list = slist_alloc()) == NULL ||
+	      if((dnp_list == NULL && (dnp_list = slist_alloc()) == NULL) ||
 		 slist_tail_push(dnp_list, optarg + 4) == NULL)
 		goto done;
 	    }
@@ -1023,17 +994,28 @@ static int check_options(int argc, char *argv[])
       goto done;
     }
 
-  if(options & OPT_LISTID && set_opt(OPT_LISTID, opt_listid, listid_set) != 0)
+  if(options & OPT_LISTID)
     {
-      usage(OPT_LISTID);
-      goto done;
+      if(string_isnumber(opt_listid) == 0 ||
+	 string_tolong(opt_listid, &lo) != 0 ||
+	 lo < SCAMPER_OPTION_LISTID_MIN || lo > SCAMPER_OPTION_LISTID_MAX)
+	{
+	  usage(OPT_LISTID);
+	  goto done;
+	}
+      listid = (int)lo;
     }
 
-  if(options & OPT_CYCLEID &&
-     set_opt(OPT_CYCLEID, opt_cycleid, cycleid_set) != 0)
+  if(options & OPT_CYCLEID)
     {
-      usage(OPT_CYCLEID);
-      goto done;
+      if(string_isnumber(opt_cycleid) == 0 ||
+	 string_tolong(opt_cycleid, &lo) != 0 ||
+	 lo < SCAMPER_OPTION_CYCLEID_MIN || lo > SCAMPER_OPTION_CYCLEID_MAX)
+	{
+	  usage(OPT_CYCLEID);
+	  goto done;
+	}
+      cycleid = (int)lo;
     }
 
 #ifndef WITHOUT_DEBUGFILE
@@ -1551,6 +1533,7 @@ int scamper_seteuid_raise(uid_t *uid_p, uid_t *euid_p)
 
 void scamper_seteuid_lower(uid_t *uid_p, uid_t *euid_p)
 {
+  int saved_errno = errno;
   assert(uid_p != euid_p);
   if(*uid_p != *euid_p && seteuid(*uid_p) != 0)
     {
@@ -1558,6 +1541,7 @@ void scamper_seteuid_lower(uid_t *uid_p, uid_t *euid_p)
       exit(-errno);
     }
   *euid_p = *uid_p;
+  errno = saved_errno;
   return;
 }
 
@@ -1687,7 +1671,7 @@ static int scamper_loadcerts(void)
    */
   assert(remote_client_privfile != NULL);
 
-  /* we should already have a remote_tlx_ctx */
+  /* we should already have a remote_tls_ctx */
   assert(remote_tls_ctx != NULL);
 
 #ifndef DISABLE_SCAMPER_PRIVSEP
@@ -1719,7 +1703,7 @@ static int scamper_loadcerts(void)
   if(SSL_CTX_use_certificate_chain_file(remote_tls_ctx,
 					remote_client_certfile) != 1)
     {
-      printerror_ssl(__func__, "could load client cert from %s",
+      printerror_ssl(__func__, "could not load client cert from %s",
 		     remote_client_certfile);
       goto err;
     }

@@ -1,12 +1,12 @@
 /*
  * scamper_writebuf.c: use in combination with select to send without blocking
  *
- * $Id: scamper_writebuf.c,v 1.55 2025/10/12 23:06:45 mjl Exp $
+ * $Id: scamper_writebuf.c,v 1.59 2026/05/24 07:36:02 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2010 The University of Waikato
  * Copyright (C) 2014      The Regents of the University of California
- * Copyright (C) 2014-2025 Matthew Luckie
+ * Copyright (C) 2014-2026 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -77,7 +77,7 @@ static void writebuf_iovfree(scamper_writebuf_t *wb, size_t size)
       iov = slist_node_item(node);
 
       /* if the whole iovec was used then it can be free'd */
-      if(iov->iov_len <= (size_t)size)
+      if(iov->iov_len <= size)
 	{
 	  size -= iov->iov_len;
 	  slist_head_pop(wb->iovs);
@@ -287,6 +287,7 @@ size_t scamper_writebuf_len2(const scamper_writebuf_t *wb,char *str,size_t len)
 int scamper_writebuf_send(scamper_writebuf_t *wb, const void *vdata, size_t len)
 {
   const uint8_t *data = (const uint8_t *)vdata;
+  struct iovec *iov;
   size_t s, x;
 
   /* make sure there is data to send */
@@ -324,8 +325,12 @@ int scamper_writebuf_send(scamper_writebuf_t *wb, const void *vdata, size_t len)
       wb->tail->iov_len += x;
       len -= x;
       data += x;
-      if(wb->tail->iov_len == pagesize && (wb->tail = iov_alloc()) == NULL)
-	return -1;
+      if(wb->tail->iov_len == pagesize)
+	{
+	  if((iov = iov_alloc()) == NULL)
+	    return -1;
+	  wb->tail = iov;
+	}
     }
 
   return 0;
@@ -384,7 +389,8 @@ scamper_writebuf_t *scamper_writebuf_alloc(void)
 #ifdef IOV_MAX
       iov_max = IOV_MAX;
 #elif defined(_SC_IOV_MAX)
-      iov_max = sysconf(_SC_IOV_MAX);
+      if((iov_max = sysconf(_SC_IOV_MAX)) < 1)
+	iov_max = 1;
 #else
       iov_max = 1;
 #endif
