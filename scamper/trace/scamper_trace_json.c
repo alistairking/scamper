@@ -6,11 +6,11 @@
  * Copyright (C) 2011-2013 Internap Network Services Corporation
  * Copyright (C) 2013-2014 The Regents of the University of California
  * Copyright (C) 2015      The University of Waikato
- * Copyright (C) 2016-2025 Matthew Luckie
+ * Copyright (C) 2016-2026 Matthew Luckie
  *
  * Authors: Brian Hammond, Matthew Luckie
  *
- * $Id: scamper_trace_json.c,v 1.56 2026/03/29 02:52:18 mjl Exp $
+ * $Id: scamper_trace_json.c,v 1.57 2026/06/13 23:03:24 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -282,7 +282,7 @@ static char *header_tostr(const scamper_trace_t *trace)
       string_concat(buf, sizeof(buf), &off, ",\"flags\":[");
       for(i=0; i<32; i++)
 	{
-	  if((flag = trace->flags & (0x1 << i)) != 0)
+	  if((flag = trace->flags & (0x1u << i)) != 0)
 	    {
 	      if(comma != 0)
 		string_concatc(buf, sizeof(buf), &off, ',');

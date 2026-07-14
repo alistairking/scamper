@@ -1,7 +1,7 @@
 /*
  * unit_cmd_http : unit tests for http commands
  *
- * $Id: unit_cmd_http.c,v 1.7 2025/05/02 04:39:00 mjl Exp $
+ * $Id: unit_cmd_http.c,v 1.8 2026/06/13 04:50:46 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -195,16 +195,20 @@ int main(int argc, char *argv[])
 {
   sc_test_t tests[] = {
     {"-u http://www.example.com/ 192.0.2.1", http_example},
+    {"-u http://www.example.com: 192.0.2.1", http_example},
+    {"-u http://www.example.com:/ 192.0.2.1", http_example},
     {"-u http://www.example.com/ -U 69 192.0.2.1", http_example_userid},
     {"-u https://www.example.com 2001:db8::1", https_example},
+    {"-u https://www.example.com:+7443 2001:db8::1", isnull},
+    {"-u https://www.example.com:7443fdf 2001:db8::1", isnull},
     {"-u https://www.example.com:7443 2001:db8::1", https_example_7443},
+    {"-u https://www.example.com:7443/ 2001:db8::1", https_example_7443},
     {"-u https://www.example.com/foo.txt 2001:db8::1", https_example_foo},
     {"-u 'https://www.example.com/foo.txt' 2001:db8::1", https_example_foo},
     {"-u \"https://www.example.com/foo.txt\" 2001:db8::1", https_example_foo},
     {"-u https://www.example.com:77443 2001:db8::1", isnull},
     {"-u htt://www.example.com 2001:db8::1", isnull},
     {"-u http://www.example;.com 2001:db8::1", isnull},
-    {"-u https://www.example.com: 2001:db8::1", isnull},
     {"-u https://www.example.com\\ 2001:db8::1", isnull},
     /* check header parsing */
     {"-H 'User-Agent: mjl' -u http://www.example.com/ 192.0.2.1",

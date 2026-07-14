@@ -1,7 +1,7 @@
 /*
  * scamper.h
  *
- * $Id: scamper.h,v 1.82.30.1 2026/04/20 06:42:43 mjl Exp $
+ * $Id: scamper.h,v 1.84.2.1 2026/07/14 00:33:05 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -27,7 +27,7 @@
 #ifndef __SCAMPER_H
 #define __SCAMPER_H
 
-#define SCAMPER_OPTION_PPS_MIN       1
+#define SCAMPER_OPTION_PPS_MIN       2
 #define SCAMPER_OPTION_PPS_DEF       20
 #define SCAMPER_OPTION_PPS_MAX       50000
 int scamper_option_pps_get(void);
@@ -84,6 +84,6 @@ int scamper_pidfile(void);
 uint16_t scamper_sport_default(void);
 uint16_t scamper_pid_u16(void);
 
-#define SCAMPER_VERSION "20260420"
+#define SCAMPER_VERSION "20260713"
 
 #endif /* __SCAMPER_H */

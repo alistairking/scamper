@@ -5,7 +5,7 @@
  *
  * Author: Matthew Luckie
  *
- * $Id: scamper_http_warts.c,v 1.8 2026/03/26 23:26:43 mjl Exp $
+ * $Id: scamper_http_warts.c,v 1.9 2026/07/11 20:15:41 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -344,6 +344,7 @@ static int warts_http_params(const scamper_http_t *http, uint8_t *flags,
 static int warts_http_params_read(scamper_http_t *http, warts_state_t *state,
 				  uint8_t *buf, uint32_t *off, uint32_t len)
 {
+  uint8_t dport_set = 0;
   warts_param_reader_t handlers[] = {
     {&http->list,         (wpr_t)extract_list,         state},
     {&http->cycle,        (wpr_t)extract_cycle,        state},
@@ -351,7 +352,7 @@ static int warts_http_params_read(scamper_http_t *http, warts_state_t *state,
     {&http->src,          (wpr_t)extract_addr_static,  NULL},
     {&http->dst,          (wpr_t)extract_addr_static,  NULL},
     {&http->sport,        (wpr_t)extract_uint16,       NULL},
-    {&http->dport,        (wpr_t)extract_uint16,       NULL},
+    {&http->dport,        (wpr_t)extract_uint16_set,   &dport_set},
     {&http->start,        (wpr_t)extract_timeval,      NULL},
     {&http->stop,         (wpr_t)extract_byte,         NULL},
     {&http->type,         (wpr_t)extract_byte,         NULL},
@@ -367,12 +368,11 @@ static int warts_http_params_read(scamper_http_t *http, warts_state_t *state,
     {&http->ech_outer_sni, (wpr_t)extract_string,       NULL},
   };
   const int handler_cnt = sizeof(handlers) / sizeof(warts_param_reader_t);
-  uint32_t o = *off;
 
   if(warts_params_read(buf, off, len, handlers, handler_cnt) != 0)
     return -1;
 
-  if(flag_isset(&buf[o], WARTS_HTTP_DPORT) == 0)
+  if(dport_set == 0)
     {
       if(http->type == SCAMPER_HTTP_TYPE_HTTPS)
 	http->dport = 443;

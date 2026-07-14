@@ -1,11 +1,11 @@
 /*
  * scamper_icmp6.h
  *
- * $Id: scamper_icmp6.h,v 1.23 2025/10/15 01:29:55 mjl Exp $
+ * $Id: scamper_icmp6.h,v 1.24 2026/07/13 09:20:00 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2009 The University of Waikato
- * Copyright (C) 2023      Matthew Luckie
+ * Copyright (C) 2023-2026 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -42,14 +42,6 @@ void scamper_icmp6_cleanup(void);
 int scamper_icmp6_probe(scamper_probe_t *probe, scamper_err_t *err);
 int scamper_icmp6_build(scamper_probe_t *probe, uint8_t *buf, size_t *len);
 uint16_t scamper_icmp6_cksum(scamper_probe_t *probe);
-#endif
-
-#ifdef __SCAMPER_ICMP_RESP_H
-#ifndef _WIN32 /* SOCKET vs int on windows */
-int scamper_icmp6_recv(int fd, scamper_icmp_resp_t *resp);
-#else
-int scamper_icmp6_recv(SOCKET fd, scamper_icmp_resp_t *resp);
-#endif
 #endif
 
 #endif /* __SCAMPER_ICMP6_H */

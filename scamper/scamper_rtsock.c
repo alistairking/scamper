@@ -1,7 +1,7 @@
 /*
  * scamper_rtsock: code to deal with a route socket or equivalent
  *
- * $Id: scamper_rtsock.c,v 1.114 2025/10/20 01:22:20 mjl Exp $
+ * $Id: scamper_rtsock.c,v 1.117 2026/06/28 02:44:57 mjl Exp $
  *
  *          Matthew Luckie
  *
@@ -535,7 +535,8 @@ static void rtsock_parsemsg(uint8_t *buf, size_t len)
 #endif
 
 #if defined(HAVE_BSD_ROUTE_SOCKET)
-static void rtsock_parsemsg_route(uint8_t *buf, scamper_route_t *route)
+static void rtsock_parsemsg_route(uint8_t *buf, size_t len,
+				  scamper_route_t *route)
 {
   struct rt_msghdr   *rtm = (struct rt_msghdr *)buf;
   struct sockaddr    *addrs[RTAX_MAX];
@@ -562,11 +563,21 @@ static void rtsock_parsemsg_route(uint8_t *buf, scamper_route_t *route)
     {
       if(rtm->rtm_addrs & (1 << i))
 	{
+	  if(len - off < sizeof(struct sockaddr))
+	    {
+	      scamper_err_make(&error, 0, "rtsock_parsemsg: short address");
+	      goto err;
+	    }
 	  addrs[i] = sa = (struct sockaddr *)(buf + off);
 	  if((tmp = sockaddr_len(sa)) <= 0)
 	    {
 	      scamper_err_make(&error, 0, "rtsock_parsemsg: unhandled af %d",
 			       sa->sa_family);
+	      goto err;
+	    }
+	  if(len - off < scamper_rtsock_roundup(tmp))
+	    {
+	      scamper_err_make(&error, 0, "rtsock_parsemsg: short address");
 	      goto err;
 	    }
 	  off += scamper_rtsock_roundup(tmp);
@@ -660,6 +671,12 @@ static void rtsock_parsemsg(uint8_t *buf, size_t len)
        * a pair for it
        */
       rtm = (struct rt_msghdr *)(buf + x);
+      if(rtm->rtm_msglen < sizeof(struct rt_msghdr))
+	{
+	  scamper_debug(__func__, "rtm->rtm_msglen %d < %d",
+			(int)rtm->rtm_msglen, (int)sizeof(struct rt_msghdr));
+	  break;
+	}
       if(rtm->rtm_pid != pid ||
 	 rtm->rtm_msglen > len - x ||
 	 rtm->rtm_type != RTM_GET ||
@@ -669,7 +686,7 @@ static void rtsock_parsemsg(uint8_t *buf, size_t len)
 
       route = pair->route;
       rtsock_pair_free(pair);
-      rtsock_parsemsg_route(buf + x, route);
+      rtsock_parsemsg_route(buf + x, rtm->rtm_msglen, route);
 
     next:
       x += rtm->rtm_msglen;
@@ -750,7 +767,6 @@ static int scamper_rtsock_getroute4(scamper_route_t *route,
   if((dw = GetBestRoute(in->s_addr, 0, &fw)) != NO_ERROR)
     {
       scamper_err_make(error, 0, "rtsock_getroute4: could not get route");
-      route->error = dw;
       return -1;
     }
 
@@ -761,7 +777,6 @@ static int scamper_rtsock_getroute4(scamper_route_t *route,
     {
       if((route->gw = scamper_addrcache_get_ipv4(addrcache, &dw)) == NULL)
 	{
-	  route->error = errno;
 	  scamper_err_make(error, errno, "rtsock_getroute4: could not get gw");
 	  return -1;
 	}
@@ -776,7 +791,7 @@ int scamper_rtsock_getroute(scamper_route_t *route, scamper_err_t *error)
     {
       if(scamper_rtsock_getroute4(route, error) != 0)
 	return -1;
-      route->cb(route);
+      route->cb(route, NULL);
     }
   else
     {

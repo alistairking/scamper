@@ -1,12 +1,12 @@
 /*
  * scamper_tcp6.c
  *
- * $Id: scamper_tcp6.c,v 1.43 2025/10/20 01:21:44 mjl Exp $
+ * $Id: scamper_tcp6.c,v 1.46 2026/07/03 21:57:47 mjl Exp $
  *
  * Copyright (C) 2006      Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2012,2015 The Regents of the University of California
- * Copyright (C) 2023      Matthew Luckie
+ * Copyright (C) 2023-2026 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -122,10 +122,10 @@ static void tcp_cksum(struct ip6_hdr *ip6, struct tcphdr *tcp, size_t len)
 {
   struct in6_addr a;
   uint16_t *w;
-  int sum = 0;
+  uint32_t sum = 0;
 
   /*
-   * the TCP checksum includes a checksum calculated over a psuedo header
+   * the TCP checksum includes a checksum calculated over a pseudo header
    * that includes the src and dst IP addresses, the protocol type, and
    * the TCP length.
    */
@@ -141,17 +141,7 @@ static void tcp_cksum(struct ip6_hdr *ip6, struct tcphdr *tcp, size_t len)
   sum += htons(IPPROTO_TCP);
 
   /* compute the checksum over the body of the TCP message */
-  w = (uint16_t *)tcp;
-  while(len > 1)
-    {
-      sum += *w++;
-      len -= 2;
-    }
-
-  if(len != 0)
-    {
-      sum += ((uint8_t *)w)[0];
-    }
+  sum += in_cksum_sum((uint16_t *)tcp, len);
 
   /* fold the checksum */
   sum  = (sum >> 16) + (sum & 0xffff);
@@ -239,9 +229,9 @@ int scamper_tcp6_build(scamper_probe_t *probe, uint8_t *buf, size_t *len)
 	  if((probe->pr_tcp_opts & SCAMPER_PROBE_TCPOPT_SACK) != 0)
 	    tcphlen += tcp_sackp(buf+ip6hlen+tcphlen);
 	  if((probe->pr_tcp_opts & SCAMPER_PROBE_TCPOPT_FO) != 0)
-	    tcphlen += tcp_fo(buf+tcphlen, probe);
+	    tcphlen += tcp_fo(buf+ip6hlen+tcphlen, probe);
 	  if((probe->pr_tcp_opts & SCAMPER_PROBE_TCPOPT_FO_EXP) != 0)
-	    tcphlen += tcp_fo_exp(buf+tcphlen, probe);
+	    tcphlen += tcp_fo_exp(buf+ip6hlen+tcphlen, probe);
 	}
 
       if((probe->pr_tcp_opts & SCAMPER_PROBE_TCPOPT_TS) != 0)

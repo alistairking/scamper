@@ -1,7 +1,7 @@
 /*
  * scamper_source
  *
- * $Id: scamper_sources.c,v 1.95 2025/12/04 08:11:00 mjl Exp $
+ * $Id: scamper_sources.c,v 1.98 2026/06/10 07:24:22 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -9,6 +9,7 @@
  * Copyright (C) 2012      The Regents of the University of California
  * Copyright (C) 2018-2024 Matthew Luckie
  * Copyright (C) 2023      The Regents of the University of California
+ * Copyright (C) 2026      Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -281,7 +282,7 @@ static const command_func_t command_funcs[] = {
     scamper_do_udpprobe_enabled,
   },
 #endif
-#ifndef DISABLE_SCAMPER_UDPPROBE
+#ifndef DISABLE_SCAMPER_OWAMP
   {
     "owamp", 5,
     scamper_do_owamp_alloc,
@@ -293,7 +294,8 @@ static const command_func_t command_funcs[] = {
 #endif
 };
 
-static size_t command_funcc = sizeof(command_funcs) / sizeof(command_func_t);
+static const size_t command_funcc =
+  sizeof(command_funcs) / sizeof(command_func_t);
 
 /*
  * command
@@ -788,7 +790,8 @@ static int command_probe_handle(scamper_source_t *source, command_t *command,
   return 0;
 
  err:
-  if(st != NULL) scamper_sourcetask_free(st);
+  /* scamper_task_free will free scamper_sourcetask_t */
+  if(st != NULL) scamper_task_free(st->task);
   if(task != NULL) scamper_task_free(task);
   if(command != NULL) command_free(command);
   sources_assert();
@@ -1256,8 +1259,7 @@ static const command_func_t *command_func_get(const char *command)
     {
       func = &command_funcs[i];
       if(strncasecmp(command, func->command, func->len) == 0 &&
-	 isspace((unsigned char)command[func->len]) &&
-	 command[func->len] != '\0')
+	 isspace((unsigned char)command[func->len]))
 	{
 	  return func;
 	}
@@ -1374,7 +1376,7 @@ int scamper_source_command2(scamper_source_t *s, const char *command,
   task = NULL;
 
   /* assign an id.  assume for now this will be enough to ensure uniqueness */
-  st->id = *id = s->id;
+  st->id = s->id;
   if(++s->id == 0) s->id = 1;
   if((st->idnode = splaytree_insert(s->idtree, st)) == NULL)
     {
@@ -1397,10 +1399,13 @@ int scamper_source_command2(scamper_source_t *s, const char *command,
 
   source_active_attach(s);
   sources_assert();
+  *id = st->id;
   return 0;
 
  err:
-  /* XXX free scamper_sourcetask_t ?? */
+  /* scamper_task_free will free scamper_sourcetask_t */
+  if(st != NULL) scamper_task_free(st->task);
+  if(task != NULL) scamper_task_free(task);
   if(data != NULL) f->freedata(data);
   if(cmd != NULL) command_free(cmd);
   sources_assert();
@@ -1415,7 +1420,6 @@ int scamper_source_command(scamper_source_t *source, const char *command)
 {
   const command_func_t *func = NULL;
   command_t *cmd = NULL;
-  char *opts = NULL;
   void *data = NULL;
   char errbuf[256];
 
@@ -1443,7 +1447,7 @@ int scamper_source_command(scamper_source_t *source, const char *command)
   if((cmd = command_alloc(COMMAND_PROBE)) == NULL)
     goto err;
   cmd->un.pr.funcs    = func;
-  cmd->un.pr.data     = data;
+  cmd->un.pr.data     = data; data = NULL;
   cmd->un.pr.cyclemon = scamper_cyclemon_use(source->cyclemon);
 
   if(dlist_tail_push(source->commands, cmd) == NULL)
@@ -1454,9 +1458,8 @@ int scamper_source_command(scamper_source_t *source, const char *command)
   return 0;
 
  err:
-  if(opts != NULL) free(opts);
   if(data != NULL) func->freedata(data);
-  if(cmd != NULL) free(cmd);
+  if(cmd != NULL) command_free(cmd);
   sources_assert();
   return -1;
 }
@@ -1662,7 +1665,7 @@ scamper_source_t *scamper_sources_get(char *name)
  * return to the caller if it is likely that the sources have more tasks
  * to return
  */
-int scamper_sources_isempty()
+int scamper_sources_isempty(void)
 {
   sources_assert();
 
@@ -1702,7 +1705,7 @@ int scamper_sources_isready(void)
  *
  * flush all sources of commands; disconnect all sources.
  */
-void scamper_sources_empty()
+void scamper_sources_empty(void)
 {
   scamper_source_t *source;
 

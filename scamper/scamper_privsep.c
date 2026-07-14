@@ -1,13 +1,14 @@
 /*
  * scamper_privsep.c: code that does root-required tasks
  *
- * $Id: scamper_privsep.c,v 1.114 2026/04/17 20:51:45 mjl Exp $
+ * $Id: scamper_privsep.c,v 1.121 2026/06/22 07:29:34 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2013-2014 The Regents of the University of California
  * Copyright (C) 2016-2022 Matthew Luckie
  * Copyright (C) 2023-2024 The Regents of the University of California
+ * Copyright (C) 2026      Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -366,7 +367,7 @@ static int privsep_root_open_rawip(uint16_t plen, const uint8_t *param)
 {
   if(plen != 0)
     {
-      scamper_debug(__func__, "plen %u != 4", plen);
+      scamper_debug(__func__, "plen %u != 0", plen);
       errno = EINVAL;
       return -1;
     }
@@ -531,21 +532,10 @@ static int privsep_root_pf_init(uint16_t plen, const uint8_t *param)
 {
 #ifdef HAVE_PF
   const char *name = (const char *)param;
-  if(plen == 0)
+  if(plen < 2 || name[plen-1] != '\0' || strlen(name) + 1 != plen ||
+     string_isprint(name, plen) == 0)
     {
-      scamper_debug(__func__, "plen == 0");
-      errno = EINVAL;
-      return -1;
-    }
-  if(string_isprint(name, plen) == 0)
-    {
-      scamper_debug(__func__, "name is not printable");
-      errno = EINVAL;
-      return -1;
-    }
-  if(name[plen] != '\0' || strlen(name) + 1 != plen)
-    {
-      scamper_debug(__func__, "malformed initialisation");
+      scamper_debug(__func__, "invalid name");
       errno = EINVAL;
       return -1;
     }
@@ -850,7 +840,7 @@ static int privsep_root_send_fd(int send_fd, int error, uint8_t msg_type)
       vec.iov_len  = 1;
       msg.msg_iov = &vec;
       msg.msg_iovlen = 1;
-      msg.msg_control = (caddr_t)cmsgbuf;
+      msg.msg_control = (void *)cmsgbuf;
       msg.msg_controllen = sizeof(cmsgbuf);
 
       cmsg = CMSG_FIRSTHDR(&msg);
@@ -1011,7 +1001,7 @@ static int privsep_unpriv_read_fd(uint8_t msg_type)
   struct msghdr   msg;
   struct iovec    vec;
   ssize_t         r;
-  int             error;
+  int             error, fd;
   struct cmsghdr *cmsg;
   uint8_t         type;
   uint8_t         cmsgbuf[CMSG_SPACE(sizeof(int))];
@@ -1024,7 +1014,7 @@ static int privsep_unpriv_read_fd(uint8_t msg_type)
       vec.iov_len  = 1;
       msg.msg_iov = &vec;
       msg.msg_iovlen = 1;
-      msg.msg_control = (caddr_t)cmsgbuf;
+      msg.msg_control = (void *)cmsgbuf;
       msg.msg_controllen = sizeof(cmsgbuf);
       if((r = recvmsg(unpriv_fd, &msg, 0)) < 0)
 	{
@@ -1065,8 +1055,15 @@ static int privsep_unpriv_read_fd(uint8_t msg_type)
    * message, we're done
    */
   cmsg = CMSG_FIRSTHDR(&msg);
-  if(cmsg != NULL && cmsg->cmsg_type == SCM_RIGHTS)
-    return *((int *)CMSG_DATA(cmsg));
+  if(cmsg != NULL &&
+     cmsg->cmsg_level == SOL_SOCKET && cmsg->cmsg_type == SCM_RIGHTS)
+    {
+      if(cmsg->cmsg_len == CMSG_LEN(sizeof(int)))
+	memcpy(&fd, CMSG_DATA(cmsg), sizeof(int));
+      else
+	fd = -1;
+      return fd;
+    }
 
   /* we didn't get a file descriptor, so an error should follow */
   if(privsep_fd_read(unpriv_fd, (uint8_t *)&error, sizeof(int)) <= 0)
@@ -1332,7 +1329,9 @@ int scamper_privsep_ipfw_del(int n, int af)
 
 int scamper_privsep_pf_init(const char *anchor)
 {
-  int len = strlen(anchor) + 1;
+  size_t len = strlen(anchor) + 1;
+  if(len > UINT16_MAX)
+    return -1;
   return privsep_unpriv_dotask(SCAMPER_PRIVSEP_PF_INIT,
 			       len, (const uint8_t *)anchor);
 }
@@ -1409,7 +1408,7 @@ void scamper_privsep_read_cb(int fd, void *param)
  */
 int scamper_privsep_init()
 {
-  struct addrinfo hints, *res0;
+  struct addrinfo hints, *res0 = NULL;
   struct timeval tv;
   struct passwd *pw;
   struct stat sb;
@@ -1488,7 +1487,8 @@ int scamper_privsep_init()
     }
   uid = pw->pw_uid;
   gid = pw->pw_gid;
-  memset(pw->pw_passwd, 0, strlen(pw->pw_passwd));
+  if(pw->pw_passwd != NULL)
+    memset(pw->pw_passwd, 0, strlen(pw->pw_passwd));
 
 #if defined(HAVE_ENDPWENT)
   endpwent();
@@ -1555,7 +1555,8 @@ int scamper_privsep_init()
   hints.ai_protocol = IPPROTO_UDP;
   hints.ai_family   = AF_INET;
   getaddrinfo("localhost", NULL, &hints, &res0);
-  freeaddrinfo(res0);
+  if(res0 != NULL)
+    freeaddrinfo(res0);
 
   /* change the root directory of the unprivileged directory */
   if(chroot(PRIVSEP_DIR) == -1)

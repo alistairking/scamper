@@ -36,6 +36,11 @@ cdef extern from "scamper_icmpext.h":
 
  int scamper_icmpext_cmp(const scamper_icmpext_t *a, const scamper_icmpext_t *b)
 
+ uint8_t scamper_icmpext_cn_get(const scamper_icmpext_t *ie)
+ uint8_t scamper_icmpext_ct_get(const scamper_icmpext_t *ie)
+ uint16_t scamper_icmpext_dl_get(const scamper_icmpext_t *ie)
+ const uint8_t *scamper_icmpext_data_get(const scamper_icmpext_t *ie)
+
  bint scamper_icmpext_is_mpls(const scamper_icmpext_t *ie)
  uint16_t scamper_icmpext_mpls_count_get(const scamper_icmpext_t *ie)
  uint32_t scamper_icmpext_mpls_label_get(const scamper_icmpext_t *ie, uint16_t i)

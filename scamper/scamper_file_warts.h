@@ -3,12 +3,12 @@
  *
  * the warts file format
  *
- * $Id: scamper_file_warts.h,v 1.37 2026/03/26 06:17:56 mjl Exp $
+ * $Id: scamper_file_warts.h,v 1.42 2026/07/11 20:48:29 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2012      The Regents of the University of California
- * Copyright (C) 2016-2025 Matthew Luckie
+ * Copyright (C) 2016-2026 Matthew Luckie
  * Copyright (C) 2024      The Regents of the University of California
  * Author: Matthew Luckie
  *
@@ -102,9 +102,7 @@ typedef struct warts_param_writer
   void       *param;
 } warts_param_writer_t;
 
-void flag_ij(const int id, int *i, int *j);
 void flag_set(uint8_t *flags, const int id, int *max_id);
-int flag_isset(const uint8_t *flags, const int id);
 uint16_t fold_flags(uint8_t *flags, const int max_id);
 
 int warts_str_size(const char *str, uint16_t *len);
@@ -140,9 +138,9 @@ void insert_wartshdr(uint8_t *buf, uint32_t *off, uint32_t len,
 void insert_byte(uint8_t *buf, uint32_t *off, const uint32_t len,
 			const uint8_t *in, void *param);
 void insert_bytes_uint16(uint8_t *buf,uint32_t *off,const uint32_t len,
-				const void *vin, uint16_t *count);
+			 const void *vin, const uint16_t *count);
 void insert_bytes_uint32(uint8_t *buf, uint32_t *off, const uint32_t len,
-			 const void *vin, uint32_t *count);
+			 const void *vin, const uint32_t *count);
 void insert_string(uint8_t *buf, uint32_t *off, const uint32_t len,
 			  const char *in, void *param);
 void insert_timeval(uint8_t *buf, uint32_t *off, const uint32_t len,
@@ -156,14 +154,18 @@ int extract_addr(const uint8_t *buf, uint32_t *off, uint32_t len,
 		 scamper_addr_t **out, warts_addrtable_t *table);
 int extract_string(const uint8_t *buf, uint32_t *off,
 			  const uint32_t len, char **out, void *param);
-int extract_uint16(const uint8_t *buf, uint32_t *off,
-			  const uint32_t len, uint16_t *out, void *param);
+int extract_uint16(const uint8_t *buf, uint32_t *off, uint32_t len,
+		   uint16_t *out, void *param);
+int extract_uint16_set(const uint8_t *buf, uint32_t *off, uint32_t len,
+		       uint16_t *out, uint8_t *set);
 int extract_uint32(const uint8_t *buf, uint32_t *off,
 		   const uint32_t len, uint32_t *out, void *param);
 int extract_int32(const uint8_t *buf, uint32_t *off,
 		  const uint32_t len, int32_t *out, void *param);
-int extract_byte(const uint8_t *buf, uint32_t *off,
-			const uint32_t len, uint8_t *out, void *param);
+int extract_byte(const uint8_t *buf, uint32_t *off, uint32_t len,
+		 uint8_t *out, void *param);
+int extract_byte_set(const uint8_t *buf, uint32_t *off, uint32_t len,
+		     uint8_t *out, uint8_t *set);
 int extract_bytes_ptr(const uint8_t *buf, uint32_t *off,
 			     const uint32_t len, const uint8_t **out,
 			     uint16_t *req);
@@ -173,8 +175,6 @@ int extract_bytes_alloc(const uint8_t *buf, uint32_t *off,
 int extract_bytes_alloc32(const uint8_t *buf, uint32_t *off,
 			  const uint32_t len, uint8_t **out,
 			  uint32_t *req);
-int extract_bytes(const uint8_t *buf, uint32_t *off, const uint32_t len,
-			 uint8_t *out, uint16_t *req);
 int extract_addr_gid(const uint8_t *buf, uint32_t *off,
 			    const uint32_t len,
 			    scamper_addr_t **addr, warts_state_t *state);

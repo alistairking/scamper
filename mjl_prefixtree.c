@@ -8,7 +8,7 @@
  * mjl_patricia.  Note, we cannot use a generic Patricia Trie to do
  * longest matching prefix lookup, hence this tree.
  *
- * Copyright (C) 2016-2025 Matthew Luckie. All rights reserved.
+ * Copyright (C) 2016-2026 Matthew Luckie. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -31,7 +31,7 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  *
- * $Id: mjl_prefixtree.c,v 1.24 2025/08/02 07:29:46 mjl Exp $
+ * $Id: mjl_prefixtree.c,v 1.27 2026/06/13 20:39:11 mjl Exp $
  *
  */
 
@@ -279,35 +279,67 @@ static prefixtree_node_t *prefixtree_node_alloc_dm(void *pref, int bit,
   return n;
 }
 
+/*
+ * ip4_bit:
+ *
+ * return a bit from the IPv4 address.  bit 0 is the left most bit,
+ * bit 31 is the right most bit.
+ */
 static int ip4_bit(const struct in_addr *ip, int bit)
 {
   assert(bit >= 0); assert(bit < 32);
   return (ntohl(ip->s_addr) >> (31 - bit)) & 1;
 }
 
+/*
+ * ip6_bit:
+ *
+ * return a bit from the IPv6 address.  bit 0 is the left most bit,
+ * bit 127 is the right most bit.
+ */
+#ifndef TEST_PREFIXTREE
 static int ip6_bit(const struct in6_addr *ip, int bit)
+#else
+int ip6_bit(const struct in6_addr *ip, int bit)
+#endif
 {
   assert(bit >= 0); assert(bit < 128);
 #ifndef _WIN32 /* windows does not have s6_addr32 for in6_addr */
-  return (ntohl(ip->s6_addr32[bit/32]) >> (32 - ((bit+1) % 32))) & 1;
+  return (ntohl(ip->s6_addr32[bit/32]) >> (31 - (bit % 32))) & 1;
 #else
-  return (ntohs(ip->u.Word[bit/16]) >> (16 - ((bit+1) % 16))) & 1;
+  return (ntohs(ip->u.Word[bit/16]) >> (15 - (bit % 16))) & 1;
 #endif
 }
 
+/*
+ * prefix4_bit:
+ *
+ * return a bit from the IPv4 prefix.  bit 0 is the left most bit,
+ * bit 31 is the right most bit.
+ */
 static int prefix4_bit(const prefix4_t *pref, int bit)
 {
   assert(bit >= 0); assert(bit < 32);
   return (ntohl(pref->net.s_addr) >> (31 - bit)) & 1;
 }
 
+/*
+ * prefix6_bit:
+ *
+ * return a bit from the IPv6 prefix.  bit 0 is the left most bit,
+ * bit 127 is the right most bit.
+ */
+#ifndef TEST_PREFIXTREE
 static int prefix6_bit(const prefix6_t *pref, int bit)
+#else
+int prefix6_bit(const prefix6_t *pref, int bit)
+#endif
 {
   assert(bit >= 0); assert(bit < 128);
 #ifndef _WIN32 /* windows does not have s6_addr32 for in6_addr */
-  return (ntohl(pref->net.s6_addr32[bit/32]) >> (32 - ((bit+1) % 32))) & 1;
+  return (ntohl(pref->net.s6_addr32[bit/32]) >> (31 - (bit % 32))) & 1;
 #else
-  return (ntohs(pref->net.u.Word[bit/16]) >> (16 - ((bit+1) % 16))) & 1;
+  return (ntohs(pref->net.u.Word[bit/16]) >> (15 - (bit % 16))) & 1;
 #endif
 }
 
@@ -480,7 +512,7 @@ int prefix6_isvalid(const struct in6_addr *net, uint8_t len)
 	      continue;
 	    }
 
-	  if((net->u.Word[i] & htonl(~uint16_mask[len-off])) != 0)
+	  if((net->u.Word[i] & htons(~uint16_mask[len-off])) != 0)
 	    return 0;
 	}
       else if(net->u.Word[i] != 0)
@@ -529,6 +561,7 @@ prefix4_t *prefixtree_find_best4(const prefixtree_t *tree,
   int i = 0;
 
   assert(tree->v == 4);
+  assert(item->len <= 32);
 
   /* go through the tree, assembling possible prefix matches */
   while(x != NULL && x->bit < item->len)
@@ -559,7 +592,7 @@ prefix4_t *prefixtree_find_exact4(const prefixtree_t *tree,
 {
   prefix4_t fm, *p;
   fm.net.s_addr = net->s_addr;
-  fm.len = len;
+  fm.len = len; assert(len <= 32);
   if((p = prefixtree_find_best4(tree, &fm)) != NULL && p->len == len)
     return p;
   return NULL;
@@ -603,6 +636,7 @@ prefix6_t *prefixtree_find_best6(const prefixtree_t *tree,
   int i = 0;
 
   assert(tree->v == 6);
+  assert(item->len <= 128);
 
   /* go through the tree, assembling possible prefix matches */
   while(x != NULL && x->bit < item->len)
@@ -633,7 +667,7 @@ prefix6_t *prefixtree_find_exact6(const prefixtree_t *tree,
 {
   prefix6_t fm, *p;
   memcpy(&fm.net, net, sizeof(struct in6_addr));
-  fm.len = len;
+  fm.len = len; assert(len <= 128);
   if((p = prefixtree_find_best6(tree, &fm)) != NULL && p->len == len)
     return p;
   return NULL;

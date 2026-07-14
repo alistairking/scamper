@@ -1,6 +1,6 @@
 #!/usr/bin/env perl
 #
-# $Id: bootstrap.pl,v 1.28 2026/01/02 17:10:38 mjl Exp $
+# $Id: bootstrap.pl,v 1.29 2026/06/14 20:26:04 mjl Exp $
 #
 # script to ship scamper with generated configure script ready to build.
 
@@ -25,8 +25,8 @@ my @autoconf = ("autoconf", "autoconf-2.68");
 my @cython = ("cython3", "cython");
 
 # where to get the AX_* m4 files
-my $ax_url = "http://git.savannah.gnu.org/gitweb/" .
-    "?p=autoconf-archive.git;a=blob_plain;f=m4";
+my $ax_url = "https://raw.githubusercontent.com/autoconf-archive/" .
+    "autoconf-archive/refs/heads/master/m4";
 
 # the AX m4 files to get, and their SHA-2 256 checksums
 my %ax = (

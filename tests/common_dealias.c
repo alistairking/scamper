@@ -1,12 +1,12 @@
 /*
  * common_dealias : common functions for unit testing dealias
  *
- * $Id: common_dealias.c,v 1.7 2026/01/01 23:39:41 mjl Exp $
+ * $Id: common_dealias.c,v 1.8 2026/07/11 19:56:54 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
  *
- * Copyright (C) 2025 Matthew Luckie
+ * Copyright (C) 2025-2026 Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -122,6 +122,41 @@ static int dealias_probedef_ok(const scamper_dealias_probedef_t *in,
   return 0;
 }
 
+static int dealias_prefixscan_ok(const scamper_dealias_prefixscan_t *in,
+				 const scamper_dealias_prefixscan_t *out)
+{
+  uint16_t i;
+
+  if(ptr_ok(in, out) != 0)
+    return -1;
+  if(in == NULL)
+    return 0;
+
+  if(addr_ok(in->a, out->a) != 0 ||
+     addr_ok(in->b, out->b) != 0 ||
+     addr_ok(in->ab, out->ab) != 0 ||
+     in->xc != out->xc ||
+     in->prefix != out->prefix ||
+     in->attempts != out->attempts ||
+     in->replyc != out->replyc ||
+     in->fudge != out->fudge ||
+     timeval_cmp(&in->wait_probe, &out->wait_probe) != 0 ||
+     timeval_cmp(&in->wait_timeout, &out->wait_timeout) != 0 ||
+     in->flags != out->flags ||
+     in->probedefc != out->probedefc)
+    return -1;
+
+  for(i=0; i<in->probedefc; i++)
+    if(dealias_probedef_ok(in->probedefs[i], out->probedefs[i]) != 0)
+      return -1;
+
+  for(i=0; i<in->xc; i++)
+    if(addr_ok(in->xs[i], out->xs[i]) != 0)
+      return -1;
+
+  return 0;
+}
+
 static int dealias_radargun_ok(const scamper_dealias_radargun_t *in,
 			       const scamper_dealias_radargun_t *out)
 {
@@ -209,7 +244,9 @@ int dealias_ok(const scamper_dealias_t *in, const scamper_dealias_t *out)
      (in->method == SCAMPER_DEALIAS_METHOD_ALLY &&
       dealias_ally_ok(in->data, out->data) != 0) ||
      (in->method == SCAMPER_DEALIAS_METHOD_RADARGUN &&
-      dealias_radargun_ok(in->data, out->data) != 0))
+      dealias_radargun_ok(in->data, out->data) != 0) ||
+     (in->method == SCAMPER_DEALIAS_METHOD_PREFIXSCAN &&
+      dealias_prefixscan_ok(in->data, out->data) != 0))
     return -1;
 
   return 0;
@@ -310,6 +347,14 @@ static scamper_dealias_radargun_t *radargun_add(scamper_dealias_t *dealias)
   return dealias->data;
 }
 
+static scamper_dealias_prefixscan_t *prefixscan_add(scamper_dealias_t *dealias)
+{
+  if((dealias->data = scamper_dealias_prefixscan_alloc()) == NULL)
+    return NULL;
+  dealias->method = SCAMPER_DEALIAS_METHOD_PREFIXSCAN;
+  return dealias->data;
+}
+
 static scamper_dealias_t *dealias_1(void)
 {
   scamper_dealias_t *dealias = NULL;
@@ -402,8 +447,8 @@ static scamper_dealias_t *dealias_2(void)
 	       IPPROTO_ICMP, 255, 0x9880) == NULL)
     goto err;
 
-  dealias->userid = 1234567890;
-  dealias->start.tv_sec = 1724828853;
+  dealias->userid = 1234567891;
+  dealias->start.tv_sec = 1724828854;
   dealias->start.tv_usec = 123456;
   dealias->result = SCAMPER_DEALIAS_RESULT_ALIASES;
   for(i=0; i<5; i++)
@@ -445,8 +490,8 @@ static scamper_dealias_t *dealias_3(void)
      scamper_dealias_radargun_probedefs_alloc(rg, 10) != 0)
     goto err;
 
-  dealias->userid = 1234567890;
-  dealias->start.tv_sec = 1724828853;
+  dealias->userid = 1234567892;
+  dealias->start.tv_sec = 1724828855;
   dealias->start.tv_usec = 123456;
   dealias->result = SCAMPER_DEALIAS_RESULT_NONE;
 
@@ -505,8 +550,8 @@ static scamper_dealias_t *dealias_4(void)
 				    255, 72)) == NULL)
     goto err;
 
-  dealias->userid = 1234567890;
-  dealias->start.tv_sec = 1724828853;
+  dealias->userid = 1234567893;
+  dealias->start.tv_sec = 1724828856;
   dealias->start.tv_usec = 123456;
   dealias->result = SCAMPER_DEALIAS_RESULT_ERROR;
   dealias->errmsg = strdup("hello world");
@@ -601,6 +646,57 @@ static scamper_dealias_t *dealias_6(void)
   return NULL;
 }
 
+static scamper_dealias_t *dealias_7(void)
+{
+  scamper_dealias_t *dealias = NULL;
+  scamper_dealias_prefixscan_t *pfs;
+
+  if((dealias = scamper_dealias_alloc()) == NULL ||
+     (pfs = prefixscan_add(dealias)) == NULL ||
+     (pfs->a = scamper_addr_fromstr_ipv4("192.0.2.6")) == NULL ||
+     (pfs->b = scamper_addr_fromstr_ipv4("203.0.113.2")) == NULL)
+    goto err;
+
+  pfs->prefix = 30;
+  pfs->replyc = 5;
+  pfs->wait_probe.tv_sec = 1;
+  pfs->wait_probe.tv_usec = 0;
+  pfs->wait_timeout.tv_sec = 1;
+  pfs->wait_timeout.tv_usec = 0;
+  pfs->flags |= SCAMPER_DEALIAS_PREFIXSCAN_FLAG_NOBS;
+  pfs->flags |= SCAMPER_DEALIAS_PREFIXSCAN_FLAG_CSA;
+
+  dealias->userid = 1234567894;
+  dealias->start.tv_sec = 1724828857;
+  dealias->start.tv_usec = 123456;
+  dealias->result = SCAMPER_DEALIAS_RESULT_ERROR;
+  dealias->errmsg = strdup("hello world");
+
+  return dealias;
+
+ err:
+  if(dealias != NULL) scamper_dealias_free(dealias);
+  return NULL;
+}
+
+static scamper_dealias_t *dealias_8(void)
+{
+  scamper_dealias_t *dealias = NULL;
+  scamper_dealias_prefixscan_t *pfs;
+
+  if((dealias = dealias_7()) == NULL)
+    goto err;
+
+  pfs = dealias->data;
+  pfs->replyc = 7;
+
+  return dealias;
+
+ err:
+  if(dealias != NULL) scamper_dealias_free(dealias);
+  return NULL;
+}
+
 static scamper_dealias_makefunc_t makers[] = {
   dealias_1,
   dealias_2,
@@ -608,6 +704,8 @@ static scamper_dealias_makefunc_t makers[] = {
   dealias_4,
   dealias_5,
   dealias_6,
+  dealias_7,
+  dealias_8,
 };
 
 scamper_dealias_t *dealias_makers(size_t i)

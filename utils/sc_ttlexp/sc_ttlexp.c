@@ -1,12 +1,12 @@
 /*
  * sc_ttlexp: dump all unique source IP addresses in TTL expired messages
  *
- * $Id: sc_ttlexp.c,v 1.16 2025/05/01 02:58:04 mjl Exp $
+ * $Id: sc_ttlexp.c,v 1.17 2026/07/03 09:37:47 mjl Exp $
  *
  *         Matthew Luckie
  *         mjl@luckie.org.nz
  *
- * Copyright (C) 2017-2023 Matthew Luckie
+ * Copyright (C) 2017-2026 Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -68,14 +68,16 @@ static int check_options(int argc, char *argv[])
 	  else if(strcasecmp(optarg, "noreserved") == 0)
 	    no_reserved = 1;
 	  else
-	    return -1;
+	    {
+	      usage();
+	      fprintf(stderr, "unknown option %s\n", optarg);
+	      return -1;
+	    }
 	  break;
 
 	case '?':
-	  usage();
-	  return -1;
-
 	default:
+	  usage();
 	  return -1;
 	}
     }
@@ -127,12 +129,14 @@ static int dump_tracelb(scamper_tracelb_t *trace)
   const scamper_tracelb_probe_t *probe;
   const scamper_tracelb_reply_t *reply;
   const scamper_tracelb_probeset_t *set;
-  scamper_addr_t *dst, *from;
+  scamper_addr_t *dst = NULL, *from;
   uint16_t i, j, k, l, m, nodec, linkc, hopc, probec, rxc;
   int rc = -1;
 
+  if(no_dst != 0 && (dst = scamper_tracelb_dst_get(trace)) == NULL)
+    goto done;
+
   nodec = scamper_tracelb_nodec_get(trace);
-  dst = scamper_tracelb_dst_get(trace);
   for(i=0; i<nodec; i++)
     {
       node = scamper_tracelb_node_get(trace, i);
@@ -154,7 +158,7 @@ static int dump_tracelb(scamper_tracelb_t *trace)
 		      reply = scamper_tracelb_probe_rx_get(probe, m);
 		      from = scamper_tracelb_reply_from_get(reply);
 		      if(scamper_tracelb_reply_is_icmp_ttl_exp(reply) == 0 ||
-			 (no_dst != 0 && scamper_addr_cmp(from, dst) == 0))
+			 (dst != NULL && scamper_addr_cmp(from, dst) == 0))
 			continue;
 		      if(dump_addr(from) != 0)
 			goto done;
@@ -173,21 +177,19 @@ static int dump_tracelb(scamper_tracelb_t *trace)
 static int dump_trace(scamper_trace_t *trace)
 {
   const scamper_trace_reply_t *hop;
-  scamper_trace_hopiter_t *hi;
-  scamper_addr_t *dst, *hop_addr;
+  scamper_trace_hopiter_t *hi = NULL;
+  scamper_addr_t *dst = NULL, *hop_addr;
   int rc = -1;
 
-  if((dst = scamper_trace_dst_get(trace)) == NULL)
-    return 0;
-
-  if((hi = scamper_trace_hopiter_alloc()) == NULL)
+  if((no_dst != 0 && (dst = scamper_trace_dst_get(trace)) == NULL) ||
+     (hi = scamper_trace_hopiter_alloc()) == NULL)
     goto done;
 
   while((hop = scamper_trace_hopiter_next(trace, hi)) != NULL)
     {
       hop_addr = scamper_trace_reply_addr_get(hop);
       if(scamper_trace_reply_is_icmp_ttl_exp(hop) == 0 ||
-	 (no_dst != 0 && scamper_addr_cmp(hop_addr, dst) == 0))
+	 (dst != NULL && scamper_addr_cmp(hop_addr, dst) == 0))
 	continue;
       if(dump_addr(hop_addr) != 0)
 	goto done;

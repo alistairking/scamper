@@ -5,7 +5,7 @@
  *
  * Author: Matthew Luckie
  *
- * $Id: scamper_owamp_warts.c,v 1.3 2026/01/04 19:43:21 mjl Exp $
+ * $Id: scamper_owamp_warts.c,v 1.4 2026/07/11 20:03:30 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -503,23 +503,17 @@ static int warts_owamp_params_read(scamper_owamp_t *owamp, warts_state_t *state,
     {&owamp->txc,          (wpr_t)extract_uint32,       NULL},
   };
   const int handler_cnt = sizeof(handlers) / sizeof(warts_param_reader_t);
-  uint32_t o = *off;
+
+  /* set the defaults */
+  owamp->dport = 861;
+  owamp->wait_timeout.tv_sec = 2;
+  owamp->schedc = 1;
+  owamp->attempts = 10;
+  owamp->pktsize = (20 + 8 + 14);
+  owamp->ttl = 255;
 
   if(warts_params_read(buf, off, len, handlers, handler_cnt) != 0)
     return -1;
-
-  if(flag_isset(&buf[o], WARTS_OWAMP_DPORT) == 0)
-    owamp->dport = 861;
-  if(flag_isset(&buf[o], WARTS_OWAMP_WAIT_TIMEOUT) == 0)
-    owamp->wait_timeout.tv_sec = 2;
-  if(flag_isset(&buf[o], WARTS_OWAMP_SCHEDC) == 0)
-    owamp->schedc = 1;
-  if(flag_isset(&buf[o], WARTS_OWAMP_ATTEMPTS) == 0)
-    owamp->attempts = 10;
-  if(flag_isset(&buf[o], WARTS_OWAMP_PKTSIZE) == 0)
-    owamp->pktsize = (20 + 8 + 14);
-  if(flag_isset(&buf[o], WARTS_OWAMP_TTL) == 0)
-    owamp->ttl = 255;
 
   return 0;
 }

@@ -5,11 +5,11 @@
  * Copyright (C) 2010-2011 The University of Waikato
  * Copyright (C) 2012      Matthew Luckie
  * Copyright (C) 2012,2015 The Regents of the University of California
- * Copyright (C) 2021-2023 Matthew Luckie
+ * Copyright (C) 2021-2026 Matthew Luckie
  *
  * Authors: Ben Stasiewicz, Matthew Luckie
  *
- * $Id: scamper_tbit.c,v 1.65 2025/10/13 21:11:18 mjl Exp $
+ * $Id: scamper_tbit.c,v 1.67 2026/07/11 05:14:33 mjl Exp $
  *
  * This file implements algorithms described in the tbit-1.0 source code,
  * as well as the papers:
@@ -75,7 +75,7 @@ static int tqe_cmp(const tqe_t *a, const tqe_t *b)
 }
 
 int scamper_tbit_client_fo_cookie_set(scamper_tbit_t *tbit,
-				      uint8_t *cookie, uint8_t len)
+				      const uint8_t *cookie, uint8_t len)
 {
   if((tbit->client_fo_cookie = memdup(cookie, len)) == NULL)
     return -1;
@@ -828,9 +828,11 @@ int scamper_tbit_pkts_alloc(scamper_tbit_t *tbit, uint32_t count)
 
 int scamper_tbit_record_pkt(scamper_tbit_t *tbit, scamper_tbit_pkt_t *pkt)
 {
-  size_t len = (tbit->pktc + 1) * sizeof(scamper_tbit_pkt_t *);
+  size_t len;
 
-  /* Add a new element to the pkts array */
+  if(tbit->pktc == UINT32_MAX)
+    return -1;
+  len = (tbit->pktc + 1) * sizeof(scamper_tbit_pkt_t *);
   if(realloc_wrap((void**)&tbit->pkts, len) != 0)
     return -1;
 

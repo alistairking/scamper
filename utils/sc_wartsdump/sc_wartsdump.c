@@ -1,7 +1,7 @@
 /*
  * sc_wartsdump
  *
- * $Id: sc_wartsdump.c,v 1.334 2026/03/29 02:52:18 mjl Exp $
+ * $Id: sc_wartsdump.c,v 1.336 2026/07/08 07:10:29 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -9,7 +9,7 @@
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2012-2015 The Regents of the University of California
- * Copyright (C) 2019-2025 Matthew Luckie
+ * Copyright (C) 2019-2026 Matthew Luckie
  * Copyright (C) 2023-2025 The Regents of the University of California
  *
  * This program is free software; you can redistribute it and/or modify
@@ -227,7 +227,7 @@ static void dump_trace_hop(const scamper_trace_t *trace,
 	     scamper_trace_reply_icmp_code_get(hop));
       if(scamper_trace_reply_is_icmp_q(hop))
 	{
-	  printf(", q-ttl: %d, q-len: %d, q-tos %d",
+	  printf(", q-ttl: %d, q-len: %d, q-tos: %d",
 		 scamper_trace_reply_icmp_q_ttl_get(hop),
 		 scamper_trace_reply_icmp_q_ipl_get(hop),
 		 scamper_trace_reply_icmp_q_tos_get(hop));
@@ -1119,7 +1119,7 @@ static void dump_dealias_probedef(const scamper_dealias_probedef_t *def)
 
 static void dump_dealias(scamper_dealias_t *dealias)
 {
-  const scamper_dealias_prefixscan_t *ps;
+  const scamper_dealias_prefixscan_t *ps = NULL;
   const scamper_dealias_mercator_t *mercator;
   const scamper_dealias_radargun_t *radargun;
   const scamper_dealias_ally_t *ally;
@@ -1330,8 +1330,7 @@ static void dump_dealias(scamper_dealias_t *dealias)
   printf(" probes: %d, result: %s", probec,
 	 scamper_dealias_result_tostr(result, buf, sizeof(buf)));
 
-  if(method == SCAMPER_DEALIAS_METHOD_PREFIXSCAN &&
-     scamper_dealias_prefixscan_is_csa(ps))
+  if(ps != NULL && scamper_dealias_prefixscan_is_csa(ps))
     printf(", csa");
   printf("\n");
 

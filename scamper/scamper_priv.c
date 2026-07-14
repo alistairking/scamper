@@ -1,7 +1,7 @@
 /*
  * scamper_priv : operations that require privilege
  *
- * $Id: scamper_priv.c,v 1.5 2026/01/02 18:30:41 mjl Exp $
+ * $Id: scamper_priv.c,v 1.7 2026/06/10 06:16:49 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -70,6 +70,7 @@ int scamper_priv_unlink(const char *filename)
   return unlink(filename);
 }
 
+#ifdef HAVE_SOCKADDR_UN
 int scamper_priv_unix_bind(const char *filename)
 {
 #ifndef DISABLE_SCAMPER_PRIVSEP
@@ -78,6 +79,7 @@ int scamper_priv_unix_bind(const char *filename)
 #endif
   return unix_bind_listen(filename, -1);
 }
+#endif /* HAVE_SOCKADDR_UN */
 
 int scamper_priv_dl(int ifindex)
 {
@@ -211,6 +213,7 @@ SOCKET scamper_priv_ip4raw(void)
   return fd;
 }
 
+#ifndef _WIN32 /* windows does not have a routing socket */
 int scamper_priv_rtsock(void)
 {
   int fd;
@@ -237,6 +240,7 @@ int scamper_priv_rtsock(void)
 
   return fd;
 }
+#endif /* _WIN32 */
 
 #ifndef _WIN32 /* SOCKET vs int on windows */
 int scamper_priv_udp4raw(const void *addr)

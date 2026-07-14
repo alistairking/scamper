@@ -1,12 +1,12 @@
 /*
  * scamper_icmpext_int.c
  *
- * $Id: scamper_icmpext_int.c,v 1.3 2025/10/10 00:56:22 mjl Exp $
+ * $Id: scamper_icmpext_int.c,v 1.5 2026/06/14 03:53:56 mjl Exp $
  *
  * Copyright (C) 2008-2010 The University of Waikato
  * Copyright (C) 2012      Matthew Luckie
  * Copyright (C) 2014      The Regents of the University of California
- * Copyright (C) 2023-2025 Matthew Luckie
+ * Copyright (C) 2023-2026 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -51,20 +51,17 @@ int scamper_icmpext_parse(scamper_icmpexts_t **out, uint8_t *data, size_t len)
     goto err;
 
   /* start at offset 4 so the extension header is skipped */
-  for(off = 4; off + 4 < len; off += dl)
+  for(off = 4; off + 4 <= len; off += dl)
     {
       /* extract the length field */
       dl = bytes_ntohs(data+off);
 
-      /* make sure there is enough in the packet left */
-      if(off + dl < len)
+      /* make sure there is enough in the packet left, and off will advance */
+      if(dl < 4 || len - off < dl)
 	break;
 
       cn = data[off+2];
       ct = data[off+3];
-
-      if(dl < 8)
-	continue;
 
       if((ie = scamper_icmpext_alloc(cn, ct, dl-4, data+off+4)) == NULL ||
 	 slist_tail_push(list, ie) == NULL)

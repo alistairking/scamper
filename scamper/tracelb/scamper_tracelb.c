@@ -1,11 +1,11 @@
 /*
  * scamper_tracelb.c
  *
- * $Id: scamper_tracelb.c,v 1.83 2025/10/14 00:14:42 mjl Exp $
+ * $Id: scamper_tracelb.c,v 1.84 2026/06/19 21:56:14 mjl Exp $
  *
  * Copyright (C) 2008-2010 The University of Waikato
  * Copyright (C) 2012      The Regents of the University of California
- * Copyright (C) 2018-2024 Matthew Luckie
+ * Copyright (C) 2018-2026 Matthew Luckie
  * Author: Matthew Luckie
  *
  * Load-balancer traceroute technique authored by
@@ -318,7 +318,10 @@ int scamper_tracelb_probeset_probes_alloc(scamper_tracelb_probeset_t *set,
 int scamper_tracelb_probeset_add(scamper_tracelb_probeset_t *probeset,
 				 scamper_tracelb_probe_t *probe)
 {
-  size_t len = (probeset->probec + 1) * sizeof(scamper_tracelb_probe_t *);
+  size_t len;
+  if(probeset->probec == UINT16_MAX)
+    return -1;
+  len = (probeset->probec + 1) * sizeof(scamper_tracelb_probe_t *);
   if(realloc_wrap((void **)&probeset->probes, len) != 0)
     return -1;
   probeset->probes[probeset->probec++] = probe;
@@ -397,10 +400,15 @@ int scamper_tracelb_link_probesets_alloc(scamper_tracelb_link_t *link,
 int scamper_tracelb_link_probeset(scamper_tracelb_link_t *link,
 				  scamper_tracelb_probeset_t *set)
 {
-  size_t len = (link->hopc + 1) * sizeof(scamper_tracelb_probeset_t *);
+  size_t len;
+
+  if(link->hopc == UINT8_MAX)
+    return -1;
+  len = (link->hopc + 1) * sizeof(scamper_tracelb_probeset_t *);
   if(realloc_wrap((void **)&link->sets, len) != 0)
     return -1;
   link->sets[link->hopc++] = set;
+
   return 0;
 }
 

@@ -4,10 +4,10 @@
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2012-2014 The Regents of the University of California
- * Copyright (C) 2016-2024 Matthew Luckie
+ * Copyright (C) 2016-2026 Matthew Luckie
  * Author: Matthew Luckie
  *
- * $Id: scamper_ping_warts.c,v 1.42 2025/10/19 02:17:23 mjl Exp $
+ * $Id: scamper_ping_warts.c,v 1.44 2026/07/11 20:42:06 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -461,6 +461,7 @@ static int warts_ping_reply_read_int(const scamper_ping_t *ping,
 				     uint32_t *off, uint32_t len)
 {
   uint16_t probe_id = 0, probe_ipid = 0, probe_sport = 0, reply_ipid = 0;
+  uint8_t reply_ipid_set = 0, reply_proto_set = 0;
   struct timeval probe_tx;
   warts_param_reader_t handlers[] = {
     {&reply->addr,            (wpr_t)extract_addr_gid,             state},
@@ -470,9 +471,9 @@ static int warts_ping_reply_read_int(const scamper_ping_t *ping,
     {reply,                   (wpr_t)extract_ping_reply_icmptc,    NULL},
     {&reply->rtt,             (wpr_t)extract_rtt,                  NULL},
     {&probe_id,               (wpr_t)extract_uint16,               NULL},
-    {&reply_ipid,             (wpr_t)extract_uint16,               NULL},
+    {&reply_ipid,             (wpr_t)extract_uint16_set,     &reply_ipid_set},
     {&probe_ipid,             (wpr_t)extract_uint16,               NULL},
-    {&reply->proto,           (wpr_t)extract_byte,                 NULL},
+    {&reply->proto,           (wpr_t)extract_byte_set,       &reply_proto_set},
     {&reply->tcp_flags,       (wpr_t)extract_byte,                 NULL},
     {&reply->addr,            (wpr_t)extract_addr,                 table},
     {&reply->v4rr,            (wpr_t)extract_ping_reply_v4rr,      table},
@@ -487,7 +488,6 @@ static int warts_ping_reply_read_int(const scamper_ping_t *ping,
   };
   const int handler_cnt = sizeof(handlers) / sizeof(warts_param_reader_t);
   scamper_ping_probe_t *probe = NULL;
-  uint32_t o = *off;
   int i;
 
   memset(&probe_tx, 0, sizeof(probe_tx));
@@ -516,7 +516,7 @@ static int warts_ping_reply_read_int(const scamper_ping_t *ping,
    * some earlier versions of the ping reply structure did not include
    * the reply protocol field.  fill it with something valid.
    */
-  if(flag_isset(&buf[o], WARTS_PING_REPLY_REPLY_PROTO) == 0)
+  if(reply_proto_set == 0)
     {
       if(SCAMPER_ADDR_TYPE_IS_IPV4(ping->dst))
 	reply->proto = IPPROTO_ICMP;
@@ -524,8 +524,7 @@ static int warts_ping_reply_read_int(const scamper_ping_t *ping,
 	reply->proto = IPPROTO_ICMPV6;
     }
 
-  if(flag_isset(&buf[o], WARTS_PING_REPLY_REPLY_IPID) &&
-     SCAMPER_ADDR_TYPE_IS_IPV4(ping->dst))
+  if(reply_ipid_set != 0 && SCAMPER_ADDR_TYPE_IS_IPV4(ping->dst))
     reply->ipid32 = reply_ipid;
 
   if(scamper_ping_probe_reply_append(probe, reply) != 0)
@@ -733,7 +732,7 @@ static int warts_ping_params_read(scamper_ping_t *ping, warts_state_t *state,
   uint8_t  flags8 = 0;
   uint8_t  wait_probe_sec = 0;
   uint32_t wait_probe_usec = 0;
-  uint8_t  wait_timeout_sec = 0;
+  uint8_t  wait_timeout_sec = 0, wait_timeout_set = 0;
   uint32_t wait_timeout_usec = 0;
 
   warts_param_reader_t handlers[] = {
@@ -763,7 +762,7 @@ static int warts_ping_params_read(scamper_ping_t *ping, warts_state_t *state,
     {&ping->tsps,          (wpr_t)extract_ping_probe_tsps, table},
     {&ping->icmpsum,       (wpr_t)extract_uint16,          NULL},
     {&ping->pmtu,          (wpr_t)extract_uint16,          NULL},
-    {&wait_timeout_sec,    (wpr_t)extract_byte,            NULL},
+    {&wait_timeout_sec,    (wpr_t)extract_byte_set,  &wait_timeout_set},
     {&wait_probe_usec,     (wpr_t)extract_uint32,          NULL},
     {&ping->tcpack,        (wpr_t)extract_uint32,          NULL},
     {&ping->flags,         (wpr_t)extract_uint32,          NULL},
@@ -773,7 +772,6 @@ static int warts_ping_params_read(scamper_ping_t *ping, warts_state_t *state,
     {&ping->errmsg,        (wpr_t)extract_string,          NULL},
   };
   const int handler_cnt = sizeof(handlers)/sizeof(warts_param_reader_t);
-  uint32_t o = *off;
   int rc;
 
   if((rc = warts_params_read(buf, off, len, handlers, handler_cnt)) != 0)
@@ -786,11 +784,11 @@ static int warts_ping_params_read(scamper_ping_t *ping, warts_state_t *state,
   ping->wait_timeout.tv_sec = wait_timeout_sec;
   ping->wait_timeout.tv_usec = wait_timeout_usec;
 
-  if(flag_isset(&buf[o], WARTS_PING_PROBE_TIMEOUT) == 0)
+  if(wait_timeout_set == 0)
     ping->wait_timeout.tv_sec = ping->wait_probe.tv_sec;
-  if(flag_isset(&buf[o], WARTS_PING_FLAGS) == 0 &&
-     flag_isset(&buf[o], WARTS_PING_FLAGS8) != 0)
+  if(ping->flags == 0)
     ping->flags = flags8;
+
   return 0;
 }
 

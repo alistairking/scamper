@@ -1,9 +1,9 @@
 /*
  * scamper_do_neighbourdisc
  *
- * $Id: scamper_neighbourdisc_do.c,v 1.62 2025/10/20 00:09:06 mjl Exp $
+ * $Id: scamper_neighbourdisc_do.c,v 1.65 2026/07/04 20:52:41 mjl Exp $
  *
- * Copyright (C) 2009-2025 Matthew Luckie
+ * Copyright (C) 2009-2026 Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -237,8 +237,8 @@ static void do_nd_probe_nsol(scamper_task_t *task, uint8_t *txbuf, size_t txlen)
   uint16_t u16, *w;
   uint8_t ip6_dst[16];
   uint8_t sol[4];
-  size_t off = 0, icmp_off;
-  int i, sum = 0;
+  size_t off = 0;
+  uint32_t sum = 0;
 
   /* figure out the lower 4 bytes of the solicited multicast address */
   memcpy(sol, ((uint8_t *)nd->dst_ip->addr)+12, 4);
@@ -269,7 +269,6 @@ static void do_nd_probe_nsol(scamper_task_t *task, uint8_t *txbuf, size_t txlen)
   memcpy(&ip6->ip6_dst, ip6_dst, 16);
 
   /* ICMP6 neighbour discovery: 32 bytes */
-  icmp_off = off;
   icmp6 = (struct icmp6_hdr *)(txbuf+off); off += sizeof(struct icmp6_hdr);
   icmp6->icmp6_type = ND_NEIGHBOR_SOLICIT;
   icmp6->icmp6_code = 0;
@@ -281,7 +280,7 @@ static void do_nd_probe_nsol(scamper_task_t *task, uint8_t *txbuf, size_t txlen)
   txbuf[off++] = 0x01;
   mem_concat(txbuf, nd->src_mac->addr, 6, &off, txlen);
 
-  /* build up the ICMP6 checksum, which includes a psuedo header */
+  /* build up the ICMP6 checksum, which includes a pseudo header */
   memcpy(&a, &ip6->ip6_src, sizeof(struct in6_addr));
   w = (uint16_t *)&a;
   sum += *w++; sum += *w++; sum += *w++; sum += *w++;
@@ -292,11 +291,11 @@ static void do_nd_probe_nsol(scamper_task_t *task, uint8_t *txbuf, size_t txlen)
   sum += *w++; sum += *w++; sum += *w++; sum += *w++;
   sum += ip6->ip6_plen;
   sum += htons(IPPROTO_ICMPV6);
-  w = (uint16_t *)(txbuf + icmp_off);
-  for(i = ntohs(ip6->ip6_plen); i > 1; i -= 2)
-    sum += *w++;
-  if(i != 0)
-    sum += ((uint8_t *)w)[0];
+
+  /* checksum over 32 bytes of ICMP6 */
+  sum += in_cksum_sum((const uint16_t *)icmp6, ntohs(ip6->ip6_plen));
+
+  /* fold */
   sum  = (sum >> 16) + (sum & 0xffff);
   sum += (sum >> 16);
   if((u16 = ~sum) == 0)
@@ -326,6 +325,9 @@ static void do_nd_handle_dl(scamper_task_t *task, scamper_dl_rec_t *dl)
   if(nd->probec == 0)
     return;
   probe = nd->probes[nd->probec-1];
+
+  if(probe->rxc == UINT16_MAX)
+    return;
 
   if(SCAMPER_DL_IS_ARP(dl))
     {
@@ -677,7 +679,7 @@ scamper_neighbourdisc_do_t *scamper_do_neighbourdisc_do(
   nd = NULL;
   if(scamper_task_sig_install(task) != 0)
     {
-      scamper_err_make(error, errno, "nd coult not install signature");
+      scamper_err_make(error, errno, "nd could not install signature");
       goto err;
     }
   if(nd_state_alloc(task, error) != 0)
