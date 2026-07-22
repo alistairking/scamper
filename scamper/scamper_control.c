@@ -1594,7 +1594,7 @@ static int client_attached_cb(client_t *client, uint8_t *buf, size_t len)
   char errbuf[256], msgbuf[384];
   char *str;
   long long ll;
-  uint32_t id;
+  uint32_t id, userid;
   size_t off = 0;
 
   assert(client->source != NULL);
@@ -1625,7 +1625,7 @@ static int client_attached_cb(client_t *client, uint8_t *buf, size_t len)
     }
 
   /* try the command to see if it is valid and acceptable */
-  if(scamper_source_command2(client->source, (char *)buf, &id,
+  if(scamper_source_command2(client->source, (char *)buf, &id, &userid,
 			     errbuf, sizeof(errbuf)) != 0)
     {
       if(errbuf[0] != '\0')
@@ -1638,6 +1638,7 @@ static int client_attached_cb(client_t *client, uint8_t *buf, size_t len)
     }
 
   string_concat_u32(msgbuf, sizeof(msgbuf), &off, "OK id-", id);
+  string_concat_u32(msgbuf, sizeof(msgbuf), &off, " userid-", userid);
   return client_send(client, msgbuf);
 }
 
