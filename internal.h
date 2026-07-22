@@ -1,7 +1,7 @@
 /*
  * internal.h
  *
- * $Id: internal.h,v 1.72 2025/07/23 07:37:47 mjl Exp $
+ * $Id: internal.h,v 1.74 2026/06/17 05:54:29 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -54,6 +54,10 @@ typedef int socklen_t;
 typedef int mode_t;
 typedef unsigned short sa_family_t;
 #define __func__ __FUNCTION__
+#endif
+
+#ifdef _WIN32
+typedef long suseconds_t;
 #endif
 
 #include <sys/types.h>
@@ -296,6 +300,7 @@ typedef unsigned short sa_family_t;
 
 #ifdef _WIN32 /* make windows look like other platforms */
 #define SHUT_RDWR SD_BOTH
+#define SHUT_WR SD_SEND
 #define STDIN_FILENO 0
 #define STDOUT_FILENO 1
 #ifndef S_IFIFO
@@ -792,6 +797,10 @@ struct sockaddr_nl
 
 #ifndef UINT16_MAX
 #define UINT16_MAX 65535U
+#endif
+
+#ifndef UINT8_MAX
+#define UINT8_MAX 255U
 #endif
 
 #ifndef LLONG_MAX

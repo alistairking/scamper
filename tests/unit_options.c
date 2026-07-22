@@ -1,12 +1,12 @@
 /*
  * unit_options : unit tests for options module
  *
- * $Id: unit_options.c,v 1.2 2023/12/02 09:21:16 mjl Exp $
+ * $Id: unit_options.c,v 1.3 2026/06/13 23:06:41 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
  *
- * Copyright (C) 2023 Matthew Luckie
+ * Copyright (C) 2023-2026 Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -194,6 +194,7 @@ static int check(char *str,
   rc = 0;
 
  done:
+  if(opts_out != NULL) scamper_options_free(opts_out);
   if(dup != NULL) free(dup);
   return rc;
 }

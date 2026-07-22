@@ -4,10 +4,10 @@
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2012-2015 The Regents of the University of California
- * Copyright (C) 2020-2023 Matthew Luckie
+ * Copyright (C) 2020-2026 Matthew Luckie
  * Author: Matthew Luckie
  *
- * $Id: scamper_ping.c,v 1.65 2025/10/15 23:47:47 mjl Exp $
+ * $Id: scamper_ping.c,v 1.68 2026/07/03 07:01:04 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -105,40 +105,44 @@ scamper_ping_stats_t *scamper_ping_stats_alloc(const scamper_ping_t *ping)
 
   for(i=0; i<ping->ping_sent; i++)
     {
-      if((probe = ping->probes[i]) == NULL)
-	continue;
-
-      if(probe->flags & SCAMPER_PING_REPLY_FLAG_PENDING)
-	{
-	  stats->npend++;
-	  continue;
-	}
-
       rxc = 0;
       err = 0;
 
-      for(j=0; j < probe->replyc; j++)
+      /*
+       * when reading through warts, details for probes with no
+       * replies are not stored.  these should be counted as lost.
+       */
+      if((probe = ping->probes[i]) != NULL)
 	{
-	  reply = probe->replies[j];
-	  if(SCAMPER_PING_REPLY_IS_FROM_TARGET(ping, reply))
+	  if(probe->flags & SCAMPER_PING_REPLY_FLAG_PENDING)
 	    {
-	      if(first == 0)
-		{
-		  if(timeval_cmp(&reply->rtt, &stats->min_rtt) < 0)
-		    timeval_cpy(&stats->min_rtt, &reply->rtt);
-		  if(timeval_cmp(&reply->rtt, &stats->max_rtt) > 0)
-		    timeval_cpy(&stats->max_rtt, &reply->rtt);
-		}
-	      else
-		{
-		  timeval_cpy(&stats->min_rtt, &reply->rtt);
-		  timeval_cpy(&stats->max_rtt, &reply->rtt);
-		  first = 0;
-		}
-	      sum += ((reply->rtt.tv_sec * 1000000) + reply->rtt.tv_usec);
-	      rxc++;
+	      stats->npend++;
+	      continue;
 	    }
-	  else err++;
+
+	  for(j=0; j < probe->replyc; j++)
+	    {
+	      reply = probe->replies[j];
+	      if(SCAMPER_PING_REPLY_IS_FROM_TARGET(ping, reply))
+		{
+		  if(first == 0)
+		    {
+		      if(timeval_cmp(&reply->rtt, &stats->min_rtt) < 0)
+			timeval_cpy(&stats->min_rtt, &reply->rtt);
+		      if(timeval_cmp(&reply->rtt, &stats->max_rtt) > 0)
+			timeval_cpy(&stats->max_rtt, &reply->rtt);
+		    }
+		  else
+		    {
+		      timeval_cpy(&stats->min_rtt, &reply->rtt);
+		      timeval_cpy(&stats->max_rtt, &reply->rtt);
+		      first = 0;
+		    }
+		  sum += ((reply->rtt.tv_sec * 1000000) + reply->rtt.tv_usec);
+		  rxc++;
+		}
+	      else err++;
+	    }
 	}
 
       if(rxc > 0)
@@ -417,11 +421,14 @@ uint32_t scamper_ping_reply_total(const scamper_ping_t *ping)
 int scamper_ping_probe_reply_append(scamper_ping_probe_t *probe,
 				    scamper_ping_reply_t *reply)
 {
-  size_t len = (probe->replyc + 1) * sizeof(scamper_ping_reply_t *);
+  size_t len;
 
+  if(probe->replyc == UINT16_MAX)
+    return -1;
+  len = (probe->replyc + 1) * sizeof(scamper_ping_reply_t *);
   if(realloc_wrap((void **)&probe->replies, len) != 0)
     return -1;
-  probe->replies[probe->replyc++] = reply;
+  probe->replies[probe->replyc++] = reply; /* probe->replyc < UINT16_MAX */
 
   return 0;
 }

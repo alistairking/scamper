@@ -1,9 +1,9 @@
 /*
  * scamper_owamp_do.c
  *
- * $Id: scamper_owamp_do.c,v 1.7 2026/04/17 22:14:20 mjl Exp $
+ * $Id: scamper_owamp_do.c,v 1.14 2026/07/04 22:02:29 mjl Exp $
  *
- * Copyright (C) 2025 The Regents of the University of California
+ * Copyright (C) 2025-2026 The Regents of the University of California
  *
  * Authors: Matthew Luckie
  *
@@ -656,7 +656,15 @@ static int tcp_stopsessions(scamper_task_t *task, scamper_err_t *error)
   next_seqno = bytes_ntohl(state->readbuf + 16 + 16);
 #endif
   num_skipranges = bytes_ntohl(state->readbuf + 16 + 20);
-  block_size = owamp_roundup(16 + 8 + (num_skipranges * 8));
+
+  /* there cannot be more skip ranges than packets we attempted to send */
+  if(num_skipranges > owamp->attempts)
+    {
+      scamper_err_make(error, 0, "implausible skipranges %u", num_skipranges);
+      return -1;
+    }
+
+  block_size = owamp_roundup(16 + 8 + ((size_t)num_skipranges * 8));
   if(state->readbuf_len < 16 + block_size + 16)
     return 0;
 
@@ -668,7 +676,7 @@ static int tcp_stopsessions(scamper_task_t *task, scamper_err_t *error)
       if(skip[0] > skip[1] || skip[1] >= owamp->attempts)
 	continue;
 
-      for(seq=skip[0]; seq<skip[1]; seq++)
+      for(seq=skip[0]; seq<=skip[1]; seq++)
 	{
 	  if(owamp->txs[seq] != NULL)
 	    continue;
@@ -749,10 +757,28 @@ static int tcp_fetchack(scamper_task_t *task, scamper_err_t *error)
   scamper_debug(__func__, "Fetch-Ack: %u schedslots, %u skipranges, %u records",
 		num_schedslots, num_skipranges, num_records);
 
+  /* there cannot be more skip ranges than packets we attempted to send */
+  if(num_skipranges > owamp->attempts)
+    {
+      scamper_err_make(error, 0, "implausible skipranges %u", num_skipranges);
+      return -1;
+    }
+  /* there cannot be more records than packets we attempted to send */
+  if(num_records > owamp->attempts)
+    {
+      scamper_err_make(error, 0, "implausible num_records %u", num_records);
+      return -1;
+    }
+  if(num_schedslots > owamp->schedc)
+    {
+      scamper_err_make(error, 0, "implausible schedslots %u", num_schedslots);
+      return -1;
+    }
+
   /* wait until we've got the entire fetch-ack */
-  reqsess_size = 112 + (num_schedslots * 16) + 16;
-  skip_size = owamp_roundup(num_skipranges * 16) + 16;
-  record_size = owamp_roundup(num_records * 25) + 16;
+  reqsess_size = 112 + ((size_t)num_schedslots * 16) + 16;
+  skip_size = owamp_roundup((size_t)num_skipranges * 16) + 16;
+  record_size = owamp_roundup((size_t)num_records * 25) + 16;
   if(state->readbuf_len < 32 + reqsess_size + skip_size + record_size)
     return 0;
 
@@ -760,7 +786,8 @@ static int tcp_fetchack(scamper_task_t *task, scamper_err_t *error)
   for(i=0; i<num_records; i++)
     {
       seq = bytes_ntohl(state->readbuf + off);
-      if(seq >= owamp->txc || owamp->txs[seq]->rxc == 255)
+      if(seq >= owamp->txc || owamp->txs[seq] == NULL ||
+	 owamp->txs[seq]->rxc == 255)
 	goto next;
 
       if((rx = scamper_owamp_rx_alloc()) == NULL)
@@ -820,7 +847,7 @@ static void tcp_read(SOCKET fd, void *param)
   if(state->mode == STATE_MODE_CONNECT)
     {
       sl = sizeof(ecode);
-      if(getsockopt(fd, SOL_SOCKET, SO_ERROR, &ecode, &sl) == 0)
+      if(getsockopt(fd, SOL_SOCKET, SO_ERROR, (void *)&ecode, &sl) == 0)
 	scamper_debug(__func__, "could not connect: %s", strerror(ecode));
       owamp_stop(task, SCAMPER_OWAMP_RESULT_NOCONN);
       scamper_fd_write_pause(state->tcp);
@@ -966,7 +993,7 @@ static void do_owamp_handle_udp(scamper_task_t *task, scamper_udp_resp_t *ur)
       tx->flags |= SCAMPER_OWAMP_TX_FLAG_ERREST;
 
       owamp->txs[seq] = tx;
-      if(seq <= owamp->txc)
+      if(seq >= owamp->txc)
 	owamp->txc = seq + 1;
     }
 
@@ -1092,6 +1119,7 @@ static int owamp_state_alloc(scamper_task_t *task, scamper_err_t *error)
       scamper_err_make(error, errno, "could not register tcp fd");
       goto err;
     }
+  fd = socket_invalid(); /* fd is now held in state->tcp */
 
   if(owamp->udp_sport == 0)
     owamp->udp_sport = scamper_sport_default();

@@ -1,12 +1,12 @@
 /*
  * scamper_addr2mac.c: handle a cache of IP to MAC address mappings
  *
- * $Id: scamper_addr2mac.c,v 1.52 2025/11/12 18:42:38 mjl Exp $
+ * $Id: scamper_addr2mac.c,v 1.53 2026/06/27 04:02:07 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2012-2014 The Regents of the University of California
- * Copyright (C) 2020-2022 Matthew Luckie
+ * Copyright (C) 2020-2026 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -432,20 +432,132 @@ static void addr2mac_mib_make(int *mib, int af)
   return;
 }
 
+static int addr2mac_init_bsd_ipv4(uint8_t *buf, size_t len,
+				  struct timeval *now, size_t *out)
+{
+  struct rt_msghdr *rtm;
+  struct sockaddr_inarp *sin;
+  struct sockaddr_dl *sdl;
+  time_t tt;
+  size_t off = 0;
+  void *ip, *mac;
+
+  /* make sure we have at least a rt_msghdr */
+  if(sizeof(struct rt_msghdr) > len)
+    return -1;
+
+  /* make sure the route message is well-formed */
+  rtm = (struct rt_msghdr *)buf;
+  if(rtm->rtm_msglen > len || rtm->rtm_msglen < sizeof(struct rt_msghdr))
+    return -1;
+  off += sizeof(struct rt_msghdr);
+
+  /* make sure we have enough for a sockaddr_inarp */
+  if(rtm->rtm_msglen - off < sizeof(struct sockaddr_inarp))
+    goto done;
+  sin = (struct sockaddr_inarp *)(buf + off);
+  if(rtm->rtm_msglen - off < scamper_rtsock_roundup(sin->sin_len))
+    goto done;
+  off += scamper_rtsock_roundup(sin->sin_len);
+
+  /* make sure we have enough for a sockaddr_dl */
+  if(rtm->rtm_msglen - off < sizeof(struct sockaddr_dl))
+    goto done;
+  sdl = (struct sockaddr_dl *)(buf + off);
+  if(rtm->rtm_msglen - off < sdl->sdl_len)
+    goto done;
+
+  /* don't deal with permanent arp entries at this time */
+  if(sdl->sdl_type != IFT_ETHER ||
+     sdl->sdl_alen != ETHER_ADDR_LEN)
+    goto done;
+
+  ip = &sin->sin_addr;
+  mac = sdl->sdl_data + sdl->sdl_nlen;
+  if((time_t)rtm->rtm_rmx.rmx_expire < now->tv_sec ||
+     (time_t)rtm->rtm_rmx.rmx_expire > now->tv_sec + 60)
+    tt = now->tv_sec + 60;
+  else
+    tt = (time_t)rtm->rtm_rmx.rmx_expire;
+
+  addr2mac_add(sdl->sdl_index, SCAMPER_ADDR_TYPE_IPV4, ip, mac, tt);
+
+ done:
+  *out = rtm->rtm_msglen;
+  return 0;
+}
+
+static int addr2mac_init_bsd_ipv6(uint8_t *buf, size_t len,
+				  struct timeval *now, size_t *out)
+{
+  struct rt_msghdr *rtm;
+  struct sockaddr_in6 *sin6;
+  struct sockaddr_dl *sdl;
+  time_t tt;
+  size_t off = 0;
+  void *ip, *mac;
+
+  /* make sure we have at least a rt_msghdr */
+  if(sizeof(struct rt_msghdr) > len)
+    return -1;
+
+  /* make sure the route message is well-formed */
+  rtm = (struct rt_msghdr *)buf;
+  if(rtm->rtm_msglen > len || rtm->rtm_msglen < sizeof(struct rt_msghdr))
+    return -1;
+  off += sizeof(struct rt_msghdr);
+
+  /* make sure we have enough for a sockaddr_in6 */
+  if(rtm->rtm_msglen - off < sizeof(struct sockaddr_in6))
+    goto done;
+  sin6 = (struct sockaddr_in6 *)(buf + off);
+  if(rtm->rtm_msglen - off < scamper_rtsock_roundup(sin6->sin6_len))
+    goto done;
+  off += scamper_rtsock_roundup(sin6->sin6_len);
+
+  /* make sure we have enough for a sockaddr_dl */
+  if(rtm->rtm_msglen - off < sizeof(struct sockaddr_dl))
+    goto done;
+  sdl = (struct sockaddr_dl *)(buf + off);
+  if(rtm->rtm_msglen - off < sdl->sdl_len)
+    goto done;
+
+  if(sdl->sdl_family != AF_LINK ||
+     sdl->sdl_type != IFT_ETHER ||
+     sdl->sdl_alen != ETHER_ADDR_LEN ||
+     (rtm->rtm_flags & RTF_HOST) == 0)
+    {
+      goto done;
+    }
+
+  /* clear out any embedded ifindex in a linklocal address */
+  if(IN6_IS_ADDR_LINKLOCAL(&sin6->sin6_addr))
+    {
+      sin6->sin6_addr.s6_addr[2] = 0;
+      sin6->sin6_addr.s6_addr[3] = 0;
+    }
+
+  ip = &sin6->sin6_addr;
+  mac = sdl->sdl_data + sdl->sdl_nlen;
+  if((time_t)rtm->rtm_rmx.rmx_expire < now->tv_sec ||
+     (time_t)rtm->rtm_rmx.rmx_expire > now->tv_sec + 60)
+    tt = now->tv_sec + 60;
+  else
+    tt = (time_t)rtm->rtm_rmx.rmx_expire;
+
+  addr2mac_add(sdl->sdl_index, SCAMPER_ADDR_TYPE_IPV6, ip, mac, tt);
+
+ done:
+  *out = rtm->rtm_msglen;
+  return 0;
+}
+
 static int addr2mac_init_bsd(void)
 {
-  struct rt_msghdr      *rtm;
-  struct sockaddr_inarp *sin;
-  struct sockaddr_in6   *sin6;
-  struct sockaddr_dl    *sdl;
-  struct timeval         tv;
-  time_t                 tt;
-  int                    iptype;
-  void                  *ip, *mac;
+  struct timeval         now;
   int                    mib[6];
-  void                  *vbuf = NULL;
-  uint8_t               *buf;
-  size_t                 i, j, size;
+  uint8_t               *buf = NULL;
+  size_t                 off, len, x;
 
   /*
    * firstly, get the IPv4 ARP cache and load that.
@@ -453,49 +565,31 @@ static int addr2mac_init_bsd(void)
    * entry
    */
   addr2mac_mib_make(mib, AF_INET);
-  if(sysctl_wrap(mib, 6, &vbuf, &size) == -1)
+  if(sysctl_wrap(mib, 6, (void **)&buf, &len) == -1)
     {
       printerror(__func__, "sysctl arp cache");
       goto err;
     }
 
-  iptype = SCAMPER_ADDR_TYPE_IPV4;
-  buf = (uint8_t *)vbuf;
-  gettimeofday_wrap(&tv);
-  for(i=0; i<size; i += rtm->rtm_msglen)
+  gettimeofday_wrap(&now);
+  off = 0;
+  while(off < len)
     {
-      j = i;
-      rtm = (struct rt_msghdr *)(buf + j); j += sizeof(struct rt_msghdr);
-      sin = (struct sockaddr_inarp *)(buf + j);
-      j += scamper_rtsock_roundup(sin->sin_len);
-      sdl = (struct sockaddr_dl *)(buf + j);
-
-      /* don't deal with permanent arp entries at this time */
-      if(sdl->sdl_type != IFT_ETHER ||
-	 sdl->sdl_alen != ETHER_ADDR_LEN)
-	{
-	  continue;
-	}
-
-      ip = &sin->sin_addr;
-      mac = sdl->sdl_data + sdl->sdl_nlen;
-      if((time_t)rtm->rtm_rmx.rmx_expire < tv.tv_sec ||
-	 (time_t)rtm->rtm_rmx.rmx_expire > tv.tv_sec + 60)
-	tt = tv.tv_sec + 60;
-      else
-	tt = (time_t)rtm->rtm_rmx.rmx_expire;
-
-      addr2mac_add(sdl->sdl_index, iptype, ip, mac, tt);
+      if(addr2mac_init_bsd_ipv4(buf + off, len - off, &now, &x) != 0 ||
+	 len - off < x)
+	break;
+      assert(x > 0);
+      off += x;
     }
-  if(vbuf != NULL)
+  if(buf != NULL)
     {
-      free(vbuf);
-      vbuf = NULL;
+      free(buf);
+      buf = NULL;
     }
 
   /* now it is time to get the IPv6 neighbour discovery cache */
   addr2mac_mib_make(mib, AF_INET6);
-  if(sysctl_wrap(mib, 6, &vbuf, &size) == -1)
+  if(sysctl_wrap(mib, 6, (void **)&buf, &len) == -1)
     {
       /*
        * assume that EINVAL means that IPv6 support is not provided on
@@ -508,52 +602,26 @@ static int addr2mac_init_bsd(void)
       goto err;
     }
 
-  iptype = SCAMPER_ADDR_TYPE_IPV6;
-  buf = (uint8_t *)vbuf;
-  gettimeofday_wrap(&tv);
-  for(i=0; i<size; i += rtm->rtm_msglen)
+  gettimeofday_wrap(&now);
+  off = 0;
+  while(off < len)
     {
-      j = i;
-      rtm = (struct rt_msghdr *)(buf + j); j += sizeof(struct rt_msghdr);
-      sin6 = (struct sockaddr_in6 *)(buf + j);
-      j += scamper_rtsock_roundup(sin6->sin6_len);
-      sdl = (struct sockaddr_dl *)(buf + j);
-
-      if(sdl->sdl_family != AF_LINK ||
-	 sdl->sdl_type != IFT_ETHER ||
-	 sdl->sdl_alen != ETHER_ADDR_LEN ||
-	 (rtm->rtm_flags & RTF_HOST) == 0)
-	{
-	  continue;
-	}
-
-      /* clear out any embedded ifindex in a linklocal address */
-      if(IN6_IS_ADDR_LINKLOCAL(&sin6->sin6_addr))
-	{
-	  sin6->sin6_addr.s6_addr[2] = 0;
-	  sin6->sin6_addr.s6_addr[3] = 0;
-	}
-
-      ip = &sin6->sin6_addr;
-      mac = sdl->sdl_data + sdl->sdl_nlen;
-      if((time_t)rtm->rtm_rmx.rmx_expire < tv.tv_sec ||
-	 (time_t)rtm->rtm_rmx.rmx_expire > tv.tv_sec + 60)
-	tt = tv.tv_sec + 60;
-      else
-	tt = (time_t)rtm->rtm_rmx.rmx_expire;
-
-      addr2mac_add(sdl->sdl_index, iptype, ip, mac, tt);
+      if(addr2mac_init_bsd_ipv6(buf + off, len - off, &now, &x) != 0 ||
+	 len - off < x)
+	break;
+      assert(x > 0);
+      off += x;
     }
-  if(vbuf != NULL)
+  if(buf != NULL)
     {
-      free(vbuf);
-      vbuf = NULL;
+      free(buf);
+      buf = NULL;
     }
 
   return 0;
 
  err:
-  if(vbuf != NULL) free(vbuf);
+  if(buf != NULL) free(buf);
   return -1;
 }
 #endif

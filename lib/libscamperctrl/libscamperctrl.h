@@ -1,7 +1,7 @@
 /*
  * libscamperctrl
  *
- * $Id: libscamperctrl.h,v 1.29 2026/04/10 05:15:04 mjl Exp $
+ * $Id: libscamperctrl.h,v 1.30 2026/06/15 19:04:18 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -125,6 +125,7 @@ scamper_inst_t *scamper_inst_remote(scamper_ctrl_t *ctrl, const char *path);
 void scamper_inst_free(scamper_inst_t *inst);
 scamper_task_t *scamper_inst_do(scamper_inst_t *inst, const char *cmd, void *p);
 int scamper_inst_done(scamper_inst_t *inst);
+int scamper_inst_isdone(const scamper_inst_t *inst);
 
 void *scamper_inst_param_get(const scamper_inst_t *inst);
 void scamper_inst_param_set(scamper_inst_t *inst, void *param);

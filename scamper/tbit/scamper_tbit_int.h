@@ -1,13 +1,13 @@
 /*
  * scamper_tbit_int.h
  *
- * $Id: scamper_tbit_int.h,v 1.6 2025/10/13 21:11:18 mjl Exp $
+ * $Id: scamper_tbit_int.h,v 1.7 2026/07/11 05:14:33 mjl Exp $
  *
  * Copyright (C) 2009-2010 Ben Stasiewicz
  * Copyright (C) 2010-2011 University of Waikato
  * Copyright (C) 2012      Matthew Luckie
  * Copyright (C) 2012,2015 The Regents of the University of California
- * Copyright (C) 2023      Matthew Luckie
+ * Copyright (C) 2023-2026 Matthew Luckie
  *
  * This file implements algorithms described in the tbit-1.0 source code,
  * as well as the papers:
@@ -64,7 +64,7 @@ int scamper_tbit_record_pkt(scamper_tbit_t *tbit, scamper_tbit_pkt_t *pkt);
 void scamper_tbit_app_http_free(scamper_tbit_app_http_t *http);
 
 int scamper_tbit_client_fo_cookie_set(scamper_tbit_t *tbit,
-				      uint8_t *c, uint8_t l);
+				      const uint8_t *c, uint8_t l);
 
 /*
  * convenience functions.

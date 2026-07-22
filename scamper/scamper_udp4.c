@@ -1,12 +1,13 @@
 /*
  * scamper_udp4.c
  *
- * $Id: scamper_udp4.c,v 1.105 2026/04/17 22:19:19 mjl Exp $
+ * $Id: scamper_udp4.c,v 1.112 2026/07/03 21:57:47 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2010 The University of Waikato
  * Copyright (C) 2022-2024 Matthew Luckie
  * Copyright (C) 2023-2024 The Regents of the University of California
+ * Copyright (C) 2026      Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -56,9 +57,9 @@ static size_t   pktbuf_len = 0;
 uint16_t scamper_udp4_cksum(scamper_probe_t *probe)
 {
   uint16_t tmp, *w;
-  int i, sum = 0;
+  uint32_t sum = 0;
 
-  /* compute the checksum over the psuedo header */
+  /* compute the checksum over the pseudo header */
   w = (uint16_t *)probe->pr_ip_src->addr;
   sum += *w++; sum += *w++;
   w = (uint16_t *)probe->pr_ip_dst->addr;
@@ -72,15 +73,7 @@ uint16_t scamper_udp4_cksum(scamper_probe_t *probe)
   sum += htons(probe->pr_len + 8);
 
   /* compute the checksum over the payload of the UDP message */
-  w = (uint16_t *)probe->pr_data;
-  for(i = probe->pr_len; i > 1; i -= 2)
-    {
-      sum += *w++;
-    }
-  if(i != 0)
-    {
-      sum += ((uint8_t *)w)[0];
-    }
+  sum += in_cksum_sum((uint16_t *)probe->pr_data, probe->pr_len);
 
   /* fold the checksum */
   sum  = (sum >> 16) + (sum & 0xffff);
@@ -216,11 +209,14 @@ void scamper_udp4_read_cb(SOCKET fd, void *param)
 {
   scamper_udp_resp_t ur;
   struct sockaddr_in from;
-  uint8_t buf[8192], ctrlbuf[256];
+  uint8_t buf[8192];
+  ssize_t rrc;
+
+#ifndef _WIN32 /* windows does not have msghdr or iovec */
+  uint8_t ctrlbuf[256];
   struct msghdr msg;
   struct cmsghdr *cmsg;
   struct iovec iov;
-  ssize_t rrc;
 
 #if defined(IP_PKTINFO)
   struct in_pktinfo *pi;
@@ -229,21 +225,29 @@ void scamper_udp4_read_cb(SOCKET fd, void *param)
 #endif
 
   memset(&iov, 0, sizeof(iov));
-  iov.iov_base = (caddr_t)buf;
+  iov.iov_base = (void *)buf;
   iov.iov_len  = sizeof(buf);
 
-  msg.msg_name       = (caddr_t)&from;
+  memset(&msg, 0, sizeof(msg));
+  msg.msg_name       = (void *)&from;
   msg.msg_namelen    = sizeof(from);
   msg.msg_iov        = &iov;
   msg.msg_iovlen     = 1;
-  msg.msg_control    = (caddr_t)ctrlbuf;
+  msg.msg_control    = (void *)ctrlbuf;
   msg.msg_controllen = sizeof(ctrlbuf);
 
   if((rrc = recvmsg(fd, &msg, 0)) <= 0)
     return;
+#else
+  socklen_t fromlen = sizeof(from);
+  if((rrc = recvfrom(fd, buf, sizeof(buf), 0,
+		     (struct sockaddr *)&from, &fromlen)) <= 0)
+    return;
+#endif
 
   memset(&ur, 0, sizeof(ur));
 
+#ifndef _WIN32 /* windows does not have msghdr or iovec */
   if(msg.msg_controllen >= sizeof(struct cmsghdr))
     {
       cmsg = (struct cmsghdr *)CMSG_FIRSTHDR(&msg);
@@ -252,39 +256,21 @@ void scamper_udp4_read_cb(SOCKET fd, void *param)
 	  if(cmsg->cmsg_level == SOL_SOCKET && cmsg->cmsg_type == SCM_TIMESTAMP)
 	    {
 	      timeval_cpy(&ur.rx, (struct timeval *)CMSG_DATA(cmsg));
-	      goto next;
 	    }
-
-	  if(cmsg->cmsg_level == IPPROTO_IP && cmsg->cmsg_type == IP_TTL)
+	  else if(cmsg->cmsg_level == IPPROTO_IP &&
+		 (cmsg->cmsg_type == IP_TTL
+#ifdef IP_RECVTTL
+		  || cmsg->cmsg_type == IP_RECVTTL
+#endif
+		  ))
 	    {
 	      /*
 	       * IP_RECVTTL (since Linux 2.2)
 	       * When this flag is set, pass a IP_TTL control message
 	       * with the time-to-live field of the received packet as
 	       * a 32 bit integer.
-	       */
-	      ur.ttl = *((int *)CMSG_DATA(cmsg));
-	      ur.flags |= SCAMPER_UDP_RESP_FLAG_TTL;
-	      goto next;
-	    }
-
-	  if((cmsg->cmsg_level == IPPROTO_IP && cmsg->cmsg_type == IP_TOS)
-#if defined(IP_RECVTOS)
-	     || (cmsg->cmsg_level == IPPROTO_IP && cmsg->cmsg_type == IP_RECVTOS)
-#endif
-	     )
-	    {
-	      ur.tos = *((uint8_t *)CMSG_DATA(cmsg));
-	      ur.flags |= SCAMPER_UDP_RESP_FLAG_TOS;
-	      goto next;
-	    }
-
-#if defined(IP_RECVTTL)
-	  if(cmsg->cmsg_level == IPPROTO_IP && cmsg->cmsg_type == IP_RECVTTL)
-	    {
-	      /*
-	       * FreeBSD, OpenBSD, NetBSD:
 	       *
+	       * FreeBSD, OpenBSD, NetBSD:
 	       * If the IP_RECVTTL option is enabled on a SOCK_DGRAM
 	       * socket, the recvmsg(2) call will return the IP TTL
 	       * (time to live) field for a UDP datagram.  The
@@ -296,34 +282,46 @@ void scamper_udp4_read_cb(SOCKET fd, void *param)
 	       *   cmsg_level = IPPROTO_IP
 	       *   cmsg_type = IP_RECVTTL
 	       */
-	      ur.ttl = *((uint8_t *)CMSG_DATA(cmsg));
-	      ur.flags |= SCAMPER_UDP_RESP_FLAG_TTL;
-	      goto next;
+	      if((ur.flags & SCAMPER_UDP_RESP_FLAG_TTL) == 0 &&
+		 cmsg_data_as_uint8(cmsg, &ur.ttl) == 0)
+		ur.flags |= SCAMPER_UDP_RESP_FLAG_TTL;
 	    }
+	  else if(cmsg->cmsg_level == IPPROTO_IP &&
+		  (cmsg->cmsg_type == IP_TOS
+#if defined(IP_RECVTOS)
+		   || cmsg->cmsg_type == IP_RECVTOS
 #endif
-
+		   ))
+	    {
+	      if((ur.flags & SCAMPER_UDP_RESP_FLAG_TOS) == 0 &&
+		 cmsg_data_as_uint8(cmsg, &ur.tos) == 0)
+		ur.flags |= SCAMPER_UDP_RESP_FLAG_TOS;
+	    }
 #if defined(IP_PKTINFO)
-	  if(cmsg->cmsg_level == IPPROTO_IP && cmsg->cmsg_type == IP_PKTINFO)
+	  else if(cmsg->cmsg_level == IPPROTO_IP &&
+		  cmsg->cmsg_type == IP_PKTINFO)
 	    {
 	      pi = (struct in_pktinfo *)CMSG_DATA(cmsg);
 	      ur.ifindex = pi->ipi_ifindex;
 	      ur.flags |= SCAMPER_UDP_RESP_FLAG_IFINDEX;
-	      goto next;
 	    }
 #elif defined(IP_RECVIF)
-	  if(cmsg->cmsg_level == IPPROTO_IP && cmsg->cmsg_type == IP_RECVIF)
+	  else if(cmsg->cmsg_level == IPPROTO_IP &&
+		  cmsg->cmsg_type == IP_RECVIF)
 	    {
 	      sdl = (struct sockaddr_dl *)CMSG_DATA(cmsg);
 	      ur.ifindex = sdl->sdl_index;
 	      ur.flags |= SCAMPER_UDP_RESP_FLAG_IFINDEX;
-	      goto next;
 	    }
 #endif
 
-	next:
 	  cmsg = (struct cmsghdr *)CMSG_NXTHDR(&msg, cmsg);
 	}
     }
+#endif /* _WIN32 */
+
+  if(timeval_iszero(&ur.rx))
+    gettimeofday_wrap(&ur.rx);
 
   ur.af = AF_INET;
   ur.addr = &from.sin_addr;

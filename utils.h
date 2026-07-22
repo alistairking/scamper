@@ -1,7 +1,7 @@
 /*
  * utils.h
  *
- * $Id: utils.h,v 1.187 2026/03/27 00:14:50 mjl Exp $
+ * $Id: utils.h,v 1.190 2026/07/03 20:50:09 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -327,6 +327,11 @@ void bytes_htonl(uint8_t *, uint32_t) ATTRIBUTE_NONNULL;
 int read_wrap(int fd, void *ptr, size_t *rc, size_t rt);
 int write_wrap(int fd, const void *ptr, size_t *wc, size_t wt);
 
+#ifndef _WIN32 /* windows does not have cmsghdr */
+int cmsg_data_as_uint8(const struct cmsghdr *cmsg, uint8_t *val)
+  ATTRIBUTE_NONNULL;
+#endif
+
 /* function for dealing with sysctls */
 #if defined(HAVE_SYSCTL) && !defined(__linux__)
 int sysctl_wrap(int *mib, u_int len, void **buf, size_t *size)
@@ -337,8 +342,9 @@ int sysctl_wrap(int *mib, u_int len, void **buf, size_t *size)
 char *offt_tostr(char *buf, size_t len, off_t off, int lz, char m)
   ATTRIBUTE_NONNULL;
 
-/* function for computing an Internet checksum */
+/* functions for computing an Internet checksum */
 uint16_t in_cksum(const void *buf, size_t len) ATTRIBUTE_NONNULL_PURE;
+uint32_t in_cksum_sum(const uint16_t *buf, size_t len) ATTRIBUTE_NONNULL_PURE;
 
 /* functions for dealing with random numbers */
 void random_seed(void);
@@ -375,8 +381,8 @@ int base64_decode(const uint8_t *in, uint8_t **out, size_t *olen)
   ATTRIBUTE_NONNULL;
 
 /* swap bytes in a 16 bit word */
-uint16_t byteswap16(const uint16_t word) ATTRIBUTE_CONST;
-uint32_t byteswap32(const uint32_t word) ATTRIBUTE_CONST;
+uint16_t byteswap16(uint16_t word) ATTRIBUTE_CONST;
+uint32_t byteswap32(uint32_t word) ATTRIBUTE_CONST;
 
 /*
  * would adding y to x wrap if the result were stored in a uint16_t or

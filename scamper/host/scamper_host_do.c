@@ -1,7 +1,7 @@
 /*
  * scamper_host_do
  *
- * $Id: scamper_host_do.c,v 1.101 2026/04/11 21:56:15 mjl Exp $
+ * $Id: scamper_host_do.c,v 1.104 2026/07/04 21:53:02 mjl Exp $
  *
  * Copyright (C) 2018-2026 Matthew Luckie
  *
@@ -620,8 +620,7 @@ static int extract_txt(scamper_host_rr_t *rr, const uint8_t *pbuf,
   scamper_host_rr_txt_t *txt;
   slist_t *list = NULL;
   char *str = NULL;
-  size_t i = 0;
-  uint8_t len;
+  size_t i = 0, len;
 
   if((list = slist_alloc()) == NULL)
     return -1;
@@ -629,7 +628,7 @@ static int extract_txt(scamper_host_rr_t *rr, const uint8_t *pbuf,
   while(i < rdlength)
     {
       len = pbuf[off];
-      if(plen - off < len || rdlength - i < len ||
+      if(plen - off < len + 1 || rdlength - i < len + 1 ||
 	 (str = malloc(len + 1)) == NULL)
 	goto err;
       memcpy(str, &pbuf[off+1], len);
@@ -672,7 +671,7 @@ static int extract_opt(scamper_host_rr_t *rr, const uint8_t *pbuf,
   size_t i = 0;
   uint16_t code, len;
 
-  if(rdlength == 0 || plen - off < rdlength)
+  if(rdlength == 0)
     return 0;
 
   if((list = slist_alloc()) == NULL)
@@ -728,7 +727,7 @@ static int extract_svcb(scamper_host_rr_t *rr, const uint8_t *pbuf,
   char tgt[256];
   size_t i = 0;
 
-  if(rdlength < 2 || plen - off < rdlength)
+  if(rdlength < 2)
     return 0;
 
   if((list = slist_alloc()) == NULL)
@@ -815,10 +814,21 @@ static slist_t *host_rr_list(const uint8_t *buf, size_t off, size_t len)
 	    }
 	  off += k;
 
+	  if(len - off < 10)
+	    {
+	      scamper_debug(__func__, "no space for rr header");
+	      goto err;
+	    }
 	  type = bytes_ntohs(buf+off); off += 2;
 	  class = bytes_ntohs(buf+off); off += 2;
 	  ttl = bytes_ntohl(buf+off); off += 4;
 	  rdlength = bytes_ntohs(buf+off); off += 2;
+
+	  if(len - off < rdlength)
+	    {
+	      scamper_debug(__func__, "no space for rdlength");
+	      goto err;
+	    }
 
 	  if((rr = scamper_host_rr_alloc(name, class, type, ttl)) == NULL)
 	    {
@@ -1148,11 +1158,11 @@ static void host_udp_read(SOCKET fd, void *param)
   return;
 }
 
-static int embed_ecs(const char *ecs, uint8_t *buf)
+static int embed_ecs(const char *ecs, uint8_t *buf, size_t len)
 {
   struct sockaddr_storage sas;
   struct sockaddr *sa = (struct sockaddr *)&sas;
-  int bc, off, plen;
+  size_t bc, off, plen;
   uint16_t family;
   uint8_t *va;
 
@@ -1177,6 +1187,10 @@ static int embed_ecs(const char *ecs, uint8_t *buf)
   bc = (plen / 8);
   if((plen % 8) != 0)
     bc++;
+
+  /* make sure space left */
+  if(len < 2 + 2 + 2 + 1 + 1 + bc)
+    return -1;
 
   off = 0;
   bytes_htons(buf+off, SCAMPER_HOST_RR_OPT_ELEM_CODE_ECS); off += 2;
@@ -1232,6 +1246,10 @@ static int do_host_probe_query(const scamper_host_t *host,
       if(dot - ptr > 63)
 	return -1;
 
+      /* never write beyond end of buffer */
+      if(off + 1 + (dot - ptr) > *len)
+	return -1;
+
       /* store the label length */
       buf[off++] = dot - ptr;
 
@@ -1246,12 +1264,17 @@ static int do_host_probe_query(const scamper_host_t *host,
       else
 	break;
     }
+
+  if(*len - off < 5)
+    return -1;
   buf[off++] = 0;
   bytes_htons(buf+off, host->qtype); off += 2;
   bytes_htons(buf+off, host->qclass); off += 2;
 
   if((host->flags & SCAMPER_HOST_FLAG_NSID) != 0 || host->ecs != NULL)
     {
+      if(*len - off < 1 + 2 + 2 + 4 + 2)
+	return -1;
       buf[off++] = 0;                       /* qname: root */
       bytes_htons(buf+off, SCAMPER_HOST_TYPE_OPT); off += 2;
       bytes_htons(buf+off, 1232); off += 2; /* udp option size: 1232 */
@@ -1262,13 +1285,15 @@ static int do_host_probe_query(const scamper_host_t *host,
 
       if((host->flags & SCAMPER_HOST_FLAG_NSID) != 0)
 	{
+	  if(*len - off < 4)
+	    return -1;
 	  bytes_htons(buf+off, SCAMPER_HOST_RR_OPT_ELEM_CODE_NSID); off += 2;
 	  bytes_htons(buf+off, 0); off += 2;
 	  rdlength += 4;
 	}
       if(host->ecs != NULL)
 	{
-	  if((ecs_len = embed_ecs(host->ecs, buf+off)) < 0)
+	  if((ecs_len = embed_ecs(host->ecs, buf+off, *len - off)) < 0)
 	    return -1;
 	  off += ecs_len;
 	  rdlength += ecs_len;

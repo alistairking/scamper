@@ -1,11 +1,11 @@
 /*
  * scamper_dealias.c
  *
- * $Id: scamper_dealias.c,v 1.81 2025/10/19 19:28:50 mjl Exp $
+ * $Id: scamper_dealias.c,v 1.84 2026/06/19 22:21:09 mjl Exp $
  *
  * Copyright (C) 2008-2010 The University of Waikato
  * Copyright (C) 2012-2013 The Regents of the University of California
- * Copyright (C) 2021-2025 Matthew Luckie
+ * Copyright (C) 2021-2026 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This code implements alias resolution techniques published by others
@@ -233,25 +233,27 @@ void scamper_dealias_probes_sort_def(scamper_dealias_t *dealias)
 int scamper_dealias_probe_add(scamper_dealias_t *dealias,
 			      scamper_dealias_probe_t *probe)
 {
-  size_t size = (dealias->probec+1) * sizeof(scamper_dealias_probe_t *);
-  if(realloc_wrap((void **)&dealias->probes, size) == 0)
-    {
-      dealias->probes[dealias->probec++] = probe;
-      return 0;
-    }
-  return -1;
+  size_t size;
+  if(dealias->probec == UINT32_MAX)
+    return -1;
+  size = (dealias->probec+1) * sizeof(scamper_dealias_probe_t *);
+  if(realloc_wrap((void **)&dealias->probes, size) != 0)
+    return -1;
+  dealias->probes[dealias->probec++] = probe; /* dealias->probec < UINT32_MAX */
+  return 0;
 }
 
 int scamper_dealias_reply_add(scamper_dealias_probe_t *probe,
 			      scamper_dealias_reply_t *reply)
 {
-  size_t size = (probe->replyc+1) * sizeof(scamper_dealias_reply_t *);
-  if(realloc_wrap((void **)&probe->replies, size) == 0)
-    {
-      probe->replies[probe->replyc++] = reply;
-      return 0;
-    }
-  return -1;
+  size_t size;
+  if(probe->replyc == UINT16_MAX)
+    return -1;
+  size = (probe->replyc+1) * sizeof(scamper_dealias_reply_t *);
+  if(realloc_wrap((void **)&probe->replies, size) != 0)
+    return -1;
+  probe->replies[probe->replyc++] = reply; /* probe->replyc < UINT16_MAX */
+  return 0;
 }
 
 scamper_dealias_ally_t *scamper_dealias_ally_alloc(void)
@@ -924,6 +926,8 @@ int scamper_dealias_prefixscan_probedef_add(scamper_dealias_t *dealias,
   size_t size;
 
   /* make the probedef array one bigger */
+  if(prefixscan->probedefc == UINT16_MAX)
+    return -1;
   size = sizeof(scamper_dealias_probedef_t *) * (prefixscan->probedefc+1);
   if(realloc_wrap((void **)&prefixscan->probedefs, size) != 0 ||
      (d = scamper_dealias_probedef_alloc()) == NULL)
@@ -934,7 +938,7 @@ int scamper_dealias_prefixscan_probedef_add(scamper_dealias_t *dealias,
   memcpy(d, def, sizeof(scamper_dealias_probedef_t));
 
   /* update the probedef with an id, and get references to the addresses */
-  d->id = prefixscan->probedefc++;
+  d->id = prefixscan->probedefc++; /* prefixscan->probedefc < UINT16_MAX */
   scamper_addr_use(d->src);
   scamper_addr_use(d->dst);
 

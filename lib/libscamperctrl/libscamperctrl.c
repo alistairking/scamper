@@ -1,7 +1,7 @@
 /*
  * libscamperctrl
  *
- * $Id: libscamperctrl.c,v 1.105 2026/04/10 05:15:04 mjl Exp $
+ * $Id: libscamperctrl.c,v 1.106 2026/06/15 19:04:18 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -1871,6 +1871,13 @@ int scamper_inst_is_remote(const scamper_inst_t *inst)
 scamper_vp_t *scamper_inst_vp_get(const scamper_inst_t *inst)
 {
   return inst->vp;
+}
+
+int scamper_inst_isdone(const scamper_inst_t *inst)
+{
+  if((inst->flags & SCAMPER_INST_FLAG_DONE) == 0)
+    return 0;
+  return 1;
 }
 
 int scamper_inst_done(scamper_inst_t *inst)

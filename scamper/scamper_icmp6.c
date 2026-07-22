@@ -1,11 +1,11 @@
 /*
  * scamper_icmp6.c
  *
- * $Id: scamper_icmp6.c,v 1.125 2025/10/23 18:54:23 mjl Exp $
+ * $Id: scamper_icmp6.c,v 1.141 2026/07/13 22:40:44 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
- * Copyright (C) 2022-2024 Matthew Luckie
+ * Copyright (C) 2022-2026 Matthew Luckie
  * Copyright (C) 2023      The Regents of the University of California
  * Author: Matthew Luckie
  *
@@ -49,6 +49,7 @@ static size_t   txbuf_len = 0;
 static uint8_t  rxbuf[65536];
 #endif
 
+#if defined(BUILDING_SCAMPER) || defined(TEST_PROBE_BUILD)
 static void icmp6_header(scamper_probe_t *probe, uint8_t *buf)
 {
   buf[0] = probe->pr_icmp_type;
@@ -79,11 +80,12 @@ uint16_t scamper_icmp6_cksum(scamper_probe_t *probe)
 {
   uint8_t hdr[8];
   uint16_t tmp, *w;
-  int i, sum = 0;
+  uint32_t sum = 0;
+  int i;
 
   /*
-   * the ICMP6 checksum includes a checksum calculated over a psuedo header
-   * that includes the src and dst IP addresses, the protocol tyoe, and
+   * the ICMP6 checksum includes a checksum calculated over a pseudo header
+   * that includes the src and dst IP addresses, the protocol type, and
    * the ICMP6 length.  this is a departure from the ICMPv4 checksum, which
    * was only over the payload of the packet
    */
@@ -103,11 +105,7 @@ uint16_t scamper_icmp6_cksum(scamper_probe_t *probe)
     sum += *w++;
 
   /* payload */
-  w = (uint16_t *)probe->pr_data;
-  for(i = probe->pr_len; i > 1; i -= 2)
-    sum += *w++;
-  if(i != 0)
-    sum += ((uint8_t *)w)[0];
+  sum += in_cksum_sum((uint16_t *)probe->pr_data, probe->pr_len);
 
   /* fold the checksum */
   sum  = (sum >> 16) + (sum & 0xffff);
@@ -170,6 +168,188 @@ int scamper_icmp6_build(scamper_probe_t *probe, uint8_t *buf, size_t *len)
   *len = req;
   return -1;
 }
+#endif /* BUILDING_SCAMPER or TEST_PROBE_BUILD */
+
+#if defined(BUILDING_SCAMPER) || defined(TEST_ICMP6_PARSE)
+static void icmp6_recv_ip(scamper_icmp_resp_t *resp, struct icmp6_hdr *icmp)
+{
+  resp->ir_af        = AF_INET6;
+  resp->ir_icmp_type = icmp->icmp6_type;
+  resp->ir_icmp_code = icmp->icmp6_code;
+
+  return;
+}
+
+/*
+ * scamper_icmp6_parse
+ *
+ * handle parsing an ICMPv6 packet.
+ *
+ * if the packet is an ICMP response that we should concern ourselves with
+ * (i.e. it is in response to one of our probes) then we fill out
+ * the attached scamper_icmp_resp_t structure and return zero.
+ *
+ * if we should ignore this packet, or an error condition occurs, then
+ * we return -1.
+ */
+#ifdef TEST_ICMP6_PARSE
+int scamper_icmp6_parse(scamper_icmp_resp_t *resp,
+			uint8_t *pbuf, ssize_t pbuflen)
+#else
+static int scamper_icmp6_parse(scamper_icmp_resp_t *resp,
+			       uint8_t *pbuf, ssize_t pbuflen)
+#endif
+{
+  ssize_t              poffset;
+  struct icmp6_hdr    *icmp, *icmpq;
+  struct ip6_hdr      *ip;
+  struct ip6_frag     *frag;
+  struct udphdr       *udp;
+  struct tcphdr       *tcp;
+  uint8_t              type, code;
+  uint8_t              nh;
+  uint8_t             *ext;
+  ssize_t              extlen;
+
+  if(pbuflen < (ssize_t)sizeof(struct icmp6_hdr))
+    {
+      scamper_debug(__func__, "too small %d for icmp6_hdr", (int)pbuflen);
+      return -1;
+    }
+
+  icmp = (struct icmp6_hdr *)pbuf;
+  poffset = sizeof(struct icmp6_hdr);
+
+  type = icmp->icmp6_type;
+  code = icmp->icmp6_code;
+
+  /* check to see if the ICMP type / code is what we want */
+  if((type != ICMP6_TIME_EXCEEDED || code != ICMP6_TIME_EXCEED_TRANSIT) &&
+      type != ICMP6_DST_UNREACH && type != ICMP6_PACKET_TOO_BIG &&
+      type != ICMP6_ECHO_REPLY)
+    {
+      scamper_debug(__func__,"ICMP6 type %d / code %d not wanted", type, code);
+      return -1;
+    }
+
+  if(type == ICMP6_ECHO_REPLY)
+    {
+      resp->ir_icmp_id  = ntohs(icmp->icmp6_id);
+      resp->ir_icmp_seq = ntohs(icmp->icmp6_seq);
+
+      icmp6_recv_ip(resp, icmp);
+
+      return 0;
+    }
+
+  if(pbuflen - poffset < (ssize_t)sizeof(struct ip6_hdr))
+    {
+      scamper_debug(__func__, "ICMP6 type %d too small %d for ip6_hdr",
+		    type, (int)pbuflen);
+      return -1;
+    }
+  ip       = (struct ip6_hdr *)(pbuf + poffset);
+  nh       = ip->ip6_nxt;
+  poffset += sizeof(struct ip6_hdr);
+
+  /*
+   * search for a ICMP / UDP / TCP header in this packet.  we check
+   * for 8 bytes left even though we look at the TCP header because we
+   * only look at the first 8 bytes of the TCP header (ports and
+   * sequence number)
+   */
+  while(poffset + 8 <= pbuflen)
+    {
+      if(nh != IPPROTO_UDP && nh != IPPROTO_ICMPV6 && nh != IPPROTO_TCP &&
+	 nh != IPPROTO_FRAGMENT)
+        {
+	  scamper_debug(__func__, "unhandled next header %d", nh);
+	  return -1;
+	}
+
+      resp->ir_flags |= SCAMPER_ICMP_RESP_FLAG_INNER_IP;
+
+      if(nh == IPPROTO_UDP)
+	{
+          udp = (struct udphdr *)(pbuf+poffset);
+	  resp->ir_inner_udp_sport = ntohs(udp->uh_sport);
+	  resp->ir_inner_udp_dport = ntohs(udp->uh_dport);
+	  resp->ir_inner_udp_sum   = udp->uh_sum;
+	}
+      else if(nh == IPPROTO_ICMPV6)
+	{
+	  icmpq = (struct icmp6_hdr *)(pbuf+poffset);
+	  resp->ir_inner_icmp_type = icmpq->icmp6_type;
+	  resp->ir_inner_icmp_code = icmpq->icmp6_code;
+	  resp->ir_inner_icmp_sum  = icmpq->icmp6_cksum;
+	  resp->ir_inner_icmp_id   = ntohs(icmpq->icmp6_id);
+	  resp->ir_inner_icmp_seq  = ntohs(icmpq->icmp6_seq);
+	}
+      else if(nh == IPPROTO_TCP)
+	{
+	  /*
+	   * note: check above was for first 8 bytes.  if we look
+	   * beyond the sequence number in a future revision, we'll
+	   * need to check in here that there is enough data left in
+	   * the buffer first.
+	   */
+	  tcp = (struct tcphdr *)(pbuf+poffset);
+	  resp->ir_inner_tcp_sport = ntohs(tcp->th_sport);
+	  resp->ir_inner_tcp_dport = ntohs(tcp->th_dport);
+	  resp->ir_inner_tcp_seq   = ntohl(tcp->th_seq);
+	}
+      else if(nh == IPPROTO_FRAGMENT)
+	{
+	  frag = (struct ip6_frag *)(pbuf+poffset);
+	  resp->ir_inner_ip_proto = nh = frag->ip6f_nxt;
+	  resp->ir_inner_ip_off = ntohs(frag->ip6f_offlg) >> 3;
+	  resp->ir_inner_ip_id  = ntohl(frag->ip6f_ident);
+	  poffset += 8;
+
+	  if(resp->ir_inner_ip_off == 0)
+	    continue;
+
+	  resp->ir_inner_data = pbuf + poffset;
+	  resp->ir_inner_datalen = pbuflen - poffset;
+	}
+
+      /* record details of ICMP header */
+      icmp6_recv_ip(resp, icmp);
+
+      memcpy(&resp->ir_inner_ip_dst.v6, &ip->ip6_dst, sizeof(struct in6_addr));
+      resp->ir_inner_ip_proto = nh;
+      resp->ir_inner_ip_hlim  = ip->ip6_hlim;
+      resp->ir_inner_ip_size  = ntohs(ip->ip6_plen) + sizeof(struct ip6_hdr);
+      resp->ir_inner_ip_flow  = ntohl(ip->ip6_flow) & 0xfffff;
+      resp->ir_inner_ip_tos   = ((ntohl(ip->ip6_flow) & 0x0ff00000) >> 20);
+
+      if(type == ICMP6_PACKET_TOO_BIG)
+	resp->ir_icmp_nhmtu = (ntohl(icmp->icmp6_mtu) % 0xffff);
+
+      /*
+       * check for ICMP extensions
+       *
+       * the length of the message must be at least padded out to 128 bytes,
+       * and must have 4 bytes of header beyond that for there to be
+       * extensions included
+       */
+      if(pbuflen - 8 > 128 + 4)
+	{
+	  ext    = pbuf    + (8 + 128);
+	  extlen = pbuflen - (8 + 128);
+
+	  if((ext[0] & 0xf0) == 0x20 &&
+	     ((ext[2] == 0 && ext[3] == 0) || in_cksum(ext, extlen) == 0) &&
+	     (resp->ir_ext = memdup(ext, extlen)) != NULL)
+	    resp->ir_extlen = extlen;
+	}
+
+      return 0;
+    }
+
+  return -1;
+}
+#endif /* BUILDING_SCAMPER or TEST_ICMP6_PARSE */
 
 #ifdef BUILDING_SCAMPER
 int scamper_icmp6_probe(scamper_probe_t *pr, scamper_err_t *error)
@@ -266,24 +446,19 @@ int scamper_icmp6_probe(scamper_probe_t *pr, scamper_err_t *error)
   return 0;
 }
 
-/*
- * icmp6_recv_ip_outer
- *
- * copy the outer-details of the ICMP6 message into the response structure.
- * get details of when the packet was received.
- */
 #ifndef _WIN32 /* windows does not have msghdr struct */
-static void icmp6_recv_ip_outer(int fd,
-				struct msghdr *msg,
+static void icmp6_meta(scamper_icmp_resp_t *resp, int fd, struct msghdr *msg,
+		       struct sockaddr_in6 *from, size_t size)
 #else
-static void icmp6_recv_ip_outer(SOCKET fd,
+static void icmp6_meta(scamper_icmp_resp_t *resp, SOCKET fd,
+		       struct sockaddr_in6 *from, size_t size)
 #endif
-				scamper_icmp_resp_t *resp,
-				struct icmp6_hdr *icmp,
-				struct sockaddr_in6 *from, size_t size)
 {
   int16_t hlim = -1;
-  int v;
+
+#if defined(IPV6_HOPLIMIT) || defined(IPV6_TCLASS)
+  uint8_t u8;
+#endif
 
 #ifndef _WIN32 /* windows does not have msghdr */
   struct cmsghdr *cm;
@@ -304,8 +479,8 @@ static void icmp6_recv_ip_outer(SOCKET fd,
 #if defined(IPV6_HOPLIMIT)
 	  if(cm->cmsg_level == IPPROTO_IPV6 && cm->cmsg_type == IPV6_HOPLIMIT)
 	    {
-	      v = *((int *)CMSG_DATA(cm));
-	      hlim = (uint8_t)v;
+	      if(cmsg_data_as_uint8(cm, &u8) == 0)
+		hlim = u8;
 	      goto next;
 	    }
 #endif
@@ -313,9 +488,11 @@ static void icmp6_recv_ip_outer(SOCKET fd,
 #if defined(IPV6_TCLASS)
 	  if(cm->cmsg_level == IPPROTO_IPV6 && cm->cmsg_type == IPV6_TCLASS)
 	    {
-	      v = *((int *)CMSG_DATA(cm));
-	      resp->ir_ip_tos = (uint8_t)v;
-	      resp->ir_flags |= SCAMPER_ICMP_RESP_FLAG_TCLASS;
+	      if(cmsg_data_as_uint8(cm, &u8) == 0)
+		{
+		  resp->ir_ip_tos = u8;
+		  resp->ir_flags |= SCAMPER_ICMP_RESP_FLAG_TCLASS;
+		}
 	      goto next;
 	    }
 #endif
@@ -358,211 +535,11 @@ static void icmp6_recv_ip_outer(SOCKET fd,
 
   memcpy(&resp->ir_ip_src.v6, &from->sin6_addr, sizeof(struct in6_addr));
 
-  resp->ir_af        = AF_INET6;
-  resp->ir_icmp_type = icmp->icmp6_type;
-  resp->ir_icmp_code = icmp->icmp6_code;
   resp->ir_ip_hlim   = hlim;
   resp->ir_ip_size   = size;
+  resp->ir_fd        = fd;
 
   return;
-}
-
-/*
- * scamper_icmp6_recv
- *
- * handle receiving an ICMPv6 packet.
- *
- * if the packet is an ICMP response that we should concern ourselves with
- * (i.e. it is in response to one of our probes) then we fill out
- * the attached icmp_response structure and return zero.
- *
- * if we should ignore this packet, or an error condition occurs, then
- * we return -1.
- */
-#ifndef _WIN32 /* SOCKET vs int on windows */
-int scamper_icmp6_recv(int fd, scamper_icmp_resp_t *resp)
-#else
-int scamper_icmp6_recv(SOCKET fd, scamper_icmp_resp_t *resp)
-#endif
-{
-  struct sockaddr_in6  from;
-  ssize_t              poffset;
-  ssize_t              pbuflen;
-  struct icmp6_hdr    *icmp, *icmpq;
-  struct ip6_hdr      *ip;
-  struct ip6_frag     *frag;
-  struct udphdr       *udp;
-  struct tcphdr       *tcp;
-  uint8_t              type, code;
-  uint8_t              nh;
-  uint8_t             *ext;
-  ssize_t              extlen;
-
-#ifndef _WIN32 /* windows does not have msghdr or iovec */
-  uint8_t              ctrlbuf[256];
-  struct msghdr        msg;
-  struct iovec         iov;
-
-  memset(&iov, 0, sizeof(iov));
-  iov.iov_base = (caddr_t)rxbuf;
-  iov.iov_len  = sizeof(rxbuf);
-
-  msg.msg_name       = (caddr_t)&from;
-  msg.msg_namelen    = sizeof(from);
-  msg.msg_iov        = &iov;
-  msg.msg_iovlen     = 1;
-  msg.msg_control    = (caddr_t)ctrlbuf;
-  msg.msg_controllen = sizeof(ctrlbuf);
-
-  if((pbuflen = recvmsg(fd, &msg, 0)) == -1)
-    {
-      printerror(__func__, "could not recvmsg");
-      return -1;
-    }
-#else
-  socklen_t fromlen = sizeof(from);
-  if((pbuflen = recvfrom(fd, rxbuf, sizeof(rxbuf), 0,
-			 (struct sockaddr *)&from, &fromlen)) < 0)
-    {
-      printerror(__func__, "could not recvfrom");
-      return -1;
-    }
-#endif
-
-  icmp = (struct icmp6_hdr *)rxbuf;
-  if(pbuflen < (ssize_t)sizeof(struct icmp6_hdr))
-    {
-      return -1;
-    }
-
-  type = icmp->icmp6_type;
-  code = icmp->icmp6_code;
-
-  /* check to see if the ICMP type / code is what we want */
-  if((type != ICMP6_TIME_EXCEEDED || code != ICMP6_TIME_EXCEED_TRANSIT) &&
-      type != ICMP6_DST_UNREACH && type != ICMP6_PACKET_TOO_BIG &&
-      type != ICMP6_ECHO_REPLY)
-    {
-      scamper_debug(__func__,"ICMP6 type %d / code %d not wanted", type, code);
-      return -1;
-    }
-
-  poffset  = sizeof(struct icmp6_hdr);
-  ip       = (struct ip6_hdr *)(rxbuf + poffset);
-
-  memset(resp, 0, sizeof(scamper_icmp_resp_t));
-
-  resp->ir_fd = fd;
-
-  if(type == ICMP6_ECHO_REPLY)
-    {
-      resp->ir_icmp_id  = ntohs(icmp->icmp6_id);
-      resp->ir_icmp_seq = ntohs(icmp->icmp6_seq);
-      memcpy(&resp->ir_inner_ip_dst.v6, &from.sin6_addr,
-	     sizeof(struct in6_addr));
-
-      icmp6_recv_ip_outer(fd,
-#ifndef _WIN32 /* windows does not have msghdr struct */
-			  &msg,
-#endif
-			  resp, icmp, &from, pbuflen + sizeof(struct ip6_hdr));
-      return 0;
-    }
-
-  nh       = ip->ip6_nxt;
-  poffset += sizeof(struct ip6_hdr);
-
-  /* search for a ICMP / UDP / TCP header in this packet */
-  while(poffset + 8 <= pbuflen)
-    {
-      if(nh != IPPROTO_UDP && nh != IPPROTO_ICMPV6 && nh != IPPROTO_TCP &&
-	 nh != IPPROTO_FRAGMENT)
-        {
-	  scamper_debug(__func__, "unhandled next header %d", nh);
-	  return -1;
-	}
-
-      resp->ir_flags |= SCAMPER_ICMP_RESP_FLAG_INNER_IP;
-
-      if(nh == IPPROTO_UDP)
-	{
-          udp = (struct udphdr *)(rxbuf+poffset);
-	  resp->ir_inner_udp_sport = ntohs(udp->uh_sport);
-	  resp->ir_inner_udp_dport = ntohs(udp->uh_dport);
-	  resp->ir_inner_udp_sum   = udp->uh_sum;
-	}
-      else if(nh == IPPROTO_ICMPV6)
-	{
-	  icmpq = (struct icmp6_hdr *)(rxbuf+poffset);
-	  resp->ir_inner_icmp_type = icmpq->icmp6_type;
-	  resp->ir_inner_icmp_code = icmpq->icmp6_code;
-	  resp->ir_inner_icmp_sum  = icmpq->icmp6_cksum;
-	  resp->ir_inner_icmp_id   = ntohs(icmpq->icmp6_id);
-	  resp->ir_inner_icmp_seq  = ntohs(icmpq->icmp6_seq);
-	}
-      else if(nh == IPPROTO_TCP)
-	{
-	  tcp = (struct tcphdr *)(rxbuf+poffset);
-	  resp->ir_inner_tcp_sport = ntohs(tcp->th_sport);
-	  resp->ir_inner_tcp_dport = ntohs(tcp->th_dport);
-	  resp->ir_inner_tcp_seq   = ntohl(tcp->th_seq);
-	}
-      else if(nh == IPPROTO_FRAGMENT)
-	{
-	  frag = (struct ip6_frag *)(rxbuf+poffset);
-	  resp->ir_inner_ip_proto = nh = frag->ip6f_nxt;
-	  resp->ir_inner_ip_off = ntohs(frag->ip6f_offlg) >> 3;
-	  resp->ir_inner_ip_id  = ntohl(frag->ip6f_ident);
-	  poffset += 8;
-
-	  if(resp->ir_inner_ip_off == 0)
-	    continue;
-
-	  resp->ir_inner_data = rxbuf + poffset;
-	  resp->ir_inner_datalen = pbuflen - poffset;
-	}
-
-      /* record details of the IP header and the ICMP headers */
-      icmp6_recv_ip_outer(fd,
-#ifndef _WIN32 /* windows does not have msghdr struct */
-			  &msg,
-#endif
-			  resp, icmp, &from, pbuflen + sizeof(struct ip6_hdr));
-
-      memcpy(&resp->ir_inner_ip_dst.v6, &ip->ip6_dst, sizeof(struct in6_addr));
-      resp->ir_inner_ip_proto = nh;
-      resp->ir_inner_ip_hlim  = ip->ip6_hlim;
-      resp->ir_inner_ip_size  = ntohs(ip->ip6_plen) + sizeof(struct ip6_hdr);
-      resp->ir_inner_ip_flow  = ntohl(ip->ip6_flow) & 0xfffff;
-      resp->ir_inner_ip_tos   = ((ntohl(ip->ip6_flow) & 0x0ff00000) >> 20);
-
-      if(type == ICMP6_PACKET_TOO_BIG)
-	resp->ir_icmp_nhmtu = (ntohl(icmp->icmp6_mtu) % 0xffff);
-
-      /*
-       * check for ICMP extensions
-       *
-       * the length of the message must be at least padded out to 128 bytes,
-       * and must have 4 bytes of header beyond that for there to be
-       * extensions included
-       */
-      if(pbuflen - 8 > 128 + 4)
-	{
-	  ext    = rxbuf   + (8 + 128);
-	  extlen = pbuflen - (8 + 128);
-
-	  if((ext[0] & 0xf0) == 0x20 &&
-	     ((ext[2] == 0 && ext[3] == 0) || in_cksum(ext, extlen) == 0))
-	    {
-	      resp->ir_ext    = memdup(ext, extlen);
-	      resp->ir_extlen = extlen;
-	    }
-	}
-
-      return 0;
-    }
-
-  return -1;
 }
 
 #ifndef _WIN32 /* SOCKET vs int on windows */
@@ -571,10 +548,52 @@ void scamper_icmp6_read_cb(int fd, void *param)
 void scamper_icmp6_read_cb(SOCKET fd, void *param)
 #endif
 {
-  scamper_icmp_resp_t ir;
+  scamper_icmp_resp_t  ir;
+  struct sockaddr_in6  from;
+  ssize_t              pbuflen;
+
+#ifndef _WIN32 /* windows does not have msghdr or iovec */
+  uint8_t              ctrlbuf[256];
+  struct msghdr        msg;
+  struct iovec         iov;
+
+  memset(&iov, 0, sizeof(iov));
+  iov.iov_base = (void *)rxbuf;
+  iov.iov_len  = sizeof(rxbuf);
+
+  msg.msg_name       = (void *)&from;
+  msg.msg_namelen    = sizeof(from);
+  msg.msg_iov        = &iov;
+  msg.msg_iovlen     = 1;
+  msg.msg_control    = (void *)ctrlbuf;
+  msg.msg_controllen = sizeof(ctrlbuf);
+
+  if((pbuflen = recvmsg(fd, &msg, 0)) == -1)
+    {
+      printerror(__func__, "could not recvmsg");
+      return;
+    }
+#else
+  socklen_t fromlen = sizeof(from);
+  if((pbuflen = recvfrom(fd, rxbuf, sizeof(rxbuf), 0,
+			 (struct sockaddr *)&from, &fromlen)) < 0)
+    {
+      printerror(__func__, "could not recvfrom");
+      return;
+    }
+#endif
+  
   memset(&ir, 0, sizeof(ir));
-  if(scamper_icmp6_recv(fd, &ir) == 0)
-    scamper_task_handleicmp(&ir);
+  if(scamper_icmp6_parse(&ir, rxbuf, pbuflen) == 0)
+    {
+#ifndef _WIN32 /* windows does not have msghdr struct */
+      icmp6_meta(&ir, fd, &msg, &from, pbuflen + sizeof(struct ip6_hdr));
+#else
+      icmp6_meta(&ir, fd, &from, pbuflen + sizeof(struct ip6_hdr));
+#endif
+      scamper_task_handleicmp(&ir);
+    }
+
   scamper_icmp_resp_clean(&ir);
   return;
 }
