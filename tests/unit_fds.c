@@ -1,7 +1,7 @@
 /*
  * unit_fds : unit tests for scamper_fd
  *
- * $Id: unit_fds.c,v 1.9 2025/10/13 00:31:12 mjl Exp $
+ * $Id: unit_fds.c,v 1.10 2026/10/16 04:35:30 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -49,14 +49,14 @@ void scamper_dl_read_cb(int fd, void *param)
   return;
 }
 
-int scamper_icmp4_open(const void *src)
+int scamper_icmp4_open(const void *src, scamper_err_t *err)
 {
   if(fd_fail != 0)
     return -1;
   return fd_n++;
 }
 
-int scamper_icmp4_open_err(const void *src)
+int scamper_icmp4_open_err(const void *src, scamper_err_t *err)
 {
   if(fd_fail != 0)
     return -1;
@@ -73,7 +73,7 @@ void scamper_icmp4_read_err_cb(int fd, void *param)
   return;
 }
 
-int scamper_icmp6_open(const void *src)
+int scamper_icmp6_open(const void *src, scamper_err_t *err)
 {
   if(fd_fail != 0)
     return -1;
@@ -104,42 +104,42 @@ int scamper_rtsock_open(void)
   return fd_n++;
 }
 
-int scamper_tcp4_open(const void *addr, int sport)
+int scamper_tcp4_open(const void *addr, int sport, scamper_err_t *err)
 {
   if(fd_fail != 0)
     return -1;
   return fd_n++;
 }
 
-int scamper_tcp6_open(const void *addr, int sport)
+int scamper_tcp6_open(const void *addr, int sport, scamper_err_t *err)
 {
   if(fd_fail != 0)
     return -1;
   return fd_n++;
 }
 
-int scamper_udp4_opendgram(const void *addr, int sport)
+int scamper_udp4_opendgram(const void *addr, int sport, scamper_err_t *err)
 {
   if(fd_fail != 0)
     return -1;
   return fd_n++;
 }
 
-int scamper_udp4_openraw(const void *addr, int sport)
+int scamper_udp4_openraw(const void *addr, scamper_err_t *err)
 {
   if(fd_fail != 0)
     return -1;
   return fd_n++;
 }
 
-int scamper_udp6_open(const void *addr, int sport)
+int scamper_udp6_open(const void *addr, int sport, scamper_err_t *err)
 {
   if(fd_fail != 0)
     return -1;
   return fd_n++;
 }
 
-int scamper_udp6_open_err(const void *addr, int sport)
+int scamper_udp6_open_err(const void *addr, int sport, scamper_err_t *err)
 {
   if(fd_fail != 0)
     return -1;

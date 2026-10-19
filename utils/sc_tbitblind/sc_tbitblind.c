@@ -5,9 +5,8 @@
  *
  * Authors      : Matthew Luckie, Robert Beverly.
  *
- * Copyright (C) 2015      The Regents of the University of California
- * Copyright (C) 2022-2024 Matthew Luckie
- * Copyright (C) 2023      The Regents of the University of California
+ * Copyright (C) 2015,2023 The Regents of the University of California
+ * Copyright (C) 2022-2026 Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -32,6 +31,7 @@
 #include "scamper_addr.h"
 #include "scamper_list.h"
 #include "tbit/scamper_tbit.h"
+#include "lib/libscamperctrl/libscamperctrl.h"
 #include "scamper_file.h"
 #include "mjl_list.h"
 #include "mjl_splaytree.h"
@@ -42,11 +42,10 @@ static uint32_t               options       = 0;
 static splaytree_t           *tree          = NULL;
 static slist_t               *list          = NULL;
 static heap_t                *heap          = NULL;
-static int                    scamper_fd    = -1;
-static char                  *readbuf       = NULL;
-static size_t                 readbuf_len   = 0;
 static int                    port          = 31337;
 static char                  *addressfile   = NULL;
+static scamper_ctrl_t        *scamper_ctrl  = NULL;
+static scamper_inst_t        *scamper_inst  = NULL;
 static char                  *outfile_type  = "warts";
 static char                  *outfile_name  = NULL;
 static scamper_file_t        *outfile       = NULL;
@@ -57,13 +56,12 @@ static int                    wait_between  = 0;
 static int                    limit         = 10000;
 static int                    tbit_app      = SCAMPER_TBIT_APP_HTTP;
 static int                    noshuffle     = 0;
-static scamper_file_filter_t *decode_filter = NULL;
-static scamper_file_t        *decode_in     = NULL;
-static int                    decode_in_fd  = -1;
-static int                    decode_out_fd = -1;
-static int                    data_left     = 0;
+static scamper_file_filter_t *ffilter       = NULL;
+static scamper_file_t        *decode_sf     = NULL;
+static scamper_file_readbuf_t *decode_rb    = NULL;
 static char                   cmd[512];
 static int                    more          = 0;
+static int                    error         = 0;
 static int                    probing       = 0;
 static FILE                  *text          = NULL;
 static FILE                  *comp          = NULL;
@@ -466,13 +464,17 @@ static int do_method(void)
     }
   else return -1;
 
-  string_concaf(cmd, sizeof(cmd), &off, " %s -s %d %s\n", m, target->sport,
+  string_concaf(cmd, sizeof(cmd), &off, " %s -s %d %s", m, target->sport,
 		scamper_addr_tostr(target->addr, addr, sizeof(addr)));
-  write_wrap(scamper_fd, cmd, NULL, off);
+  if(scamper_inst_do(scamper_inst, cmd, target) == NULL)
+    {
+      fprintf(stderr, "could not send %s\n", cmd);
+      return -1;
+    }
   probing++;
   more--;
 
-  print("p %d/%d, v %d : %s", probing, splaytree_count(tree),
+  print("p %d/%d, v %d : %s\n", probing, splaytree_count(tree),
 	slist_count(list), cmd);
 
   return 0;
@@ -564,231 +566,6 @@ static int parse_list(char *str, void *param)
   return 0;
 }
 
-/*
- * do_scamperconnect
- *
- * allocate socket and connect to scamper process listening on the port
- * specified.
- */
-static int do_scamperconnect(void)
-{
-  struct sockaddr_in sin;
-  struct in_addr in;
-
-  inet_aton("127.0.0.1", &in);
-  sockaddr_compose((struct sockaddr *)&sin, AF_INET, &in, port);
-
-  if((scamper_fd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) < 0)
-    {
-      fprintf(stderr, "could not allocate new socket\n");
-      return -1;
-    }
-
-  if(connect(scamper_fd, (const struct sockaddr *)&sin, sizeof(sin)) != 0)
-    {
-      fprintf(stderr, "could not connect to scamper process\n");
-      return -1;
-    }
-
-  return 0;
-}
-
-/*
- * do_scamperread
- *
- * the fd for the scamper process is marked as readable, so do a read
- * on it.
- */
-static int do_scamperread(void)
-{
-  ssize_t rc;
-  uint8_t uu[64];
-  char   *ptr, *head;
-  char    buf[512];
-  void   *tmp;
-  long    l;
-  size_t  i, uus, linelen;
-
-  if((rc = read(scamper_fd, buf, sizeof(buf))) > 0)
-    {
-      if(readbuf_len == 0)
-	{
-	  if((readbuf = memdup(buf, rc)) == NULL)
-	    {
-	      return -1;
-	    }
-	  readbuf_len = rc;
-	}
-      else
-	{
-	  if((tmp = realloc(readbuf, readbuf_len + rc)) != NULL)
-	    {
-	      readbuf = tmp;
-	      memcpy(readbuf+readbuf_len, buf, rc);
-	      readbuf_len += rc;
-	    }
-	  else return -1;
-	}
-    }
-  else if(rc == 0)
-    {
-      close(scamper_fd);
-      scamper_fd = -1;
-    }
-  else if(errno == EINTR || errno == EAGAIN)
-    {
-      return 0;
-    }
-  else
-    {
-      fprintf(stderr, "could not read: errno %d\n", errno);
-      return -1;
-    }
-
-  /* process whatever is in the readbuf */
-  if(readbuf_len == 0)
-    {
-      goto done;
-    }
-
-  head = readbuf;
-  for(i=0; i<readbuf_len; i++)
-    {
-      if(readbuf[i] == '\n')
-	{
-	  /* skip empty lines */
-	  if(head == &readbuf[i])
-	    {
-	      head = &readbuf[i+1];
-	      continue;
-	    }
-
-	  /* calculate the length of the line, excluding newline */
-	  linelen = &readbuf[i] - head;
-
-	  /* if currently decoding data, then pass it to uudecode */
-	  if(data_left > 0)
-	    {
-	      uus = sizeof(uu);
-	      if(uudecode_line(head, linelen, uu, &uus) != 0)
-		{
-		  fprintf(stderr, "could not uudecode_line\n");
-		  goto err;
-		}
-
-	      if(uus != 0)
-		write_wrap(decode_out_fd, uu, NULL, uus);
-
-	      data_left -= (linelen + 1);
-	    }
-	  /* if the scamper process is asking for more tasks, give it more */
-	  else if(linelen == 4 && strncasecmp(head, "MORE", linelen) == 0)
-	    {
-	      if(more != 0)
-		{
-		  fprintf(stderr, "lost syncrhonisation\n");
-		  goto err;
-		}
-	      more++;
-	    }
-	  /* new piece of data */
-	  else if(linelen > 5 && strncasecmp(head, "DATA ", 5) == 0)
-	    {
-	      if((l = strtol(head+5, &ptr, 10)) < 1 ||
-		 (*ptr != '\n' && *ptr != ' '))
-		{
-		  head[linelen] = '\0';
-		  fprintf(stderr, "could not parse %s\n", head);
-		  goto err;
-		}
-
-	      data_left = l;
-	    }
-	  /* feedback letting us know that the command was accepted */
-	  else if(linelen >= 2 && strncasecmp(head, "OK", 2) == 0)
-	    {
-	      /* err, nothing to do */
-	    }
-	  /* feedback letting us know that the command was not accepted */
-	  else if(linelen == 3 && strncasecmp(head, "ERR", 3) == 0)
-	    {
-	      goto err;
-	    }
-	  else
-	    {
-	      head[linelen] = '\0';
-	      fprintf(stderr, "unknown response '%s'\n", head);
-	      goto err;
-	    }
-
-	  head = &readbuf[i+1];
-	}
-    }
-
-  if(head != &readbuf[readbuf_len])
-    {
-      readbuf_len = &readbuf[readbuf_len] - head;
-      ptr = memdup(head, readbuf_len);
-      free(readbuf);
-      readbuf = ptr;
-    }
-  else
-    {
-      readbuf_len = 0;
-      free(readbuf);
-      readbuf = NULL;
-    }
-
- done:
-  return 0;
-
- err:
-  return -1;
-}
-
-/*
- * do_files
- *
- * open a socketpair that can be used to feed warts data into one end and
- * have the scamper_file routines decode it via the other end.
- *
- * also open a file to send the binary warts data file to.
- */
-static int do_files(void)
-{
-  uint16_t types[] = {SCAMPER_FILE_OBJ_TBIT};
-  int  pair[2];
-
-  if((decode_filter = scamper_file_filter_alloc(types, 1)) == NULL)
-    {
-      return -1;
-    }
-
-  /*
-   * setup a socketpair that is used to decode warts from a binary input.
-   * pair[0] is used to write to the file, while pair[1] is used by
-   * the scamper_file_t routines to parse the warts data.
-   */
-  if(socketpair(AF_UNIX, SOCK_STREAM, 0, pair) != 0)
-    {
-      return -1;
-    }
-
-  decode_in_fd  = pair[0];
-  decode_out_fd = pair[1];
-  if((decode_in = scamper_file_openfd(decode_in_fd,NULL,'r',"warts")) == NULL)
-    {
-      return -1;
-    }
-
-  if(fcntl_set(decode_in_fd, O_NONBLOCK) == -1)
-    {
-      return -1;
-    }
-
-  return 0;
-}
-
 static int process_tbit(target_t *target, scamper_tbit_t *tbit)
 {
   char buf[128];
@@ -833,76 +610,147 @@ static int process_tbit(target_t *target, scamper_tbit_t *tbit)
   return 0;
 }
 
-static int do_decoderead(void)
+static void ctrlcb(scamper_inst_t *inst, uint8_t type, scamper_task_t *task,
+		   const void *data, size_t len)
 {
-  scamper_tbit_t *tbit = NULL;
-  target_t       *target, findme;
-  void           *data;
-  uint16_t        type;
-  char            buf[1024];
-  int             rc;
+  target_t *target;
+  uint16_t obj_type;
+  void *obj_data;
+  char buf[1024];
 
-  if(scamper_file_read(decode_in, decode_filter, &type, &data) != 0)
+  gettimeofday_wrap(&now);
+
+  if(type == SCAMPER_CTRL_TYPE_MORE)
     {
-      fprintf(stderr, "do_decoderead: scamper_file_read errno %d\n", errno);
+      more++;
+      do_method();
+    }
+  else if(type == SCAMPER_CTRL_TYPE_DATA)
+    {
+      if(scamper_file_readbuf_add(decode_rb, data, len) != 0 ||
+	 scamper_file_read(decode_sf, ffilter, &obj_type, &obj_data) != 0)
+	{
+	  fprintf(stderr, "%s: could not read\n", __func__);
+	  goto err;
+	}
+
+      if(obj_data == NULL)
+	return;
+
+      /* rotate the file if necessary */
+      if(outfile_obj >= limit)
+	{
+	  if(outfile != NULL)
+	    {
+	      scamper_file_close(outfile);
+	      outfile = NULL;
+	    }
+	  outfile_obj = 0;
+	  snprintf(buf, sizeof(buf), "%s_%02d.%s",
+		   outfile_name, outfile_i++, outfile_type);
+	  if((outfile = scamper_file_open(buf, 'w', outfile_type)) == NULL)
+	    {
+	      fprintf(stderr, "could not open outfile\n");
+	      goto err;
+	    }
+	}
+
+      if(scamper_file_write_obj(outfile, obj_type, obj_data) != 0)
+	{
+	  fprintf(stderr, "%s: could not write obj %d\n", __func__, obj_type);
+	  goto err;
+	}
+
+      if(obj_type == SCAMPER_FILE_OBJ_CYCLE_START ||
+	 obj_type == SCAMPER_FILE_OBJ_CYCLE_STOP)
+	{
+	  scamper_cycle_free(obj_data);
+	  return;
+	}
+
+      probing--;
+      target = scamper_task_param_get(task);
+
+      if(obj_type == SCAMPER_FILE_OBJ_TBIT)
+	{
+	  outfile_obj++;
+	  if(process_tbit(target, obj_data) != 0)
+	    goto err;
+	}
+      else
+	{
+	  fprintf(stderr, "unexpected type %d\n", obj_type);
+	  goto err;
+	}
+    }
+  else if(type == SCAMPER_CTRL_TYPE_ERR)
+    {
+      goto err;
+    }
+  else if(type == SCAMPER_CTRL_TYPE_EOF)
+    {
+      scamper_inst_free(scamper_inst);
+      scamper_inst = NULL;
+    }
+  else if(type == SCAMPER_CTRL_TYPE_FATAL)
+    {
+      print("fatal: %s", scamper_ctrl_strerror(scamper_ctrl));
+      goto err;
+    }
+  return;
+
+ err:
+  error = 1;
+  return;
+}
+
+/*
+ * do_scamperconnect
+ *
+ * allocate socket and connect to scamper process listening on the port
+ * specified.
+ */
+static int do_scamperconnect(void)
+{
+  if((scamper_ctrl = scamper_ctrl_alloc(ctrlcb)) == NULL)
+    {
+      fprintf(stderr, "could not alloc scamper_ctrl\n");
       return -1;
     }
 
-  if(data == NULL)
+  if((scamper_inst = scamper_inst_inet(scamper_ctrl, NULL, NULL, port)) == NULL)
     {
-      if(scamper_file_geteof(decode_in) != 0)
-	{
-	  scamper_file_close(decode_in);
-	  decode_in = NULL;
-	  decode_in_fd = -1;
-	}
-      return 0;
+      fprintf(stderr, "could not alloc port inst\n");
+      return -1;
     }
 
-  probing--;
+  return 0;
+}
 
-  /* rotate the file if necessary */
-  if(outfile_obj >= limit)
+static int do_files(void)
+{
+  uint16_t types[] = {SCAMPER_FILE_OBJ_TBIT,
+		      SCAMPER_FILE_OBJ_CYCLE_START,
+		      SCAMPER_FILE_OBJ_CYCLE_STOP
+  };
+
+  if((ffilter = scamper_file_filter_alloc(types, 3)) == NULL)
     {
-      if(outfile != NULL)
-	{
-	  scamper_file_close(outfile);
-	  outfile = NULL;
-	}
-      outfile_obj = 0;
-      snprintf(buf, sizeof(buf), "%s_%02d.%s", outfile_name, outfile_i++,
-	       outfile_type);
-      if((outfile = scamper_file_open(buf, 'w', outfile_type)) == NULL)
-	return -1;
+      return -1;
     }
 
-  if(type == SCAMPER_FILE_OBJ_TBIT)
+  if((decode_sf = scamper_file_opennull('r', "warts")) == NULL)
     {
-      tbit = (scamper_tbit_t *)data;
-      findme.addr = scamper_tbit_dst_get(tbit);
-      if(scamper_file_write_tbit(outfile, tbit, NULL) != 0)
-	return -1;
-      outfile_obj++;
+      fprintf(stderr, "could not alloc decode_sf\n");
+      return -1;
     }
-  else return -1;
-
-  if((target = splaytree_find(tree, &findme)) == NULL)
+  if((decode_rb = scamper_file_readbuf_alloc()) == NULL)
     {
-      fprintf(stderr, "do_decoderead: could not find dst %s\n",
-	      scamper_addr_tostr(findme.addr, buf, sizeof(buf)));
-      goto err;
+      fprintf(stderr, "could not alloc decode_rb\n");
+      return -1;
     }
-
-  if(tbit != NULL)
-    rc = process_tbit(target, tbit);
-  else
-    rc = -1;
-
-  return rc;
-
- err:
-  if(tbit != NULL) scamper_tbit_free(tbit);
-  return -1;
+  scamper_file_setreadfunc(decode_sf, decode_rb, scamper_file_readbuf_read);
+  return 0;
 }
 
 static void cleanup(void)
@@ -925,16 +773,34 @@ static void cleanup(void)
       heap = NULL;
     }
 
-  if(decode_in != NULL)
+  if(ffilter != NULL)
     {
-      scamper_file_close(decode_in);
-      decode_in = NULL;
+      scamper_file_filter_free(ffilter);
+      ffilter = NULL;
     }
 
-  if(decode_filter != NULL)
+  if(decode_rb != NULL)
     {
-      scamper_file_filter_free(decode_filter);
-      decode_filter = NULL;
+      scamper_file_readbuf_free(decode_rb);
+      decode_rb = NULL;
+    }
+
+  if(decode_sf != NULL)
+    {
+      scamper_file_close(decode_sf);
+      decode_sf = NULL;
+    }
+
+  if(scamper_inst != NULL)
+    {
+      scamper_inst_free(scamper_inst);
+      scamper_inst = NULL;
+    }
+
+  if(scamper_ctrl != NULL)
+    {
+      scamper_ctrl_free(scamper_ctrl);
+      scamper_ctrl = NULL;
     }
 
   if(text != NULL)
@@ -956,8 +822,6 @@ int main(int argc, char *argv[])
 {
   struct timeval tv, *tv_ptr;
   target_t *target;
-  fd_set rfds;
-  int nfds;
 
 #if defined(DMALLOC)
   free(malloc(1));
@@ -991,79 +855,54 @@ int main(int argc, char *argv[])
   if(do_files() != 0)
     return -1;
 
-  /* attach */
-  snprintf(cmd, sizeof(cmd), "attach\n");
-  if(write_wrap(scamper_fd, cmd, NULL, 7) != 0)
+  while(scamper_ctrl_isdone(scamper_ctrl) == 0)
     {
-      fprintf(stderr, "could not attach to scamper process\n");
-      return -1;
-    }
-
-  for(;;)
-    {
-      nfds = 0;
-      FD_ZERO(&rfds);
-
-      if(scamper_fd < 0 && decode_in_fd < 0)
-	break;
-
-      if(scamper_fd >= 0)
-	{
-	  FD_SET(scamper_fd, &rfds);
-	  if(nfds < scamper_fd) nfds = scamper_fd;
-	}
-
-      if(decode_in_fd >= 0)
-	{
-	  FD_SET(decode_in_fd, &rfds);
-	  if(nfds < decode_in_fd) nfds = decode_in_fd;
-	}
-
-      if(splaytree_count(tree) == 0 && slist_count(list) == 0)
-	break;
-
+      /*
+       * need to set a timeout on select if scamper's processing window is
+       * not full and there is a trace in the waiting queue.
+       */
       tv_ptr = NULL;
-      gettimeofday_wrap(&tv);
       if(more > 0)
 	{
-	  if(slist_count(list) > 0)
+	  gettimeofday_wrap(&now);
+
+	  /*
+	   * if there is something ready to probe now, then try and
+	   * do it.
+	   */
+	  if(slist_count(list) > 0 ||
+	     ((target = heap_head_item(heap)) != NULL &&
+	      timeval_cmp(&target->next, &now) <= 0))
 	    {
-	      memset(&tv, 0, sizeof(tv));
-	      tv_ptr = &tv;
+	      if(do_method() != 0)
+		{
+		  print("do_method did not return 0");
+		  return -1;
+		}
 	    }
-	  else if((target = heap_head_item(heap)) != NULL)
+
+	  /*
+	   * if there is something ready to probe now, then try and
+	   * do it.
+	   */
+	  if(more > 0 && (target = heap_head_item(heap)) != NULL)
 	    {
-	      if(timeval_cmp(&tv, &target->next) <= 0)
-		timeval_diff_tv(&tv, &tv, &target->next);
+	      if(timeval_cmp(&now, &target->next) <= 0)
+		timeval_diff_tv(&tv, &now, &target->next);
 	      else
 		memset(&tv, 0, sizeof(tv));
 	      tv_ptr = &tv;
 	    }
 	}
 
-      if(select(nfds+1, &rfds, NULL, NULL, tv_ptr) < 0)
-	{
-	  if(errno == EINTR) continue;
-	  break;
-	}
-      gettimeofday_wrap(&now);
+      if(splaytree_count(tree) == 0 && slist_count(list) == 0 &&
+	 scamper_inst != NULL && scamper_inst_isdone(scamper_inst) == 0)
+	scamper_inst_done(scamper_inst);
 
-      if(FD_ISSET(decode_in_fd, &rfds))
-	{
-	  if(do_decoderead() != 0)
-	    return -1;
-	}
+      scamper_ctrl_wait(scamper_ctrl, tv_ptr);
 
-      if(FD_ISSET(scamper_fd, &rfds))
-	{
-	  if(do_scamperread() != 0)
-	    return -1;
-	}
-
-      if(more > 0)
-	{
-	  do_method();
-	}
+      if(error != 0)
+	return -1;
     }
 
   return 0;

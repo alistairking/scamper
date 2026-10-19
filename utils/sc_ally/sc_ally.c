@@ -2,11 +2,11 @@
  * sc_ally : scamper driver to collect data on candidate aliases using the
  *           Ally method.
  *
- * $Id: sc_ally.c,v 1.65 2025/02/24 06:59:36 mjl Exp $
+ * $Id: sc_ally.c,v 1.67 2026/07/25 02:06:29 mjl Exp $
  *
  * Copyright (C) 2009-2011 The University of Waikato
  * Copyright (C) 2013-2015 The Regents of the University of California
- * Copyright (C) 2016-2024 Matthew Luckie
+ * Copyright (C) 2016-2026 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -30,6 +30,7 @@
 #include "internal.h"
 
 #include "scamper_addr.h"
+#include "scamper_addr_int.h" /* for scamper_addr_cmp_thunk */
 #include "scamper_list.h"
 #include "ping/scamper_ping.h"
 #include "dealias/scamper_dealias.h"
@@ -1060,7 +1061,7 @@ static void sc_allytest_free(sc_allytest_t *at)
   if(at == NULL)
     return;
   if(at->addr_list != NULL)
-    slist_free_cb(at->addr_list, (slist_free_t)scamper_addr_free);
+    slist_free_cb(at->addr_list, scamper_addr_free_thunk);
   if(at->router_tree != NULL)
     splaytree_free(at->router_tree, (splaytree_free_t)sc_addr2router_free);
   if(at->router_list != NULL)
@@ -1107,7 +1108,7 @@ static int addressfile_line(char *buf, void *param)
     return 0;
 
   if((list = slist_alloc()) == NULL ||
-     (tree = splaytree_alloc((splaytree_cmp_t)scamper_addr_cmp)) == NULL)
+     (tree = splaytree_alloc(scamper_addr_cmp_thunk)) == NULL)
     goto err;
 
   a = b = buf;
@@ -1160,7 +1161,7 @@ static int addressfile_line(char *buf, void *param)
 
  err:
   if(tree != NULL) splaytree_free(tree, NULL);
-  if(list != NULL) slist_free_cb(list, (slist_free_t)scamper_addr_free);
+  if(list != NULL) slist_free_cb(list, scamper_addr_free_thunk);
   return -1;
 }
 

@@ -1,7 +1,7 @@
 /*
  * scamper_addr.h
  *
- * $Id: scamper_addr.h,v 1.41 2025/11/12 22:36:39 mjl Exp $
+ * $Id: scamper_addr.h,v 1.42 2026/08/31 07:14:30 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -78,13 +78,13 @@ size_t scamper_addr_len_get(const scamper_addr_t *addr);
  *
  */
 #ifndef DMALLOC
-scamper_addr_t *scamper_addr_alloc(const int type, const void *addr);
+scamper_addr_t *scamper_addr_alloc(int type, const void *addr);
 scamper_addr_t *scamper_addr_fromstr(int type, const char *str);
 #else
-scamper_addr_t *scamper_addr_alloc_dm(const int type, const void *addr,
-				      const char *file, const int line);
+scamper_addr_t *scamper_addr_alloc_dm(int type, const void *addr,
+				      const char *file, int line);
 scamper_addr_t *scamper_addr_fromstr_dm(int type, const char *str,
-					const char *file, const int line);
+					const char *file, int line);
 #define scamper_addr_alloc(type, addr) \
   scamper_addr_alloc_dm((type), (addr), __FILE__, __LINE__)
 #define scamper_addr_fromstr(type, addr) \

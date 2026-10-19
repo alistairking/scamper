@@ -1,7 +1,7 @@
 /*
  * common_trace : common functions for unit testing trace
  *
- * $Id: common_trace.c,v 1.25 2026/07/13 01:10:35 mjl Exp $
+ * $Id: common_trace.c,v 1.26 2026/08/29 03:06:16 mjl Exp $
  *
  *        Marcus Luckie, Matthew Luckie
  *        mjl@luckie.org.nz
@@ -64,6 +64,7 @@ static int trace_reply_ok(const scamper_trace_reply_t *in,
      in->reply_icmp_q_ttl != out->reply_icmp_q_ttl ||
      in->reply_icmp_q_ipl != out->reply_icmp_q_ipl ||
      in->reply_icmp_q_tos != out->reply_icmp_q_tos ||
+     in->reply_icmp_q_ipid != out->reply_icmp_q_ipid ||
      in->reply_icmp_nhmtu != out->reply_icmp_nhmtu ||
      in->reply_tcp_flags != out->reply_tcp_flags ||
      timeval_cmp(&in->rtt, &out->rtt) != 0 ||
@@ -91,6 +92,7 @@ static int trace_probe_ok(const scamper_trace_probe_t *in,
      in->size != out->size ||
      in->replyc != out->replyc ||
      in->flags != out->flags ||
+     in->ipid != out->ipid ||
      timeval_cmp(&in->tx, &out->tx) != 0)
     goto err;
 
@@ -957,6 +959,86 @@ scamper_trace_t *trace_11(void)
   return NULL;
 }
 
+scamper_trace_t *trace_12(void)
+{
+  scamper_trace_t *trace = NULL;
+  scamper_trace_probe_t *p[5];
+  scamper_trace_reply_t *r[5];
+
+  if((trace = scamper_trace_alloc()) == NULL ||
+     (trace->src = scamper_addr_fromstr_ipv4("192.0.2.1")) == NULL ||
+     (trace->dst = scamper_addr_fromstr_ipv4("192.0.2.10")) == NULL ||
+     scamper_trace_hops_alloc(trace, 5) != 0 ||
+     probettl_alloc(trace, 5) != 0)
+    goto err;
+
+  trace->userid               = 69;
+  trace->sport                = 120;
+  trace->dport                = 154;
+  trace->probe_size           = 44;
+  trace->start.tv_sec         = 1724828853;
+  trace->start.tv_usec        = 123456;
+  trace->wait_timeout.tv_sec  = 1;
+  trace->wait_timeout.tv_usec = 0;
+  trace->wait_probe.tv_sec    = 0;
+  trace->wait_probe.tv_usec   = 0;
+  trace->flags                = 0;
+  trace->hop_count            = 5;
+  trace->firsthop             = 1;
+  trace->squeries             = 1;
+  trace->gaplimit             = 3;
+  trace->attempts             = 1;
+  trace->probec               = 5;
+  trace->flags               |= SCAMPER_TRACE_FLAG_ICMPCSUMDP;
+  trace->stop_reason          = SCAMPER_TRACE_STOP_COMPLETED;
+  trace->type                 = SCAMPER_TRACE_TYPE_ICMP_ECHO_PARIS;
+
+  if(trace_prply_add(trace, 1, 1, 44, 1724828853, 123456,
+		     "192.0.2.4", 255, 56, 0, 53421, &p[0], &r[0]) != 0 ||
+     trace_prply_add(trace, 1, 2, 44, 1724828853, 184231,
+		     "192.0.2.5", 254, 72, 0, 85273, &p[1], &r[1]) != 0 ||
+     trace_prply_add(trace, 1, 3, 44, 1724828853, 273209,
+		     "192.0.2.6", 254, 72, 0, 86127, &p[2], &r[2]) != 0 ||
+     trace_prply_add(trace, 1, 4, 44, 1724828853, 362164,
+		     "192.0.2.7", 254, 72, 0, 87971, &p[3], &r[3]) != 0 ||
+     trace_prply_add(trace, 1, 5, 44, 1724828853, 459691,
+		     "192.0.2.10", 254, 72, 0, 91182, &p[4], &r[4]) != 0)
+    goto err;
+
+  p[0]->flags |= SCAMPER_TRACE_REPLY_FLAG_PQ_IPID;
+  p[0]->ipid = 0x0001;
+  r[0]->flags |= SCAMPER_TRACE_REPLY_FLAG_PQ_IPID;
+  r[0]->reply_icmp_q_ipid = 0x0001;
+
+  p[1]->flags |= SCAMPER_TRACE_REPLY_FLAG_PQ_IPID;
+  p[1]->ipid = 0x0002;
+  r[1]->flags |= SCAMPER_TRACE_REPLY_FLAG_PQ_IPID;
+  r[1]->reply_icmp_q_ipid = 0x0002;
+
+  p[2]->flags |= SCAMPER_TRACE_REPLY_FLAG_PQ_IPID;
+  p[2]->ipid = 0x0003;
+  r[2]->flags |= SCAMPER_TRACE_REPLY_FLAG_PQ_IPID;
+  r[2]->reply_icmp_q_ipid = 0x0300;
+
+  p[3]->flags |= SCAMPER_TRACE_REPLY_FLAG_PQ_IPID;
+  p[3]->ipid = 0x0004;
+  r[3]->flags |= SCAMPER_TRACE_REPLY_FLAG_PQ_IPID;
+  r[3]->reply_icmp_q_ipid = 0x4321;
+
+  p[4]->flags |= SCAMPER_TRACE_REPLY_FLAG_PQ_IPID;
+  p[4]->ipid = 0x0005;
+  r[4]->reply_icmp_type = ICMP_ECHOREPLY;
+  r[4]->reply_icmp_code = 0;
+  r[4]->reply_icmp_q_ipl = 0;
+  r[4]->reply_icmp_q_ttl = 0;
+
+  return trace;
+
+ err:
+  if(trace != NULL) scamper_trace_free(trace);
+  return NULL;
+}
+
 static scamper_trace_makefunc_t makers[] = {
   trace_1,
   trace_2,
@@ -969,6 +1051,7 @@ static scamper_trace_makefunc_t makers[] = {
   trace_9,
   trace_10,
   trace_11,
+  trace_12,
 };
 
 scamper_trace_t *trace_makers(size_t i)

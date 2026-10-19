@@ -1,14 +1,14 @@
 /*
  * sc_speedtrap
  *
- * $Id: sc_speedtrap.c,v 1.95 2025/04/20 07:29:14 mjl Exp $
+ * $Id: sc_speedtrap.c,v 1.97 2026/07/25 02:06:29 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
  *
  * Copyright (C) 2013-2015 The Regents of the University of California
  * Copyright (C) 2016,2020 The University of Waikato
- * Copyright (C) 2022-2025 Matthew Luckie
+ * Copyright (C) 2022-2026 Matthew Luckie
  * Copyright (C) 2023-2025 The Regents of the University of California
  *
  * This program is free software; you can redistribute it and/or modify
@@ -36,6 +36,7 @@
 #endif
 
 #include "scamper_addr.h"
+#include "scamper_addr_int.h"
 #include "scamper_list.h"
 #include "ping/scamper_ping.h"
 #include "dealias/scamper_dealias.h"
@@ -2273,7 +2274,7 @@ static int do_addressfile(void)
   sc_target_t *target = NULL;
   int rc = -1;
 
-  if((tree = splaytree_alloc((splaytree_cmp_t)scamper_addr_cmp)) == NULL ||
+  if((tree = splaytree_alloc(scamper_addr_cmp_thunk)) == NULL ||
      (list = slist_alloc()) == NULL ||
      file_lines(addressfile, addressfile_line, tree) != 0)
     goto done;
@@ -2298,8 +2299,8 @@ static int do_addressfile(void)
   rc = 0;
 
  done:
-  if(tree != NULL) splaytree_free(tree, (splaytree_free_t)scamper_addr_free);
-  if(list != NULL) slist_free_cb(list, (slist_free_t)scamper_addr_free);
+  if(tree != NULL) splaytree_free(tree, scamper_addr_free_thunk);
+  if(list != NULL) slist_free_cb(list, scamper_addr_free_thunk);
   return rc;
 }
 

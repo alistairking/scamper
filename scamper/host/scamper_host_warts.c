@@ -1,11 +1,11 @@
 /*
  * scamper_host_warts.c
  *
- * Copyright (C) 2019-2025 Matthew Luckie
+ * Copyright (C) 2019-2026 Matthew Luckie
  *
  * Author: Matthew Luckie
  *
- * $Id: scamper_host_warts.c,v 1.25 2025/10/19 02:17:23 mjl Exp $
+ * $Id: scamper_host_warts.c,v 1.27 2026/09/02 03:39:09 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -55,6 +55,7 @@
 #define WARTS_HOST_QCOUNT          14
 #define WARTS_HOST_ECS             15
 #define WARTS_HOST_ERRMSG          16
+#define WARTS_HOST_MQTYPES         17
 
 static const warts_var_t host_vars[] =
 {
@@ -74,6 +75,7 @@ static const warts_var_t host_vars[] =
   {WARTS_HOST_QCOUNT,          1},
   {WARTS_HOST_ECS,            -1},
   {WARTS_HOST_ERRMSG,         -1},
+  {WARTS_HOST_MQTYPES,        -1},
 };
 #define host_vars_mfb WARTS_VAR_MFB(host_vars)
 
@@ -1247,6 +1249,53 @@ static void warts_host_rr_write(scamper_host_rr_t *rr, uint8_t *buf,
    return;
 }
 
+static int mqtypes_size(const scamper_host_t *host, uint16_t *params_len)
+{
+  uint16_t mqtypes_len = 1 + (host->mqtypec * 2);
+  if(uint16_wouldwrap(*params_len, mqtypes_len))
+     return -1;
+  *params_len += mqtypes_len;
+  return 0;
+}
+
+static void mqtypes_insert(uint8_t *buf, uint32_t *off, const uint32_t len,
+			   const scamper_host_t *host, void *param)
+{
+  uint8_t i;
+  buf[*off] = host->mqtypec; *off += 1;
+  for(i=0; i<host->mqtypec; i++)
+    insert_uint16(buf, off, len, &host->mqtypes[i], NULL);
+  return;
+}
+
+static int mqtypes_extract(const uint8_t *buf, uint32_t *off,
+			   const uint32_t len,
+			   scamper_host_t *host, void *param)
+{
+  uint16_t *mqtypes = NULL;
+  uint8_t i, mqtypec;
+
+  if(*off >= len || len - *off < 3)
+    goto err;
+  mqtypec = buf[*off];
+  if(len - *off < (uint32_t)(1 + (mqtypec * 2)) ||
+     (mqtypes = malloc(sizeof(uint16_t) * mqtypec)) == NULL)
+    goto err;
+  *off += 1;
+  for(i=0; i<mqtypec; i++)
+    if(extract_uint16(buf, off, len, &mqtypes[i], NULL) != 0)
+      goto err;
+
+  host->mqtypes = mqtypes;
+  host->mqtypec = mqtypec;
+
+  return 0;
+
+ err:
+  if(mqtypes != NULL) free(mqtypes);
+  return -1;
+}
+
 static int warts_host_params(const scamper_host_t *host,
 			     warts_addrtable_t *table, uint8_t *flags,
 			     uint16_t *flags_len, uint16_t *params_len)
@@ -1277,7 +1326,8 @@ static int warts_host_params(const scamper_host_t *host,
 	 (var->id == WARTS_HOST_QNAME   && host->qname == NULL) ||
 	 (var->id == WARTS_HOST_QCOUNT  && host->qcount == 0) ||
 	 (var->id == WARTS_HOST_ECS     && host->ecs == NULL) ||
-	 (var->id == WARTS_HOST_ERRMSG  && host->errmsg == NULL))
+	 (var->id == WARTS_HOST_ERRMSG  && host->errmsg == NULL) ||
+	 (var->id == WARTS_HOST_MQTYPES && host->mqtypec == 0))
 	continue;
 
       /* Set the flag for the rest of the variables */
@@ -1307,6 +1357,11 @@ static int warts_host_params(const scamper_host_t *host,
       else if(var->id == WARTS_HOST_ERRMSG)
 	{
 	  if(warts_str_size(host->errmsg, params_len) != 0)
+	    return -1;
+	}
+      else if(var->id == WARTS_HOST_MQTYPES)
+	{
+	  if(mqtypes_size(host, params_len) != 0)
 	    return -1;
 	}
       else
@@ -1343,6 +1398,7 @@ static int warts_host_params_read(scamper_host_t *host,
     {&host->qcount,       (wpr_t)extract_byte,    NULL},
     {&host->ecs,          (wpr_t)extract_string,  NULL},
     {&host->errmsg,       (wpr_t)extract_string,  NULL},
+    {host,                (wpr_t)mqtypes_extract, NULL},
   };
   const int handler_cnt = sizeof(handlers) / sizeof(warts_param_reader_t);
   int rc;
@@ -1385,6 +1441,7 @@ static int warts_host_params_write(const scamper_host_t *host,
     {&host->qcount,       (wpw_t)insert_byte,     NULL},
     {host->ecs,           (wpw_t)insert_string,   NULL},
     {host->errmsg,        (wpw_t)insert_string,   NULL},
+    {host,                (wpw_t)mqtypes_insert,  NULL},
   };
   const int handler_cnt = sizeof(handlers)/sizeof(warts_param_writer_t);
 

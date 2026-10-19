@@ -1,7 +1,7 @@
 /*
  * scamper_dealias.c
  *
- * $Id: scamper_dealias.c,v 1.84 2026/06/19 22:21:09 mjl Exp $
+ * $Id: scamper_dealias.c,v 1.85 2026/07/22 08:18:02 mjl Exp $
  *
  * Copyright (C) 2008-2010 The University of Waikato
  * Copyright (C) 2012-2013 The Regents of the University of California
@@ -870,14 +870,14 @@ int scamper_dealias_prefixscan_xs_add(scamper_dealias_t *dealias,
   size_t tmp;
 
   if(array_find((void **)prefixscan->xs, prefixscan->xc, addr,
-		(array_cmp_t)scamper_addr_cmp) != NULL)
+		scamper_addr_cmp_thunk) != NULL)
     return 0;
 
   if((tmp = prefixscan->xc) == 65535)
     return -1;
 
   if(array_insert((void ***)&prefixscan->xs, &tmp, addr,
-		  (array_cmp_t)scamper_addr_cmp) != 0)
+		  scamper_addr_cmp_thunk) != 0)
     return -1;
 
   scamper_addr_use(addr);
@@ -890,7 +890,7 @@ int scamper_dealias_prefixscan_xs_in(scamper_dealias_t *dealias,
 {
   scamper_dealias_prefixscan_t *prefixscan = dealias->data;
   if(array_find((void **)prefixscan->xs, prefixscan->xc, addr,
-		(array_cmp_t)scamper_addr_cmp) != NULL)
+		scamper_addr_cmp_thunk) != NULL)
     return 1;
   return 0;
 }

@@ -1,7 +1,7 @@
 /*
  * scamper_do_trace.c
  *
- * $Id: scamper_trace_do.c,v 1.465 2026/07/11 03:42:44 mjl Exp $
+ * $Id: scamper_trace_do.c,v 1.468 2026/08/21 18:57:22 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -812,7 +812,7 @@ static void trace_lss_free(trace_lss_t *lss)
   if(lss->name != NULL)
     free(lss->name);
   if(lss->tree != NULL)
-    splaytree_free(lss->tree, (splaytree_free_t)scamper_addr_free);
+    splaytree_free(lss->tree, scamper_addr_free_thunk);
 
   free(lss);
   return;
@@ -840,7 +840,7 @@ static trace_lss_t *trace_lss_get(char *name)
 
   if((lss = malloc_zero(sizeof(trace_lss_t))) == NULL ||
      (lss->name = strdup(name)) == NULL ||
-     (lss->tree = splaytree_alloc((splaytree_cmp_t)scamper_addr_cmp))==NULL ||
+     (lss->tree = splaytree_alloc(scamper_addr_cmp_thunk)) == NULL ||
      (lss->node = splaytree_insert(lsses, lss)) == NULL)
     {
       trace_lss_free(lss);
@@ -1314,7 +1314,7 @@ static int conf_iface_add(trace_conf_state_t *conf, scamper_addr_t *iface)
 
   /* interface already in the set */
   if(array_find((void **)conf->interfaces, conf->interfacec,
-		iface, (array_cmp_t)scamper_addr_cmp) != NULL)
+		iface, scamper_addr_cmp_thunk) != NULL)
     return 0;
 
   /* increase array size for one more interface */
@@ -1326,7 +1326,7 @@ static int conf_iface_add(trace_conf_state_t *conf, scamper_addr_t *iface)
   if(conf->interfacec > 1)
     {
       array_qsort((void **)conf->interfaces, conf->interfacec,
-		  (array_cmp_t)scamper_addr_cmp);
+		  scamper_addr_cmp_thunk);
       conf->n++;
     }
 
@@ -1339,7 +1339,7 @@ static int dtree_lss_add(trace_dtree_state_t *dtree, scamper_addr_t *iface)
     return -1;
   scamper_addr_use(iface);
   if(array_insert((void ***)&dtree->lss, &dtree->lssc, iface,
-		  (array_cmp_t)scamper_addr_cmp) != 0)
+		  scamper_addr_cmp_thunk) != 0)
     return -1;
   return 0;
 }
@@ -1356,7 +1356,7 @@ static int state_lss_in(trace_state_t *state, scamper_addr_t *iface)
   trace_dtree_state_t *dtree = state->dtree;
   if(dtree != NULL &&
      array_find((void **)dtree->lss, dtree->lssc, iface,
-		(array_cmp_t)scamper_addr_cmp) != NULL)
+		scamper_addr_cmp_thunk) != NULL)
     return 1;
   return 0;
 }
@@ -1667,6 +1667,11 @@ static scamper_trace_reply_t *trace_icmp_hop(const scamper_task_t *task,
       hop->reply_icmp_q_ttl = ir->ir_inner_ip_ttl;
       hop->reply_icmp_q_ipl = ir->ir_inner_ip_size;
       hop->reply_icmp_q_tos = ir->ir_inner_ip_tos;
+      if(ir->ir_af == AF_INET)
+	{
+	  hop->flags |= SCAMPER_TRACE_REPLY_FLAG_PQ_IPID;
+	  hop->reply_icmp_q_ipid = ir->ir_inner_ip_id;
+	}
     }
 
   /* if ICMP extensions are included, then attempt to parse and include them */
@@ -4814,6 +4819,11 @@ static void do_trace_probe(scamper_task_t *task)
   stp->ttl = probe.pr_ip_ttl;
   stp->size = probe.pr_len + state->header_size;
   timeval_cpy(&stp->tx, &probe.pr_tx);
+  if(trace->dst->type == SCAMPER_ADDR_TYPE_IPV4)
+    {
+      stp->ipid = probe.pr_ip_id;
+      stp->flags |= SCAMPER_TRACE_REPLY_FLAG_PQ_IPID;
+    }
 
   tp->mode = state->mode;
   tp->id = state->id_next;
@@ -4864,7 +4874,7 @@ static void do_trace_probe(scamper_task_t *task)
       tp->flags |= TRACE_PROBE_FLAG_STORED;
     }
 
-  stp->flags = SCAMPER_TRACE_REPLY_FLAG_PENDING;
+  stp->flags |= SCAMPER_TRACE_REPLY_FLAG_PENDING;
 
   tp->probe = stp;
   state->probes[state->id_next] = tp;
@@ -4897,7 +4907,7 @@ int scamper_do_trace_dtree_lss_clear(char *name)
   findme.name = name;
   if((lss = splaytree_find(lsses, &findme)) == NULL)
     return -1;
-  splaytree_empty(lss->tree, (splaytree_free_t)scamper_addr_free);
+  splaytree_empty(lss->tree, scamper_addr_free_thunk);
   return 0;
 }
 

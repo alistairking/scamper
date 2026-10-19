@@ -1,7 +1,7 @@
 /*
  * scamper_privsep.c: code that does root-required tasks
  *
- * $Id: scamper_privsep.c,v 1.121 2026/06/22 07:29:34 mjl Exp $
+ * $Id: scamper_privsep.c,v 1.122 2026/09/25 21:15:49 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -66,7 +66,6 @@ typedef struct privsep_func
 
 static int   root_fd   = -1; /* the fd the root code send/recv on */
 static int   unpriv_fd = -1; /* the fd that the unpriv code uses */
-extern pid_t privsep_unpriv_pid; /* the pid of the unpriv process */
 
 /*
  * the privilege separation code works by allowing the unprivileged
@@ -1512,7 +1511,7 @@ int scamper_privsep_init()
       printerror(__func__, "could not fork");
       return -1;
     }
-  else if(pid == 0) /* child */
+  else if(pid != 0) /* not the child */
     {
       /*
        * this is the process that will do the root tasks.
@@ -1528,9 +1527,6 @@ int scamper_privsep_init()
    */
   close(root_fd);
   root_fd = -1;
-
-  /* make a copy of the pid of the unprivileged process */
-  privsep_unpriv_pid = pid;
 
   /* make sure the privsep process signals ready */
   if(privsep_unpriv_getready() != 0)

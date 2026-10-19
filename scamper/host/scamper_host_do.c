@@ -1,7 +1,7 @@
 /*
  * scamper_host_do
  *
- * $Id: scamper_host_do.c,v 1.104 2026/07/04 21:53:02 mjl Exp $
+ * $Id: scamper_host_do.c,v 1.107 2026/09/02 04:36:10 mjl Exp $
  *
  * Copyright (C) 2018-2026 Matthew Luckie
  *
@@ -405,10 +405,10 @@ static void host_state_free(host_state_t *state)
   return;
 }
 
-static int host_state_alloc(scamper_task_t *task, scamper_err_t *error)
+static int host_state_init(scamper_task_t *task, scamper_err_t *error)
 {
   scamper_host_t *host = host_getdata(task);
-  host_state_t *state = NULL;
+  host_state_t *state = host_getstate(task);
   scamper_addr_t *sa = NULL;
   struct in_addr *in4;
   struct in6_addr *in6;
@@ -421,12 +421,16 @@ static int host_state_alloc(scamper_task_t *task, scamper_err_t *error)
   uint16_t u16;
 #endif
 
-  if((state = malloc_zero(sizeof(host_state_t))) == NULL ||
-     (state->pids = dlist_alloc()) == NULL)
+  if((state->pids = dlist_alloc()) == NULL)
     {
       scamper_err_make(error, errno, "could not alloc state");
       goto err;
     }
+
+  /* if the user did not specify the source address to use, determine one */
+  if(host->src == NULL &&
+     (host->src = scamper_getsrc(host->dst, 0, error)) == NULL)
+    goto err;
 
   if(host->qtype == SCAMPER_HOST_TYPE_PTR)
     {
@@ -483,12 +487,10 @@ static int host_state_alloc(scamper_task_t *task, scamper_err_t *error)
 	}
     }
 
-  scamper_task_setstate(task, state);
   return 0;
 
  err:
   if(sa != NULL) scamper_addr_free(sa);
-  if(state != NULL) host_state_free(state);
   return -1;
 }
 #endif /* TEST_HOST_RR_LIST */
@@ -671,9 +673,6 @@ static int extract_opt(scamper_host_rr_t *rr, const uint8_t *pbuf,
   size_t i = 0;
   uint16_t code, len;
 
-  if(rdlength == 0)
-    return 0;
-
   if((list = slist_alloc()) == NULL)
     return -1;
 
@@ -697,15 +696,12 @@ static int extract_opt(scamper_host_rr_t *rr, const uint8_t *pbuf,
       off += len;
     }
 
-  if(slist_count(list) > 0)
-    {
-      if((opt = scamper_host_rr_opt_alloc(slist_count(list))) == NULL)
-	goto err;
-      i = 0;
-      while((elem = slist_head_pop(list)) != NULL)
-	opt->elems[i++] = elem;
-      rr->un.opt = opt;
-    }
+  if((opt = scamper_host_rr_opt_alloc(slist_count(list))) == NULL)
+    goto err;
+  i = 0;
+  while((elem = slist_head_pop(list)) != NULL)
+    opt->elems[i++] = elem;
+  rr->un.opt = opt;
 
   slist_free(list);
   return 0;
@@ -1202,6 +1198,27 @@ static int embed_ecs(const char *ecs, uint8_t *buf, size_t len)
   return off;
 }
 
+static int embed_mqtypes(const scamper_host_t *host, uint8_t *buf, size_t len)
+{
+  size_t off = 0;
+  uint8_t i;
+
+  /* make sure space left */
+  if(len < 2 + ((size_t)host->mqtypec * 2))
+    return -1;
+
+  off = 0;
+  bytes_htons(buf+off, SCAMPER_HOST_RR_OPT_ELEM_CODE_MQTYPE_Q); off += 2;
+  bytes_htons(buf+off, host->mqtypec * 2); off += 2;
+  for(i=0; i<host->mqtypec; i++)
+    {
+      bytes_htons(buf+off, host->mqtypes[i]);
+      off += 2;
+    }
+
+  return off;
+}
+
 static int do_host_probe_query(const scamper_host_t *host,
 			       const host_state_t *state, uint16_t id,
 			       uint8_t *buf, size_t *len)
@@ -1209,13 +1226,15 @@ static int do_host_probe_query(const scamper_host_t *host,
   const char *ptr, *dot;
   uint16_t arcount = 0, rdlength;
   uint8_t *rdptr;
-  int ecs_len;
+  int ecs_len, mqtypes_len;
   size_t off;
 
   if(*len < 12)
     return -1;
 
-  if(host->flags & SCAMPER_HOST_FLAG_NSID || host->ecs != NULL)
+  if(host->flags & SCAMPER_HOST_FLAG_NSID ||
+     host->ecs != NULL ||
+     host->mqtypes != NULL)
     arcount = 1;
 
   /* 12 bytes of DNS header */
@@ -1271,7 +1290,9 @@ static int do_host_probe_query(const scamper_host_t *host,
   bytes_htons(buf+off, host->qtype); off += 2;
   bytes_htons(buf+off, host->qclass); off += 2;
 
-  if((host->flags & SCAMPER_HOST_FLAG_NSID) != 0 || host->ecs != NULL)
+  if((host->flags & SCAMPER_HOST_FLAG_NSID) != 0 ||
+     host->ecs != NULL ||
+     host->mqtypes != NULL)
     {
       if(*len - off < 1 + 2 + 2 + 4 + 2)
 	return -1;
@@ -1297,6 +1318,13 @@ static int do_host_probe_query(const scamper_host_t *host,
 	    return -1;
 	  off += ecs_len;
 	  rdlength += ecs_len;
+	}
+      if(host->mqtypes != NULL)
+	{
+	  if((mqtypes_len = embed_mqtypes(host, buf+off, *len - off)) < 0)
+	    return -1;
+	  off += mqtypes_len;
+	  rdlength += mqtypes_len;
 	}
 
       bytes_htons(rdptr, rdlength);
@@ -1633,16 +1661,27 @@ static int do_host_probe_tcp(scamper_task_t *task, scamper_err_t *error)
 static void do_host_probe(scamper_task_t *task)
 {
   scamper_host_t *host = host_getdata(task);
+  host_state_t *state = host_getstate(task);
   scamper_err_t error;
   int rc = -1;
 
-  SCAMPER_ERR_INIT(&error);
+  if(state == NULL)
+    {
+      /* set a timestamp on an abandoned host */
+      if(timeval_iszero(&host->start))
+	gettimeofday_wrap(&host->start);
+      scamper_task_queue_done(task);
+      return;
+    }
 
-  if(host_getstate(task) == NULL && host_state_alloc(task, &error) != 0)
-    goto done;
+  SCAMPER_ERR_INIT(&error);
 
   if(host->queries == NULL)
     {
+      assert(state->pids == NULL);
+      if(host_state_init(task, &error) != 0)
+	goto done;
+
       if(scamper_host_queries_alloc(host, host->retries + 1) != 0)
 	{
 	  scamper_err_make(&error, errno, "could not alloc queries");
@@ -1672,57 +1711,71 @@ static void do_host_handle_timeout(scamper_task_t *task)
   return;
 }
 
-scamper_task_t *scamper_do_host_alloctask(void *data, scamper_list_t *list,
-					  scamper_cycle_t *cycle,
-					  char *errbuf, size_t errlen)
+static void do_host_sigs(scamper_task_t *task)
 {
-  scamper_host_t *host = (scamper_host_t *)data;
+  scamper_host_t *host = host_getdata(task);
+  host_state_t *state = host_getstate(task);
   scamper_task_sig_t *sig = NULL;
-  scamper_task_t *task = NULL;
   scamper_err_t error;
 
   SCAMPER_ERR_INIT(&error);
 
-  /* allocate a task structure and store the host query with it */
-  if((task = scamper_task_alloc(host, &host_funcs)) == NULL)
+  /*
+   * this function might have already been called if the task was held
+   * because its signature overlapped with another task
+   */
+  if(state != NULL)
+    return;
+
+  if((state = malloc_zero(sizeof(host_state_t))) == NULL)
     {
-      snprintf(errbuf, errlen, "%s: could not malloc state", __func__);
+      scamper_err_make(&error, errno, "could not malloc state");
       goto err;
     }
 
   if((sig = scamper_task_sig_alloc(SCAMPER_TASK_SIG_TYPE_HOST)) == NULL)
     {
-      snprintf(errbuf, errlen, "%s: could not alloc task signature", __func__);
+      scamper_err_make(&error, errno, "could not alloc task signature");
       goto err;
     }
   sig->sig_host_type = host->qtype;
   sig->sig_host_name = strdup(host->qname);
   sig->sig_host_dst  = scamper_addr_use(host->dst);
-  if((host->src = scamper_getsrc(host->dst, 0, &error)) == NULL)
-    {
-      snprintf(errbuf, errlen, "%s: %s", __func__, error.errstr);
-      goto err;
-    }
+
   if(scamper_task_sig_add(task, sig) != 0)
     {
-      snprintf(errbuf, errlen, "%s: could not add signature to task", __func__);
+      scamper_err_make(&error, errno, "could not add signature to task");
       goto err;
     }
-  sig = NULL;
+
+  scamper_task_setstate(task, state);
+  return;
+
+ err:
+  if(sig != NULL) scamper_task_sig_free(sig);
+  if(state != NULL) host_state_free(state);
+  host_stop_err(host, &error);
+  return;
+}
+
+scamper_task_t *scamper_do_host_alloctask(void *data, scamper_list_t *list,
+					  scamper_cycle_t *cycle,
+					  char *errbuf, size_t errlen)
+{
+  scamper_host_t *host = (scamper_host_t *)data;
+  scamper_task_t *task = NULL;
+
+  /* allocate a task structure and store the host query with it */
+  if((task = scamper_task_alloc(host, &host_funcs)) == NULL)
+    {
+      snprintf(errbuf, errlen, "%s: could not malloc state", __func__);
+      return NULL;
+    }
 
   host->list = scamper_list_use(list);
   host->cycle = scamper_cycle_use(cycle);
 
   return task;
-
- err:
-  if(sig != NULL) scamper_task_sig_free(sig);
-  if(task != NULL)
-    {
-      scamper_task_setdatanull(task);
-      scamper_task_free(task);
-    }
-  return NULL;
 }
 
 void scamper_host_do_free(scamper_host_do_t *hostdo)
@@ -1802,27 +1855,38 @@ static scamper_host_do_t *scamper_do_host_do_host(const char *qname,
   if((task = scamper_do_host_alloctask(host, NULL, NULL, errbuf,
 				       sizeof(errbuf))) == NULL)
     {
-      printerror(__func__, "could not alloc task");
+      printerror_msg(__func__, "%s", errbuf);
       goto err;
     }
   host = NULL;
+
+  /* allocate the signature.  if the function fails, state will be NULL */
+  do_host_sigs(task);
+  if(host_getstate(task) == NULL)
+    {
+      printerror_msg(__func__, "could not alloc sigs");
+      goto err;
+    }
+
   if(scamper_task_sig_install(task) != 0)
     {
       printerror(__func__, "could not install task");
       goto err;
     }
-  if(host_state_alloc(task, &error) != 0)
+  if(host_state_init(task, &error) != 0)
     {
-      printerror(__func__, "could not alloc state");
+      errno = error.error;
+      printerror(__func__, "%s", error.errstr);
       goto err;
     }
   do_host_probe(task);
   if(scamper_task_queue_isdone(task))
     {
-      printerror(__func__, "done");
+      printerror_msg(__func__, "done");
       goto err;
     }
 
+  /* scamper_host_do_add() calls printerror itself */
   if((hostdo = scamper_host_do_add(task, param)) == NULL)
     goto err;
 
@@ -2125,6 +2189,7 @@ int scamper_do_host_init()
   host_funcs.write          = do_host_write;
   host_funcs.task_free      = do_host_free;
   host_funcs.halt           = do_host_halt;
+  host_funcs.sigs           = do_host_sigs;
 
   if((nsip = scamper_option_nameserver_get()) != NULL)
     {

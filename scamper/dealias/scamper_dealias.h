@@ -1,11 +1,11 @@
 /*
  * scamper_dealias.h
  *
- * $Id: scamper_dealias.h,v 1.75 2025/10/19 19:23:21 mjl Exp $
+ * $Id: scamper_dealias.h,v 1.76 2026/08/31 06:23:00 mjl Exp $
  *
  * Copyright (C) 2008-2011 The University of Waikato
  * Copyright (C) 2012-2013 The Regents of the University of California
- * Copyright (C) 2023-2025 Matthew Luckie
+ * Copyright (C) 2023-2026 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This code implements alias resolution techniques published by others
@@ -259,7 +259,7 @@ int scamper_dealias_reply_from_target(const scamper_dealias_probe_t *probe,
 				      const scamper_dealias_reply_t *reply);
 
 #ifdef __SCAMPER_ICMPEXT_H
-scamper_icmpext_t *scamper_dealias_reply_icmp_ext_get(const scamper_dealias_reply_t *reply);
+scamper_icmpexts_t *scamper_dealias_reply_icmp_exts_get(const scamper_dealias_reply_t *reply);
 #endif
 
 void scamper_dealias_free(scamper_dealias_t *dealias);

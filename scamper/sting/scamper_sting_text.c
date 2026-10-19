@@ -2,11 +2,11 @@
  * scamper_sting_text.c
  *
  * Copyright (C) 2008-2010 The University of Waikato
- * Copyright (C) 2022-2023 Matthew Luckie
+ * Copyright (C) 2022-2026 Matthew Luckie
  *
  * Author: Matthew Luckie
  *
- * $Id: scamper_sting_text.c,v 1.6 2023/12/24 00:03:21 mjl Exp $
+ * $Id: scamper_sting_text.c,v 1.7 2026/08/31 07:34:35 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -33,6 +33,7 @@
 #include "scamper_sting.h"
 #include "scamper_sting_int.h"
 #include "scamper_file.h"
+#include "scamper_file_int.h"
 #include "scamper_sting_text.h"
 #include "utils.h"
 

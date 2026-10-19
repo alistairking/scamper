@@ -1,9 +1,9 @@
 /*
  * scamper_host_lib.c
  *
- * $Id: scamper_host_lib.c,v 1.14 2025/10/19 19:23:21 mjl Exp $
+ * $Id: scamper_host_lib.c,v 1.15 2026/09/02 02:24:58 mjl Exp $
  *
- * Copyright (C) 2023-2025 Matthew Luckie
+ * Copyright (C) 2023-2026 Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -108,6 +108,18 @@ const char *scamper_host_ecs_get(const scamper_host_t *host)
 const char *scamper_host_errmsg_get(const scamper_host_t *host)
 {
   return host->errmsg;
+}
+
+uint8_t scamper_host_mqtypec_get(const scamper_host_t *host)
+{
+  return host->mqtypec;
+}
+
+uint16_t scamper_host_mqtypes_get(const scamper_host_t *host, uint8_t i)
+{
+  if(host->mqtypes == NULL || i >= host->mqtypec)
+    return 0;
+  return host->mqtypes[i];
 }
 
 scamper_host_query_t *scamper_host_query_get(const scamper_host_t *host, uint8_t i)

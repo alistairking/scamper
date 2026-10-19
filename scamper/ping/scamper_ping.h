@@ -1,12 +1,12 @@
 /*
  * scamper_ping.h
  *
- * $Id: scamper_ping.h,v 1.89 2025/10/19 19:23:21 mjl Exp $
+ * $Id: scamper_ping.h,v 1.93 2026/08/31 18:52:19 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2012-2015 The Regents of the University of California
- * Copyright (C) 2020-2024 Matthew Luckie
+ * Copyright (C) 2020-2026 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -157,6 +157,7 @@ uint8_t scamper_ping_reply_icmp_type_get(const scamper_ping_reply_t *reply);
 uint8_t scamper_ping_reply_icmp_code_get(const scamper_ping_reply_t *reply);
 uint16_t scamper_ping_reply_icmp_nhmtu_get(const scamper_ping_reply_t *reply);
 uint8_t scamper_ping_reply_tcp_flags_get(const scamper_ping_reply_t *reply);
+uint16_t scamper_ping_reply_tcp_mss_get(const scamper_ping_reply_t *reply);
 const char *scamper_ping_reply_ifname_get(const scamper_ping_reply_t *reply);
 int scamper_ping_reply_is_icmp(const scamper_ping_reply_t *reply);
 int scamper_ping_reply_is_tcp(const scamper_ping_reply_t *reply);
@@ -172,16 +173,15 @@ scamper_ping_reply_v4rr_t *scamper_ping_reply_v4rr_get(const scamper_ping_reply_
 scamper_ping_reply_v4ts_t *scamper_ping_reply_v4ts_get(const scamper_ping_reply_t *reply);
 scamper_ping_reply_tsreply_t *scamper_ping_reply_tsreply_get(const scamper_ping_reply_t *reply);
 
-void scamper_ping_reply_tsreply_free(scamper_ping_reply_tsreply_t *tsr);
 uint32_t scamper_ping_reply_tsreply_tso_get(const scamper_ping_reply_tsreply_t *tsr);
 uint32_t scamper_ping_reply_tsreply_tsr_get(const scamper_ping_reply_tsreply_t *tsr);
 uint32_t scamper_ping_reply_tsreply_tst_get(const scamper_ping_reply_tsreply_t *tsr);
 
 scamper_ping_reply_v4rr_t *scamper_ping_reply_v4rr_dup(const scamper_ping_reply_v4rr_t *rr);
-void scamper_ping_reply_v4rr_free(scamper_ping_reply_v4rr_t *rr);
 uint8_t scamper_ping_reply_v4rr_ipc_get(const scamper_ping_reply_v4rr_t *rr);
 scamper_addr_t *scamper_ping_reply_v4rr_ip_get(const scamper_ping_reply_v4rr_t *rr, uint8_t i);
 
+scamper_ping_reply_v4ts_t *scamper_ping_reply_v4ts_use(scamper_ping_reply_v4ts_t *ts);
 void scamper_ping_reply_v4ts_free(scamper_ping_reply_v4ts_t *ts);
 uint8_t scamper_ping_reply_v4ts_tsc_get(const scamper_ping_reply_v4ts_t *ts);
 uint32_t scamper_ping_reply_v4ts_ts_get(const scamper_ping_reply_v4ts_t *ts,
@@ -189,7 +189,6 @@ uint32_t scamper_ping_reply_v4ts_ts_get(const scamper_ping_reply_v4ts_t *ts,
 int scamper_ping_reply_v4ts_hasip(const scamper_ping_reply_v4ts_t *ts);
 scamper_addr_t *scamper_ping_reply_v4ts_ip_get(const scamper_ping_reply_v4ts_t *ts, uint8_t i);
 
-void scamper_ping_v4ts_free(scamper_ping_v4ts_t *ts);
 uint8_t scamper_ping_v4ts_ipc_get(const scamper_ping_v4ts_t *ts);
 scamper_addr_t *scamper_ping_v4ts_ip_get(const scamper_ping_v4ts_t *ts, uint8_t i);
 
