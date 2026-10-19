@@ -1,7 +1,7 @@
 /*
  * sc_rxifd: reply to query with received interface name
  *
- * $Id: sc_rxifd.c,v 1.33 2026/07/15 19:18:06 mjl Exp $
+ * $Id: sc_rxifd.c,v 1.34 2026/10/10 04:47:41 mjl Exp $
  *
  *         Matthew Luckie
  *         mjl@luckie.org.nz
@@ -1367,37 +1367,6 @@ static void quic_varint_insert(uint8_t *buf, size_t len, size_t *off,
   return;
 }
 
-static BIO_ADDR *bioaddr_from_sockaddr(const struct sockaddr *sa)
-{
-  const struct sockaddr_in *sin;
-  const struct sockaddr_in6 *sin6;
-  BIO_ADDR *ba;
-
-  if((ba = BIO_ADDR_new()) == NULL)
-    return NULL;
-  if(sa->sa_family == AF_INET)
-    {
-      sin = (const struct sockaddr_in *)sa;
-      if(BIO_ADDR_rawmake(ba, AF_INET, &sin->sin_addr,
-			  sizeof(sin->sin_addr), sin->sin_port) != 1)
-	goto err;
-    }
-  else if(sa->sa_family == AF_INET6)
-    {
-      sin6 = (const struct sockaddr_in6 *)sa;
-      if(BIO_ADDR_rawmake(ba, AF_INET6, &sin6->sin6_addr,
-			  sizeof(sin6->sin6_addr), sin6->sin6_port) != 1)
-	goto err;
-    }
-  else goto err;
-  return ba;
-
- err:
-  if(ba != NULL)
-    BIO_ADDR_free(ba);
-  return NULL;
-}
-
 static BIO_ADDR *bioaddr_from_bits(int af, const void *addr, uint16_t port)
 {
   BIO_ADDR *ba = NULL;
@@ -2175,7 +2144,8 @@ static void quic4_handle(void)
 
   if(udp4_recv(quic4, rxbuf, rxbuflen, &rxlen, &us, &them, &ifindex) != 2 ||
      (us_addr = bioaddr_from_bits(AF_INET, &us, quic_port)) == NULL ||
-     (them_addr = bioaddr_from_sockaddr((struct sockaddr *)&them)) == NULL)
+     (them_addr = bioaddr_from_bits(AF_INET, &them.sin_addr,
+				    ntohs(them.sin_port))) == NULL)
     goto done;
 
   quic_in(rxbuf, rxlen, them_addr, us_addr, ifindex);
@@ -2199,7 +2169,8 @@ static void quic6_handle(void)
 
   if(udp6_recv(quic6, rxbuf, rxbuflen, &rxlen, &us, &them, &ifindex) != 2 ||
      (us_addr = bioaddr_from_bits(AF_INET6, &us, quic_port)) == NULL ||
-     (them_addr = bioaddr_from_sockaddr((struct sockaddr *)&them)) == NULL)
+     (them_addr = bioaddr_from_bits(AF_INET6, &them.sin6_addr,
+				    ntohs(them.sin6_port))) == NULL)
     goto done;
 
   quic_in(rxbuf, rxlen, them_addr, us_addr, ifindex);

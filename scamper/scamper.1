@@ -10,9 +10,9 @@
 .\" Copyright (c) 2024-2026 The Regents of the University of California
 .\"                         All rights reserved
 .\"
-.\" $Id: scamper.1,v 1.165 2026/09/02 02:12:32 mjl Exp $
+.\" $Id: scamper.1,v 1.167 2026/09/25 21:16:56 mjl Exp $
 .\"
-.Dd September 2, 2026
+.Dd September 26, 2026
 .Dt SCAMPER 1
 .Os
 .\""""""""""""
@@ -228,8 +228,9 @@ debugfile is used, though debugging output is sent to stderr if scamper is
 built for debugging.
 .It Fl e Ar pidfile
 specifies a file to write scamper's process ID to.
-If scamper is built with privilege separation, the ID of the unprivileged
-process is written.
+If scamper is built with privilege separation, the ID of the privileged
+process is written, as this is the process that can be signalled by the
+user that started scamper.
 .It Fl O Ar options
 allows scamper's behaviour to be further tailored.
 The options are case insensitive.
@@ -1643,7 +1644,7 @@ uses a priority of 1 -- all sources are mixed equally.
 .El
 .It Ic get Ar argument
 The get command returns the current setting for the supplied argument.
-Valid argument values are: command, monitorname, nameserver, pid, pps,
+Valid argument values are: command, monitorname, nameserver, pps,
 version, window.
 .It Ic set Ar argument ...
 The set command sets the current setting for the supplied argument.

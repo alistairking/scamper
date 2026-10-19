@@ -3,12 +3,12 @@
 .\"
 .\" Author: Matthew Luckie <mjl@luckie.org.nz>
 .\"
-.\" Copyright (c) 2017 Matthew Luckie
+.\" Copyright (c) 2017-2026 Matthew Luckie
 .\"                    All rights reserved
 .\"
-.\" $Id: sc_uptime.1,v 1.12 2019/01/22 22:24:40 mjl Exp $
+.\" $Id: sc_uptime.1,v 1.14 2026/09/19 20:45:12 mjl Exp $
 .\"
-.Dd July 2, 2017
+.Dd September 20, 2026
 .Dt SC_UPTIME 1
 .Os
 .Sh NAME
@@ -189,7 +189,9 @@ state.sqlite to record probe state within, probe the addresses
 contained in addrs.txt once to collect raw data that can be used to
 infer reboot windows, and store the raw data in out1.warts:
 .Pp
-.Dl sc_uptime -p 31337 -O create-db -d state.sqlite -a addrs.txt -o out1.warts
+.Dl sc_uptime -c -O init-state -d state.sqlite
+.Dl sc_uptime -a -d state.sqlite addrs.txt
+.Dl sc_uptime -o out1.warts -d state.sqlite -p 31337
 .Pp
 To infer reboot windows,
 .Nm
@@ -197,12 +199,13 @@ must be run in rounds.  The next time
 .Nm
 is run, use:
 .Pp
-.Dl sc_uptime -p 31337 -d state.sqlite -o out2.warts
+.Dl sc_uptime -o out2.warts -d state.sqlite -p 31337
 .Pp
 Import the IPID samples from out1.warts and out2.warts into a separate
 probe database:
 .Pp
-.Dl sc_uptime -i -O create-db -d data.sqlite out1.warts out2.warts
+.Dl sc_uptime -c -O init-data -d data.sqlite
+.Dl sc_uptime -i -d data.sqlite out1.warts out2.warts
 .Pp
 Infer reboots across all imported data:
 .Pp

@@ -1,7 +1,7 @@
 /*
  * sc_hoiho: Holistic Orthography of Internet Hostname Observations
  *
- * $Id: sc_hoiho.c,v 1.39 2025/07/29 00:42:35 mjl Exp $
+ * $Id: sc_hoiho.c,v 1.40 2026/10/14 00:29:36 mjl Exp $
  *
  *         Matthew Luckie
  *         mjl@luckie.org.nz
@@ -10,7 +10,7 @@
  *
  * Copyright (C) 2017-2021 The University of Waikato
  * Copyright (C) 2022-2025 Matthew Luckie
- * Copyright (C) 2023-2025 The Regents of the University of California
+ * Copyright (C) 2023-2026 The Regents of the University of California
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -884,7 +884,7 @@ static void usage(uint32_t opts)
     }
 
   if(opts & OPT_REGEX)
-    fprintf(stderr, "       -r: the regex (or file of regexes) to apply\n");
+    fprintf(stderr, "       -r: the naming convention (or file of conventions) to apply\n");
   if(opts & OPT_RTTS)
     fprintf(stderr, "       -R: RTT file\n");
   if(opts & OPT_STOPID)
@@ -908,6 +908,7 @@ static int check_options(int argc, char *argv[])
   char *opt_threadc = NULL, *opt_dumpid = NULL, *opt_stopid = NULL;
   char *opt_fudge = NULL, *opt_lightspeed = NULL;
   uint16_t refine = 0, norefine = 0;
+  const char *ptr;
   struct stat sb;
   size_t off = 0;
   long lo;
@@ -1105,14 +1106,37 @@ static int check_options(int argc, char *argv[])
   if(regex_eval != NULL)
     {
       /*
-       * -r can be either a single regex, or a file.  if its a single
-       * regex (cannot stat the regex file), the user must specify a
+       * -r can be either a naming convention, or a file.  if its a naming
+       * convention (cannot stat the regex file), the user must specify a
        * domain.
        */
-      if(stat(regex_eval, &sb) != 0 && domain_eval == NULL)
+      if(stat(regex_eval, &sb) != 0)
 	{
-	  usage(OPT_REGEX|OPT_DOMAIN);
-	  return -1;
+	  if(domain_eval == NULL)
+	    {
+	      usage(OPT_REGEX|OPT_DOMAIN);
+	      return -1;
+	    }
+
+	  if(do_learngeo != 0)
+	    {
+	      usage(OPT_REGEX);
+	      fprintf(stderr,
+		      "           with -O learngeo requires regex file\n");
+	      return -1;
+	    }
+
+	  /* the regex string must contain at least one regex */
+	  ptr = regex_eval;
+	  while(*ptr == ' ')
+	    ptr++;
+	  if(*ptr == '\0')
+	    {
+	      usage(OPT_REGEX);
+	      fprintf(stderr,
+		      "           regex string is empty\n");
+	      return -1;
+	    }
 	}
 
       /*
@@ -1218,29 +1242,41 @@ static int check_options(int argc, char *argv[])
 	  usage(OPT_RTTS);
 	  return -1;
 	}
+    }
 
-      if(opt_fudge != NULL)
+  if(opt_fudge != NULL)
+    {
+      if(do_learngeo == 0)
 	{
-	  if(string_isdigit(opt_fudge) == 0 ||
-	     string_tolong(opt_fudge, &lo) != 0 || lo < 0 || lo > FUDGE_MAX)
-	    {
-	      usage(OPT_FUDGE);
-	      return -1;
-	    }
-	  rtt_fudge = (uint8_t)lo;
+	  usage(OPT_FUDGE);
+	  fprintf(stderr, "           only valid with -O learngeo\n");
+	  return -1;
 	}
+      if(string_isdigit(opt_fudge) == 0 ||
+	 string_tolong(opt_fudge, &lo) != 0 || lo < 0 || lo > FUDGE_MAX)
+	{
+	  usage(OPT_FUDGE);
+	  return -1;
+	}
+      rtt_fudge = (uint8_t)lo;
+    }
 
-      if(opt_lightspeed != NULL)
+  if(opt_lightspeed != NULL)
+    {
+      if(do_learngeo == 0)
 	{
-	  if(string_isdigit(opt_lightspeed) == 0 ||
-	     string_tolong(opt_lightspeed, &lo) != 0 ||
-	     lo < 0 || lo > LIGHT_SPEED_MAX)
-	    {
-	      usage(OPT_LIGHTSPEED);
-	      return -1;
-	    }
-	  light_speed = ((double)lo) / 1000000; /* meters per millisecond */
+	  usage(OPT_LIGHTSPEED);
+	  fprintf(stderr, "           only valid with -O learngeo\n");
+	  return -1;
 	}
+      if(string_isdigit(opt_lightspeed) == 0 ||
+	 string_tolong(opt_lightspeed, &lo) != 0 ||
+	 lo <= 0 || lo > LIGHT_SPEED_MAX)
+	{
+	  usage(OPT_LIGHTSPEED);
+	  return -1;
+	}
+      light_speed = ((double)lo) / 1000000; /* kilometres per millisecond */
     }
 
   suffix_file = argv[optind + 0];
@@ -1299,7 +1335,7 @@ static int mask_isset(uint32_t *mask, uint32_t len, uint32_t bit)
   x = (bit - 1) / 32;
   i = (bit - 1) % 32;
   assert(x < len);
-  if(mask[x] & (0x1 << i))
+  if(mask[x] & ((uint32_t)0x1 << i))
     return 1;
   return 0;
 }
@@ -1311,7 +1347,7 @@ static void mask_set(uint32_t *mask, uint32_t len, uint32_t bit)
   x = (bit - 1) / 32;
   i = (bit - 1) % 32;
   assert(x < len);
-  mask[x] |= (0x1 << i);
+  mask[x] |= ((uint32_t)0x1 << i);
   return;
 }
 
@@ -4394,7 +4430,7 @@ static slist_t *lcs_asn(sc_ifacedom_t *S, sc_ifacedom_t *T)
       while(S->label[s_end+1] != '\0' && T->label[t_end+1] != '\0')
 	{
 	  if(S->label[s_end+1] != T->label[t_end+1] ||
-	     isalnum((unsigned char)T->label[s_end+1]) == 0)
+	     isalnum((unsigned char)T->label[t_end+1]) == 0)
 	    break;
 	  s_end++; t_end++;
 	}
@@ -7325,14 +7361,15 @@ static sc_regex_t *sc_regex_alloc_str(char *str)
 
   do
     {
-      string_nullterm_char(ptr, ' ', &next);
-      if(slist_tail_push(list, ptr) == NULL)
+      /* split on spaces, skipping repeated spaces */
+      if(string_nullterm_char(ptr, ' ', &next) > 0 &&
+	 slist_tail_push(list, ptr) == NULL)
 	goto err;
       ptr = next;
     }
   while(ptr != NULL);
 
-  if((re = sc_regex_alloc_list(list)) == NULL)
+  if(slist_count(list) == 0 || (re = sc_regex_alloc_list(list)) == NULL)
     goto err;
   slist_free(list); list = NULL;
 
@@ -7342,6 +7379,33 @@ static sc_regex_t *sc_regex_alloc_str(char *str)
   if(list != NULL) slist_free(list);
   if(re != NULL) sc_regex_free(re);
   return NULL;
+}
+
+/*
+ * sc_regex_alloc_css_quantifier
+ *
+ * copy the quantifier, if any, that follows a character class or '.'
+ * into buf.  class refinement emits no quantifier (a single
+ * character, e.g. [a-z\d]), "+", or "{n}", and could emit "*" or "?"
+ * in the future.  returns a pointer to the character after the
+ * quantifier, or NULL if the input is malformed.
+ */
+static const char *sc_regex_alloc_css_quantifier(char *buf, size_t *off,
+						 const char *ptr)
+{
+  if(*ptr == '+' || *ptr == '*' || *ptr == '?')
+    {
+      buf[(*off)++] = *ptr++;
+    }
+  else if(*ptr == '{')
+    {
+      while(*ptr != '}' && *ptr != '\0')
+	buf[(*off)++] = *ptr++;
+      if(*ptr == '\0')
+	return NULL;
+      buf[(*off)++] = *ptr++;
+    }
+  return ptr;
 }
 
 static sc_regex_t *sc_regex_alloc_css(const sc_css_t *in)
@@ -7373,7 +7437,7 @@ static sc_regex_t *sc_regex_alloc_css(const sc_css_t *in)
 		  start = NULL;
 		}
 
-	      /* skip over [X]+ */
+	      /* skip over [X] and any quantifier */
 	      while(*ptr != ']' && *ptr != '\0')
 		{
 		  buf[off++] = *ptr;
@@ -7382,9 +7446,10 @@ static sc_regex_t *sc_regex_alloc_css(const sc_css_t *in)
 	      if(*ptr == '\0')
 		goto err;
 	      buf[off++] = *ptr; ptr++;
-	      buf[off++] = *ptr; ptr++;
+	      if((ptr = sc_regex_alloc_css_quantifier(buf, &off, ptr)) == NULL)
+		goto err;
 	    }
-	  else if(ptr[0] == '\\' && ptr[1] == 'd' && ptr[2] == '+')
+	  else if(ptr[0] == '\\' && ptr[1] == 'd')
 	    {
 	      if(start != NULL)
 		{
@@ -7392,10 +7457,11 @@ static sc_regex_t *sc_regex_alloc_css(const sc_css_t *in)
 		  start = NULL;
 		}
 
-	      /* skip over \d+ */
+	      /* skip over \d and any quantifier */
 	      buf[off++] = *ptr; ptr++;
 	      buf[off++] = *ptr; ptr++;
-	      buf[off++] = *ptr; ptr++;
+	      if((ptr = sc_regex_alloc_css_quantifier(buf, &off, ptr)) == NULL)
+		goto err;
 	    }
 	  else if(*ptr == '.')
 	    {
@@ -7405,12 +7471,15 @@ static sc_regex_t *sc_regex_alloc_css(const sc_css_t *in)
 		  start = NULL;
 		}
 
-	      /* skip over .+ */
+	      /* skip over . and any quantifier */
 	      buf[off++] = *ptr; ptr++;
-	      buf[off++] = *ptr; ptr++;
+	      if((ptr = sc_regex_alloc_css_quantifier(buf, &off, ptr)) == NULL)
+		goto err;
 	    }
 	  else if(*ptr == '\\')
 	    {
+	      if(ptr[1] == '\0')
+		goto err;
 	      if(start == NULL)
 		{
 		  buf[off++] = ptr[0];
@@ -19738,11 +19807,27 @@ static int generate_regexes_supplied(void)
 
   if(stat(regex_eval, &sb) != 0)
     {
-      if((dom = sc_domain_find(domain_eval)) == NULL ||
-	 (dup = strdup(regex_eval)) == NULL ||
-	 (re = sc_regex_alloc_str(dup)) == NULL ||
-	 slist_tail_push(dom->regexes, re) == NULL)
-	goto done;
+      if((dom = sc_domain_find(domain_eval)) == NULL)
+	{
+	  fprintf(stderr, "no hostnames in %s found in %s\n",
+		  domain_eval, router_file);
+	  goto done;
+	}
+      if((dup = strdup(regex_eval)) == NULL)
+	{
+	  fprintf(stderr, "%s: could not dup regex string\n", __func__);
+	  goto done;
+	}
+      if((re = sc_regex_alloc_str(dup)) == NULL)
+	{
+	  fprintf(stderr, "could not parse regex string: %s\n", regex_eval);
+	  goto done;
+	}
+      if(slist_tail_push(dom->regexes, re) == NULL)
+	{
+	  fprintf(stderr, "%s: could not push regex\n", __func__);
+	  goto done;
+	}
       re->dom = dom;
       re = NULL;
     }
@@ -20822,7 +20907,7 @@ static int refine_dict_asnames(void)
       for(s=0; s<tag2asc; s++)
 	if(tag2ass[s] != NULL)
 	  sc_as2tag_free(tag2ass[s]);
-      free(tag2ass); tag2ass = NULL;
+      free(tag2ass); tag2ass = NULL; tag2asc = 0;
     }
 
   /* install the new asnames dictionary */
@@ -21167,7 +21252,7 @@ static int refine_regexes_pref_asn_1(splaytree_t *tree,
 
   /* figure out where the prefix could extend to */
   ifd1_start = ifd1->iface->as_s;
-  ifd2_start = ifd1->iface->as_s;
+  ifd2_start = ifd2->iface->as_s;
   if((pt = slist_head_item(asn_pt)) != NULL)
     {
       if(pt->S_start < ifd1_start)
@@ -21989,7 +22074,7 @@ static int geohints_file_line_place(const char *line, char **ptr_in,
 				    char *place, size_t place_len)
 {
   char *ptr = *ptr_in;
-  int p;
+  size_t p;
 
   if(*ptr == '\0')
     {
@@ -22005,6 +22090,11 @@ static int geohints_file_line_place(const char *line, char **ptr_in,
   ptr++; p = 0;
   while(*ptr != '"' && *ptr != '\0')
     {
+      if(p + 1 >= place_len)
+	{
+	  fprintf(stderr, "%s: string too long: %s\n", __func__, line);
+	  return -1;
+	}
       place[p++] = *ptr;
       ptr++;
     }
@@ -22792,32 +22882,36 @@ static int asnames_file_line(char *line, void *param)
   sc_as2tag_t fm;
   long long ll;
 
-  if(*line == '#')
+  /* skip over comments and empty lines */
+  if(*line == '#' || *line == '\0')
     return 0;
 
   asn = line;
   ptr = line;
   while(isdigit((unsigned char)*ptr) != 0)
     ptr++;
-  if(*ptr == '\0')
+  if(ptr == asn || isspace((unsigned char)*ptr) == 0)
     {
-      fprintf(stderr, "%s: unexpected null: %s\n", __func__, line);
+      fprintf(stderr, "%s: expected ASN then whitespace: %s\n", __func__, line);
       return -1;
     }
 
+  /* terminate the ASN and skip over whitespace to the name */
   *ptr = '\0';
   ptr++;
-  if(isspace((unsigned char)*ptr) != 0)
+  while(*ptr != '\0' && isspace((unsigned char)*ptr) != 0)
+    ptr++;
+  if(*ptr == '\0')
     {
-      while(*ptr != '\0' && isspace((unsigned char)*ptr) == 0)
-	ptr++;
-      if(*ptr == '\0')
-	{
-	  fprintf(stderr, "%s: unexpected null\n", __func__);
-	  return -1;
-	}
+      fprintf(stderr, "%s: no name for ASN %s\n", __func__, asn);
+      return -1;
     }
   name = ptr;
+
+  /* trim trailing whitespace */
+  ptr = name + strlen(name);
+  while(ptr > name && isspace((unsigned char)ptr[-1]) != 0)
+    *--ptr = '\0';
 
   if(string_isdigit(asn) == 0 || string_tollong(asn, &ll, NULL, 10) != 0 ||
      ll < 0 || ll > 4294967295)

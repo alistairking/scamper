@@ -6,9 +6,9 @@
 .\" Copyright (c) 2019-2020 Matthew Luckie
 .\"               All rights reserved
 .\"
-.\" $Id: sc_hoiho.1,v 1.11 2024/09/07 03:34:44 mjl Exp $
+.\" $Id: sc_hoiho.1,v 1.12 2026/10/16 02:45:43 mjl Exp $
 .\"
-.Dd September 7, 2024
+.Dd October 13, 2026
 .Dt SC_HOIHO 1
 .Os
 .Sh NAME
@@ -56,7 +56,7 @@ Measurement Conference (IMC) 2019.
 The technique that learns to extract ASNs is described in the paper
 "Learning to Extract and Use ASNs in Hostnames" published in IMC 2020.
 The technique that learns to extract geolocation hints is described
-in the paper "Learning to Extract Geographic Hints from Internet Router
+in the paper "Learning to Extract Geographic Information from Internet Router
 Hostnames" published in the ACM Conference on emerging Networking
 EXperiments and Technologies (CoNEXT) 2021.
 The technique that learns to extract AS names is described in the paper
@@ -87,21 +87,25 @@ respectively.
 .It Fl D Ar domain
 specifies the domain suffix that
 .Nm
-should operate on.  If no suffix is specified, then
+should operate on.
+If no suffix is specified, then
 .Nm
 operates on all suffixes.
 .It Fl f Ar rtt-fudge
 specifies a fudge value, in milliseconds, to add to measured RTTs
 before evaluating if the RTT between two lat/longs is feasible.
 By default, this is 1ms.
+Valid values are between 0 and 3, inclusive.
+This option is only valid when used with
+.Fl O Sy learngeo .
 .It Fl g Ar dictionary
 specifies a filename containing a geolocation or AS name dictionary.
 The format of this file is specified below.
 .It Fl l Ar light-speed
-specifies the distance covered in metres per millisecond, and is used
+specifies the distance covered in metres per second, and is used
 to evaluate if the RTT between two lat/longs is feasible.
-By default, this is 204.190477 metres per millisecond, the speed of
-light in fiber optic cable.
+By default, this is 204190477 metres per second (204.190477 kilometres
+per millisecond), the speed of light in fiber optic cable.
 .It Fl O Ar option
 allows the behavior of
 .Nm
@@ -109,145 +113,169 @@ to be further tailored.
 The current choices for this option are:
 .Bl -dash -offset 2n -compact -width 1n
 .It
-.Sy application:
+.Sy application :
 Show the outcome of applying the regular expressions to the application set.
 .It
-.Sy debug:
-output significant volumes of debugging information.  Debugging
-information is only printed when a
+.Sy debug :
+output significant volumes of debugging information.
+Debugging information is only printed when
 .Nm
 is using a single thread.
 .It
-.Sy json:
-Output inferences using json format.  This option is applicable on
-dump IDs 2 and 3.
+.Sy json :
+Output inferences using json format.
+This option is applicable on dump IDs 2 and 3.
 .It
-.Sy learnalias:
+.Sy learnalias :
 infer regexes to extract router names from hostnames.
 .It
-.Sy learnasn:
+.Sy learnasn :
 infer regexes to extract AS numbers from hostnames.
 .It
-.Sy learnasnames:
+.Sy learnasnames :
 infer regexes to extract AS names from hostnames.
 .It
-.Sy learngeo:
+.Sy learngeo :
 infer regexes to extract geolocation hints from hostnames.
 .It
-.Sy loadonly:
+.Sy loadonly :
 load the training data into memory and then exit.
 .It
-.Sy noclli:
+.Sy noclli :
 do not emit geolocation information for CLLI code prefixes.
 .It
-.Sy noed1:
+.Sy noed1 :
 Do not infer true positives between extracted and inferred ASNs where the
 ASNs have an edit distance of one.
 .It
-.Sy noip:
+.Sy noip :
 Do not infer the location of an embedded IP address portion, if any, in
 the hostname.
 .It
-.Sy nojit:
+.Sy nojit :
 Do not use
 .Xr pcre 3
 or
 .Xr pcre2 3
-just in time complication to improve regex performance.
+just in time compilation to improve regex performance.
 .It
-.Sy norefine:
+.Sy norefine :
 do not do any refinement of regular expressions.
 .It
-.Sy norefine-tp, refine-tp:
+.Sy norefine-tp , refine-tp :
 do not, or do, execute the phase that builds literals into components
-that extract a string from the hostnames.  This phase is described in
-phase 5.2 of the IMC 2019 paper.
+that extract a string from the hostnames.
+This phase is described in section 5.2 of the IMC 2019 paper.
 .It
-.Sy norefine-fne, refine-fne:
+.Sy norefine-fne , refine-fne :
 do not, or do, execute the phase that embeds literals in a regex component
-that separates hostnames from their training routers.  This phase
-is described in section 5.3 of the IMC 2019 paper.
+that separates hostnames from their training routers.
+This phase is described in section 5.3 of the IMC 2019 paper.
 .It
-.Sy norefine-class, refine-class:
+.Sy norefine-class , refine-class :
 do not, or do, execute the phase that embeds character classes in regular
-expressions.  This phase is described in section 5.4 of the IMC 2019 paper.
+expressions.
+This phase is described in section 5.4 of the IMC 2019 paper.
 .It
-.Sy norefine-fnu, refine-fnu:
+.Sy norefine-fnu , refine-fnu :
 do not, or do, execute the phase that builds additional regexes to use as a
 companion regex with another regex that did not cluster all interfaces
-on a router.  This phase is described in section 5.5 of the IMC 2019 paper.
+on a router.
+This phase is described in section 5.5 of the IMC 2019 paper.
 .It
-.Sy norefine-sets, refine-sets:
+.Sy norefine-sets , refine-sets :
 do not, or do, execute the phase that builds naming convention sets using the
-regexes in the working set.  This phase is described in section 5.6 of
-the IMC 2019 paper.
+regexes in the working set.
+This phase is described in section 5.6 of the IMC 2019 paper.
 .It
-.Sy norefine-ip, refine-ip:
+.Sy norefine-ip , refine-ip :
 do not, or do, execute the phase that builds regexes to filter hostnames with
 IP addresses in them, where the IP address would be part of an
-extracted name.  This phase is described in section 5.7 of the IMC 2019 paper.
+extracted name.
+This phase is described in section 5.7 of the IMC 2019 paper.
 .It
-.Sy norefine-fp, refine-fp:
+.Sy norefine-fp , refine-fp :
 do not, or do, execute the phase that builds regexes to filter hostnames that,
 if matched, would result in false positives according to the training
-data.  This phase is described in phase 5.7 of the IMC 2019 paper.
+data.
+This phase is described in section 5.7 of the IMC 2019 paper.
 .It
-.Sy norefine-merge, refine-merge:
+.Sy norefine-merge , refine-merge :
 do not, or do, execute the phase that merges regular expressions that
-differ by a single simple string.  This phase is described in section
-3.3 of the IMC 2020 paper.
+differ by a single simple string.
+This phase is described in section 3.3 of the IMC 2020 paper.
 .It
-.Sy norefine-dict, refine-dict:
+.Sy norefine-pref , refine-pref :
+do not, or do, execute the phase that infers regular expressions where
+the entity that assigns the hostnames places their identifier at the
+start of the string.
+This phase only works for ASN regexes, and is not further documented in
+any paper.
+.It
+.Sy norefine-dict , refine-dict :
 do not, or do, execute the phase that refines the geolocation dictionary.
 This phase is described in section 5.4 of the CoNEXT 2021 paper.
 .It
-.Sy nothin:
+.Sy nothin :
 do not remove any redundant regexes at the end of each phase, as
 described in section 4.5 of the IMC 2019 paper.
 .It
-.Sy nothin-matchc, thin-matchc:
+.Sy nothin-matchc , thin-matchc :
 do not, or do, remove any regexes that do not meet the minimum number
-of matches to be considered capturing a convention.  The conditions
-are described in section 4.5 of the IMC 2019 paper.
+of matches to be considered capturing a convention.
+The conditions are described in section 4.5 of the IMC 2019 paper.
 .It
-.Sy nothin-same, thin-same:
+.Sy nothin-same , thin-same :
 do not, or do, remove redundant regexes that make the same inferences.
 .It
-.Sy nothin-mask, thin-mask:
+.Sy nothin-mask , thin-mask :
 do not, or do, remove redundant regexes whose inferences are entirely
 contained in another regex, with no additional false positives.
 .It
-.Sy randindex:
+.Sy randindex :
 compute the Rand Index metric on the clustering of hostnames by router
 name regexes according to the training data.
 .It
-.Sy show-class:
+.Sy show-class :
 only show hostnames where
 .Nm
 made a classification using a regex.
 .It
-.Sy show-good:
+.Sy show-good :
 show regexes that
 .Nm
 classifies as good.
 .It
-.Sy show-promising:
+.Sy show-promising :
 show regexes that
 .Nm
 classifies as promising.
 .It
-.Sy show-poor:
+.Sy show-poor :
 show regexes that
 .Nm
 classifies as poor.
 .It
-.Sy split-locode:
+.Sy split-locode :
 identify LOCODEs that appear to be split into lengths of 2
 (country-code) and 3 (location code) in hostnames.
 .El
 .It Fl r Ar regex
 specifies the name of a file containing a working set of regexes, or a
-naming convention, to apply.
+naming convention given directly as a string.
+A naming convention consists of one or more regexes separated by a
+single space.
+When a naming convention is given as a string,
+.Fl D
+must also be specified to name the suffix it applies to.
+Supplied regexes are not refined unless the corresponding
+.Sy refine-
+options are also given with
+.Fl O .
+With
+.Fl O Sy learngeo ,
+regexes must be supplied in a file, as the plan of each regex is read
+from the file.
 .It Fl R Ar rtt-file
 specifies the name of a file containing round trip time (RTT) measurements
 from systems with known locations towards routers.
@@ -258,7 +286,8 @@ specifies the name of a file containing sibling ASes.
 Each line in the file contains a list of sibling ASes that belong to the
 same organization.
 .It Fl t Ar threadc
-specifies the number of threads to use in the threadpool.  By default,
+specifies the number of threads to use in the threadpool.
+By default,
 .Nm
 will determine the number of processors online, and use all of them.
 .El
@@ -267,156 +296,159 @@ will determine the number of processors online, and use all of them.
 Given a set of routers in a file named routers.txt, and a copy of
 public_suffix_list.dat obtained from the Mozilla Foundation's
 https://publicsuffix.org/list/ website:
-.Pp
-.in +.3i
-.nf
+.Bd -literal -offset indent
 # node2id: 1
 # node2as: 64496
 192.0.2.1    esr1-ge-5-0-0.jfk2.example.net
-.br
 192.0.2.10   esr1-ge-5-0-6.jfk2.example.net
-.br
 192.0.31.60
-.Pp
+
 # node2id: 2
 # node2as: 64496
 192.0.2.2    esr2-xe-4-0-0.lax.example.net
-.br
 192.0.2.5    esr2-xe-4-0-1.lax.example.net
-.br
 192.0.31.8
-.Pp
+
 # node2id: 3
 # node2as: 64496
 192.0.2.6    das1-v3005.akl.example.net
-.br
 192.0.2.9    das1-v3006.akl.example.net
-.br
 192.0.2.44   44.2.0.192.example.net
-.Pp
+
 # node2id: 4
 # node2as: 64496
 192.0.2.13   esr1-xe-4-0-0.lax.example.net
-.Pp
+
 # node2id: 5
 # node2as: 64496
 192.0.2.17   esr1-xe-4-0-1.lax.example.net
-.Pp
+
 # node2id: 6
 # node2as: 64496
-192.0.2.21   esr1-xe-4-0-1.lax.example.net
-.Pp
+192.0.2.21   esr1-xe-4-0-2.lax.example.net
+
 # node2id: 7
 # node2as: 64500
 192.0.2.25   as64500.cust.example.net
-.Pp
+
 # node2id: 8
 # node2as: 64501
 192.0.2.29   as64501.cust.example.net
-.Pp
+
 # node2id: 9
 # node2as: 64502
 192.0.2.33   as64502.cust.example.net
-.Pp
+
 # node2id: 10
 # node2as: 64503
 192.0.2.37   as64503.cust.example.net
-.fi
-.in -.3i
+.Ed
 .Pp
 Then the following command will build a base set of regular
 expressions that extract router names, as described in section 5.1 of
 the IMC 2019 paper, and output the working set of regexes inferred for
 each suffix at the end of that phase.
-.Pp
-sc_hoiho -O learnalias -d working-set -O norefine public_suffix_list.dat routers.txt
+.Bd -literal -offset indent
+sc_hoiho -O learnalias -d working-set -O norefine \e
+    public_suffix_list.dat routers.txt
+.Ed
 .Pp
 To obtain the best selected regular expression that extracts router names
 for example.net, use:
-.Pp
-sc_hoiho -O learnalias -d best-regex -D example.net public_suffix_list.dat routers.txt
+.Bd -literal -offset indent
+sc_hoiho -O learnalias -d best-regex -D example.net \e
+    public_suffix_list.dat routers.txt
+.Ed
 .Pp
 To examine how the best regular expression that extracts router names
 applies to the training data for example.net, use:
-.Pp
-sc_hoiho -O learnalias -d routers -D example.net public_suffix_list.dat routers.txt
+.Bd -literal -offset indent
+sc_hoiho -O learnalias -d routers -D example.net \e
+    public_suffix_list.dat routers.txt
+.Ed
 .Pp
 To examine how the best regular expression that extracts router names
 applies to the training data, as well as interfaces in the application
 set, use:
-.Pp
-sc_hoiho -O learnalias -d routers -D example.net -O application
-public_suffix_list.dat routers.txt
+.Bd -literal -offset indent
+sc_hoiho -O learnalias -d routers -D example.net \e
+    -O application public_suffix_list.dat routers.txt
+.Ed
 .Pp
 To see the working set of regular expressions that extract router names
 built after embedding literals in captures for example.net, use:
-.Pp
-sc_hoiho -O learnalias -d working-set -D example.net -s 2
-public_suffix_list.dat routers.txt
+.Bd -literal -offset indent
+sc_hoiho -O learnalias -d working-set -D example.net \e
+    -s 2 public_suffix_list.dat routers.txt
+.Ed
 .Pp
 To see how a manually-derived regular expression clusters hostnames
 according to the extracted router name, use:
-.Pp
-sc_hoiho -O learnalias -d routers -D example.net
--r "^([a-z]+\\d+)-.+\\.([a-z\\d]+)\\.example\\.net$"
-.br
-public_suffix_list.dat routers.txt
+.Bd -literal -offset indent
+sc_hoiho -O learnalias -d routers -D example.net \e
+    -r "\(ha([a-z]+\\d+)-.+\\.([a-z\\d]+)\\.example\\.net$" \e
+    public_suffix_list.dat routers.txt
+.Ed
 .Pp
 To infer regular expressions that extract ASNs from hostnames, use:
+.Bd -literal -offset indent
+sc_hoiho -O learnasn -d best-regex \e
+    public_suffix_list.dat routers.txt
+.Ed
 .Pp
-sc_hoiho -O learnasn -d best-regex public_suffix_list.dat routers.txt
-.Pp
-To infer regular expressions that extract geohints from hostnames, and formatting the
-output as JSON, use:
-.Pp
-sc_hoiho -O learngeo -d best-regex -O json -R rtts.txt -g geohints.txt public_suffix_list.dat routers.txt
-.Pp
+To infer regular expressions that extract geohints from hostnames, and
+format the output as JSON, use:
+.Bd -literal -offset indent
+sc_hoiho -O learngeo -d best-regex -O json \e
+    -R rtts.txt -g geohints.txt \e
+    public_suffix_list.dat routers.txt
+.Ed
 .\""""""""""""
 .Sh HINTS
 .Nm
 can take a long time to run when inferring regular expressions that extract
 router names, depending on the training set involved.
-One option to breaking up the runtime (but not reducing it) is to
+One option for breaking up the runtime (but not reducing it) is to
 capture the output from one phase, and then use that as input to the
-next phase.  For example, to run the first three phases:
-.Pp
-sc_hoiho -O learnalias -d working-set -s 1 public_suffix_list.dat routers.txt
->phase-1.re
-.br
-sc_hoiho -O learnalias -d working-set -s 2 -r phase-1.re
-public_suffix_list.dat routers.txt >phase-2.re
-.br
-sc_hoiho -O learnalias -d working-set -s 3 -r phase-2.re
-public_suffix_list.dat routers.txt >phase-3.re
-.Pp
+next phase.
+For example, to run the first three phases:
+.Bd -literal -offset indent
+sc_hoiho -O learnalias -d working-set -O norefine \e
+    public_suffix_list.dat routers.txt >phase-1.re
+
+sc_hoiho -O learnalias -d working-set -O refine-tp \e
+    -r phase-1.re public_suffix_list.dat routers.txt >phase-2.re
+
+sc_hoiho -O learnalias -d working-set -O refine-fne \e
+    -r phase-2.re public_suffix_list.dat routers.txt >phase-3.re
+.Ed
 .\""""""""""""
 .Sh NOTES
-.Pp
 .Nm
 follows the format of the hostnames files stored in CAIDA's Internet
 Topology Data Kit (ITDK) which stores hostnames in lower-case, and
 stores characters that do not form part of the DNS's alphabet
-(A-Z, a-z, - and .) as a hexadecimal escaped string.
+(A-Z, a-z, 0-9,
+.Ql \-
+and
+.Ql \&. )
+as a hexadecimal escaped string.
 For example, if a hostname contains an underscore character, such
 as foo_bar, then encode the underscore using the hexadecimal dictionary
 in
 .Xr ascii 7
-as follows: foo\\x5fbar.
+as follows: foo\ex5fbar.
 .Pp
 When learning ASN regexes,
 .Nm
 can take an optional parameter that specifies which ASNs belong
-to the same organization (are siblings).  Each line specifies ASNs
-that belong to the same organization.  For example, a file with
-the following contents:
-.Pp
-.in +.3i
-.nf
+to the same organization (are siblings).
+Each line specifies ASNs that belong to the same organization.
+For example, a file with the following contents:
+.Bd -literal -offset indent
 64504 64505 64506
-.br
 64507 64508
-.fi
-.in -.3i
+.Ed
 .Pp
 defines the ASNs operated by two organizations: one organization
 with ASes 64504, 64505, and 64506, and the other organization
@@ -427,119 +459,78 @@ When learning geohint regexes,
 requires parameters that specify a geohint dictionary, and RTT
 measurements.
 For the geohint dictionary, the format of the file is as follows:
-.Pp
-.in +.3i
-.nf
+.Bd -literal -offset indent
 iata code lat lng cc-st "city"
-.br
 icao code lat lng cc-st "city"
-.br
 clli code lat lng cc-st "city"
-.br
 place "city" cc-st lat lng population
-.br
 locode code lat lng cc-st "city"
-.br
 facility "city" cc-st lat lng "street" "name"
-.br
 country iso3166-2 iso3166-3 "name"
-.br
 state cc-st "name"
-.br
 vp code lat lng
-.fi
-.in -.3i
+.Ed
 .Pp
 For example:
-.Pp
-.in +.3i
-.nf
-iata IAD 38.9445 -77.455803 US-VA "Washington, DC"
-.br
-icao KIAD 38.9445 -77.455803 US-VA "Washington, DC"
-.br
-clli washdc 38.89511 -77.03637 US-DC "Washington, D.C."
-.br
-place "Washington" US-DC 38.89511 -77.03637 601723
-.br
-locode USIAD 38.94877 -77.4491 US-VA "Dulles Int Apt/Washington"
-.br
-facility "Washington" US-DC 38.902918 -77.029149 "1275 K Street, NW" "CoreSite - Washington,DC (DC1)"
-.br
+.Bd -literal -offset indent
+iata IAD 38.9445 -77.4558 US-VA "Washington, DC"
+icao KIAD 38.9445 -77.4558 US-VA "Washington, DC"
+clli washdc 38.8951 -77.0363 US-DC "Washington, D.C."
+place "Washington" US-DC 38.8951 -77.0363 601723
+locode USIAD 38.9487 -77.4491 US-VA "Dulles Int Apt/Washington"
+facility "Washington" US-DC 38.9029 -77.0291 "1275 K St NW" "CoreSite DC1"
 country us usa "United States"
-.br
 state US-DC "Washington, D.C."
-.br
-vp hlz2-nz 37.86 175.33
-.fi
-.in -.3i
+vp hlz2-nz -37.86 175.33
+.Ed
 .Pp
 The VP geohints in the file are used by
 .Nm
 to record where a given VP is located, and are used to identify the location
 associated with an RTT sample.
-VP geohints are not used when searching a hostname for location identifier.
+VP geohints are not used when searching a hostname for location identifiers.
 If the RTT file contains VP codes without a VP geohint, the VP code
 must match one of the other codes with a lat/lng.
 .Pp
 For the RTT measurements, the format of each line of the file is as
 follows:
-.Pp
-.in +.3i
-.nf
-nodeid iata ms
-.fi
-.in -.3i
+.Bd -literal -offset indent
+N<node-id> vp-code rtt-ms
+.Ed
 .Pp
 For example:
-.Pp
-.in +.3i
-.nf
+.Bd -literal -offset indent
 N1 jfk 1
-.br
 N1 iad 10
-.br
 N1 yhu 20
-.br
 N2 sjc 10
-.br
 N2 san 12
-.br
 N2 tij 16
-.br
 N3 akl 2
-.br
 N3 wlg 11
-.br
 N3 syd 25
-.fi
-.in -.3i
+.Ed
 .Pp
 When learning AS name regexes,
 .Nm
-can optionally be provided an AS name dictionary.  If an AS name
-dictionary is not provided, then
+can optionally be provided an AS name dictionary.
+If an AS name dictionary is not provided, then
 .Nm
 will learn an AS name dictionary automatically.
 For an AS name dictionary that maps 64504 to foo, 64505 to bar, and
 64506 to baz, the format of the file is as follows:
-.Pp
-.in +.3i
-.nf
+.Bd -literal -offset indent
 64504 foo
-.br
 64505 bar
-.br
 64506 baz
-.fi
-.in -.3i
+.Ed
 .Sh SEE ALSO
-.Xr pcre 3 ,
-.Xr pcre2 3 ,
 .Xr sc_ally 1 ,
 .Xr sc_pinger 1 ,
 .Xr sc_radargun 1 ,
 .Xr sc_speedtrap 1 ,
+.Xr pcre 3 ,
+.Xr pcre2 3
 .Rs
 .%A "M. Luckie"
 .%A "B. Huffaker"
@@ -564,7 +555,8 @@ For an AS name dictionary that maps 64504 to foo, 64505 to bar, and
 .%A "M. Fletcher"
 .%A "k claffy"
 .%T "Learning to Extract Geographic Information from Internet Router Hostnames"
-.%O "Proc. ACM Conference on emerging Networking EXperiments and Technologies (CoNEXT) 2021"
+.%O "Proc. ACM Conference on emerging Networking EXperiments and Technologies \
+(CoNEXT) 2021"
 .Re
 .Rs
 .%A "M. Luckie"
@@ -627,11 +619,14 @@ For an AS name dictionary that maps 64504 to foo, 64505 to bar, and
 .%A "B. Huffaker"
 .%A "J. Smith"
 .%A "k claffy"
-.%T "Pushing the Boundaries with bdrmapIT: Mapping Router Ownership at Internet Scale"
+.%T "Pushing the Boundaries with bdrmapIT: Mapping Router Ownership \
+at Internet Scale"
 .%O "Proc. ACM Internet Measurement Conference 2018"
 .Re
 .Sh AUTHORS
 .Nm
-was written by Matthew Luckie.
-Marianne Fletcher added support for inferring regexes that extract
-ASNs and geohints from hostnames.
+was written by
+.An Matthew Luckie .
+.An Marianne Fletcher
+added support for inferring regexes that extract ASNs and geohints
+from hostnames.

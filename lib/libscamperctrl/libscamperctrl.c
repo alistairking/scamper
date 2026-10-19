@@ -1,7 +1,7 @@
 /*
  * libscamperctrl
  *
- * $Id: libscamperctrl.c,v 1.122 2026/08/31 06:21:38 mjl Exp $
+ * $Id: libscamperctrl.c,v 1.126 2026/09/26 08:42:29 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -571,22 +571,17 @@ static int fd_unset_write(scamper_ctrl_t *ctrl, sc_fd_t *fdn)
   return 0;
 }
 
-static int fd_write(scamper_ctrl_t *ctrl, sc_fd_t *fdn)
+static int fd_write_tx(scamper_ctrl_t *ctrl, sc_fd_t *fdn, sc_tx_t *tx)
 {
   scamper_task_t *task;
-  sc_tx_t *tx;
   ssize_t rc;
-
-  /* the queue might get emptied in scamper_ctrl_remove() */
-  if((tx = dlist_head_item(fdn->queue)) == NULL)
-    goto done;
 
   /* test if send was successful */
   if((rc = send(fdn->fd, tx->buf + tx->off, tx->len - tx->off, 0)) == -1)
     {
       /* would have blocked / got interrupted.  non-fatal error */
       if(errno == EINTR || errno == EAGAIN)
-	return 0;
+	return 1;
       snprintf(ctrl->err, sizeof(ctrl->err), "could not send: %s",
 	       strerror(errno));
       return -1;
@@ -619,7 +614,7 @@ static int fd_write(scamper_ctrl_t *ctrl, sc_fd_t *fdn)
       if(tx->inst == NULL)
 	{
 	  tx_free(tx);
-	  goto done;
+	  return 0;
 	}
 
       if(slist_tail_push(tx->inst->waitok, tx) == NULL)
@@ -637,7 +632,31 @@ static int fd_write(scamper_ctrl_t *ctrl, sc_fd_t *fdn)
       tx->off += rc;
     }
 
- done:
+  return 0;
+}
+
+static int fd_write(scamper_ctrl_t *ctrl, sc_fd_t *fdn)
+{
+  sc_tx_t *tx;
+  int rc;
+
+  /*
+   * read items to send out of the tx queue until either the queue is
+   * empty or we get EINTR or EAGAIN
+   */
+  while((tx = dlist_head_item(fdn->queue)) != NULL)
+    {
+      if((rc = fd_write_tx(ctrl, fdn, tx)) < 0)
+	return -1;
+
+      /*
+       * we got EINTR or EAGAIN.  return zero rather than break out
+       * because there are things left in the queue to send.
+       */
+      if(rc == 1)
+	return 0;
+    }
+
   /* if nothing left to write, then unset write */
   if(dlist_count(fdn->queue) == 0 && fd_unset_write(ctrl, fdn) != 0)
     {
@@ -2271,11 +2290,11 @@ scamper_inst_t *scamper_inst_remote(scamper_ctrl_t *ctrl, const char *path)
 }
 
 /*
- * scamper_inst_read
+ * inst_read
  *
  * read from the control socket.
  */
-static int scamper_inst_read(scamper_inst_t *inst)
+static int inst_read(scamper_inst_t *inst)
 {
   scamper_ctrl_t *ctrl;
   sc_fd_t *fdn;
@@ -2849,17 +2868,13 @@ static int ctrl_flag_muxgo(scamper_ctrl_t *ctrl)
 }
 
 #ifdef HAVE_KQUEUE
-int scamper_ctrl_wait(scamper_ctrl_t *ctrl, struct timeval *to)
+static int ctrl_wait_kqueue(scamper_ctrl_t *ctrl, struct timeval *to)
 {
   struct kevent events[128];
   int eventc = sizeof(events) / sizeof(struct kevent);
   struct timespec ts, *timeout;
   sc_fd_t *fdn;
   int i, c, rc = -1;
-
-  if((ctrl->flags & SCAMPER_CTRL_FLAG_MUXGO) != 0 &&
-     ctrl_flag_muxgo(ctrl) != 0)
-    goto done;	
 
   if(to != NULL)
     {
@@ -2881,7 +2896,6 @@ int scamper_ctrl_wait(scamper_ctrl_t *ctrl, struct timeval *to)
       goto done;
     }
 
-  ctrl->flags |= SCAMPER_CTRL_FLAG_INWAIT;
   for(i=0; i<c; i++)
     {
       fdn = events[i].udata;
@@ -2889,7 +2903,7 @@ int scamper_ctrl_wait(scamper_ctrl_t *ctrl, struct timeval *to)
 	{
 	  if(fdn->fdtype == FD_TYPE_INST)
 	    {
-	      if(scamper_inst_read(fdn->un.inst) != 0)
+	      if(inst_read(fdn->un.inst) != 0)
 		goto done;
 	    }
 	  else if(fdn->fdtype == FD_TYPE_MUX)
@@ -2910,10 +2924,10 @@ int scamper_ctrl_wait(scamper_ctrl_t *ctrl, struct timeval *to)
   rc = 0;
 
  done:
-  return ctrl_wait_done(ctrl, rc);
+  return rc;
 }
 #else
-int scamper_ctrl_wait(scamper_ctrl_t *ctrl, struct timeval *to)
+static int ctrl_wait_select(scamper_ctrl_t *ctrl, struct timeval *to)
 {
   dlist_node_t *dn;
   fd_set rfds, wfds, *wfdsp, *rfdsp;
@@ -2925,10 +2939,6 @@ int scamper_ctrl_wait(scamper_ctrl_t *ctrl, struct timeval *to)
 #else
   SOCKET fd;
 #endif
-
-  if((ctrl->flags & SCAMPER_CTRL_FLAG_MUXGO) != 0 &&
-     ctrl_flag_muxgo(ctrl) != 0)
-    goto done;	
 
   nfds = -1; FD_ZERO(&rfds); FD_ZERO(&wfds); wfdsp = NULL; rfdsp = NULL;
   for(dn=dlist_head_node(ctrl->fds); dn != NULL; dn=dlist_node_next(dn))
@@ -2957,7 +2967,6 @@ int scamper_ctrl_wait(scamper_ctrl_t *ctrl, struct timeval *to)
   if(rfdsp == NULL)
     return 0;
 
-  ctrl->flags |= SCAMPER_CTRL_FLAG_INWAIT;
   dn = dlist_head_node(ctrl->fds);
   while(dn != NULL && count > 0)
     {
@@ -2976,7 +2985,7 @@ int scamper_ctrl_wait(scamper_ctrl_t *ctrl, struct timeval *to)
 	  count--;
 	  if(fdn->fdtype == FD_TYPE_INST)
 	    {
-	      if(scamper_inst_read(fdn->un.inst) != 0)
+	      if(inst_read(fdn->un.inst) != 0)
 		goto done;
 	    }
 	  else if(fdn->fdtype == FD_TYPE_MUX)
@@ -3001,9 +3010,36 @@ int scamper_ctrl_wait(scamper_ctrl_t *ctrl, struct timeval *to)
   rc = 0;
 
  done:
-  return ctrl_wait_done(ctrl, rc);
+  return rc;
 }
 #endif
+
+int scamper_ctrl_wait(scamper_ctrl_t *ctrl, struct timeval *to)
+{
+  int rc = -1;
+
+  if((ctrl->flags & SCAMPER_CTRL_FLAG_INWAIT) != 0)
+    {
+      /* do not fall through to done, which will clear the INWAIT flag */
+      snprintf(ctrl->err, sizeof(ctrl->err), "already in scamper_ctrl_wait");
+      return -1;
+    }
+
+  ctrl->flags |= SCAMPER_CTRL_FLAG_INWAIT;
+
+  if((ctrl->flags & SCAMPER_CTRL_FLAG_MUXGO) != 0 &&
+     ctrl_flag_muxgo(ctrl) != 0)
+    goto done;
+
+#ifdef HAVE_KQUEUE
+  rc = ctrl_wait_kqueue(ctrl, to);
+#else
+  rc = ctrl_wait_select(ctrl, to);
+#endif
+
+ done:
+  return ctrl_wait_done(ctrl, rc);
+}
 
 /*
  * scamper_ctrl_free:

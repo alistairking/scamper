@@ -1,7 +1,7 @@
 /*
  * scamper_control.c
  *
- * $Id: scamper_control.c,v 1.303 2026/08/22 02:40:27 mjl Exp $
+ * $Id: scamper_control.c,v 1.304 2026/09/25 21:16:56 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -1053,18 +1053,6 @@ static int command_get_nameserver(client_t *client, char *spare)
 #endif
 }
 
-static int command_get_pid(client_t *client, char *spare)
-{
-#ifndef _WIN32 /* windows does not have getpid */
-  pid_t pid = getpid();
-#else
-  DWORD pid = GetCurrentProcessId();
-#endif
-  char buf[256]; size_t off = 0;
-  string_concat_u32(buf, sizeof(buf), &off, "OK pid ", (uint32_t)pid);
-  return client_send(client, buf);
-}
-
 static int command_get_pps(client_t *client, char *spare)
 {
   int pps = scamper_option_pps_get();
@@ -1093,7 +1081,6 @@ static int command_get(client_t *client, char *buf)
     {"command",     command_get_command},
     {"monitorname", command_get_monitorname},
     {"nameserver",  command_get_nameserver},
-    {"pid",         command_get_pid},
     {"pps",         command_get_pps},
     {"version",     command_get_version},
     {"window",      command_get_window},
