@@ -1,12 +1,12 @@
 /*
  * scamper_addr_int.h
  *
- * $Id: scamper_addr_int.h,v 1.7 2025/10/19 21:21:24 mjl Exp $
+ * $Id: scamper_addr_int.h,v 1.10 2026/08/31 07:14:30 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2013      The Regents of the University of California
- * Copyright (C) 2016-2023 Matthew Luckie
+ * Copyright (C) 2016-2026 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -47,6 +47,9 @@ struct scamper_addr
 #endif
 };
 
+int scamper_addr_cmp_thunk(const void *sa, const void *sb);
+void scamper_addr_free_thunk(void *sa);
+
 /*
  * scamper_addrcache:
  *  store identical addresses just once in this structure
@@ -70,16 +73,16 @@ void scamper_addrcache_free(scamper_addrcache_t *ac);
  */
 #ifndef DMALLOC
 scamper_addr_t *scamper_addrcache_get(scamper_addrcache_t *ac,
-				      const int type, const void *addr);
+				      int type, const void *addr);
 scamper_addr_t *scamper_addrcache_resolve(scamper_addrcache_t *ac,
-					  const int af, const char *addr);
+					  int af, const char *addr);
 #else
 scamper_addr_t *scamper_addrcache_get_dm(scamper_addrcache_t *ac,
-					 const int type, const void *addr,
-					 const char *file, const int line);
+					 int type, const void *addr,
+					 const char *file, int line);
 scamper_addr_t *scamper_addrcache_resolve_dm(scamper_addrcache_t *ac,
-					     const int af, const char *addr,
-					     const char *file, const int line);
+					     int af, const char *addr,
+					     const char *file, int line);
 #define scamper_addrcache_get(ac, type, addr) \
   scamper_addrcache_get_dm((ac), (type), (addr), __FILE__, __LINE__)
 #define scamper_addrcache_resolve(ac, af, addr) \

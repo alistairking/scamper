@@ -1,7 +1,7 @@
 /*
  * sc_remoted
  *
- * $Id: sc_remoted.c,v 1.162 2026/04/16 06:36:10 mjl Exp $
+ * $Id: sc_remoted.c,v 1.163 2026/08/30 00:53:51 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -3302,6 +3302,44 @@ static int sc_mux_read_channel_open(sc_mux_t *mux,const uint8_t *buf,size_t len)
   return -1;
 }
 
+static int sc_mux_read_channel_close(sc_mux_t *mux,
+				     const uint8_t *buf, size_t len)
+{
+  sc_muxchan_t *mcn = NULL;
+  sc_channel_t *cn = NULL;
+  uint32_t channel_id;
+
+  if(len < 4)
+    {
+      remote_debug(__func__, "channel close length is less than 4 bytes");
+      goto err;
+    }
+  channel_id = bytes_ntohl(buf);
+
+  /* find the channel */
+  if((mcn = sc_mux_chan_get(mux, channel_id)) == NULL)
+    {
+      remote_debug(__func__, "no channel id %u", channel_id);
+      goto err;
+    }
+
+  /* send an eof to scamper */
+  if((cn = mcn->channel) != NULL &&
+     (cn->flags & (CHANNEL_FLAG_EOF_RX|CHANNEL_FLAG_EOF_TX)) == 0)
+    {
+      remote_debug(__func__, "closing channel id %u", channel_id);
+      sc_master_inet_send_channel_eof(cn->master, cn);
+      cn->flags |= CHANNEL_FLAG_EOF_TX;
+    }
+
+  sc_muxchan_free(mcn);
+
+  return 0;
+
+ err:
+  return -1;
+}
+
 static int sc_mux_read_channel_zero(sc_mux_t *mux,const uint8_t *buf,size_t len)
 {
   uint16_t msg_type;
@@ -3317,6 +3355,12 @@ static int sc_mux_read_channel_zero(sc_mux_t *mux,const uint8_t *buf,size_t len)
     {
       /* sc_mux_read_channel_open() emits error messages */
       if(sc_mux_read_channel_open(mux, buf+2, len-2) != 0)
+	return -1;
+    }
+  else if(msg_type == MUX_CHANNEL_CLOSE)
+    {
+      /* sc_mux_read_channel_close() emits error messages */
+      if(sc_mux_read_channel_close(mux, buf+2, len-2) != 0)
 	return -1;
     }
 

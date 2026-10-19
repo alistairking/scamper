@@ -1,7 +1,7 @@
 /*
  * scamper_host_cmd
  *
- * $Id: scamper_host_cmd.c,v 1.22 2026/03/19 06:41:38 mjl Exp $
+ * $Id: scamper_host_cmd.c,v 1.26 2026/09/02 02:20:48 mjl Exp $
  *
  * Copyright (C) 2018-2026 Matthew Luckie
  *
@@ -126,6 +126,99 @@ static int host_canprobe(scamper_addr_t *dst)
 }
 #endif
 
+static int host_arg_qtype_to_num(const char *param, uint16_t *qtype)
+{
+  if(strcasecmp(param, "A") == 0)
+    *qtype = SCAMPER_HOST_TYPE_A;
+  else if(strcasecmp(param, "AAAA") == 0)
+    *qtype = SCAMPER_HOST_TYPE_AAAA;
+  else if(strcasecmp(param, "PTR") == 0)
+    *qtype = SCAMPER_HOST_TYPE_PTR;
+  else if(strcasecmp(param, "MX") == 0)
+    *qtype = SCAMPER_HOST_TYPE_MX;
+  else if(strcasecmp(param, "NS") == 0)
+    *qtype = SCAMPER_HOST_TYPE_NS;
+  else if(strcasecmp(param, "SOA") == 0)
+    *qtype = SCAMPER_HOST_TYPE_SOA;
+  else if(strcasecmp(param, "TXT") == 0)
+    *qtype = SCAMPER_HOST_TYPE_TXT;
+  else if(strcasecmp(param, "SVCB") == 0)
+    *qtype = SCAMPER_HOST_TYPE_SVCB;
+  else if(strcasecmp(param, "HTTPS") == 0)
+    *qtype = SCAMPER_HOST_TYPE_HTTPS;
+  else
+    return -1;
+  return 0;
+}
+
+static int mqtypes_to_array(const char *param,
+			    uint16_t *mqtypes, uint8_t *mqtypec,
+			    char *errbuf, size_t errlen)
+{
+  char *dup = NULL;
+  char *in, *next;
+  uint16_t qtype;
+  uint8_t qtypec = 0;
+  int rc = -1;
+
+  if((dup = strdup(param)) == NULL)
+    {
+      snprintf(errbuf, errlen, "could not dup mqtypes");
+      goto done;
+    }
+  in = dup;
+
+  do
+    {
+      if(string_nullterm_char(in, ',', &next) == 0)
+	{
+	  snprintf(errbuf, errlen, "invalid mqtypes option: missing qtype");
+	  goto done;
+	}
+
+      if(host_arg_qtype_to_num(in, &qtype) != 0)
+	{
+	  snprintf(errbuf, errlen, "invalid mqtypes option: unsupported qtype");
+	  goto done;
+	}
+
+      if(mqtypes != NULL)
+	{
+	  if(*mqtypec <= qtypec)
+	    {
+	      snprintf(errbuf, errlen,
+		       "invalid mqtypes option: mqtypec %u would overflow",
+		       *mqtypec);
+	      goto done;
+	    }
+	  mqtypes[qtypec] = qtype;
+	}
+
+      if(qtypec == UINT8_MAX)
+	{
+	  snprintf(errbuf, errlen,
+		   "invalid mqtypes option: qtypec would overflow");
+	  goto done;
+	}
+      qtypec++;
+      in = next;
+    }
+  while(in != NULL);
+
+  if(qtypec == 0)
+    {
+      snprintf(errbuf, errlen, "invalid mqtypes option: no qtypes");
+      goto done;
+    }
+
+  rc = 0;
+  *mqtypec = qtypec;
+
+ done:
+  if(dup != NULL) free(dup);
+  return rc;
+}
+
 static int host_arg_param_validate(int optid, char *param, long long *out,
 				   char *errbuf, size_t errlen)
 {
@@ -133,6 +226,8 @@ static int host_arg_param_validate(int optid, char *param, long long *out,
   scamper_addr_t *addr;
   struct timeval tv;
   long long tmp = 0;
+  uint16_t qtype;
+  uint8_t qtypec;
 
 #ifndef NDEBUG
   errbuf[0] = '\0';
@@ -171,29 +266,12 @@ static int host_arg_param_validate(int optid, char *param, long long *out,
       break;
 
     case HOST_OPT_TYPE:
-      if(strcasecmp(param, "A") == 0)
-	tmp = SCAMPER_HOST_TYPE_A;
-      else if(strcasecmp(param, "AAAA") == 0)
-	tmp = SCAMPER_HOST_TYPE_AAAA;
-      else if(strcasecmp(param, "PTR") == 0)
-	tmp = SCAMPER_HOST_TYPE_PTR;
-      else if(strcasecmp(param, "MX") == 0)
-	tmp = SCAMPER_HOST_TYPE_MX;
-      else if(strcasecmp(param, "NS") == 0)
-	tmp = SCAMPER_HOST_TYPE_NS;
-      else if(strcasecmp(param, "SOA") == 0)
-	tmp = SCAMPER_HOST_TYPE_SOA;
-      else if(strcasecmp(param, "TXT") == 0)
-	tmp = SCAMPER_HOST_TYPE_TXT;
-      else if(strcasecmp(param, "SVCB") == 0)
-	tmp = SCAMPER_HOST_TYPE_SVCB;
-      else if(strcasecmp(param, "HTTPS") == 0)
-	tmp = SCAMPER_HOST_TYPE_HTTPS;
-      else
+      if(host_arg_qtype_to_num(param, &qtype) != 0)
 	{
 	  snprintf(errbuf, errlen, "unsupported query type");
 	  goto err;
 	}
+      tmp = qtype;
       break;
 
     case HOST_OPT_WAIT:
@@ -239,6 +317,12 @@ static int host_arg_param_validate(int optid, char *param, long long *out,
 	    }
 	  tmp = 0;
 	}
+      else if(strncasecmp(param, "mqtypes=", 8) == 0)
+	{
+	  if(mqtypes_to_array(param+8, NULL, &qtypec, errbuf, errlen) != 0)
+	    goto err;
+	  tmp = qtypec;
+	}
       else
 	{
 	  snprintf(errbuf, errlen, "unknown option");
@@ -280,6 +364,8 @@ void *scamper_do_host_alloc(char *str, char *errbuf, size_t errlen)
   uint16_t flags = 0;
   uint16_t qclass = 1;
   uint16_t qtype = 0;
+  uint16_t *mqtypes = NULL;
+  uint8_t mqtypec = 0;
   long long tmp = 0;
   struct timeval wait_timeout;
   uint32_t optids = 0;
@@ -360,11 +446,33 @@ void *scamper_do_host_alloc(char *str, char *errbuf, size_t errlen)
 	    flags |= (uint16_t)tmp;
 	  else if(strncasecmp(opt->str, "subnet=", 7) == 0)
 	    {
+	      if(ecs != NULL)
+		{
+		  snprintf(errbuf, errlen, "repeated subnet option");
+		  goto err;
+		}
 	      if((ecs = strdup(opt->str+7)) == NULL)
 		{
 		  snprintf(errbuf, errlen, "could not strdup subnet");
 		  goto err;
 		}
+	    }
+	  else if(strncasecmp(opt->str, "mqtypes=", 8) == 0)
+	    {
+	      if(mqtypes != NULL)
+		{
+		  snprintf(errbuf, errlen, "repeated mqtypes option");
+		  goto err;
+		}
+	      mqtypec = (uint8_t)tmp;
+	      if((mqtypes = malloc(sizeof(uint16_t) * mqtypec)) == NULL)
+		{
+		  snprintf(errbuf, errlen, "could not alloc mqtypes");
+		  goto err;
+		}
+	      if(mqtypes_to_array(opt->str+8, mqtypes, &mqtypec,
+				  errbuf, errlen) != 0)
+		goto err;
 	    }
 	  break;
 
@@ -453,6 +561,8 @@ void *scamper_do_host_alloc(char *str, char *errbuf, size_t errlen)
   host->qtype   = qtype;
   host->qclass  = qclass;
   host->ecs     = ecs; ecs = NULL;
+  host->mqtypes = mqtypes; mqtypes = NULL;
+  host->mqtypec = mqtypec;
 
   timeval_cpy(&host->wait_timeout, &wait_timeout);
 
@@ -490,6 +600,7 @@ void *scamper_do_host_alloc(char *str, char *errbuf, size_t errlen)
  err:
   assert(errbuf[0] != '\0');
   if(ecs != NULL) free(ecs);
+  if(mqtypes != NULL) free(mqtypes);
   if(host != NULL) scamper_host_free(host);
   if(name_addr != NULL) scamper_addr_free(name_addr);
   if(server != NULL) scamper_addr_free(server);

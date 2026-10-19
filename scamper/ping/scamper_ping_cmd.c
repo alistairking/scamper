@@ -1,12 +1,12 @@
 /*
  * scamper_ping_cmd.c
  *
- * $Id: scamper_ping_cmd.c,v 1.35 2025/10/10 01:33:17 mjl Exp $
+ * $Id: scamper_ping_cmd.c,v 1.36 2026/08/31 06:58:55 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2012-2015 The Regents of the University of California
- * Copyright (C) 2016-2025 Matthew Luckie
+ * Copyright (C) 2016-2026 Matthew Luckie
  * Copyright (C) 2024      The Regents of the University of California
  * Author: Matthew Luckie
  *
@@ -259,7 +259,7 @@ static int ping_arg_param_validate(int optid, char *param, long long *out,
       else if(strncasecmp(param, "mss=", 4) == 0)
 	{
 	  if(string_tollong(param+4, &mss, NULL, 0) != 0 ||
-	     mss < 0 || mss > 65535)
+	     mss <= 0 || mss > 65535)
 	    {
 	      snprintf(errbuf, errlen, "expected valid MSS value");
 	      goto err;
@@ -551,7 +551,7 @@ void *scamper_do_ping_alloc(char *str, char *errbuf, size_t errlen)
 	  else if(strncasecmp(opt->str, "mss=", 4) == 0)
 	    {
 	      if(string_tollong(opt->str+4, &tmp, NULL, 0) != 0 ||
-		 tmp < 0 || tmp > 65535)
+		 tmp <= 0 || tmp > 65535)
 		{
 		  snprintf(errbuf, errlen, "expected valid MSS value");
 		  goto err;

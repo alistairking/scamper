@@ -1,7 +1,7 @@
 /*
  * sc_minrtt: dump RTT values by node for use by sc_hoiho
  *
- * $Id: sc_minrtt.c,v 1.30 2026/03/30 03:37:44 mjl Exp $
+ * $Id: sc_minrtt.c,v 1.32 2026/07/25 02:06:29 mjl Exp $
  *
  *         Matthew Luckie
  *         mjl@luckie.org.nz
@@ -48,6 +48,7 @@
 #include <assert.h>
 
 #include "scamper_addr.h"
+#include "scamper_addr_int.h"
 #include "scamper_list.h"
 #include "scamper_ping.h"
 #include "scamper_dealias.h"
@@ -543,7 +544,7 @@ static char *filename_vpname(const char *filename)
 static void sc_router_free(sc_router_t *rtr)
 {
   if(rtr->addrs != NULL)
-    slist_free_cb(rtr->addrs, (slist_free_t)scamper_addr_free);
+    slist_free_cb(rtr->addrs, scamper_addr_free_thunk);
   free(rtr);
   return;
 }
@@ -554,7 +555,7 @@ static int sc_router_finish(sc_routerload_t *rl)
 
   if(rl->gotid == 0 || slist_count(rl->addrs) == 0)
     {
-      slist_empty_cb(rl->addrs, (slist_free_t)scamper_addr_free);
+      slist_empty_cb(rl->addrs, scamper_addr_free_thunk);
       return 0;
     }
 
@@ -1003,7 +1004,7 @@ static slist_t *do_rtrfile_read(void)
 
  err:
   if(rl.addrs != NULL)
-    slist_free_cb(rl.addrs, (slist_free_t)scamper_addr_free);
+    slist_free_cb(rl.addrs, scamper_addr_free_thunk);
   if(rl.routers != NULL)
     slist_free_cb(rl.routers, (slist_free_t)sc_router_free);
   return NULL;
@@ -1763,7 +1764,7 @@ static void do_file_read(sc_filedata_t *fd)
   for(sn=slist_head_node(fd->samples); sn != NULL; sn=slist_node_next(sn))
     if(sc_rxsec_add(rxs_trees, slist_node_item(sn)) != 0)
       goto done;
-  if((addr_tree = splaytree_alloc((splaytree_cmp_t)scamper_addr_cmp)) == NULL)
+  if((addr_tree = splaytree_alloc(scamper_addr_cmp_thunk)) == NULL)
     goto done;
   for(i=1; i<4; i++)
     {

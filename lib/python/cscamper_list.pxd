@@ -41,4 +41,4 @@ cdef extern from "scamper_list.h":
  time_t scamper_cycle_start_time_get(const scamper_cycle_t *cycle)
  time_t scamper_cycle_stop_time_get(const scamper_cycle_t *cycle)
  const char *scamper_cycle_hostname_get(const scamper_cycle_t *cycle)
- int scamper_cycle_cmp(scamper_cycle_t *a, scamper_cycle_t *b)
+ int scamper_cycle_cmp(const scamper_cycle_t *a, const scamper_cycle_t *b)

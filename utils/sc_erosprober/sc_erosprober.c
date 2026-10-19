@@ -4,7 +4,9 @@
  *
  * Authors       : Matthew Luckie
  *
- * Copyright (C) 2018-2024 Matthew Luckie
+ * $Id: sc_erosprober.c,v 1.34 2026/07/25 02:06:29 mjl Exp $
+ *
+ * Copyright (C) 2018-2026 Matthew Luckie
  * Copyright (C) 2023      The Regents of the University of California
  *
  * This program is free software; you can redistribute it and/or modify
@@ -28,6 +30,7 @@
 #include "internal.h"
 
 #include "scamper_addr.h"
+#include "scamper_addr_int.h"
 #include "scamper_list.h"
 #include "ping/scamper_ping.h"
 #include "trace/scamper_trace.h"
@@ -555,7 +558,7 @@ static int do_addrfile(void)
   rc = 0;
 
  done:
-  if(list != NULL) slist_free_cb(list, (slist_free_t)scamper_addr_free);
+  if(list != NULL) slist_free_cb(list, scamper_addr_free_thunk);
   if(sa != NULL) scamper_addr_free(sa);
   return rc;
 }

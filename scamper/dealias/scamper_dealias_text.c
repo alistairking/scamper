@@ -5,7 +5,7 @@
  * Copyright (C) 2013-2025 Matthew Luckie
  * Author: Matthew Luckie
  *
- * $Id: scamper_dealias_text.c,v 1.8 2025/05/17 06:58:48 mjl Exp $
+ * $Id: scamper_dealias_text.c,v 1.9 2026/08/31 07:34:35 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -30,6 +30,7 @@
 #include "scamper_addr.h"
 #include "scamper_list.h"
 #include "scamper_file.h"
+#include "scamper_file_int.h"
 #include "scamper_dealias.h"
 #include "scamper_dealias_int.h"
 #include "scamper_dealias_text.h"

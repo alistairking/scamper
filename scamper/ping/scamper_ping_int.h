@@ -1,12 +1,12 @@
 /*
  * scamper_ping_int.h
  *
- * $Id: scamper_ping_int.h,v 1.23 2025/10/15 23:47:47 mjl Exp $
+ * $Id: scamper_ping_int.h,v 1.26 2026/08/31 07:33:00 mjl Exp $
  *
  * Copyright (C) 2005-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
  * Copyright (C) 2012-2015 The Regents of the University of California
- * Copyright (C) 2020-2025 Matthew Luckie
+ * Copyright (C) 2020-2026 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -34,6 +34,10 @@ scamper_ping_reply_t *scamper_ping_reply_alloc(void);
 scamper_ping_reply_v4ts_t *scamper_ping_reply_v4ts_alloc(uint8_t tsc, int ip);
 scamper_ping_reply_v4rr_t *scamper_ping_reply_v4rr_alloc(uint8_t ipc);
 scamper_ping_reply_tsreply_t *scamper_ping_reply_tsreply_alloc(void);
+
+void scamper_ping_v4ts_free(scamper_ping_v4ts_t *ts);
+void scamper_ping_reply_v4rr_free(scamper_ping_reply_v4rr_t *rr);
+void scamper_ping_reply_tsreply_free(scamper_ping_reply_tsreply_t *tsr);
 
 int scamper_ping_probes_alloc(scamper_ping_t *ping, uint16_t count);
 int scamper_ping_probe_replies_alloc(scamper_ping_probe_t *probe,
@@ -217,6 +221,10 @@ struct scamper_ping_reply_v4ts
   scamper_addr_t **ips; /* IP addresses, if SCAMPER_PING_FLAG_TSANDADDR */
   uint32_t        *tss; /* timestamps */
   uint8_t          tsc; /* the number of timestamps (ip addresses) */
+
+#ifdef BUILDING_LIBSCAMPERFILE
+  int              refcnt;
+#endif
 };
 
 /*

@@ -1,7 +1,7 @@
 /*
  * scamper
  *
- * $Id: scamper.c,v 1.393 2026/05/23 07:39:22 mjl Exp $
+ * $Id: scamper.c,v 1.395 2026/09/25 21:54:09 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -280,7 +280,6 @@ int           sighup_rx = 0;
 #ifndef DISABLE_SCAMPER_PRIVSEP
 static scamper_fd_t *privsep_fdn = NULL;
 int                  privsep_do = -1; /* 0=no, 1=yes */
-pid_t                privsep_unpriv_pid = -1;
 #endif
 
 #ifndef DISABLE_SCAMPER_DNP
@@ -1554,7 +1553,7 @@ uid_t scamper_geteuid(void)
 /*
  * scamper_pidfile
  *
- * write the pidfile after any privilege separation occurs.
+ * write the pidfile.
  */
 int scamper_pidfile(void)
 {
@@ -1581,10 +1580,6 @@ int scamper_pidfile(void)
 
 #ifndef _WIN32 /* windows process-id differences */
   pid = getpid();
-#ifndef DISABLE_SCAMPER_PRIVSEP
-  if(privsep_unpriv_pid != -1)
-    pid = privsep_unpriv_pid;
-#endif
 #else
   pid = GetCurrentProcessId();
 #endif
@@ -2200,6 +2195,10 @@ static int scamper(int argc, char *argv[])
     }
 #endif
 
+  /* write the pidfile */
+  if(scamper_pidfile() != 0)
+    goto done;
+
 #ifndef DISABLE_SCAMPER_PRIVSEP
   /*
    * revoke the root privileges we started with, if started with root
@@ -2225,10 +2224,6 @@ static int scamper(int argc, char *argv[])
       privsep_do = 0;
     }
 #endif
-
-  /* write the pidfile */
-  if(scamper_pidfile() != 0)
-    goto done;
 
   random_seed();
 

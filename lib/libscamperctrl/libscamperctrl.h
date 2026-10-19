@@ -1,7 +1,7 @@
 /*
  * libscamperctrl
  *
- * $Id: libscamperctrl.h,v 1.30 2026/06/15 19:04:18 mjl Exp $
+ * $Id: libscamperctrl.h,v 1.33 2026/08/31 06:21:38 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -61,6 +61,7 @@ scamper_ctrl_t *scamper_ctrl_alloc_dm(scamper_ctrl_cb_t cb,
 int scamper_ctrl_wait(scamper_ctrl_t *ctrl, struct timeval *to);
 void scamper_ctrl_free(scamper_ctrl_t *ctrl);
 int scamper_ctrl_isdone(scamper_ctrl_t *ctrl);
+int scamper_ctrl_remove(scamper_ctrl_t *ctrl, scamper_inst_t *inst);
 
 void *scamper_ctrl_param_get(const scamper_ctrl_t *ctrl);
 void scamper_ctrl_param_set(scamper_ctrl_t *ctrl, void *param);
@@ -75,7 +76,6 @@ const char *scamper_ctrl_strerror(const scamper_ctrl_t *ctrl);
 scamper_mux_t *scamper_mux_add(scamper_ctrl_t *ctrl, const char *path);
 scamper_mux_t *scamper_mux_add_inet(scamper_ctrl_t *ctrl, const char *ip,
 				    uint16_t port);
-void scamper_mux_free(scamper_mux_t *mux);
 
 /*
  * scamper_vpset_t functions:
@@ -147,7 +147,7 @@ scamper_vp_t *scamper_inst_vp_get(const scamper_inst_t *inst);
  *
  * functions for interacting with queued tasks.
  */
-void *scamper_task_param_get(scamper_task_t *task);
+void *scamper_task_param_get(const scamper_task_t *task);
 void scamper_task_param_set(scamper_task_t *task, void *p);
 char *scamper_task_cmd_get(scamper_task_t *task, char *buf, size_t len);
 void scamper_task_free(scamper_task_t *task);

@@ -1,7 +1,7 @@
 /*
- * scamper_file.c
+ * scamper_file.h
  *
- * $Id: scamper_file.h,v 1.46 2025/12/04 08:11:00 mjl Exp $
+ * $Id: scamper_file.h,v 1.47 2026/08/31 07:34:35 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -68,7 +68,6 @@ scamper_file_t *scamper_file_openfd(int fd, const char *fn, char mode,
 				    const char *type);
 scamper_file_t *scamper_file_opennull(char mode, const char *type);
 void scamper_file_close(scamper_file_t *sf);
-void scamper_file_free(scamper_file_t *sf);
 
 scamper_file_filter_t *scamper_file_filter_alloc(const uint16_t *types,
 						 uint16_t num);
@@ -142,7 +141,6 @@ const char *scamper_file_objtype_tostr(uint16_t type);
 char *scamper_file_getfilename(scamper_file_t *sf);
 
 int   scamper_file_geteof(const scamper_file_t *sf);
-void  scamper_file_seteof(scamper_file_t *sf);
 
 /* instead of calling read, call the supplied readfunc */
 void  scamper_file_setreadfunc(scamper_file_t *sf, void *param,
@@ -163,7 +161,6 @@ void  scamper_file_setwritefunc(scamper_file_t *sf, void *param,
 scamper_file_writefunc_t scamper_file_getwritefunc(const scamper_file_t *sf);
 void *scamper_file_getwriteparam(const scamper_file_t *sf);
 
-int   scamper_file_getfd(const scamper_file_t *sf);
 void *scamper_file_getstate(const scamper_file_t *sf);
 void  scamper_file_setstate(scamper_file_t *sf, void *state);
 

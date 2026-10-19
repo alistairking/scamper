@@ -1,9 +1,9 @@
 /*
  * scamper_trace_lib.c
  *
- * $Id: scamper_trace_lib.c,v 1.21 2025/10/19 19:23:21 mjl Exp $
+ * $Id: scamper_trace_lib.c,v 1.22 2026/08/21 18:57:22 mjl Exp $
  *
- * Copyright (C) 2023-2025 Matthew Luckie
+ * Copyright (C) 2023-2026 Matthew Luckie
  *
  * Authors: Matthew Luckie
  *
@@ -284,6 +284,11 @@ uint16_t scamper_trace_reply_icmp_q_ipl_get(const scamper_trace_reply_t *reply)
   return reply->reply_icmp_q_ipl;
 }
 
+uint16_t scamper_trace_reply_icmp_q_ipid_get(const scamper_trace_reply_t *reply)
+{
+  return reply->reply_icmp_q_ipid;
+}
+
 uint8_t scamper_trace_reply_tcp_flags_get(const scamper_trace_reply_t *reply)
 {
   return reply->reply_tcp_flags;
@@ -343,6 +348,11 @@ scamper_trace_probe_tx_get(const scamper_trace_probe_t *probe)
   return &probe->tx;
 }
 
+uint32_t scamper_trace_probe_flags_get(const scamper_trace_probe_t *probe)
+{
+  return probe->flags;
+}
+
 uint8_t scamper_trace_probe_id_get(const scamper_trace_probe_t *probe)
 {
   return probe->id;
@@ -356,6 +366,11 @@ uint8_t scamper_trace_probe_ttl_get(const scamper_trace_probe_t *probe)
 uint16_t scamper_trace_probe_size_get(const scamper_trace_probe_t *probe)
 {
   return probe->size;
+}
+
+uint16_t scamper_trace_probe_ipid_get(const scamper_trace_probe_t *probe)
+{
+  return probe->ipid;
 }
 
 uint8_t scamper_trace_type_get(const scamper_trace_t *trace)

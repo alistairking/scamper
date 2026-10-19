@@ -1,7 +1,7 @@
 /*
  * scamper_trace_int.h
  *
- * $Id: scamper_trace_int.h,v 1.21 2026/03/28 21:10:19 mjl Exp $
+ * $Id: scamper_trace_int.h,v 1.22 2026/08/21 18:57:22 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -304,6 +304,7 @@ struct scamper_trace_probe
   uint8_t                 id;
   uint8_t                 ttl;
   uint8_t                 flags;
+  uint16_t                ipid;
 
 #ifdef BUILDING_LIBSCAMPERFILE
   int                     refcnt;
@@ -345,6 +346,7 @@ struct scamper_trace_reply
       uint8_t                  icmp_q_tos;
       uint16_t                 icmp_q_ipl;
       uint16_t                 icmp_nhmtu;
+      uint16_t                 icmp_q_ipid;
     } icmp;
     struct reply_tcp
     {
@@ -372,6 +374,7 @@ struct scamper_trace_reply
 #define reply_icmp_q_ttl un.icmp.icmp_q_ttl
 #define reply_icmp_q_ipl un.icmp.icmp_q_ipl
 #define reply_icmp_q_tos un.icmp.icmp_q_tos
+#define reply_icmp_q_ipid un.icmp.icmp_q_ipid
 #define reply_icmp_nhmtu un.icmp.icmp_nhmtu
 #define reply_tcp_flags  un.tcp.tcp_flags
 

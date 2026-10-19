@@ -1,7 +1,7 @@
 /*
  * scamper_firewall.c
  *
- * $Id: scamper_firewall.c,v 1.64 2026/06/14 02:55:18 mjl Exp $
+ * $Id: scamper_firewall.c,v 1.71 2026/09/13 23:01:58 mjl Exp $
  *
  * Copyright (C) 2008-2011 The University of Waikato
  * Copyright (C) 2016-2026 Matthew Luckie
@@ -297,34 +297,83 @@ void scamper_firewall_ipfw_cleanup(void)
   return;
 }
 
+void *ipfw_make(int n, uint16_t cmdlen, socklen_t *sl, ipfw_insn **insn)
+{
+#if __FreeBSD_version >= 1500000
+  ip_fw3_opheader *fw = NULL;
+  struct ip_fw_rule *rule;
+  ipfw_obj_ctlv *ctlv;
+  size_t rulelen;
+#else
+  struct ip_fw *fw = NULL;
+#endif
+
+  /*
+   * build ip_fw struct
+   *
+   * note that the ip_fw struct has one member reserved for
+   * the first instruction, so that is not counted here
+   */
+#if __FreeBSD_version >= 1500000
+  rulelen = sizeof(struct ip_fw_rule) + ((cmdlen-1) * sizeof(uint32_t));
+  rulelen = (rulelen + sizeof(uint64_t) - 1) & ~(sizeof(uint64_t) - 1);
+  *sl = sizeof(ip_fw3_opheader) + sizeof(ipfw_obj_ctlv) + rulelen;
+#else
+  *sl = sizeof(struct ip_fw) + ((cmdlen-1) * sizeof(uint32_t));
+#endif
+
+  if((fw = malloc_zero(*sl)) == NULL)
+    return NULL;
+
+#if __FreeBSD_version >= 1500000
+  fw->opcode = IP_FW_XADD;
+  fw->version = IP_FW3_OPVER;
+  ctlv = (ipfw_obj_ctlv *)(fw + 1);
+  ctlv->head.type = IPFW_TLV_RULE_LIST;
+  ctlv->head.length = sizeof(ipfw_obj_ctlv) + rulelen;
+  ctlv->count = 1;
+  ctlv->objsize = rulelen;
+  rule = (struct ip_fw_rule *)(ctlv + 1);
+  rule->rulenum = n;
+  rule->flags = IPFW_RULE_NOOPT;
+  rule->act_ofs = cmdlen-1;
+  rule->cmd_len = cmdlen;
+  *insn = rule->cmd;
+#else
+#if defined(__APPLE__)
+  fw->version = IP_FW_CURRENT_API_VERSION;
+#endif
+
+  fw->rulenum = n;
+  fw->act_ofs = cmdlen-1;
+  fw->cmd_len = cmdlen;
+  *insn = fw->cmd;
+#endif
+
+  return fw;
+}
+
 #if __FreeBSD_version >= 600000
 static int ipfw_deny_ip6_ext6hdr_frag(int n, void *s, void *d)
 {
   struct ip_fw *fw = NULL;
   socklen_t sl;
-  uint16_t insnc;
+  uint16_t cmdlen;
   ipfw_insn_ip6 *insn_ip6;
   ipfw_insn *insn;
 
-  insnc = 1 + 5 + 1 + 1;
+  cmdlen = 1 + 5 + 1 + 1; /* O_IP6 + O_IP6_SRC + O_EXT_HDR + O_DENY */
 
   if(d != NULL)
-    insnc += 5;
+    cmdlen += 5; /* O_IP6_DST */
   else
-    insnc += 1;
+    cmdlen += 1; /* O_IP6_DST_ME */
 
-  sl = sizeof(struct ip_fw) + (insnc*4) - 4;
-
-  if((fw = malloc_zero(sl)) == NULL)
+  if((fw = ipfw_make(n, cmdlen, &sl, &insn)) == NULL)
     {
       printerror(__func__, "could not malloc ip_fw");
       goto err;
     }
-
-  fw->rulenum = n;
-  fw->act_ofs = insnc-1;
-  fw->cmd_len = insnc;
-  insn = fw->cmd;
 
   insn->opcode = O_IP6;
   insn->len    = 1;
@@ -358,7 +407,13 @@ static int ipfw_deny_ip6_ext6hdr_frag(int n, void *s, void *d)
   insn->opcode = O_DENY;
   insn->len    = 1;
 
-  if(getsockopt(fws, IPPROTO_IP, IP_FW_ADD, fw, &sl) != 0)
+  if(getsockopt(fws, IPPROTO_IP,
+#if __FreeBSD_version >= 1500000
+		IP_FW3,
+#else
+		IP_FW_ADD,
+#endif
+		fw, &sl) != 0)
     {
       printerror(__func__, "could not add rule");
       goto err;
@@ -377,54 +432,43 @@ int scamper_firewall_ipfw_add(int n,int af,int p,void *s,void *d,int sp,int dp)
 {
   ipfw_insn_u32 *insn_u32;
   ipfw_insn_u16 *insn_u16;
-  struct ip_fw *fw = NULL;
   ipfw_insn *insn;
   socklen_t sl;
-  size_t len;
+  uint16_t cmdlen;
 
 #if __FreeBSD_version >= 600000
   ipfw_insn_ip6 *insn_ip6;
 #endif
 
-  /*
-   * build ip_fw struct
-   *
-   * note that the ip_fw struct has one member reserved for
-   * the first instruction, so that is not counted here
-   */
-  len = 2 + 2 + 1; /* O_PROTO + O_IP_SRCPORT + O_IP_DSTPORT + O_DENY */
+#if __FreeBSD_version >= 1500000
+  ip_fw3_opheader *fw = NULL;
+#else
+  struct ip_fw *fw = NULL;
+#endif
+
+  cmdlen = 1 + 2 + 2 + 1; /* O_PROTO + O_IP_SRCPORT + O_IP_DSTPORT + O_DENY */
 
   if(af == AF_INET)
-    len += 2; /* O_IP_SRC */
+    cmdlen += 2; /* O_IP_SRC */
+#if __FreeBSD_version >= 600000
   else if(af == AF_INET6)
-    len += 5; /* O_IP6_SRC */
+    cmdlen += 5; /* O_IP6_SRC */
+#endif
   else
     goto err;
 
   if(d == NULL)
-    len += 1; /* O_IP_DST_ME -or- O_IP6_DST_ME */
+    cmdlen += 1; /* O_IP_DST_ME -or- O_IP6_DST_ME */
   else if(af == AF_INET)
-    len += 2; /* O_IP_DST */
-  else if(af == AF_INET6)
-    len += 5; /* O_IP6_DST */
+    cmdlen += 2; /* O_IP_DST */
   else
-    goto err;
+    cmdlen += 5; /* O_IP6_DST */
 
-  if((fw = malloc_zero(sizeof(struct ip_fw) + (len * 4))) == NULL)
+  if((fw = ipfw_make(n, cmdlen, &sl, &insn)) == NULL)
     {
-      printerror(__func__, "could not malloc ip_fw");
+      printerror(__func__, "could not malloc fw");
       goto err;
     }
-  sl = sizeof(struct ip_fw) + (len * 4);
-
-#if defined(__APPLE__)
-  fw->version = IP_FW_CURRENT_API_VERSION;
-#endif
-
-  fw->rulenum = n;
-  fw->act_ofs = len;
-  fw->cmd_len = len+1;
-  insn = fw->cmd;
 
   /* encode the O_PROTO parameter */
   insn->opcode = O_PROTO;
@@ -441,7 +485,7 @@ int scamper_firewall_ipfw_add(int n,int af,int p,void *s,void *d,int sp,int dp)
       insn->len    = 2;
     }
 #if __FreeBSD_version >= 600000
-  else if(af == AF_INET6)
+  else
     {
       insn_ip6 = (ipfw_insn_ip6 *)insn;
       memcpy(&insn_ip6->addr6, s, 16);
@@ -449,8 +493,6 @@ int scamper_firewall_ipfw_add(int n,int af,int p,void *s,void *d,int sp,int dp)
       insn->len    = 5;
     }
 #endif
-  else
-    goto err;
 
   insn += insn->len;
 
@@ -468,11 +510,9 @@ int scamper_firewall_ipfw_add(int n,int af,int p,void *s,void *d,int sp,int dp)
       if(af == AF_INET)
 	insn->opcode = O_IP_DST_ME;
 #if __FreeBSD_version >= 600000
-      else if(af == AF_INET6)
+      else
 	insn->opcode = O_IP6_DST_ME;
 #endif
-      else
-	goto err;
       insn->len = 1;
     }
   else if(af == AF_INET)
@@ -483,7 +523,7 @@ int scamper_firewall_ipfw_add(int n,int af,int p,void *s,void *d,int sp,int dp)
       insn->len    = 2;
     }
 #if __FreeBSD_version >= 600000
-  else if(af == AF_INET6)
+  else
     {
       insn_ip6 = (ipfw_insn_ip6 *)insn;
       memcpy(&insn_ip6->addr6, d, 16);
@@ -491,8 +531,7 @@ int scamper_firewall_ipfw_add(int n,int af,int p,void *s,void *d,int sp,int dp)
       insn->len    = 5;
     }
 #endif
-  else
-    goto err;
+
   insn += insn->len;
 
   /* encode the O_IP_DSTPORT parameter */
@@ -507,7 +546,13 @@ int scamper_firewall_ipfw_add(int n,int af,int p,void *s,void *d,int sp,int dp)
   insn->opcode = O_DENY;
   insn->len    = 1;
 
-  if(getsockopt(fws, IPPROTO_IP, IP_FW_ADD, fw, &sl) != 0)
+  if(getsockopt(fws, IPPROTO_IP,
+#if __FreeBSD_version >= 1500000
+		IP_FW3,
+#else
+		IP_FW_ADD,
+#endif
+		fw, &sl) != 0)
     {
       printerror(__func__, "could not add rule");
       goto err;
@@ -529,6 +574,24 @@ int scamper_firewall_ipfw_add(int n,int af,int p,void *s,void *d,int sp,int dp)
 
 int scamper_firewall_ipfw_del(int n, int af)
 {
+#if __FreeBSD_version >= 1500000
+  ipfw_range_header req;
+
+  memset(&req, 0, sizeof(req));
+  req.opheader.opcode = IP_FW_XDEL;
+  req.opheader.version = IP_FW3_OPVER;
+  req.range.head.type = IPFW_TLV_RANGE;
+  req.range.head.length = sizeof(req.range);
+  req.range.start_rule = n;
+  req.range.end_rule = n;
+  req.range.flags = IPFW_RCFLAG_RANGE;
+
+  if(setsockopt(fws, IPPROTO_IP, IP_FW3, &req, sizeof(req)) != 0)
+    {
+      printerror(__func__, "could not delete rule %d", n);
+      return -1;
+    }
+#else
   uint32_t rule = n;
 
   if(setsockopt(fws, IPPROTO_IP, IP_FW_DEL, &rule, sizeof(rule)) != 0)
@@ -536,6 +599,7 @@ int scamper_firewall_ipfw_del(int n, int af)
       printerror(__func__, "could not delete rule %d", n);
       return -1;
     }
+#endif
 
   return 0;
 }
@@ -952,7 +1016,7 @@ int scamper_firewall_pf_add(int n,int af,int p,void *s,void *d,int sp,int dp)
 
   memset(&pfr, 0, sizeof(pfr));
   strncpy(pfr.anchor, anchor, sizeof(pfr.anchor)-1);
-  pfte.anchor[sizeof(pfr.anchor)-1] = '\0';
+  pfr.anchor[sizeof(pfr.anchor)-1] = '\0';
   pfr.ticket = pfte.ticket;
   pfr.rule.af = af;
   pfr.rule.proto = p;
@@ -1121,71 +1185,6 @@ static int pf_init(char *opts)
 }
 #endif /* HAVE_PF */
 
-scamper_firewall_entry_t *scamper_firewall_entry_get(scamper_firewall_rule_t *sfw)
-{
-#if defined(HAVE_IPFW) || defined(HAVE_PF)
-  scamper_firewall_entry_t findme, *entry = NULL;
-
-  /* sanity check the rule */
-  if((sfw->sfw_5tuple_proto != IPPROTO_TCP &&
-      sfw->sfw_5tuple_proto != IPPROTO_UDP) ||
-      sfw->sfw_5tuple_sport == 0 ||
-      sfw->sfw_5tuple_dport == 0 ||
-     (sfw->sfw_5tuple_dst == NULL || sfw->sfw_5tuple_src == NULL ||
-      sfw->sfw_5tuple_src->type != sfw->sfw_5tuple_dst->type))
-    {
-      scamper_debug(__func__, "invalid 5tuple rule");
-      goto err;
-    }
-
-  findme.rule = sfw;
-  if((entry = splaytree_find(entries, &findme)) != NULL)
-    {
-      entry->refcnt++;
-      return entry;
-    }
-
-  if((entry = heap_remove(freeslots)) == NULL)
-    goto err;
-
-  entry->refcnt = 1;
-  if((entry->rule = firewall_rule_dup(sfw)) == NULL ||
-     (entry->node = splaytree_insert(entries, entry)) == NULL)
-    {
-      goto err;
-    }
-
-#ifdef HAVE_IPFW
-  if(ipfw_use != 0)
-    {
-      if(ipfw_add(entry->slot, sfw) != 0)
-	goto err;
-      return entry;
-    }
-#endif
-
-#ifdef HAVE_PF
-  if(pf_use != 0)
-    {
-      if(pf_add(entry->slot, sfw) != 0)
-	goto err;
-      return entry;
-    }
-#endif
-
- err:
-  if(entry != NULL)
-    {
-      if(entry->rule != NULL)
-	firewall_rule_free(entry->rule);
-      free(entry);
-    }
-
-#endif /* HAVE_IPFW || HAVE_PF */
-
-  return NULL;
-}
-
 #if defined(HAVE_IPFW) || defined(HAVE_PF)
 static int firewall_rule_delete(scamper_firewall_entry_t *entry)
 {
@@ -1214,6 +1213,7 @@ static int firewall_rule_delete(scamper_firewall_entry_t *entry)
       printerror(__func__, "could not add entry %d", entry->slot);
       return -1;
     }
+  entry->refcnt = 0;
 
   /* free up the firewall rule associated with the entry */
   firewall_rule_free(entry->rule);
@@ -1222,6 +1222,80 @@ static int firewall_rule_delete(scamper_firewall_entry_t *entry)
   return 0;
 }
 #endif
+
+scamper_firewall_entry_t *scamper_firewall_entry_get(scamper_firewall_rule_t *sfw)
+{
+#if defined(HAVE_IPFW) || defined(HAVE_PF)
+  scamper_firewall_entry_t findme, *entry = NULL;
+
+  /* sanity check the rule */
+  if((sfw->sfw_5tuple_proto != IPPROTO_TCP &&
+      sfw->sfw_5tuple_proto != IPPROTO_UDP) ||
+      sfw->sfw_5tuple_sport == 0 ||
+      sfw->sfw_5tuple_dport == 0 ||
+     (sfw->sfw_5tuple_dst == NULL || sfw->sfw_5tuple_src == NULL ||
+      sfw->sfw_5tuple_src->type != sfw->sfw_5tuple_dst->type))
+    {
+      scamper_debug(__func__, "invalid 5tuple rule");
+      goto err;
+    }
+
+  /* there is already this rule in the firewall, return a reference to it */
+  findme.rule = sfw;
+  if((entry = splaytree_find(entries, &findme)) != NULL)
+    {
+      entry->refcnt++;
+      return entry;
+    }
+
+  if((entry = heap_remove(freeslots)) == NULL)
+    {
+      scamper_debug(__func__, "no available rule");
+      goto err;
+    }
+
+  entry->refcnt = 1;
+  if((entry->rule = firewall_rule_dup(sfw)) == NULL)
+    {
+      printerror(__func__, "could not dup rule");
+      goto err;
+    }
+
+#ifdef HAVE_IPFW
+  if(ipfw_use != 0)
+    {
+      if(ipfw_add(entry->slot, sfw) != 0)
+	goto err;
+      goto done;
+    }
+#endif
+
+#ifdef HAVE_PF
+  if(pf_use != 0)
+    {
+      if(pf_add(entry->slot, sfw) != 0)
+	goto err;
+      goto done;
+    }
+#endif
+
+ done:
+  if((entry->node = splaytree_insert(entries, entry)) == NULL)
+    {
+      scamper_debug(__func__, "could not insert firewall rule");
+      goto err;
+    }
+
+  return entry;
+
+ err:
+  if(entry != NULL)
+    firewall_rule_delete(entry);
+
+#endif /* HAVE_IPFW || HAVE_PF */
+
+  return NULL;
+}
 
 void scamper_firewall_entry_free(scamper_firewall_entry_t *entry)
 {

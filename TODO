@@ -1,4 +1,4 @@
-$Id: TODO,v 1.47 2026/01/15 19:25:46 mjl Exp $
+$Id: TODO,v 1.51 2026/09/19 20:46:21 mjl Exp $
 
 * compile without warnings when the following is passed in CFLAGS
   -Wall -Wno-unneeded-internal-declaration -Wno-unused-const-variable
@@ -13,12 +13,12 @@ $Id: TODO,v 1.47 2026/01/15 19:25:46 mjl Exp $
 
 * try alternate nameserver entries if the first is unresponsive.
 
-* convert sc_erosprober, sc_radargun, sc_tbitblind, sc_tbitpmtud, and
-  sc_uptime to libscamperctrl
+* convert sc_erosprober to libscamperctrl
 
 * in data collection drivers, ask for cycle start and stop records,
   write them out.  done: sc_ally, sc_filterpolicy, sc_pinger,
-  sc_prefixprober, sc_prefixscan, sc_speedtrap
+  sc_prefixprober, sc_prefixscan, sc_radargun, sc_speedtrap,
+  sc_tbitblind, sc_tbitpmtud, sc_uptime
 
 * libscamperctrl:
    unit tests

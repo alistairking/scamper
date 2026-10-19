@@ -2,7 +2,7 @@
 #
 # Author: Matthew Luckie
 #
-# Copyright (C) 2023-2025 The Regents of the University of California
+# Copyright (C) 2023-2026 The Regents of the University of California
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -61,6 +61,7 @@ cdef extern from "scamper_trace.h":
  cdef uint8_t  SCAMPER_TRACE_TYPE_ICMP_ECHO_PARIS
  cdef uint32_t SCAMPER_TRACE_FLAG_RXERR
  cdef uint8_t  SCAMPER_TRACE_REPLY_FLAG_REPLY_TTL
+ cdef uint8_t  SCAMPER_TRACE_REPLY_FLAG_PQ_IPID
 
  cdef uint8_t  SCAMPER_TRACE_STOP_NONE
  cdef uint8_t  SCAMPER_TRACE_STOP_COMPLETED
@@ -129,9 +130,11 @@ cdef extern from "scamper_trace.h":
 
  scamper_trace_probe_t *scamper_trace_probe_use(scamper_trace_probe_t *probe)
  void scamper_trace_probe_free(scamper_trace_probe_t *probe)
+ uint32_t scamper_trace_probe_flags_get(const scamper_trace_probe_t *probe)
  uint8_t scamper_trace_probe_id_get(const scamper_trace_probe_t *probe)
  uint8_t scamper_trace_probe_ttl_get(const scamper_trace_probe_t *probe)
  uint16_t scamper_trace_probe_size_get(const scamper_trace_probe_t *probe)
+ uint16_t scamper_trace_probe_ipid_get(const scamper_trace_probe_t *probe)
  const timeval *scamper_trace_probe_tx_get(const scamper_trace_probe_t *probe)
 
  scamper_trace_reply_t *scamper_trace_reply_use(scamper_trace_reply_t *reply)
@@ -158,6 +161,7 @@ cdef extern from "scamper_trace.h":
  uint8_t scamper_trace_reply_icmp_q_ttl_get(const scamper_trace_reply_t *reply)
  uint8_t scamper_trace_reply_icmp_q_tos_get(const scamper_trace_reply_t *reply)
  uint16_t scamper_trace_reply_icmp_q_ipl_get(const scamper_trace_reply_t *reply)
+ uint16_t scamper_trace_reply_icmp_q_ipid_get(const scamper_trace_reply_t *reply)
  uint8_t scamper_trace_reply_tcp_flags_get(const scamper_trace_reply_t *reply)
  scamper_icmpexts_t *scamper_trace_reply_icmp_exts_get(const scamper_trace_reply_t *reply)
 

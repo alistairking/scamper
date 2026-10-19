@@ -8,7 +8,7 @@
  * Copyright (C) 2015-2026 Matthew Luckie
  * Author: Matthew Luckie
  *
- * $Id: scamper_trace_warts.c,v 1.65 2026/07/11 20:35:29 mjl Exp $
+ * $Id: scamper_trace_warts.c,v 1.66 2026/08/21 18:57:22 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -210,6 +210,7 @@ static const warts_var_t trace_dtree_vars[] =
 #define WARTS_TRACE_HOP_ADDR         18      /* address */
 #define WARTS_TRACE_HOP_TX           19      /* transmit time */
 #define WARTS_TRACE_HOP_NAME         20      /* name for IP address */
+#define WARTS_TRACE_HOP_PQ_IPID      21      /* ip->id from probe/quoted pkt */
 
 static const warts_var_t hop_vars[] =
 {
@@ -233,6 +234,7 @@ static const warts_var_t hop_vars[] =
   {WARTS_TRACE_HOP_ADDR,        -1},
   {WARTS_TRACE_HOP_TX,           8},
   {WARTS_TRACE_HOP_NAME,        -1},
+  {WARTS_TRACE_HOP_PQ_IPID,     -1},
 };
 #define hop_vars_mfb WARTS_VAR_MFB(hop_vars)
 
@@ -567,6 +569,110 @@ static void warts_trace_hop_write_icmpext(uint8_t *buf, uint32_t *off,
   return;
 }
 
+static int warts_trace_hop_pq_ipid_size(const scamper_trace_probe_t *probe,
+					const scamper_trace_reply_t *reply,
+					uint16_t *len)
+{
+  uint16_t s;
+  if((reply->flags & SCAMPER_TRACE_REPLY_FLAG_PQ_IPID) == 0 ||
+     probe->ipid == reply->reply_icmp_q_ipid ||
+     probe->ipid == byteswap16(reply->reply_icmp_q_ipid))
+    s = 3;
+  else
+    s = 5;
+  if(uint16_wouldwrap(*len, s))
+    return -1;
+  *len += s;
+  return 0;
+}
+
+static void warts_trace_hop_write_pq_ipid(uint8_t *buf, uint32_t *off,
+					  uint32_t len,
+					  scamper_trace_reply_t *reply,
+					  scamper_trace_probe_t *probe)
+{
+  uint8_t type;
+
+  if((reply->flags & SCAMPER_TRACE_REPLY_FLAG_PQ_IPID) == 0 ||
+     probe->ipid == reply->reply_icmp_q_ipid ||
+     probe->ipid == byteswap16(reply->reply_icmp_q_ipid))
+    {
+      assert(len - *off >= 3);
+      if((reply->flags & SCAMPER_TRACE_REPLY_FLAG_PQ_IPID) == 0)
+	type = 1;
+      else if(probe->ipid == reply->reply_icmp_q_ipid)
+	type = 2;
+      else
+	type = 3;
+    }
+  else
+    {
+      assert(len - *off >= 5);
+      type = 4;
+    }
+  
+  insert_byte(buf, off, len, &type, NULL);
+  insert_uint16(buf, off, len, &probe->ipid, NULL);
+  if(type == 4)
+    insert_uint16(buf, off, len, &reply->reply_icmp_q_ipid, NULL);
+
+  return;
+}
+
+static int warts_trace_hop_read_pq_ipid(const uint8_t *buf, uint32_t *off,
+					uint32_t len, uint8_t *out,
+					uint8_t *set)
+{
+  uint8_t type;
+  uint32_t s;
+  if(len - *off < 3)
+    return -1;
+  type = buf[*off];
+  if(type == 4)
+    {
+      if(len - *off < 5)
+	return -1;
+      s = 5;
+    }
+  else if(type >= 1 && type <= 3)
+    s = 3;
+  else
+    return -1;
+
+  memcpy(out, buf + *off, s);
+  (*off) += s;
+  *set = 1;
+  return 0;
+}
+
+static int warts_trace_hop_parse_pq_ipid(scamper_trace_probe_t *probe,
+					 scamper_trace_reply_t *reply,
+					 const uint8_t *buf)
+{
+  uint8_t type = buf[0];
+  uint32_t off = 1;
+  if(extract_uint16(buf, &off, 5, &probe->ipid, NULL) != 0)
+    return -1;
+  probe->flags |= SCAMPER_TRACE_REPLY_FLAG_PQ_IPID;
+  if(type == 1)
+    return 0;
+  if(type >= 2 && type <= 4)
+    {
+      reply->flags |= SCAMPER_TRACE_REPLY_FLAG_PQ_IPID;
+      if(type == 2)
+	reply->reply_icmp_q_ipid = probe->ipid;
+      else if(type == 3)
+	reply->reply_icmp_q_ipid = byteswap16(probe->ipid);
+      else
+	{
+	  off = 3;
+	  extract_uint16(buf, &off, 5, &reply->reply_icmp_q_ipid, NULL);
+	}
+      return 0;
+    }
+  return -1;
+}
+
 static int warts_trace_hop_params(const scamper_trace_t *trace,
 				  const scamper_trace_probe_t *probe,
 				  const scamper_trace_reply_t *reply,
@@ -605,8 +711,10 @@ static int warts_trace_hop_params(const scamper_trace_t *trace,
 	 (var->id == WARTS_TRACE_HOP_ICMPEXT && reply->icmp_exts == NULL) ||
 	 (var->id == WARTS_TRACE_HOP_REPLY_IPID && reply->ipid == 0) ||
 	 (var->id == WARTS_TRACE_HOP_TX && probe->tx.tv_sec == 0) ||
-	 (var->id == WARTS_TRACE_HOP_NAME && reply->name == NULL))
-	continue;
+	 (var->id == WARTS_TRACE_HOP_NAME && reply->name == NULL) ||
+	 (var->id == WARTS_TRACE_HOP_PQ_IPID &&
+	  (probe->flags & SCAMPER_TRACE_REPLY_FLAG_PQ_IPID) == 0))
+	 continue;
 
       flag_set(flags, var->id, &max_id);
 
@@ -623,6 +731,11 @@ static int warts_trace_hop_params(const scamper_trace_t *trace,
       else if(var->id == WARTS_TRACE_HOP_NAME)
 	{
 	  if(warts_str_size(reply->name, params_len) != 0)
+	    return -1;
+	}
+      else if(var->id == WARTS_TRACE_HOP_PQ_IPID)
+	{
+	  if(warts_trace_hop_pq_ipid_size(probe, reply, params_len) != 0)
 	    return -1;
 	}
       else
@@ -682,7 +795,8 @@ static int warts_trace_hop_read_int(slist_t *probes, trace_hop_t *hop,
 {
   scamper_trace_reply_t *reply = hop->reply;
   struct timeval probe_tx;
-  uint8_t probe_ttl = 0, probe_id = 0, qttl_set = 0, qipl_set = 0;
+  uint8_t probe_ttl = 0, probe_id = 0, qttl_set = 0, qipl_set = 0, ipid_set = 0;
+  uint8_t ipid[5];
   uint16_t probe_size = 0;
   warts_param_reader_t handlers[] = {
     {&reply->addr,             (wpr_t)extract_addr_gid,              state},
@@ -705,6 +819,7 @@ static int warts_trace_hop_read_int(slist_t *probes, trace_hop_t *hop,
     {&reply->addr,             (wpr_t)extract_addr,                  table},
     {&probe_tx,                (wpr_t)extract_timeval,               NULL},
     {&reply->name,             (wpr_t)extract_string,                NULL},
+    {ipid,                     (wpr_t)warts_trace_hop_read_pq_ipid, &ipid_set},
   };
   const int handler_cnt = sizeof(handlers)/sizeof(warts_param_reader_t);
   scamper_trace_probe_t *probe;
@@ -746,6 +861,9 @@ static int warts_trace_hop_read_int(slist_t *probes, trace_hop_t *hop,
 	reply->reply_icmp_q_ipl = probe->size;
     }
 
+  if(ipid_set != 0)
+    warts_trace_hop_parse_pq_ipid(probe, reply, ipid);
+
   return 0;
 }
 
@@ -770,11 +888,12 @@ static void warts_trace_hop_write(const warts_trace_hop_t *state,
 {
   scamper_trace_reply_t *reply = state->reply;
   scamper_trace_probe_t *probe = state->probe;
+  uint8_t flags = reply->flags & (~SCAMPER_TRACE_REPLY_FLAG_PQ_IPID);
   warts_param_writer_t handlers[] = {
     {NULL,                     NULL,                                  NULL},
     {&probe->ttl,              (wpw_t)insert_byte,                    NULL},
     {&reply->ttl,              (wpw_t)insert_byte,                    NULL},
-    {&reply->flags,            (wpw_t)insert_byte,                    NULL},
+    {&flags,                   (wpw_t)insert_byte,                    NULL},
     {&probe->id,               (wpw_t)warts_trace_hop_write_probe_id, NULL},
     {&reply->rtt,              (wpw_t)insert_rtt,                     NULL},
     {reply,                    (wpw_t)warts_trace_hop_write_icmp_tc,  NULL},
@@ -791,6 +910,7 @@ static void warts_trace_hop_write(const warts_trace_hop_t *state,
     {reply->addr,              (wpw_t)insert_addr,                    table},
     {&probe->tx,               (wpw_t)insert_timeval,                 NULL},
     {reply->name,              (wpw_t)insert_string,                  NULL},
+    {reply,                    (wpw_t)warts_trace_hop_write_pq_ipid,  probe},
   };
   const int handler_cnt = sizeof(handlers)/sizeof(warts_param_writer_t);
   warts_params_write(buf, off, len, state->flags, state->flags_len,
