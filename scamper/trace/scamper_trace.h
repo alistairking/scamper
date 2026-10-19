@@ -1,7 +1,7 @@
 /*
  * scamper_trace.h
  *
- * $Id: scamper_trace.h,v 1.182 2026/03/29 02:52:18 mjl Exp $
+ * $Id: scamper_trace.h,v 1.183 2026/08/21 18:57:22 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -72,10 +72,11 @@
 #define SCAMPER_TRACE_REPLY_FLAG_TS_SOCK_RX 0x01 /* socket rx timestamp */
 #define SCAMPER_TRACE_REPLY_FLAG_TS_DL_TX   0x02 /* datalink tx timestamp */
 #define SCAMPER_TRACE_REPLY_FLAG_TS_DL_RX   0x04 /* datalink rx timestamp */
-#define SCAMPER_TRACE_REPLY_FLAG_PENDING    0x80 /* response pending */
+#define SCAMPER_TRACE_REPLY_FLAG_PQ_IPID    0x08 /* probe/quote ipid included */
 #define SCAMPER_TRACE_REPLY_FLAG_REPLY_TTL  0x10 /* reply ttl included */
 #define SCAMPER_TRACE_REPLY_FLAG_TCP        0x20 /* reply is TCP */
 #define SCAMPER_TRACE_REPLY_FLAG_UDP        0x40 /* reply is UDP */
+#define SCAMPER_TRACE_REPLY_FLAG_PENDING    0x80 /* response pending */
 
 #define SCAMPER_TRACE_PMTUD_NOTE_TYPE_PTB      1
 #define SCAMPER_TRACE_PMTUD_NOTE_TYPE_PTB_BAD  2
@@ -169,10 +170,12 @@ void scamper_trace_probe_free(scamper_trace_probe_t *probe);
 scamper_trace_reply_t *scamper_trace_probe_reply_get(const scamper_trace_probe_t *probe, uint16_t i);
 int scamper_trace_probe_reply_add(scamper_trace_probe_t *probe,
 				  scamper_trace_reply_t *reply);
+uint32_t scamper_trace_probe_flags_get(const scamper_trace_probe_t *probe);
 const struct timeval *scamper_trace_probe_tx_get(const scamper_trace_probe_t *probe);
 uint8_t scamper_trace_probe_id_get(const scamper_trace_probe_t *probe);
 uint8_t scamper_trace_probe_ttl_get(const scamper_trace_probe_t *probe);
 uint16_t scamper_trace_probe_size_get(const scamper_trace_probe_t *probe);
+uint16_t scamper_trace_probe_ipid_get(const scamper_trace_probe_t *probe);
 
 /* use and free reply structures */
 scamper_trace_reply_t *scamper_trace_reply_dup(const scamper_trace_reply_t *reply);
@@ -206,6 +209,7 @@ uint16_t scamper_trace_reply_icmp_nhmtu_get(const scamper_trace_reply_t *reply);
 uint8_t scamper_trace_reply_icmp_q_ttl_get(const scamper_trace_reply_t *reply);
 uint8_t scamper_trace_reply_icmp_q_tos_get(const scamper_trace_reply_t *reply);
 uint16_t scamper_trace_reply_icmp_q_ipl_get(const scamper_trace_reply_t *reply);
+uint16_t scamper_trace_reply_icmp_q_ipid_get(const scamper_trace_reply_t *reply);
 uint8_t scamper_trace_reply_tcp_flags_get(const scamper_trace_reply_t *reply);
 
 #ifdef __SCAMPER_ICMPEXT_H

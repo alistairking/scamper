@@ -7,7 +7,7 @@
  * Copyright (C) 2016-2026 Matthew Luckie
  * Author: Matthew Luckie
  *
- * $Id: scamper_ping_warts.c,v 1.44 2026/07/11 20:42:06 mjl Exp $
+ * $Id: scamper_ping_warts.c,v 1.46 2026/08/31 19:06:46 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -79,6 +79,7 @@
 #define WARTS_PING_ADDR_RTR       32
 #define WARTS_PING_PROBE_TIMEOUT_US 33
 #define WARTS_PING_ERRMSG         34
+#define WARTS_PING_PROBE_TCPMSS   35
 
 static const warts_var_t ping_vars[] =
 {
@@ -116,6 +117,7 @@ static const warts_var_t ping_vars[] =
   {WARTS_PING_ADDR_RTR,         -1},
   {WARTS_PING_PROBE_TIMEOUT_US,  4},
   {WARTS_PING_ERRMSG,           -1},
+  {WARTS_PING_PROBE_TCPMSS,      2},
 };
 #define ping_vars_mfb WARTS_VAR_MFB(ping_vars)
 
@@ -140,6 +142,7 @@ static const warts_var_t ping_vars[] =
 #define WARTS_PING_REPLY_REPLY_IPTOS     19
 #define WARTS_PING_REPLY_IFNAME          20
 #define WARTS_PING_REPLY_ICMP_NHMTU      21
+#define WARTS_PING_REPLY_TCP_MSS         22
 
 static const warts_var_t ping_reply_vars[] =
 {
@@ -164,6 +167,7 @@ static const warts_var_t ping_reply_vars[] =
   {WARTS_PING_REPLY_REPLY_IPTOS,     1},
   {WARTS_PING_REPLY_IFNAME,         -1},
   {WARTS_PING_REPLY_ICMP_NHMTU,      2},
+  {WARTS_PING_REPLY_TCP_MSS,         2},
 };
 #define ping_reply_vars_mfb WARTS_VAR_MFB(ping_reply_vars)
 
@@ -359,7 +363,8 @@ static int warts_ping_reply_params(const scamper_ping_t *ping,
 	 (var->id == WARTS_PING_REPLY_REPLY_IPTOS && reply->tos == 0) ||
 	 (var->id == WARTS_PING_REPLY_IFNAME && reply->ifname == NULL) ||
 	 (var->id == WARTS_PING_REPLY_ICMP_NHMTU &&
-	  SCAMPER_PING_REPLY_IS_ICMP_PTB(reply) == 0))
+	  SCAMPER_PING_REPLY_IS_ICMP_PTB(reply) == 0) ||
+	 (var->id == WARTS_PING_REPLY_TCP_MSS && reply->tcp_mss == 0))
 	{
 	  continue;
 	}
@@ -485,6 +490,7 @@ static int warts_ping_reply_read_int(const scamper_ping_t *ping,
     {&reply->tos,             (wpr_t)extract_byte,                 NULL},
     {&reply->ifname,          (wpr_t)extract_ifname,               ifntable},
     {&reply->icmp_nhmtu,      (wpr_t)extract_uint16,               NULL},
+    {&reply->tcp_mss,         (wpr_t)extract_uint16,               NULL},
   };
   const int handler_cnt = sizeof(handlers) / sizeof(warts_param_reader_t);
   scamper_ping_probe_t *probe = NULL;
@@ -585,6 +591,7 @@ static void warts_ping_reply_write(const warts_ping_reply_t *state,
     {&reply->tos,             (wpw_t)insert_byte,                   NULL},
     {reply->ifname,           (wpw_t)insert_ifname,                 ifntable},
     {&reply->icmp_nhmtu,      (wpw_t)insert_uint16,                 NULL},
+    {&reply->tcp_mss,         (wpw_t)insert_uint16,                 NULL},
   };
   const int handler_cnt = sizeof(handlers) / sizeof(warts_param_writer_t);
 
@@ -635,7 +642,8 @@ static int warts_ping_params(const scamper_ping_t *ping,
 	  (ping->icmpsum == 0 || (ping->flags & SCAMPER_PING_FLAG_ICMPSUM) == 0)) ||
 	 (var->id == WARTS_PING_DATA_BYTES    && ping->datalen == 0) ||
 	 (var->id == WARTS_PING_PROBE_TSPS    && ping->tsps == NULL) ||
-	 (var->id == WARTS_PING_ERRMSG        && ping->errmsg == NULL))
+	 (var->id == WARTS_PING_ERRMSG        && ping->errmsg == NULL) ||
+	 (var->id == WARTS_PING_PROBE_TCPMSS  && ping->tcpmss == 0))
 	{
 	  continue;
 	}
@@ -770,6 +778,7 @@ static int warts_ping_params_read(scamper_ping_t *ping, warts_state_t *state,
     {&ping->rtr,           (wpr_t)extract_addr_static,     NULL},
     {&wait_timeout_usec,   (wpr_t)extract_uint32,          NULL},
     {&ping->errmsg,        (wpr_t)extract_string,          NULL},
+    {&ping->tcpmss,        (wpr_t)extract_uint16,          NULL},
   };
   const int handler_cnt = sizeof(handlers)/sizeof(warts_param_reader_t);
   int rc;
@@ -843,6 +852,7 @@ static int warts_ping_params_write(const scamper_ping_t *ping,
     {ping->rtr,            (wpw_t)insert_addr_static,     NULL},
     {&wait_timeout_usec,   (wpw_t)insert_uint32,          NULL},
     {ping->errmsg,         (wpw_t)insert_string,          NULL},
+    {&ping->tcpmss,        (wpw_t)insert_uint16,          NULL},
   };
 
   const int handler_cnt = sizeof(handlers)/sizeof(warts_param_writer_t);

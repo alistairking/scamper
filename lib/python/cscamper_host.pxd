@@ -2,7 +2,7 @@
 #
 # Author: Matthew Luckie
 #
-# Copyright (C) 2023-2025 The Regents of the University of California
+# Copyright (C) 2023-2026 The Regents of the University of California
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -85,6 +85,8 @@ cdef extern from "scamper_host.h":
  uint8_t scamper_host_qcount_get(const scamper_host_t *host)
  const char *scamper_host_ecs_get(const scamper_host_t *host)
  const char *scamper_host_errmsg_get(const scamper_host_t *host)
+ uint8_t scamper_host_mqtypec_get(const scamper_host_t *host)
+ uint16_t scamper_host_mqtypes_get(const scamper_host_t *host, uint8_t i)
 
  scamper_host_query_t *scamper_host_query_get(const scamper_host_t *host, uint8_t i)
  scamper_host_query_t *scamper_host_query_use(scamper_host_query_t *q)

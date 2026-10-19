@@ -6,13 +6,13 @@
 .\"
 .\" Copyright (c) 2007-2011 University of Waikato
 .\" Copyright (c) 2012-2015 The Regents of the University of California
-.\" Copyright (c) 2015-2025 Matthew Luckie
+.\" Copyright (c) 2015-2026 Matthew Luckie
 .\" Copyright (c) 2024-2026 The Regents of the University of California
 .\"                         All rights reserved
 .\"
-.\" $Id: scamper.1,v 1.164 2026/03/30 00:11:22 mjl Exp $
+.\" $Id: scamper.1,v 1.165 2026/09/02 02:12:32 mjl Exp $
 .\"
-.Dd March 30, 2026
+.Dd September 2, 2026
 .Dt SCAMPER 1
 .Os
 .\""""""""""""
@@ -930,6 +930,10 @@ NSID OPT record in the response.
 .Sy ecs=subnet:
 specifies that the query should embed the specified subnet in an
 EDNS-client-subnet (ECS) option.
+.It
+.Sy mqtypes=csqt:
+specifies that the query should embed the specified additional
+comma-separated qtypes in a MQTYPE-Query option.
 .El
 .It Fl R Ar retry-count
 specifies the number of retries until giving up.

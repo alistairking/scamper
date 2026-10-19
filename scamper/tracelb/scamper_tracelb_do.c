@@ -1,7 +1,7 @@
 /*
  * scamper_tracelb_do.c
  *
- * $Id: scamper_tracelb_do.c,v 1.340 2026/07/11 03:42:44 mjl Exp $
+ * $Id: scamper_tracelb_do.c,v 1.342 2026/07/25 02:06:29 mjl Exp $
  *
  * Copyright (C) 2008-2011 The University of Waikato
  * Copyright (C) 2012      The Regents of the University of California
@@ -3889,7 +3889,7 @@ static void tracelb_state_free(scamper_tracelb_t *trace,tracelb_state_t *state)
 
   /* free the address tree */
   if(state->addrs != NULL)
-    splaytree_free(state->addrs, (splaytree_free_t)scamper_addr_free);
+    splaytree_free(state->addrs, scamper_addr_free_thunk);
 
 #ifndef DISABLE_SCAMPER_HOST
   /* free any outstanding ptr requests */
@@ -4015,7 +4015,7 @@ static int tracelb_state_alloc(scamper_task_t *task, scamper_err_t *error)
   assert(trace != NULL);
 
   if((state = malloc_zero(sizeof(tracelb_state_t))) == NULL ||
-     (state->addrs=splaytree_alloc((splaytree_cmp_t)scamper_addr_cmp)) == NULL||
+     (state->addrs=splaytree_alloc(scamper_addr_cmp_thunk)) == NULL||
      (state->active=heap_alloc((heap_cmp_t)tracelb_branch_active_cmp)) == NULL||
      (state->waiting=heap_alloc((heap_cmp_t)tracelb_branch_waiting_cmp))==NULL||
      (branch = malloc_zero(sizeof(tracelb_branch_t))) == NULL)

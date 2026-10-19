@@ -2,7 +2,7 @@
 #
 # Author: Matthew Luckie
 #
-# Copyright (C) 2023-2024 The Regents of the University of California
+# Copyright (C) 2023-2026 The Regents of the University of California
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -18,6 +18,12 @@ from posix.time cimport timeval
 
 cdef extern from "scamper_addr.h":
  ctypedef struct scamper_addr_t:
+  pass
+
+cdef extern from "scamper_icmpext.h":
+ ctypedef struct scamper_icmpext_t:
+  pass
+ ctypedef struct scamper_icmpexts_t:
   pass
 
 cdef extern from "scamper_list.h":
@@ -130,7 +136,7 @@ cdef extern from "scamper_dealias.h":
  scamper_dealias_probedef_t *scamper_dealias_bump_def0_get(const scamper_dealias_bump_t *bump)
  scamper_dealias_probedef_t *scamper_dealias_bump_def1_get(const scamper_dealias_bump_t *bump)
  const timeval *scamper_dealias_bump_wait_probe_get(const scamper_dealias_bump_t *bump)
- const timeval *scamper_dealias_bump_limit_get(const scamper_dealias_bump_t *bump)
+ uint16_t scamper_dealias_bump_limit_get(const scamper_dealias_bump_t *bump)
  uint8_t scamper_dealias_bump_attempts_get(const scamper_dealias_bump_t *bump)
 
  scamper_dealias_probedef_t *scamper_dealias_midarest_def_get(const scamper_dealias_midarest_t *me, uint16_t i)
@@ -212,6 +218,7 @@ cdef extern from "scamper_dealias.h":
  uint8_t scamper_dealias_reply_tcp_flags_get(const scamper_dealias_reply_t *reply)
  uint16_t scamper_dealias_reply_ipid_get(const scamper_dealias_reply_t *reply)
  uint32_t scamper_dealias_reply_ipid32_get(const scamper_dealias_reply_t *reply)
+ scamper_icmpexts_t *scamper_dealias_reply_icmp_exts_get(const scamper_dealias_reply_t *reply)
  bint scamper_dealias_reply_is_ipid32(const scamper_dealias_reply_t *reply)
  bint scamper_dealias_reply_is_icmp(const scamper_dealias_reply_t *reply)
  bint scamper_dealias_reply_is_icmp_q(const scamper_dealias_reply_t *reply)

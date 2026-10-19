@@ -1,12 +1,12 @@
 /*
  * unit_cmd_host : unit tests for host commands
  *
- * $Id: unit_cmd_host.c,v 1.9 2025/09/27 00:14:34 mjl Exp $
+ * $Id: unit_cmd_host.c,v 1.10 2026/09/02 02:25:23 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
  *
- * Copyright (C) 2023-2025 Matthew Luckie
+ * Copyright (C) 2023-2026 Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -209,6 +209,24 @@ static int v6_doesnotexist_nsid(const scamper_host_t *in)
   return 0;
 }
 
+static int example_com_mqtypes(const scamper_host_t *in)
+{
+  const char *qname;
+
+  if(in == NULL ||
+     check_addr(scamper_host_dst_get(in), "192.0.2.1") != 0 ||
+     (qname = scamper_host_qname_get(in)) == NULL ||
+     strcmp(qname, "example.com") != 0 ||
+     scamper_host_qclass_get(in) != SCAMPER_HOST_CLASS_IN ||
+     scamper_host_qtype_get(in) != SCAMPER_HOST_TYPE_MX ||
+     scamper_host_mqtypec_get(in) != 2 ||
+     scamper_host_mqtypes_get(in, 0) != SCAMPER_HOST_TYPE_A ||
+     scamper_host_mqtypes_get(in, 1) != SCAMPER_HOST_TYPE_AAAA)
+    return -1;
+
+  return 0;
+}
+
 static int check(const char *cmd, int (*func)(const scamper_host_t *in))
 {
   scamper_host_t *host;
@@ -277,6 +295,7 @@ int main(int argc, char *argv[])
     {"-s 2001:DB8::1 ..example.com.", isnull},
     {"-s 2001:DB8::1 ..example.com", isnull},
     {"-s 192.0.2.1 example.com.", example_com_a},
+    {"-s 192.0.2.1 -t mx -O mqtypes=a,aaaa example.com", example_com_mqtypes},
   };
   size_t i, testc = sizeof(tests) / sizeof(sc_test_t);
   char filename[128];

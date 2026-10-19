@@ -1,7 +1,7 @@
 /*
  * sc_wartsdump
  *
- * $Id: sc_wartsdump.c,v 1.336 2026/07/08 07:10:29 mjl Exp $
+ * $Id: sc_wartsdump.c,v 1.339 2026/09/02 03:34:29 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -178,7 +178,7 @@ static void dump_trace_hop(const scamper_trace_t *trace,
   const scamper_icmpext_t *ie;
   struct timeval tv;
   const char *str;
-  uint32_t u32, hop_flags;
+  uint32_t u32, hop_flags, probe_flags;
   uint16_t i, m, mplsc;
   uint8_t u8;
   char buf[256];
@@ -192,6 +192,7 @@ static void dump_trace_hop(const scamper_trace_t *trace,
 
   printf(" attempt: %d", scamper_trace_probe_id_get(probe));
   tx = scamper_trace_probe_tx_get(probe);
+  probe_flags = scamper_trace_probe_flags_get(probe);
   if(tx->tv_sec != 0)
     {
       start = scamper_trace_start_get(trace);
@@ -199,9 +200,12 @@ static void dump_trace_hop(const scamper_trace_t *trace,
       printf(", tx: %d.%06ds", (int)tv.tv_sec, (int)tv.tv_usec);
     }
   rtt = scamper_trace_reply_rtt_get(hop);
-  printf(", rtt: %d.%06ds, probe-size: %d\n",
+  printf(", rtt: %d.%06ds, probe-size: %d",
 	 (int)rtt->tv_sec, (int)rtt->tv_usec,
 	 scamper_trace_probe_size_get(probe));
+  if(probe_flags & SCAMPER_TRACE_REPLY_FLAG_PQ_IPID)
+    printf(", probe-ipid: 0x%04x", scamper_trace_probe_ipid_get(probe));
+  printf("\n");
 
   hop_flags = scamper_trace_reply_flags_get(hop);
   if(hop_flags & SCAMPER_TRACE_REPLY_FLAG_REPLY_TTL)
@@ -231,6 +235,9 @@ static void dump_trace_hop(const scamper_trace_t *trace,
 		 scamper_trace_reply_icmp_q_ttl_get(hop),
 		 scamper_trace_reply_icmp_q_ipl_get(hop),
 		 scamper_trace_reply_icmp_q_tos_get(hop));
+	  if(hop_flags & SCAMPER_TRACE_REPLY_FLAG_PQ_IPID)
+	    printf(", q-ipid: 0x%04x",
+		   scamper_trace_reply_icmp_q_ipid_get(hop));
 	}
       if(scamper_trace_reply_is_icmp_ptb(hop))
 	printf(", nhmtu: %d", scamper_trace_reply_icmp_nhmtu_get(hop));
@@ -2133,6 +2140,9 @@ static void dump_host_rr_opt(const scamper_host_rr_opt_t *opt)
   uint16_t i, j, elemc, elem_len;
   const uint8_t *ptr;
 
+  if(opt == NULL)
+    return;
+
   elemc = scamper_host_rr_opt_elemc_get(opt);
   printf(" %d", elemc);
   for(i=0; i<elemc; i++)
@@ -2261,7 +2271,7 @@ static void dump_host(scamper_host_t *host)
   char buf[256], lower[256];
   uint32_t i, j, l;
   uint16_t qflags, count;
-  uint8_t qcount, rcode, rflags;
+  uint8_t qcount, rcode, rflags, mqtypec, x;
 
   printf("host");
   if((addr = scamper_host_src_get(host)) != NULL)
@@ -2296,6 +2306,14 @@ static void dump_host(scamper_host_t *host)
   printf(", qtype: %s",
 	 scamper_host_qtype_tostr(scamper_host_qtype_get(host),
 				  buf, sizeof(buf)));
+  if((mqtypec = scamper_host_mqtypec_get(host)) > 0)
+    {
+      printf(", mqtypes: ");
+      for(x=0; x<mqtypec; x++)
+	printf("%s%s", x > 0 ? "," : "",
+	       scamper_host_qtype_tostr(scamper_host_mqtypes_get(host, x),
+					buf, sizeof(buf)));
+    }
   qcount = scamper_host_qcount_get(host);
   printf(", qcount: %d\n", qcount);
 

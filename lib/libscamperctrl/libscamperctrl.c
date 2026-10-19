@@ -1,7 +1,7 @@
 /*
  * libscamperctrl
  *
- * $Id: libscamperctrl.c,v 1.106 2026/06/15 19:04:18 mjl Exp $
+ * $Id: libscamperctrl.c,v 1.122 2026/08/31 06:21:38 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -110,11 +110,15 @@ typedef struct sc_fd
 #else
   SOCKET             fd;       /* file descriptor for socket */
 #endif
-  int                fdtype;   /* type of file descriptor */
+  int                fdtype;   /* type of file descriptor: inst or mux */
   dlist_t           *queue;    /* queue of items to write */
   int                write;    /* has write want been signalled? */
   dlist_node_t      *fdsdn;    /* entry in ctrl->fds */
-  void              *data;     /* pointer to scamper_inst_t / scamper_mux_t */
+  union
+  {
+    scamper_inst_t  *inst;
+    scamper_mux_t   *mux;
+  } un;
 } sc_fd_t;
 
 typedef struct sc_muxchan
@@ -153,7 +157,7 @@ struct scamper_inst
   uint8_t            type;     /* types: inet, unix, remote, or mux-chan */
   uint8_t            flags;    /* flags: done */
   slist_t           *waitok;   /* commands we are waiting for an ok for */
-  splaytree_t       *tree;     /* tasks searchable by their ID */
+  splaytree_t       *tasks;    /* tasks searchable by their ID */
   char               err[128]; /* error string */
 
   /* buffer for storing incomplete lines in between calls to recv */
@@ -255,12 +259,14 @@ struct scamper_vp
 #define TX_TYPE_TASK             3
 #define TX_TYPE_DONE             4
 #define TX_TYPE_MUXVP_OPEN       5
+#define TX_TYPE_MUXVP_CLOSE      6
 
 #define SCAMPER_CTRL_FLAG_INWAIT 0x01 /* in scamper_ctrl_wait() */
 #define SCAMPER_CTRL_FLAG_MUXGO  0x02 /* data left post GO */
 
 #define SCAMPER_INST_FLAG_DONE   0x01 /* "done" sent for this inst */
-#define SCAMPER_INST_FLAG_FREE   0x02 /* the inst is in the waitlist to free */
+#define SCAMPER_INST_FLAG_FREE   0x02 /* inst is in the waitlist to free */
+#define SCAMPER_INST_FLAG_REMOVE 0x04 /* inst is in the waitlist to remove */
 
 #define SCAMPER_TASK_FLAG_QUEUE  0x01
 #define SCAMPER_TASK_FLAG_WAITOK 0x02
@@ -488,8 +494,19 @@ static int inet_fd(const struct sockaddr *sa, char *err, size_t errlen)
 
 static void tx_free(sc_tx_t *tx)
 {
+  if(tx->task != NULL)
+    {
+      assert(tx->task->tx == NULL || tx->task->tx == tx);
+      tx->task->tx = NULL;
+    }
   if(tx->buf != NULL) free(tx->buf);
   free(tx);
+  return;
+}
+
+static void tx_free_thunk(void *tx)
+{
+  tx_free((sc_tx_t *)tx);
   return;
 }
 
@@ -560,12 +577,16 @@ static int fd_write(scamper_ctrl_t *ctrl, sc_fd_t *fdn)
   sc_tx_t *tx;
   ssize_t rc;
 
-  tx = dlist_head_item(fdn->queue);
-  assert(tx != NULL);
+  /* the queue might get emptied in scamper_ctrl_remove() */
+  if((tx = dlist_head_item(fdn->queue)) == NULL)
+    goto done;
 
   /* test if send was successful */
   if((rc = send(fdn->fd, tx->buf + tx->off, tx->len - tx->off, 0)) == -1)
     {
+      /* would have blocked / got interrupted.  non-fatal error */
+      if(errno == EINTR || errno == EAGAIN)
+	return 0;
       snprintf(ctrl->err, sizeof(ctrl->err), "could not send: %s",
 	       strerror(errno));
       return -1;
@@ -664,11 +685,27 @@ static sc_fd_t *fd_alloc(int fd)
 
 static void fd_free(sc_fd_t *fdn)
 {
+  if(fdn->fdtype == FD_TYPE_INST && fdn->un.inst != NULL)
+    {
+      assert(fdn->un.inst->fdn == NULL || fdn->un.inst->fdn == fdn);
+      fdn->un.inst->fdn = NULL;
+    }
+  else if(fdn->fdtype == FD_TYPE_MUX && fdn->un.mux != NULL)
+    {
+      assert(fdn->un.mux->fdn == NULL || fdn->un.mux->fdn == fdn);
+      fdn->un.mux->fdn = NULL;
+    }
   if(fdn->queue != NULL)
     dlist_free(fdn->queue);
   if(socket_isvalid(fdn->fd))
     socket_close(fdn->fd);
   free(fdn);
+  return;
+}
+
+static void fd_free_thunk(void *vfdn)
+{
+  fd_free((sc_fd_t *)vfdn);
   return;
 }
 
@@ -678,8 +715,8 @@ static int task_set_str(scamper_inst_t *inst, scamper_task_t *task,
   size_t i, len = strlen(str);
 
   /* make sure the thing to isn't a reserved keyword */
-  if(strncasecmp(str, "attach", 6) == 0 &&
-     strncasecmp(str, "halt", 4) == 0 &&
+  if(strncasecmp(str, "attach", 6) == 0 ||
+     strncasecmp(str, "halt", 4) == 0 ||
      strncasecmp(str, "done", 4) == 0)
     {
       snprintf(inst->err, sizeof(inst->err), "invalid command");
@@ -733,6 +770,25 @@ static int task_cmp(const scamper_task_t *a, const scamper_task_t *b)
   if(a->id < b->id) return -1;
   if(a->id > b->id) return  1;
   return 0;
+}
+
+static int task_cmp_thunk(const void *va, const void *vb)
+{
+  return task_cmp((const scamper_task_t *)va, (const scamper_task_t *)vb);
+}
+
+/*
+ * task_free_instnull_thunk
+ *
+ * called by inst_free.  because the inst is going away, ensure the task's
+ * pointer to the instance is set to null.
+ */
+static void task_free_instnull_thunk(void *vtask)
+{
+  scamper_task_t *task = (scamper_task_t *)vtask;
+  task->inst = NULL;
+  scamper_task_free(task);
+  return;
 }
 
 /*
@@ -936,8 +992,8 @@ static int inst_rx(scamper_inst_t *inst, uint8_t *buf, size_t len)
 	      tx->task->id = lo;
 	      tx->task->flags &= (~SCAMPER_TASK_FLAG_WAITOK);
 	      tx->task->flags |= SCAMPER_TASK_FLAG_GOTID;
-	      assert(splaytree_find(inst->tree, tx->task) == NULL);
-	      if(splaytree_insert(inst->tree, tx->task) == NULL)
+	      assert(splaytree_find(inst->tasks, tx->task) == NULL);
+	      if(splaytree_insert(inst->tasks, tx->task) == NULL)
 		{
 		  snprintf(ctrl->err, sizeof(ctrl->err), "could not add task");
 		  goto done;
@@ -1012,13 +1068,13 @@ static int inst_rx(scamper_inst_t *inst, uint8_t *buf, size_t len)
 		      goto done;
 		    }
 		  fm.id = lo;
-		  if((inst->task = splaytree_find(inst->tree, &fm)) == NULL)
+		  if((inst->task = splaytree_find(inst->tasks, &fm)) == NULL)
 		    {
 		      snprintf(ctrl->err, sizeof(ctrl->err),
 			       "could not find task with ID %ld", lo);
 		      goto done;
 		    }
-		  splaytree_remove_item(inst->tree, &fm);
+		  splaytree_remove_item(inst->tasks, &fm);
 		}
 	    }
 	}
@@ -1152,6 +1208,12 @@ static void inst_set_null(scamper_inst_t *inst)
   return;
 }
 
+static void inst_set_null_thunk(void *vinst)
+{
+  inst_set_null((scamper_inst_t *)vinst);
+  return;
+}
+
 static int inst_set_fd(scamper_inst_t *inst, int *fd)
 {
   scamper_ctrl_t *ctrl = inst->ctrl;
@@ -1183,7 +1245,7 @@ static int inst_set_fd(scamper_inst_t *inst, int *fd)
   /* set pointers appropriately */
   inst->fdn = fdn;
   fdn->fdtype = FD_TYPE_INST;
-  fdn->data = inst;
+  fdn->un.inst = inst;
   fdn = NULL;
 
   if((ctrl->flags & SCAMPER_CTRL_FLAG_INWAIT) == 0 &&
@@ -1196,7 +1258,7 @@ static int inst_set_fd(scamper_inst_t *inst, int *fd)
   return 0;
 }
 
-static void inst_free(scamper_inst_t *inst)
+static void inst_remove(scamper_inst_t *inst)
 {
   if(inst->fdn != NULL)
     {
@@ -1205,22 +1267,44 @@ static void inst_free(scamper_inst_t *inst)
       assert(inst->fdn->fdsdn != NULL);
       dlist_node_pop(inst->ctrl->fds, inst->fdn->fdsdn);
       fd_free(inst->fdn);
+      inst->fdn = NULL;
     }
   if(inst->mc != NULL)
     {
       assert(inst->type == SCAMPER_INST_TYPE_MUXVP);
+      assert(inst->mc->inst == NULL || inst->mc->inst == inst);
       inst->mc->inst = NULL;
     }
   if(inst->idn != NULL)
-    dlist_node_pop(inst->list, inst->idn);
+    {
+      assert(inst->list != NULL);
+      dlist_node_pop(inst->list, inst->idn);
+      inst->list = NULL;
+      inst->idn = NULL;
+    }
+  if(inst->waitok != NULL)
+    {
+      slist_free_cb(inst->waitok, tx_free_thunk);
+      inst->waitok = NULL;
+    }
+  if(inst->tasks != NULL)
+    {
+      splaytree_free(inst->tasks, task_free_instnull_thunk);
+      inst->tasks = NULL;
+    }
+  if(inst->data != NULL)
+    {
+      free(inst->data);
+      inst->data = NULL;
+    }
+  return;
+}
+
+static void inst_free(scamper_inst_t *inst)
+{
+  inst_remove(inst);
   if(inst->name != NULL)
     free(inst->name);
-  if(inst->waitok != NULL)
-    slist_free_cb(inst->waitok, (slist_free_t)tx_free);
-  if(inst->tree != NULL)
-    splaytree_free(inst->tree, (splaytree_free_t)scamper_task_free);
-  if(inst->data != NULL)
-    free(inst->data);
   if(inst->vp != NULL)
     scamper_vp_free(inst->vp);
   free(inst);
@@ -1258,7 +1342,7 @@ static scamper_inst_t *inst_alloc_dm(scamper_ctrl_t *ctrl, uint8_t type,
 
   if((inst->name = strdup(name)) == NULL ||
      (inst->waitok = slist_alloc()) == NULL ||
-     (inst->tree = splaytree_alloc((splaytree_cmp_t)task_cmp)) == NULL)
+     (inst->tasks = splaytree_alloc(task_cmp_thunk)) == NULL)
     {
       snprintf(ctrl->err, sizeof(ctrl->err), "could not initialise instance");
       goto err;
@@ -1463,7 +1547,10 @@ static int mux_channel_eof(scamper_mux_t *mux, const uint8_t *buf, size_t len)
   if(mc->cdn != NULL)
     dlist_node_pop(mux->channels, mc->cdn);
   if(mc->inst != NULL)
-    mc->inst->mc = NULL;
+    {
+      assert(mc->inst->mc == NULL || mc->inst->mc == mc);
+      mc->inst->mc = NULL;
+    }
   free(mc); mc = NULL;
 
   /* signal eof */
@@ -1514,7 +1601,10 @@ static void mux_free(scamper_mux_t *mux)
       while((mc = dlist_head_pop(mux->channels)) != NULL)
 	{
 	  if(mc->inst != NULL)
-	    mc->inst->mc = NULL;
+	    {
+	      assert(mc->inst->mc == NULL || mc->inst->mc == mc);
+	      mc->inst->mc = NULL;
+	    }
 	  free(mc);
 	}
       dlist_free(mux->channels);
@@ -1524,6 +1614,7 @@ static void mux_free(scamper_mux_t *mux)
     {
       while((vp = dlist_head_pop(mux->vps)) != NULL)
 	{
+	  assert(vp->mux == NULL || vp->mux == mux);
 	  vp->mux = NULL;
 	  scamper_vp_free(vp);
 	}
@@ -1536,6 +1627,12 @@ static void mux_free(scamper_mux_t *mux)
     fd_free(mux->fdn);
   free(mux);
 
+  return;
+}
+
+static void mux_free_thunk(void *vmux)
+{
+  mux_free((scamper_mux_t *)vmux);
   return;
 }
 
@@ -1653,6 +1750,7 @@ static int mux_read(scamper_mux_t *mux)
 	  if((inst = mc->inst) != NULL)
 	    {
 	      ctrl = inst->ctrl;
+	      assert(inst->mc == NULL || inst->mc->inst == inst);
 	      inst->mc = NULL;
 	      if(ctrl != NULL)
 		{
@@ -1690,11 +1788,15 @@ void scamper_task_free(scamper_task_t *task)
 scamper_task_t *scamper_task_use(scamper_task_t *task)
 {
   if(task != NULL)
-    task->refcnt++;
+    {
+      if(task->refcnt == UINT8_MAX)
+	return NULL;
+      task->refcnt++;
+    }
   return task;
 }
 
-void *scamper_task_param_get(scamper_task_t *task)
+void *scamper_task_param_get(const scamper_task_t *task)
 {
   return task->param;
 }
@@ -1708,6 +1810,8 @@ void scamper_task_param_set(scamper_task_t *task, void *param)
 char *scamper_task_cmd_get(scamper_task_t *task, char *buf, size_t len)
 {
   size_t x, sl;
+  if(len == 0)
+    return NULL;
   sl = strlen(task->str);
   x  = sl < len ? sl : len - 1;
   memcpy(buf, task->str, x);
@@ -1751,6 +1855,13 @@ scamper_task_t *scamper_inst_do(scamper_inst_t *inst, const char *str, void *p)
   if((inst->flags & SCAMPER_INST_FLAG_DONE) != 0)
     {
       snprintf(inst->err, sizeof(inst->err), "instance marked done");
+      return NULL;
+    }
+
+  /* can't send a command after scamper_inst_remove() called */
+  if((inst->flags & SCAMPER_INST_FLAG_REMOVE) != 0)
+    {
+      snprintf(inst->err, sizeof(inst->err), "instance marked for removal");
       return NULL;
     }
 
@@ -2236,6 +2347,7 @@ static int ctrl_wait_done(scamper_ctrl_t *ctrl, int rc)
   /*
    * the nodes in the waitlist were put in there by the user calling
    * - scamper_inst_free to free the instance,
+   * - scamper_ctrl_remove to remove the instance,
    * - scamper_inst_unix, scamper_inst_remote, scamper_inst_inet to
    *   add a new instance.
    * while in scamper_ctrl_wait.  process them now.
@@ -2246,6 +2358,11 @@ static int ctrl_wait_done(scamper_ctrl_t *ctrl, int rc)
 	{
 	  inst->list = NULL; inst->idn = NULL;
 	  inst_free(inst);
+	}
+      else if(inst->flags & SCAMPER_INST_FLAG_REMOVE)
+	{
+	  inst->list = NULL; inst->idn = NULL;
+	  inst_remove(inst);
 	}
       else
 	{
@@ -2376,10 +2493,8 @@ static scamper_mux_t *ctrl_mux_go(scamper_ctrl_t *ctrl, SOCKET fd)
       snprintf(ctrl->err, sizeof(ctrl->err), "could not add to fd list");
       goto err;
     }
-  mux->fdn = fdn;
   fdn->fdtype = FD_TYPE_MUX;
-  fdn->data = mux;
-  fdn = NULL;
+  fdn->un.mux = mux;
 
   if(dlist_tail_push(ctrl->muxs, mux) == NULL)
     {
@@ -2387,12 +2502,25 @@ static scamper_mux_t *ctrl_mux_go(scamper_ctrl_t *ctrl, SOCKET fd)
       goto err;
     }
   mux->ctrl = ctrl;
+  mux->fdn = fdn;
 
   return mux;
 
  err:
   if(fd != -1) close(fd);
-  if(fdn != NULL) fd_free(fdn);
+  if(fdn != NULL)
+    {
+      /*
+       * mux_free and fd_free won't remove fdn from ctrl->fds, so do
+       * so explicitly here
+       */
+      if(fdn->fdsdn != NULL)
+	{
+	  dlist_node_pop(ctrl->fds, fdn->fdsdn);
+	  fdn->fdsdn = NULL;
+	}
+      fd_free(fdn);
+    }
   if(mux != NULL) mux_free(mux);
   return NULL;
 }
@@ -2427,12 +2555,6 @@ scamper_mux_t *scamper_mux_add(scamper_ctrl_t *ctrl, const char *path)
   if((fd = unix_fd(path, ctrl->err, sizeof(ctrl->err))) == -1)
     return NULL;
   return ctrl_mux_go(ctrl, fd);
-}
-
-void scamper_mux_free(scamper_mux_t *mux)
-{
-  mux_free(mux);
-  return;
 }
 
 void scamper_vp_free(scamper_vp_t *vp)
@@ -2618,6 +2740,94 @@ scamper_vpset_t *scamper_vpset_get(const scamper_mux_t *mux)
   return NULL;
 }
 
+int scamper_ctrl_remove(scamper_ctrl_t *ctrl, scamper_inst_t *inst)
+{
+  uint8_t *msg = NULL;
+  scamper_mux_t *mux = NULL;
+  sc_muxchan_t *mc = NULL;
+
+  if(inst->ctrl == NULL)
+    {
+      snprintf(ctrl->err, sizeof(ctrl->err), "no corresponding control");
+      goto err;
+    }
+
+  if(inst->ctrl != ctrl)
+    {
+      snprintf(ctrl->err, sizeof(ctrl->err),
+	       "inst not associated with this control");
+      goto err;
+    }
+
+  if(inst->flags & SCAMPER_INST_FLAG_REMOVE)
+    return 0;
+  inst->flags |= SCAMPER_INST_FLAG_REMOVE;
+
+  /* if this is a muxvp, then send a channel close message */
+  if(inst->type == SCAMPER_INST_TYPE_MUXVP)
+    {
+      if((mc = inst->mc) == NULL)
+	{
+	  snprintf(ctrl->err, sizeof(ctrl->err), "muxvp has no mc");
+	  goto err;
+	}
+      if((mux = mc->mux) == NULL)
+	{
+	  snprintf(ctrl->err, sizeof(ctrl->err), "mc has no mux");
+	  goto err;
+	}
+      if((msg = malloc(MUX_HDRLEN + 2 + 4)) == NULL)
+	{
+	  snprintf(ctrl->err, sizeof(ctrl->err), "could not alloc close");
+	  goto err;
+	}
+      bytes_htonl(msg + 0,              0);
+      bytes_htonl(msg + 4,              6);
+      bytes_htons(msg + MUX_HDRLEN,     MUX_CHANNEL_CLOSE);
+      bytes_htonl(msg + MUX_HDRLEN + 2, mc->chan);
+      if(fd_queue(mux->fdn, TX_TYPE_MUXVP_CLOSE, msg, MUX_HDRLEN + 6) == NULL)
+	{
+	  snprintf(ctrl->err, sizeof(ctrl->err), "could not queue close");
+	  goto err;
+	}
+      msg = NULL;
+      if(fd_set_write(ctrl, mux->fdn) != 0)
+	{
+	  snprintf(ctrl->err, sizeof(ctrl->err), "could not set write on mux");
+	  goto err;
+	}
+    }
+  else
+    {
+      if(inst->fdn != NULL && socket_isvalid(inst->fdn->fd))
+	{
+	  socket_close(inst->fdn->fd);
+	  inst->fdn->fd = socket_invalid();
+	}
+    }
+
+  if((inst->ctrl->flags & SCAMPER_CTRL_FLAG_INWAIT) != 0)
+    {
+      if(inst->list != inst->ctrl->waitlist)
+	{
+	  if(inst->list != NULL)
+	    dlist_node_eject(inst->list, inst->idn);
+	  dlist_node_tail_push(inst->ctrl->waitlist, inst->idn);
+	  inst->list = inst->ctrl->waitlist;
+	}
+    }
+  else
+    {
+      inst_remove(inst);
+    }
+
+  return 0;
+
+ err:
+  if(msg != NULL) free(msg);
+  return -1;
+}
+
 static int ctrl_flag_muxgo(scamper_ctrl_t *ctrl)
 {
   dlist_node_t *dn, *dn_next;
@@ -2679,12 +2889,12 @@ int scamper_ctrl_wait(scamper_ctrl_t *ctrl, struct timeval *to)
 	{
 	  if(fdn->fdtype == FD_TYPE_INST)
 	    {
-	      if(scamper_inst_read(fdn->data) != 0)
+	      if(scamper_inst_read(fdn->un.inst) != 0)
 		goto done;
 	    }
 	  else if(fdn->fdtype == FD_TYPE_MUX)
 	    {
-	      if(mux_read(fdn->data) != 0)
+	      if(mux_read(fdn->un.mux) != 0)
 		goto done;
 	    }
 	}
@@ -2757,17 +2967,21 @@ int scamper_ctrl_wait(scamper_ctrl_t *ctrl, struct timeval *to)
       /* take a copy incase FD becomes invalid, to work with count */
       fd = fdn->fd;
 
+      /* if the socket gets closed in scamper_ctrl_remove() then skip */
+      if(socket_isinvalid(fd))
+	continue;
+
       if(FD_ISSET(fd, &rfds))
 	{
 	  count--;
 	  if(fdn->fdtype == FD_TYPE_INST)
 	    {
-	      if(scamper_inst_read(fdn->data) != 0)
+	      if(scamper_inst_read(fdn->un.inst) != 0)
 		goto done;
 	    }
 	  else if(fdn->fdtype == FD_TYPE_MUX)
 	    {
-	      if(mux_read(fdn->data) != 0)
+	      if(mux_read(fdn->un.mux) != 0)
 		goto done;
 	    }
 	}
@@ -2801,26 +3015,16 @@ int scamper_ctrl_wait(scamper_ctrl_t *ctrl, struct timeval *to)
  */
 void scamper_ctrl_free(scamper_ctrl_t *ctrl)
 {
-  scamper_mux_t *mux;
-
   assert(ctrl != NULL);
 
   if(ctrl->fds != NULL)
-    dlist_free_cb(ctrl->fds, (dlist_free_t)fd_free);
+    dlist_free_cb(ctrl->fds, fd_free_thunk);
   if(ctrl->muxs != NULL)
-    {
-      while((mux = dlist_head_pop(ctrl->muxs)) != NULL)
-	{
-	  /* mux->fdn was free'd when it was removed from ctrl->fds */
-	  mux->fdn = NULL;
-	  mux_free(mux);
-	}
-      dlist_free(ctrl->muxs);
-    }
+    dlist_free_cb(ctrl->muxs, mux_free_thunk);
   if(ctrl->insts != NULL)
-    dlist_free_cb(ctrl->insts, (dlist_free_t)inst_set_null);
+    dlist_free_cb(ctrl->insts, inst_set_null_thunk);
   if(ctrl->waitlist != NULL)
-    dlist_free_cb(ctrl->waitlist, (dlist_free_t)inst_set_null);
+    dlist_free_cb(ctrl->waitlist, inst_set_null_thunk);
 
 #ifdef HAVE_KQUEUE
   if(ctrl->kqfd != -1)

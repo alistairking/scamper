@@ -1,7 +1,7 @@
 /*
  * scamper_control.c
  *
- * $Id: scamper_control.c,v 1.301 2026/06/16 20:19:53 mjl Exp $
+ * $Id: scamper_control.c,v 1.303 2026/08/22 02:40:27 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -120,12 +120,12 @@ typedef struct client_message
  * snd_nxt:     the next sequence number to use
  * rcv_nxt:     the next sequence number expected from the controller
  * messages:    list of client_message_t structures
- * list:        list of client_t instances
+ * clients:     list of client_t instances
  * tx_ka:       when we sent the last keepalive to the remote instance
  * rx_abort:    when to give up on the remote instance if unresponsive
  * sq:          scamper_queue_t to manage events related to above timestamps
  * resume:      1 if we should resume using magic, 0 if we should restart
- * mode:        REMOTE_MODE_CONNECT or REMOTE_MODE_GO
+ * mode:        REMOTE_MODE_HANDSHAKE or REMOTE_MODE_GO
  * node:        dlist_node_t for this control_remote_t in remote_list
  * ssl_mode:    SSL_MODE_HANDSHAKE or SSL_MODE_ESTABLISHED
  * ssl:         OpenSSL structure
@@ -148,7 +148,7 @@ typedef struct control_remote
   uint32_t            snd_nxt;
   uint32_t            rcv_nxt;
   slist_t            *messages;
-  dlist_t            *list;
+  dlist_t            *clients;
   struct timeval      tx_ka;
   struct timeval      rx_abort;
   scamper_queue_t    *sq;
@@ -252,7 +252,7 @@ typedef struct client
 #define CLIENT_OBJ_FLAG_ID      0x01
 #define CLIENT_OBJ_FLAG_INPROG  0x02
 
-#define REMOTE_MODE_CONNECT     0
+#define REMOTE_MODE_HANDSHAKE   0
 #define REMOTE_MODE_GO          1
 
 typedef struct command
@@ -491,7 +491,7 @@ static void client_free(client_t *client)
     {
       if(client->un.chan.node != NULL)
 	{
-	  dlist_node_pop(client->un.chan.rem->list, client->un.chan.node);
+	  dlist_node_pop(client->un.chan.rem->clients, client->un.chan.node);
 	  client->un.chan.node = NULL;
 	}
     }
@@ -1968,7 +1968,7 @@ static void remote_free(control_remote_t *rm, int mode)
     }
 
   rm->bufoff = 0;
-  rm->mode = REMOTE_MODE_CONNECT;
+  rm->mode = REMOTE_MODE_HANDSHAKE;
 
   if(mode == REMOTE_FREE_RESUME)
     return;
@@ -1979,7 +1979,7 @@ static void remote_free(control_remote_t *rm, int mode)
       rm->alias = NULL;
     }
 
-  while((client = dlist_head_pop(rm->list)) != NULL)
+  while((client = dlist_head_pop(rm->clients)) != NULL)
     {
       client->un.chan.node = NULL;
       client_free(client);
@@ -2005,10 +2005,10 @@ static void remote_free(control_remote_t *rm, int mode)
       rm->server_name = NULL;
     }
 
-  if(rm->list != NULL)
+  if(rm->clients != NULL)
     {
-      dlist_free(rm->list);
-      rm->list = NULL;
+      dlist_free(rm->clients);
+      rm->clients = NULL;
     }
 
   if(rm->messages != NULL)
@@ -2163,9 +2163,9 @@ static int remote_sock_send(control_remote_t *rm, void *ptr, size_t len,
       goto err;
     }
 
-  if(ack == 0 && rm->mode == REMOTE_MODE_CONNECT)
+  if(ack == 0 && rm->mode == REMOTE_MODE_HANDSHAKE)
     {
-      scamper_debug(__func__, "not sending unack frame in connect mode");
+      scamper_debug(__func__, "not sending unack frame in handshake mode");
       return 0;
     }
 
@@ -2198,9 +2198,9 @@ static int remote_sock_send(control_remote_t *rm, void *ptr, size_t len,
       rm->snd_nxt++;
     }
 
-  if(rm->mode == REMOTE_MODE_CONNECT)
+  if(rm->mode == REMOTE_MODE_HANDSHAKE)
     {
-      scamper_debug(__func__, "not sending in connect mode");
+      scamper_debug(__func__, "not sending in handshake mode");
       return 0;
     }
 
@@ -2293,7 +2293,7 @@ static client_t *remote_channel_find(control_remote_t *rem, uint32_t id)
   dlist_node_t *dn;
   client_t *client;
 
-  for(dn=dlist_head_node(rem->list); dn != NULL; dn=dlist_node_next(dn))
+  for(dn=dlist_head_node(rem->clients); dn != NULL; dn=dlist_node_next(dn))
     {
       client = dlist_node_item(dn);
       assert(client->type == CLIENT_TYPE_CHANNEL);
@@ -2415,7 +2415,7 @@ static int remote_read_control_channel_new(control_remote_t *rm,
       goto err;
     }
 
-  if((client->un.chan.node = dlist_tail_push(rm->list, client)) == NULL)
+  if((client->un.chan.node = dlist_tail_push(rm->clients, client)) == NULL)
     {
       printerror(__func__, "could not add client to remote list");
       goto err;
@@ -2572,12 +2572,12 @@ static int remote_read_control(control_remote_t *rm)
   type = buf[0];
   buf++; msglen--;
 
-  if(rm->mode == REMOTE_MODE_CONNECT)
+  if(rm->mode == REMOTE_MODE_HANDSHAKE)
     {
       /* we expect sequence zero. no acks for any of these messages. */
       if(seq != 0)
 	{
-	  printerror_msg(__func__, "expected sequence zero in mode connect");
+	  printerror_msg(__func__, "expected sequence zero in handshake mode");
 	  return -1;
 	}
       switch(type)
@@ -2957,8 +2957,8 @@ static void remote_write(SOCKET fd, void *param)
   if(scamper_writebuf_gtzero(rm->wb) == 0)
     {
       /* if there are no clients, then we won't have anything to send */
-      if(rm->mode == REMOTE_MODE_CONNECT ||
-	 dlist_head_node(rm->list) == NULL)
+      if(rm->mode == REMOTE_MODE_HANDSHAKE ||
+	 dlist_head_node(rm->clients) == NULL)
 	{
 	  scamper_fd_write_pause(rm->fd);
 	  return;
@@ -2968,7 +2968,7 @@ static void remote_write(SOCKET fd, void *param)
        * take a pass through the clients, getting something from each
        * connected channel, if available
        */
-      dn = dlist_head_node(rm->list);
+      dn = dlist_head_node(rm->clients);
       while(dn != NULL)
 	{
 	  client = dlist_node_item(dn);
@@ -3286,7 +3286,7 @@ int scamper_control_add_remote(const char *name, uint16_t port, int ssl)
 
   if((remote_list == NULL && (remote_list = dlist_alloc()) == NULL) ||
      (rm = malloc_zero(sizeof(control_remote_t))) == NULL ||
-     (rm->list = dlist_alloc()) == NULL ||
+     (rm->clients = dlist_alloc()) == NULL ||
      (rm->messages = slist_alloc()) == NULL ||
      (rm->sq = scamper_queue_alloc(NULL)) == NULL ||
      (rm->server_name = strdup(name)) == NULL ||

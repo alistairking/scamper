@@ -1,7 +1,7 @@
 /*
  * scamper_tracelb.c
  *
- * $Id: scamper_tracelb.c,v 1.84 2026/06/19 21:56:14 mjl Exp $
+ * $Id: scamper_tracelb.c,v 1.85 2026/07/22 08:18:02 mjl Exp $
  *
  * Copyright (C) 2008-2010 The University of Waikato
  * Copyright (C) 2012      The Regents of the University of California
@@ -103,10 +103,10 @@ scamper_tracelb_probeset_summary_alloc(const scamper_tracelb_probeset_t *set)
 	      addr = probe->rxs[j]->reply_from;
 	      addrc = (size_t)sum->addrc;
 	      if(array_find((void **)sum->addrs, addrc, addr,
-			    (array_cmp_t)scamper_addr_cmp) != NULL)
+			    scamper_addr_cmp_thunk) != NULL)
 		continue;
 	      if(array_insert((void ***)&sum->addrs, &addrc, addr,
-			      (array_cmp_t)scamper_addr_cmp) != 0)
+			      scamper_addr_cmp_thunk) != 0)
 		goto err;
 	      sum->addrc = (uint16_t)addrc;
 	      scamper_addr_use(addr);

@@ -1,7 +1,7 @@
 /*
  * common_ping : common functions for unit testing ping
  *
- * $Id: common_ping.c,v 1.14 2026/07/11 03:49:51 mjl Exp $
+ * $Id: common_ping.c,v 1.15 2026/08/29 03:36:52 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -81,6 +81,22 @@ static int v4rr_ok(const scamper_ping_reply_v4rr_t *in,
   return 0;
 }
 
+static int tsreply_ok(const scamper_ping_reply_tsreply_t *in,
+		      const scamper_ping_reply_tsreply_t *out)
+{
+  if(in == NULL && out == NULL)
+    return 0;
+
+  if((in != NULL && out == NULL) ||
+     (in == NULL && out != NULL) ||
+     in->tso != out->tso ||
+     in->tsr != out->tsr ||
+     in->tst != out->tst)
+    return -1;
+
+  return 0;
+}
+
 static scamper_ping_reply_t *reply_add(scamper_ping_probe_t *probe,
 				       const char *addr, const char *rxif)
 {
@@ -121,7 +137,8 @@ static int ping_reply_ok(const scamper_ping_reply_t *in,
      in->tcp_flags != out->tcp_flags ||
      timeval_cmp(&in->rtt, &out->rtt) != 0 ||
      ifname_ok(in->ifname, out->ifname) != 0 ||
-     v4rr_ok(in->v4rr, out->v4rr) != 0)
+     v4rr_ok(in->v4rr, out->v4rr) != 0 ||
+     tsreply_ok(in->tsreply, out->tsreply) != 0)
     return -1;
 
   return 0;
@@ -653,6 +670,86 @@ static scamper_ping_t *ping_8(void)
   return NULL;
 }
 
+static scamper_ping_t *ping_9(void)
+{
+  scamper_ping_t *ping = NULL;
+  scamper_ping_probe_t *probe;
+  scamper_ping_reply_t *reply;
+
+  if((ping = scamper_ping_alloc()) == NULL ||
+     (ping->src = scamper_addr_fromstr_ipv4("192.0.2.8")) == NULL ||
+     (ping->dst = scamper_addr_fromstr_ipv4("192.0.30.33")) == NULL ||
+     (ping->probes = malloc_zero(sizeof(void *) * 2)) == NULL ||
+     (ping->probes[0] = probe = scamper_ping_probe_alloc()) == NULL ||
+     (reply = reply_add(probe, "192.0.30.33", NULL)) == NULL ||
+     (reply->tsreply = scamper_ping_reply_tsreply_alloc()) == NULL ||
+     (ping->probes[1] = probe = scamper_ping_probe_alloc()) == NULL ||
+     (reply = reply_add(probe, "192.0.30.33", NULL)) == NULL ||
+     (reply->tsreply = scamper_ping_reply_tsreply_alloc()) == NULL)
+    goto err;
+
+  ping->userid               = 235107;
+  ping->start.tv_sec         = 1724828860;
+  ping->start.tv_usec        = 134512;
+  ping->stop_reason          = SCAMPER_PING_STOP_COMPLETED;
+  ping->wait_probe.tv_sec    = 1;
+  ping->wait_probe.tv_usec   = 0;
+  ping->wait_timeout.tv_sec  = 1;
+  ping->wait_timeout.tv_usec = 0;
+  ping->attempts             = 2;
+  ping->size                 = 40;
+  ping->method               = SCAMPER_PING_METHOD_ICMP_TIME;
+  ping->ttl                  = 255;
+  ping->sport                = 0x4321;
+  ping->flags               |= SCAMPER_PING_FLAG_ICMPSUM;
+  ping->icmpsum              = 65;
+  ping->ping_sent            = 2;
+
+  probe = ping->probes[0]; reply = probe->replies[0];
+  probe->tx.tv_sec   = ping->start.tv_sec;
+  probe->tx.tv_usec  = ping->start.tv_usec;
+  probe->id          = 0;
+  reply->proto       = IPPROTO_ICMP;
+  reply->tos         = 0;
+  reply->size        = 20 + 8 + 12;
+  reply->icmp_type   = ICMP_TSTAMPREPLY;
+  reply->ttl         = 187;
+  reply->rtt.tv_sec  = 0;
+  reply->rtt.tv_usec = 150283;
+  reply->flags       = (SCAMPER_PING_REPLY_FLAG_REPLY_TOS |
+			SCAMPER_PING_REPLY_FLAG_REPLY_TTL |
+			SCAMPER_PING_REPLY_FLAG_REPLY_IPID);
+  reply->ipid32      = 0x3265;
+  reply->tsreply->tso = (((7 * 3600) + (7 * 60) + 40) * 1000) + 134;
+  reply->tsreply->tsr = (((7 * 3600) + (7 * 60) + 40) * 1000) + 204;
+  reply->tsreply->tst = (((7 * 3600) + (7 * 60) + 40) * 1000) + 205;
+
+  probe = ping->probes[1]; reply = probe->replies[0];
+  probe->tx.tv_sec   = ping->start.tv_sec + 1;
+  probe->tx.tv_usec  = ping->start.tv_usec;
+  probe->id          = 1;
+  reply->proto       = IPPROTO_ICMP;
+  reply->tos         = 0;
+  reply->size        = 20 + 8 + 12;
+  reply->icmp_type   = ICMP_TSTAMPREPLY;
+  reply->ttl         = 187;
+  reply->rtt.tv_sec  = 0;
+  reply->rtt.tv_usec = 149108;
+  reply->flags       = (SCAMPER_PING_REPLY_FLAG_REPLY_TOS |
+			SCAMPER_PING_REPLY_FLAG_REPLY_TTL |
+			SCAMPER_PING_REPLY_FLAG_REPLY_IPID);
+  reply->ipid32      = 0x3266;
+  reply->tsreply->tso = (((7 * 3600) + (7 * 60) + 41) * 1000) + 134;
+  reply->tsreply->tsr = (((7 * 3600) + (7 * 60) + 41) * 1000) + 204;
+  reply->tsreply->tst = (((7 * 3600) + (7 * 60) + 41) * 1000) + 205;
+
+  return ping;
+
+ err:
+  if(ping != NULL) scamper_ping_free(ping);
+  return NULL;
+}
+
 static scamper_ping_makefunc_t makers[] = {
   ping_1,
   ping_2,
@@ -662,6 +759,7 @@ static scamper_ping_makefunc_t makers[] = {
   ping_6,
   ping_7,
   ping_8,
+  ping_9,
 };
 
 scamper_ping_t *ping_makers(size_t i)

@@ -1,11 +1,11 @@
 /*
  * sc_radargun : scamper driver to do radargun-style probing.
  *
- * $Id: sc_radargun.c,v 1.26 2025/04/21 03:24:13 mjl Exp $
+ * $Id: sc_radargun.c,v 1.28 2026/07/25 02:06:29 mjl Exp $
  *
  * Copyright (C) 2014      The Regents of the University of California
  * Copyright (C) 2016      The University of Waikato
- * Copyright (C) 2020-2024 Matthew Luckie
+ * Copyright (C) 2020-2026 Matthew Luckie
  * Author: Matthew Luckie
  *
  * Radargun technique authored by:
@@ -37,6 +37,7 @@
 #include "internal.h"
 
 #include "scamper_addr.h"
+#include "scamper_addr_int.h"
 #include "scamper_list.h"
 #include "ping/scamper_ping.h"
 #include "dealias/scamper_dealias.h"
@@ -765,7 +766,7 @@ static void sc_radargun_free(sc_radargun_t *rg)
   if(rg->test != NULL)
     sc_test_free(rg->test);
   if(rg->addrs != NULL)
-    dlist_free_cb(rg->addrs, (dlist_free_t)scamper_addr_free);
+    dlist_free_cb(rg->addrs, scamper_addr_free_thunk);
   free(rg);
   return;
 }
@@ -1524,7 +1525,7 @@ static int do_addrfile(void)
   splaytree_t *tree;
   sc_radargun_t *rg;
 
-  if((tree = splaytree_alloc((splaytree_cmp_t)scamper_addr_cmp)) == NULL ||
+  if((tree = splaytree_alloc(scamper_addr_cmp_thunk)) == NULL ||
      file_lines(addrfile, addrfile_line, tree) != 0)
     goto err;
 
@@ -1539,11 +1540,11 @@ static int do_addrfile(void)
     }
 
   rglist_cn = clist_head_node(rglist);
-  splaytree_free(tree, (splaytree_free_t)scamper_addr_free);
+  splaytree_free(tree, scamper_addr_free_thunk);
   return 0;
 
  err:
-  if(tree != NULL) splaytree_free(tree, (splaytree_free_t)scamper_addr_free);
+  if(tree != NULL) splaytree_free(tree, scamper_addr_free_thunk);
   return -1;
 }
 

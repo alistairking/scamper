@@ -7,7 +7,7 @@
  * Copyright (C) 2020-2026 Matthew Luckie
  * Author: Matthew Luckie
  *
- * $Id: scamper_ping.c,v 1.68 2026/07/03 07:01:04 mjl Exp $
+ * $Id: scamper_ping.c,v 1.70 2026/08/31 18:51:39 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -440,6 +440,11 @@ void scamper_ping_reply_v4ts_free(scamper_ping_reply_v4ts_t *ts)
   if(ts == NULL)
     return;
 
+#ifdef BUILDING_LIBSCAMPERFILE
+  if(--ts->refcnt > 0)
+    return;
+#endif
+
   if(ts->tss != NULL)
     free(ts->tss);
 
@@ -461,6 +466,11 @@ scamper_ping_reply_v4ts_t *scamper_ping_reply_v4ts_alloc(uint8_t tsc, int ip)
 
   if((ts = malloc_zero(sizeof(scamper_ping_reply_v4ts_t))) == NULL)
     goto err;
+
+#ifdef BUILDING_LIBSCAMPERFILE
+  ts->refcnt = 1;
+#endif
+
   ts->tsc = tsc;
 
   if(tsc > 0)
@@ -593,6 +603,8 @@ scamper_ping_reply_t *scamper_ping_reply_dup(const scamper_ping_reply_t *in)
     out->ifname = scamper_ifname_use(in->ifname);
   if(in->v4rr != NULL)
     out->v4rr = scamper_ping_reply_v4rr_dup(in->v4rr);
+  if(in->tsreply != NULL)
+    out->tsreply = memdup(in->tsreply, sizeof(scamper_ping_reply_tsreply_t));
 
   return out;
 }

@@ -1,7 +1,7 @@
 /*
  * scamper_addr.c
  *
- * $Id: scamper_addr.c,v 1.100 2026/06/13 19:25:32 mjl Exp $
+ * $Id: scamper_addr.c,v 1.103 2026/08/31 07:14:30 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -71,11 +71,15 @@ static const uint16_t uint16_mask[] = {
 #endif
 
 static int ipv4_cmp(const scamper_addr_t *, const scamper_addr_t *);
+static int ipv4_cmp_thunk(const void *, const void *);
 static int ipv4_human_cmp(const scamper_addr_t *, const scamper_addr_t *);
 static int ipv6_cmp(const scamper_addr_t *, const scamper_addr_t *);
+static int ipv6_cmp_thunk(const void *, const void *);
 static int ipv6_human_cmp(const scamper_addr_t *, const scamper_addr_t *);
 static int ethernet_cmp(const scamper_addr_t *, const scamper_addr_t *);
+static int ethernet_cmp_thunk(const void *, const void *);
 static int firewire_cmp(const scamper_addr_t *, const scamper_addr_t *);
+static int firewire_cmp_thunk(const void *, const void *);
 
 static void ipv4_tostr(const scamper_addr_t *, char *, const size_t);
 static void ipv6_tostr(const scamper_addr_t *, char *, const size_t);
@@ -128,6 +132,7 @@ struct handler
   size_t  size;
   int     af;
   int    (*cmp)(const scamper_addr_t *sa, const scamper_addr_t *sb);
+  int    (*cmp_thunk)(const void *va, const void *vb);
   int    (*human_cmp)(const scamper_addr_t *sa, const scamper_addr_t *sb);
   void   (*tostr)(const scamper_addr_t *addr, char *buf, const size_t len);
   int    (*inprefix)(const scamper_addr_t *addr, const void *prefix, int len);
@@ -148,6 +153,7 @@ static const struct handler handlers[] = {
     4,
     AF_INET,
     ipv4_cmp,
+    ipv4_cmp_thunk,
     ipv4_human_cmp,
     ipv4_tostr,
     ipv4_inprefix,
@@ -166,6 +172,7 @@ static const struct handler handlers[] = {
     16,
     AF_INET6,
     ipv6_cmp,
+    ipv6_cmp_thunk,
     ipv6_human_cmp,
     ipv6_tostr,
     ipv6_inprefix,
@@ -184,6 +191,7 @@ static const struct handler handlers[] = {
     6,
     -1,
     ethernet_cmp,
+    ethernet_cmp_thunk,
     ethernet_cmp,
     ethernet_tostr,
     null_inprefix,
@@ -202,6 +210,7 @@ static const struct handler handlers[] = {
     8,
     -1,
     firewire_cmp,
+    firewire_cmp_thunk,
     firewire_cmp,
     firewire_tostr,
     null_inprefix,
@@ -281,6 +290,11 @@ static int ipv4_cmp(const scamper_addr_t *sa, const scamper_addr_t *sb)
   b = (struct in_addr *)sb->addr;
 
   return (a->s_addr > b->s_addr) - (a->s_addr < b->s_addr);
+}
+
+static int ipv4_cmp_thunk(const void *sa, const void *sb)
+{
+  return ipv4_cmp((const scamper_addr_t *)sa, (const scamper_addr_t *)sb);
 }
 
 static int ipv4_human_cmp(const scamper_addr_t *sa, const scamper_addr_t *sb)
@@ -549,6 +563,11 @@ static int ipv6_cmp(const scamper_addr_t *sa, const scamper_addr_t *sb)
 #endif /* SIZEOF_LONG == 8 */
 
   return upper | (lower & -!upper);
+}
+
+static int ipv6_cmp_thunk(const void *sa, const void *sb)
+{
+  return ipv6_cmp((const scamper_addr_t *)sa, (const scamper_addr_t *)sb);
 }
 
 static int ipv6_human_cmp(const scamper_addr_t *sa, const scamper_addr_t *sb)
@@ -929,6 +948,11 @@ static int ethernet_cmp(const scamper_addr_t *sa, const scamper_addr_t *sb)
   return memcmp(sa->addr, sb->addr, 6);
 }
 
+static int ethernet_cmp_thunk(const void *sa, const void *sb)
+{
+  return ethernet_cmp((const scamper_addr_t *)sa, (const scamper_addr_t *)sb);
+}
+
 static void ethernet_tostr(const scamper_addr_t *addr,
 			   char *buf, const size_t len)
 {
@@ -983,6 +1007,11 @@ static int firewire_cmp(const scamper_addr_t *sa, const scamper_addr_t *sb)
   assert(sa->addr != NULL);
   assert(sb->addr != NULL);
   return memcmp(sa->addr, sb->addr, 8);
+}
+
+static int firewire_cmp_thunk(const void *sa, const void *sb)
+{
+  return firewire_cmp((const scamper_addr_t *)sa, (const scamper_addr_t *)sb);
 }
 
 static void firewire_tostr(const scamper_addr_t *addr,
@@ -1061,7 +1090,7 @@ scamper_addrcache_t *scamper_addrcache_alloc()
 
   for(i=(sizeof(handlers)/sizeof(struct handler))-1; i>=0; i--)
     {
-      ac->tree[i] = splaytree_alloc((splaytree_cmp_t)handlers[i].cmp);
+      ac->tree[i] = splaytree_alloc(handlers[i].cmp_thunk);
       if(ac->tree[i] == NULL)
 	goto err;
     }
@@ -1075,11 +1104,11 @@ scamper_addrcache_t *scamper_addrcache_alloc()
 
 #ifndef DMALLOC
 scamper_addr_t *scamper_addrcache_get(scamper_addrcache_t *ac,
-				      const int type, const void *addr)
+				      int type, const void *addr)
 #else
 scamper_addr_t *scamper_addrcache_get_dm(scamper_addrcache_t *ac,
-					 const int type, const void *addr,
-					 const char *file, const int line)
+					 int type, const void *addr,
+					 const char *file, int line)
 #endif
 {
   scamper_addr_t *sa, findme;
@@ -1127,11 +1156,11 @@ scamper_addr_t *scamper_addrcache_get_dm(scamper_addrcache_t *ac,
  */
 #ifndef DMALLOC
 scamper_addr_t *scamper_addrcache_resolve(scamper_addrcache_t *addrcache,
-					  const int af, const char *addr)
+					  int af, const char *addr)
 #else
 scamper_addr_t *scamper_addrcache_resolve_dm(scamper_addrcache_t *addrcache,
-					     const int af, const char *addr,
-					     const char *file, const int line)
+					     int af, const char *addr,
+					     const char *file, int line)
 #endif
 {
   struct sockaddr_storage sas;
@@ -1170,7 +1199,7 @@ scamper_addr_t *scamper_addrcache_resolve_dm(scamper_addrcache_t *addrcache,
 #if defined(DMALLOC)
 #undef scamper_addrcache_resolve
 scamper_addr_t *scamper_addrcache_resolve(scamper_addrcache_t *addrcache,
-					  const int af, const char *addr)
+					  int af, const char *addr)
 {
   return scamper_addrcache_resolve_dm(addrcache, af, addr, __FILE__, __LINE__);
 }
@@ -1207,10 +1236,10 @@ const void *scamper_addr_addr_get(const scamper_addr_t *addr)
 }
 
 #ifndef DMALLOC
-scamper_addr_t *scamper_addr_alloc(const int type, const void *addr)
+scamper_addr_t *scamper_addr_alloc(int type, const void *addr)
 #else
-scamper_addr_t *scamper_addr_alloc_dm(const int type, const void *addr,
-				      const char *file, const int line)
+scamper_addr_t *scamper_addr_alloc_dm(int type, const void *addr,
+				      const char *file, int line)
 #endif
 {
   scamper_addr_t *sa;
@@ -1253,7 +1282,7 @@ scamper_addr_t *scamper_addr_alloc_dm(const int type, const void *addr,
 scamper_addr_t *scamper_addr_fromstr(int type, const char *addr)
 #else
 scamper_addr_t *scamper_addr_fromstr_dm(int type, const char *addr,
-					const char *file, const int line)
+					const char *file, int line)
 #endif
 {
   struct sockaddr_storage sas;
@@ -1488,6 +1517,12 @@ void scamper_addr_free(scamper_addr_t *sa)
   return;
 }
 
+void scamper_addr_free_thunk(void *sa)
+{
+  scamper_addr_free((scamper_addr_t *)sa);
+  return;
+}
+
 int scamper_addr_cmp(const scamper_addr_t *a, const scamper_addr_t *b)
 {
   SCAMPER_ADDR_TYPE_ASSERT(a);
@@ -1501,6 +1536,11 @@ int scamper_addr_cmp(const scamper_addr_t *a, const scamper_addr_t *b)
     return handlers[a->type-1].cmp(a, b);
 
   return (a->type > b->type) - (a->type < b->type);
+}
+
+int scamper_addr_cmp_thunk(const void *a, const void *b)
+{
+  return scamper_addr_cmp((const scamper_addr_t *)a, (const scamper_addr_t *)b);
 }
 
 int scamper_addr_human_cmp(const scamper_addr_t *a, const scamper_addr_t *b)

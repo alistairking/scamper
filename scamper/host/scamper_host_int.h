@@ -1,9 +1,9 @@
 /*
  * scamper_host_int.h
  *
- * $Id: scamper_host_int.h,v 1.12 2025/10/12 21:20:47 mjl Exp $
+ * $Id: scamper_host_int.h,v 1.13 2026/08/03 18:53:10 mjl Exp $
  *
- * Copyright (C) 2018-2025 Matthew Luckie
+ * Copyright (C) 2018-2026 Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -180,6 +180,8 @@ struct scamper_host
   uint8_t                  retries;  /* how many retries to make */
   uint16_t                 qtype;    /* query type */
   uint16_t                 qclass;   /* query class */
+  uint16_t                *mqtypes;  /* additional Q-types */
+  uint8_t                  mqtypec;  /* additional Q-types */
   char                    *qname;    /* query name */
   char                    *ecs;      /* edns-client-subnet */
   scamper_host_query_t   **queries;  /* queries sent */

@@ -1,7 +1,7 @@
 /*
  * scamper_dealias_cmd.c
  *
- * $Id: scamper_dealias_cmd.c,v 1.35 2025/08/04 03:14:02 mjl Exp $
+ * $Id: scamper_dealias_cmd.c,v 1.36 2026/07/25 02:06:29 mjl Exp $
  *
  * Copyright (C) 2008-2011 The University of Waikato
  * Copyright (C) 2012-2013 Matthew Luckie
@@ -936,7 +936,7 @@ static int dealias_alloc_radargun(scamper_dealias_t *d, dealias_options_t *o,
 
   if(addrs != NULL)
     {
-      slist_free_cb(addrs, (slist_free_t)scamper_addr_free);
+      slist_free_cb(addrs, scamper_addr_free_thunk);
       addrs = NULL;
     }
 
@@ -979,7 +979,7 @@ static int dealias_alloc_radargun(scamper_dealias_t *d, dealias_options_t *o,
   if(addr != NULL)
     scamper_addr_free(addr);
   if(addrs != NULL)
-    slist_free_cb(addrs, (slist_free_t)scamper_addr_free);
+    slist_free_cb(addrs, scamper_addr_free_thunk);
   if(rg != NULL)
     scamper_dealias_radargun_free(rg);
   if(pd != NULL)
@@ -1424,7 +1424,7 @@ static int dealias_alloc_midarest(scamper_dealias_t *d, dealias_options_t *o,
   d->data = me;
 
   slist_free_cb(pd_list, (slist_free_t)scamper_dealias_probedef_free);
-  slist_free_cb(addrs, (slist_free_t)scamper_addr_free);
+  slist_free_cb(addrs, scamper_addr_free_thunk);
   return 0;
 
  err:
@@ -1433,7 +1433,7 @@ static int dealias_alloc_midarest(scamper_dealias_t *d, dealias_options_t *o,
   if(pd_list != NULL)
     slist_free_cb(pd_list, (slist_free_t)scamper_dealias_probedef_free);
   if(addrs != NULL)
-    slist_free_cb(addrs, (slist_free_t)scamper_addr_free);
+    slist_free_cb(addrs, scamper_addr_free_thunk);
   if(addr != NULL)
     scamper_addr_free(addr);
   if(pd != NULL)

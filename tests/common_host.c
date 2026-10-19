@@ -1,7 +1,7 @@
 /*
  * common_host : common functions for unit testing host
  *
- * $Id: common_host.c,v 1.9 2026/07/10 22:01:29 mjl Exp $
+ * $Id: common_host.c,v 1.10 2026/09/02 03:35:05 mjl Exp $
  *
  *        Matthew Luckie
  *        mjl@luckie.org.nz
@@ -210,6 +210,21 @@ static int host_query_ok(const scamper_host_query_t *in, const scamper_host_quer
   return 0;
 }
 
+static int mqtypes_ok(const scamper_host_t *in, const scamper_host_t *out)
+{
+  uint8_t i;
+  if(in->mqtypec != out->mqtypec)
+    return -1;
+  if(in->mqtypec == 0)
+    return 0;
+  if(in->mqtypes == NULL || out->mqtypes == NULL)
+    return -1;
+  for(i=0; i<in->mqtypec; i++)
+    if(in->mqtypes[i] != out->mqtypes[i])
+      return -1;
+  return 0;
+}
+
 int host_ok(const scamper_host_t *in, const scamper_host_t *out)
 {
   uint8_t i;
@@ -228,7 +243,8 @@ int host_ok(const scamper_host_t *in, const scamper_host_t *out)
      in->qclass != out->qclass ||
      in->qtype != out->qtype ||
      strcmp(in->qname, out->qname) != 0 ||
-     in->qcount != out->qcount)
+     in->qcount != out->qcount ||
+     mqtypes_ok(in, out) != 0)
     return -1;
 
   for(i=0; i<in->qcount; i++)
@@ -819,6 +835,67 @@ static scamper_host_t *host_11(void)
   return host;
 }
 
+static scamper_host_t *host_12(void)
+{
+  scamper_host_t *host = NULL;
+  scamper_host_query_t *q;
+  scamper_host_rr_t *rr;
+  uint16_t port = htons(443);
+
+  if((host = scamper_host_alloc()) == NULL ||
+     (host->src = scamper_addr_fromstr_ipv6("2001:db8::1")) == NULL ||
+     (host->dst = scamper_addr_fromstr_ipv6("2001:db8::2")) == NULL ||
+     (host->qname = strdup("example.com")) == NULL ||
+     scamper_host_queries_alloc(host, 1) != 0 ||
+     (host->queries[0] = q = scamper_host_query_alloc()) == NULL ||
+     scamper_host_query_rr_alloc(q, 3, 0, 0) != 0 ||
+     (q->an[0] = rr = scamper_host_rr_alloc("example.com",
+					    SCAMPER_HOST_CLASS_IN,
+					    SCAMPER_HOST_TYPE_HTTPS,
+					    86400)) == NULL ||
+     (rr->un.svcb = scamper_host_rr_svcb_alloc(1, ".", 2)) == NULL ||
+     (rr->un.svcb->params[0] = /* alpn */
+      scamper_host_rr_svcb_param_alloc(1, 2, (const uint8_t *)"h3")) == NULL ||
+     (rr->un.svcb->params[1] = /* port */
+      scamper_host_rr_svcb_param_alloc(3, 2, (const uint8_t *)&port)) == NULL ||
+     (q->an[1] = rr = scamper_host_rr_alloc("example.com",
+					    SCAMPER_HOST_CLASS_IN,
+					    SCAMPER_HOST_TYPE_A,
+					    60)) == NULL ||
+     (rr->un.addr = scamper_addr_fromstr_ipv4("192.0.2.4")) == NULL ||
+     (q->an[2] = rr = scamper_host_rr_alloc("example.com",
+					    SCAMPER_HOST_CLASS_IN,
+					    SCAMPER_HOST_TYPE_AAAA,
+					    60)) == NULL ||
+     (rr->un.addr = scamper_addr_fromstr_ipv6("2001:db8::4")) == NULL ||
+     (host->mqtypes = malloc(sizeof(uint16_t) * 2)) == NULL)
+    goto err;
+
+  host->userid               = 79;
+  host->qclass               = SCAMPER_HOST_CLASS_IN;
+  host->qtype                = SCAMPER_HOST_TYPE_HTTPS;
+  host->stop                 = SCAMPER_HOST_STOP_DONE;
+  host->start.tv_sec         = 1724828863;
+  host->start.tv_usec        = 123461;
+  host->wait_timeout.tv_sec  = 2;
+  host->wait_timeout.tv_usec = 0;
+  host->mqtypec              = 2;
+  host->mqtypes[0]           = SCAMPER_HOST_TYPE_A;
+  host->mqtypes[1]           = SCAMPER_HOST_TYPE_AAAA;
+
+  q->tx.tv_sec               = 1724828863;
+  q->tx.tv_usec              = 123462;
+  q->rx.tv_sec               = 1724828863;
+  q->rx.tv_usec              = 223462;
+  q->id                      = 10;
+
+  return host;
+
+ err:
+  if(host != NULL) scamper_host_free(host);
+  return host;
+}
+
 static scamper_host_makefunc_t makers[] = {
   host_1,
   host_2,
@@ -831,6 +908,7 @@ static scamper_host_makefunc_t makers[] = {
   host_9,
   host_10,
   host_11,
+  host_12,
 };
 
 scamper_host_t *host_makers(size_t i)

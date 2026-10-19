@@ -6,7 +6,7 @@
  * Copyright (C) 2022-2026 Matthew Luckie
  * Author: Matthew Luckie
  *
- * $Id: scamper_tracelb_text.c,v 1.17 2026/06/18 07:00:26 mjl Exp $
+ * $Id: scamper_tracelb_text.c,v 1.18 2026/08/31 07:34:35 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -34,6 +34,7 @@
 #include "scamper_tracelb.h"
 #include "scamper_tracelb_int.h"
 #include "scamper_file.h"
+#include "scamper_file_int.h"
 #include "scamper_tracelb_text.h"
 #include "utils.h"
 

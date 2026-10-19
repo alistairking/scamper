@@ -1,7 +1,7 @@
 /*
  * sc_rxifd: reply to query with received interface name
  *
- * $Id: sc_rxifd.c,v 1.32 2026/06/10 06:04:50 mjl Exp $
+ * $Id: sc_rxifd.c,v 1.33 2026/07/15 19:18:06 mjl Exp $
  *
  *         Matthew Luckie
  *         mjl@luckie.org.nz
@@ -2509,6 +2509,28 @@ static void cleanup(void)
 #endif /* HAVE_RXIF */
 
 #ifdef HAVE_RXIF
+#ifdef HAVE_RXIF4
+static int rxifd_do4(void)
+{
+#ifdef HAVE_RXIF6
+  if((options & OPT_IPV6) != 0)
+    return 0;
+#endif
+  return 1;
+}
+#endif /* HAVE_RXIF4 */
+
+#ifdef HAVE_RXIF6
+static int rxifd_do6(void)
+{
+#ifdef HAVE_RXIF4
+  if((options & OPT_IPV4) != 0)
+    return 0;
+#endif
+  return 1;
+}
+#endif /* HAVE_RXIF6 */
+
 static int rxifd(int argc, char *argv[])
 {
   int rc = -1;
@@ -2566,7 +2588,7 @@ static int rxifd(int argc, char *argv[])
 #endif /* HAVE_SETEUID */
 
 #ifdef HAVE_RXIF4
-  if((options & OPT_IPV6) == 0)
+  if(rxifd_do4())
     {
       dns4 = udp4_open(dns_port);
       if(socket_isinvalid(dns4))
@@ -2583,7 +2605,7 @@ static int rxifd(int argc, char *argv[])
 #endif /* HAVE_RXIF4 */
 
 #ifdef HAVE_RXIF6
-  if((options & OPT_IPV4) == 0)
+  if(rxifd_do6())
     {
       dns6 = udp6_open(dns_port);
       if(socket_isinvalid(dns6))

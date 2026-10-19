@@ -1,7 +1,7 @@
 /*
  * sc_bdrmap: driver to map first hop border routers of networks
  *
- * $Id: sc_bdrmap.c,v 1.75 2026/03/29 23:55:56 mjl Exp $
+ * $Id: sc_bdrmap.c,v 1.77 2026/07/25 02:06:29 mjl Exp $
  *
  *         Matthew Luckie
  *         mjl@caida.org / mjl@wand.net.nz
@@ -10,7 +10,7 @@
  * Copyright (C) 2015-2016 The University of Waikato
  * Copyright (C) 2017      The Regents of the University of California
  * Copyright (C) 2018-2020 The University of Waikato
- * Copyright (C) 2020-2024 Matthew Luckie
+ * Copyright (C) 2020-2026 Matthew Luckie
  * Copyright (C) 2023-2026 The Regents of the University of California
  *
  * This program is free software; you can redistribute it and/or modify
@@ -34,6 +34,7 @@
 #include "internal.h"
 
 #include "scamper_addr.h"
+#include "scamper_addr_int.h" /* for scamper_addr_cmp_thunk */
 #include "scamper_list.h"
 #include "ping/scamper_ping.h"
 #include "trace/scamper_trace.h"
@@ -3598,7 +3599,7 @@ static int sc_astraces_gss_add(sc_astraces_t *traces, scamper_addr_t *addr)
   if(no_gss != 0)
     return 0;
   if(traces->gss == NULL &&
-     (traces->gss = sc_stree_alloc((splaytree_cmp_t)scamper_addr_cmp)) == NULL)
+     (traces->gss = sc_stree_alloc(scamper_addr_cmp_thunk)) == NULL)
     return -1;
   if(sc_stree_find(traces->gss, addr) != NULL)
     return 0;
@@ -3627,7 +3628,7 @@ static void sc_astraces_free(sc_astraces_t *traces)
   if(traces->dsts != NULL)
     slist_free(traces->dsts);
   if(traces->gss != NULL)
-    sc_stree_free(traces->gss, (sc_stree_free_t)scamper_addr_free);
+    sc_stree_free(traces->gss, scamper_addr_free_thunk);
   if(traces->links != NULL)
     sc_stree_free(traces->links, (sc_stree_free_t)sc_astraces_link_free);
   free(traces);
