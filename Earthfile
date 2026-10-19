@@ -13,7 +13,10 @@ base-debian:
 deps-debian:
         ARG --required release
         FROM +base-debian --release=${release}
-        RUN apt-get update && \
+        RUN if [ "${release}" = "bullseye" ]; then \
+                sed -i 's|http://deb.debian.org/debian-security|http://archive.debian.org/debian-security|g' /etc/apt/sources.list; \
+            fi && \
+            apt-get update && \
             apt-get install -y \
                     build-essential \
                     autoconf \
