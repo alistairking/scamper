@@ -109,7 +109,8 @@ int scamper_source_isfinished(scamper_source_t *source);
 /* functions for adding stuff to the source's command queue */
 int scamper_source_command(scamper_source_t *source, const char *command);
 int scamper_source_command2(scamper_source_t *source, const char *command,
-			    uint32_t *id, char *errbuf, size_t errlen);
+			    uint32_t *id, uint32_t *userid,
+			    char *errbuf, size_t errlen);
 int scamper_source_halttask(scamper_source_t *source, uint32_t id);
 
 /* function for adding a snapshot of a current task to source */
