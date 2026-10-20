@@ -1,7 +1,7 @@
 /*
  * scamper_trace_cmd.c
  *
- * $Id: scamper_trace_cmd.c,v 1.32 2026/03/30 00:12:01 mjl Exp $
+ * $Id: scamper_trace_cmd.c,v 1.34 2026/07/25 02:06:29 mjl Exp $
  *
  * Copyright (C) 2003-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -796,8 +796,7 @@ void *scamper_do_trace_alloc(char *str, char *errbuf, size_t errlen)
       /* add the nodes to the global stop set for this trace */
       if(gss != NULL)
 	{
-	  gss_tree = splaytree_alloc((splaytree_cmp_t)scamper_addr_cmp);
-	  if(gss_tree == NULL)
+	  if((gss_tree = splaytree_alloc(scamper_addr_cmp_thunk)) == NULL)
 	    {
 	      snprintf(errbuf, errlen, "cannot alloc gss");
 	      goto err;
@@ -828,7 +827,7 @@ void *scamper_do_trace_alloc(char *str, char *errbuf, size_t errlen)
 	    }
 	  splaytree_inorder(gss_tree, (splaytree_inorder_t)trace_gss_add,
 			    trace->dtree);
-	  splaytree_free(gss_tree, (splaytree_free_t)scamper_addr_free);
+	  splaytree_free(gss_tree, scamper_addr_free_thunk);
 	  gss_tree = NULL;
 	  scamper_trace_dtree_gss_sort(trace->dtree);
 	}
@@ -841,8 +840,7 @@ void *scamper_do_trace_alloc(char *str, char *errbuf, size_t errlen)
   if(sa != NULL) scamper_addr_free(sa);
   if(payload != NULL) free(payload);
   if(gss != NULL) slist_free(gss);
-  if(gss_tree != NULL)
-    splaytree_free(gss_tree, (splaytree_free_t)scamper_addr_free);
+  if(gss_tree != NULL) splaytree_free(gss_tree, scamper_addr_free_thunk);
   if(trace != NULL) scamper_trace_free(trace);
   if(opts_out != NULL) scamper_options_free(opts_out);
   return NULL;

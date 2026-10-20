@@ -10,12 +10,11 @@ sc_uptime_SOURCES = \
 	$(top_srcdir)/mjl_heap.c \
 	$(top_srcdir)/mjl_list.c \
 	$(top_srcdir)/mjl_splaytree.c \
-	$(top_srcdir)/mjl_prefixtree.c \
-	$(top_srcdir)/scamper/scamper_linepoll.c \
-	$(top_srcdir)/scamper/scamper_writebuf.c
+	$(top_srcdir)/mjl_prefixtree.c
 
 sc_uptime_LDADD = \
 	$(top_srcdir)/lib/libscamperfile/libscamperfile.la \
+	$(top_srcdir)/lib/libscamperctrl/libscamperctrl.la \
 	-lsqlite3
 
 man_MANS = sc_uptime.1

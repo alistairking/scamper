@@ -59,8 +59,9 @@ cdef extern from "libscamperctrl.h":
  void *scamper_ctrl_param_get(const scamper_ctrl_t *ctrl)
  void scamper_ctrl_param_set(scamper_ctrl_t *ctrl, void *param)
  const char *scamper_ctrl_strerror(const scamper_ctrl_t *ctrl)
+ int scamper_ctrl_remove(scamper_ctrl_t *ctrl, scamper_inst_t *inst)
 
- scamper_inst_t *scamper_inst_vp(scamper_ctrl_t *ctrl, const scamper_vp_t *vp)
+ scamper_inst_t *scamper_inst_vp(scamper_ctrl_t *ctrl, scamper_vp_t *vp)
  scamper_inst_t *scamper_inst_unix(scamper_ctrl_t *ctrl,
 				   const scamper_attp_t *attp,
 				   const char *path)
@@ -73,6 +74,7 @@ cdef extern from "libscamperctrl.h":
  scamper_task_t *scamper_inst_do(scamper_inst_t *inst, const char *cmd, void *p)
  const char *scamper_inst_strerror(const scamper_inst_t *inst)
  int scamper_inst_done(scamper_inst_t *inst)
+ bint scamper_inst_isdone(const scamper_inst_t *inst)
  void *scamper_inst_param_get(const scamper_inst_t *inst)
  void scamper_inst_param_set(scamper_inst_t *inst, void *param)
  scamper_ctrl_t *scamper_inst_ctrl_get(const scamper_inst_t *inst)

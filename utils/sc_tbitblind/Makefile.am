@@ -12,7 +12,8 @@ sc_tbitblind_SOURCES = \
 	$(top_srcdir)/mjl_splaytree.c
 
 sc_tbitblind_LDADD = \
-	$(top_srcdir)/lib/libscamperfile/libscamperfile.la
+	$(top_srcdir)/lib/libscamperfile/libscamperfile.la \
+	$(top_srcdir)/lib/libscamperctrl/libscamperctrl.la
 
 man_MANS = sc_tbitblind.1
 

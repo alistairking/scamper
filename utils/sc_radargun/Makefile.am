@@ -12,7 +12,8 @@ sc_radargun_SOURCES = \
 	$(top_srcdir)/mjl_splaytree.c
 
 sc_radargun_LDADD = \
-	$(top_srcdir)/lib/libscamperfile/libscamperfile.la
+	$(top_srcdir)/lib/libscamperfile/libscamperfile.la \
+	$(top_srcdir)/lib/libscamperctrl/libscamperctrl.la
 
 man_MANS = sc_radargun.1
 

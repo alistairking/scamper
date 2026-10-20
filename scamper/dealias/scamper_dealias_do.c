@@ -1,7 +1,7 @@
 /*
  * scamper_do_dealias.c
  *
- * $Id: scamper_dealias_do.c,v 1.222 2026/07/04 20:57:23 mjl Exp $
+ * $Id: scamper_dealias_do.c,v 1.224 2026/08/31 06:23:43 mjl Exp $
  *
  * Copyright (C) 2008-2011 The University of Waikato
  * Copyright (C) 2012-2013 Matthew Luckie
@@ -42,6 +42,7 @@
 #include "scamper_addr_int.h"
 #include "scamper_list.h"
 #include "scamper_icmpext.h"
+#include "scamper_icmpext_int.h"
 #include "scamper_dealias.h"
 #include "scamper_dealias_int.h"
 #include "scamper_task.h"
@@ -1191,7 +1192,7 @@ static int dealias_prefixscan_next(scamper_task_t *task, scamper_err_t *error)
    * prefixscan->a, then we don't need to bother probing it.
    */
   if(array_find((void **)pfstate->aaliases, pfstate->aaliasc, def->dst,
-		(array_cmp_t)scamper_addr_cmp) != NULL)
+		scamper_addr_cmp_thunk) != NULL)
     {
       prefixscan->ab = scamper_addr_use(def->dst);
       prefixscan->flags |= SCAMPER_DEALIAS_PREFIXSCAN_FLAG_CSA;
@@ -1304,10 +1305,10 @@ static void dealias_prefixscan_handlereply(scamper_task_t *task,
 	   * address of the interface used in the response.
 	   */
 	  if(array_find((void **)pfstate->aaliases, pfstate->aaliasc,
-			reply->src, (array_cmp_t)scamper_addr_cmp) == NULL)
+			reply->src, scamper_addr_cmp_thunk) == NULL)
 	    {
 	      if(array_insert((void ***)&pfstate->aaliases, &pfstate->aaliasc,
-			      reply->src, (array_cmp_t)scamper_addr_cmp) != 0)
+			      reply->src, scamper_addr_cmp_thunk) != 0)
 		{
 		  scamper_err_make(&error, errno, "could not add to aaliases");
 		  goto err;
@@ -1323,7 +1324,7 @@ static void dealias_prefixscan_handlereply(scamper_task_t *task,
 	   */
 	  if(scamper_addr_cmp(reply->src, prefixscan->a) == 0 ||
 	     array_find((void **)pfstate->aaliases, pfstate->aaliasc,
-			reply->src, (array_cmp_t)scamper_addr_cmp) != NULL)
+			reply->src, scamper_addr_cmp_thunk) != NULL)
 	    {
 	      prefixscan->ab = scamper_addr_use(probe->def->dst);
 	      prefixscan->flags |= SCAMPER_DEALIAS_PREFIXSCAN_FLAG_CSA;
@@ -2106,6 +2107,10 @@ static void do_dealias_handle_icmp(scamper_task_t *task,scamper_icmp_resp_t *ir)
   reply->icmp_type     = ir->ir_icmp_type;
   reply->icmp_code     = ir->ir_icmp_code;
   reply->icmp_q_ttl    = ir->ir_inner_ip_ttl;
+
+  /* if ICMP extensions are included, then attempt to parse and include them */
+  if(ir->ir_ext != NULL)
+    scamper_icmpext_parse(&reply->icmp_exts, ir->ir_ext, ir->ir_extlen);
 
   if(ir->ir_af == AF_INET)
     {

@@ -7,7 +7,7 @@
  * Copyright (C) 2022-2024 Matthew Luckie
  * Author: Matthew Luckie
  *
- * $Id: scamper_ping_text.c,v 1.31 2025/07/30 07:54:23 mjl Exp $
+ * $Id: scamper_ping_text.c,v 1.32 2026/08/31 07:34:35 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -35,6 +35,7 @@
 #include "scamper_ping.h"
 #include "scamper_ping_int.h"
 #include "scamper_file.h"
+#include "scamper_file_int.h"
 #include "scamper_ping_text.h"
 
 #include "utils.h"

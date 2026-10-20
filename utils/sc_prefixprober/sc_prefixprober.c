@@ -2,10 +2,10 @@
  * sc_prefixprober : scamper driver to probe addresses in specified
  *                   prefixes
  *
- * $Id: sc_prefixprober.c,v 1.54 2025/07/29 01:08:36 mjl Exp $
+ * $Id: sc_prefixprober.c,v 1.55 2026/07/25 02:06:29 mjl Exp $
  *
  * Copyright (C) 2023 The Regents of the University of California
- * Copyright (C) 2024-2025 Matthew Luckie
+ * Copyright (C) 2024-2026 Matthew Luckie
  * Author: Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
@@ -29,6 +29,7 @@
 #include "internal.h"
 
 #include "scamper_addr.h"
+#include "scamper_addr_int.h"
 #include "scamper_list.h"
 #include "ping/scamper_ping.h"
 #include "trace/scamper_trace.h"
@@ -714,7 +715,7 @@ static void sc_prefix_free(sc_prefix_t *p)
   else if(p->v == 6 && p->pfx.v6 != NULL)
     prefix6_free(p->pfx.v6);
   if(p->addrs != NULL)
-    slist_free_cb(p->addrs, (slist_free_t)scamper_addr_free);
+    slist_free_cb(p->addrs, scamper_addr_free_thunk);
   free(p);
   return;
 }

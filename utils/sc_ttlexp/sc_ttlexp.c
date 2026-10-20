@@ -1,7 +1,7 @@
 /*
  * sc_ttlexp: dump all unique source IP addresses in TTL expired messages
  *
- * $Id: sc_ttlexp.c,v 1.17 2026/07/03 09:37:47 mjl Exp $
+ * $Id: sc_ttlexp.c,v 1.19 2026/07/25 02:06:29 mjl Exp $
  *
  *         Matthew Luckie
  *         mjl@luckie.org.nz
@@ -29,6 +29,7 @@
 #include "internal.h"
 
 #include "scamper_addr.h"
+#include "scamper_addr_int.h"
 #include "scamper_list.h"
 #include "trace/scamper_trace.h"
 #include "tracelb/scamper_tracelb.h"
@@ -206,13 +207,13 @@ static void cleanup(void)
 {
   if(st_ip4 != NULL)
     {
-      splaytree_free(st_ip4, (splaytree_free_t)scamper_addr_free);
+      splaytree_free(st_ip4, scamper_addr_free_thunk);
       st_ip4 = NULL;
     }
 
   if(st_ip6 != NULL)
     {
-      splaytree_free(st_ip6, (splaytree_free_t)scamper_addr_free);
+      splaytree_free(st_ip6, scamper_addr_free_thunk);
       st_ip6 = NULL;
     }
 
@@ -247,8 +248,8 @@ int main(int argc, char *argv[])
   if(check_options(argc, argv) != 0)
     return -1;
 
-  if((st_ip4 = splaytree_alloc((splaytree_cmp_t)scamper_addr_cmp)) == NULL ||
-     (st_ip6 = splaytree_alloc((splaytree_cmp_t)scamper_addr_cmp)) == NULL)
+  if((st_ip4 = splaytree_alloc(scamper_addr_cmp_thunk)) == NULL ||
+     (st_ip6 = splaytree_alloc(scamper_addr_cmp_thunk)) == NULL)
     return -1;
 
   if((filter = scamper_file_filter_alloc(filter_types, filter_cnt)) == NULL)

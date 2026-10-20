@@ -3,7 +3,7 @@
  *
  * the warts file format
  *
- * $Id: scamper_file_warts.c,v 1.302 2026/07/11 21:17:09 mjl Exp $
+ * $Id: scamper_file_warts.c,v 1.303 2026/08/31 07:34:35 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -37,6 +37,7 @@
 #include "scamper_list.h"
 #include "scamper_list_int.h"
 #include "scamper_file.h"
+#include "scamper_file_int.h"
 #include "scamper_file_warts.h"
 #include "scamper_icmpext.h"
 #include "scamper_icmpext_int.h"

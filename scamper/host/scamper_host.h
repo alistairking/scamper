@@ -1,7 +1,7 @@
 /*
  * scamper_host
  *
- * $Id: scamper_host.h,v 1.34 2026/03/19 06:41:38 mjl Exp $
+ * $Id: scamper_host.h,v 1.36 2026/09/02 02:24:58 mjl Exp $
  *
  * Copyright (C) 2018-2026 Matthew Luckie
  *
@@ -57,6 +57,8 @@ const char *scamper_host_qname_get(const scamper_host_t *host);
 uint8_t scamper_host_qcount_get(const scamper_host_t *host);
 const char *scamper_host_ecs_get(const scamper_host_t *host);
 const char *scamper_host_errmsg_get(const scamper_host_t *host);
+uint8_t scamper_host_mqtypec_get(const scamper_host_t *host);
+uint16_t scamper_host_mqtypes_get(const scamper_host_t *host, uint8_t i);
 
 scamper_host_query_t *scamper_host_query_get(const scamper_host_t *host,
 					     uint8_t i);
@@ -196,7 +198,9 @@ const uint8_t *scamper_host_rr_svcb_param_val_get(const scamper_host_rr_svcb_par
 #define SCAMPER_HOST_RR_DATA_TYPE_OPT  6
 #define SCAMPER_HOST_RR_DATA_TYPE_SVCB 7
 
-#define SCAMPER_HOST_RR_OPT_ELEM_CODE_NSID 3
-#define SCAMPER_HOST_RR_OPT_ELEM_CODE_ECS  8
+#define SCAMPER_HOST_RR_OPT_ELEM_CODE_NSID     3
+#define SCAMPER_HOST_RR_OPT_ELEM_CODE_ECS      8
+#define SCAMPER_HOST_RR_OPT_ELEM_CODE_MQTYPE_Q 20
+#define SCAMPER_HOST_RR_OPT_ELEM_CODE_MQTYPE_R 21
 
 #endif /* __SCAMPER_HOST_H */

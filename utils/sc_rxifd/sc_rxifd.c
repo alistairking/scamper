@@ -1,7 +1,7 @@
 /*
  * sc_rxifd: reply to query with received interface name
  *
- * $Id: sc_rxifd.c,v 1.32 2026/06/10 06:04:50 mjl Exp $
+ * $Id: sc_rxifd.c,v 1.34 2026/10/10 04:47:41 mjl Exp $
  *
  *         Matthew Luckie
  *         mjl@luckie.org.nz
@@ -1367,37 +1367,6 @@ static void quic_varint_insert(uint8_t *buf, size_t len, size_t *off,
   return;
 }
 
-static BIO_ADDR *bioaddr_from_sockaddr(const struct sockaddr *sa)
-{
-  const struct sockaddr_in *sin;
-  const struct sockaddr_in6 *sin6;
-  BIO_ADDR *ba;
-
-  if((ba = BIO_ADDR_new()) == NULL)
-    return NULL;
-  if(sa->sa_family == AF_INET)
-    {
-      sin = (const struct sockaddr_in *)sa;
-      if(BIO_ADDR_rawmake(ba, AF_INET, &sin->sin_addr,
-			  sizeof(sin->sin_addr), sin->sin_port) != 1)
-	goto err;
-    }
-  else if(sa->sa_family == AF_INET6)
-    {
-      sin6 = (const struct sockaddr_in6 *)sa;
-      if(BIO_ADDR_rawmake(ba, AF_INET6, &sin6->sin6_addr,
-			  sizeof(sin6->sin6_addr), sin6->sin6_port) != 1)
-	goto err;
-    }
-  else goto err;
-  return ba;
-
- err:
-  if(ba != NULL)
-    BIO_ADDR_free(ba);
-  return NULL;
-}
-
 static BIO_ADDR *bioaddr_from_bits(int af, const void *addr, uint16_t port)
 {
   BIO_ADDR *ba = NULL;
@@ -2175,7 +2144,8 @@ static void quic4_handle(void)
 
   if(udp4_recv(quic4, rxbuf, rxbuflen, &rxlen, &us, &them, &ifindex) != 2 ||
      (us_addr = bioaddr_from_bits(AF_INET, &us, quic_port)) == NULL ||
-     (them_addr = bioaddr_from_sockaddr((struct sockaddr *)&them)) == NULL)
+     (them_addr = bioaddr_from_bits(AF_INET, &them.sin_addr,
+				    ntohs(them.sin_port))) == NULL)
     goto done;
 
   quic_in(rxbuf, rxlen, them_addr, us_addr, ifindex);
@@ -2199,7 +2169,8 @@ static void quic6_handle(void)
 
   if(udp6_recv(quic6, rxbuf, rxbuflen, &rxlen, &us, &them, &ifindex) != 2 ||
      (us_addr = bioaddr_from_bits(AF_INET6, &us, quic_port)) == NULL ||
-     (them_addr = bioaddr_from_sockaddr((struct sockaddr *)&them)) == NULL)
+     (them_addr = bioaddr_from_bits(AF_INET6, &them.sin6_addr,
+				    ntohs(them.sin6_port))) == NULL)
     goto done;
 
   quic_in(rxbuf, rxlen, them_addr, us_addr, ifindex);
@@ -2509,6 +2480,28 @@ static void cleanup(void)
 #endif /* HAVE_RXIF */
 
 #ifdef HAVE_RXIF
+#ifdef HAVE_RXIF4
+static int rxifd_do4(void)
+{
+#ifdef HAVE_RXIF6
+  if((options & OPT_IPV6) != 0)
+    return 0;
+#endif
+  return 1;
+}
+#endif /* HAVE_RXIF4 */
+
+#ifdef HAVE_RXIF6
+static int rxifd_do6(void)
+{
+#ifdef HAVE_RXIF4
+  if((options & OPT_IPV4) != 0)
+    return 0;
+#endif
+  return 1;
+}
+#endif /* HAVE_RXIF6 */
+
 static int rxifd(int argc, char *argv[])
 {
   int rc = -1;
@@ -2566,7 +2559,7 @@ static int rxifd(int argc, char *argv[])
 #endif /* HAVE_SETEUID */
 
 #ifdef HAVE_RXIF4
-  if((options & OPT_IPV6) == 0)
+  if(rxifd_do4())
     {
       dns4 = udp4_open(dns_port);
       if(socket_isinvalid(dns4))
@@ -2583,7 +2576,7 @@ static int rxifd(int argc, char *argv[])
 #endif /* HAVE_RXIF4 */
 
 #ifdef HAVE_RXIF6
-  if((options & OPT_IPV4) == 0)
+  if(rxifd_do6())
     {
       dns6 = udp6_open(dns_port);
       if(socket_isinvalid(dns6))

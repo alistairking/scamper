@@ -72,4 +72,4 @@ cdef extern from "scamper_file.h":
  int scamper_file_readbuf_read(void *param, uint8_t **data, size_t len)
 
  int scamper_file_write_obj(scamper_file_t *sf,
-			    uint16_t o_type, void *o_data)
+			    uint16_t o_type, const void *o_data)

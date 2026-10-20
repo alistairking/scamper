@@ -5,7 +5,7 @@
  * Authors         : Matthew Luckie, Jakub Czyz
  *
  * Copyright (C) 2014-2015 The Regents of the University of California
- * Copyright (C) 2015-2024 Matthew Luckie
+ * Copyright (C) 2015-2026 Matthew Luckie
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -28,6 +28,7 @@
 #include "internal.h"
 
 #include "scamper_addr.h"
+#include "scamper_addr_int.h"
 #include "scamper_list.h"
 #include "ping/scamper_ping.h"
 #include "trace/scamper_trace.h"
@@ -1199,7 +1200,7 @@ static int do_infile(void)
   slist_node_t *node;
   sc_name2ips_t *n2i;
 
-  if((addrtree = splaytree_alloc((splaytree_cmp_t)scamper_addr_cmp)) == NULL)
+  if((addrtree = splaytree_alloc(scamper_addr_cmp_thunk)) == NULL)
     {
       fprintf(stderr, "could not alloc addrtree\n");
       return -1;
@@ -1216,7 +1217,7 @@ static int do_infile(void)
       if(file_lines(infile, infile_rows_line, addrtree) != 0)
 	goto err;
     }
-  splaytree_free(addrtree, (splaytree_free_t)scamper_addr_free);
+  splaytree_free(addrtree, scamper_addr_free_thunk);
   addrtree = NULL;
 
   for(node=slist_head_node(n2i_list); node != NULL; node=slist_node_next(node))
@@ -1242,7 +1243,7 @@ static int do_infile(void)
 
  err:
   if(addrtree != NULL)
-    splaytree_free(addrtree, (splaytree_free_t)scamper_addr_free);
+    splaytree_free(addrtree, scamper_addr_free_thunk);
   return -1;
 }
 

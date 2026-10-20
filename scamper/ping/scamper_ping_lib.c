@@ -1,10 +1,10 @@
 /*
  * scamper_ping_lib.c
  *
- * Copyright (C) 2023-2025 Matthew Luckie
+ * Copyright (C) 2023-2026 Matthew Luckie
  * Author: Matthew Luckie
  *
- * $Id: scamper_ping_lib.c,v 1.16 2025/10/19 19:23:21 mjl Exp $
+ * $Id: scamper_ping_lib.c,v 1.19 2026/08/31 18:52:19 mjl Exp $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -330,6 +330,11 @@ uint8_t scamper_ping_reply_tcp_flags_get(const scamper_ping_reply_t *reply)
   return reply->tcp_flags;
 }
 
+uint16_t scamper_ping_reply_tcp_mss_get(const scamper_ping_reply_t *reply)
+{
+  return reply->tcp_mss;
+}
+
 const char *scamper_ping_reply_ifname_get(const scamper_ping_reply_t *reply)
 {
   if(reply->ifname == NULL)
@@ -448,14 +453,14 @@ uint32_t scamper_ping_reply_v4ts_ts_get(const scamper_ping_reply_v4ts_t *ts, uin
 
 int scamper_ping_reply_v4ts_hasip(const scamper_ping_reply_v4ts_t *ts)
 {
-  if(ts->tss != NULL)
+  if(ts->ips != NULL)
     return 1;
   return 0;
 }
 
 scamper_addr_t *scamper_ping_reply_v4ts_ip_get(const scamper_ping_reply_v4ts_t *ts, uint8_t i)
 {
-  if(ts->tsc <= i)
+  if(ts->ips == NULL || ts->tsc <= i)
     return NULL;
   return ts->ips[i];
 }
@@ -531,5 +536,11 @@ scamper_ping_probe_t *scamper_ping_probe_use(scamper_ping_probe_t *probe)
 {
   probe->refcnt++;
   return probe;
+}
+
+scamper_ping_reply_v4ts_t *scamper_ping_reply_v4ts_use(scamper_ping_reply_v4ts_t *ts)
+{
+  ts->refcnt++;
+  return ts;
 }
 #endif

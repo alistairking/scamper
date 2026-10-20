@@ -1,7 +1,7 @@
 /*
  * scamper_outfiles: hold a collection of output targets together
  *
- * $Id: scamper_outfiles.c,v 1.64 2025/03/29 18:46:03 mjl Exp $
+ * $Id: scamper_outfiles.c,v 1.65 2026/08/31 07:34:35 mjl Exp $
  *
  * Copyright (C) 2004-2006 Matthew Luckie
  * Copyright (C) 2006-2011 The University of Waikato
@@ -31,6 +31,7 @@
 
 #include "scamper_debug.h"
 #include "scamper_file.h"
+#include "scamper_file_int.h"
 #include "scamper_priv.h"
 #include "scamper_outfiles.h"
 #include "utils.h"
